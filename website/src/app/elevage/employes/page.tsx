@@ -50,6 +50,16 @@ interface Employe {
   eleveurProfileId?: string | null;
 }
 
+interface Conge {
+  id: string; employe_id: string; date_debut: string; date_fin: string;
+  statut: 'en_attente' | 'approuve' | 'refuse'; motif: string | null;
+}
+
+function fmtDateConge(iso: string) {
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 const PERMS_LIST = [
   { key: 'write_animaux',    label: 'Modifier les animaux',  desc: 'Éditer fiches, photos, identité' },
   { key: 'write_sante',      label: 'Carnet de santé',       desc: 'Vaccins, traitements, poids' },
@@ -118,8 +128,12 @@ export default function EmployesPage() {
   const { user, loading } = useAuth();
   const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
-  const [tab, setTab] = useState<'employes' | 'taches'>('taches');
+  const [tab, setTab] = useState<'employes' | 'taches' | 'conges'>('taches');
   const [employes, setEmployes] = useState<Employe[]>([]);
+  const [conges, setConges] = useState<Conge[]>([]);
+  const [congeDebut, setCongeDebut] = useState('');
+  const [congeFin, setCongeFin] = useState('');
+  const [congeEmployeId, setCongeEmployeId] = useState('');
   const [tachesM, setTachesM] = useState<TacheManuelle[]>([]);
   const [planTaches, setPlanTaches] = useState<PlanTache[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -189,6 +203,18 @@ export default function EmployesPage() {
         }
       }
       setEmployes(empsData);
+
+      // Congés — chargés avec les employés (mêmes ids), pas de fetch séparé
+      // au changement d'onglet.
+      const empIds = empsData.map(e => e.id);
+      if (empIds.length > 0) {
+        const { data: congesRaw } = await supabase.from('employe_conges')
+          .select('id, employe_id, date_debut, date_fin, statut, motif')
+          .in('employe_id', empIds).order('date_debut', { ascending: false });
+        setConges((congesRaw ?? []) as Conge[]);
+      } else {
+        setConges([]);
+      }
 
       // Permission « suivi_chaleurs » par employé — pilote l'affichage du
       // bouton 🌸 sur chaque ligne.
@@ -270,6 +296,40 @@ export default function EmployesPage() {
     });
     load();
   }, [user, load]);
+
+  const repondreConge = useCallback(async (c: Conge, approuve: boolean) => {
+    await supabase.from('employe_conges').update({ statut: approuve ? 'approuve' : 'refuse' }).eq('id', c.id);
+    const employe = employes.find(e => e.id === c.employe_id);
+    if (employe) {
+      await supabase.from('notifications').insert({
+        uid: employe.uid_employe,
+        type: 'conge_reponse',
+        title: approuve ? 'Congé approuvé' : 'Congé refusé',
+        body: approuve
+          ? `Votre demande de congé du ${fmtDateConge(c.date_debut)} au ${fmtDateConge(c.date_fin)} a été approuvée.`
+          : `Votre demande de congé du ${fmtDateConge(c.date_debut)} au ${fmtDateConge(c.date_fin)} a été refusée.`,
+        ...(employe.employeProfileId ? { profile_id: employe.employeProfileId } : {}),
+        data: { congeId: c.id, approved: approuve },
+        read: false,
+      });
+    }
+    load();
+  }, [employes, load]);
+
+  const ajouterConge = useCallback(async () => {
+    if (!congeEmployeId || !congeDebut || !congeFin) return;
+    await supabase.from('employe_conges').insert({
+      employe_id: congeEmployeId, date_debut: congeDebut, date_fin: congeFin,
+      statut: 'approuve', demande_par_uid: user?.uid ?? null,
+    });
+    setCongeDebut(''); setCongeFin(''); setCongeEmployeId('');
+    load();
+  }, [congeEmployeId, congeDebut, congeFin, user, load]);
+
+  const supprimerConge = useCallback(async (id: string) => {
+    await supabase.from('employe_conges').delete().eq('id', id);
+    load();
+  }, [load]);
 
   const [permsInitial, setPermsInitial] = useState<Set<string>>(new Set());
 
@@ -443,12 +503,12 @@ export default function EmployesPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
-        {(['employes', 'taches'] as const).map(t => (
+        {(['employes', 'taches', 'conges'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-5 py-2.5 text-sm font-semibold transition-colors border-b-2 ${
               tab === t ? 'border-teal-600 text-teal-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}>
-            {t === 'employes' ? 'Employés' : 'Tâches'}
+            {t === 'employes' ? 'Employés' : t === 'taches' ? 'Tâches' : 'Congés'}
           </button>
         ))}
       </div>
@@ -514,6 +574,73 @@ export default function EmployesPage() {
             </svg>
             Ajouter un employé
           </button>
+        </div>
+
+      ) : tab === 'conges' ? (
+
+        // ── Onglet Congés ───────────────────────────────────────────────────
+        <div className="space-y-4">
+          {employes.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Ajouter directement</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select value={congeEmployeId} onChange={e => setCongeEmployeId(e.target.value)}
+                  className="border rounded-lg px-2 py-1.5 text-xs flex-1 min-w-[120px]">
+                  <option value="">Employé…</option>
+                  {employes.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                </select>
+                <input type="date" value={congeDebut} onChange={e => setCongeDebut(e.target.value)}
+                  className="border rounded-lg px-2 py-1.5 text-xs" />
+                <span className="text-gray-400 text-xs">→</span>
+                <input type="date" value={congeFin} onChange={e => setCongeFin(e.target.value)}
+                  className="border rounded-lg px-2 py-1.5 text-xs" />
+                <button onClick={ajouterConge}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold text-white bg-teal-600 hover:bg-teal-700">
+                  Ajouter
+                </button>
+              </div>
+            </div>
+          )}
+
+          {conges.length === 0 ? (
+            <p className="text-center text-gray-400 py-10">Aucun congé enregistré.</p>
+          ) : (
+            <div className="space-y-2">
+              {conges.map(c => {
+                const employe = employes.find(e => e.id === c.employe_id);
+                const style = c.statut === 'en_attente'
+                  ? { label: 'En attente', bg: 'bg-orange-50', color: 'text-orange-700' }
+                  : c.statut === 'refuse'
+                  ? { label: 'Refusé', bg: 'bg-red-50', color: 'text-red-700' }
+                  : { label: 'Approuvé', bg: 'bg-green-50', color: 'text-green-700' };
+                return (
+                  <div key={c.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-sm text-gray-800">{employe?.nom ?? 'Employé'}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${style.bg} ${style.color}`}>{style.label}</span>
+                        <button onClick={() => supprimerConge(c.id)} className="text-gray-400 hover:text-red-500 text-sm">✕</button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{fmtDateConge(c.date_debut)} → {fmtDateConge(c.date_fin)}</p>
+                    {c.motif && <p className="text-xs text-gray-400 mt-1">{c.motif}</p>}
+                    {c.statut === 'en_attente' && (
+                      <div className="flex gap-2 mt-3">
+                        <button onClick={() => repondreConge(c, false)}
+                          className="flex-1 py-1.5 rounded-lg border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">
+                          Refuser
+                        </button>
+                        <button onClick={() => repondreConge(c, true)}
+                          className="flex-1 py-1.5 rounded-lg bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700">
+                          Approuver
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
       ) : (

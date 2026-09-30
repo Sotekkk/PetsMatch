@@ -6,6 +6,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show kTypesPrestationToilettage;
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
+import 'package:PetsMatch/widgets/employe_conges_section.dart';
 
 const kJoursSemaine = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const kCouleursPlanning = ['#FFB74D', '#4DB6AC', '#7986CB', '#F06292', '#81C784', '#BA68C8'];
@@ -53,10 +54,36 @@ class _ToilettageEmployesPageState extends State<ToilettageEmployesPage> {
             : Future.value(<Map<String, dynamic>>[]),
       ]);
       final planCode = results[0] as String;
-      final rows = results[1] as List;
+      final rows = List<Map<String, dynamic>>.from(results[1] as List);
+
+      // `employes.prenom`/`nom` ne sont renseignés QUE pour un contact ajouté
+      // manuellement (sans compte PetsMatch) — un employé invité via son
+      // compte (le cas normal) n'a que `employe_profile_id`, d'où le nom/la
+      // photo manquants ici. On résout ces cas via user_profiles, comme le
+      // fait déjà _EmployesTab (employes_page.dart).
+      final profileIds = rows
+          .map((e) => e['employe_profile_id'] as String?)
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (profileIds.isNotEmpty) {
+        final profiles = await _supa.from('user_profiles')
+            .select('id, firstname, lastname, avatar_url')
+            .inFilter('id', profileIds);
+        final byId = { for (final p in (profiles as List)) p['id'] as String: p };
+        for (final e in rows) {
+          final p = byId[e['employe_profile_id']];
+          if (p == null) continue;
+          final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+          if (nom.isNotEmpty) { e['prenom'] = p['firstname']; e['nom'] = p['lastname']; }
+          e['_avatar_url'] = p['avatar_url'];
+        }
+      }
+
       if (mounted) setState(() {
         _hasPlanningEmployes = PlanService.getToilettageConfig(planCode).hasPlanningEmployes;
-        _employes = List<Map<String, dynamic>>.from(rows);
+        _employes = rows;
         _loading = false;
       });
     } catch (_) {
@@ -124,14 +151,34 @@ class _ToilettageEmployesPageState extends State<ToilettageEmployesPage> {
                         final e = _employes[i];
                         final couleur = Color(int.parse((e['couleur_planning'] as String? ?? '#FFB74D').replaceFirst('#', '0xFF')));
                         final competences = (e['competences'] as List?) ?? [];
+                        final nom = '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim();
+                        final photo = e['_avatar_url'] as String?;
                         return Card(
                           margin: const EdgeInsets.only(bottom: 10),
                           elevation: 1,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           child: ListTile(
                             onTap: () => _openEdit(e),
-                            leading: CircleAvatar(backgroundColor: couleur, radius: 10),
-                            title: Text('${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim(),
+                            leading: Stack(clipBehavior: Clip.none, children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: couleur.withValues(alpha: 0.2),
+                                backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+                                child: (photo == null || photo.isEmpty)
+                                    ? Icon(Icons.person, color: couleur, size: 18) : null,
+                              ),
+                              Positioned(
+                                right: -1, bottom: -1,
+                                child: Container(
+                                  width: 10, height: 10,
+                                  decoration: BoxDecoration(
+                                    color: couleur, shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 1.5),
+                                  ),
+                                ),
+                              ),
+                            ]),
+                            title: Text(nom.isEmpty ? 'Employé' : nom,
                                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                             subtitle: Text(competences.isEmpty
                                 ? 'Toutes prestations'
@@ -162,8 +209,6 @@ class _EmployeToilettageFormState extends State<_EmployeToilettageForm> {
   late Set<String> _competences;
   late Map<String, dynamic> _horaires;
   bool _saving = false;
-  List<Map<String, dynamic>> _conges = [];
-  bool _loadingConges = true;
 
   @override
   void initState() {
@@ -171,36 +216,6 @@ class _EmployeToilettageFormState extends State<_EmployeToilettageForm> {
     _couleur = widget.employe['couleur_planning'] as String? ?? kCouleursPlanning.first;
     _competences = ((widget.employe['competences'] as List?)?.cast<String>().toSet()) ?? {};
     _horaires = Map<String, dynamic>.from((widget.employe['horaires'] as Map?) ?? {});
-    _loadConges();
-  }
-
-  Future<void> _loadConges() async {
-    try {
-      final rows = await _supa.from('employe_conges').select()
-          .eq('employe_id', widget.employe['id']).order('date_debut', ascending: false);
-      if (mounted) setState(() { _conges = List<Map<String, dynamic>>.from(rows as List); _loadingConges = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loadingConges = false);
-    }
-  }
-
-  Future<void> _addConge() async {
-    final now = DateTime.now();
-    final range = await showDateRangePicker(
-      context: context, firstDate: now, lastDate: DateTime(now.year + 2), locale: const Locale('fr'),
-    );
-    if (range == null) return;
-    await _supa.from('employe_conges').insert({
-      'employe_id': widget.employe['id'],
-      'date_debut': range.start.toIso8601String().substring(0, 10),
-      'date_fin': range.end.toIso8601String().substring(0, 10),
-    });
-    _loadConges();
-  }
-
-  Future<void> _removeConge(String id) async {
-    await _supa.from('employe_conges').delete().eq('id', id);
-    _loadConges();
   }
 
   Future<void> _submit() async {
@@ -270,26 +285,12 @@ class _EmployeToilettageFormState extends State<_EmployeToilettageForm> {
             );
           }).toList()),
           const SizedBox(height: 16),
-          Row(children: [
-            Text('Congés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade700)),
-            const Spacer(),
-            TextButton.icon(onPressed: _addConge, icon: const Icon(Icons.add, size: 16), label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
-          ]),
-          if (_loadingConges)
-            const Padding(padding: EdgeInsets.all(8), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
-          else if (_conges.isEmpty)
-            Text('Aucun congé programmé.', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))
-          else
-            ..._conges.map((c) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(children: [
-                Icon(Icons.event_busy_outlined, size: 16, color: Colors.grey.shade500),
-                const SizedBox(width: 6),
-                Text('${c['date_debut']} → ${c['date_fin']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                const Spacer(),
-                IconButton(icon: const Icon(Icons.close, size: 16), onPressed: () => _removeConge(c['id'].toString())),
-              ]),
-            )),
+          EmployeCongesSection(
+            employeId: widget.employe['id'],
+            employeUidEmploye: widget.employe['uid_employe'] as String?,
+            employeProfileId: widget.employe['employe_profile_id'] as String?,
+            color: _orange,
+          ),
           const SizedBox(height: 12),
           SizedBox(width: double.infinity, child: ElevatedButton(
             onPressed: _saving ? null : _submit,

@@ -51,6 +51,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
+import 'package:PetsMatch/widgets/conge_date_range_sheet.dart';
 
 // ─── Libellé de structure pour les notifications d'invitation ────────────────
 
@@ -116,7 +117,10 @@ class EmployesPage extends StatefulWidget {
   /// corrigée ici : un éducateur/pension/garde voyait les employés de son
   /// profil éleveur du même compte.
   final String? profileType;
-  const EmployesPage({super.key, this.isAssociation = false, this.profileType});
+  /// Onglet ouvert au chargement (0=Employés, 1=Tâches, 2=Congés) — sert au
+  /// tap sur une notif "Demande de congé" pour atterrir direct dessus.
+  final int initialTab;
+  const EmployesPage({super.key, this.isAssociation = false, this.profileType, this.initialTab = 0});
   @override
   State<EmployesPage> createState() => _EmployesPageState();
 }
@@ -132,7 +136,7 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this, initialIndex: widget.initialTab.clamp(0, 2));
     _tab.addListener(() => setState(() {}));
   }
 
@@ -166,6 +170,7 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
           tabs: [
             Tab(text: widget.isAssociation ? 'Équipe' : 'Employés'),
             const Tab(text: 'Tâches'),
+            const Tab(text: 'Congés'),
           ],
         ),
       ),
@@ -175,6 +180,8 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
           _EmployesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
               isAssociation: widget.isAssociation, profileType: widget.profileType),
           _TachesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
+              isAssociation: widget.isAssociation, profileType: widget.profileType),
+          _CongesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
               isAssociation: widget.isAssociation, profileType: widget.profileType),
         ],
       ),
@@ -806,22 +813,21 @@ bool _permApplies(String key, String catPro) {
     case 'write_repro': // saillies/gestations/portées : cœur de métier éleveur uniquement
       return catPro.isEmpty;
     case 'suivi_chaleurs': // rappels de chaleurs : cœur de métier éleveur uniquement
+    case 'notif_chaleurs':
+    case 'notif_mise_bas':
       return catPro.isEmpty;
+    case 'notif_vermifuges':
+    case 'notif_vaccins':
+    case 'notif_antiparasitaires':
+      return _permApplies('write_sante', catPro);
+    case 'notif_inventaire':
+      return _permApplies('write_inventaire', catPro);
     case 'write_protocoles': // protocoles de soins : éleveur + véto/ostéo-kiné
       return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire';
     case 'write_sante': // carnet de santé complet : éleveur, véto/santé, pension (suivi pendant la garde)
       return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire' || catPro == 'pension';
     case 'write_inventaire': // gestion de stock : pas pertinent pour garde/éducation/photographe
       return catPro != 'garde' && catPro != 'education' && catPro != 'photographe';
-    case 'notif_chaleurs': // rappels chaleurs / mises bas : éleveur uniquement
-    case 'notif_mise_bas':
-      return catPro.isEmpty;
-    case 'notif_vermifuges': // rappels santé : mêmes métiers que le carnet de santé
-    case 'notif_vaccins':
-    case 'notif_antiparasitaires':
-      return _permApplies('write_sante', catPro);
-    case 'notif_inventaire': // stock bas : mêmes métiers que l'inventaire
-      return _permApplies('write_inventaire', catPro);
     default: // write_animaux, write_planning, write_notes : pertinents partout
       return true;
   }
@@ -1129,10 +1135,15 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     q = q.eq('eleveur_profile_id', eleveurProfileId);
     final existing = await q.maybeSingle();
 
-    // Limite d'employés par forfait (éducateur/pension) — la page d'abonnement
-    // annonce ces limites mais rien ne les appliquait jusqu'ici.
+    // Limite d'employés par forfait — la page d'abonnement annonce ces
+    // limites mais rien ne les appliquait jusqu'ici (education/pension), ou
+    // pas du tout (garde/toilettage, pourtant déjà chiffrées dans
+    // PlanService). catPro vient du CONTEXTE de cette page (profileType de
+    // la relation en cours de création), jamais de User_Info.catPro — un
+    // compte multi-profil connecté sous un autre métier appliquerait sinon
+    // la mauvaise limite (ou aucune).
     if (existing == null || existing['actif'] != true) {
-      final catPro = User_Info.catPro;
+      final catPro = widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
       int maxEmployes = -1;
       if (catPro == 'education') {
         final planCode = await PlanService.getEducationPlanCode(widget.uid);
@@ -1140,6 +1151,12 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       } else if (catPro == 'pension') {
         final planCode = await PlanService.getPensionPlanCode(widget.uid);
         maxEmployes = PlanService.getPensionConfig(planCode).maxEmployes;
+      } else if (catPro == 'garde') {
+        final planCode = await PlanService.getGardePlanCode(widget.uid);
+        maxEmployes = PlanService.getGardeConfig(planCode).maxEmployes;
+      } else if (catPro == 'toilettage') {
+        final planCode = await PlanService.getToilettagePlanCode(widget.uid);
+        maxEmployes = PlanService.getToilettageConfig(planCode).maxEmployes;
       }
       if (maxEmployes != -1) {
         // Scoper par eleveur_profile_id précis : profil_source ne distingue
@@ -2043,6 +2060,542 @@ class _TachesTabState extends State<_TachesTab> {
       ),
     );
   }
+}
+
+// ─── Tab Congés ───────────────────────────────────────────────────────────────
+// Généralisé à toute catégorie pro (pas seulement toilettage, où ça vivait
+// jusqu'ici en dur dans ToilettageEmployesPage) : demandes faites par
+// l'employé (Mes Employeurs → 🏖️ Congé), à valider/refuser ici, + ajout
+// direct d'un congé déjà acquis par l'employeur.
+
+class _CongesTab extends StatefulWidget {
+  final Color green, teal, dark, bg;
+  final bool isAssociation;
+  final String? profileType;
+  const _CongesTab({required this.green, required this.teal, required this.dark, required this.bg,
+      this.isAssociation = false, this.profileType});
+  @override
+  State<_CongesTab> createState() => _CongesTabState();
+}
+
+class _CongesTabState extends State<_CongesTab> {
+  final _supa = Supabase.instance.client;
+  final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  bool _loading = true;
+  List<Map<String, dynamic>> _employes = [];
+  List<Map<String, dynamic>> _conges = [];
+  String get _profileType => widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final ownerUid = await _resolveOwnerUid(_supa, _uid);
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, ownerUid, widget.isAssociation, profileType: widget.profileType);
+      final type = _profileType;
+
+      dynamic q = _supa.from('employes').select().eq('actif', true);
+      q = eleveurProfileId != null ? q.eq('eleveur_profile_id', eleveurProfileId) : q.eq('uid_eleveur', ownerUid);
+      q = type == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', type);
+      final rows = (await q.order('created_at')) as List;
+
+      final employes = <Map<String, dynamic>>[];
+      for (final e in rows) {
+        final employeProfileId = e['employe_profile_id'] as String?;
+        Map<String, dynamic>? u;
+        if (employeProfileId != null) {
+          final profileData = await _supa.from('user_profiles')
+              .select('uid').eq('id', employeProfileId).maybeSingle();
+          final employeUid = profileData?['uid'] as String?;
+          if (employeUid != null) {
+            u = await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, avatar_url')
+                .eq('uid', employeUid).eq('is_main', true).maybeSingle();
+          }
+        } else {
+          final employeUid = e['uid_employe'] as String? ?? '';
+          if (employeUid.isNotEmpty) {
+            u = await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, avatar_url')
+                .eq('uid', employeUid).eq('is_main', true).maybeSingle();
+          }
+        }
+        employes.add({...e, 'user': u});
+      }
+
+      final employeIds = employes.map((e) => e['id']).toList();
+      var conges = <Map<String, dynamic>>[];
+      if (employeIds.isNotEmpty) {
+        final cRows = await _supa.from('employe_conges').select()
+            .inFilter('employe_id', employeIds).order('date_debut', ascending: false);
+        final byId = { for (final e in employes) e['id']: e };
+        conges = (cRows as List)
+            .map((c) => {...Map<String, dynamic>.from(c as Map), '_employe': byId[c['employe_id']]})
+            .toList();
+      }
+
+      if (mounted) setState(() { _employes = employes; _conges = conges; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _nomEmploye(Map<String, dynamic>? employe) {
+    final u = employe?['user'] as Map<String, dynamic>?;
+    final nom = '${u?['firstname'] ?? ''} ${u?['lastname'] ?? ''}'.trim();
+    if (nom.isNotEmpty) return nom;
+    final fallback = '${employe?['prenom'] ?? ''} ${employe?['nom'] ?? ''}'.trim();
+    return fallback.isEmpty ? 'Employé' : fallback;
+  }
+
+  String _fmt(String? iso) {
+    if (iso == null) return '';
+    final d = DateTime.tryParse(iso);
+    if (d == null) return iso;
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  Future<void> _repondre(Map<String, dynamic> conge, bool approuve) async {
+    await _supa.from('employe_conges')
+        .update({'statut': approuve ? 'approuve' : 'refuse'}).eq('id', conge['id']);
+    final employe = conge['_employe'] as Map<String, dynamic>?;
+    final employeUid = employe?['uid_employe'] as String?;
+    if (employeUid != null) {
+      final employeProfileId = employe?['employe_profile_id'] as String?;
+      await _supa.from('notifications').insert({
+        'uid':   employeUid,
+        'type':  'conge_reponse',
+        'title': approuve ? 'Congé approuvé' : 'Congé refusé',
+        'body':  approuve
+            ? 'Votre demande de congé du ${_fmt(conge['date_debut'] as String?)} au ${_fmt(conge['date_fin'] as String?)} a été approuvée.'
+            : 'Votre demande de congé du ${_fmt(conge['date_debut'] as String?)} au ${_fmt(conge['date_fin'] as String?)} a été refusée.',
+        if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
+        'data':  {'congeId': conge['id'].toString(), 'approved': approuve},
+        'read':  false,
+      });
+    }
+    _load();
+  }
+
+  Future<void> _ajouterDirect() async {
+    if (_employes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aucun employé actif pour le moment.')));
+      return;
+    }
+    final employe = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Pour quel employé ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          ),
+          for (final e in _employes)
+            ListTile(
+              title: Text(_nomEmploye(e), style: const TextStyle(fontFamily: 'Galey')),
+              onTap: () => Navigator.pop(context, e),
+            ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (employe == null || !mounted) return;
+    final range = await pickCongeDateRange(context, teal: widget.teal);
+    if (range == null) return;
+    await _supa.from('employe_conges').insert({
+      'employe_id':      employe['id'],
+      'date_debut':      range.start.toIso8601String().substring(0, 10),
+      'date_fin':        range.end.toIso8601String().substring(0, 10),
+      'statut':          'approuve',
+      'demande_par_uid': _uid,
+    });
+    _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enAttente = _conges.where((c) => c['statut'] == 'en_attente').toList();
+    final autres     = _conges.where((c) => c['statut'] != 'en_attente').toList();
+
+    return Scaffold(
+      backgroundColor: widget.bg,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: widget.teal,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+        onPressed: _ajouterDirect,
+      ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => _EmployesPlanningPage(isAssociation: widget.isAssociation, profileType: widget.profileType),
+              )),
+              icon: Icon(Icons.calendar_view_week_outlined, size: 16, color: widget.teal),
+              label: Text('Voir le planning de l\'équipe',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: widget.teal)),
+              style: OutlinedButton.styleFrom(side: BorderSide(color: widget.teal), padding: const EdgeInsets.symmetric(vertical: 10)),
+            ),
+          ),
+        ),
+        Expanded(child: _loading
+          ? Center(child: CircularProgressIndicator(color: widget.teal))
+          : (_conges.isEmpty
+              ? Center(
+                  child: Text('Aucun congé enregistré.',
+                      style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)))
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  color: widget.teal,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+                    children: [
+                      if (enAttente.isNotEmpty) ...[
+                        Text('En attente (${enAttente.length})',
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: widget.dark)),
+                        const SizedBox(height: 8),
+                        for (final c in enAttente) _CongeCard(
+                          conge: c, nom: _nomEmploye(c['_employe'] as Map<String, dynamic>?),
+                          dark: widget.dark, teal: widget.teal, fmt: _fmt,
+                          onApprouver: () => _repondre(c, true),
+                          onRefuser: () => _repondre(c, false),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      if (autres.isNotEmpty) ...[
+                        Text('Historique', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: widget.dark)),
+                        const SizedBox(height: 8),
+                        for (final c in autres) _CongeCard(
+                          conge: c, nom: _nomEmploye(c['_employe'] as Map<String, dynamic>?),
+                          dark: widget.dark, teal: widget.teal, fmt: _fmt,
+                        ),
+                      ],
+                    ],
+                  ),
+                )),
+        ),
+      ]),
+    );
+  }
+}
+
+class _CongeCard extends StatelessWidget {
+  final Map<String, dynamic> conge;
+  final String nom;
+  final Color dark, teal;
+  final String Function(String?) fmt;
+  final VoidCallback? onApprouver;
+  final VoidCallback? onRefuser;
+  const _CongeCard({required this.conge, required this.nom, required this.dark, required this.teal,
+      required this.fmt, this.onApprouver, this.onRefuser});
+
+  @override
+  Widget build(BuildContext context) {
+    final statut = conge['statut'] as String? ?? 'approuve';
+    final style = switch (statut) {
+      'en_attente' => (label: 'En attente', color: const Color(0xFFC2740B), bg: const Color(0xFFFFF3E0)),
+      'refuse'     => (label: 'Refusé',     color: const Color(0xFFC62828), bg: const Color(0xFFFFEBEE)),
+      _            => (label: 'Approuvé',   color: const Color(0xFF2E7D32), bg: const Color(0xFFE8F5E9)),
+    };
+    final motif = conge['motif'] as String?;
+    final demandeParUid = conge['demande_par_uid'] as String?;
+    final isDemandeEmploye = demandeParUid != null && demandeParUid == (conge['_employe'] as Map<String, dynamic>?)?['uid_employe'];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(nom, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: dark))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: style.bg, borderRadius: BorderRadius.circular(8)),
+            child: Text(style.label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: style.color)),
+          ),
+        ]),
+        const SizedBox(height: 4),
+        Text('${fmt(conge['date_debut'] as String?)} → ${fmt(conge['date_fin'] as String?)}',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        if (isDemandeEmploye)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text('Demandé par l\'employé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          ),
+        if (motif != null && motif.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(motif, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          ),
+        if (onApprouver != null && onRefuser != null) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: OutlinedButton(
+              onPressed: onRefuser,
+              style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFC62828), side: const BorderSide(color: Color(0xFFC62828))),
+              child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: ElevatedButton(
+              onPressed: onApprouver,
+              style: ElevatedButton.styleFrom(backgroundColor: teal, foregroundColor: Colors.white),
+              child: const Text('Approuver', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            )),
+          ]),
+        ],
+      ]),
+    );
+  }
+}
+
+// ─── Planning de l'équipe — jours travaillés + congés, en grille ─────────────
+// Même visuel que le planning d'occupation chenil (pension_planning_page.dart) :
+// fenêtre de 14 jours défilable, une ligne par employé, cellule colorée selon
+// le statut du jour. Lecture seule (l'édition des horaires/congés se fait
+// depuis les fiches employé / l'onglet Congés) — généralisé à toutes les
+// catégories, pas seulement pension.
+
+const _kJoursSemaineKeys = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
+class _EmployesPlanningPage extends StatefulWidget {
+  final bool isAssociation;
+  final String? profileType;
+  const _EmployesPlanningPage({this.isAssociation = false, this.profileType});
+  @override
+  State<_EmployesPlanningPage> createState() => _EmployesPlanningPageState();
+}
+
+class _EmployesPlanningPageState extends State<_EmployesPlanningPage> {
+  final _supa = Supabase.instance.client;
+  final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  static const _teal = Color(0xFF0C5C6C);
+
+  bool _loading = true;
+  List<Map<String, dynamic>> _employes = [];
+  List<Map<String, dynamic>> _conges = [];
+  DateTime _windowStart = DateTime.now();
+  static const int _days = 14;
+
+  String get _profileType => widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _windowStart = DateTime(now.year, now.month, now.day);
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final ownerUid = await _resolveOwnerUid(_supa, _uid);
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, ownerUid, widget.isAssociation, profileType: widget.profileType);
+      final type = _profileType;
+
+      dynamic q = _supa.from('employes').select().eq('actif', true);
+      q = eleveurProfileId != null ? q.eq('eleveur_profile_id', eleveurProfileId) : q.eq('uid_eleveur', ownerUid);
+      q = type == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', type);
+      final rows = (await q.order('created_at')) as List;
+
+      final employes = <Map<String, dynamic>>[];
+      for (final e in rows) {
+        final employeProfileId = e['employe_profile_id'] as String?;
+        Map<String, dynamic>? u;
+        if (employeProfileId != null) {
+          final profileData = await _supa.from('user_profiles')
+              .select('uid').eq('id', employeProfileId).maybeSingle();
+          final employeUid = profileData?['uid'] as String?;
+          if (employeUid != null) {
+            u = await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, avatar_url')
+                .eq('uid', employeUid).eq('is_main', true).maybeSingle();
+          }
+        } else {
+          final employeUid = e['uid_employe'] as String? ?? '';
+          if (employeUid.isNotEmpty) {
+            u = await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, avatar_url')
+                .eq('uid', employeUid).eq('is_main', true).maybeSingle();
+          }
+        }
+        employes.add({...e, 'user': u});
+      }
+
+      final employeIds = employes.map((e) => e['id']).toList();
+      var conges = <Map<String, dynamic>>[];
+      if (employeIds.isNotEmpty) {
+        final cRows = await _supa.from('employe_conges').select()
+            .inFilter('employe_id', employeIds).eq('statut', 'approuve');
+        conges = List<Map<String, dynamic>>.from(cRows as List);
+      }
+
+      if (mounted) setState(() { _employes = employes; _conges = conges; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _shiftWindow(int days) => setState(() => _windowStart = _windowStart.add(Duration(days: days)));
+
+  String _nomEmploye(Map<String, dynamic> e) {
+    final u = e['user'] as Map<String, dynamic>?;
+    final nom = '${u?['firstname'] ?? ''} ${u?['lastname'] ?? ''}'.trim();
+    if (nom.isNotEmpty) return nom;
+    final fallback = '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim();
+    return fallback.isEmpty ? 'Employé' : fallback;
+  }
+
+  Map<String, dynamic>? _congeFor(dynamic employeId, DateTime day) {
+    for (final c in _conges) {
+      if (c['employe_id'] != employeId) continue;
+      final debut = DateTime.tryParse(c['date_debut'] as String? ?? '');
+      final fin = DateTime.tryParse(c['date_fin'] as String? ?? '');
+      if (debut == null || fin == null) continue;
+      if (!day.isBefore(debut) && !day.isAfter(fin)) return c;
+    }
+    return null;
+  }
+
+  bool _travailleCe(Map<String, dynamic> employe, DateTime day) {
+    final horaires = employe['horaires'] as Map?;
+    if (horaires == null || horaires.isEmpty) return false;
+    final key = _kJoursSemaineKeys[day.weekday - 1];
+    return horaires.containsKey(key);
+  }
+
+  void _showDayInfo(Map<String, dynamic> employe, DateTime day) {
+    final conge = _congeFor(employe['id'], day);
+    final travaille = _travailleCe(employe, day);
+    final dateStr = '${day.day.toString().padLeft(2, '0')}/${day.month.toString().padLeft(2, '0')}/${day.year}';
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('${_nomEmploye(employe)} — $dateStr', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        content: Text(
+          conge != null
+              ? 'En congé${(conge['motif'] as String?)?.isNotEmpty == true ? ' — ${conge['motif']}' : ''}.'
+              : (travaille ? 'Jour travaillé.' : 'Repos (pas d\'horaires ce jour-là).'),
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer'))],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final days = List.generate(_days, (i) => _windowStart.add(Duration(days: i)));
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        title: const Text('Planning équipe', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => _shiftWindow(-7)),
+          IconButton(icon: const Icon(Icons.today_outlined), tooltip: 'Aujourd\'hui', onPressed: () => setState(() => _windowStart = today)),
+          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _shiftWindow(7)),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _teal))
+          : _employes.isEmpty
+              ? Center(child: Text('Aucun employé actif.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)))
+              : Column(children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        SizedBox(
+                          width: 110,
+                          child: Column(children: [
+                            const SizedBox(height: 40),
+                            for (final e in _employes)
+                              Container(
+                                height: 44, alignment: Alignment.centerLeft,
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+                                child: Text(_nomEmploye(e), overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                          ]),
+                        ),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: _days * 48.0,
+                              child: Column(children: [
+                                Row(children: [
+                                  for (final d in days)
+                                    Container(
+                                      width: 48, height: 40, alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: d.year == today.year && d.month == today.month && d.day == today.day ? const Color(0xFFEEF5EA) : null,
+                                        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                                      ),
+                                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                        Text(const ['L','M','M','J','V','S','D'][d.weekday - 1],
+                                            style: TextStyle(fontFamily: 'Galey', fontSize: 9, color: Colors.grey.shade500)),
+                                        Text('${d.day}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600)),
+                                      ]),
+                                    ),
+                                ]),
+                                for (final e in _employes)
+                                  Row(children: [
+                                    for (final d in days) _dayCell(e, d),
+                                  ]),
+                              ]),
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey.shade200))),
+                    child: Wrap(spacing: 12, children: [
+                      _legendDot(const Color(0xFF6E9E57), 'Travaille'),
+                      _legendDot(const Color(0xFFE57373), 'Congé'),
+                      _legendDot(Colors.grey.shade300, 'Repos'),
+                    ]),
+                  ),
+                ]),
+    );
+  }
+
+  Widget _dayCell(Map<String, dynamic> e, DateTime d) {
+    final conge = _congeFor(e['id'], d);
+    final travaille = _travailleCe(e, d);
+    final color = conge != null ? const Color(0xFFE57373) : (travaille ? const Color(0xFF6E9E57) : Colors.grey.shade200);
+    return GestureDetector(
+      onTap: () => _showDayInfo(e, d),
+      child: Container(
+        width: 48, height: 44,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade100))),
+        child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))),
+      ),
+    );
+  }
+
+  Widget _legendDot(Color color, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Container(width: 10, height: 10, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+    const SizedBox(width: 4),
+    Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade600)),
+  ]);
 }
 
 // ─── Bottom sheet : Détail d'un groupe de tâches protocole ───────────────────
@@ -3311,11 +3864,11 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
       List rows;
       if (myProfileId != null) {
         rows = await _supa.from('employes')
-            .select('uid_eleveur, eleveur_profile_id, permissions, type')
+            .select('id, uid_eleveur, eleveur_profile_id, permissions, type')
             .eq('employe_profile_id', myProfileId).eq('actif', true).order('created_at');
       } else {
         rows = await _supa.from('employes')
-            .select('uid_eleveur, eleveur_profile_id, permissions, type')
+            .select('id, uid_eleveur, eleveur_profile_id, permissions, type')
             .eq('uid_employe', _uid).eq('actif', true).order('created_at');
       }
 
@@ -3596,6 +4149,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                         final cardKey = '$uid|$eleveurProfileId';
                         final activeTab = _tabState[cardKey] ?? 'animaux';
                         final catPro = u['cat_pro'] as String?;
+                        final employeId = e['id'];
                         return _EmployeurExpandedCard(
                           uid: uid, nom: nom, photo: photo, teal: _teal, dark: _dark,
                           activeTab: activeTab,
@@ -3605,6 +4159,17 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                           animaux: animaux.cast<Map<String, dynamic>>(),
                           taches: taches.cast<Map<String, dynamic>>(),
                           onTabChange: (val) => setState(() => _tabState[cardKey] = val),
+                          onCongeTap: employeId == null ? null : () => showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => _DemanderCongeSheet(
+                              employeId: employeId, employerNom: nom, teal: _teal, dark: _dark,
+                            ),
+                          ),
+                          onPlanningEmployeTap: employeId == null ? null : () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _MonPlanningPage(employeId: employeId, employerNom: nom, teal: _teal, dark: _dark),
+                          )),
                           onVoirProfil: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => EmployeurDetailPage(
                               eleveurUid: uid, eleveurNom: nom,
@@ -3680,6 +4245,8 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final VoidCallback onProtocolesTap;
   final VoidCallback onCreateTacheTap;
   final VoidCallback onReload;
+  final VoidCallback? onCongeTap;
+  final VoidCallback? onPlanningEmployeTap;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
@@ -3688,7 +4255,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
     required this.animaux, required this.taches,
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
     required this.onAnimalTap, required this.onPlanningTap, required this.onProtocolesTap,
-    required this.onCreateTacheTap, required this.onReload,
+    required this.onCreateTacheTap, required this.onReload, this.onCongeTap, this.onPlanningEmployeTap,
   });
 
   @override
@@ -3704,54 +4271,79 @@ class _EmployeurExpandedCard extends StatelessWidget {
         // Header
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-          child: Row(children: [
-            CircleAvatar(
-              radius: 22, backgroundColor: teal.withOpacity(0.12),
-              backgroundImage: photo != null ? CachedNetworkImageProvider(photo!) : null,
-              child: photo == null ? Icon(Icons.business, color: teal, size: 20) : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(nom.isEmpty ? 'Élevage' : nom,
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: dark))),
-            if (catPro == 'pension' && perms.contains('read_planning_pension')) ...[
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              CircleAvatar(
+                radius: 22, backgroundColor: teal.withOpacity(0.12),
+                backgroundImage: photo != null ? CachedNetworkImageProvider(photo!) : null,
+                child: photo == null ? Icon(Icons.business, color: teal, size: 20) : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(nom.isEmpty ? 'Élevage' : nom,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: dark))),
+            ]),
+            const SizedBox(height: 10),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              if (catPro == 'pension' && perms.contains('read_planning_pension'))
+                GestureDetector(
+                  onTap: onPlanningTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: teal.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('📅 Planning', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              if (perms.contains('write_protocoles'))
+                GestureDetector(
+                  onTap: onProtocolesTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: teal.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('📋 Protocoles', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              if (onCongeTap != null)
+                GestureDetector(
+                  onTap: onCongeTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: teal.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('🏖️ Congé', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              if (onPlanningEmployeTap != null)
+                GestureDetector(
+                  onTap: onPlanningEmployeTap,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: teal.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('📅 Mon planning', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ),
               GestureDetector(
-                onTap: onPlanningTap,
+                onTap: onVoirProfil,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
-                    color: teal.withOpacity(0.08),
+                    border: Border.all(color: teal.withOpacity(0.6)),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text('📅 Planning', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                  child: Text('Voir', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ),
-            ],
-            if (perms.contains('write_protocoles')) ...[
-              GestureDetector(
-                onTap: onProtocolesTap,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: teal.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text('📋 Protocoles', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
-            GestureDetector(
-              onTap: onVoirProfil,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  border: Border.all(color: teal.withOpacity(0.6)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text('Voir', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
-              ),
-            ),
+            ]),
           ]),
         ),
         // Tabs
@@ -3922,6 +4514,300 @@ class _EmployeurExpandedCard extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+// ─── Bottom sheet : demande de congé (côté employé, Mes Employeurs) ──────────
+// [employeId] identifie la RELATION précise (ligne employes) — jamais
+// User_Info.activeProfileId ni un profil "principal" : un même compte peut
+// être employé de plusieurs employeurs (ou de plusieurs profils d'un même
+// employeur), la demande doit rester attachée à cette relation exacte.
+
+class _DemanderCongeSheet extends StatefulWidget {
+  final dynamic employeId;
+  final String employerNom;
+  final Color teal, dark;
+  const _DemanderCongeSheet({required this.employeId, required this.employerNom, required this.teal, required this.dark});
+
+  @override
+  State<_DemanderCongeSheet> createState() => _DemanderCongeSheetState();
+}
+
+class _DemanderCongeSheetState extends State<_DemanderCongeSheet> {
+  final _supa = Supabase.instance.client;
+  final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  final _motifCtrl = TextEditingController();
+  DateTimeRange? _range;
+  bool _loading = true;
+  bool _saving = false;
+  List<Map<String, dynamic>> _mesDemandes = [];
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  @override
+  void dispose() { _motifCtrl.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try {
+      final rows = await _supa.from('employe_conges').select()
+          .eq('employe_id', widget.employeId).order('date_debut', ascending: false);
+      if (mounted) setState(() { _mesDemandes = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  String _fmt(String? iso) {
+    if (iso == null) return '';
+    final d = DateTime.tryParse(iso);
+    if (d == null) return iso;
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  Future<void> _pickRange() async {
+    final range = await pickCongeDateRange(context, teal: widget.teal);
+    if (range != null) setState(() => _range = range);
+  }
+
+  Future<void> _envoyer() async {
+    final range = _range;
+    if (range == null) return;
+    setState(() => _saving = true);
+    try {
+      await _supa.from('employe_conges').insert({
+        'employe_id':      widget.employeId,
+        'date_debut':      range.start.toIso8601String().substring(0, 10),
+        'date_fin':        range.end.toIso8601String().substring(0, 10),
+        'motif':           _motifCtrl.text.trim().isEmpty ? null : _motifCtrl.text.trim(),
+        'statut':          'en_attente',
+        'demande_par_uid': _uid,
+      });
+
+      // Notifier l'employeur — remonter uid_eleveur/eleveur_profile_id DEPUIS
+      // la relation (employeId), jamais un profil actif/principal du compte
+      // connecté : c'est la relation précise qui porte l'identité correcte
+      // de l'employeur à notifier.
+      final rel = await _supa.from('employes')
+          .select('uid_eleveur, eleveur_profile_id')
+          .eq('id', widget.employeId).maybeSingle();
+      final employeurUid = rel?['uid_eleveur'] as String?;
+      final employeurProfileId = rel?['eleveur_profile_id'] as String?;
+      // Type de profil précis de CETTE relation, pour que le tap sur la
+      // notif ouvre le bon onglet Congés (pas celui du profil principal du
+      // compte employeur si celui-ci en a plusieurs).
+      String? employeurProfileType;
+      if ((employeurProfileId ?? '').isNotEmpty) {
+        final p = await _supa.from('user_profiles').select('profile_type').eq('id', employeurProfileId!).maybeSingle();
+        employeurProfileType = p?['profile_type'] as String?;
+      }
+      if (employeurUid != null) {
+        await _supa.from('notifications').insert({
+          'uid':   employeurUid,
+          'type':  'conge_demande',
+          'title': 'Demande de congé',
+          'body':  'Une demande de congé du ${_fmt(range.start.toIso8601String())} au ${_fmt(range.end.toIso8601String())} attend votre validation.',
+          if ((employeurProfileId ?? '').isNotEmpty) 'profile_id': employeurProfileId,
+          'data':  {'employeId': widget.employeId.toString(), 'profileType': employeurProfileType},
+          'read':  false,
+        });
+      }
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 16),
+          Text('Demander un congé', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: widget.dark)),
+          Text(widget.employerNom, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _pickRange,
+            icon: Icon(Icons.calendar_today_outlined, size: 16, color: widget.teal),
+            label: Text(
+              _range == null ? 'Choisir les dates' : '${_fmt(_range!.start.toIso8601String())} → ${_fmt(_range!.end.toIso8601String())}',
+              style: TextStyle(fontFamily: 'Galey', color: widget.teal, fontWeight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(side: BorderSide(color: widget.teal), padding: const EdgeInsets.symmetric(vertical: 12)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _motifCtrl,
+            maxLines: 2,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Motif (optionnel)',
+              filled: true, fillColor: const Color(0xFFF8F8F6),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: (_range == null || _saving) ? null : _envoyer,
+            style: ElevatedButton.styleFrom(backgroundColor: widget.teal, padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: _saving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text('Envoyer la demande', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+          )),
+          if (!_loading && _mesDemandes.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Text('Mes demandes', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: widget.dark)),
+            const SizedBox(height: 8),
+            for (final c in _mesDemandes) Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(children: [
+                Icon(Icons.event_outlined, size: 15, color: Colors.grey.shade400),
+                const SizedBox(width: 6),
+                Expanded(child: Text('${_fmt(c['date_debut'] as String?)} → ${_fmt(c['date_fin'] as String?)}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                Text(switch (c['statut']) {
+                  'en_attente' => 'En attente',
+                  'refuse'     => 'Refusé',
+                  _            => 'Approuvé',
+                }, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: switch (c['statut']) {
+                  'en_attente' => const Color(0xFFC2740B),
+                  'refuse'     => const Color(0xFFC62828),
+                  _            => const Color(0xFF2E7D32),
+                })),
+              ]),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Mon planning — vue employé, jour par jour, pour UN employeur précis ────
+// [employeId] identifie la relation exacte (comme _DemanderCongeSheet) — les
+// horaires/congés viennent tous de CETTE ligne employes, jamais d'un profil
+// actif/principal du compte connecté.
+
+class _MonPlanningPage extends StatefulWidget {
+  final dynamic employeId;
+  final String employerNom;
+  final Color teal, dark;
+  const _MonPlanningPage({required this.employeId, required this.employerNom, required this.teal, required this.dark});
+
+  @override
+  State<_MonPlanningPage> createState() => _MonPlanningPageState();
+}
+
+class _MonPlanningPageState extends State<_MonPlanningPage> {
+  final _supa = Supabase.instance.client;
+  bool _loading = true;
+  Map<String, dynamic>? _horaires;
+  List<Map<String, dynamic>> _conges = [];
+
+  static const int _days = 14;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final employe = await _supa.from('employes').select('horaires').eq('id', widget.employeId).maybeSingle();
+      final congesRows = await _supa.from('employe_conges').select().eq('employe_id', widget.employeId).eq('statut', 'approuve');
+      if (mounted) setState(() {
+        _horaires = Map<String, dynamic>.from((employe?['horaires'] as Map?) ?? {});
+        _conges = List<Map<String, dynamic>>.from(congesRows as List);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Map<String, dynamic>? _congeFor(DateTime day) {
+    for (final c in _conges) {
+      final debut = DateTime.tryParse(c['date_debut'] as String? ?? '');
+      final fin = DateTime.tryParse(c['date_fin'] as String? ?? '');
+      if (debut == null || fin == null) continue;
+      if (!day.isBefore(debut) && !day.isAfter(fin)) return c;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _horairesFor(DateTime day) {
+    final key = _kJoursSemaineKeys[day.weekday - 1];
+    final h = _horaires?[key];
+    return h == null ? null : Map<String, dynamic>.from(h as Map);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final days = List.generate(_days, (i) => DateTime(today.year, today.month, today.day).add(Duration(days: i)));
+    const nomsJours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      appBar: AppBar(
+        backgroundColor: widget.teal,
+        foregroundColor: Colors.white,
+        title: Text('Mon planning · ${widget.employerNom}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+      ),
+      body: _loading
+          ? Center(child: CircularProgressIndicator(color: widget.teal))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _days,
+              itemBuilder: (_, i) {
+                final d = days[i];
+                final conge = _congeFor(d);
+                final horaires = _horairesFor(d);
+                final isToday = i == 0;
+                final label = isToday ? 'Aujourd\'hui' : (i == 1 ? 'Demain' : nomsJours[d.weekday - 1]);
+                final dateStr = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+                final (statutLabel, statutColor, statutBg) = conge != null
+                    ? ('Congé', const Color(0xFFC62828), const Color(0xFFFFEBEE))
+                    : horaires != null
+                        ? ('Travaille · ${horaires['debut'] ?? ''}-${horaires['fin'] ?? ''}', const Color(0xFF2E7D32), const Color(0xFFE8F5E9))
+                        : ('Repos', Colors.grey.shade600, Colors.grey.shade100);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white, borderRadius: BorderRadius.circular(12),
+                    border: isToday ? Border.all(color: widget.teal, width: 1.5) : null,
+                  ),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 70,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(label, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: widget.dark)),
+                        Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                      ]),
+                    ),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(color: statutBg, borderRadius: BorderRadius.circular(8)),
+                        child: Text(statutLabel, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: statutColor)),
+                      ),
+                    ),
+                  ]),
+                );
+              },
+            ),
     );
   }
 }

@@ -136,6 +136,7 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
   const [showFormEmploye, setShowFormEmploye] = useState(false);
   const [editing, setEditing] = useState<MembreEquipe | null>(null);
   const [assigning, setAssigning] = useState<MembreEquipe | null>(null);
+  const [congeFor, setCongeFor] = useState<MembreEquipe | null>(null);
   const [form, setForm] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
   const [formEmploye, setFormEmploye] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
   const [saving, setSaving] = useState(false);
@@ -299,6 +300,10 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
               + Tâche
             </button>
           )}
+          <button onClick={ev => { ev.stopPropagation(); setCongeFor(m); }}
+            className="text-xs text-teal-600 hover:text-teal-800 font-galey px-2 py-1 rounded-lg hover:bg-teal-50 transition-colors">
+            🏖️ Congé
+          </button>
           <button onClick={ev => { ev.stopPropagation(); setEditing(m); }}
             className="text-xs text-teal-500 hover:text-teal-700 px-1.5 py-1 rounded-lg hover:bg-teal-50 transition-colors">✏️</button>
           <button onClick={ev => { ev.stopPropagation(); handleDelete(m.id); }}
@@ -429,6 +434,132 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
           assigneeName={`${assigning.prenom} ${assigning.nom}`.trim()}
           onClose={() => { setAssigning(null); load(); }} />
       )}
+      {congeFor && (
+        <CongeModal membre={congeFor} myUid={uid} onClose={() => setCongeFor(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Modal : congés d'un membre (employé ou bénévole) ──────────────────────────
+// membre.id identifie la RELATION précise (ligne employes) — jamais
+// activeProfileId ni un profil "principal" : la même logique que les autres
+// écrans congés (EmployesAvancesPage, elevage/employes, mes-employeurs).
+
+interface CongeRow {
+  id: string; date_debut: string; date_fin: string;
+  statut: 'en_attente' | 'approuve' | 'refuse'; motif: string | null;
+}
+
+function fmtDateConge(iso: string) {
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function CongeModal({ membre, myUid, onClose }: { membre: MembreEquipe; myUid: string; onClose: () => void }) {
+  const [conges, setConges] = useState<CongeRow[]>([]);
+  const [loadingConges, setLoadingConges] = useState(true);
+  const [debut, setDebut] = useState('');
+  const [fin, setFin] = useState('');
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('employe_conges').select('id, date_debut, date_fin, statut, motif')
+      .eq('employe_id', membre.id).order('date_debut', { ascending: false });
+    setConges((data ?? []) as CongeRow[]);
+    setLoadingConges(false);
+  }, [membre.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const displayName = `${membre.prenom} ${membre.nom}`.trim() || (membre.type === 'benevole' ? 'Bénévole' : 'Employé');
+
+  const notifierEmploye = async (c: CongeRow, approuve: boolean) => {
+    if (!membre.uid_employe) return;
+    await supabase.from('notifications').insert({
+      uid: membre.uid_employe,
+      type: 'conge_reponse',
+      title: approuve ? 'Congé approuvé' : 'Congé refusé',
+      body: approuve
+        ? `Votre demande de congé du ${fmtDateConge(c.date_debut)} au ${fmtDateConge(c.date_fin)} a été approuvée.`
+        : `Votre demande de congé du ${fmtDateConge(c.date_debut)} au ${fmtDateConge(c.date_fin)} a été refusée.`,
+      ...(membre.employe_profile_id ? { profile_id: membre.employe_profile_id } : {}),
+      data: { congeId: c.id, approved: approuve },
+      read: false,
+    });
+  };
+
+  const repondre = async (c: CongeRow, approuve: boolean) => {
+    await supabase.from('employe_conges').update({ statut: approuve ? 'approuve' : 'refuse' }).eq('id', c.id);
+    await notifierEmploye(c, approuve);
+    load();
+  };
+
+  const ajouter = async () => {
+    if (!debut || !fin) return;
+    await supabase.from('employe_conges').insert({
+      employe_id: membre.id, date_debut: debut, date_fin: fin,
+      statut: 'approuve', demande_par_uid: myUid,
+    });
+    setDebut(''); setFin('');
+    load();
+  };
+
+  const supprimer = async (id: string) => {
+    await supabase.from('employe_conges').delete().eq('id', id);
+    load();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto p-5"
+        onClick={e => e.stopPropagation()}>
+        <h2 className="font-bold font-galey text-lg mb-4">Congés — {displayName}</h2>
+
+        <div className="flex items-center gap-2 mb-4">
+          <input type="date" value={debut} onChange={e => setDebut(e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs flex-1" />
+          <span className="text-gray-400 text-xs">→</span>
+          <input type="date" value={fin} onChange={e => setFin(e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs flex-1" />
+          <button onClick={ajouter} className="text-xs px-3 py-1.5 rounded-lg font-semibold text-white bg-teal-700 hover:bg-teal-800">
+            Ajouter
+          </button>
+        </div>
+
+        {loadingConges ? null : conges.length === 0 ? (
+          <p className="text-xs text-gray-400 text-center py-4">Aucun congé enregistré.</p>
+        ) : (
+          <div className="space-y-2 mb-2">
+            {conges.map(c => {
+              const style = c.statut === 'en_attente'
+                ? { label: 'En attente', bg: 'bg-orange-50', color: 'text-orange-700' }
+                : c.statut === 'refuse'
+                ? { label: 'Refusé', bg: 'bg-red-50', color: 'text-red-700' }
+                : { label: 'Approuvé', bg: 'bg-green-50', color: 'text-green-700' };
+              return (
+                <div key={c.id} className="border rounded-lg p-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{fmtDateConge(c.date_debut)} → {fmtDateConge(c.date_fin)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full font-semibold ${style.bg} ${style.color}`}>{style.label}</span>
+                      <button onClick={() => supprimer(c.id)} className="text-gray-400 hover:text-red-500">✕</button>
+                    </div>
+                  </div>
+                  {c.motif && <p className="text-gray-500 mt-1">{c.motif}</p>}
+                  {c.statut === 'en_attente' && (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => repondre(c, false)}
+                        className="flex-1 py-1 rounded border border-red-300 text-red-600 font-semibold">Refuser</button>
+                      <button onClick={() => repondre(c, true)}
+                        className="flex-1 py-1 rounded text-white font-semibold bg-teal-700">Approuver</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <button onClick={onClose} className="w-full mt-3 py-2.5 rounded-lg border font-semibold text-sm">Fermer</button>
+      </div>
     </div>
   );
 }

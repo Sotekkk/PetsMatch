@@ -56,6 +56,7 @@ interface InventaireItem {
 }
 
 interface Employer {
+  employeId: string;
   uid: string;
   eleveur_profile_id: string | null;
   firstname: string | null;
@@ -218,6 +219,7 @@ export default function MesEmployeursPage() {
   const [tab, setTab] = useState<Record<string, 'animaux' | 'taches' | 'inventaire'>>({});
   const [selectedTache, setSelectedTache] = useState<Tache | null>(null);
   const [createTacheFor, setCreateTacheFor] = useState<Employer | null>(null);
+  const [congeFor, setCongeFor] = useState<Employer | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
@@ -236,7 +238,7 @@ export default function MesEmployeursPage() {
 
     if (!profileId) { setLoading(false); return; }
     const { data: rows } = await supabase.from('employes')
-      .select('uid_eleveur, eleveur_profile_id, type').eq('employe_profile_id', profileId).eq('actif', true);
+      .select('id, uid_eleveur, eleveur_profile_id, type').eq('employe_profile_id', profileId).eq('actif', true);
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
@@ -247,7 +249,7 @@ export default function MesEmployeursPage() {
     // faisait perdre l'une des deux et affichait un nom choisi arbitrairement.
     // On ne déduplique que les doublons exacts (même uid + même profil), en
     // préférant la ligne non-bénévole.
-    type EmpRow = { uid_eleveur: string; eleveur_profile_id: string | null; type: string | null };
+    type EmpRow = { id: string; uid_eleveur: string; eleveur_profile_id: string | null; type: string | null };
     const relMap = new Map<string, EmpRow>();
     for (const r of rows as EmpRow[]) {
       const key = `${r.uid_eleveur}|${r.eleveur_profile_id ?? ''}`;
@@ -426,6 +428,7 @@ export default function MesEmployeursPage() {
       list.push({
         ...u,
         ...nameOverride,
+        employeId: rel.id,
         eleveur_profile_id: eleveurProfileId,
         profile_type_relation: invitingProfile?.profile_type ?? null,
         perms,
@@ -548,6 +551,10 @@ export default function MesEmployeursPage() {
                       📋 Protocoles
                     </Link>
                   )}
+                  <button onClick={() => setCongeFor(emp)}
+                    className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] hover:bg-[#0C5C6C]/20 transition-colors">
+                    🏖️ Congé
+                  </button>
                 </div>
 
                 {/* Onglets */}
@@ -683,6 +690,120 @@ export default function MesEmployeursPage() {
           onCreated={() => { setCreateTacheFor(null); load(); }}
         />
       )}
+
+      {congeFor && (
+        <CongeRequestModal
+          employer={congeFor}
+          myUid={user!.uid}
+          onClose={() => setCongeFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal : demander un congé à un employeur ────────────────────────────────
+// employer.employeId identifie la RELATION précise (ligne employes) — jamais
+// activeProfileId ni un profil "principal" : un même compte peut être
+// employé de plusieurs employeurs (ou de plusieurs profils d'un même
+// employeur), la demande doit rester attachée à cette relation exacte.
+
+function CongeRequestModal({ employer, myUid, onClose }: {
+  employer: Employer; myUid: string; onClose: () => void;
+}) {
+  const [dateDebut, setDateDebut] = useState('');
+  const [dateFin, setDateFin] = useState('');
+  const [motif, setMotif] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [mesDemandes, setMesDemandes] = useState<{ id: string; date_debut: string; date_fin: string; statut: string }[]>([]);
+  const [loadingDemandes, setLoadingDemandes] = useState(true);
+
+  useEffect(() => {
+    supabase.from('employe_conges').select('id, date_debut, date_fin, statut')
+      .eq('employe_id', employer.employeId).order('date_debut', { ascending: false })
+      .then(({ data }) => { setMesDemandes(data ?? []); setLoadingDemandes(false); });
+  }, [employer.employeId]);
+
+  const envoyer = async () => {
+    if (!dateDebut || !dateFin) return;
+    setSaving(true);
+    setError('');
+    try {
+      await supabase.from('employe_conges').insert({
+        employe_id: employer.employeId,
+        date_debut: dateDebut, date_fin: dateFin,
+        motif: motif.trim() || null,
+        statut: 'en_attente',
+        demande_par_uid: myUid,
+      });
+
+      let employeurProfileType: string | null = null;
+      if (employer.eleveur_profile_id) {
+        const { data: p } = await supabase.from('user_profiles').select('profile_type')
+          .eq('id', employer.eleveur_profile_id).maybeSingle();
+        employeurProfileType = p?.profile_type ?? null;
+      }
+      await supabase.from('notifications').insert({
+        uid: employer.uid,
+        type: 'conge_demande',
+        title: 'Demande de congé',
+        body: `Une demande de congé du ${dateDebut} au ${dateFin} attend votre validation.`,
+        ...(employer.eleveur_profile_id ? { profile_id: employer.eleveur_profile_id } : {}),
+        data: { employeId: employer.employeId, profileType: employeurProfileType },
+        read: false,
+      });
+      onClose();
+    } catch (e) {
+      setError(String(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto p-5"
+        onClick={e => e.stopPropagation()}>
+        <h2 className="font-bold text-lg mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Demander un congé</h2>
+        <p className="text-sm text-gray-400 mb-4">{employer.name_elevage || `${employer.firstname ?? ''} ${employer.lastname ?? ''}`.trim()}</p>
+
+        <div className="flex items-center gap-2 mb-3">
+          <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)}
+            className="border rounded-lg px-2 py-1.5 text-sm flex-1" />
+          <span className="text-gray-400 text-xs">→</span>
+          <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)}
+            className="border rounded-lg px-2 py-1.5 text-sm flex-1" />
+        </div>
+        <textarea value={motif} onChange={e => setMotif(e.target.value)} placeholder="Motif (optionnel)" rows={2}
+          className="w-full border rounded-lg px-3 py-2 text-sm mb-3 resize-none" />
+        {error && <p className="text-xs text-red-500 mb-2">{error}</p>}
+
+        <div className="flex gap-2 mb-4">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border font-semibold text-sm">Annuler</button>
+          <button onClick={envoyer} disabled={!dateDebut || !dateFin || saving}
+            className="flex-1 py-2.5 rounded-lg text-white font-semibold text-sm disabled:opacity-60 bg-[#0C5C6C]">
+            {saving ? '…' : 'Envoyer'}
+          </button>
+        </div>
+
+        {!loadingDemandes && mesDemandes.length > 0 && (
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-2">Mes demandes</p>
+            <div className="space-y-1">
+              {mesDemandes.map(d => {
+                const label = d.statut === 'en_attente' ? 'En attente' : d.statut === 'refuse' ? 'Refusé' : 'Approuvé';
+                const color = d.statut === 'en_attente' ? 'text-orange-600' : d.statut === 'refuse' ? 'text-red-600' : 'text-green-600';
+                return (
+                  <div key={d.id} className="flex items-center justify-between text-xs">
+                    <span>{d.date_debut} → {d.date_fin}</span>
+                    <span className={`font-semibold ${color}`}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

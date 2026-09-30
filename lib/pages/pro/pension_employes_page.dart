@@ -6,6 +6,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/widgets/employe_conges_section.dart';
 
 const kJoursSemainePension = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const kCouleursPlanningPension = ['#4DB6AC', '#FFB74D', '#7986CB', '#F06292', '#81C784', '#BA68C8'];
@@ -163,8 +164,6 @@ class _EmployePensionFormState extends State<_EmployePensionForm> {
   late Set<String> _competences;
   late Map<String, dynamic> _horaires;
   bool _saving = false;
-  List<Map<String, dynamic>> _conges = [];
-  bool _loadingConges = true;
 
   @override
   void initState() {
@@ -172,36 +171,6 @@ class _EmployePensionFormState extends State<_EmployePensionForm> {
     _couleur = widget.employe['couleur_planning'] as String? ?? kCouleursPlanningPension.first;
     _competences = ((widget.employe['competences'] as List?)?.cast<String>().toSet()) ?? {};
     _horaires = Map<String, dynamic>.from((widget.employe['horaires'] as Map?) ?? {});
-    _loadConges();
-  }
-
-  Future<void> _loadConges() async {
-    try {
-      final rows = await _supa.from('employe_conges').select()
-          .eq('employe_id', widget.employe['id']).order('date_debut', ascending: false);
-      if (mounted) setState(() { _conges = List<Map<String, dynamic>>.from(rows as List); _loadingConges = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loadingConges = false);
-    }
-  }
-
-  Future<void> _addConge() async {
-    final now = DateTime.now();
-    final range = await showDateRangePicker(
-      context: context, firstDate: now, lastDate: DateTime(now.year + 2), locale: const Locale('fr'),
-    );
-    if (range == null) return;
-    await _supa.from('employe_conges').insert({
-      'employe_id': widget.employe['id'],
-      'date_debut': range.start.toIso8601String().substring(0, 10),
-      'date_fin': range.end.toIso8601String().substring(0, 10),
-    });
-    _loadConges();
-  }
-
-  Future<void> _removeConge(String id) async {
-    await _supa.from('employe_conges').delete().eq('id', id);
-    _loadConges();
   }
 
   Future<void> _submit() async {
@@ -272,26 +241,12 @@ class _EmployePensionFormState extends State<_EmployePensionForm> {
             );
           }).toList()),
           const SizedBox(height: 16),
-          Row(children: [
-            Text('Congés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade700)),
-            const Spacer(),
-            TextButton.icon(onPressed: _addConge, icon: const Icon(Icons.add, size: 16), label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
-          ]),
-          if (_loadingConges)
-            const Padding(padding: EdgeInsets.all(8), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
-          else if (_conges.isEmpty)
-            Text('Aucun congé programmé.', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))
-          else
-            ..._conges.map((c) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(children: [
-                Icon(Icons.event_busy_outlined, size: 16, color: Colors.grey.shade500),
-                const SizedBox(width: 6),
-                Text('${c['date_debut']} → ${c['date_fin']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                const Spacer(),
-                IconButton(icon: const Icon(Icons.close, size: 16), onPressed: () => _removeConge(c['id'].toString())),
-              ]),
-            )),
+          EmployeCongesSection(
+            employeId: widget.employe['id'],
+            employeUidEmploye: widget.employe['uid_employe'] as String?,
+            employeProfileId: widget.employe['employe_profile_id'] as String?,
+            color: _teal,
+          ),
           const SizedBox(height: 12),
           SizedBox(width: double.infinity, child: ElevatedButton(
             onPressed: _saving ? null : _submit,

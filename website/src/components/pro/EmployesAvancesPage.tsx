@@ -14,6 +14,8 @@ const JOURS_SEMAINE = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samed
 
 interface Employe {
   id: string;
+  uid_employe: string | null;
+  employe_profile_id: string | null;
   prenom: string | null;
   nom: string | null;
   couleur_planning: string | null;
@@ -21,7 +23,15 @@ interface Employe {
   horaires: Record<string, { debut: string; fin: string }> | null;
 }
 
-interface Conge { id: string; date_debut: string; date_fin: string }
+interface Conge {
+  id: string; date_debut: string; date_fin: string;
+  statut: 'en_attente' | 'approuve' | 'refuse'; motif: string | null; demande_par_uid: string | null;
+}
+
+function fmtDate(iso: string) {
+  const d = new Date(iso);
+  return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+}
 
 /**
  * Employés enrichis (couleur planning / compétences / horaires / congés) —
@@ -155,6 +165,7 @@ function EmployeEditModal({
   employe: Employe; themeColor: string; competences: Competence[];
   onClose: () => void; onSaved: () => void;
 }) {
+  const { user } = useAuth();
   const [couleur, setCouleur] = useState(employe.couleur_planning || COULEURS_PLANNING[0]);
   const [comps, setComps] = useState<Set<string>>(new Set(employe.competences ?? []));
   const [horaires, setHoraires] = useState<Record<string, { debut: string; fin: string }>>(employe.horaires ?? {});
@@ -165,13 +176,31 @@ function EmployeEditModal({
   const [loadingConges, setLoadingConges] = useState(true);
 
   const loadConges = useCallback(async () => {
-    const { data } = await supabase.from('employe_conges').select('id, date_debut, date_fin')
+    const { data } = await supabase.from('employe_conges').select('id, date_debut, date_fin, statut, motif, demande_par_uid')
       .eq('employe_id', employe.id).order('date_debut', { ascending: false });
     setConges((data ?? []) as Conge[]);
     setLoadingConges(false);
   }, [employe.id]);
 
   useEffect(() => { loadConges(); }, [loadConges]);
+
+  const repondre = async (conge: Conge, approuve: boolean) => {
+    await supabase.from('employe_conges').update({ statut: approuve ? 'approuve' : 'refuse' }).eq('id', conge.id);
+    if (employe.uid_employe) {
+      await supabase.from('notifications').insert({
+        uid: employe.uid_employe,
+        type: 'conge_reponse',
+        title: approuve ? 'Congé approuvé' : 'Congé refusé',
+        body: approuve
+          ? `Votre demande de congé du ${fmtDate(conge.date_debut)} au ${fmtDate(conge.date_fin)} a été approuvée.`
+          : `Votre demande de congé du ${fmtDate(conge.date_debut)} au ${fmtDate(conge.date_fin)} a été refusée.`,
+        ...(employe.employe_profile_id ? { profile_id: employe.employe_profile_id } : {}),
+        data: { congeId: conge.id, approved: approuve },
+        read: false,
+      });
+    }
+    loadConges();
+  };
 
   const toggleJour = (j: string) => {
     setHoraires(prev => {
@@ -191,7 +220,10 @@ function EmployeEditModal({
 
   const addConge = async () => {
     if (!congeDebut || !congeFin) return;
-    await supabase.from('employe_conges').insert({ employe_id: employe.id, date_debut: congeDebut, date_fin: congeFin });
+    await supabase.from('employe_conges').insert({
+      employe_id: employe.id, date_debut: congeDebut, date_fin: congeFin,
+      statut: 'approuve', demande_par_uid: user?.uid ?? null,
+    });
     setCongeDebut(''); setCongeFin('');
     loadConges();
   };
@@ -263,13 +295,36 @@ function EmployeEditModal({
         {loadingConges ? null : conges.length === 0 ? (
           <p className="text-xs text-gray-400 mb-4">Aucun congé programmé.</p>
         ) : (
-          <div className="space-y-1 mb-4">
-            {conges.map(c => (
-              <div key={c.id} className="flex items-center justify-between text-xs">
-                <span>{c.date_debut} → {c.date_fin}</span>
-                <button onClick={() => removeConge(c.id)} className="text-gray-400 hover:text-red-500">✕</button>
-              </div>
-            ))}
+          <div className="space-y-2 mb-4">
+            {conges.map(c => {
+              const style = c.statut === 'en_attente'
+                ? { label: 'En attente', bg: '#FFF3E0', color: '#C2740B' }
+                : c.statut === 'refuse'
+                ? { label: 'Refusé', bg: '#FFEBEE', color: '#C62828' }
+                : { label: 'Approuvé', bg: '#E8F5E9', color: '#2E7D32' };
+              return (
+                <div key={c.id} className="border rounded-lg p-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{fmtDate(c.date_debut)} → {fmtDate(c.date_fin)}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full font-semibold" style={{ background: style.bg, color: style.color }}>
+                        {style.label}
+                      </span>
+                      <button onClick={() => removeConge(c.id)} className="text-gray-400 hover:text-red-500">✕</button>
+                    </div>
+                  </div>
+                  {c.motif && <p className="text-gray-500 mt-1">{c.motif}</p>}
+                  {c.statut === 'en_attente' && (
+                    <div className="flex gap-2 mt-2">
+                      <button onClick={() => repondre(c, false)}
+                        className="flex-1 py-1 rounded border border-red-300 text-red-600 font-semibold">Refuser</button>
+                      <button onClick={() => repondre(c, true)}
+                        className="flex-1 py-1 rounded text-white font-semibold" style={{ backgroundColor: themeColor }}>Approuver</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
