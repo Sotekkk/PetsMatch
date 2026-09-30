@@ -61,7 +61,8 @@ function newRow(): AnimalRow {
 
 function tUrl(url: string) {
   if (!url.includes('/storage/v1/object/public/')) return url;
-  return url.replace('/storage/v1/object/', '/storage/v1/render/image/') + '?width=80&quality=70&resize=contain';
+  const sep = url.includes('?') ? '&' : '?'; // URL déjà versionnée (?v=…)
+  return url.replace('/storage/v1/object/', '/storage/v1/render/image/') + sep + 'width=80&quality=70&resize=contain';
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────

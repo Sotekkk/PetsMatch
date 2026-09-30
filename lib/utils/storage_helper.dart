@@ -38,7 +38,12 @@ Future<String> _upload(Uint8List bytes, String storagePath) async {
     bytes,
     fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
   );
-  return supa.storage.from(_bucket).getPublicUrl(storagePath);
+  // Marqueur de version : beaucoup de photos gardent un nom fixe
+  // (profiles/<uid>/photo.jpg…). Sans lui, l'URL ne change pas et l'appli
+  // comme le CDN Supabase (cache 1 h) continuent d'afficher l'ancienne image
+  // après un changement de photo.
+  final url = supa.storage.from(_bucket).getPublicUrl(storagePath);
+  return '$url?v=${DateTime.now().millisecondsSinceEpoch}';
 }
 
 /// Upload any file (PDF, image, etc.) without compression — uses the `media` bucket.
@@ -78,5 +83,6 @@ Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
 String thumbUrl(String url, {int width = 600, int? height, int quality = 75, String resize = 'cover'}) {
   if (!url.contains('/storage/v1/object/public/')) return url;
   final h = height != null ? '&height=$height' : '';
-  return '${url.replaceFirst('/storage/v1/object/', '/storage/v1/render/image/')}?width=$width$h&quality=$quality&resize=$resize';
+  final sep = url.contains('?') ? '&' : '?'; // URL déjà versionnée (?v=…)
+  return '${url.replaceFirst('/storage/v1/object/', '/storage/v1/render/image/')}${sep}width=$width$h&quality=$quality&resize=$resize';
 }

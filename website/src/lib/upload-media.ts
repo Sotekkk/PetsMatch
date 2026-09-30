@@ -33,7 +33,11 @@ async function _upload(blob: Blob, storagePath: string): Promise<string> {
     .from(BUCKET)
     .upload(storagePath, blob, { contentType: 'image/jpeg', upsert: true });
   if (error) throw new Error(error.message);
-  return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
+  // Marqueur de version : les photos à nom fixe (profiles/<uid>/photo.jpg…)
+  // gardent sinon la même URL → ancienne image affichée (cache navigateur +
+  // CDN Supabase 1 h) après un changement de photo.
+  const url = supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
+  return `${url}?v=${Date.now()}`;
 }
 
 /**
