@@ -10,6 +10,8 @@ const EMP = 'IfhRVwY55KUXW12lBG4D0bs0V383';            // employé de Natacha
 const TIERS = 'PZltNeW1M4cmEmOdRlbvOVmUNyB2';          // sans lien avec Natacha
 // Contrat « ancien » à nom fixe : créé au 1er passage, ancien (> 1 min) ensuite.
 const OLD_CONTRAT = 'contrat_00000000-0000-0000-0000-000000000000_1790770000001.html';
+// Idem pour la photo déposée pendant l'inscription (avant le compte Firebase).
+const OLD_PHOTO_INSCRIPTION = 'profiles/1790770000002.jpg';
 const TS = Date.now();
 
 let ok = 0, ko = 0;
@@ -32,6 +34,8 @@ const has = (r, s) => r.body.includes(s);
   }
   const oldC = await anon.upload('contrats', OLD_CONTRAT, true);
   const oldReady = oldC.status !== 200; // refusé → existe depuis plus d'1 min
+  const oldP = await anon.upload('media', OLD_PHOTO_INSCRIPTION, true);
+  const oldPhotoReady = oldP.status !== 200;
 
   console.log('── Non connecté');
   let r = await anon.list('media', DIR);
@@ -59,6 +63,20 @@ const has = (r, s) => r.body.includes(s);
     check('ancien contrat non supprimable', !has(r, '1790770000001'), r);
   } else {
     console.log('--  contrat témoin créé il y a moins d\'1 min : relancer plus tard pour tester « ancien contrat »');
+  }
+
+  console.log('── Inscription (photo déposée avant le compte)');
+  r = await anon.upload('media', `profiles/${TS}.jpg`, true);
+  check('photo d\'inscription (x-upsert) acceptée', r.status === 200, r);
+  r = await anon.upload('media', `profiles/pirate_${TS}.jpg`, true);
+  check('autre nom sous profiles/ refusé', r.status >= 400, r);
+  if (oldPhotoReady) {
+    r = await anon.list('media', 'profiles');
+    check('anciennes photos non listées', !has(r, '1790770000002'), r);
+    r = await anon.upload('media', OLD_PHOTO_INSCRIPTION, true);
+    check('ancienne photo non écrasable', r.status >= 400, r);
+  } else {
+    console.log('--  photo témoin créée il y a moins d\'1 min : relancer plus tard pour tester « ancienne photo »');
   }
 
   console.log('── Natacha (propriétaire)');
