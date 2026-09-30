@@ -70,6 +70,17 @@ node scripts/staging/storage_test.js
 
 Il dépose des fichiers témoins sous `test_sec/<horodatage>/`, sur le staging uniquement.
 
+### `storage_test_phase2.js`
+
+Il teste la phase 2a sur le staging : chacun ne liste, ne remplace et ne supprime que **ses** fichiers.
+
+```
+node scripts/staging/storage_test_phase2.js <fichier_ancien>
+```
+
+- **Le fichier ancien** est un objet `media` sans `owner_id`, placé dans le dossier de Natacha. On le crée d'abord en SQL, par exemple `profiles/<uid Natacha>/legacy_1.jpg`. Il simule les fichiers déposés avant le 22/09.
+- **La migration testée** est `supabase/migration_storage_policies_phase2a.sql`.
+
 ### `test_storage_prod.sql`
 
 Ce sont les mêmes contrôles, en SQL. Chaque cas se déroule dans une transaction **annulée**, ce qui le rend utilisable sur la prod sans laisser de trace.

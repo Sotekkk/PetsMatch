@@ -2286,7 +2286,9 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
     if (isAvatar) {
       setState(() => _uploadingAvatar = true);
       try {
-        final url = await storage.uploadPhoto(file, 'groupes/$groupeId/avatar.jpg', quality: 88);
+        // Nom unique : un autre modérateur ne peut pas écraser le fichier
+        // déposé par un autre (policies Storage), et le cache image se rafraîchit.
+        final url = await storage.uploadPhoto(file, 'groupes/$groupeId/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg', quality: 88);
         await _supa.from('groupes').update({'avatar_url': url}).eq('id', groupeId);
         if (mounted) {
           setState(() { _avatarFile = file; _uploadingAvatar = false; });
@@ -2298,7 +2300,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
     } else {
       setState(() => _uploadingBanner = true);
       try {
-        final url = await storage.uploadPhoto(file, 'groupes/$groupeId/banner.jpg', quality: 82, maxDim: 1200);
+        final url = await storage.uploadPhoto(file, 'groupes/$groupeId/banner_${DateTime.now().millisecondsSinceEpoch}.jpg', quality: 82, maxDim: 1200);
         await _supa.from('groupes').update({'photo_cover_url': url}).eq('id', groupeId);
         if (mounted) {
           setState(() { _bannerFile = file; _uploadingBanner = false; });

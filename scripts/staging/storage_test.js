@@ -50,8 +50,10 @@ const has = (r, s) => r.body.includes(s);
   check('suppression document sans effet', !has(r, DOC), r);
   r = await anon.remove('stories', [S1]);
   check('suppression story sans effet', !has(r, 'story1_'), r);
+  // Accepté en phase 1 (fenêtre « Finaliser » sans jeton), refusé à partir
+  // de la phase 2a (elle envoie le jeton de l'éleveur) : information seule.
   r = await anon.upload('contrats', `contrat_5e9284bd-87cb-411a-8b70-f3ea1adb0486_${TS}.html`, true);
-  check('dépôt contrat « Finaliser » (x-upsert) accepté', r.status === 200, r);
+  console.log(`--  dépôt contrat « Finaliser » sans jeton : ${r.status === 200 ? 'accepté (phase 1)' : 'refusé (phase 2a)'}`);
   r = await anon.upload('contrats', `pirate_${TS}.html`);
   check('autre nom dans contrats refusé', r.status >= 400, r);
   if (oldReady) {

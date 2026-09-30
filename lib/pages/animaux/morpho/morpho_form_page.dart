@@ -326,11 +326,16 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         suiviId = inserted['id'] as String;
       }
       final base = 'animaux/${widget.animalId ?? 'libre'}/morpho/$suiviId';
+      // Noms uniques par enregistrement : un nom fixe écrasait les fichiers
+      // encore utilisés (extra_0.jpg d'une édition précédente) et, avec les
+      // policies Storage « seul le déposant remplace son fichier », une
+      // ré-édition par une autre personne échouerait.
+      final stamp = DateTime.now().millisecondsSinceEpoch;
 
       // Photos de vues guidées — nouvelle (upload) ou existante conservée
       for (final vue in {..._photosVues.keys, ..._photosVuesExistantes.keys}) {
         final url = _photosVues.containsKey(vue)
-            ? await storage.uploadPhoto(_photosVues[vue]!, '$base/$vue.jpg')
+            ? await storage.uploadPhoto(_photosVues[vue]!, '$base/${vue}_$stamp.jpg')
             : _photosVuesExistantes[vue];
         if (url != null) {
           await _supa.from('suivis_morpho_photos').insert({'suivi_id': suiviId, 'vue': vue, 'url': url});
@@ -338,7 +343,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       }
       // Photos extra — nouvelles (upload) + existantes non retirées
       for (var i = 0; i < _photosExtra.length; i++) {
-        final url = await storage.uploadPhoto(_photosExtra[i], '$base/extra_$i.jpg');
+        final url = await storage.uploadPhoto(_photosExtra[i], '$base/extra_${i}_$stamp.jpg');
         await _supa.from('suivis_morpho_photos').insert({'suivi_id': suiviId, 'vue': 'autre', 'url': url});
       }
       for (final url in _photosExtraExistantes) {
@@ -351,7 +356,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         final String url;
         if (v.file != null) {
           final ext = v.file!.path.split('.').last.toLowerCase();
-          url = await storage.uploadRawFile(v.file!, '$base/video_$i.$ext');
+          url = await storage.uploadRawFile(v.file!, '$base/video_${i}_$stamp.$ext');
         } else {
           url = v.existingUrl!;
         }
@@ -373,7 +378,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           if (p.couleur != null) 'couleur': p.couleur,
         }).select('id').single();
         final pointPhotoUrl = p.photo != null
-            ? await storage.uploadPhoto(p.photo!, '$base/point_$i.jpg')
+            ? await storage.uploadPhoto(p.photo!, '$base/point_${i}_$stamp.jpg')
             : p.existingPhotoUrl;
         if (pointPhotoUrl != null) {
           await _supa.from('suivis_morpho_photos').insert({

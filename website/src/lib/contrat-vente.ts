@@ -140,6 +140,18 @@ var _pads = [];
 var _animalId = ${JSON.stringify(animalId)};
 var _sbUrl = ${JSON.stringify(supabaseUrl)};
 var _sbKey = ${JSON.stringify(supabaseKey)};
+// Jeton de l'utilisateur connecté, demandé à la page qui a ouvert cette
+// fenêtre au moment d'enregistrer : jamais écrit dans le HTML (qui est
+// lui-même sauvegardé comme contrat). Repli sur la clé publique.
+async function _pmJeton() {
+  try {
+    if (window.opener && window.opener.__pmIdToken) {
+      var t = await window.opener.__pmIdToken();
+      if (t) return t;
+    }
+  } catch (e) {}
+  return _sbKey;
+}
 
 window.addEventListener('load', function() {
   if (typeof SignaturePad === 'undefined') return;
@@ -185,12 +197,13 @@ async function finaliser() {
 
   // Enregistrer dans Supabase Storage si animalId présent
   if (_animalId && _sbUrl && _sbKey) {
+    var _sbTok = await _pmJeton();
     try {
       var blob = new Blob([html], {type:'text/html;charset=utf-8'});
       var filename = 'contrat_'+_animalId+'_'+Date.now()+'.html';
       var uploadRes = await fetch(_sbUrl+'/storage/v1/object/contrats/'+filename, {
         method: 'POST',
-        headers: {'apikey': _sbKey, 'Authorization': 'Bearer '+_sbKey, 'Content-Type': 'text/html;charset=utf-8', 'x-upsert': 'true'},
+        headers: {'apikey': _sbKey, 'Authorization': 'Bearer '+_sbTok, 'Content-Type': 'text/html;charset=utf-8', 'x-upsert': 'true'},
         body: blob
       });
       if (uploadRes.ok) {
@@ -198,7 +211,7 @@ async function finaliser() {
         // Mettre à jour animaux
         await fetch(_sbUrl+'/rest/v1/animaux?id=eq.'+_animalId, {
           method: 'PATCH',
-          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'application/json','Prefer':'return=minimal'},
+          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbTok,'Content-Type':'application/json','Prefer':'return=minimal'},
           body: JSON.stringify({cession_contrat_url: publicUrl})
         });
         // Notifier le parent
@@ -228,6 +241,18 @@ var _pads = [];
 var _animalId = ${JSON.stringify(animalId)};
 var _sbUrl = ${JSON.stringify(supabaseUrl)};
 var _sbKey = ${JSON.stringify(supabaseKey)};
+// Jeton de l'utilisateur connecté, demandé à la page qui a ouvert cette
+// fenêtre au moment d'enregistrer : jamais écrit dans le HTML (qui est
+// lui-même sauvegardé comme contrat). Repli sur la clé publique.
+async function _pmJeton() {
+  try {
+    if (window.opener && window.opener.__pmIdToken) {
+      var t = await window.opener.__pmIdToken();
+      if (t) return t;
+    }
+  } catch (e) {}
+  return _sbKey;
+}
 var _eleveurUid = ${JSON.stringify(eleveurUid)};
 
 window.addEventListener('load', function() {
@@ -266,12 +291,13 @@ async function finaliser() {
   var html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
 
   if (_animalId && _sbUrl && _sbKey) {
+    var _sbTok = await _pmJeton();
     try {
       var blob = new Blob([html], {type:'text/html;charset=utf-8'});
       var filename = 'certificat_cession_'+_animalId+'_'+Date.now()+'.html';
       var uploadRes = await fetch(_sbUrl+'/storage/v1/object/contrats/'+filename, {
         method: 'POST',
-        headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'text/html;charset=utf-8','x-upsert':'true'},
+        headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbTok,'Content-Type':'text/html;charset=utf-8','x-upsert':'true'},
         body: blob
       });
       if (uploadRes.ok) {
@@ -279,13 +305,13 @@ async function finaliser() {
         // Màj cession_certificat_url sur l'animal
         await fetch(_sbUrl+'/rest/v1/animaux?id=eq.'+_animalId, {
           method: 'PATCH',
-          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'application/json','Prefer':'return=minimal'},
+          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbTok,'Content-Type':'application/json','Prefer':'return=minimal'},
           body: JSON.stringify({cession_certificat_url: publicUrl})
         });
         // Insérer dans documents_animaux
         await fetch(_sbUrl+'/rest/v1/documents_animaux', {
           method: 'POST',
-          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbKey,'Content-Type':'application/json','Prefer':'return=minimal'},
+          headers: {'apikey':_sbKey,'Authorization':'Bearer '+_sbTok,'Content-Type':'application/json','Prefer':'return=minimal'},
           body: JSON.stringify({animal_id:_animalId, uid_eleveur:_eleveurUid, type:'certificat_cession', titre:'Certificat de cession', url:publicUrl, statut:'signe', signe_le: new Date().toISOString()})
         });
         // Notifier le parent

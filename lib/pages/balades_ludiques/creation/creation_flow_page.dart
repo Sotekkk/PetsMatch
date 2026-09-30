@@ -129,7 +129,9 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
       String? finalCoverUrl = coverUrl;
       final baladeId = widget.baladeId ?? '';
       if (coverFile != null) {
-        finalCoverUrl = await uploadPhoto(coverFile!, 'balades_ludiques/${baladeId.isEmpty ? DateTime.now().millisecondsSinceEpoch : baladeId}/cover.jpg');
+        // Nom unique : pas d'écrasement du fichier d'un autre (policies Storage).
+        final stamp = DateTime.now().millisecondsSinceEpoch;
+        finalCoverUrl = await uploadPhoto(coverFile!, 'balades_ludiques/${baladeId.isEmpty ? stamp : baladeId}/cover_$stamp.jpg');
       }
 
       final premierPoint = points.first;

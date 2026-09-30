@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { auth } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlan } from '@/lib/use-plan';
@@ -137,6 +138,16 @@ export default function ContratsPage() {
   const popupRef = useRef<Window | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
+
+  // La fenêtre de signature (contrat-vente.ts → _pmJeton) demande ici le
+  // jeton Firebase au moment d'enregistrer : le dépôt dans `contrats` et la
+  // mise à jour de l'animal se font sous l'identité de l'éleveur, sans que le
+  // jeton soit écrit dans le HTML sauvegardé.
+  useEffect(() => {
+    const w = window as unknown as { __pmIdToken?: () => Promise<string | null> };
+    w.__pmIdToken = async () => (await auth.currentUser?.getIdToken()) ?? null;
+    return () => { delete w.__pmIdToken; };
+  }, []);
 
   useEffect(() => {
     if (!user || !ownerUid) return;

@@ -15,9 +15,9 @@ const ESPECE_LABEL: Record<string, string> = {
 async function uploadPhoto(file: File, uid: string): Promise<string> {
   const ext = file.name.split('.').pop() ?? 'jpg';
   const path = `annonces/${uid}/${Date.now()}.${ext}`;
-  const { error } = await supabase.storage.from('PetsMatch').upload(path, file, { upsert: true });
+  const { error } = await supabase.storage.from('petsmatch').upload(path, file, { upsert: true });
   if (error) throw error;
-  const { data } = supabase.storage.from('PetsMatch').getPublicUrl(path);
+  const { data } = supabase.storage.from('petsmatch').getPublicUrl(path);
   return data.publicUrl;
 }
 

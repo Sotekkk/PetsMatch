@@ -577,7 +577,7 @@ export default function GroupeDetailPage() {
     if (!file || !groupe) return;
     setAvatarUploading(true);
     try {
-      const url = await uploadToStorage(file, `groupes/${id}/avatar.jpg`);
+      const url = await uploadToStorage(file, `groupes/${id}/avatar_${Date.now()}.jpg`);
       await supabase.from('groupes').update({ avatar_url: url }).eq('id', id);
       setGroupe(prev => prev ? { ...prev, avatar_url: url } : null);
     } finally { setAvatarUploading(false); }
@@ -588,7 +588,7 @@ export default function GroupeDetailPage() {
     if (!file || !groupe) return;
     setBannerUploading(true);
     try {
-      const url = await uploadToStorage(file, `groupes/${id}/banner.jpg`);
+      const url = await uploadToStorage(file, `groupes/${id}/banner_${Date.now()}.jpg`);
       await supabase.from('groupes').update({ photo_cover_url: url }).eq('id', id);
       setGroupe(prev => prev ? { ...prev, photo_cover_url: url } : null);
     } finally { setBannerUploading(false); }
