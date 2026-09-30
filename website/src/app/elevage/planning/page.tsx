@@ -162,6 +162,31 @@ const TRANCHE_LABELS: Record<string, string> = {
   matin: '🌅 Matin', midi: '☀️ Midi', apres_midi: '🌤️ Après-midi', soir: '🌙 Soir',
 };
 
+// Libellé propre d'un acte (pas le code brut type_acte) — partagé entre la
+// fiche de lecture (ProtocolViewModal) et l'export imprimable (printProtocole).
+const ACTE_LABELS: Record<string, string> = {
+  vermifuge: 'Vermifuge', vaccination: 'Vaccination', antiparasitaire: 'Antiparasitaire',
+  traitement: 'Traitement', visite: 'Visite vétérinaire', alimentaire: 'Alimentaire',
+  toilettage: 'Toilettage', nettoyage: 'Désinfection',
+  promenade: 'Promenade / Socialisation', socialisation: 'Promenade / Socialisation',
+  autre: 'Autre',
+};
+function acteLabel(v: string) { return ACTE_LABELS[v] ?? v; }
+
+function etapeTimingLabel(e: Etape): string {
+  if (e.age_min_semaines != null) return `À ${e.age_min_semaines} semaines`;
+  return `${e.offset_direction === 'avant' ? 'Avant' : 'Après'} J0 + ${e.jour_offset}j`;
+}
+function etapeFreqLabel(e: Etape): string {
+  return e.frequence === 'ponctuel' ? `Ponctuel (${e.duree_jours}j)`
+    : e.frequence === 'quotidien' ? `Quotidien (${e.duree_semaines}sem)`
+    : e.frequence === 'hebdomadaire' ? `${e.nb_fois_semaine}x/sem × ${e.duree_semaines}sem`
+    : `Mensuel × ${e.duree_semaines}mois`;
+}
+function etapeTrancheLabel(e: Etape): string {
+  return e.tranche_horaire ? (TRANCHE_LABELS[e.tranche_horaire] ?? e.tranche_horaire) : '—';
+}
+
 // ── Utils ─────────────────────────────────────────────────────────────────────
 
 function toISODate(d: Date) { return d.toISOString().split('T')[0]; }
@@ -211,25 +236,54 @@ function groupeTaches(taches: Tache[]): TacheGroupe[] {
   });
 }
 
+// Impression : même visuel que la fiche de lecture (ProtocolViewModal) — en-tête
+// teal + badges, puis chaque étape en carte numérotée (plus de tableau).
 function printProtocole(template: Template) {
   const etapes = template.plan_template_etapes ?? [];
-  const rows = etapes.map((e, i) => {
-    const trancheLabel = e.tranche_horaire ? (TRANCHE_LABELS[e.tranche_horaire] ?? e.tranche_horaire) : '—';
-    const timing = (e.age_min_semaines != null)
-      ? `À ${e.age_min_semaines} semaines`
-      : `${e.offset_direction === 'avant' ? 'Avant' : 'Après'} J0 + ${e.jour_offset}j`;
-    const freqLabel = e.frequence === 'ponctuel' ? `Ponctuel (${e.duree_jours}j)`
-      : e.frequence === 'quotidien' ? `Quotidien (${e.duree_semaines}sem)`
-      : e.frequence === 'hebdomadaire' ? `${e.nb_fois_semaine}x/sem × ${e.duree_semaines}sem`
-      : `Mensuel × ${e.duree_semaines}mois`;
-    return `<tr><td>${i + 1}</td><td>${ACTE_EMOJIS[e.type_acte] ?? '📋'} ${e.type_acte}</td><td>${e.produit || '—'}${e.dosage ? ` (${e.dosage})` : ''}</td><td>${timing}</td><td>${freqLabel}</td><td>${trancheLabel}</td><td>${e.description || ''}</td></tr>`;
+  const badges = [
+    acteLabel(template.type),
+    template.espece || null,
+    `${etapes.length} étape${etapes.length > 1 ? 's' : ''}`,
+  ].filter(Boolean).map(b => `<span class="badge">${b}</span>`).join('');
+  const cards = etapes.map((e, i) => {
+    const prodDos = [e.produit, e.dosage ? `(${e.dosage})` : ''].filter(Boolean).join(' ');
+    return `<div class="card">
+      <div class="num">${i + 1}</div>
+      <div class="body">
+        <div class="row"><span class="acte">${ACTE_EMOJIS[e.type_acte] ?? '📋'} ${acteLabel(e.type_acte)}</span><span class="when">${etapeTimingLabel(e)}</span></div>
+        ${prodDos ? `<p class="proddos">${prodDos}</p>` : ''}
+        <div class="chips"><span class="chip">${etapeFreqLabel(e)}</span><span class="chip">${etapeTrancheLabel(e)}</span></div>
+        ${e.description ? `<p class="notes">${e.description}</p>` : ''}
+      </div>
+    </div>`;
   }).join('');
   const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>${template.nom}</title>
-<style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#222}h1{font-size:18px;margin-bottom:4px}.meta{color:#666;font-size:11px;margin-bottom:16px}table{width:100%;border-collapse:collapse}th{background:#f0f0f0;font-weight:bold;text-align:left;padding:6px 8px;border:1px solid #ccc}td{padding:6px 8px;border:1px solid #ddd;vertical-align:top}tr:nth-child(even) td{background:#fafafa}.foot{margin-top:24px;font-size:10px;color:#999}@media print{body{margin:10px}}</style>
+<style>
+body{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#222}
+.header{background:#0C5C6C;color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:16px}
+.header h1{font-size:18px;margin:0 0 8px}
+.badge{display:inline-block;background:rgba(255,255,255,.16);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:bold;margin:0 6px 0 0}
+.header .desc{font-size:11px;color:rgba(255,255,255,.85);margin:8px 0 0}
+.card{display:flex;gap:10px;border:1px solid #eee;border-radius:8px;padding:10px 12px;margin-bottom:8px;page-break-inside:avoid}
+.num{width:22px;height:22px;border-radius:50%;background:rgba(12,92,108,.12);color:#0C5C6C;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.body{flex:1}
+.row{display:flex;justify-content:space-between;gap:8px}
+.acte{font-weight:bold;font-size:13px}
+.when{font-size:11px;color:#888;white-space:nowrap}
+.proddos{font-size:11.5px;color:#444;margin:3px 0 0}
+.chips{margin-top:5px}
+.chip{display:inline-block;background:#f2f2f2;color:#666;border-radius:5px;padding:2px 6px;font-size:10px;font-weight:bold;margin:0 5px 0 0}
+.notes{font-size:11px;color:#888;font-style:italic;margin:5px 0 0}
+.foot{margin-top:24px;font-size:10px;color:#999}
+@media print{body{margin:10px}}
+</style>
 </head><body>
-<h1>📋 ${template.nom}</h1>
-<p class="meta">${cibleDescription(template.cible_type, template.espece)} • ${etapes.length} étape${etapes.length > 1 ? 's' : ''}${template.description ? ` • ${template.description}` : ''}</p>
-<table><thead><tr><th>#</th><th>Acte</th><th>Produit / Dosage</th><th>Quand</th><th>Fréquence</th><th>Tranche</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
+<div class="header">
+  <h1>📋 ${template.nom}</h1>
+  ${badges}
+  ${template.description ? `<p class="desc">${template.description}</p>` : ''}
+</div>
+${cards || '<p style="color:#888">Aucune étape définie.</p>'}
 <p class="foot">Imprimé le ${new Date().toLocaleDateString('fr-FR')} • PetsMatch</p>
 </body></html>`;
   const win = window.open('', '_blank');
@@ -900,6 +954,7 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
 }) {
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
   const [authModalTemplate, setAuthModalTemplate] = useState<Template | null>(null);
+  const [viewModal, setViewModal] = useState<{ template: Template; canEdit: boolean } | null>(null);
 
   useEffect(() => {
     const ids = [...new Set(templates
@@ -948,7 +1003,8 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
             const canEditThis = isEmployeeMode ? (canWrite && isMine) : canWrite;
             const canApplyThis = !isEmployeeMode || isMine || !!authorizedTemplateIds?.has(t.id);
             return (
-            <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <div key={t.id} onClick={() => setViewModal({ template: t, canEdit: canEditThis })}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 cursor-pointer hover:shadow-md transition-shadow">
               <div className="flex items-start gap-3">
                 <div className="text-2xl">{ACTE_EMOJIS[t.type] ?? '📋'}</div>
                 <div className="flex-1">
@@ -969,14 +1025,14 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
                   <p className="text-xs text-gray-400 mt-1">{cibleDescription(t.cible_type, t.espece)}</p>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => onPrint(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Imprimer ce protocole">🖨️</button>
+                  <button onClick={(e) => { e.stopPropagation(); onPrint(t); }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Imprimer ce protocole">🖨️</button>
                   {!isEmployeeMode && (
-                    <button onClick={() => setAuthModalTemplate(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Qui peut appliquer ce protocole">🔓</button>
+                    <button onClick={(e) => { e.stopPropagation(); setAuthModalTemplate(t); }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Qui peut appliquer ce protocole">🔓</button>
                   )}
                   {canEditThis ? (
                     <>
-                      <button onClick={() => onEdit(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">✏️</button>
-                      <button onClick={() => onDelete(t.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">🗑️</button>
+                      <button onClick={(e) => { e.stopPropagation(); onEdit(t); }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">✏️</button>
+                      <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">🗑️</button>
                     </>
                   ) : isEmployeeMode && (
                     <span className="p-1.5 text-gray-300" title="Protocole de l'élevage — non modifiable">🔒</span>
@@ -984,7 +1040,7 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
                 </div>
               </div>
               {canApplyThis ? (
-                <button onClick={() => onApply(t)} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
+                <button onClick={(e) => { e.stopPropagation(); onApply(t); }} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
                   ▶ Appliquer ce protocole
                 </button>
               ) : (
@@ -1007,6 +1063,90 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
           onClose={() => setAuthModalTemplate(null)}
         />
       )}
+
+      {viewModal && (
+        <ProtocolViewModal
+          template={viewModal.template}
+          canEdit={viewModal.canEdit}
+          onEdit={() => { setViewModal(null); onEdit(viewModal.template); }}
+          onClose={() => setViewModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modale : fiche de synthèse en lecture (+ impression) ─────────────────────
+
+function ProtocolViewModal({ template, canEdit, onEdit, onClose }: {
+  template: Template; canEdit: boolean; onEdit: () => void; onClose: () => void;
+}) {
+  const etapes = template.plan_template_etapes ?? [];
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#1F2A2E]">Fiche protocole</h3>
+          <div className="flex items-center gap-1">
+            <button onClick={() => printProtocole(template)}
+              className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors text-gray-500" title="Imprimer">
+              🖨️
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div className="p-5 overflow-y-auto space-y-4">
+          <div className="bg-[#0C5C6C] rounded-2xl p-4 text-white">
+            <p className="font-bold text-lg">{template.nom}</p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-white/15 font-semibold">{acteLabel(template.type)}</span>
+              {template.espece && <span className="text-xs px-2 py-0.5 rounded-full bg-white/15 font-semibold">{template.espece}</span>}
+              <span className="text-xs px-2 py-0.5 rounded-full bg-white/15 font-semibold">{etapes.length} étape{etapes.length > 1 ? 's' : ''}</span>
+            </div>
+            {template.description && <p className="text-xs text-white/80 mt-2">{template.description}</p>}
+          </div>
+
+          {etapes.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Aucune étape définie.</p>
+          ) : (
+            <div className="space-y-2">
+              {etapes.map((e, i) => {
+                const prodDos = [e.produit, e.dosage ? `(${e.dosage})` : ''].filter(Boolean).join(' ');
+                return (
+                  <div key={e.id ?? i} className="border border-gray-100 rounded-xl p-3 flex gap-3">
+                    <div className="w-6 h-6 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                      {i + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-sm text-[#1F2A2E]">{ACTE_EMOJIS[e.type_acte] ?? '📋'} {acteLabel(e.type_acte)}</span>
+                        <span className="text-xs text-gray-400 whitespace-nowrap">{etapeTimingLabel(e)}</span>
+                      </div>
+                      {prodDos && <p className="text-xs text-gray-600 mt-0.5">{prodDos}</p>}
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium">{etapeFreqLabel(e)}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-medium">{etapeTrancheLabel(e)}</span>
+                      </div>
+                      {e.description && <p className="text-xs text-gray-400 italic mt-1.5">{e.description}</p>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {canEdit && (
+          <div className="px-5 py-4 border-t border-gray-100">
+            <button onClick={onEdit} className="w-full py-2.5 bg-[#0C5C6C] text-white rounded-xl text-sm font-semibold hover:bg-[#0a4d5a]">
+              ✏️ Modifier
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

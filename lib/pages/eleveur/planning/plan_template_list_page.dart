@@ -5,6 +5,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_view_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/protocole_chaleur_page.dart';
 
@@ -229,6 +230,15 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                       isEmployeeMode: _isEmployeeMode,
                       canWrite: canEditThis,
                       canApply: canApply,
+                      onView: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => PlanTemplateViewPage(
+                          template: t,
+                          canWrite: canEditThis,
+                          profilSource: widget.profilSource,
+                          employerUid: widget.employerUid,
+                          employerProfileId: widget.employerProfileId,
+                        ),
+                      )).then((_) => _load()),
                       onEdit: !canEditThis ? null : () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => PlanTemplateFormPage(
                           existing: t,
@@ -288,6 +298,7 @@ class _TemplateCard extends StatelessWidget {
   final bool isOwnerProtocol;
   final bool isEmployeeMode;
   final bool canWrite;
+  final VoidCallback onView;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final bool canApply;
@@ -297,7 +308,7 @@ class _TemplateCard extends StatelessWidget {
 
   const _TemplateCard({
     required this.template, this.creatorName, this.isOwnerProtocol = false, this.isEmployeeMode = false,
-    required this.canWrite, this.canApply = true,
+    required this.canWrite, this.canApply = true, required this.onView,
     required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint,
     this.onManageAuth,
   });
@@ -346,10 +357,15 @@ class _TemplateCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onView,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
@@ -455,6 +471,8 @@ class _TemplateCard extends StatelessWidget {
                     ),
             ),
           ],
+        ),
+        ),
         ),
       ),
     );

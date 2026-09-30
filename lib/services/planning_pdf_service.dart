@@ -1,6 +1,7 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:PetsMatch/utils/plan_template_labels.dart';
 
 // PLN05 — impression protocole template
 // PLN06 — impression planning du jour avec cases à cocher
@@ -14,48 +15,12 @@ class PlanningPdfService {
   static const _lightGrey = PdfColors.grey200;
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  static String _acteLabel(String? v) => switch (v) {
-    'vermifuge'       => 'Vermifuge',
-    'vaccination'     => 'Vaccination',
-    'antiparasitaire' => 'Antiparasitaire',
-    'traitement'      => 'Traitement',
-    'visite'          => 'Visite vétérinaire',
-    'nettoyage'       => 'Nettoyage',
-    'promenade'       => 'Promenade',
-    'socialisation'   => 'Socialisation',
-    _                 => 'Autre',
-  };
-
-  static String _trancheLabel(String? v) => switch (v) {
-    'matin'     => 'Matin',
-    'midi'      => 'Midi',
-    'apres_midi'=> 'Après-midi',
-    'soir'      => 'Soir',
-    _           => '—',
-  };
-
-  static String _freqLabel(Map<String, dynamic> e) {
-    final freq = e['frequence'] as String? ?? '';
-    final dS = e['duree_semaines'] as int? ?? 1;
-    final dJ = e['duree_jours'] as int? ?? 1;
-    final nb = e['nb_fois_semaine'] as int? ?? 1;
-    return switch (freq) {
-      'ponctuel'     => 'Ponctuel ($dJ j)',
-      'quotidien'    => 'Quotidien ($dS sem)',
-      'hebdomadaire' => '${nb}x/sem × $dS sem',
-      'mensuel'      => 'Mensuel × $dS mois',
-      _              => freq,
-    };
-  }
-
-  static String _timingLabel(Map<String, dynamic> e) {
-    final ageSem = e['age_min_semaines'] as int?;
-    if (ageSem != null) return 'À $ageSem semaines';
-    final dir = e['offset_direction'] as String? ?? 'apres';
-    final off = e['jour_offset'] as int? ?? 0;
-    return '${dir == 'avant' ? 'Avant' : 'Après'} J0 + ${off}j';
-  }
+  // Libellés d'acte/tranche/fréquence/timing partagés avec
+  // plan_template_view_page.dart — voir utils/plan_template_labels.dart.
+  static String _acteLabel(String? v) => planTemplateActeLabel(v);
+  static String _trancheLabel(String? v) => planTemplateTrancheLabel(v);
+  static String _freqLabel(Map<String, dynamic> e) => planTemplateFreqLabel(e);
+  static String _timingLabel(Map<String, dynamic> e) => planTemplateTimingLabel(e);
 
   static String _footerDate() {
     final d = DateTime.now();
@@ -125,53 +90,12 @@ class PlanningPdfService {
         ),
         pw.SizedBox(height: 14),
 
-        // ── Tableau des étapes
+        // ── Étapes, en cartes numérotées — même visuel que la fiche de
+        // lecture dans l'appli (plan_template_view_page.dart).
         if (etapes.isEmpty)
           pw.Text('Aucune étape définie.', style: pw.TextStyle(color: _grey))
         else
-          pw.Table(
-            border: pw.TableBorder.all(color: _lightGrey, width: 0.5),
-            columnWidths: const {
-              0: pw.FixedColumnWidth(20),
-              1: pw.FlexColumnWidth(2),
-              2: pw.FlexColumnWidth(2.5),
-              3: pw.FlexColumnWidth(2),
-              4: pw.FlexColumnWidth(2),
-              5: pw.FlexColumnWidth(1.5),
-              6: pw.FlexColumnWidth(2),
-            },
-            children: [
-              // En-tête
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: PdfColors.grey100),
-                children: ['#', 'Acte', 'Produit / Dosage', 'Quand', 'Fréquence', 'Tranche', 'Notes']
-                    .map((h) => _cell(h, bold: true))
-                    .toList(),
-              ),
-              // Lignes
-              ...etapes.asMap().entries.map((en) {
-                final i = en.key;
-                final e = en.value;
-                final produit = e['produit'] as String? ?? '';
-                final dosage  = e['dosage']  as String? ?? '';
-                final prodDos = [if (produit.isNotEmpty) produit,
-                                 if (dosage.isNotEmpty) '($dosage)'].join(' ');
-                return pw.TableRow(
-                  decoration: pw.BoxDecoration(
-                      color: i.isEven ? PdfColors.white : PdfColors.grey50),
-                  children: [
-                    _cell('${i + 1}'),
-                    _cell(_acteLabel(e['type_acte'] as String?)),
-                    _cell(prodDos.isEmpty ? '—' : prodDos),
-                    _cell(_timingLabel(e)),
-                    _cell(_freqLabel(e)),
-                    _cell(_trancheLabel(e['tranche_horaire'] as String?)),
-                    _cell(e['description'] as String? ?? ''),
-                  ],
-                );
-              }),
-            ],
-          ),
+          ...etapes.asMap().entries.map((en) => _etapeCard(en.key + 1, en.value)),
       ],
     ));
 
@@ -181,12 +105,65 @@ class PlanningPdfService {
     );
   }
 
-  static pw.Widget _cell(String text, {bool bold = false}) => pw.Padding(
-    padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-    child: pw.Text(text,
-        style: pw.TextStyle(
-            fontSize: 8,
-            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal)),
+  static pw.Widget _etapeCard(int index, Map<String, dynamic> e) {
+    final produit = e['produit'] as String? ?? '';
+    final dosage  = e['dosage']  as String? ?? '';
+    final prodDos = [if (produit.isNotEmpty) produit,
+                     if (dosage.isNotEmpty) '($dosage)'].join(' ');
+    final notes   = e['description'] as String? ?? '';
+
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 8),
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _lightGrey, width: 0.5),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Container(
+          width: 18, height: 18,
+          alignment: pw.Alignment.center,
+          decoration: pw.BoxDecoration(
+            color: PdfColor(_teal.red, _teal.green, _teal.blue, 0.12),
+            shape: pw.BoxShape.circle,
+          ),
+          child: pw.Text('$index',
+              style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: _teal)),
+        ),
+        pw.SizedBox(width: 10),
+        pw.Expanded(
+          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(_acteLabel(e['type_acte'] as String?),
+                    style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                pw.Text(_timingLabel(e), style: pw.TextStyle(fontSize: 8.5, color: _grey)),
+              ],
+            ),
+            if (prodDos.isNotEmpty) ...[
+              pw.SizedBox(height: 2),
+              pw.Text(prodDos, style: const pw.TextStyle(fontSize: 9)),
+            ],
+            pw.SizedBox(height: 4),
+            pw.Wrap(spacing: 5, runSpacing: 3, children: [
+              _chip(_freqLabel(e)),
+              _chip(_trancheLabel(e['tranche_horaire'] as String?)),
+            ]),
+            if (notes.isNotEmpty) ...[
+              pw.SizedBox(height: 4),
+              pw.Text(notes, style: pw.TextStyle(fontSize: 8.5, color: _grey, fontStyle: pw.FontStyle.italic)),
+            ],
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  static pw.Widget _chip(String label) => pw.Container(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+    decoration: pw.BoxDecoration(color: _lightGrey, borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4))),
+    child: pw.Text(label, style: pw.TextStyle(fontSize: 7.5, color: _grey, fontWeight: pw.FontWeight.bold)),
   );
 
   // ── PLN06 — Planning du jour ─────────────────────────────────────────────────
