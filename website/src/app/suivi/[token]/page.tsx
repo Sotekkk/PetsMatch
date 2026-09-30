@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabaseLien } from '@/lib/supabase';
 import { RichText } from '@/lib/rich-text';
 
 interface Animal {
@@ -43,6 +43,8 @@ type State =
 
 export default function SuiviPartagePage() {
   const { token } = useParams<{ token: string }>();
+  // Toutes les requêtes de la page portent le lien (en-tête x-pm-token).
+  const supabase = supabaseLien(token);
   const [state, setState] = useState<State>({ status: 'loading' });
 
   useEffect(() => {

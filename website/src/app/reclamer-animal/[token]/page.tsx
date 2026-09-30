@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
+import { supabaseLien } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
 interface Claim {
@@ -22,6 +22,8 @@ interface Animal {
 
 export default function ReclamerAnimalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  // Toutes les requêtes de la page portent le lien (en-tête x-pm-token).
+  const supabase = supabaseLien(token);
   const { user } = useAuth();
   const [claim, setClaim] = useState<Claim | null>(null);
   const [animal, setAnimal] = useState<Animal | null>(null);

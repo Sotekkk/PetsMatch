@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { supabaseLien } from '@/lib/supabase';
 
 interface Animal {
   id: string;
@@ -40,6 +40,8 @@ const ESPECE_EMOJI: Record<string, string> = {
 
 export default function PartageAnimalPage() {
   const { token } = useParams<{ token: string }>();
+  // Toutes les requêtes de la page portent le lien (en-tête x-pm-token).
+  const supabase = supabaseLien(token);
   const [state, setState] = useState<State>({ status: 'loading' });
 
   useEffect(() => {

@@ -125,6 +125,35 @@ Après chaque passage, fais le ménage avec les requêtes SQL indiquées dans l'
 - Une insertion avec relecture (`return=representation`) exige de pouvoir lire la ligne créée. Pour une ligne destinée à quelqu'un d'autre, utilise `insertMin`.
 - `auth.uid()` convertit l'identifiant en uuid, ce qui provoque une erreur 22P02 avec un identifiant Firebase. Utilise toujours `auth.jwt() ->> 'sub'`.
 
+### `rls_documents_factures_test.js`
+
+Il lance 37 tests de lecture sur les factures, devis, cessions, certificats et contrats : émetteur, destinataire, lien secret, mauvais lien, tiers et non connecté.
+
+```
+node scripts/staging/rls_documents_factures_test.js
+```
+
+### `rls_partages_test.js` et `fixtures_partages.sql`
+
+Il lance 33 tests sur les partages par lien :
+- l'accès vétérinaire au carnet de santé, y compris avec un lien **expiré** ;
+- l'album partagé ;
+- le suivi d'éducation ;
+- le partage et la réclamation d'un animal ;
+- les blocages et les likes.
+
+Il crée d'abord des données de test marquées `test_rls`, puis il faut les supprimer après usage :
+
+```
+psql "<STAGING_DB_URL>" -v action=creer -f scripts/staging/fixtures_partages.sql
+node scripts/staging/rls_partages_test.js
+psql "<STAGING_DB_URL>" -v action=supprimer -f scripts/staging/fixtures_partages.sql
+```
+
+**Le lien secret** : le token d'un lien est envoyé dans l'en-tête HTTP `x-pm-token`, que la fonction SQL `pm_token_requete()` lit.
+- Dans le code, on utilise `.setHeader('x-pm-token', token)` sur une requête, ou le client `supabaseLien(token)` sur le site.
+- Dans les tests, on écrit `as(null).rest(chemin, { 'x-pm-token': token })`.
+
 ### `url_exposure_test.js`
 
 Il montre qui peut lire les colonnes contenant des liens vers des fichiers sensibles.

@@ -23,6 +23,9 @@ class _VetTokenViewState extends State<VetTokenView> {
     _load();
   }
 
+  // Le lien (token) est envoyé dans l'en-tête x-pm-token : les policies
+  // RLS n'ouvrent le carnet de santé que de l'animal de CE lien, tant qu'il
+  // n'est pas expiré.
   Future<void> _load() async {
     final supa = Supabase.instance.client;
     try {
@@ -30,6 +33,7 @@ class _VetTokenViewState extends State<VetTokenView> {
           .from('partage_tokens')
           .select('id, animal_id, expires_at, used_at')
           .eq('token', widget.token)
+          .setHeader('x-pm-token', widget.token)
           .maybeSingle();
 
       if (row == null) { setState(() => _status = _Status.notFound); return; }
@@ -44,12 +48,14 @@ class _VetTokenViewState extends State<VetTokenView> {
       if (row['used_at'] == null) {
         await supa.from('partage_tokens')
             .update({'used_at': DateTime.now().toUtc().toIso8601String()})
-            .eq('id', row['id']);
+            .eq('id', row['id'])
+            .setHeader('x-pm-token', widget.token);
       }
 
       final animalData = await supa.from('animaux')
           .select('id, nom, espece, race, sexe, date_naissance, identification, couleur, couleur_yeux, photo_url, sterilise, description, poids, taille')
           .eq('id', row['animal_id']?.toString() ?? '')
+          .setHeader('x-pm-token', widget.token)
           .maybeSingle();
 
       if (animalData == null) { setState(() => _status = _Status.notFound); return; }
@@ -57,6 +63,7 @@ class _VetTokenViewState extends State<VetTokenView> {
       final tables = ['vaccinations','traitements','visites','vermifuges','antiparasitaires','allergies'];
       final results = await Future.wait(tables.map((t) =>
           supa.from(t).select('*').eq('animal_id', row['animal_id']?.toString() ?? '')
+              .setHeader('x-pm-token', widget.token)
               .order('date', ascending: false)));
 
       final h = <String, List<Map<String, dynamic>>>{};
