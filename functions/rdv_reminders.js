@@ -336,3 +336,125 @@ exports.sendRdvReminders = functions
 
         return null;
     });
+
+/**
+ * Rappels avant une séance de cours collectif (éducateur/comportementaliste)
+ * — même mécanisme que sendRdvReminders (RDV individuels), qui ne couvrait
+ * QUE la table `rdv` : les cours collectifs n'avaient aucun rappel
+ * automatique réel malgré le type de notif "cours_collectif_rappel" déjà
+ * géré côté appli/site (une route web /api/cron/rdv-reminders existait pour
+ * ça, mais nécessite un déclencheur externe jamais mis en place — aucun
+ * rappel n'a donc jamais été envoyé). Colonnes reminder_48h/24h/1h/15min_sent
+ * déjà présentes sur cours_collectifs (migration_cours_collectifs_reminders.sql).
+ */
+exports.sendCoursCollectifReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("every 5 minutes")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        const now = new Date();
+        const fmtISO = (d) => d.toISOString();
+
+        const windows = [
+            {
+                label: "48h", echeance: "48h",
+                from: fmtISO(new Date(now.getTime() + (48 * 60 - 5) * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + (48 * 60 + 5) * 60 * 1000)),
+                sentField: "reminder_48h_sent",
+                title: "Rappel de cours dans 48h",
+            },
+            {
+                label: "24h", echeance: "24h",
+                from: fmtISO(new Date(now.getTime() + (24 * 60 - 5) * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + (24 * 60 + 5) * 60 * 1000)),
+                sentField: "reminder_24h_sent",
+                title: "Rappel de cours dans 24h",
+            },
+            {
+                label: "1h", echeance: "1h",
+                from: fmtISO(new Date(now.getTime() + 55 * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + 65 * 60 * 1000)),
+                sentField: "reminder_1h_sent",
+                title: "Rappel de cours dans 1 heure",
+            },
+            {
+                label: "15min", echeance: "15min",
+                from: fmtISO(new Date(now.getTime() + 10 * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + 20 * 60 * 1000)),
+                sentField: "reminder_15min_sent",
+                title: "Rappel de cours dans 15 minutes",
+            },
+        ];
+
+        for (const win of windows) {
+            let coursRows;
+            try {
+                const cols = "id,pro_uid,pro_profile_id,titre,date_heure,lieu";
+                const qs = `statut=eq.planifie` +
+                    `&date_heure=gte.${encodeURIComponent(win.from)}` +
+                    `&date_heure=lte.${encodeURIComponent(win.to)}` +
+                    `&${win.sentField}=eq.false&select=${cols}`;
+                coursRows = await supabaseGet(`cours_collectifs?${qs}`);
+            } catch (e) {
+                console.error(`sendCoursCollectifReminders [${win.label}] fetch error:`, e);
+                continue;
+            }
+            if (!coursRows || coursRows.length === 0) continue;
+
+            for (const cours of coursRows) {
+                try {
+                    let participants = [];
+                    try {
+                        participants = await supabaseGet(
+                            `cours_collectifs_participants?cours_id=eq.${cours.id}` +
+                            `&statut=eq.inscrit&select=client_uid,client_profile_id`);
+                    } catch (e) {
+                        console.error(`sendCoursCollectifReminders [${win.label}] participants ${cours.id}:`, e);
+                    }
+
+                    const heureStr = new Date(cours.date_heure).toLocaleString("fr-FR", {
+                        dateStyle: "short", timeStyle: "short", timeZone: "Europe/Paris",
+                    });
+                    const lieuTxt = cours.lieu ? ` (${cours.lieu})` : "";
+                    const body = `"${cours.titre}"${lieuTxt} est prévu le ${heureStr}.`;
+
+                    // Rappel au pro (éducateur/comportementaliste).
+                    await supabaseInsert("notifications", [{
+                        uid: cours.pro_uid,
+                        type: "cours_collectif_rappel",
+                        title: win.title,
+                        body: body,
+                        data: {cours_id: cours.id, echeance: win.echeance},
+                        read: false,
+                        ...(cours.pro_profile_id ? {profile_id: cours.pro_profile_id} : {}),
+                    }]);
+                    await sendPush(cours.pro_uid, win.title, body,
+                        {type: "cours_collectif_rappel", cours_id: cours.id},
+                        {profileId: cours.pro_profile_id || null});
+
+                    // Rappel à chaque participant inscrit.
+                    for (const p of participants) {
+                        await supabaseInsert("notifications", [{
+                            uid: p.client_uid,
+                            type: "cours_collectif_rappel",
+                            title: win.title,
+                            body: body,
+                            data: {cours_id: cours.id, echeance: win.echeance},
+                            read: false,
+                            ...(p.client_profile_id ? {profile_id: p.client_profile_id} : {}),
+                        }]);
+                        await sendPush(p.client_uid, win.title, body,
+                            {type: "cours_collectif_rappel", cours_id: cours.id},
+                            {profileId: p.client_profile_id || null});
+                    }
+
+                    await supabasePatch("cours_collectifs", cours.id, {[win.sentField]: true});
+                    console.log(`Rappel cours ${win.label} -> ${cours.id} (${participants.length} participant(s))`);
+                } catch (e) {
+                    console.error(`sendCoursCollectifReminders [${win.label}] error for ${cours.id}:`, e);
+                }
+            }
+        }
+
+        return null;
+    });
