@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     }
     if (!uid) return NextResponse.json({ error: 'Compte introuvable' }, { status: 404 });
 
-    const [profilesRes, aboRes, plansRes, userRes] = await Promise.all([
+    const [profilesRes, aboRes, plansRes, userRes, achatsRes] = await Promise.all([
       supabaseAdmin.from('user_profiles').select(IDENTITY_COLS)
         .eq('uid', uid).order('is_main', { ascending: false }),
       supabaseAdmin.from('abonnements')
@@ -44,6 +44,9 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('plans_tarifaires')
         .select('profil_type, plan_code, label, prix_mensuel, prix_annuel, max_annonces, duree_annonce_jours, actif'),
       supabaseAdmin.from('users').select('uid, email, is_premium, plan_code, last_active, created_at, is_admin').eq('uid', uid).maybeSingle(),
+      supabaseAdmin.from('achats_ponctuels')
+        .select('id, annonce_id, statut, date_achat, date_expiration, stripe_payment_intent_id, produits_ponctuels(label, prix, description)')
+        .eq('uid', uid).order('date_achat', { ascending: false }),
     ]);
 
     return NextResponse.json({
@@ -52,6 +55,7 @@ export async function GET(req: NextRequest) {
       profiles: profilesRes.data ?? [],
       abonnements: aboRes.data ?? [],
       plans: plansRes.data ?? [],
+      achats: achatsRes.data ?? [],
     });
   } catch (err) {
     console.error('[admin/profil]', err);

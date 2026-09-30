@@ -88,7 +88,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'comptes' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes';
 // 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
 // valeur est une catégorie dynamique (eleveur, association, particulier, ou
 // un métier pro), générée depuis les données — cf. entryCategory().
@@ -122,6 +122,12 @@ const STATUT_STYLE: Record<string, { label: string; color: string; bg: string }>
   suspendu:   { label: 'Suspendu',   color: '#ea580c', bg: '#ffedd5' },
   refuse:     { label: 'Refusé',     color: '#dc2626', bg: '#fee2e2' },
   en_attente: { label: 'En attente', color: '#2563eb', bg: '#dbeafe' },
+};
+
+const ACHAT_STATUT_STYLE: Record<string, { label: string; color: string; bg: string }> = {
+  paye:       { label: 'Payé',       color: '#16a34a', bg: '#dcfce7' },
+  rembourse:  { label: 'Remboursé',  color: '#dc2626', bg: '#fee2e2' },
+  en_attente: { label: 'En attente', color: '#d97706', bg: '#fef3c7' },
 };
 
 const RAISON_LABELS: Record<string, string> = {
@@ -409,16 +415,25 @@ export default function AdminPage() {
   }, []);
 
   async function setStatut(entry: ProfileEntry, statut: string) {
-    if (entry.profileTableId) {
+    // Activer/Suspendre = statut du COMPTE, pas d'un profil isolé : ça doit
+    // s'appliquer à tous les profils de l'uid, sinon un compte "bloqué"
+    // reste utilisable via un autre de ses profils. Refuser/En attente
+    // restent le workflow de validation PRO d'un profil précis (inchangé).
+    const accountWide = statut === 'actif' || statut === 'suspendu';
+    if (accountWide) {
+      await supabase.from('user_profiles').update({ statut_pro: statut }).eq('uid', entry.uid);
+      setEntries(prev => prev.map(e => e.uid === entry.uid ? { ...e, statutPro: statut } : e));
+      if (selected?.uid === entry.uid) setSelected(prev => prev ? { ...prev, statutPro: statut } : null);
+    } else if (entry.profileTableId) {
       await supabase.from('user_profiles').update({ statut_pro: statut }).eq('id', entry.profileTableId);
+      setEntries(prev => prev.map(e => {
+        if (e.profileTableId === entry.profileTableId && e.uid === entry.uid)
+          return { ...e, statutPro: statut };
+        return e;
+      }));
+      if (selected?.uid === entry.uid && selected?.profileTableId === entry.profileTableId)
+        setSelected(prev => prev ? { ...prev, statutPro: statut } : null);
     }
-    setEntries(prev => prev.map(e => {
-      if (e.profileTableId === entry.profileTableId && e.uid === entry.uid)
-        return { ...e, statutPro: statut };
-      return e;
-    }));
-    if (selected?.uid === entry.uid && selected?.profileTableId === entry.profileTableId)
-      setSelected(prev => prev ? { ...prev, statutPro: statut } : null);
     // Refresh stats via RPC
     const { data: rpc } = await supabase.rpc('get_admin_stats');
     const r = (rpc ?? {}) as Record<string, unknown>;
@@ -435,7 +450,27 @@ export default function AdminPage() {
       if (!confirm('Supprimer ce compte définitivement ?')) return;
       if (prompt('Tapez SUPPRIMER pour confirmer') !== 'SUPPRIMER') return;
       try {
-        await supabase.functions.invoke('delete-user', { body: { uid: entry.uid } });
+        // adminUid requis par l'edge function (sinon rejet immédiat) — et son
+        // retour doit être vérifié : functions.invoke() ne lève pas d'exception
+        // sur une réponse d'erreur, il fallait lire { error }/{ data.success }.
+        // Sans ça, la suite s'exécutait quand même : le doc Firestore
+        // disparaissait de l'admin (illusion de succès) alors que le compte
+        // Firebase Auth + Supabase restait bien vivant.
+        const { data, error } = await supabase.functions.invoke('delete-user', {
+          body: { uid: entry.uid, adminUid: user!.uid },
+        });
+        if (error) {
+          // FunctionsHttpError expose la Response brute dans `.context` — son
+          // .message générique ("non-2xx status code") ne dit jamais POURQUOI ;
+          // le vrai message est dans le corps JSON renvoyé par la function.
+          let detail = error.message as string;
+          try {
+            const body = await (error as { context?: Response }).context?.json();
+            if (body?.error) detail = body.error as string;
+          } catch { /* corps non-JSON ou déjà consommé */ }
+          throw new Error(detail);
+        }
+        if (!data?.success) throw new Error(data?.error ?? 'Échec de la suppression');
         await deleteDoc(doc(db, 'users', entry.uid));
         setEntries(prev => prev.filter(e => e.uid !== entry.uid));
         setSelected(null);
@@ -1105,7 +1140,7 @@ export default function AdminPage() {
     if (tab === 'dashboard') loadStats();
     if (tab === 'signalements') loadSignalements(sigFilter);
     if (tab === 'dossiers' && dossiers.length === 0 && refusedDossiers.length === 0) loadDossiers();
-    if (tab === 'utilisateurs' && entries.length === 0) loadUsers();
+    if ((tab === 'utilisateurs' || tab === 'comptes') && entries.length === 0) loadUsers();
     if (tab === 'annonces') { loadAnnoncesEnAttente(); loadAnnoncesSuspectes(); loadAnnoncesSuspendues(); }
     if (tab === 'lieux_naturels') { loadNaturalPlacesEnAttente(); loadAmenitySuggestions(); loadPhotoSuggestions(); }
     if (tab === 'tarification') loadTarification();
@@ -1125,6 +1160,37 @@ export default function AdminPage() {
   // « Admin » sur la carte (sinon un admin-éleveur comme un fondateur de
   // test disparaissait de tous les filtres par métier).
   const filtered = entries.filter(e => {
+    if (filter === 'admin') return !!e.isAdmin;
+    if (filter === 'en_attente' && e.statutPro !== 'en_attente') return false;
+    if (filter !== 'tous' && filter !== 'en_attente' && entryCategory(e) !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const name = `${e.firstName} ${e.lastName}`.toLowerCase();
+      if (!name.includes(q) && !e.email.toLowerCase().includes(q) && !e.nameElevage.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  // ── Comptes : un compte = un uid, dédupliqué depuis `entries` (qui liste
+  // un item par PROFIL — principal + secondaires). Le profil principal sert
+  // de représentant pour l'affichage/les filtres ; `profileCount` retrace
+  // combien de profils sont rattachés à ce compte.
+  const accounts: (ProfileEntry & { profileCount: number })[] = (() => {
+    const byUid = new Map<string, ProfileEntry & { profileCount: number }>();
+    for (const e of entries) {
+      const existing = byUid.get(e.uid);
+      if (!existing) {
+        byUid.set(e.uid, { ...e, profileCount: 1 });
+      } else {
+        existing.profileCount += 1;
+        if (existing.isSecondary && !e.isSecondary) {
+          byUid.set(e.uid, { ...e, profileCount: existing.profileCount });
+        }
+      }
+    }
+    return Array.from(byUid.values());
+  })();
+  const filteredAccounts = accounts.filter(e => {
     if (filter === 'admin') return !!e.isAdmin;
     if (filter === 'en_attente' && e.statutPro !== 'en_attente') return false;
     if (filter !== 'tous' && filter !== 'en_attente' && entryCategory(e) !== filter) return false;
@@ -1167,7 +1233,8 @@ export default function AdminPage() {
           signalements_conv:  { label: 'Conv. signalées',  icon: '💬' },
           avis_contestes:     { label: 'Avis contestés',   icon: '🚩', badge: avisContestesEnAttente || undefined },
           dossiers:           { label: 'Dossiers',         icon: '📂', badge: stats?.profilsEnAttente },
-          utilisateurs:       { label: 'Utilisateurs',     icon: '👥' },
+          comptes:            { label: 'Comptes',          icon: '👥' },
+          utilisateurs:       { label: 'Profils',          icon: '🪪' },
           animaux:            { label: 'Animaux',          icon: '🐾' },
           aliments:           { label: 'Aliments',         icon: '🥣' },
           annonces:           { label: 'Annonces',         icon: '📋', badge: annoncesEnAttente.length || undefined },
@@ -1179,7 +1246,7 @@ export default function AdminPage() {
         const GROUPS: { key: string; label: string; icon: string; tabs: AdminTab[] }[] = [
           { key: 'dashboard',    label: 'Dashboard',      icon: '📊', tabs: ['dashboard'] },
           { key: 'moderation',   label: 'Modération',     icon: '🚨', tabs: ['signalements', 'signalements_conv', 'avis_contestes'] },
-          { key: 'comptes',      label: 'Comptes',        icon: '👥', tabs: ['dossiers', 'utilisateurs'] },
+          { key: 'comptes',      label: 'Comptes',        icon: '👥', tabs: ['comptes', 'dossiers', 'utilisateurs'] },
           { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'aliments', 'annonces', 'lieux_naturels'] },
           { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'tarification', 'story_music'] },
         ];
@@ -1697,6 +1764,64 @@ export default function AdminPage() {
         )}
 
         {/* ─── Utilisateurs ──────────────────────────────────────────────── */}
+        {/* ─── Comptes — un uid = une ligne, tous ses profils dédupliqués ── */}
+        {tab === 'comptes' && (
+          <div className="max-w-4xl mx-auto">
+            {entries.length === 0 && !usersLoading && (
+              <div className="flex justify-center mb-4">
+                <button onClick={loadUsers}
+                  className="px-5 py-2 bg-[#0C5C6C] text-white rounded-xl text-sm font-semibold hover:bg-[#094F5D]"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Charger les comptes
+                </button>
+              </div>
+            )}
+            <input
+              type="text" placeholder="Rechercher par nom, structure ou email…"
+              value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 bg-white shadow-sm mb-4 outline-none focus:border-[#A7C79A] text-sm"
+              style={{ fontFamily: 'Galey, sans-serif' }}
+            />
+            <div className="flex gap-2 flex-wrap mb-4">
+              {[
+                { key: 'tous',       label: 'Tous' },
+                { key: 'en_attente', label: '⏳ En attente' },
+                { key: 'admin',      label: 'Admins' },
+              ].map(f => (
+                <button key={f.key} onClick={() => setFilter(f.key)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                    filter === f.key
+                      ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                  }`}
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {f.label}
+                </button>
+              ))}
+              <span className="ml-auto text-sm text-gray-400 self-center">
+                {filteredAccounts.length} compte(s)
+              </span>
+            </div>
+
+            {usersLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filteredAccounts.length === 0 ? (
+              <p className="text-center text-gray-400 py-12" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Aucun résultat.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {filteredAccounts.map(e => (
+                  <ProfileCard key={e.uid} entry={e} profileCount={e.profileCount} onClick={() => setSelected(e)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ─── Profils — un item par profil (principal + secondaires) ────── */}
         {tab === 'utilisateurs' && (
           <div className="max-w-4xl mx-auto">
             {entries.length === 0 && !usersLoading && (
@@ -2882,7 +3007,7 @@ export default function AdminPage() {
 
 // ─── ProfileCard ──────────────────────────────────────────────────────────────
 
-function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => void }) {
+function ProfileCard({ entry, onClick, profileCount }: { entry: ProfileEntry; onClick: () => void; profileCount?: number }) {
   const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ') || 'Nom inconnu';
   const statutStyle = STATUT_STYLE[entry.statutPro] ?? STATUT_STYLE.actif;
   const isPro = !!entry.catPro;
@@ -2911,6 +3036,7 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
           {entry.isAdmin && <Badge label="Admin" color="#7c3aed" />}
           {!entry.isSecondary && entry.isElevage && <Badge label="Éleveur" color="#0C5C6C" />}
           {entry.catPro && <Badge label={CAT_LABELS[entry.catPro] ?? entry.catPro} color="#0C5C6C" />}
+          {!!profileCount && profileCount > 1 && <Badge label={`${profileCount} profils`} color="#d97706" />}
           {(isPro || entry.isSecondary) && (
             <span className="text-xs px-2 py-0.5 rounded-full font-medium"
               style={{ background: statutStyle.bg, color: statutStyle.color }}>
@@ -2926,12 +3052,20 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
 
 // ─── ProfileModal ─────────────────────────────────────────────────────────────
 
+interface Achat {
+  id: string; annonce_id: string | null; statut: string;
+  date_achat: string; date_expiration: string | null;
+  stripe_payment_intent_id: string | null;
+  produits_ponctuels: { label: string; prix: number; description: string | null } | null;
+}
+
 interface ProfileDetail {
   uid: string;
   user: Record<string, unknown> | null;
   profiles: Record<string, unknown>[];
   abonnements: Record<string, unknown>[];
   plans: { profil_type: string; plan_code: string; label: string; prix_mensuel: number; actif: boolean }[];
+  achats: Achat[];
 }
 
 function ProfileModal({ entry, adminUid, onClose, onSetStatut, onDelete }: {
@@ -3058,6 +3192,29 @@ function ProfileModal({ entry, adminUid, onClose, onSetStatut, onDelete }: {
                   </>
                 );
               })()}
+            </Section>
+          )}
+
+          {/* ── Paiements (achats ponctuels — boosts, annonces supplémentaires…) ── */}
+          {detail && detail.achats.length > 0 && (
+            <Section title={`Paiements (${detail.achats.length})`}>
+              <div className="space-y-1.5">
+                {detail.achats.map(a => {
+                  const s = ACHAT_STATUT_STYLE[a.statut] ?? ACHAT_STATUT_STYLE.paye;
+                  return (
+                    <div key={a.id} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-1.5 flex-wrap">
+                      <span className="font-medium text-gray-700">{a.produits_ponctuels?.label ?? 'Achat'}</span>
+                      <span className="text-xs text-gray-400">
+                        {a.produits_ponctuels?.prix != null ? `${a.produits_ponctuels.prix} €` : ''}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                      <span className="ml-auto text-xs text-gray-500">
+                        {new Date(a.date_achat).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </Section>
           )}
 
