@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 /// S05 — Pro view : accès carnet santé d'un animal.
 /// Vérifie si le pro a accès, propose de le demander sinon.
@@ -39,10 +40,14 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     if (proUid == null) { setState(() => _loading = false); return; }
 
-    // Récupérer le profile_id du pro
-    final proProfile = await _supa.from('user_profiles')
-        .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
-    final proProfileId = proProfile?['id'] as String?;
+    // Profil pro ACTIF (pas forcément is_main — un compte multi-profil peut
+    // agir avec un profil vétérinaire/toiletteur secondaire) : sans ça, la
+    // demande d'accès partait avec le profile_id du profil principal du
+    // compte, pas celui réellement utilisé pour la demande.
+    final proProfileId = User_Info.activeProfileId.isNotEmpty
+        ? User_Info.activeProfileId
+        : (await _supa.from('user_profiles')
+            .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle())?['id'] as String?;
 
     try {
       if (proProfileId == null) { setState(() => _loading = false); return; }
@@ -73,10 +78,11 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
     if (proUid == null) return;
     setState(() => _requesting = true);
     try {
-      // Profil pro actif
-      final proProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
-      final proProfileId = proProfile?['id'] as String?;
+      // Profil pro ACTIF (voir commentaire dans _check()) — pas is_main.
+      final proProfileId = User_Info.activeProfileId.isNotEmpty
+          ? User_Info.activeProfileId
+          : (await _supa.from('user_profiles')
+              .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle())?['id'] as String?;
 
       // Profil propriétaire depuis animaux_proprietes
       final ownerData = await _supa.from('animaux_proprietes')
