@@ -14,6 +14,12 @@ async function as(uid) {
   return {
     // GET REST : as(uid).rest('animaux?select=id&limit=5')
     rest: (p) => call('GET', '/rest/v1/' + p),
+    // Écritures REST ; renvoient les lignes touchées (Prefer: return=representation).
+    insert: (table, row) => call('POST', `/rest/v1/${table}`, JSON.stringify(row),
+      { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    update: (p, patch) => call('PATCH', '/rest/v1/' + p, JSON.stringify(patch),
+      { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    del: (p) => call('DELETE', '/rest/v1/' + p, undefined, { Prefer: 'return=representation' }),
     list: (bucket, prefix = '') => call('POST', `/storage/v1/object/list/${bucket}`,
       JSON.stringify({ prefix, limit: 100 }), { 'Content-Type': 'application/json' }),
     // media / petsmatch n'acceptent pas text/plain → faux JPEG.

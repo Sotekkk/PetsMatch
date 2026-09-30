@@ -81,6 +81,24 @@ node scripts/staging/storage_test_phase2.js <fichier_ancien>
 - **Le fichier ancien** est un objet `media` sans `owner_id`, placé dans le dossier de Natacha. On le crée d'abord en SQL, par exemple `profiles/<uid Natacha>/legacy_1.jpg`. Il simule les fichiers déposés avant le 22/09.
 - **La migration testée** est `supabase/migration_storage_policies_phase2a.sql`.
 
+### `rls_messagerie_test.js`
+
+Il lance 27 tests RLS de la messagerie (conversations, messages, réactions), rôle par rôle : participant, tiers, employé, admin, non connecté.
+
+```
+node scripts/staging/rls_messagerie_test.js
+```
+
+Attention : le compte `PZlt…` est **admin**. Ne l'utilise pas comme « tiers » pour tester la messagerie.
+
+### `url_exposure_test.js`
+
+Il montre qui peut lire les colonnes contenant des liens vers des fichiers sensibles.
+
+```
+node scripts/staging/url_exposure_test.js
+```
+
 ### `test_storage_prod.sql`
 
 Ce sont les mêmes contrôles, en SQL. Chaque cas se déroule dans une transaction **annulée**, ce qui le rend utilisable sur la prod sans laisser de trace.
