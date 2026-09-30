@@ -89,7 +89,21 @@ Il lance 27 tests RLS de la messagerie (conversations, messages, réactions), r�
 node scripts/staging/rls_messagerie_test.js
 ```
 
-Attention : le compte `PZlt…` est **admin**. Ne l'utilise pas comme « tiers » pour tester la messagerie.
+### `rls_user_profiles_test.js`
+
+Il lance 20 tests sur `user_profiles` :
+- qui peut modifier quel profil (propriétaire, tiers, non connecté, admin) ;
+- le cogérant limité à son profil élevage ;
+- les colonnes réservées (abonnement, statut de vérification, badge) ;
+- l'essai gratuit accordé à la création d'un profil pro.
+
+```
+node scripts/staging/rls_user_profiles_test.js
+```
+
+Avant de le relancer, supprime la ligne d'essai qu'il laisse : la requête SQL à utiliser est dans l'en-tête du fichier.
+
+**Comptes administrateurs** (`users.is_admin`) : `plih…`, `PZlt…`, `xoRH…`, `YF9k…` (Natacha) et `zWCe…`. N'utilise jamais l'un d'eux comme « propriétaire ordinaire » ou « tiers » : un admin passe outre la plupart des règles. Comptes ordinaires utiles : `G59E…` (association), `RIOW…` (employé) et `2n7P…` (cogérant).
 
 ### `url_exposure_test.js`
 
