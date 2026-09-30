@@ -1,0 +1,8 @@
+# delete-user est appelée depuis l'admin web avec un token d'ID Firebase (pas
+# un JWT Supabase) : la vérification JWT de la passerelle Supabase rejette
+# systématiquement l'appel avant même d'exécuter la fonction
+# (UNAUTHORIZED_INVALID_JWT_FORMAT). L'autorisation admin est déjà vérifiée
+# À L'INTÉRIEUR de la fonction (Firestore users/{uid}.isAdmin), donc la
+# vérification JWT de la passerelle est à la fois inutile et bloquante ici.
+[functions.delete-user]
+verify_jwt = false

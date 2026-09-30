@@ -63,3 +63,7 @@ build/
 .netlify/
 deno.lock
 supabase/.temp/
+
+# Fichiers temporaires de la CLI Supabase
+website/supabase/.temp/
+supabase/.temp/
