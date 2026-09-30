@@ -105,6 +105,26 @@ Avant de le relancer, supprime la ligne d'essai qu'il laisse : la requête SQL �
 
 **Comptes administrateurs** (`users.is_admin`) : `plih…`, `PZlt…`, `xoRH…`, `YF9k…` (Natacha) et `zWCe…`. N'utilise jamais l'un d'eux comme « propriétaire ordinaire » ou « tiers » : un admin passe outre la plupart des règles. Comptes ordinaires utiles : `G59E…` (association), `RIOW…` (employé) et `2n7P…` (cogérant).
 
+### `rls_agenda_rdv_test.js`
+
+Il lance 37 tests sur l'agenda, les RDV, les notifications et le registre des mouvements. Il couvre :
+- le scoping par profil des employés et du cogérant ;
+- les droits d'écriture des employés ;
+- le client d'un RDV ;
+- les deux parties d'une cession ;
+- un tiers et un visiteur non connecté.
+
+```
+node scripts/staging/rls_agenda_rdv_test.js
+```
+
+Après chaque passage, fais le ménage avec les requêtes SQL indiquées dans l'en-tête du fichier.
+
+**Pièges appris en écrivant ces tests :**
+- Une suppression ou une modification exige aussi le droit de **lire** la ligne.
+- Une insertion avec relecture (`return=representation`) exige de pouvoir lire la ligne créée. Pour une ligne destinée à quelqu'un d'autre, utilise `insertMin`.
+- `auth.uid()` convertit l'identifiant en uuid, ce qui provoque une erreur 22P02 avec un identifiant Firebase. Utilise toujours `auth.jwt() ->> 'sub'`.
+
 ### `url_exposure_test.js`
 
 Il montre qui peut lire les colonnes contenant des liens vers des fichiers sensibles.

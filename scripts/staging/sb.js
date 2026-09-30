@@ -17,6 +17,10 @@ async function as(uid) {
     // Écritures REST ; renvoient les lignes touchées (Prefer: return=representation).
     insert: (table, row) => call('POST', `/rest/v1/${table}`, JSON.stringify(row),
       { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    // Insertion SANS relecture (comme l'appli / le site pour une ligne destinée
+    // à quelqu'un d'autre : une relecture exigerait le droit de la lire).
+    insertMin: (table, row) => call('POST', `/rest/v1/${table}`, JSON.stringify(row),
+      { 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
     update: (p, patch) => call('PATCH', '/rest/v1/' + p, JSON.stringify(patch),
       { 'Content-Type': 'application/json', Prefer: 'return=representation' }),
     del: (p) => call('DELETE', '/rest/v1/' + p, undefined, { Prefer: 'return=representation' }),
