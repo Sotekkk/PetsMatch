@@ -146,7 +146,9 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
 
   Future<void> _toggleLike(Map<String, dynamic> u) async {
     final newLiked = !(u['owner_liked'] == true);
-    await _supa.from('pension_updates').update({'owner_liked': newLiked}).eq('id', u['id'] as String);
+    // RPC : le propriétaire ne peut modifier que sa réaction (RLS : écriture = pro)
+    await _supa.rpc('pm_reagir_nouvelle_pension',
+        params: {'p_id': u['id'], 'p_liked': newLiked, 'p_reply': null});
     if (newLiked) unawaited(_notifyPension(u, action: 'like'));
     _load();
   }
@@ -170,10 +172,8 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
       ),
     );
     if (result == null || result.isEmpty) return;
-    await _supa.from('pension_updates').update({
-      'owner_reply': result,
-      'owner_reply_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', u['id'] as String);
+    await _supa.rpc('pm_reagir_nouvelle_pension',
+        params: {'p_id': u['id'], 'p_liked': null, 'p_reply': result});
     unawaited(_notifyPension(u, action: 'reply', message: result));
     _load();
   }

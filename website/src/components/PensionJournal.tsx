@@ -127,7 +127,8 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
 
   async function toggleLike(u: Update) {
     const newLiked = !u.owner_liked;
-    await supabase.from('pension_updates').update({ owner_liked: newLiked }).eq('id', u.id);
+    // RPC : le propriétaire ne peut modifier que sa réaction (RLS : écriture = pro)
+    await supabase.rpc('pm_reagir_nouvelle_pension', { p_id: u.id, p_liked: newLiked, p_reply: null });
     if (newLiked) notifyPension(u, 'like');
     load();
   }
@@ -135,9 +136,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
   async function reply(u: Update) {
     const message = window.prompt('Votre réponse à la pension :', u.owner_reply ?? '');
     if (!message || !message.trim()) return;
-    await supabase.from('pension_updates').update({
-      owner_reply: message.trim(), owner_reply_at: new Date().toISOString(),
-    }).eq('id', u.id);
+    await supabase.rpc('pm_reagir_nouvelle_pension', { p_id: u.id, p_liked: null, p_reply: message.trim() });
     notifyPension(u, 'reply', message.trim());
     load();
   }
