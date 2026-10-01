@@ -1,4 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// Vérifie la réponse d'un défi (question / QR code) CÔTÉ SERVEUR : la
+/// réponse attendue n'est plus lisible par les joueurs (masquée dans
+/// balades_ludiques_points_complet sauf pour le créateur) — avant, elle
+/// était téléchargée sur le téléphone et comparée localement (triche).
+Future<bool> verifierDefi(String pointId, String reponse) async {
+  try {
+    final ok = await Supabase.instance.client
+        .rpc('pm_verifier_defi', params: {'p_point_id': pointId, 'p_reponse': reponse});
+    return ok == true;
+  } catch (_) {
+    return false;
+  }
+}
 
 // ─── Palette & constantes partagées au module Balades ludiques ────────────────
 

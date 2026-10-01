@@ -37,7 +37,7 @@ export default function BaladeDetailPage() {
     setLoading(true);
     const [{ data: b }, { data: pts }, { data: av }] = await Promise.all([
       supabase.from('balades_ludiques').select('*').eq('id', id).single(),
-      supabase.from('balades_ludiques_points').select('*').eq('balade_id', id).order('ordre'),
+      supabase.from('balades_ludiques_points_complet').select('*').eq('balade_id', id).order('ordre'),
       supabase.from('balades_ludiques_avis').select('*').eq('balade_id', id).order('created_at', { ascending: false }),
     ]);
     setBalade(b as Balade);

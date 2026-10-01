@@ -3,10 +3,11 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../balades_ludiques_shared.dart';
 
 class DefiQrWidget extends StatefulWidget {
-  final String qrCodeValeurAttendue;
+  /// Point du défi : le code scanné est vérifié côté serveur (verifierDefi).
+  final String pointId;
   final Future<void> Function(String valeurScannee) onValidated;
 
-  const DefiQrWidget({super.key, required this.qrCodeValeurAttendue, required this.onValidated});
+  const DefiQrWidget({super.key, required this.pointId, required this.onValidated});
 
   @override
   State<DefiQrWidget> createState() => _DefiQrWidgetState();
@@ -22,11 +23,14 @@ class _DefiQrWidgetState extends State<DefiQrWidget> {
       MaterialPageRoute(builder: (_) => const _QrScannerPage()),
     );
     if (result == null) return;
-    if (result.trim() != widget.qrCodeValeurAttendue.trim()) {
-      setState(() => _erreur = true);
+    setState(() => _busy = true);
+    final ok = await verifierDefi(widget.pointId, result.trim());
+    if (!mounted) return;
+    if (!ok) {
+      setState(() { _erreur = true; _busy = false; });
       return;
     }
-    setState(() { _erreur = false; _busy = true; });
+    setState(() => _erreur = false);
     await widget.onValidated(result.trim());
     if (mounted) setState(() => _busy = false);
   }

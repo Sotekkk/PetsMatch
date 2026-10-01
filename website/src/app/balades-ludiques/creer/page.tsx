@@ -76,7 +76,7 @@ function CreerBaladeContent() {
     if (!editId || !user) return;
     (async () => {
       const { data: b } = await supabase.from('balades_ludiques').select('*').eq('id', editId).single();
-      const { data: pts } = await supabase.from('balades_ludiques_points').select('*').eq('balade_id', editId).order('ordre');
+      const { data: pts } = await supabase.from('balades_ludiques_points_complet').select('*').eq('balade_id', editId).order('ordre');
       if (b) {
         setTitre(b.titre ?? ''); setDescription(b.description ?? ''); setCoverUrl(b.cover_url ?? null);
         setEspece(b.espece_cible ?? 'tous'); setFamille(!!b.famille); setSportif(!!b.sportif); setPmr(!!b.accessible_pmr);

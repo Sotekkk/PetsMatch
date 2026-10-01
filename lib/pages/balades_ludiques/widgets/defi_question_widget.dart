@@ -3,10 +3,11 @@ import '../balades_ludiques_shared.dart';
 
 class DefiQuestionWidget extends StatefulWidget {
   final String question;
-  final String reponseAttendue;
+  /// Point du défi : la réponse est vérifiée côté serveur (verifierDefi).
+  final String pointId;
   final Future<void> Function(String reponse) onValidated;
 
-  const DefiQuestionWidget({super.key, required this.question, required this.reponseAttendue, required this.onValidated});
+  const DefiQuestionWidget({super.key, required this.question, required this.pointId, required this.onValidated});
 
   @override
   State<DefiQuestionWidget> createState() => _DefiQuestionWidgetState();
@@ -18,14 +19,16 @@ class _DefiQuestionWidgetState extends State<DefiQuestionWidget> {
   bool _busy = false;
 
   Future<void> _submit() async {
-    final saisie = _ctrl.text.trim().toLowerCase();
-    final attendu = widget.reponseAttendue.trim().toLowerCase();
+    final saisie = _ctrl.text.trim();
     if (saisie.isEmpty) return;
-    if (saisie != attendu) {
-      setState(() => _erreur = true);
+    setState(() => _busy = true);
+    final ok = await verifierDefi(widget.pointId, saisie);
+    if (!mounted) return;
+    if (!ok) {
+      setState(() { _erreur = true; _busy = false; });
       return;
     }
-    setState(() { _erreur = false; _busy = true; });
+    setState(() => _erreur = false);
     await widget.onValidated(_ctrl.text.trim());
     if (mounted) setState(() => _busy = false);
   }

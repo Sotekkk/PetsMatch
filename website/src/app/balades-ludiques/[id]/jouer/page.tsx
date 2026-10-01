@@ -48,7 +48,7 @@ export default function JouerPage() {
     if (!user || !activeProfileId) return;
     setLoading(true);
     const { data: b } = await supabase.from('balades_ludiques').select('*').eq('id', id).single();
-    const { data: pts } = await supabase.from('balades_ludiques_points').select('*').eq('balade_id', id).order('ordre');
+    const { data: pts } = await supabase.from('balades_ludiques_points_complet').select('*').eq('balade_id', id).order('ordre');
     let { data: prog } = await supabase.from('balades_ludiques_progressions').select('*').eq('balade_id', id).eq('joueur_profile_id', activeProfileId).maybeSingle();
     if (!prog) {
       const { data: inserted } = await supabase.from('balades_ludiques_progressions').insert({ balade_id: id, joueur_uid: user.uid, joueur_profile_id: activeProfileId }).select().single();
@@ -127,17 +127,22 @@ export default function JouerPage() {
     if (estTermine) await onCompletion();
   }
 
-  function validerReponse() {
-    if (!currentPoint) return;
-    const saisie = reponse.trim().toLowerCase();
-    const attendu = (currentPoint.question_reponse ?? '').trim().toLowerCase();
-    if (saisie !== attendu) { setErreurReponse(true); return; }
+  // Réponse vérifiée CÔTÉ SERVEUR (pm_verifier_defi) : la réponse attendue
+  // n'est plus lisible par les joueurs (avant : téléchargée et comparée ici).
+  async function verifierDefi(pointId: string, valeur: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('pm_verifier_defi', { p_point_id: pointId, p_reponse: valeur });
+    return !error && data === true;
+  }
+
+  async function validerReponse() {
+    if (!currentPoint || !reponse.trim()) return;
+    if (!(await verifierDefi(currentPoint.id, reponse.trim()))) { setErreurReponse(true); return; }
     validerEtape({ type_preuve: 'texte', preuve_texte: reponse.trim() });
   }
 
-  function validerQr() {
-    if (!currentPoint) return;
-    if (codeQr.trim() !== (currentPoint.qr_code_value ?? '').trim()) { setErreurQr(true); return; }
+  async function validerQr() {
+    if (!currentPoint || !codeQr.trim()) return;
+    if (!(await verifierDefi(currentPoint.id, codeQr.trim()))) { setErreurQr(true); return; }
     validerEtape({ type_preuve: 'qr_code', preuve_texte: codeQr.trim() });
   }
 

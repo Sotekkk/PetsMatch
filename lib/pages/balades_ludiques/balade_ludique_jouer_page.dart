@@ -39,7 +39,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final balade = await _supa.from('balades_ludiques').select().eq('id', widget.baladeId).single();
-    final points = await _supa.from('balades_ludiques_points').select().eq('balade_id', widget.baladeId).order('ordre');
+    final points = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId).order('ordre');
     var progression = await _supa.from('balades_ludiques_progressions').select()
         .eq('balade_id', widget.baladeId).eq('joueur_profile_id', _pid).maybeSingle();
     progression ??= await _supa.from('balades_ludiques_progressions').insert({
@@ -292,12 +292,12 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
       case 'question':
         return DefiQuestionWidget(
           question: (point['question_texte'] as String?) ?? '',
-          reponseAttendue: (point['question_reponse'] as String?) ?? '',
+          pointId: point['id'].toString(),
           onValidated: (rep) => _onValidated(point, texte: rep),
         );
       case 'qr_code':
         return DefiQrWidget(
-          qrCodeValeurAttendue: (point['qr_code_value'] as String?) ?? '',
+          pointId: point['id'].toString(),
           onValidated: (v) => _onValidated(point, texte: v),
         );
       case 'gps_seul':

@@ -91,21 +91,18 @@ class _BetaGatePageState extends State<_BetaGatePage> {
     super.dispose();
   }
 
-  /// Mot de passe de référence : Supabase d'abord, sinon la constante compilée.
-  Future<String> _referencePassword() async {
+  /// Vérifie le mot de passe CÔTÉ SERVEUR (pm_verifier_code_beta) : la valeur
+  /// de référence n'est plus lisible via l'API (avant : téléchargée depuis
+  /// app_config et comparée ici). Hors ligne → repli sur la constante compilée.
+  Future<bool> _codeValide(String saisie) async {
     try {
-      final row = await Supabase.instance.client
-          .from('app_config')
-          .select('value')
-          .eq('key', 'beta_password')
-          .maybeSingle()
+      final ok = await Supabase.instance.client
+          .rpc('pm_verifier_code_beta', params: {'p_code': saisie})
           .timeout(const Duration(seconds: 6));
-      final remote = (row?['value'] as String?)?.trim() ?? '';
-      if (remote.isNotEmpty) return remote;
+      return ok == true;
     } catch (_) {
-      // hors ligne ou table absente → on utilise la constante
+      return saisie == kBetaPassword;
     }
-    return kBetaPassword;
   }
 
   Future<void> _submit() async {
@@ -115,8 +112,7 @@ class _BetaGatePageState extends State<_BetaGatePage> {
       _error = null;
     });
     final entered = _controller.text.trim();
-    final reference = await _referencePassword();
-    if (entered.isNotEmpty && entered == reference) {
+    if (entered.isNotEmpty && await _codeValide(entered)) {
       await widget.onUnlocked();
     } else {
       if (mounted) {
