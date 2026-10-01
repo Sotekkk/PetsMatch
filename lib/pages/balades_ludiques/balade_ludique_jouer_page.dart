@@ -39,7 +39,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final balade = await _supa.from('balades_ludiques').select().eq('id', widget.baladeId).single();
-    final points = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId).order('ordre');
+    final points = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId).order('ordre', ascending: true);
     var progression = await _supa.from('balades_ludiques_progressions').select()
         .eq('balade_id', widget.baladeId).eq('joueur_profile_id', _pid).maybeSingle();
     progression ??= await _supa.from('balades_ludiques_progressions').insert({
@@ -88,8 +88,18 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
         'preuve_lng': lng,
         'distance_calculee_m': distance,
       });
-    } catch (_) {
-      // Déjà validée (contrainte UNIQUE) — on continue simplement.
+    } on PostgrestException catch (e) {
+      // Déjà validée (contrainte UNIQUE) — on continue simplement ;
+      // toute autre erreur bloque l'étape au lieu de la sauter.
+      if (e.code != '23505') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("L'étape n'a pas pu être validée, réessayez. (${e.message})"),
+            backgroundColor: Colors.red,
+          ));
+        }
+        return;
+      }
     }
 
     final nouveauNb = ((_progression!['nb_points_valides'] as int?) ?? 0) + 1;

@@ -221,7 +221,7 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
                 padding: EdgeInsets.fromLTRB(16, 0, 16, bottom + 90),
                 sliver: SliverList.separated(
                   itemCount: _filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  separatorBuilder: (_, __) => const SizedBox(height: 16),
                   itemBuilder: (_, i) => _BaladeCard(
                     balade: _filtered[i],
                     onTap: () => _openDetail(_filtered[i]['id'] as String),
@@ -394,68 +394,87 @@ class _BaladeCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 2))],
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 14, offset: const Offset(0, 4))],
         ),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          // ── Thumbnail ──
-          ClipRRect(
-            borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
-            child: SizedBox(
-              width: 88,
-              child: cover.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _placeholder())
-                  : _placeholder(),
-            ),
-          ),
-          // ── Contenu ──
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  if (isOfficiel) const Text('🏆 ', style: TextStyle(fontSize: 11)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // ── Visuel + titre ──
+            SizedBox(
+              height: 170,
+              width: double.infinity,
+              child: Stack(fit: StackFit.expand, children: [
+                cover.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => _placeholder())
+                    : _placeholder(),
+                Positioned.fill(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: blDifficulteColor(difficulte).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                        stops: const [0.45, 1.0],
+                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
+                      ),
                     ),
-                    child: Text(blDifficulteLabel(difficulte),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: blDifficulteColor(difficulte))),
                   ),
-                ]),
-                const SizedBox(height: 4),
-                Text(balade['titre']?.toString() ?? '',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1A1A1A))),
-                const SizedBox(height: 4),
-                if (ville.isNotEmpty)
-                  Row(children: [
-                    Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
-                    const SizedBox(width: 3),
-                    Text('${blEspeceEmoji(espece)}  $ville',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+                Positioned(
+                  top: 12, left: 12,
+                  child: Row(children: [
+                    _badge(blDifficulteLabel(difficulte), blDifficulteColor(difficulte)),
+                    if (isOfficiel) ...[
+                      const SizedBox(width: 6),
+                      _badge('🏆 Officiel', kBlOrange),
+                    ],
                   ]),
-                const SizedBox(height: 5),
-                Wrap(spacing: 5, runSpacing: 4, children: [
-                  if (balade['duree_min'] != null)
-                    _chip(blDureeLabel(balade['duree_min'] as int?), Colors.grey.shade500),
-                  _chip(balade['gratuit'] == true ? 'Gratuit' : '${balade['prix'] ?? ''} €', const Color(0xFF2E7D5E)),
-                  if (balade['note_moyenne'] != null)
-                    _chip('⭐ ${balade['note_moyenne']}', Colors.amber.shade700),
-                ]),
+                ),
+                Positioned(
+                  top: 12, right: 12,
+                  child: _badge(balade['gratuit'] == true ? 'Gratuit' : '${balade['prix'] ?? ''} €', const Color(0xFF2E7D5E)),
+                ),
+                Positioned(
+                  bottom: 12, left: 14, right: 14,
+                  child: Text(balade['titre']?.toString() ?? '',
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w800,
+                          color: Colors.white, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
+                ),
               ]),
             ),
-          ),
-          // ── Chevron ──
-          Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: Center(child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300, size: 22)),
-          ),
-        ]),
+            // ── Infos ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Row(children: [
+                Text(blEspeceEmoji(espece), style: const TextStyle(fontSize: 14)),
+                if (ville.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
+                  const SizedBox(width: 2),
+                  Flexible(child: Text(ville, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87))),
+                ],
+                if (balade['duree_min'] != null) ...[
+                  const SizedBox(width: 10),
+                  Icon(Icons.schedule_rounded, size: 14, color: Colors.grey.shade500),
+                  const SizedBox(width: 3),
+                  Text(blDureeLabel(balade['duree_min'] as int?),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87)),
+                ],
+                if (balade['note_moyenne'] != null) ...[
+                  const SizedBox(width: 10),
+                  const Icon(Icons.star_rounded, size: 15, color: Color(0xFFFDD835)),
+                  const SizedBox(width: 2),
+                  Text('${balade['note_moyenne']}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
+                ],
+                const Spacer(),
+                Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey.shade400),
+              ]),
+            ),
+          ]),
+        ),
       ),
     );
   }
@@ -465,12 +484,12 @@ class _BaladeCard extends StatelessWidget {
       gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
         colors: [Color(0xFF2E7D5E), Color(0xFF7ED69D)]),
     ),
-    child: const Center(child: Icon(Icons.route_rounded, color: Colors.white, size: 32)),
+    child: const Center(child: Text('🗺️', style: TextStyle(fontSize: 56))),
   );
 
-  Widget _chip(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
-    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+  Widget _badge(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
+    child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
   );
 }

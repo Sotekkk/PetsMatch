@@ -31,6 +31,13 @@ class _DefiPhotoWidgetState extends State<DefiPhotoWidget> {
     try {
       final url = await uploadPhoto(_photo!, widget.storagePath);
       await widget.onValidated(url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("La photo n'a pas pu être envoyée, réessayez. ($e)"),
+          backgroundColor: Colors.red,
+        ));
+      }
     } finally {
       if (mounted) setState(() => _uploading = false);
     }

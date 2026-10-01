@@ -38,7 +38,7 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
     try {
       var q = _supa.from('prestations_education').select().eq('pro_uid', uid).eq('actif', true);
       if (User_Info.activeProfileId.isNotEmpty) q = q.eq('pro_profile_id', User_Info.activeProfileId);
-      final rows = await q.order('ordre').order('created_at');
+      final rows = await q.order('ordre', ascending: true).order('created_at', ascending: true);
       if (mounted) setState(() { _prestations = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);

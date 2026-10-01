@@ -40,7 +40,7 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
     setState(() => _loading = true);
     try {
       final balade = await _supa.from('balades_ludiques').select().eq('id', widget.baladeId).single();
-      final points = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId).order('ordre');
+      final points = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId).order('ordre', ascending: true);
       final avis = await _supa.from('balades_ludiques_avis').select().eq('balade_id', widget.baladeId).order('created_at', ascending: false);
 
       Map<String, dynamic>? progression;

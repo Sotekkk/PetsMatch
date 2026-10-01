@@ -7281,7 +7281,7 @@ class _EducationTabPState extends State<_EducationTabP> {
       List exercices = const [];
       try {
         objectifs = await _supa.from('education_objectifs').select()
-            .eq('animal_id', widget.animalId!).order('ordre').order('created_at');
+            .eq('animal_id', widget.animalId!).order('ordre', ascending: true).order('created_at', ascending: true);
       } catch (_) {}
       try {
         exercices = await _supa.from('exercices_attribues').select()

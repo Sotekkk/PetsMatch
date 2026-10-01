@@ -747,7 +747,7 @@ class PlanningService {
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   static Future<List<Map<String, dynamic>>> _loadEtapes(String templateId) async {
-    final rows = await _supa.from('plan_template_etapes').select().eq('template_id', templateId).order('ordre');
+    final rows = await _supa.from('plan_template_etapes').select().eq('template_id', templateId).order('ordre', ascending: true);
     return List<Map<String, dynamic>>.from(rows);
   }
 

@@ -93,7 +93,7 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
         _supa.from('credit_wallets').select().eq('uid', uid).maybeSingle(),
         _supa.from('credit_transactions').select().eq('uid', uid)
             .order('created_at', ascending: false).limit(50),
-        _supa.from('credit_packs').select().eq('actif', true).order('ordre'),
+        _supa.from('credit_packs').select().eq('actif', true).order('ordre', ascending: true),
       ]);
 
       final wallet = results[0] as Map<String, dynamic>?;

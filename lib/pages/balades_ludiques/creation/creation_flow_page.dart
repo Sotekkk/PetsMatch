@@ -63,7 +63,7 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
   Future<void> _loadExisting() async {
     setState(() => _loading = true);
     final b = await _supa.from('balades_ludiques').select().eq('id', widget.baladeId!).single();
-    final pts = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId!).order('ordre');
+    final pts = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId!).order('ordre', ascending: true);
     titreCtrl.text = b['titre'] ?? '';
     descriptionCtrl.text = b['description'] ?? '';
     coverUrl = b['cover_url'];

@@ -81,7 +81,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     try {
       final results = await Future.wait([
         _supa.from('education_objectifs').select().eq('animal_id', widget.animalId)
-            .order('ordre').order('created_at'),
+            .order('ordre', ascending: true).order('created_at', ascending: true),
         _supa.from('education_progression').select().eq('animal_id', widget.animalId)
             .order('date_seance', ascending: false),
         _supa.from('animaux').select('uid_proprietaire, uid_eleveur')

@@ -266,7 +266,7 @@ class _PromenadesPageState extends State<PromenadePage> {
                 padding: EdgeInsets.fromLTRB(16, 0, 16, bottom + 90),
                 sliver: SliverList.separated(
                   itemCount: _filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  separatorBuilder: (_, __) => const SizedBox(height: 16),
                   itemBuilder: (_, i) {
                     final p = _filtered[i];
                     final id = p['id'].toString();
@@ -705,113 +705,117 @@ class _PromenadesCard extends StatelessWidget {
         ? (partsData.first['count'] as num?)?.toInt() ?? 0 : 0;
     final isFull = !estParticipant && participantsMax != null && nbParticipants >= participantsMax;
 
+    final statutLabel = isFull ? 'Complet'
+        : myStatut == 'accepte' ? '✓ Inscrit'
+        : myStatut != null ? '⏳ En attente' : null;
+    final statutColor = isFull ? Colors.grey.shade700
+        : myStatut == 'accepte' ? const Color(0xFF2E7D5E) : Colors.amber.shade800;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 2))],
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 14, offset: const Offset(0, 4))],
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        // ── Thumbnail ──
-        ClipRRect(
-          borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
-          child: SizedBox(
-            width: 88,
-            child: photoUrl != null
-                ? Image.network(photoUrl, fit: BoxFit.cover)
-                : Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft, end: Alignment.bottomRight,
-                        colors: [Color(0xFF2E7D5E), Color(0xFF7ED69D)],
-                      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // ── Visuel + titre ──
+          SizedBox(
+            height: 170,
+            width: double.infinity,
+            child: Stack(fit: StackFit.expand, children: [
+              photoUrl != null && photoUrl.isNotEmpty
+                  ? Image.network(photoUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholder())
+                  : _placeholder(),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                      stops: const [0.45, 1.0],
+                      colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
                     ),
-                    child: const Center(child: Icon(Icons.directions_walk_rounded, color: Colors.white, size: 34)),
                   ),
-          ),
-        ),
-        // ── Contenu ──
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ),
+              ),
               if (dateHeure.isNotEmpty)
-                Text(_fmtDateRelative(dateHeure),
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-              const SizedBox(height: 3),
-              Text(titre,
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 14, color: Color(0xFF1E2025)),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 5),
+                Positioned(
+                  top: 12, left: 12,
+                  child: _badge('📅 ${_fmtDateRelative(dateHeure)}', const Color(0xFF2E7D5E)),
+                ),
+              if (statutLabel != null)
+                Positioned(top: 12, right: 12, child: _badge(statutLabel, statutColor)),
+              Positioned(
+                bottom: 12, left: 14, right: 14,
+                child: Text(titre,
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w800,
+                        color: Colors.white, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
+              ),
+            ]),
+          ),
+          // ── Infos ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (lieu.isNotEmpty)
                 Row(children: [
-                  Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                  Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
                   const SizedBox(width: 4),
-                  Expanded(child: Text(lieu,
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
-                      maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  Expanded(child: Text(lieu, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87))),
                   if (lat != null && lng != null)
                     GestureDetector(
                       onTap: () => _openNavigation(lat, lng),
-                      child: const Icon(Icons.navigation_outlined, size: 14, color: Color(0xFF2E7D5E)),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8),
+                        child: Icon(Icons.navigation_outlined, size: 18, color: Color(0xFF2E7D5E)),
+                      ),
                     ),
                 ]),
-              const SizedBox(height: 3),
+              const SizedBox(height: 6),
               Row(children: [
-                Icon(Icons.group_outlined, size: 12, color: isFull ? Colors.red.shade300 : Colors.grey.shade400),
+                Icon(Icons.group_outlined, size: 14, color: isFull ? Colors.red.shade400 : Colors.grey.shade500),
                 const SizedBox(width: 4),
                 Text(
                   participantsMax != null ? '$nbParticipants/$participantsMax participants' : '$nbParticipants participants',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      color: isFull ? Colors.red.shade300 : Colors.grey.shade500,
-                      fontWeight: isFull ? FontWeight.w700 : FontWeight.normal),
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: isFull ? Colors.red.shade400 : Colors.black87,
+                      fontWeight: isFull ? FontWeight.w700 : FontWeight.w600),
                 ),
-              ]),
-              if (espece.isNotEmpty && espece != 'Toutes' && espece != 'Toutes espèces') ...[
-                const SizedBox(height: 3),
-                Row(children: [
-                  Icon(Icons.pets, size: 12, color: Colors.grey.shade400),
+                if (espece.isNotEmpty && espece != 'Toutes' && espece != 'Toutes espèces') ...[
+                  const SizedBox(width: 10),
+                  Icon(Icons.pets, size: 13, color: Colors.grey.shade500),
                   const SizedBox(width: 4),
-                  Text('$espece bienvenus',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-                ]),
-              ],
-              if (myStatut != null || isFull) ...[
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isFull ? Colors.grey.shade100
-                          : myStatut == 'accepte' ? const Color(0xFF7ED69D).withValues(alpha: 0.15)
-                          : Colors.amber.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      isFull ? 'Complet'
-                          : myStatut == 'accepte' ? '✓ Inscrit'
-                          : '⏳ En attente',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700,
-                          color: isFull ? Colors.grey
-                              : myStatut == 'accepte' ? const Color(0xFF2E7D5E)
-                              : Colors.amber.shade800),
-                    ),
-                  ),
-                ),
-              ],
+                  Flexible(child: Text('$espece bienvenus', maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87))),
+                ],
+                const Spacer(),
+                Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey.shade400),
+              ]),
             ]),
           ),
-        ),
-        // ── Chevron ──
-        Padding(
-          padding: const EdgeInsets.only(right: 10),
-          child: Center(child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300, size: 22)),
-        ),
-      ]),
+        ]),
+      ),
     );
   }
+
+  Widget _placeholder() => Container(
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [Color(0xFF2E7D5E), Color(0xFF7ED69D)],
+      ),
+    ),
+    child: const Center(child: Text('🐾', style: TextStyle(fontSize: 56))),
+  );
+
+  Widget _badge(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
+    child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+  );
 }
 
 // ─── Sheet création ───────────────────────────────────────────────────────────

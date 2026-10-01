@@ -6649,7 +6649,7 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
     try {
       final results = await Future.wait([
         _supa.from('credit_wallets').select('solde').eq('uid', widget.myUid).maybeSingle(),
-        _supa.from('credit_packs').select().eq('actif', true).order('ordre'),
+        _supa.from('credit_packs').select().eq('actif', true).order('ordre', ascending: true),
       ]);
       if (mounted) {
         setState(() {

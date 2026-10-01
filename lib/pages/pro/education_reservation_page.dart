@@ -163,7 +163,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       if (_resolvedProfileId != null && _resolvedProfileId!.isNotEmpty) {
         q = q.eq('pro_profile_id', _resolvedProfileId!);
       }
-      final rows = await q.order('ordre').order('created_at');
+      final rows = await q.order('ordre', ascending: true).order('created_at', ascending: true);
       var all = List<Map<String, dynamic>>.from(rows as List);
 
       await _checkFirstTimeClient();
