@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { usePensionPlan } from '@/lib/use-plan';
 import { sendNotification } from '@/lib/notifications';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 interface Entree {
   id: string;
@@ -60,7 +61,7 @@ export default function PensionContratPage() {
       supabase.from('pension_entrees').select('*').eq('pro_uid', user.uid).order('date_entree', { ascending: false }).limit(50),
       supabase.from('documents_animaux').select('id, pension_entree_id, token, statut').eq('uid_eleveur', user.uid).eq('type', 'contrat_hebergement'),
       supabase.from('enclos_chenil').select('id, nom').eq('uid_eleveur', user.uid),
-      supabase.from('users').select('arrhes_pourcentage').eq('uid', user.uid).maybeSingle(),
+      supabase.from('users_complet').select('arrhes_pourcentage').eq('uid', user.uid).maybeSingle(),
     ]);
     setEntrees(ent ?? []);
     setDocs(Object.fromEntries(((docsData ?? []) as Doc[]).map(d => [d.pension_entree_id, d])));
@@ -97,7 +98,7 @@ export default function PensionContratPage() {
     const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
     const contact = entree.proprietaire_contact?.trim();
     if (contact?.includes('@')) {
-      const { data: targetUser } = await supabase.from('users').select('uid').eq('email', contact).maybeSingle();
+      const targetUser = await trouverUtilisateurParEmail(contact);
       if (targetUser?.uid) {
         const pensionNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'La pension';
         await sendNotification({

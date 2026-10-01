@@ -82,7 +82,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
 
     // Résoudre le profile_id particulier de l'utilisateur connecté (un profil
     // particulier existe toujours, mais peut être secondaire — pas is_main).
-    final particulierProfile = await supa.from('user_profiles')
+    final particulierProfile = await supa.from('user_profiles_complet')
         .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     final particulierProfileId = particulierProfile?['id'] as String?;
 

@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/contrats/contrat_finalize.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/widgets/signature_pad.dart';
 import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -192,11 +193,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     final proPid = _doc!['pro_profile_id'] as String?;
     Map<String, dynamic>? up;
     if (proPid != null && proPid.isNotEmpty) {
-      up = await _supa.from('user_profiles').select(upFields).eq('id', proPid).maybeSingle();
+      up = await _supa.from('user_profiles_complet').select(upFields).eq('id', proPid).maybeSingle();
     }
-    up ??= await _supa.from('user_profiles').select(upFields)
+    up ??= await _supa.from('user_profiles_complet').select(upFields)
         .eq('uid', elvUid).eq('profile_type', 'eleveur').maybeSingle();
-    up ??= await _supa.from('user_profiles').select(upFields)
+    up ??= await _supa.from('user_profiles_complet').select(upFields)
         .eq('uid', elvUid).eq('is_main', true).maybeSingle();
     _eleveur = _mapEleveur(up != null ? Map<String, dynamic>.from(up) : null);
 
@@ -215,7 +216,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       final a = await _supa.from('animaux').select('*').eq('id', animalId).maybeSingle();
       if (a != null) _animal = Map<String, dynamic>.from(a);
     }
-    final up = await _supa.from('user_profiles')
+    final up = await _supa.from('user_profiles_complet')
         .select('nom, firstname, lastname')
         .eq('uid', _doc!['uid_eleveur'] as String)
         .eq('is_main', true).maybeSingle();
@@ -245,7 +246,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       const f = 'nom, firstname, lastname, siret, phone_number, numero_elevage, '
           'email_contact, adresse, rue, ville, code_postal, rue_pro, ville_pro, '
           'code_postal_pro';
-      up = await _supa.from('user_profiles').select(f)
+      up = await _supa.from('user_profiles_complet').select(f)
           .eq('uid', cedantUid).eq('is_main', true).maybeSingle();
     }
     // Adapte les colonnes *_pro vers ce que _mapEleveur attend.
@@ -610,7 +611,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       // Notifier l'éleveur
       final eleveurUid = _doc!['uid_eleveur'] as String?;
       if (eleveurUid != null) {
-        final prof = await _supa.from('user_profiles')
+        final prof = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', eleveurUid).eq('profile_type', 'eleveur').maybeSingle();
         await _supa.from('notifications').insert({
           'uid': eleveurUid,
@@ -693,7 +694,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       // Notifier le cédant.
       final cedantUid = _cert!['cedant_uid'] as String?;
       if (cedantUid != null) {
-        final prof = await _supa.from('user_profiles')
+        final prof = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', cedantUid).eq('is_main', true).maybeSingle();
         final who = (nom.trim().isNotEmpty ? nom.trim()
             : '${_cert!['acquereur_prenom'] ?? ''} ${_cert!['acquereur_nom'] ?? ''}'.trim());
@@ -733,7 +734,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       // Résoudre l'uid de l'acquéreur si absent.
       var acqUid = _cert!['acquereur_uid'] as String?;
       if ((acqUid == null || acqUid.isEmpty) && email != null && email.isNotEmpty) {
-        final u = await _supa.from('users').select('uid').eq('email', email.toLowerCase()).maybeSingle();
+        final u = await trouverUtilisateurParEmail(email.toLowerCase());
         acqUid = u?['uid'] as String?;
         if (acqUid != null) {
           await _supa.from('certificats_engagement')
@@ -800,13 +801,13 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     final recorded = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
     if (recorded != null && recorded.isNotEmpty) return recorded;
     try {
-      final part = await _supa.from('user_profiles')
+      final part = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('profile_type', 'particulier')
           .order('is_main', ascending: false).limit(1).maybeSingle();
       if (part?['id'] != null) return part!['id'] as String;
     } catch (_) {}
     try {
-      final main = await _supa.from('user_profiles')
+      final main = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       return main?['id'] as String?;
     } catch (_) {}
@@ -827,7 +828,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           ?? (meta['client_uid'] as String?);
       final email = ((meta['acquereur_email'] ?? meta['client_email']) as String?)?.trim();
       if ((acqUid == null || acqUid.isEmpty) && email != null && email.isNotEmpty) {
-        final u = await _supa.from('users').select('uid').eq('email', email).maybeSingle();
+        final u = await trouverUtilisateurParEmail(email);
         acqUid = u?['uid'] as String?;
         if (acqUid != null) {
           meta['acquereur_uid'] = acqUid;

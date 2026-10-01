@@ -782,7 +782,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     if (uid == null) return;
     try {
       final profil = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('nom, rue_pro, ville_pro')
           .eq('uid', uid)
           .eq('is_main', true)

@@ -30,7 +30,7 @@ export async function fetchOwnerContact(animalId: string, ownerUid: string | nul
 
   let hasLiveProfile = false;
   if (ownerUid) {
-    const { data: p } = await supabase.from('user_profiles')
+    const { data: p } = await supabase.from('user_profiles_complet')
       .select('firstname, lastname, phone_number, email_contact')
       .eq('uid', ownerUid).eq('profile_type', 'particulier').maybeSingle();
     if (p) {
@@ -77,7 +77,7 @@ export async function openOrCreateOwnerConversation(
 ): Promise<string> {
   const sorted = [myUid, otherUid].sort().join('_');
   const proProfileId = myProfileId;
-  const { data: consumerProfile } = await supabase.from('user_profiles')
+  const { data: consumerProfile } = await supabase.from('user_profiles_complet')
     .select('id').eq('uid', otherUid).eq('profile_type', 'particulier').maybeSingle();
   const consumerProfileId = consumerProfile?.id ?? null;
 
@@ -94,9 +94,9 @@ export async function openOrCreateOwnerConversation(
     return existing.id;
   }
 
-  const { data: me } = await supabase.from('user_profiles')
+  const { data: me } = await supabase.from('user_profiles_complet')
     .select('firstname, lastname, nom, avatar_url').eq('uid', myUid).eq('is_main', true).maybeSingle();
-  const { data: other } = await supabase.from('user_profiles')
+  const { data: other } = await supabase.from('user_profiles_complet')
     .select('firstname, lastname, nom, avatar_url').eq('uid', otherUid).eq('is_main', true).maybeSingle();
   const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Professionnel';
   const otherName = `${other?.firstname ?? ''} ${other?.lastname ?? ''}`.trim() || (other?.nom ?? 'Utilisateur');

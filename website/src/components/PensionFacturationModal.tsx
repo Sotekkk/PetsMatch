@@ -42,7 +42,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   useEffect(() => {
     (async () => {
       if (!proProfileId) return;
-      const { data: profil } = await supabase.from('user_profiles')
+      const { data: profil } = await supabase.from('user_profiles_complet')
         .select('tarifs_pension, nom, rue_pro, code_postal_pro, ville_pro, pays_pro, siret, numero_tva, phone_number')
         .eq('id', proProfileId).maybeSingle();
       if (profil) {

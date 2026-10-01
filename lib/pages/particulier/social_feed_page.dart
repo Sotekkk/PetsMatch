@@ -193,7 +193,7 @@ Future<int> socialUnseenCount(String uid) async {
     final supa = Supabase.instance.client;
     final pid = await _activeAuthorProfileId(uid);
     if (pid == null) return 0;
-    final profRow = await supa.from('user_profiles')
+    final profRow = await supa.from('user_profiles_complet')
         .select('social_notif_seen_at').eq('id', pid).maybeSingle();
     final lastSeenStr = profRow?['social_notif_seen_at'] as String?;
     final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
@@ -228,7 +228,7 @@ Future<String?> _particulierProfileId(String uid) async {
   if (_pidCache.containsKey(uid)) return _pidCache[uid];
   try {
     final rows = await Supabase.instance.client
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('id')
         .eq('uid', uid)
         .eq('profile_type', 'particulier')
@@ -251,7 +251,7 @@ Future<String?> _socialProfileId(String uid) async {
   if (_socialPidCache.containsKey(uid)) return _socialPidCache[uid];
   try {
     final rows = await Supabase.instance.client
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('id, profile_type, is_main')
         .eq('uid', uid);
     final list = (rows as List).cast<Map<String, dynamic>>();
@@ -341,7 +341,7 @@ Future<String?> _activeAuthorProfileId(String uid) async {
       if (await _socialProAllowed(uid, activeType)) {
         if (activeId.isNotEmpty) return activeId;
         final rows = await Supabase.instance.client
-            .from('user_profiles').select('id')
+            .from('user_profiles_complet').select('id')
             .eq('uid', uid).eq('is_main', true).limit(1);
         if ((rows as List).isNotEmpty) return rows.first['id'] as String?;
       } else {
@@ -447,8 +447,8 @@ void _sendSocialNotif({
     // secondaire au hasard).
     const cols = 'firstname, lastname, nom, social_pseudo, profile_type';
     final actorRow = actorProfileId != null
-        ? await supa.from('user_profiles').select(cols).eq('id', actorProfileId).maybeSingle()
-        : await supa.from('user_profiles').select(cols).eq('uid', actorUid).eq('is_main', true).maybeSingle();
+        ? await supa.from('user_profiles_complet').select(cols).eq('id', actorProfileId).maybeSingle()
+        : await supa.from('user_profiles_complet').select(cols).eq('uid', actorUid).eq('is_main', true).maybeSingle();
     final actorName = _profileName(actorRow);
 
     await supa.from('notifications').insert({
@@ -551,7 +551,7 @@ Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) as
     ],
   }.toList();
   if (profIds.isNotEmpty) {
-    final byId = await supa.from('user_profiles').select(_kAuthorCols).inFilter('id', profIds);
+    final byId = await supa.from('user_profiles_complet').select(_kAuthorCols).inFilter('id', profIds);
     for (final r in byId as List) {
       out[r['id'] as String] = Map<String, dynamic>.from(r as Map);
     }
@@ -568,7 +568,7 @@ Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) as
     ],
   }.where((u) => !out.containsKey('u:$u')).toList();
   if (legacyUids.isNotEmpty) {
-    final byUid = await supa.from('user_profiles').select(_kAuthorCols)
+    final byUid = await supa.from('user_profiles_complet').select(_kAuthorCols)
         .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
     for (final r in byUid as List) {
       out.putIfAbsent('u:${r['uid']}', () => Map<String, dynamic>.from(r as Map));
@@ -783,7 +783,7 @@ Future<void> openSharedSocialPost(BuildContext context, String postId, {String? 
 Future<void> openMentionedProfile(BuildContext context, String myUid, String profileId) async {
   try {
     final row = await Supabase.instance.client
-        .from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
+        .from('user_profiles_complet').select('uid').eq('id', profileId).maybeSingle();
     if (row == null || !context.mounted) return;
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => SocialProfilePage(targetUid: row['uid'] as String, myUid: myUid, targetProfileId: profileId),
@@ -1012,7 +1012,7 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
       // de profil. Stocké en base (user_profiles.social_notif_seen_at), pas
       // seulement en local : sans ça, une réinstallation de l'app faisait
       // réapparaître la bulle avec tout l'historique.
-      final profRow = await _supa.from('user_profiles')
+      final profRow = await _supa.from('user_profiles_complet')
           .select('social_notif_seen_at').eq('id', pid).maybeSingle();
       final lastSeenStr = profRow?['social_notif_seen_at'] as String?;
       final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
@@ -1509,13 +1509,13 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
 
     final out = <Map<String, dynamic>>[];
     if (candidatePids.isNotEmpty) {
-      final rows = await _supa.from('user_profiles')
+      final rows = await _supa.from('user_profiles_complet')
           .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, social_pseudo')
           .inFilter('id', candidatePids);
       out.addAll((rows as List).cast<Map<String, dynamic>>());
     }
     if (candidateLegacyUids.isNotEmpty) {
-      final rows = await _supa.from('user_profiles')
+      final rows = await _supa.from('user_profiles_complet')
           .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, social_pseudo')
           .inFilter('uid', candidateLegacyUids)
           .eq('profile_type', 'particulier');
@@ -2970,8 +2970,8 @@ class _MyPostsListState extends State<_MyPostsList>
               : postsBase.eq('uid', widget.myUid))
           .order('created_at', ascending: false);
       final profQ = pid != null
-          ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', pid).maybeSingle()
-          : _supa.from('user_profiles')
+          ? _supa.from('user_profiles_complet').select(_kAuthorCols).eq('id', pid).maybeSingle()
+          : _supa.from('user_profiles_complet')
               .select(_kAuthorCols).eq('uid', widget.myUid).eq('profile_type', 'particulier').maybeSingle();
       final results = await Future.wait([postsQ, profQ]);
       final posts = (results[0] as List).cast<Map<String, dynamic>>();
@@ -2999,7 +2999,7 @@ class _MyPostsListState extends State<_MyPostsList>
           if (apid.isNotEmpty) origPids.add(apid);
         }
         if (origPids.isNotEmpty) {
-          final profs = await _supa.from('user_profiles')
+          final profs = await _supa.from('user_profiles_complet')
               .select(_kAuthorCols).inFilter('id', origPids.toList());
           for (final r in profs as List) {
             origProfiles[r['id'] as String] = Map<String, dynamic>.from(r as Map);
@@ -3774,7 +3774,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       );
       // @mentions dans le commentaire — fire-and-forget
       unawaited(() async {
-        final me = pid != null ? await _supa.from('user_profiles').select(_kAuthorCols).eq('id', pid).maybeSingle() : null;
+        final me = pid != null ? await _supa.from('user_profiles_complet').select(_kAuthorCols).eq('id', pid).maybeSingle() : null;
         final actorName = me != null ? _profileName(Map<String, dynamic>.from(me)) : 'Quelqu\'un';
         await notifyMentions(
           text: text,
@@ -4314,7 +4314,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
       if (!mounted || id == null) return;
       _myProfileId = id;
       try {
-        final r = await _supa.from('user_profiles')
+        final r = await _supa.from('user_profiles_complet')
             .select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', id).maybeSingle();
         if (mounted && r != null) {
           setState(() {
@@ -5003,7 +5003,7 @@ class _SearchSheetState extends State<_SearchSheet> {
       // Particuliers + profils pro/éleveur (uniquement ceux qui ont déjà publié
       // → réellement présents sur Pets Social).
       final rows = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select(_kAuthorCols)
           .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
           .inFilter('profile_type', ['particulier', 'eleveur', 'association',
@@ -5345,8 +5345,8 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
     final mpid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
 
     final profQ = tpid != null
-        ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', tpid).maybeSingle()
-        : _supa.from('user_profiles')
+        ? _supa.from('user_profiles_complet').select(_kAuthorCols).eq('id', tpid).maybeSingle()
+        : _supa.from('user_profiles_complet')
             .select(_kAuthorCols).eq('uid', widget.targetUid).eq('profile_type', 'particulier').maybeSingle();
     final postsBase = _supa.from('posts_socialmedia').select();
     final postsQ = (tpid != null ? postsBase.eq('author_profile_id', tpid) : postsBase.eq('uid', widget.targetUid))
@@ -5401,7 +5401,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         mutualTotal = commonUids.length;
         if (commonUids.isNotEmpty) {
           final sample = commonUids.take(6).toList();
-          final profRows = await _supa.from('user_profiles')
+          final profRows = await _supa.from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, avatar_url, social_pseudo')
               .inFilter('uid', sample);
           final seen = <String>{};
@@ -5916,11 +5916,11 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
     }.toList();
     final profByKey = <String, Map<String, dynamic>>{};
     if (actorProfIds.isNotEmpty) {
-      final rows = await _supa.from('user_profiles').select(_kAuthorCols).inFilter('id', actorProfIds);
+      final rows = await _supa.from('user_profiles_complet').select(_kAuthorCols).inFilter('id', actorProfIds);
       for (final r in rows as List) { profByKey[r['id'] as String] = Map<String, dynamic>.from(r as Map); }
     }
     if (legacyUids.isNotEmpty) {
-      final rows = await _supa.from('user_profiles').select(_kAuthorCols)
+      final rows = await _supa.from('user_profiles_complet').select(_kAuthorCols)
           .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
       for (final r in rows as List) { profByKey['u:${r['uid']}'] = Map<String, dynamic>.from(r as Map); }
     }
@@ -6195,8 +6195,8 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       }
     }
     final profQ = authorPid != null
-        ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', authorPid).maybeSingle()
-        : _supa.from('user_profiles').select(_kAuthorCols)
+        ? _supa.from('user_profiles_complet').select(_kAuthorCols).eq('id', authorPid).maybeSingle()
+        : _supa.from('user_profiles_complet').select(_kAuthorCols)
             .eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     final myPid = await _activeAuthorProfileId(widget.myUid);
     var followCheckQ = _supa.from('follows').select('follower_uid').eq('following_uid', uid);
@@ -6349,11 +6349,11 @@ class _FollowListPageState extends State<_FollowListPage> {
     if (pids.isEmpty && legacyUids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
     final users = <Map<String, dynamic>>[];
     if (pids.isNotEmpty) {
-      final r = await _supa.from('user_profiles').select(_kAuthorCols).inFilter('id', pids);
+      final r = await _supa.from('user_profiles_complet').select(_kAuthorCols).inFilter('id', pids);
       users.addAll((r as List).cast<Map<String, dynamic>>());
     }
     if (legacyUids.isNotEmpty) {
-      final r = await _supa.from('user_profiles').select(_kAuthorCols)
+      final r = await _supa.from('user_profiles_complet').select(_kAuthorCols)
           .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
       users.addAll((r as List).cast<Map<String, dynamic>>());
     }
@@ -6480,13 +6480,13 @@ class _PostLikesSheetState extends State<_PostLikesSheet> {
       }.toList();
       final byKey = <String, Map<String, dynamic>>{};
       if (pids.isNotEmpty) {
-        final r = await _supa.from('user_profiles').select(_kAuthorCols).inFilter('id', pids);
+        final r = await _supa.from('user_profiles_complet').select(_kAuthorCols).inFilter('id', pids);
         for (final p in r as List) {
           byKey[p['id'] as String] = Map<String, dynamic>.from(p as Map);
         }
       }
       if (legacyUids.isNotEmpty) {
-        final r = await _supa.from('user_profiles').select(_kAuthorCols)
+        final r = await _supa.from('user_profiles_complet').select(_kAuthorCols)
             .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
         for (final p in r as List) {
           byKey['u:${p['uid']}'] = Map<String, dynamic>.from(p as Map);
@@ -7174,7 +7174,7 @@ class _FriendsListPageState extends State<_FriendsListPage> {
       final mutualPids = iFollowByPid.keys.toSet().intersection(followMePids).toList();
       if (mutualPids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
 
-      final profiles = await _supa.from('user_profiles')
+      final profiles = await _supa.from('user_profiles_complet')
           .select('$kSocialAuthorCols, uid').inFilter('id', mutualPids);
 
       final entries = (profiles as List).map((p) => _FriendEntry(

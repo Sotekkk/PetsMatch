@@ -170,7 +170,7 @@ Future<Map<String, Map<String, dynamic>>> _resolveForumAuthors(List<Map<String, 
       .toSet()
       .toList();
   if (profIds.isNotEmpty) {
-    final byId = await supa.from('user_profiles').select(kSocialAuthorCols).inFilter('id', profIds);
+    final byId = await supa.from('user_profiles_complet').select(kSocialAuthorCols).inFilter('id', profIds);
     for (final r in byId as List) {
       out[r['id'] as String] = Map<String, dynamic>.from(r as Map);
     }
@@ -189,7 +189,7 @@ Future<Map<String, Map<String, dynamic>>> _resolveForumAuthors(List<Map<String, 
     // (ex. Natacha, is_main = éleveur) et un profil particulier secondaire ;
     // filtrer is_main affichait alors "Membre" à la place de son vrai nom.
     // Même logique que _resolveAuthors côté Pets Social.
-    final byUid = await supa.from('user_profiles').select(kSocialAuthorCols)
+    final byUid = await supa.from('user_profiles_complet').select(kSocialAuthorCols)
         .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
     for (final r in byUid as List) {
       out.putIfAbsent('u:${r['uid']}', () => Map<String, dynamic>.from(r as Map));
@@ -787,7 +787,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
         });
       }
       unawaited(() async {
-        final me = pid != null ? await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', pid).maybeSingle() : null;
+        final me = pid != null ? await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', pid).maybeSingle() : null;
         final actorName = me != null ? socialProfileName(me) : 'Quelqu\'un';
         await notifyMentions(
           text: texte,
@@ -1107,7 +1107,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         if (media.videoUrl != null) 'video_url': media.videoUrl,
       }).select('id').single();
       unawaited(() async {
-        final me = pid != null ? await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', pid).maybeSingle() : null;
+        final me = pid != null ? await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', pid).maybeSingle() : null;
         final actorName = me != null ? socialProfileName(me) : 'Quelqu\'un';
         await notifyMentions(
           text: contenu,

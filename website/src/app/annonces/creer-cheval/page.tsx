@@ -205,7 +205,7 @@ function CreerAnnonceChevalInner() {
       }
 
       // Profil particulier actif → géo + nom
-      const q = supabase.from('user_profiles')
+      const q = supabase.from('user_profiles_complet')
         .select('firstname, lastname, nom, ville, code_postal, departement, region, pays');
       const { data: u } = pid
         ? await q.eq('id', pid).maybeSingle()

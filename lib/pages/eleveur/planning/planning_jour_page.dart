@@ -51,7 +51,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
       final empsRaw = await query;
       final List<Map<String, dynamic>> result = [];
       for (final e in empsRaw) {
-        final u = await supa.from('user_profiles')
+        final u = await supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, nom, profile_type')
             .eq('uid', e['uid_employe'] as String)
             .eq('is_main', true)
@@ -221,7 +221,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
     try {
       String? employeProfileId;
       if (employeUid != null) {
-        final p = await Supabase.instance.client.from('user_profiles')
+        final p = await Supabase.instance.client.from('user_profiles_complet')
             .select('id').eq('uid', employeUid).eq('profile_type', 'particulier').maybeSingle();
         employeProfileId = p?['id'] as String?;
       }

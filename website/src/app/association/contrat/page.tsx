@@ -12,6 +12,8 @@ import {
 } from '@/lib/contrat-adoption';
 import { sendNotification } from '@/lib/notifications';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import { rechercherUtilisateurs } from '@/lib/user-lookup';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -113,13 +115,13 @@ export default function ContratsAdoptionPage() {
     if (!user || !profileLoaded) return;
     setFetching(true);
     const profQuery = profileId
-      ? supabase.from('user_profiles').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('id', profileId).maybeSingle()
-      : supabase.from('user_profiles').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      ? supabase.from('user_profiles_complet').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('id', profileId).maybeSingle()
+      : supabase.from('user_profiles_complet').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('uid', user.uid).eq('is_main', true).maybeSingle();
     const [docsRes, aniRes, profRes, userRes] = await Promise.all([
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).eq('type', 'contrat_adoption').order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, sexe, identification, date_naissance, couleur, couleur_yeux, sterilise').eq('uid_eleveur', user.uid).eq('is_association', true).not('statut', 'in', '(sorti,decede,adopte)').order('nom'),
       profQuery,
-      supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
+      supabase.from('users_complet').select('email').eq('uid', user.uid).maybeSingle(),
     ]);
     const allDocs = (docsRes.data ?? []) as DocAdoption[];
     setDocs(allDocs);
@@ -150,22 +152,22 @@ export default function ContratsAdoptionPage() {
       rue_elevage: cp.rue_pro as string | undefined, ville_elevage: cp.ville_pro as string | undefined, code_postal_elevage: cp.code_postal_pro as string | undefined,
     });
     if (q.includes('@')) {
-      const { data: users } = await supabase.from('users').select('uid,email').ilike('email', `%${q}%`).limit(5);
+      const users = await rechercherUtilisateurs(q, { limit: 5 });
       const uids = (users ?? []).map(u => u.uid);
       const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
       const { data: cps } = uids.length
-        ? await supabase.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true)
+        ? await supabase.from('user_profiles_complet').select(cpFields).in('uid', uids).eq('is_main', true)
         : { data: [] as Record<string, unknown>[] };
       setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     } else {
-      const { data: cps } = await supabase.from('user_profiles').select(cpFields)
+      const { data: cps } = await supabase.from('user_profiles_complet').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).eq('is_main', true).limit(8);
       // email_contact est souvent vide alors que le compte a bien un email
       // de connexion (table users) — sans ce complément, un utilisateur
       // pourtant déjà inscrit ressort sans email pré-rempli.
       const uids = (cps ?? []).map(c => c.uid as string);
       const { data: loginUsers } = uids.length
-        ? await supabase.from('users').select('uid,email').in('uid', uids)
+        ? await supabase.from('users_complet').select('uid,email').in('uid', uids)
         : { data: [] as { uid: string; email: string }[] };
       const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
       setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
@@ -281,8 +283,7 @@ export default function ContratsAdoptionPage() {
       const url = `${window.location.origin}/signer-contrat/${token}`;
       if (acqEmail.trim()) {
         try {
-          const { data: adoptantUser } = await supabase
-            .from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+          const adoptantUser = await trouverUtilisateurParEmail(acqEmail.trim());
           if (adoptantUser?.uid) {
             await sendNotification({ uid: adoptantUser.uid, type: 'contrat_invite', title: '🏡 Contrat d\'adoption à signer', body: `Un contrat d'adoption pour ${selectedAnimal.nom} vous a été envoyé — vérifiez et signez`, data: { url } });
           }
@@ -310,7 +311,7 @@ export default function ContratsAdoptionPage() {
     const acqEmail = doc.metadata?.acquereur_email as string | undefined;
     const acqNom   = doc.metadata?.acquereur_nom as string | undefined;
     if (acqEmail?.trim()) {
-      const { data: targetUser } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      const targetUser = await trouverUtilisateurParEmail(acqEmail.trim());
       if (targetUser?.uid) {
         const assoNom = profile?.nom || 'Une association';
         const signingUrl = `${window.location.origin}/signer-contrat/${token}`;

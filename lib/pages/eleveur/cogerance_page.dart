@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -47,7 +48,7 @@ class _CogerancePageState extends State<CogerancePage> {
   // User_Info.activeProfileId qui peut être périmé après un switch récent —
   // même pattern que employes_page.dart._resolveOwnerProfileId.
   Future<String?> _resolveElevageProfileId() async {
-    final row = await _supa.from('user_profiles').select('id')
+    final row = await _supa.from('user_profiles_complet').select('id')
         .eq('uid', _uid).eq('profile_type', 'eleveur').maybeSingle();
     return row?['id'] as String?;
   }
@@ -55,7 +56,7 @@ class _CogerancePageState extends State<CogerancePage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final me = await _supa.from('user_profiles').select('id, firstname, lastname, nom')
+      final me = await _supa.from('user_profiles_complet').select('id, firstname, lastname, nom')
           .eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
       final myParticulierName = _nomFromProfile(me);
       if (myParticulierName != null) _myName = myParticulierName;
@@ -85,7 +86,7 @@ class _CogerancePageState extends State<CogerancePage> {
       };
       final Map<String, Map<String, dynamic>> byId = {};
       if (profileIds.isNotEmpty) {
-        final profs = await _supa.from('user_profiles')
+        final profs = await _supa.from('user_profiles_complet')
             .select('id, firstname, lastname, nom, avatar_url')
             .inFilter('id', profileIds.toList());
         for (final p in (profs as List)) {
@@ -220,7 +221,7 @@ class _CogerancePageState extends State<CogerancePage> {
       });
 
   Future<void> _accepter(Map<String, dynamic> row) => _run(() async {
-        final me = await _supa.from('user_profiles').select('id')
+        final me = await _supa.from('user_profiles_complet').select('id')
             .eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('elevage_cogerants').update({
           'statut': 'actif',
@@ -403,11 +404,9 @@ class _RechercheCogerantSheetState extends State<_RechercheCogerantSheet> {
     try {
       List<Map<String, dynamic>> users;
       if (q.contains('@')) {
-        final rows = await _supa.from('users').select('uid, firstname, lastname, email')
-            .eq('email', q.toLowerCase()).limit(5);
-        users = List<Map<String, dynamic>>.from(rows as List);
+        users = await rechercherUtilisateurs(q, limit: 5);
       } else {
-        final rows = await _supa.from('users').select('uid, firstname, lastname, email')
+        final rows = await _supa.from('users_complet').select('uid, firstname, lastname, email')
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%').limit(15);
         users = List<Map<String, dynamic>>.from(rows as List);
       }
@@ -416,7 +415,7 @@ class _RechercheCogerantSheetState extends State<_RechercheCogerantSheet> {
       final uids = users.map((u) => u['uid'] as String).toList();
       final Map<String, String> profileByUid = {};
       if (uids.isNotEmpty) {
-        final profs = await _supa.from('user_profiles').select('uid, id')
+        final profs = await _supa.from('user_profiles_complet').select('uid, id')
             .inFilter('uid', uids).eq('profile_type', 'particulier');
         for (final p in (profs as List)) {
           profileByUid[p['uid'] as String] = p['id'] as String;

@@ -232,7 +232,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     if (uid == null) return;
     try {
       final row = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('ville, ville_pro')
           .eq('uid', uid)
           .eq('is_main', true)

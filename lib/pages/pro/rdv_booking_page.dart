@@ -365,13 +365,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final pid = User_Info.activeProfileId;
       if (pid.isNotEmpty) {
         row = await supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('rue, ville, code_postal, pays, lat, lng, '
                 'rue_elevage, ville_elevage, code_postal_elevage, pays_elevage')
             .eq('id', pid)
             .maybeSingle();
       }
-      row ??= await supa.from('users').select('rue, ville, code_postal, pays, lat, lng').eq('uid', uid).maybeSingle();
+      row ??= await supa.from('users_complet').select('rue, ville, code_postal, pays, lat, lng').eq('uid', uid).maybeSingle();
       if (row == null) return;
       final genericParts = [row['rue'], row['code_postal'], row['ville']]
           .map((e) => e?.toString().trim() ?? '')
@@ -439,12 +439,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // toujours le profil principal, potentiellement d'un autre type).
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
-              .from('users')
+              .from('users_complet')
               .select('durees_motifs, cat_pro, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng')
               .eq('uid', widget.proUid)
               .maybeSingle();

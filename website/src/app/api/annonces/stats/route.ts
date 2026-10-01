@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
     // Résolution du département
     let dept = departement ?? 'inconnu';
     if (profileId && dept === 'inconnu') {
-      const { data: profile } = await supabase
+      // Code postal : colonne privée pour un particulier → client serveur.
+      const { data: profile } = await supabaseAdmin
         .from('user_profiles')
         .select('departement, code_postal')
         .eq('id', profileId)

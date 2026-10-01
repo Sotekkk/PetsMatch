@@ -48,7 +48,7 @@ class _PhotographeDashboardPageState extends State<PhotographeDashboardPage> {
             .gte('date_heure', startOfMonth.toIso8601String())
             .not('lat_depart', 'is', null),
         pid.isNotEmpty
-            ? _supa.from('user_profiles').select('lat, lng, note_moyenne, nb_avis').eq('id', pid).maybeSingle()
+            ? _supa.from('user_profiles_complet').select('lat, lng, note_moyenne, nb_avis').eq('id', pid).maybeSingle()
             : Future<Map<String, dynamic>?>.value(null),
       ]);
 

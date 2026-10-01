@@ -98,11 +98,11 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       final ownerUid = animal?['uid_proprietaire']?.toString() ?? animal?['uid_eleveur']?.toString();
       if (ownerUid != null) {
         try {
-          _ownerInfo = await _supa.from('user_profiles')
+          _ownerInfo = await _supa.from('user_profiles_complet')
               .select('firstname, lastname, email_contact')
               .eq('uid', ownerUid).eq('is_main', true).maybeSingle();
           if (_ownerInfo?['email_contact'] == null || '${_ownerInfo?['email_contact']}'.isEmpty) {
-            final u = await _supa.from('users').select('email').eq('uid', ownerUid).maybeSingle();
+            final u = await _supa.from('users_complet').select('email').eq('uid', ownerUid).maybeSingle();
             if (u?['email'] != null) {
               _ownerInfo = {...?_ownerInfo, 'email_contact': u!['email']};
             }

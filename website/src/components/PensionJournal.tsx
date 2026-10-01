@@ -104,7 +104,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
         .order('date_debut', { ascending: false }).limit(1).maybeSingle();
       const ownerUid = propRow?.uid_proprio;
       if (!ownerUid) return;
-      const { data: pro } = await supabase.from('user_profiles')
+      const { data: pro } = await supabase.from('user_profiles_complet')
         .select('nom, firstname, lastname').eq('uid', proUid).eq('is_main', true).maybeSingle();
       const proNom = pro?.nom || [pro?.firstname, pro?.lastname].filter(Boolean).join(' ') || 'Votre pension';
       await supabase.from('notifications').insert({
@@ -144,7 +144,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
 
   async function notifyPension(u: Update, action: 'like' | 'reply', message?: string) {
     try {
-      const { data: proProfile } = await supabase.from('user_profiles')
+      const { data: proProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', u.pro_uid).eq('profile_type', 'pension').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.pro_uid, type: 'pension_journal_reply',

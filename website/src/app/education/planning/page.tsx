@@ -382,7 +382,7 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
     const clientUids = [...new Set(list.map(p => p.client_uid).filter((u): u is string => !!u))];
     const animalIds = [...new Set(list.map(p => p.animal_id).filter(Boolean))] as string[];
     if (clientUids.length > 0) {
-      const { data: users } = await supabase.from('user_profiles').select('uid, firstname, lastname').in('uid', clientUids).eq('is_main', true);
+      const { data: users } = await supabase.from('user_profiles_complet').select('uid, firstname, lastname').in('uid', clientUids).eq('is_main', true);
       const names: Record<string, string> = {};
       for (const u of users ?? []) names[u.uid] = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || 'Client';
       for (const p of list) p.client_nom = p.client_uid ? names[p.client_uid] : (p.client_nom_manuel || 'Client');

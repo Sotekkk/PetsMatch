@@ -257,7 +257,7 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
           const limite = new Date(data.date_limite_signature);
           if (now < limite) { setDelaiBloq(true); setJoursRestants(Math.ceil((limite.getTime() - now.getTime()) / 86400_000)); }
         }
-        const { data: cp } = await supabase.from('user_profiles')
+        const { data: cp } = await supabase.from('user_profiles_complet')
           .select('nom,firstname,lastname,siret,phone_number,numero_elevage,rue_pro,ville_pro,code_postal_pro,rue,ville,code_postal,profile_type,cat_pro')
           .eq('uid', data.cedant_uid).eq('is_main', true).maybeSingle();
         const ced = cp ? {

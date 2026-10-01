@@ -62,7 +62,7 @@ export async function gardeTarif(proUid: string, proProfileId: string | null, rd
     const p = data?.prix as number | undefined;
     if (p != null && p > 0) return p;
   }
-  const { data: prof } = await supabase.from('user_profiles').select('tarifs_garde').eq('id', proProfileId).maybeSingle();
+  const { data: prof } = await supabase.from('user_profiles_complet').select('tarifs_garde').eq('id', proProfileId).maybeSingle();
   const tg = prof?.tarifs_garde as Record<string, number> | null;
   return (tg && typeof tg[key] === 'number') ? tg[key] : 0;
 }

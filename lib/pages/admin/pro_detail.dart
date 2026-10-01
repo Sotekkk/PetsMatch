@@ -134,7 +134,7 @@ class _ProDetailState extends State<ProDetail> {
         try {
           final profileType = (_supaRow['profile_type'] ?? _supaRow['cat_pro'] ?? '').toString();
           final profile = profileType.isNotEmpty
-              ? await _supa.from('user_profiles')
+              ? await _supa.from('user_profiles_complet')
                   .select('id').eq('uid', widget.uid).eq('profile_type', profileType).maybeSingle()
               : null;
           await _supa.from('notifications').insert({

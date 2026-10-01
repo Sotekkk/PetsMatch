@@ -46,7 +46,7 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
     // compte, pas celui réellement utilisé pour la demande.
     final proProfileId = User_Info.activeProfileId.isNotEmpty
         ? User_Info.activeProfileId
-        : (await _supa.from('user_profiles')
+        : (await _supa.from('user_profiles_complet')
             .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle())?['id'] as String?;
 
     try {
@@ -81,7 +81,7 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
       // Profil pro ACTIF (voir commentaire dans _check()) — pas is_main.
       final proProfileId = User_Info.activeProfileId.isNotEmpty
           ? User_Info.activeProfileId
-          : (await _supa.from('user_profiles')
+          : (await _supa.from('user_profiles_complet')
               .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle())?['id'] as String?;
 
       // Profil propriétaire depuis animaux_proprietes

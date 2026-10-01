@@ -41,6 +41,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -383,7 +384,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final proProfile = await _supa.from('user_profiles')
+      final proProfile = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       final pid = proProfile?['id'] as String?;
       if (pid == null) return;
@@ -417,7 +418,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       final proNames = <String, String>{};
       final vetProfileIds = <String>{};
       if (profileIds.isNotEmpty) {
-        final profiles = await _supa.from('user_profiles')
+        final profiles = await _supa.from('user_profiles_complet')
             .select('id, firstname, lastname, profile_type')
             .inFilter('id', profileIds);
         for (final u in profiles as List) {
@@ -925,7 +926,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (uid == null) return;
     try {
       final profil = await _supa
-          .from('users')
+          .from('users_complet')
           .select('name_elevage, rue_elevage, ville_elevage, code_postal_elevage')
           .eq('uid', uid)
           .maybeSingle();
@@ -1313,10 +1314,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         final wanted = qualiteAcq == 'eleveur'
             ? 'eleveur'
             : qualiteAcq == 'refuge' || qualiteAcq == 'association' ? 'association' : 'particulier';
-        final byType = await _supa.from('user_profiles')
+        final byType = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', uidAcq).eq('profile_type', wanted).maybeSingle();
         acqProfileId = byType?['id'] as String?;
-        acqProfileId ??= (await _supa.from('user_profiles')
+        acqProfileId ??= (await _supa.from('user_profiles_complet')
             .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle())?['id'] as String?;
       }
       // Transférer la fiche
@@ -1367,7 +1368,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
       if (uidAcq != null && cedantUid != null) {
-        final profilAcq = await _supa.from('users')
+        final profilAcq = await _supa.from('users_complet')
             .select('firstname, lastname, name_elevage, is_elevage, is_association')
             .eq('uid', uidAcq).maybeSingle();
         final nomAcqRaw = (profilAcq?['name_elevage'] as String? ?? '').isNotEmpty
@@ -1375,7 +1376,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             : '${profilAcq?['firstname'] ?? ''} ${profilAcq?['lastname'] ?? ''}'.trim();
         final isAcqEleveur = profilAcq?['is_elevage'] == true;
         final isAcqAsso    = profilAcq?['is_association'] == true;
-        final cedantProfileId = await _supa.from('user_profiles')
+        final cedantProfileId = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', cedantUid).eq('is_main', true).maybeSingle();
         // Sortie pour le cédant
         await _supa.from('registre_mouvements').insert({
@@ -1391,7 +1392,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         });
         // Entrée pour l'acquéreur (éleveur ou association uniquement)
         if (isAcqEleveur || isAcqAsso) {
-          final acqProfRow = await _supa.from('user_profiles')
+          final acqProfRow = await _supa.from('user_profiles_complet')
               .select('id').eq('uid', uidAcq!).eq('is_main', true).maybeSingle();
           final acqProfileId = acqProfRow?['id'] as String?;
           await _supa.from('registre_mouvements').insert({
@@ -1466,7 +1467,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             .inFilter('statut', ['brouillon', 'en_attente']);
       } catch (_) {}
       if (uidAcq != null) {
-        final acqProfileNotif = await _supa.from('user_profiles')
+        final acqProfileNotif = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   uidAcq,
@@ -6300,7 +6301,7 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
     try {
       // select(*) évite les erreurs de casse sur les noms de colonnes
       final row = await Supabase.instance.client
-          .from('users')
+          .from('users_complet')
           .select('*')
           .eq('uid', uid)
           .maybeSingle();
@@ -7140,7 +7141,7 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
     final visiteId = DateTime.now().microsecondsSinceEpoch.toString();
     String? vetProfileId;
     if (widget.vetId != null) {
-      final profRow = await supa.from('user_profiles')
+      final profRow = await supa.from('user_profiles_complet')
           .select('id').eq('uid', widget.vetId!).eq('is_main', true).maybeSingle();
       vetProfileId = profRow?['id'] as String?;
     }
@@ -8728,7 +8729,7 @@ Future<void> _scheduleRappelAgenda({
     var proProfileId = User_Info.activeProfileId;
     if (proProfileId.isEmpty) {
       try {
-        final row = await Supabase.instance.client.from('user_profiles')
+        final row = await Supabase.instance.client.from('user_profiles_complet')
             .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
         proProfileId = row?['id']?.toString() ?? '';
       } catch (_) {}
@@ -12266,7 +12267,7 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     if (widget.animalId == null) { setState(() => _loading = false); return; }
     final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     if (_vetProfileId == null && vetUid.isNotEmpty) {
-      final row = await _supa.from('user_profiles').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
+      final row = await _supa.from('user_profiles_complet').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
       _vetProfileId = row?['id'] as String?;
     }
     final proFilter = _vetProfileId != null ? 'pro_profile_id' : 'pro_uid';
@@ -12870,7 +12871,7 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
       final vetNames = <String, String>{};
       if (proUids.isNotEmpty) {
         try {
-          final users = await _supa.from('users')
+          final users = await _supa.from('users_complet')
               .select('uid, firstname, lastname').inFilter('uid', proUids);
           for (final u in users as List) {
             final uid = u['uid']?.toString() ?? '';
@@ -13553,7 +13554,7 @@ class _VetAddVisiteDialogState extends State<_VetAddVisiteDialog> {
     setState(() => _saving = true);
     try {
       final id = DateTime.now().microsecondsSinceEpoch.toString();
-      final profRow = await Supabase.instance.client.from('user_profiles')
+      final profRow = await Supabase.instance.client.from('user_profiles_complet')
           .select('id').eq('uid', widget.vetUid).eq('is_main', true).maybeSingle();
       final vetProfileId = profRow?['id'] as String?;
       await Supabase.instance.client.from('visites').insert({
@@ -13681,7 +13682,7 @@ class _VetAddOrdoDialogState extends State<_VetAddOrdoDialog> {
       final today = _date;
       String? ownerProfileId;
       if (widget.ownerUid != null) {
-        final row = await Supabase.instance.client.from('user_profiles').select('id').eq('uid', widget.ownerUid!).eq('is_main', true).maybeSingle();
+        final row = await Supabase.instance.client.from('user_profiles_complet').select('id').eq('uid', widget.ownerUid!).eq('is_main', true).maybeSingle();
         ownerProfileId = row?['id'] as String?;
       }
       await Supabase.instance.client.from('ordonnances').insert({
@@ -14202,11 +14203,11 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     final meta = doc['metadata'] as Map? ?? {};
     final acqEmail = meta['acquereur_email'] as String?;
     if (acqEmail != null && acqEmail.trim().isNotEmpty) {
-      final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      final target = await trouverUtilisateurParEmail(acqEmail.trim());
       if (target != null) {
         final acqUid = target['uid'] as String;
         final signingUrl = '$kSiteBaseUrl/signer-contrat/$token';
-        final acqProfile = await _supa.from('user_profiles')
+        final acqProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
           'uid': acqUid,

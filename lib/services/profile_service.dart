@@ -5,7 +5,7 @@ class ProfileService {
 
   static Future<List<Map<String, dynamic>>> loadProfiles(String uid) async {
     final rows = await _supa
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select()
         .eq('uid', uid)
         .order('is_main', ascending: false)
@@ -32,7 +32,7 @@ class ProfileService {
           .whereType<String>()
           .toList();
       if (ids.isEmpty) return [];
-      final profs = await _supa.from('user_profiles').select().inFilter('id', ids);
+      final profs = await _supa.from('user_profiles_complet').select().inFilter('id', ids);
       return List<Map<String, dynamic>>.from(profs as List)
           .map((p) => {...p, '_is_cogerance': true})
           .toList();

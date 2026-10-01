@@ -233,7 +233,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       if (myUid != null && uniqueUids.isNotEmpty) {
         final sample = uniqueUids.take(5).toList();
         final users = await Supabase.instance.client
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, firstname, profile_picture_url:avatar_url')
             .inFilter('uid', sample).eq('is_main', true);
         likers = List<Map<String, dynamic>>.from(users);
@@ -323,7 +323,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   Future<void> _loadEleveur(String uid, {String? profilSource, String? profileId}) async {
     try {
       final row = await Supabase.instance.client
-          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
+          .from('user_profiles_complet').select().eq('uid', uid).eq('is_main', true).single();
       Map<String, dynamic> normalized = _normalizeUser(row);
 
       final src = profilSource
@@ -339,14 +339,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           if (profileId != null && profileId.isNotEmpty) {
             // Query directe par profile UUID (bypass RLS) — profile_id stocké dans l'annonce
             p = await Supabase.instance.client
-                .from('user_profiles')
+                .from('user_profiles_complet')
                 .select('id, profile_type, nom, firstname, lastname, profile_label, avatar_url, ville')
                 .eq('id', profileId)
                 .maybeSingle();
           } else {
             // Fallback : query par uid sans filtre profile_type, filtre client-side
             final profiles = await Supabase.instance.client
-                .from('user_profiles')
+                .from('user_profiles_complet')
                 .select('id, profile_type, nom, firstname, lastname, profile_label, avatar_url, ville')
                 .eq('uid', uid) as List;
             p = profiles.firstWhere(
@@ -2628,7 +2628,7 @@ class _LikersSheetState extends State<_LikersSheet> {
         return;
       }
       final users = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, profile_picture_url:avatar_url')
           .inFilter('uid', uids).eq('is_main', true);
       final userMap = <String, Map<String, dynamic>>{
@@ -2768,7 +2768,7 @@ class _FavorisSheetState extends State<_FavorisSheet> {
         return;
       }
       final users = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, profile_picture_url:avatar_url')
           .inFilter('uid', uids).eq('is_main', true);
       final userMap = <String, Map<String, dynamic>>{

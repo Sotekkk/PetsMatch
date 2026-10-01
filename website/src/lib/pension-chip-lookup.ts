@@ -30,7 +30,7 @@ export async function lookupAnimalByChip(chip: string): Promise<PensionEntreePre
   // (numero_elevage, nom), distinct du numéro personnel éventuel sur users.
   let filledFromProfile = false;
   if (propRow?.profile_id_proprio) {
-    const { data: prof } = await supabase.from('user_profiles')
+    const { data: prof } = await supabase.from('user_profiles_complet')
       .select('nom, firstname, lastname, phone, numero_elevage, profile_type, adresse, rue, code_postal, ville')
       .eq('id', propRow.profile_id_proprio).maybeSingle();
     if (prof) {
@@ -45,7 +45,7 @@ export async function lookupAnimalByChip(chip: string): Promise<PensionEntreePre
   }
 
   if (ownerUid) {
-    const { data: owner } = await supabase.from('users')
+    const { data: owner } = await supabase.from('users_complet')
       .select('name_elevage, firstname, lastname, phone_number, email, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, rue, code_postal, ville')
       .eq('uid', ownerUid).maybeSingle();
     if (owner) {
@@ -77,7 +77,7 @@ export async function requestAnimalAccess(
     if (!proProfileId) return;
     let resolvedOwnerProfileId = ownerProfileId ?? null;
     if (!resolvedOwnerProfileId) {
-      const { data: ownerProfiles } = await supabase.from('user_profiles')
+      const { data: ownerProfiles } = await supabase.from('user_profiles_complet')
         .select('id, is_main').eq('uid', ownerUid);
       resolvedOwnerProfileId = (ownerProfiles ?? []).find(p => p.is_main)?.id ?? ownerProfiles?.[0]?.id ?? null;
     }

@@ -69,7 +69,7 @@ export default function RestaurationDashboard() {
 
       const [profileRes, placesRes] = await Promise.all([
         supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('nom, ville_pro, type_restauration, avatar_url, banner_url, verification_status')
           .eq('uid', uid)
           .eq('cat_pro', 'restauration')

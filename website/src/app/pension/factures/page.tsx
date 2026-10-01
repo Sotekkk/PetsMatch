@@ -60,7 +60,7 @@ export default function PensionFacturesPage() {
     setLoading(true);
     let proProfileId = activeProfileId || null;
     if (!proProfileId) {
-      const { data: mainProfile } = await supabase.from('user_profiles')
+      const { data: mainProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       proProfileId = mainProfile?.id ?? null;
     }

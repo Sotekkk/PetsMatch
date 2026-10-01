@@ -128,7 +128,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     // Profil éleveur (nom + adresse)
     try {
       final profil = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('nom, rue_pro, ville_pro')
           .eq('uid', uid)
           .eq('is_main', true)
@@ -313,7 +313,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       // reste celle du gérant.
       String ownerUid = uid;
       if (User_Info.activeProfileId.isNotEmpty) {
-        final ownerRow = await _supa.from('user_profiles')
+        final ownerRow = await _supa.from('user_profiles_complet')
             .select('uid').eq('id', User_Info.activeProfileId).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? uid;
       }

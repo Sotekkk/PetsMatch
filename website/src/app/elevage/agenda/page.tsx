@@ -19,7 +19,7 @@ function displayNameFromProfile(
 }
 
 async function resolveDisplayName(uid: string, fallback: string): Promise<string> {
-  const { data } = await supabase.from('user_profiles')
+  const { data } = await supabase.from('user_profiles_complet')
     .select('firstname,lastname,nom,profile_type').eq('uid', uid).eq('is_main', true).maybeSingle();
   return displayNameFromProfile(data, fallback);
 }
@@ -29,7 +29,7 @@ async function resolveDisplayName(uid: string, fallback: string): Promise<string
 async function resolveProfileNames(ids: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (!ids.length) return map;
-  const { data } = await supabase.from('user_profiles')
+  const { data } = await supabase.from('user_profiles_complet')
     .select('id, firstname, lastname, nom, profile_type').in('id', ids);
   (data ?? []).forEach((p: { id: string; firstname?: string | null; lastname?: string | null; nom?: string | null; profile_type?: string | null }) => {
     map.set(p.id, displayNameFromProfile(p, p.id.slice(0, 8)));
@@ -53,7 +53,7 @@ function nameForCompletion(
 
 // Une tâche assignée cible le profil particulier du destinataire (pas le profil élevage/employeur)
 async function resolveParticulierProfileId(uid: string): Promise<string | null> {
-  const { data } = await supabase.from('user_profiles')
+  const { data } = await supabase.from('user_profiles_complet')
     .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
   return data?.id ?? null;
 }
@@ -1035,7 +1035,7 @@ export default function AgendaElevagePage() {
   // clé. Miroir de agenda_page.dart::_effectiveUid.
   const resolveEffectiveUid = useCallback(async (): Promise<string> => {
     if (!activeProfileId) return user!.uid;
-    const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+    const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
     return (data?.uid as string | undefined) ?? user!.uid;
   }, [activeProfileId, user]);
 
@@ -1062,7 +1062,7 @@ export default function AgendaElevagePage() {
       if (!emps?.length) return;
       const uids = emps.map((e: { uid_employe: string }) => e.uid_employe);
       const { data: profiles } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('uid, firstname, lastname, avatar_url')
         .in('uid', uids).eq('is_main', true);
       setEmployes((profiles ?? []).map((u: { uid: string; firstname?: string; lastname?: string; avatar_url?: string }) => ({

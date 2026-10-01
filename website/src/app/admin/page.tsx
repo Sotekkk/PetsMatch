@@ -322,10 +322,10 @@ export default function AdminPage() {
       // is_premium/email n'ont pas d'équivalent fiable sur user_profiles — seuls
       // champs encore lus depuis users (comportement déjà établi ailleurs dans
       // l'admin : identité/abonnement reste sur users).
-      const { data: usersMeta } = await supabase.from('users').select('uid, email, is_premium');
+      const { data: usersMeta } = await supabase.from('users_complet').select('uid, email, is_premium');
       const usersMetaByUid = new Map((usersMeta ?? []).map(u => [u.uid, u]));
 
-      const { data: profileRows } = await supabase.from('user_profiles').select(
+      const { data: profileRows } = await supabase.from('user_profiles_complet').select(
         'id, uid, is_main, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, nom, firstname, lastname, profession_pro, avatar_url, profile_picture_url_pro, siret'
       ).not('profile_type', 'is', null);
 
@@ -516,7 +516,7 @@ export default function AdminPage() {
         { data: refused, error: err2 },
       ] = await Promise.all([
         supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select(dossierCols)
           .not('profile_type', 'is', null)
           .neq('profile_type', 'particulier')
@@ -524,7 +524,7 @@ export default function AdminPage() {
           .not('statut_pro', 'eq', 'refuse')
           .order('created_at', { ascending: true }),
         supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select(dossierCols)
           .not('profile_type', 'is', null)
           .neq('profile_type', 'particulier')

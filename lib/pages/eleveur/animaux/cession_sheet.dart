@@ -13,6 +13,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -172,7 +173,7 @@ class _CessionSheetState extends State<CessionSheet> {
           _loadingDocs = false;
         });
       }
-      _supa.from('user_profiles')
+      _supa.from('user_profiles_complet')
           .select('nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, email_contact')
           .eq('uid', widget.uid).eq('is_main', true).maybeSingle()
           .then((up) { if (mounted && up != null) _eleveurProfile = Map<String, dynamic>.from(up); });
@@ -224,13 +225,13 @@ class _CessionSheetState extends State<CessionSheet> {
   Future<String?> _resolveAcqProfileId(String uid, String qualite) async {
     final wanted = _profileTypeForQualite(qualite);
     try {
-      final byType = await _supa.from('user_profiles')
+      final byType = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('profile_type', wanted).maybeSingle();
       if (byType?['id'] != null) return byType!['id'] as String;
-      final main = await _supa.from('user_profiles')
+      final main = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       if (main?['id'] != null) return main!['id'] as String;
-      final any = await _supa.from('user_profiles')
+      final any = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).limit(1).maybeSingle();
       return any?['id'] as String?;
     } catch (_) {
@@ -262,18 +263,17 @@ class _CessionSheetState extends State<CessionSheet> {
       final isEmail = q.contains('@');
       List<Map<String, dynamic>> rows;
       if (isEmail) {
-        final userRow = await _supa.from('users').select('uid, email')
-            .eq('email', q.toLowerCase()).maybeSingle();
+        final userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow == null) {
           rows = [];
         } else {
-          final cp = await _supa.from('user_profiles').select(_cpFields)
+          final cp = await _supa.from('user_profiles_complet').select(_cpFields)
               .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
           rows = cp != null ? [_mapProfile(cp, email: userRow['email'] as String?)] : [];
         }
       } else {
         final cps = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select(_cpFields)
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
             .eq('is_main', true)
@@ -302,7 +302,7 @@ class _CessionSheetState extends State<CessionSheet> {
   /// rempli — très fréquent, à ne pas confondre avec un email manquant.
   Future<String?> _loginEmailForUid(String uid) async {
     try {
-      final u = await _supa.from('users').select('email').eq('uid', uid).maybeSingle();
+      final u = await _supa.from('users_complet').select('email').eq('uid', uid).maybeSingle();
       return u?['email'] as String?;
     } catch (_) {
       return null;
@@ -317,13 +317,13 @@ class _CessionSheetState extends State<CessionSheet> {
   /// n'existe pas pour cet uid.
   Future<Map<String, dynamic>?> _fetchContactProfile(String uid, String profileType) async {
     try {
-      final byType = await _supa.from('user_profiles').select(_cpFields)
+      final byType = await _supa.from('user_profiles_complet').select(_cpFields)
           .eq('uid', uid).eq('profile_type', profileType).maybeSingle();
       if (byType != null) return byType;
-      final main = await _supa.from('user_profiles').select(_cpFields)
+      final main = await _supa.from('user_profiles_complet').select(_cpFields)
           .eq('uid', uid).eq('is_main', true).maybeSingle();
       if (main != null) return main;
-      return await _supa.from('user_profiles').select(_cpFields)
+      return await _supa.from('user_profiles_complet').select(_cpFields)
           .eq('uid', uid).limit(1).maybeSingle();
     } catch (_) {
       return null;

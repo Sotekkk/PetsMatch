@@ -10,6 +10,7 @@ import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _amber = Color(0xFFD97706);
@@ -142,18 +143,17 @@ class _ReservationSheetState extends State<ReservationSheet> {
       final isEmail = q.contains('@');
       List<Map<String, dynamic>> rows;
       if (isEmail) {
-        final userRow = await _supa.from('users').select('uid, email')
-            .eq('email', q.toLowerCase()).maybeSingle();
+        final userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow == null) {
           rows = [];
         } else {
-          final cp = await _supa.from('user_profiles').select(_cpFields)
+          final cp = await _supa.from('user_profiles_complet').select(_cpFields)
               .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
           rows = cp != null ? [_mapProfile(cp, email: userRow['email'] as String?)] : [];
         }
       } else {
         final cps = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select(_cpFields)
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
             .eq('is_main', true)
@@ -166,7 +166,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
         final loginEmails = uids.isEmpty
             ? <Map<String, dynamic>>[]
             : List<Map<String, dynamic>>.from(
-                await _supa.from('users').select('uid, email').inFilter('uid', uids) as List);
+                await _supa.from('users_complet').select('uid, email').inFilter('uid', uids) as List);
         final emailByUid = { for (final u in loginEmails) u['uid'] as String: u['email'] as String? };
         rows = cpList.map((cp) => _mapProfile(cp, email: emailByUid[cp['uid']])).toList();
       }

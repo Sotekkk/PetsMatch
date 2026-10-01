@@ -134,7 +134,7 @@ Future<double> gardeTarif(Map<String, dynamic> rdv) async {
       final p = (o?['prix'] as num?)?.toDouble();
       if (p != null && p > 0) return p;
     }
-    final prof = await supa.from('user_profiles')
+    final prof = await supa.from('user_profiles_complet')
         .select('tarifs_garde').eq('id', pid).maybeSingle();
     final tg = prof?['tarifs_garde'];
     if (tg is Map) {

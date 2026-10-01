@@ -11,6 +11,8 @@ import { generateContratHTML, generateContratVente, generateContratReservationHT
 import { sendNotification } from '@/lib/notifications';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import { rechercherUtilisateurs } from '@/lib/user-lookup';
 
 interface DocAnimal {
   id: string;
@@ -81,7 +83,7 @@ export default function ContratsPage() {
     if (!user) return;
     if (!activeProfileId) { setOwnerUid(user.uid); return; }
     let cancelled = false;
-    supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle()
+    supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle()
       .then(({ data }) => { if (!cancelled) setOwnerUid((data?.uid as string | undefined) ?? user.uid); });
     return () => { cancelled = true; };
   }, [user, activeProfileId]);
@@ -245,8 +247,8 @@ export default function ContratsPage() {
       // etc. sur ce même compte se mélangent ici (même bug que côté appli).
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', ownerUid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie']).order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, couleur_yeux, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', ownerUid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
-      supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', ownerUid).eq('is_main', true).maybeSingle(),
-      supabase.from('users').select('email').eq('uid', ownerUid).maybeSingle(),
+      supabase.from('user_profiles_complet').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', ownerUid).eq('is_main', true).maybeSingle(),
+      supabase.from('users_complet').select('email').eq('uid', ownerUid).maybeSingle(),
     ]);
     setDocs((docsRes.data ?? []) as DocAnimal[]);
     setAnimaux((animauxRes.data ?? []) as Animal[]);
@@ -278,21 +280,21 @@ export default function ContratsPage() {
       siret: cp.siret as string | undefined,
     });
     if (isEmail) {
-      const { data: users } = await supabase.from('users').select('uid,email').ilike('email', `%${q}%`).limit(5);
+      const users = await rechercherUtilisateurs(q, { limit: 5 });
       const uids = (users ?? []).map(u => u.uid);
       if (uids.length === 0) { setUserResults([]); return; }
-      const { data: cps } = await supabase.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true);
+      const { data: cps } = await supabase.from('user_profiles_complet').select(cpFields).in('uid', uids).eq('is_main', true);
       const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
       setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     } else {
-      const { data: cps } = await supabase.from('user_profiles').select(cpFields)
+      const { data: cps } = await supabase.from('user_profiles_complet').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`).eq('is_main', true).limit(8);
       // email_contact est souvent vide alors que le compte a bien un email
       // de connexion (table users) — sans ce complément, un utilisateur
       // pourtant déjà inscrit ressort sans email pré-rempli.
       const uids = (cps ?? []).map(c => c.uid as string);
       const { data: loginUsers } = uids.length
-        ? await supabase.from('users').select('uid,email').in('uid', uids)
+        ? await supabase.from('users_complet').select('uid,email').in('uid', uids)
         : { data: [] as { uid: string; email: string }[] };
       const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
       setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
@@ -423,8 +425,7 @@ export default function ContratsPage() {
     if (token) {
       // Notifier la contrepartie si elle est sur PetsMatch
       if (acqEmail.trim()) {
-        const { data: targetUser } = await supabase
-          .from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+        const targetUser = await trouverUtilisateurParEmail(acqEmail.trim());
         if (targetUser?.uid) {
           const elvNom = profile?.name_elevage || `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim() || 'Un éleveur';
           const animalNom = selectedAnimal?.nom || 'un animal';
@@ -494,7 +495,7 @@ export default function ContratsPage() {
     let acqUid: string | null = null;
     let acqProfileId: string | null = null;
     if (acqEmail.trim()) {
-      const { data: u } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      const u = await trouverUtilisateurParEmail(acqEmail.trim());
       acqUid = (u?.uid as string | undefined) ?? null;
       if (acqUid) acqProfileId = await resolveAcquereurProfileId(acqUid, qualiteAcq);
     }
@@ -546,7 +547,7 @@ export default function ContratsPage() {
     const acqEmail = doc.metadata?.acquereur_email as string | undefined;
     const acqNomMeta = doc.metadata?.acquereur_nom as string | undefined;
     if (acqEmail?.trim()) {
-      const { data: targetUser } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      const targetUser = await trouverUtilisateurParEmail(acqEmail.trim());
       if (targetUser?.uid) {
         const elvNom = profile?.name_elevage || `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim() || 'Un éleveur';
         const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;

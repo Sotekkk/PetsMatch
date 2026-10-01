@@ -38,7 +38,7 @@ export default function AssociationsPage() {
   useEffect(() => {
     // user_profiles : profile_type='association' — on ne sélectionne PAS name_elevage
     // (cette colonne n'existe pas dans user_profiles, cause "not in schema cache")
-    supabase.from('user_profiles')
+    supabase.from('user_profiles_complet')
       .select('id, uid, nom, profile_label, avatar_url, banner_url, ville, description, lat, lng, statut_pro')
       .eq('profile_type', 'association')
       .order('nom')

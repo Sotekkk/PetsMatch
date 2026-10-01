@@ -77,10 +77,10 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
       final results = await Future.wait([
         clientProfileIds.isNotEmpty
-            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('id', clientProfileIds)
+            ? _supa.from('user_profiles_complet').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('id', clientProfileIds)
             : Future.value(<Map<String, dynamic>>[]),
         clientUidsNoPid.isNotEmpty
-            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('uid', clientUidsNoPid).eq('is_main', true)
+            ? _supa.from('user_profiles_complet').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('uid', clientUidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
         animalIds.isNotEmpty
             ? _supa.from('animaux').select('id, nom, espece, race, identification').inFilter('id', animalIds)

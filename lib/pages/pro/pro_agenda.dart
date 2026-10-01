@@ -27,6 +27,7 @@ import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 /// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
 /// motif texte saisi par le client à la réservation (ex. "Promenade 1h",
@@ -139,7 +140,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final uidByProfileId = <String, String>{};
       final profileIds = emps.map((e) => e['employe_profile_id'] as String?).whereType<String>().toList();
       if (profileIds.isNotEmpty) {
-        final profs = await Supabase.instance.client.from('user_profiles')
+        final profs = await Supabase.instance.client.from('user_profiles_complet')
             .select('id, uid').inFilter('id', profileIds);
         for (final p in profs) {
           uidByProfileId[p['id'].toString()] = p['uid'].toString();
@@ -154,7 +155,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       }
       if (employeUids.isEmpty) { if (mounted) setState(() => _employesLoaded = true); return; }
 
-      final users = await Supabase.instance.client.from('users')
+      final users = await Supabase.instance.client.from('users_complet')
           .select('uid, firstname, lastname').inFilter('uid', employeUids.toList());
       final nameByUid = <String, String>{
         for (final u in users)
@@ -218,7 +219,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (uid == null) return;
     try {
       final row = await Supabase.instance.client
-          .from('users').select('durees_motifs').eq('uid', uid).maybeSingle();
+          .from('users_complet').select('durees_motifs').eq('uid', uid).maybeSingle();
       if (row?['durees_motifs'] is Map && mounted) {
         setState(() {
           _dureesMotifs = Map<String, int>.from(
@@ -276,7 +277,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (clientProfileIds.isNotEmpty) {
         try {
           final profs = await Supabase.instance.client
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('id, firstname, lastname, nom')
               .inFilter('id', clientProfileIds);
           for (final p in profs) {
@@ -292,7 +293,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (clientUids.isNotEmpty) {
         try {
           final users = await Supabase.instance.client
-              .from('users')
+              .from('users_complet')
               .select('uid, firstname, lastname')
               .inFilter('uid', clientUids);
           for (final u in users) {
@@ -1656,7 +1657,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     try {
       final ids = <String>{if (cpid?.isNotEmpty ?? false) cpid!, if (ppid?.isNotEmpty ?? false) ppid!};
       if (ids.isNotEmpty) {
-        final rows = await supa.from('user_profiles')
+        final rows = await supa.from('user_profiles_complet')
             .select('id, firstname, lastname, nom').inFilter('id', ids.toList());
         for (final r in rows as List) {
           final nom = (r['nom'] as String?)?.trim() ?? '';
@@ -2157,24 +2158,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       try {
         final supa = Supabase.instance.client;
         Map<String, dynamic>? u;
+        // Correspondance EXACTE (pm_trouver_utilisateur) : l'e-mail et le
+        // téléphone d'un particulier sont masqués dans users_complet.
         if (email.isNotEmpty) {
-          final rows = await supa.from('users')
-              .select('uid, firstname, lastname, email, phone_number')
-              .ilike('email', email).limit(1);
-          if ((rows as List).isNotEmpty) u = Map<String, dynamic>.from(rows.first);
+          u = await trouverUtilisateurParEmail(email);
         }
-        if (u == null && tel.isNotEmpty) {
-          final digits = tel.replaceAll(RegExp(r'[^0-9]'), '');
-          final tail = digits.length >= 8 ? digits.substring(digits.length - 8) : digits;
-          if (tail.length >= 6) {
-            final rows = await supa.from('users')
-                .select('uid, firstname, lastname, email, phone_number')
-                .ilike('phone_number', '%$tail%').limit(1);
-            if ((rows as List).isNotEmpty) u = Map<String, dynamic>.from(rows.first);
-          }
+        if (u == null && tel.replaceAll(RegExp(r'[^0-9]'), '').length >= 9) {
+          u = await trouverUtilisateurParTelephone(tel);
+          if (u != null) u['phone_number'] = tel;
         }
         if (u != null) {
-          final prof = await supa.from('user_profiles')
+          final prof = await supa.from('user_profiles_complet')
               .select('id').eq('uid', u['uid']).eq('profile_type', 'particulier').maybeSingle();
           if (prof != null) {
             u['profile_id'] = prof['id'];
@@ -2614,7 +2608,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final supa = Supabase.instance.client;
 
       // Profil pro actif
-      final proProfile = await supa.from('user_profiles')
+      final proProfile = await supa.from('user_profiles_complet')
           .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
       final proProfileId = proProfile?['id'] as String?;
       if (proProfileId == null) return;
@@ -2872,9 +2866,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (User_Info.catPro == 'garde') {
         try {
           final prof = pid.isNotEmpty
-              ? await Supabase.instance.client.from('user_profiles')
+              ? await Supabase.instance.client.from('user_profiles_complet')
                   .select('garde_chevauchement_ok').eq('id', pid).maybeSingle()
-              : await Supabase.instance.client.from('users')
+              : await Supabase.instance.client.from('users_complet')
                   .select('garde_chevauchement_ok').eq('uid', uid).maybeSingle();
           chevauchementOk = prof?['garde_chevauchement_ok'] as bool? ?? true;
         } catch (_) {}

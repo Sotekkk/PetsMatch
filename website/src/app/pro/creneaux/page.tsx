@@ -112,7 +112,7 @@ export default function ProCreneauxPage() {
 
   useEffect(() => {
     if (!activeProfileId) return;
-    supabase.from('user_profiles').select('profile_type, cat_pro').eq('id', activeProfileId).single()
+    supabase.from('user_profiles_complet').select('profile_type, cat_pro').eq('id', activeProfileId).single()
       .then(({ data }) => setCatPro((data?.profile_type ?? data?.cat_pro ?? '') as string));
   }, [activeProfileId]);
 

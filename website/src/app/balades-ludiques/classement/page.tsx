@@ -33,7 +33,7 @@ export default function ClassementPage() {
       // Résolution des noms d'affichage (profil) pour les deux classements
       const profileIds = [...new Set([...explorateursList.map(e => e.profile_id), ...createursList.map(c => c.createur_profile_id)])];
       if (profileIds.length > 0) {
-        const { data: profiles } = await supabase.from('user_profiles')
+        const { data: profiles } = await supabase.from('user_profiles_complet')
           .select('id, nom, firstname, lastname, profile_label').in('id', profileIds);
         const nameById = new Map((profiles ?? []).map(p => {
           const nom = (p.nom as string | null)?.trim() || (p.profile_label as string | null)?.trim()

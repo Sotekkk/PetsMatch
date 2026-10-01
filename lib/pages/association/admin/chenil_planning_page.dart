@@ -52,7 +52,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     setState(() => _loading = true);
     try {
       // Récupérer le profile_id du profil association actif
-      final profileData = await _supa.from('user_profiles')
+      final profileData = await _supa.from('user_profiles_complet')
           .select('id')
           .eq('uid', uid)
           .eq('profile_type', 'association')
@@ -112,7 +112,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     if (data == null || !mounted) return;
 
     try {
-      final profileData = await _supa.from('user_profiles')
+      final profileData = await _supa.from('user_profiles_complet')
           .select('id')
           .eq('uid', uid)
           .eq('profile_type', 'association')

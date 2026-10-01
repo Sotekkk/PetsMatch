@@ -121,7 +121,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final aid = animalId ?? '';
       if (_proProfileId == null && vetUid.isNotEmpty) {
-        final row = await _supa.from('user_profiles').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
+        final row = await _supa.from('user_profiles_complet').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
         _proProfileId = row?['id'] as String?;
       }
       final proFilter  = _proProfileId != null ? 'pro_profile_id' : 'pro_uid';
@@ -251,14 +251,14 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     // owner_uid doit être un uid réel (FK vers users).
     if (uid != null) {
       try {
-        final u = await _supa.from('users').select('uid').eq('uid', uid).maybeSingle();
+        final u = await _supa.from('users_complet').select('uid').eq('uid', uid).maybeSingle();
         if (u == null) uid = null;
       } catch (_) { uid = null; }
     }
     // Profil particulier du propriétaire si non fourni.
     if (pid == null && uid != null) {
       try {
-        final p = await _supa.from('user_profiles')
+        final p = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', uid).eq('profile_type', 'particulier')
             .order('is_main', ascending: false).limit(1).maybeSingle();
         pid = p?['id'] as String?;

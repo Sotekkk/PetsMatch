@@ -80,7 +80,7 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
       final rUserNames = <String, String>{}; // repli, clé = client_uid
       final rAnimalNames = <String, String>{};
       if (rClientProfileIds.isNotEmpty) {
-        final profs = await _supa.from('user_profiles')
+        final profs = await _supa.from('user_profiles_complet')
             .select('id, firstname, lastname, nom').inFilter('id', rClientProfileIds);
         for (final p in profs as List) {
           final nom = (p['nom'] as String?)?.trim() ?? '';
@@ -90,7 +90,7 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
         }
       }
       if (rClientUids.isNotEmpty) {
-        final users = await _supa.from('users')
+        final users = await _supa.from('users_complet')
             .select('uid, firstname, lastname').inFilter('uid', rClientUids);
         for (final u in users as List) {
           rUserNames[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
@@ -561,7 +561,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
       final userNames = <String, String>{}; // repli, clé = client_uid
       final animalNames = <String, String>{};
       if (clientProfileIds.isNotEmpty) {
-        final profs = await _supa.from('user_profiles')
+        final profs = await _supa.from('user_profiles_complet')
             .select('id, firstname, lastname, nom').inFilter('id', clientProfileIds);
         for (final p in profs as List) {
           final nom = (p['nom'] as String?)?.trim() ?? '';
@@ -571,7 +571,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
         }
       }
       if (clientUids.isNotEmpty) {
-        final users = await _supa.from('users').select('uid, firstname, lastname').inFilter('uid', clientUids);
+        final users = await _supa.from('users_complet').select('uid, firstname, lastname').inFilter('uid', clientUids);
         for (final u in users as List) {
           userNames[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
         }

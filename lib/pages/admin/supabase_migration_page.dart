@@ -204,7 +204,7 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
     _log('🐾 Migration animaux...');
     final snap = await _db.collection('animaux').get();
 
-    final knownUsers = await _supa.from('users').select('uid');
+    final knownUsers = await _supa.from('users_complet').select('uid');
     final knownUids = <String>{for (final r in knownUsers) r['uid'].toString()};
 
     final rows = snap.docs.map((d) {
@@ -300,7 +300,7 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
     _log('  ℹ️ ${existingIds.length} déjà dans Supabase, ${newDocs.length} à importer');
 
     // UIDs connus pour respecter le FK uid_eleveur → users(uid)
-    final knownUsers = await _supa.from('users').select('uid');
+    final knownUsers = await _supa.from('users_complet').select('uid');
     final knownUids = <String>{for (final r in knownUsers) r['uid'].toString()};
 
     final rows = newDocs.map((d) {
@@ -420,7 +420,7 @@ class _SupabaseMigrationPageState extends State<SupabaseMigrationPage> {
     final snap = await _db.collection('post').get();
 
     // Récupère les UIDs connus dans Supabase pour éviter la violation FK
-    final knownUsers = await _supa.from('users').select('uid');
+    final knownUsers = await _supa.from('users_complet').select('uid');
     final knownUids = <String>{for (final r in knownUsers) r['uid'].toString()};
 
     final rows = snap.docs.map((d) {

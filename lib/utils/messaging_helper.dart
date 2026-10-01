@@ -16,7 +16,7 @@ class MessagingHelper {
   /// (`user_profiles`, `is_main=true`, toujours présent grâce au trigger
   /// de création automatique à l'inscription).
   static Future<Map<String, dynamic>> getDisplayInfo(String uid) async {
-    final p = await _supa.from('user_profiles')
+    final p = await _supa.from('user_profiles_complet')
         .select('firstname, lastname, avatar_url, profile_type, nom')
         .eq('uid', uid).eq('is_main', true).maybeSingle();
     if (p == null) {

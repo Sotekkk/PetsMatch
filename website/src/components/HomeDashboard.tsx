@@ -129,7 +129,7 @@ export default function HomeDashboard() {
       setProfileLoading(false);
       return;
     }
-    supabase.from('user_profiles')
+    supabase.from('user_profiles_complet')
       .select('id, profile_type, nom, avatar_url, cat_pro, is_main')
       .eq('id', activeProfileId).single()
       .then(({ data }) => {

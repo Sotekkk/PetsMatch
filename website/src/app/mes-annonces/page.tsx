@@ -83,7 +83,7 @@ export default function MesAnnoncesPage() {
       // pour un profil particulier (pas de cogérance à ce niveau).
       let ownerUid = user!.uid;
       if (!isParticulier && activeProfileId) {
-        const { data: prof } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        const { data: prof } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
         ownerUid = (prof?.uid as string | undefined) ?? user!.uid;
       }
 

@@ -148,7 +148,7 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
         .toSet()
         .toList();
     final res = await Future.wait([
-      _supa.from('user_profiles')
+      _supa.from('user_profiles_complet')
           .select('uid, firstname, lastname, nom, email_contact')
           .inFilter('uid', clientUids).eq('is_main', true),
       animalIds.isNotEmpty

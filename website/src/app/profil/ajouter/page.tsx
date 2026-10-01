@@ -351,7 +351,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
 
       // Vérifie si le profil existe déjà (pour ne pas remettre en_attente lors d'une mise à jour)
       const { data: existing } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('id')
         .eq('uid', uid)
         .eq('profile_type', typeInfo.type)

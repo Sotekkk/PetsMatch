@@ -74,7 +74,7 @@ export default function AnnonceObjetDetailPage() {
         .then(({ data }) => data && supabase.from('annonces_objets')
           .update({ contacts: (data.contacts ?? 0) + 1 }).eq('id', a.id));
       const { data: sellerProfile } = await supabase
-        .from('user_profiles').select('id').eq('uid', a.uid)
+        .from('user_profiles_complet').select('id').eq('uid', a.uid)
         .order('is_main', { ascending: false }).limit(1).maybeSingle();
       const participants = [user.uid, a.uid].sort();
       const convId = participants.join('_') + '_objet_' + a.id;

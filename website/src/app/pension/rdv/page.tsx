@@ -379,7 +379,7 @@ export default function PensionRdvPage() {
       const animalIds  = [...new Set(list.map(r => r.animal_id).filter(Boolean) as string[])];
 
       const [usersRes, animauxRes] = await Promise.all([
-        clientUids.length ? supabase.from('user_profiles').select('uid, firstname, lastname').in('uid', clientUids).eq('is_main', true) : Promise.resolve({ data: [] }),
+        clientUids.length ? supabase.from('user_profiles_complet').select('uid, firstname, lastname').in('uid', clientUids).eq('is_main', true) : Promise.resolve({ data: [] }),
         animalIds.length  ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] }),
       ]);
 

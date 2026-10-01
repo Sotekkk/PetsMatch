@@ -40,7 +40,7 @@ class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
       // Profil ÉLEVEUR de ce compte uniquement — jamais un autre profil du
       // même uid (association, pension…), pour éviter toute fuite cross-profil.
       final prof = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id, montre_reproducteurs, statut_pro')
           .eq('uid', widget.uid)
           .eq('profile_type', 'eleveur')

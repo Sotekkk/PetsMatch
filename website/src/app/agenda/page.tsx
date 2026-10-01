@@ -480,7 +480,7 @@ export default function AgendaPage() {
   useEffect(() => {
     if (!activeProfileId) { setEffectiveUid(null); return; }
     let cancelled = false;
-    supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle()
+    supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle()
       .then(({ data }) => { if (!cancelled) setEffectiveUid((data?.uid as string | undefined) ?? null); });
     return () => { cancelled = true; };
   }, [activeProfileId]);
@@ -500,7 +500,7 @@ export default function AgendaPage() {
     // agenda_page.dart::_effectiveUid.
     async function resolveEffectiveUid(): Promise<string> {
       if (!activeProfileId) return uid!;
-      const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+      const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
       return (data?.uid as string | undefined) ?? uid!;
     }
 
@@ -587,11 +587,11 @@ export default function AgendaPage() {
         const byPpid: Record<string, number> = {};
         const byUid: Record<string, number> = {};
         if (ppids.length) {
-          const { data } = await supabase.from('user_profiles').select('id, annulation_limite_h').in('id', ppids);
+          const { data } = await supabase.from('user_profiles_complet').select('id, annulation_limite_h').in('id', ppids);
           for (const p of data ?? []) byPpid[p.id] = Number(p.annulation_limite_h) || 0;
         }
         if (uids.length) {
-          const { data } = await supabase.from('user_profiles').select('uid, annulation_limite_h').in('uid', uids).eq('is_main', true);
+          const { data } = await supabase.from('user_profiles_complet').select('uid, annulation_limite_h').in('uid', uids).eq('is_main', true);
           for (const p of data ?? []) byUid[p.uid] = Number(p.annulation_limite_h) || 0;
         }
         for (const r of Object.values(rdvMap)) {
@@ -692,7 +692,7 @@ export default function AgendaPage() {
     }
     if (taskUids.size > 0) {
       const { data: usersData } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('uid,firstname,lastname,nom,profile_type,is_main')
         .in('uid', [...taskUids]);
       // Un compte peut avoir plusieurs profils pour le même uid (ex: éleveur +
@@ -722,7 +722,7 @@ export default function AgendaPage() {
       const profileIds = [...new Set(assignedByOthers.map(t => t.eleveur_profile_id).filter((v): v is string => !!v))];
       const profileNomMap: Record<string, string> = {};
       if (profileIds.length > 0) {
-        const { data: profs } = await supabase.from('user_profiles').select('id,nom').in('id', profileIds);
+        const { data: profs } = await supabase.from('user_profiles_complet').select('id,nom').in('id', profileIds);
         for (const p of (profs ?? []) as { id: string; nom?: string }[]) {
           if (p.nom) profileNomMap[p.id] = p.nom;
         }
@@ -1027,16 +1027,16 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
   useEffect(() => {
     let alive = true;
     const cq = rdv.client_profile_id
-      ? supabase.from('user_profiles').select('firstname, lastname, nom').eq('id', rdv.client_profile_id).maybeSingle()
-      : supabase.from('user_profiles').select('firstname, lastname, nom').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+      ? supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', rdv.client_profile_id).maybeSingle()
+      : supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
     cq.then(({ data }) => {
       if (!alive || !data) return;
       const d = data as { firstname?: string; lastname?: string; nom?: string };
       setClientName((d.nom || [d.firstname, d.lastname].filter(Boolean).join(' ') || '').trim());
     });
     (proProfileId
-      ? supabase.from('user_profiles').select('firstname, lastname, nom').eq('id', proProfileId).maybeSingle()
-      : supabase.from('user_profiles').select('firstname, lastname, nom').eq('uid', proUid).eq('is_main', true).maybeSingle()
+      ? supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', proProfileId).maybeSingle()
+      : supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('uid', proUid).eq('is_main', true).maybeSingle()
     ).then(({ data }) => {
       if (!alive || !data) return;
       const d = data as { firstname?: string; lastname?: string; nom?: string };
@@ -1247,7 +1247,7 @@ function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: stri
       const { data: emps } = await supabase.from('employes').select('uid_employe').eq('uid_eleveur', uid).eq('actif', true);
       if (!emps?.length) return;
       const uids = (emps as { uid_employe: string }[]).map(e => e.uid_employe);
-      const { data: users } = await supabase.from('user_profiles').select('uid,firstname,lastname,nom,profile_type').in('uid', uids).eq('is_main', true);
+      const { data: users } = await supabase.from('user_profiles_complet').select('uid,firstname,lastname,nom,profile_type').in('uid', uids).eq('is_main', true);
       setMembers(((users ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]).map(u => ({
         uid: u.uid,
         nom: (u.profile_type === 'eleveur' && u.nom) ? u.nom : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(),
@@ -1590,23 +1590,23 @@ function RdvDetails({ rdv, viewerUid, onNavigateToAnimal }: {
     async function loadOther() {
       if (iAmPro) {
         if (rdv.client_profile_id) {
-          const { data } = await supabase.from('user_profiles')
+          const { data } = await supabase.from('user_profiles_complet')
             .select('nom, firstname, lastname, telephone').eq('id', rdv.client_profile_id).maybeSingle();
           if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
         }
         if (rdv.client_uid) {
-          const { data } = await supabase.from('user_profiles')
+          const { data } = await supabase.from('user_profiles_complet')
             .select('nom, firstname, lastname, telephone').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
           if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
         }
         return { name: (rdv.client_nom_manuel || '').trim(), tel: (rdv.client_telephone_manuel || '').trim() };
       }
       if (rdv.pro_profile_id) {
-        const { data } = await supabase.from('user_profiles')
+        const { data } = await supabase.from('user_profiles_complet')
           .select('nom, firstname, lastname, telephone').eq('id', rdv.pro_profile_id).maybeSingle();
         if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
       }
-      const { data } = await supabase.from('user_profiles')
+      const { data } = await supabase.from('user_profiles_complet')
         .select('nom, firstname, lastname, telephone').eq('uid', rdv.pro_uid).eq('is_main', true).maybeSingle();
       if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
       return { name: '', tel: '' };

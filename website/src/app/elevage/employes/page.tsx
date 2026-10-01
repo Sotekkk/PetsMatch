@@ -160,8 +160,8 @@ export default function EmployesPage() {
     if (!user || !profileLoaded) return;
     (async () => {
       const q = profileId
-        ? supabase.from('user_profiles').select('cat_pro').eq('id', profileId).maybeSingle()
-        : supabase.from('user_profiles').select('cat_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+        ? supabase.from('user_profiles_complet').select('cat_pro').eq('id', profileId).maybeSingle()
+        : supabase.from('user_profiles_complet').select('cat_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const { data } = await q;
       setIsPension((data as { cat_pro?: string } | null)?.cat_pro === 'pension');
     })();
@@ -185,7 +185,7 @@ export default function EmployesPage() {
       const empsData: Employe[] = [];
       const uidToNom: Record<string, string> = {};
       for (const e of empsRaw ?? []) {
-        const { data: u } = await supabase.from('user_profiles')
+        const { data: u } = await supabase.from('user_profiles_complet')
           .select('uid,firstname,lastname,nom,profile_type,avatar_url,profile_picture_url_pro')
           .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
         if (u) {
@@ -387,7 +387,7 @@ export default function EmployesPage() {
 
     let newProfileId: string | null = null;
     if (newUid) {
-      const { data } = await supabase.from('user_profiles')
+      const { data } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', newUid).eq('profile_type', 'particulier').maybeSingle();
       newProfileId = (data?.id as string | undefined) ?? null;
     }
@@ -397,7 +397,7 @@ export default function EmployesPage() {
       .in('id', ids);
 
     if (newUid) {
-      const { data: prof } = await supabase.from('user_profiles')
+      const { data: prof } = await supabase.from('user_profiles_complet')
         .select('nom, firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const nomElevage = ((prof?.nom as string | undefined)?.trim())
         || `${prof?.firstname ?? ''} ${prof?.lastname ?? ''}`.trim()
@@ -1338,13 +1338,13 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
   useEffect(() => {
     async function load() {
       const { data: profile } = profileId
-        ? await supabase.from('user_profiles').select('nom, firstname, lastname').eq('id', profileId).maybeSingle()
-        : await supabase.from('user_profiles').select('nom, firstname, lastname').eq('uid', uid).eq('is_main', true).maybeSingle();
+        ? await supabase.from('user_profiles_complet').select('nom, firstname, lastname').eq('id', profileId).maybeSingle()
+        : await supabase.from('user_profiles_complet').select('nom, firstname, lastname').eq('uid', uid).eq('is_main', true).maybeSingle();
       setNomElevage(
         (profile?.nom as string)?.trim() ||
         `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim()
       );
-      const { data } = await supabase.from('user_profiles')
+      const { data } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, nom, profile_type, cat_pro')
         .neq('uid', uid).eq('is_main', true).limit(500);
       const filtered = (data ?? []).map(u => ({
@@ -1385,8 +1385,8 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
       // d'abonnement annonce ces limites mais rien ne les appliquait jusqu'ici.
       if (!existing || !existing.actif) {
         const catPro = profileId
-          ? (await supabase.from('user_profiles').select('profile_type,cat_pro').eq('id', profileId).maybeSingle()).data
-          : (await supabase.from('user_profiles').select('cat_pro').eq('uid', uid).eq('is_main', true).maybeSingle()).data;
+          ? (await supabase.from('user_profiles_complet').select('profile_type,cat_pro').eq('id', profileId).maybeSingle()).data
+          : (await supabase.from('user_profiles_complet').select('cat_pro').eq('uid', uid).eq('is_main', true).maybeSingle()).data;
         const catProVal = (catPro as { cat_pro?: string } | null)?.cat_pro;
         if (catProVal === 'education' || catProVal === 'pension') {
           const { data: abo } = await supabase.from('abonnements')
@@ -1424,7 +1424,7 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
           actif: true,
         });
       }
-      const { data: targetParticulier } = await supabase.from('user_profiles')
+      const { data: targetParticulier } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',

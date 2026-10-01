@@ -156,7 +156,7 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     List<String> acceptees = List<String>.from(User_Info.especesAcceptees);
     try {
       if (pid.isNotEmpty) {
-        final row = await _supa.from('user_profiles')
+        final row = await _supa.from('user_profiles_complet')
             .select('tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
         final data = row?['tarifs_pension'];
         if (data is Map) tarifs = Map<String, dynamic>.from(data);

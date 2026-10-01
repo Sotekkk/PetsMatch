@@ -117,7 +117,7 @@ export default function InventairePage() {
     const uids = [...new Set(rows.map(r => r.uid_auteur))];
     if (uids.length) {
       const { data: users } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('uid, firstname, lastname, nom, profile_type')
         .in('uid', uids).eq('is_main', true);
       const map: Record<string, string> = {};

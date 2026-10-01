@@ -102,7 +102,7 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
         .whereType<String>().toSet().toList();
     final ownerNames = <String, String>{};
     if (ownerProfileIds.isNotEmpty) {
-      final profiles = await _supa.from('user_profiles').select('id, firstname, lastname, nom')
+      final profiles = await _supa.from('user_profiles_complet').select('id, firstname, lastname, nom')
           .inFilter('id', ownerProfileIds);
       for (final u in (profiles as List)) {
         final name = (u['nom'] as String?)?.isNotEmpty == true

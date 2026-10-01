@@ -101,7 +101,7 @@ function TacheDetailModal({ tache, uid, activeProfileId, onClose }: {
     const authorNames: Record<string, string> = {};
     for (const c of rows ?? []) {
       if (!authorNames[c.uid_auteur]) {
-        const { data: u } = await supabase.from('user_profiles')
+        const { data: u } = await supabase.from('user_profiles_complet')
           .select('firstname, lastname, nom, profile_type')
           .eq('uid', c.uid_auteur).eq('is_main', true).maybeSingle();
         if (u) {
@@ -232,7 +232,7 @@ export default function MesEmployeursPage() {
     // Les relations employé sont toujours rattachées au profil particulier de
     // la personne (jamais à un profil pro/éleveur/association actif) : on
     // résout ce profile_id avant d'interroger `employes`.
-    const { data: particulierProfile } = await supabase.from('user_profiles')
+    const { data: particulierProfile } = await supabase.from('user_profiles_complet')
       .select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle();
     const profileId = particulierProfile?.id as string | undefined;
 
@@ -298,7 +298,7 @@ export default function MesEmployeursPage() {
       { data: tachesRaw },
       { data: planTachesRaw },
     ] = await Promise.all([
-      supabase.from('user_profiles')
+      supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, nom, profile_type, cat_pro, avatar_url, profile_picture_url_pro')
         .in('uid', uids).eq('is_main', true)
         .then(({ data }) => ({ data: (data ?? []).map(p => ({
@@ -316,7 +316,7 @@ export default function MesEmployeursPage() {
     type InvitingProfile = { id: string; nom: string | null; avatar_url: string | null; profile_type: string | null };
     let invitingProfileById: Record<string, InvitingProfile> = {};
     if (allProfileIds.length > 0) {
-      const { data: invitingProfiles } = await supabase.from('user_profiles')
+      const { data: invitingProfiles } = await supabase.from('user_profiles_complet')
         .select('id, nom, avatar_url, profile_type')
         .in('id', allProfileIds) as unknown as { data: InvitingProfile[] | null };
       invitingProfileById = Object.fromEntries((invitingProfiles ?? []).map(p => [p.id, p]));
@@ -740,7 +740,7 @@ function CongeRequestModal({ employer, myUid, onClose }: {
 
       let employeurProfileType: string | null = null;
       if (employer.eleveur_profile_id) {
-        const { data: p } = await supabase.from('user_profiles').select('profile_type')
+        const { data: p } = await supabase.from('user_profiles_complet').select('profile_type')
           .eq('id', employer.eleveur_profile_id).maybeSingle();
         employeurProfileType = p?.profile_type ?? null;
       }

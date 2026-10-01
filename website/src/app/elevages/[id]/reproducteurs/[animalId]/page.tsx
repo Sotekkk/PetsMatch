@@ -30,10 +30,10 @@ export default function ReproDetailPage() {
     (async () => {
       let euid = id;
       if (UUID_RE.test(id)) {
-        const { data } = await supabase.from('user_profiles').select('uid').eq('id', id).maybeSingle();
+        const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', id).maybeSingle();
         euid = (data?.uid as string) ?? id;
       }
-      const { data: prof } = await supabase.from('user_profiles')
+      const { data: prof } = await supabase.from('user_profiles_complet')
         .select('id, montre_reproducteurs, statut_pro')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof?.id || prof.montre_reproducteurs !== true) { setLoading(false); return; }

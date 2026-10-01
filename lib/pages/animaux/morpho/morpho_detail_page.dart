@@ -79,9 +79,9 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       final futures = <Future<dynamic>>[
         if (animalId != null) _supa.from('animaux').select('nom, espece, race').eq('id', animalId).maybeSingle() else Future.value(null),
         if (proProfileId != null)
-          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('id', proProfileId).maybeSingle()
+          _supa.from('user_profiles_complet').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('id', proProfileId).maybeSingle()
         else if (uidAuteur != null)
-          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('uid', uidAuteur).eq('is_main', true).maybeSingle()
+          _supa.from('user_profiles_complet').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('uid', uidAuteur).eq('is_main', true).maybeSingle()
         else
           Future.value(null),
       ];

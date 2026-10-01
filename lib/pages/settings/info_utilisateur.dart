@@ -136,7 +136,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
         // Charger lat/lng depuis Supabase et pré-remplir le champ de recherche
         try {
           final rows = await Supabase.instance.client
-              .from('users')
+              .from('users_complet')
               .select('lat, lng')
               .eq('uid', user.uid)
               .maybeSingle();
@@ -163,10 +163,10 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     try {
       final pid = User_Info.activeProfileId;
       if (pid.isNotEmpty) {
-        row = await supa.from('user_profiles').select().eq('id', pid).maybeSingle();
+        row = await supa.from('user_profiles_complet').select().eq('id', pid).maybeSingle();
       }
       row ??= await supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select()
           .eq('uid', uid)
           .eq('profile_type', 'particulier')

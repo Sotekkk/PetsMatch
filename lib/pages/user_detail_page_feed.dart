@@ -53,7 +53,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   Future<void> _loadEleveurProfil() async {
     try {
       final prof = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id, montre_reproducteurs, desc_entreprise, description, '
               'instagram, facebook, site_web, numero_elevage, phone_number, statut_pro')
           .eq('uid', widget.user.uid)
@@ -121,7 +121,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   Future<void> _loadBannerFromSupabase() async {
     try {
       final row = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('banner_url')
           .eq('uid', widget.user.uid)
           .eq('is_main', true)

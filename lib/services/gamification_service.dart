@@ -75,7 +75,7 @@ class GamificationService {
     String? pid = (profileId != null && profileId.isNotEmpty) ? profileId : null;
     if (pid == null && uid.isNotEmpty) {
       final mainRow = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id')
           .eq('uid', uid)
           .eq('is_main', true)
@@ -181,7 +181,7 @@ class GamificationService {
     required String graceUsedCol,
   }) async {
     final profRow = await _supa
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('$countCol, $lastDateCol, $graceUsedCol')
         .eq('id', profileId)
         .maybeSingle();

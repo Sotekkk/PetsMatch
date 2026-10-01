@@ -44,7 +44,7 @@ export default function TarifsClientsPage() {
     setLoading(true);
 
     const [{ data: profileRow }, { data: rdvData }, { data: overrideData }] = await Promise.all([
-      supabase.from('user_profiles').select('tarifs_garde').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('user_profiles_complet').select('tarifs_garde').eq('id', activeProfileId).maybeSingle(),
       supabase.from('rdv').select('client_uid, client_profile_id, animal_id')
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
         .in('statut', ['confirme', 'termine']).not('client_profile_id', 'is', null),
@@ -69,7 +69,7 @@ export default function TarifsClientsPage() {
     const clientProfileIds = [...seenClients.keys()];
     let names = new Map<string, string>();
     if (clientProfileIds.length) {
-      const { data: profiles } = await supabase.from('user_profiles')
+      const { data: profiles } = await supabase.from('user_profiles_complet')
         .select('id, firstname, lastname, nom').in('id', clientProfileIds);
       names = new Map((profiles ?? []).map(p => {
         const nom = (p.nom as string | null)?.trim();

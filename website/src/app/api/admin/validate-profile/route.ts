@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 import { requireUser } from '@/lib/server-auth';
-import { checkAdmin } from '../_lib/guard';
+// Client serveur (service_role) : les droits sont vérifiés ci-dessous
+// (jeton Firebase + admin ou propriétaire du profil). Le client navigateur
+// n'a pas d'identité côté serveur : sa mise à jour de user_profiles était
+// refusée par la RLS et il ne pourra plus lire les colonnes privées.
+import { checkAdmin, supabaseAdmin as supabase } from '../_lib/guard';
 
 // ─── Codes NAF autorisés par type de profil ───────────────────────────────────
 // L'API renvoie le code sous la forme "01.49Z" — on compare les préfixes normalisés

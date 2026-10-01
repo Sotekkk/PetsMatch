@@ -62,11 +62,11 @@ export default function AssociationProfilePage() {
 
     const profileQ = isProfileUUID
       // UUID de profil : query directe par id (bypass RLS, le profil est connu)
-      ? supabase.from('user_profiles')
+      ? supabase.from('user_profiles_complet')
           .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook, statut_pro')
           .eq('id', id).maybeSingle().then(r => ({ data: r.data ? [r.data] : [], uid: (r.data as SecProfile | null)?.uid ?? id }))
       // Firebase UID : query par uid sans filtre profile_type (filtre côté client)
-      : supabase.from('user_profiles')
+      : supabase.from('user_profiles_complet')
           .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook, statut_pro')
           .eq('uid', id).then(r => ({ data: r.data ?? [], uid: id }));
 
@@ -76,7 +76,7 @@ export default function AssociationProfilePage() {
       const firebaseUid = ownerUid;
 
       Promise.all([
-        supabase.from('users').select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone_number').eq('uid', firebaseUid).maybeSingle(),
+        supabase.from('users_complet').select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone_number').eq('uid', firebaseUid).maybeSingle(),
         supabase.from('annonces').select('id, titre, espece, race, photos, ville_eleveur').eq('uid_eleveur', firebaseUid).eq('profil_source', 'association').eq('statut', 'disponible').order('created_at', { ascending: false }),
         supabase.from('animaux').select('id, nom, espece, race, statut, photo_url').eq('uid_eleveur', firebaseUid).eq('is_association', true).eq('statut', 'disponible').order('nom'),
       ]).then(([{ data: userRow }, { data: ann }, { data: anim }]) => {
@@ -119,7 +119,7 @@ export default function AssociationProfilePage() {
       } else {
         // Récupère le profil Supabase de l'association
         const { data: proProfile } = await supabase
-          .from('user_profiles').select('id').eq('uid', id)
+          .from('user_profiles_complet').select('id').eq('uid', id)
           .order('is_main', { ascending: false }).limit(1).maybeSingle();
 
         const ref = await addDoc(collection(db, 'conversations'), {

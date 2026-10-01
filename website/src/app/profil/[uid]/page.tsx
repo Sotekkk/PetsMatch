@@ -44,10 +44,10 @@ function profileDisplayName(p: { social_pseudo?: string | null; nom?: string | n
 async function activeProfileName(uid: string, activePid: string | null): Promise<string> {
   const cols = 'social_pseudo, nom, firstname, lastname, profile_type';
   if (activePid) {
-    const { data } = await supabase.from('user_profiles').select(cols).eq('id', activePid).maybeSingle();
+    const { data } = await supabase.from('user_profiles_complet').select(cols).eq('id', activePid).maybeSingle();
     if (data) return profileDisplayName(data);
   }
-  const { data } = await supabase.from('user_profiles').select(cols).eq('uid', uid).eq('is_main', true).maybeSingle();
+  const { data } = await supabase.from('user_profiles_complet').select(cols).eq('uid', uid).eq('is_main', true).maybeSingle();
   return profileDisplayName(data);
 }
 
@@ -94,10 +94,10 @@ function PublicProfilePageInner() {
     setLoading(true);
     try {
       const { data: p } = notifFromProfileId
-        ? await supabase.from('user_profiles')
+        ? await supabase.from('user_profiles_complet')
             .select('id, firstname, lastname, avatar_url, ville')
             .eq('id', notifFromProfileId).maybeSingle()
-        : await supabase.from('user_profiles')
+        : await supabase.from('user_profiles_complet')
             .select('id, firstname, lastname, avatar_url, ville')
             .eq('uid', targetUid).eq('is_main', true).maybeSingle();
       setProfile(p ? {

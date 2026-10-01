@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'chatScreen.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 class MessagePage extends StatefulWidget {
   const MessagePage({super.key});
@@ -563,7 +564,7 @@ class _MessagePageState extends State<MessagePage> {
 
     List<Map<String, dynamic>> allUsers = [];
     if (friendUids.isNotEmpty) {
-      final rows = await _supa.from('user_profiles')
+      final rows = await _supa.from('user_profiles_complet')
           .select('uid, firstname, lastname, nom, avatar_url, profile_type')
           .inFilter('uid', friendUids).eq('is_main', true);
       allUsers = (rows as List).cast<Map<String, dynamic>>();
@@ -673,7 +674,7 @@ class _MessagePageState extends State<MessagePage> {
                       final nom = nomCtrl.text.trim();
                       if (nom.isEmpty) return;
                       final members = [uid, ...selectedUids];
-                      final myData = await _supa.from('user_profiles')
+                      final myData = await _supa.from('user_profiles_complet')
                           .select('firstname, lastname').eq('uid', uid).eq('is_main', true).maybeSingle();
                       final myName = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
                       final unread = {for (final u in members) u: 0};
@@ -681,7 +682,7 @@ class _MessagePageState extends State<MessagePage> {
                         uid: {'name': myName.isEmpty ? 'Moi' : myName},
                       };
                       if (selectedUids.isNotEmpty) {
-                        final others = await _supa.from('user_profiles')
+                        final others = await _supa.from('user_profiles_complet')
                             .select('uid, firstname, lastname, avatar_url')
                             .inFilter('uid', selectedUids.toList()).eq('is_main', true);
                         for (final o in others as List) {
@@ -1055,19 +1056,18 @@ class _NewMessageSearchSheetState extends State<_NewMessageSearchSheet> {
     try {
       List<Map<String, dynamic>> rows;
       if (q.contains('@')) {
-        final userRow = await _supa.from('users').select('uid, email')
-            .eq('email', q.toLowerCase()).maybeSingle();
+        final userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow == null) {
           rows = [];
         } else {
-          final cp = await _supa.from('user_profiles')
+          final cp = await _supa.from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, profile_type, avatar_url')
               .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
           rows = cp != null ? [Map<String, dynamic>.from(cp)] : [];
         }
       } else {
         final cps = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, firstname, lastname, nom, profile_type, avatar_url')
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
             .eq('is_main', true)

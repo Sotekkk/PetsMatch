@@ -206,7 +206,7 @@ function FeedPageContent() {
         : 'particulier'
       );
     } else {
-      supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single()
+      supabase.from('user_profiles_complet').select('profile_type').eq('id', activeProfileId).single()
         .then(({ data }) => setProfileType((data as Record<string, unknown>)?.profile_type as string ?? 'particulier'));
     }
   }, [activeProfileId, userData, authLoading]);
@@ -274,7 +274,7 @@ function FeedPageContent() {
     const uids = [...new Set(feed.map(f => f.uidEleveur).filter(Boolean))] as string[];
     if (uids.length > 0) {
       const { data: users } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('uid, profile_picture_url_pro, avatar_url')
         .in('uid', uids).eq('is_main', true);
       if (users) {

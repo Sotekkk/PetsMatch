@@ -84,7 +84,7 @@ function AbonnementContent() {
       if (activeProfileId) {
         // Lire le plan directement sur le profil actif
         const { data } = await supabase
-          .from('user_profiles').select('plan_code, profile_name').eq('id', activeProfileId).maybeSingle();
+          .from('user_profiles_complet').select('plan_code, profile_name').eq('id', activeProfileId).maybeSingle();
         setProfileName(data?.profile_name ?? '');
         return (data?.plan_code as string) ?? 'free';
       }

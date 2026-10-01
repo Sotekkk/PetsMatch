@@ -11,6 +11,7 @@ import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { facturePdfBlob } from '@/lib/facture-pdf';
 import { apiFetch } from '@/lib/api-fetch';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -543,7 +544,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
 
       // Les associations rangent leur adresse dans rue/ville/code_postal/pays et
       // leur téléphone dans phone (pas les colonnes *_pro).
-      let pq = supabase.from('user_profiles').select('nom,firstname,lastname,phone_number,phone,rue_pro,code_postal_pro,ville_pro,pays_pro,rue,ville,code_postal,pays,siret,numero_tva,forme_juridique_pro,capital_social_pro,rcs_pro,rm_pro,regime_tva_pro,iban_pro,bic_pro');
+      let pq = supabase.from('user_profiles_complet').select('nom,firstname,lastname,phone_number,phone,rue_pro,code_postal_pro,ville_pro,pays_pro,rue,ville,code_postal,pays,siret,numero_tva,forme_juridique_pro,capital_social_pro,rcs_pro,rm_pro,regime_tva_pro,iban_pro,bic_pro');
       pq = profileId ? pq.eq('id', profileId) : pq.eq('uid', uid).eq('is_main', true);
       const { data: prof } = await pq.maybeSingle();
 
@@ -711,7 +712,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
     const emailTrim = emailClient.trim();
     if (emailTrim) {
       try {
-        const { data: target } = await supabase.from('users').select('uid').eq('email', emailTrim).maybeSingle();
+        const target = await trouverUtilisateurParEmail(emailTrim);
         const clientUid = target?.uid as string | undefined;
         if (clientUid) {
           await supabase.from('notifications').insert({

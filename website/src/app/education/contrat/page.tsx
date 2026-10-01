@@ -93,7 +93,7 @@ export default function EducationContratPage() {
     const clientUids = [...new Set(candidats.map(p => p.client_uid as string))];
     const animalIds = [...new Set(candidats.map(p => p.animal_id).filter((a): a is string => !!a))];
     const [{ data: clients }, { data: anims }] = await Promise.all([
-      supabase.from('user_profiles').select('uid, firstname, lastname, nom, email_contact').in('uid', clientUids).eq('is_main', true),
+      supabase.from('user_profiles_complet').select('uid, firstname, lastname, nom, email_contact').in('uid', clientUids).eq('is_main', true),
       animalIds.length ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
     ]);
     const cInfo = new Map((clients ?? []).map(c => {

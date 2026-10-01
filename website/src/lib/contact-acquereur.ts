@@ -39,7 +39,7 @@ export async function fetchContactAcquereur(a: AnimalRef): Promise<ContactAcquer
 
   let hasLiveProfile = false;
   if (a.uid_acquereur) {
-    const { data: p } = await supabase.from('user_profiles')
+    const { data: p } = await supabase.from('user_profiles_complet')
       .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
       .eq('uid', a.uid_acquereur).eq('profile_type', 'particulier').maybeSingle();
     if (p) {

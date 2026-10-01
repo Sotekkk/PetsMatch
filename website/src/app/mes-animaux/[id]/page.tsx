@@ -21,6 +21,7 @@ import { morphoSpeciesSupported } from '@/lib/morpho';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -2041,7 +2042,7 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
     setLoading(true);
     let pid = myProfileId;
     if (!pid) {
-      const { data: me } = await supabase.from('user_profiles')
+      const { data: me } = await supabase.from('user_profiles_complet')
         .select('id, firstname, lastname, nom').eq('uid', userUid).eq('profile_type', 'particulier').maybeSingle();
       pid = (me?.id as string) ?? null;
       setMyProfileId(pid);
@@ -2054,7 +2055,7 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
     const list = (data ?? []) as CoproRow[];
     const ids = [...new Set(list.filter(r => r.statut === 'actif' && r.profile_id_proprio).map(r => r.profile_id_proprio as string))];
     if (ids.length) {
-      const { data: profs } = await supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', ids);
+      const { data: profs } = await supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', ids);
       const byId = new Map((profs ?? []).map(p => [p.id as string, `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || (p.nom as string) || 'Propriétaire']));
       list.forEach(r => { r._name = byId.get(r.profile_id_proprio ?? '') ?? 'Propriétaire'; });
     }
@@ -2093,17 +2094,17 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
     setSearching(true); setSearchDone(true);
     let users: { uid: string; firstname: string; lastname: string; email: string }[] = [];
     if (term.includes('@')) {
-      const { data } = await supabase.from('users').select('uid, firstname, lastname, email').eq('email', term.toLowerCase()).limit(5);
-      users = (data ?? []) as typeof users;
+      const found = await trouverUtilisateurParEmail(term);
+      users = (found ? [found] : []) as typeof users;
     } else {
-      const { data } = await supabase.from('users').select('uid, firstname, lastname, email').or(`firstname.ilike.%${term}%,lastname.ilike.%${term}%`).limit(15);
+      const { data } = await supabase.from('users_complet').select('uid, firstname, lastname, email').or(`firstname.ilike.%${term}%,lastname.ilike.%${term}%`).limit(15);
       users = (data ?? []) as typeof users;
     }
     users = users.filter(u => u.uid !== userUid);
     const uids = users.map(u => u.uid);
     const profByUid = new Map<string, string>();
     if (uids.length) {
-      const { data: profs } = await supabase.from('user_profiles').select('uid, id').in('uid', uids).eq('profile_type', 'particulier');
+      const { data: profs } = await supabase.from('user_profiles_complet').select('uid, id').in('uid', uids).eq('profile_type', 'particulier');
       (profs ?? []).forEach(p => profByUid.set(p.uid as string, p.id as string));
     }
     setResults(users.filter(u => profByUid.has(u.uid)).map(u => ({
@@ -2137,7 +2138,7 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
       statut: accepte ? 'actif' : 'refuse', ...(accepte ? { accepte_le: new Date().toISOString() } : {}),
     }).eq('id', myInvite.id);
     if (myInvite.invite_par_profile_id) {
-      const { data: inv } = await supabase.from('user_profiles').select('uid').eq('id', myInvite.invite_par_profile_id).maybeSingle();
+      const { data: inv } = await supabase.from('user_profiles_complet').select('uid').eq('id', myInvite.invite_par_profile_id).maybeSingle();
       if (inv?.uid) await notify(inv.uid as string, myInvite.invite_par_profile_id,
         accepte ? 'coproprio_invitation_acceptee' : 'coproprio_invitation_refusee',
         accepte ? 'Invitation acceptée' : 'Invitation refusée',
@@ -2288,7 +2289,7 @@ function AnimalFichePageInner() {
     (async () => {
       let resolved = user.uid;
       if (activeProfileId) {
-        const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
         resolved = (data?.uid as string | undefined) ?? user.uid;
       }
       if (!cancelled) setOwnerUid(resolved);
@@ -2520,7 +2521,7 @@ function AnimalFichePageInner() {
     let profileUidMap: Record<string,string> = {};
     let profileTypeMap: Record<string,string> = {};
     if (proProfileIds.length > 0) {
-      const { data: profiles } = await supabase.from('user_profiles').select('id, uid, profile_type').in('id', proProfileIds);
+      const { data: profiles } = await supabase.from('user_profiles_complet').select('id, uid, profile_type').in('id', proProfileIds);
       (profiles ?? []).forEach((p: {id:string;uid:string;profile_type?:string}) => {
         profileUidMap[p.id] = p.uid;
         profileTypeMap[p.id] = p.profile_type ?? '';
@@ -2536,7 +2537,7 @@ function AnimalFichePageInner() {
     // verrouillage d'accès côté carnet de santé, donc gardent leur préfixe).
     const bareNames: Record<string,string> = {};
     if (proUids.length > 0) {
-      const { data: users } = await supabase.from('user_profiles').select('uid, firstname, lastname').in('uid', proUids).eq('is_main', true);
+      const { data: users } = await supabase.from('user_profiles_complet').select('uid, firstname, lastname').in('uid', proUids).eq('is_main', true);
       (users ?? []).forEach((u: Record<string,unknown>) => {
         const nom = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         names[u.uid as string] = nom ? `Dr. ${nom}` : 'Vétérinaire';
@@ -2629,7 +2630,7 @@ function AnimalFichePageInner() {
         const { data: dejaSorti } = await supabase.from('registre_mouvements')
           .select('id').eq('animal_id', id).eq('type', 'sortie').eq('motif', 'cession').limit(1);
         if (!dejaSorti || dejaSorti.length === 0) {
-          const { data: acqU } = await supabase.from('users')
+          const { data: acqU } = await supabase.from('users_complet')
             .select('firstname, lastname, name_elevage, is_elevage, is_association').eq('uid', acqUidC).maybeSingle();
           const acqNom = (acqU?.name_elevage as string || '').trim()
             || `${acqU?.firstname ?? ''} ${acqU?.lastname ?? ''}`.trim()
@@ -2643,7 +2644,7 @@ function AnimalFichePageInner() {
             destinataire_nom: acqNom, cession_id: cessionEnCours.id,
           });
           if (acqEleveur || acqAsso) {
-            const { data: acqProf } = await supabase.from('user_profiles')
+            const { data: acqProf } = await supabase.from('user_profiles_complet')
               .select('id').eq('uid', acqUidC).eq('is_main', true).maybeSingle();
             await supabase.from('registre_mouvements').insert({
               animal_id: id, uid_eleveur: acqUidC,
@@ -2742,7 +2743,7 @@ function AnimalFichePageInner() {
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur || !ownerUid) return;
-    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', ownerUid).eq('is_main', true).maybeSingle()
+    supabase.from('user_profiles_complet').select('nom, rue_pro, ville_pro').eq('uid', ownerUid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setNomElevage((data as {nom?:string}).nom ?? '');
@@ -3350,16 +3351,15 @@ function AnimalFichePageInner() {
       const isEmail = q.includes('@');
       let rows: { firstname?: string; lastname?: string; phone_number?: string }[] = [];
       if (isEmail) {
-        const { data: userRow } = await supabase.from('users').select('uid, email')
-            .eq('email', q.toLowerCase()).maybeSingle();
+        const userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow) {
-          const { data: cp } = await supabase.from('user_profiles')
+          const { data: cp } = await supabase.from('user_profiles_complet')
               .select('firstname, lastname, phone_number')
               .eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
           rows = cp ? [cp] : [];
         }
       } else {
-        const { data } = await supabase.from('user_profiles')
+        const { data } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, phone_number')
             .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`)
             .eq('is_main', true)

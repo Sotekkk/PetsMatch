@@ -90,7 +90,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
     }
     try {
       final profRows = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id, nom, prenom')
           .inFilter('id', ids);
       _creatorNames = {
@@ -527,7 +527,7 @@ class _ProtocolAuthSheetState extends State<_ProtocolAuthSheet> {
       for (final e in (empRows as List)) {
         final employeProfileId = e['employe_profile_id'] as String?;
         if (employeProfileId == null) continue;
-        final u = await _supa.from('user_profiles')
+        final u = await _supa.from('user_profiles_complet')
             .select('firstname, lastname').eq('id', employeProfileId).maybeSingle();
         final nom = u != null ? '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim() : 'Employé';
         result.add({'employe_profile_id': employeProfileId, 'nom': nom.isEmpty ? 'Employé' : nom});

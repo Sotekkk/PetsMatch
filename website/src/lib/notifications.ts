@@ -12,7 +12,7 @@ export async function sendNotification(params: {
   // laissé vide par les appelants) — par défaut le profil particulier, qui
   // sert d'ancrage aux notifications "grand public" (contrat_invite, etc.)
   // dans tout le reste du projet.
-  const { data: prof } = await supabase.from('user_profiles')
+  const { data: prof } = await supabase.from('user_profiles_complet')
     .select('id').eq('uid', params.uid).eq('profile_type', params.profileType ?? 'particulier').maybeSingle();
   await supabase.from('notifications').insert({
     uid:          params.uid,

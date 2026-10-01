@@ -72,7 +72,7 @@ class _TourneePageState extends State<TourneePage> {
 
       final results = await Future.wait([
         clientUids.isNotEmpty
-            ? _supa.from('user_profiles').select('uid, firstname, lastname, nom').inFilter('uid', clientUids).eq('is_main', true)
+            ? _supa.from('user_profiles_complet').select('uid, firstname, lastname, nom').inFilter('uid', clientUids).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
         animalIds.isNotEmpty
             ? _supa.from('animaux').select('id, nom').inFilter('id', animalIds)

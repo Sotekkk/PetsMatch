@@ -42,7 +42,7 @@ class _ToilettageDashboardPageState extends State<ToilettageDashboardPage> {
             .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('statut', 'termine'),
         _supa.from('toilettage_factures').select('montant').eq('pro_uid', uid).eq('pro_profile_id', pid).eq('statut', 'payee'),
         pid.isNotEmpty
-            ? _supa.from('user_profiles').select('note_moyenne, nb_avis').eq('id', pid).maybeSingle()
+            ? _supa.from('user_profiles_complet').select('note_moyenne, nb_avis').eq('id', pid).maybeSingle()
             : Future<Map<String, dynamic>?>.value(null),
       ]);
 

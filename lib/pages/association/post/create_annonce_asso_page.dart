@@ -182,7 +182,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       debugPrint('[ASSO] uid=$uid step=userRow');
       final userRow = await Supabase.instance.client
-          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
+          .from('user_profiles_complet').select().eq('uid', uid).eq('is_main', true).single();
 
       // Profil secondaire association — son nom > name_elevage > nom/prénom
       String? assoLabel;
@@ -192,13 +192,13 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         Map<String, dynamic>? assoRow;
         if (activeId.isNotEmpty) {
           assoRow = await Supabase.instance.client
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('nom, profile_label')
               .eq('id', activeId)
               .maybeSingle();
         } else {
           final list = await Supabase.instance.client
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('nom, profile_label, profile_type')
               .eq('uid', uid) as List;
           assoRow = list.firstWhere(

@@ -53,7 +53,7 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
     try {
       // Profil
       final profileRes = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('nom, ville_pro, type_restauration, avatar_url, banner_url, verification_status')
           .eq('uid', uid)
           .eq('cat_pro', 'restauration')

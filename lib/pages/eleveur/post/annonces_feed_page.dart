@@ -328,11 +328,11 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       if (uids.isNotEmpty) {
         try {
           final users = await Supabase.instance.client
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('uid, profile_picture_url_pro, avatar_url, statut_pro, siret')
               .inFilter('uid', uids).eq('is_main', true);
           final premiumRows = await Supabase.instance.client
-              .from('users').select('uid, is_premium').inFilter('uid', uids);
+              .from('users_complet').select('uid, is_premium').inFilter('uid', uids);
           final premiumByUid = { for (final u in List<Map<String, dynamic>>.from(premiumRows)) u['uid'] as String: u['is_premium'] == true };
           final photoMap    = <String, String>{};
           final verifiedMap = <String, bool>{};
@@ -380,7 +380,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           if (partPids.isNotEmpty) {
             try {
               final profiles = await Supabase.instance.client
-                  .from('user_profiles')
+                  .from('user_profiles_complet')
                   .select('id, avatar_url, ville, firstname, lastname, nom')
                   .inFilter('id', partPids);
               final partPhoto = <String, String>{};
@@ -424,7 +424,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           if (assoUids.isNotEmpty) {
             try {
               final profiles = await Supabase.instance.client
-                  .from('user_profiles')
+                  .from('user_profiles_complet')
                   .select('uid, name_elevage, profile_label, avatar_url')
                   .inFilter('uid', assoUids)
                   .eq('profile_type', 'association');

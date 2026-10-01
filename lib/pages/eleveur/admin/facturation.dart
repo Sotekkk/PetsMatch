@@ -26,6 +26,7 @@ import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -817,7 +818,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     }
     Map<String, dynamic>? prof;
     try {
-      final pq = supa.from('user_profiles').select(
+      final pq = supa.from('user_profiles_complet').select(
           'id, nom, rue_pro, code_postal_pro, ville_pro, pays_pro, phone_number, siret, numero_tva, '
           'forme_juridique_pro, capital_social_pro, rcs_pro, rm_pro, regime_tva_pro, iban_pro, bic_pro');
       prof = activePid != null
@@ -887,9 +888,9 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       const cols = 'rue, code_postal, ville, pays, phone, rue_pro, code_postal_pro, '
           'ville_pro, pays_pro, phone_number, siret, numero_tva';
       final cprof = widget.clientProfileId != null
-          ? await supa.from('user_profiles').select(cols)
+          ? await supa.from('user_profiles_complet').select(cols)
               .eq('id', widget.clientProfileId!).maybeSingle()
-          : await supa.from('user_profiles').select(cols)
+          : await supa.from('user_profiles_complet').select(cols)
               .eq('uid', widget.clientUid!).eq('is_main', true).maybeSingle();
       if (cprof == null || !mounted) return;
       // Les colonnes génériques (rue/ville/…) sont renseignées pour tous les
@@ -1084,7 +1085,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       );
     } catch (_) {}
     try {
-      final target = await supa.from('users').select('uid').eq('email', email).maybeSingle();
+      final target = await trouverUtilisateurParEmail(email);
       final clientUid = target?['uid'] as String?;
       if (clientUid != null) {
         await supa.from('notifications').insert({

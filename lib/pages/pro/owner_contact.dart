@@ -39,7 +39,7 @@ Future<OwnerContact> fetchOwnerContact(
   var hasLiveProfile = false;
   if (ownerUid != null && ownerUid.isNotEmpty) {
     try {
-      final p = await supa.from('user_profiles')
+      final p = await supa.from('user_profiles_complet')
           .select('firstname, lastname, phone_number, email_contact')
           .eq('uid', ownerUid)
           .eq('profile_type', 'particulier')

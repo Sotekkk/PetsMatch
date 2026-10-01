@@ -165,7 +165,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     if (uid == null) return;
     try {
       final supa = Supabase.instance.client;
-      final profileData = await supa.from('user_profiles')
+      final profileData = await supa.from('user_profiles_complet')
           .select('id')
           .eq('uid', uid)
           .eq('is_main', true)

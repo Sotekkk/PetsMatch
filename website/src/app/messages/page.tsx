@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 type ConvCategorie = 'animaux-perdus' | 'annonces' | 'communaute' | 'contact-elevage' | 'service-professionnel' | '__archived__' | null;
 
@@ -169,7 +170,7 @@ function MessagesPageInner() {
   // Profile IDs secondaires
   useEffect(() => {
     if (!user) return;
-    supabase.from('user_profiles').select('id').eq('uid', user.uid)
+    supabase.from('user_profiles_complet').select('id').eq('uid', user.uid)
       .then(({ data }) => { if (data) setUserProfileIds(data.map((r: { id: string }) => r.id)); });
   }, [user]);
 
@@ -189,7 +190,7 @@ function MessagesPageInner() {
   const getUserInfo = useCallback(async (uid: string): Promise<UserInfo> => {
     if (userInfoCacheRef.current[uid]) return userInfoCacheRef.current[uid];
     try {
-      const { data } = await supabase.from('user_profiles')
+      const { data } = await supabase.from('user_profiles_complet')
         .select('firstname, lastname, avatar_url, profile_type, nom')
         .eq('uid', uid).eq('is_main', true).maybeSingle();
       if (data) {
@@ -251,16 +252,15 @@ function MessagesPageInner() {
       type Row = { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string; avatar_url?: string };
       let rows: Row[] = [];
       if (q.includes('@')) {
-        const { data: userRow } = await supabase.from('users').select('uid, email')
-            .eq('email', q.toLowerCase()).maybeSingle();
+        const userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow) {
-          const { data: cp } = await supabase.from('user_profiles')
+          const { data: cp } = await supabase.from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, profile_type, avatar_url')
               .eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
           rows = cp ? [cp] : [];
         }
       } else {
-        const { data } = await supabase.from('user_profiles')
+        const { data } = await supabase.from('user_profiles_complet')
             .select('uid, firstname, lastname, nom, profile_type, avatar_url')
             .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`)
             .eq('is_main', true)

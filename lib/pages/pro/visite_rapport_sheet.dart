@@ -109,7 +109,7 @@ Future<void> showVisiteRapportSheet(BuildContext context, Map<String, dynamic> r
         var destPid = rdv['client_profile_id']?.toString();
         if (destPid == null || destPid.isEmpty) {
           try {
-            final p = await supa.from('user_profiles')
+            final p = await supa.from('user_profiles_complet')
                 .select('id').eq('uid', ownerUid).eq('profile_type', 'particulier')
                 .order('is_main', ascending: false).limit(1).maybeSingle();
             destPid = p?['id'] as String?;

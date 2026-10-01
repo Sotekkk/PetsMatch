@@ -99,7 +99,7 @@ class _InscriptionRestaurationDetailPageState
     if (uid == null) { setState(() => _loading = false); return; }
     try {
       final res = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select()
           .eq('uid', uid)
           .eq('cat_pro', 'restauration')

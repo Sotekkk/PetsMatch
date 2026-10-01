@@ -8,6 +8,7 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -88,10 +89,10 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
     final meta     = contrat['metadata'] as Map<String, dynamic>? ?? {};
     final acqEmail = meta['acquereur_email'] as String?;
     if (acqEmail != null && acqEmail.trim().isNotEmpty) {
-      final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      final target = await trouverUtilisateurParEmail(acqEmail.trim());
       if (target != null) {
         final acqUid = target['uid'] as String;
-        final acqProfile = await _supa.from('user_profiles')
+        final acqProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
           'uid':  acqUid,
@@ -362,16 +363,15 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       List<Map<String, dynamic>> results;
       if (query.contains('@')) {
-        final users = await _supa.from('users').select('uid,email')
-            .ilike('email', '%$query%').neq('uid', uid).limit(5);
+        final users = await rechercherUtilisateurs(query, exclureUid: uid, limit: 5);
         final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
         final uids = emailByUid.keys.toList();
-        final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles')
+        final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles_complet')
             .select('uid,firstname,lastname,phone_number,rue,ville,code_postal,rue_pro,ville_pro,code_postal_pro')
             .inFilter('uid', uids).eq('is_main', true);
         results = List<Map<String, dynamic>>.from(cps).map((cp) => _mapProfile(cp, email: emailByUid[cp['uid']])).toList();
       } else {
-        final cps = await _supa.from('user_profiles')
+        final cps = await _supa.from('user_profiles_complet')
             .select('uid,firstname,lastname,email_contact,phone_number,rue,ville,code_postal,rue_pro,ville_pro,code_postal_pro')
             .or('firstname.ilike.%$query%,lastname.ilike.%$query%')
             .neq('uid', uid).eq('is_main', true).limit(5);
@@ -438,10 +438,10 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
       // Infos de l'association active (jamais celles de l'éleveur/profil principal)
       final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       final assoProfile = pid != null
-          ? await _supa.from('user_profiles')
+          ? await _supa.from('user_profiles_complet')
               .select('nom, profession_pro, siret, email_contact, phone, telephone, rue, ville, code_postal')
               .eq('id', pid).maybeSingle()
-          : await _supa.from('user_profiles')
+          : await _supa.from('user_profiles_complet')
               .select('nom, profession_pro, siret, email_contact, phone, telephone, rue, ville, code_postal')
               .eq('uid', uid).eq('is_main', true).maybeSingle();
       final assoNom = (assoProfile?['nom'] as String?) ?? '';

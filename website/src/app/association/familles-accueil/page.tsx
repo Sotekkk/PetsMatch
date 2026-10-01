@@ -83,10 +83,10 @@ export default function FamillesAccueilWebPage() {
   const loadUsers = useCallback(async () => {
     if (!user) return;
     const [{ data: profiles }, { data: emails }] = await Promise.all([
-      supabase.from('user_profiles')
+      supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, phone_number, avatar_url, rue, ville_pro, code_postal_pro')
         .neq('uid', user.uid).eq('is_main', true).limit(500),
-      supabase.from('users').select('uid, email').neq('uid', user.uid).limit(500),
+      supabase.from('users_complet').select('uid, email').neq('uid', user.uid).limit(500),
     ]);
     const emailByUid = new Map((emails ?? []).map(u => [u.uid, u.email as string]));
     setAllUsers((profiles ?? []).map(p => ({
@@ -219,7 +219,7 @@ export default function FamillesAccueilWebPage() {
     }).eq('id', animal.id);
 
     if (placingFa.fa_uid) {
-      const { data: faProfile } = await supabase.from('user_profiles')
+      const { data: faProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', placingFa.fa_uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: placingFa.fa_uid,

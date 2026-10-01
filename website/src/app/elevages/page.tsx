@@ -52,7 +52,7 @@ export default function ElevagesPage() {
 
   useEffect(() => {
     // Tout depuis user_profiles — especes_elevees, lat, lng sont disponibles
-    supabase.from('user_profiles')
+    supabase.from('user_profiles_complet')
       .select('id, uid, nom, firstname, lastname, avatar_url, banner_url, ville, especes_elevees, desc_entreprise, lat, lng, statut_pro, siret, is_premium')
       .eq('profile_type', 'eleveur')
       .eq('is_validate', true)

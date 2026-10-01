@@ -120,7 +120,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
       // (pension est souvent un profil secondaire, is_main pointe ailleurs).
       var proProfileId = User_Info.activeProfileId;
       if (proProfileId.isEmpty) {
-        final proProfile = await _supa.from('user_profiles')
+        final proProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
         proProfileId = proProfile?['id'] as String? ?? '';
       }
@@ -169,7 +169,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
       final ownerProfiles = <String, Map<String, String>>{}; // granted_by_profile_id → infos
       if (grantedProfileIds.isNotEmpty) {
         try {
-          final profils = await _supa.from('user_profiles')
+          final profils = await _supa.from('user_profiles_complet')
               .select('id, uid, profile_type, nom, profile_label, firstname, lastname, phone_number, phone, telephone, email_contact')
               .inFilter('id', grantedProfileIds.toList());
 
@@ -180,7 +180,7 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
           final usersFallback = <String, String>{};
           if (uidsToCheck.isNotEmpty) {
             try {
-              final users = await _supa.from('users').select('uid, phone_number').inFilter('uid', uidsToCheck.toList());
+              final users = await _supa.from('users_complet').select('uid, phone_number').inFilter('uid', uidsToCheck.toList());
               for (final u in users as List) {
                 usersFallback[u['uid'] as String] = (u['phone_number'] as String?) ?? '';
               }

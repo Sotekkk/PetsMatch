@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 const _kPurple = Color(0xFF7B5EA7);
@@ -402,7 +403,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
       final isEducation = User_Info.catPro == 'education';
       final selectCols = isEducation ? '$_tarifsCol,tarifs_education_extra' : _tarifsCol;
       final tarifsRow = pid.isNotEmpty
-          ? await _supa.from('user_profiles').select(selectCols).eq('id', pid).maybeSingle()
+          ? await _supa.from('user_profiles_complet').select(selectCols).eq('id', pid).maybeSingle()
           : null;
       final forfaitsRows = await _supa.from(forfaitsTable)
           .select('id,nom,prix').eq('pro_uid', uid).eq('actif', true);
@@ -451,11 +452,10 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
       const cpFields = 'id,uid,firstname,lastname,phone_number';
       List<Map<String, dynamic>> results;
       if (query.contains('@')) {
-        final users = await _supa.from('users').select('uid, email')
-            .ilike('email', '%$query%').neq('uid', uid).limit(6);
+        final users = await rechercherUtilisateurs(query, exclureUid: uid, limit: 6);
         final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
         final uids = emailByUid.keys.toList();
-        final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles')
+        final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles_complet')
             .select(cpFields).inFilter('uid', uids).eq('is_main', true);
         results = List<Map<String, dynamic>>.from(cps).map((cp) => {
           'uid': cp['uid'], 'firstname': cp['firstname'], 'lastname': cp['lastname'],
@@ -463,7 +463,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           'profile_id': cp['id'],
         }).toList();
       } else {
-        final cps = await _supa.from('user_profiles').select('$cpFields,email_contact')
+        final cps = await _supa.from('user_profiles_complet').select('$cpFields,email_contact')
             .or('firstname.ilike.%$query%,lastname.ilike.%$query%')
             .neq('uid', uid).eq('is_main', true).limit(6);
         results = List<Map<String, dynamic>>.from(cps as List).map((cp) => {

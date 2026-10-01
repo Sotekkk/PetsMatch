@@ -59,12 +59,12 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       // 1. Profil association depuis user_profiles
       Map<String, dynamic>? p;
       if (widget.profileId != null) {
-        p = await _supa.from('user_profiles')
+        p = await _supa.from('user_profiles_complet')
             .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, statut_pro')
             .eq('id', widget.profileId!)
             .maybeSingle();
       } else {
-        final rows = (await _supa.from('user_profiles')
+        final rows = (await _supa.from('user_profiles_complet')
             .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type, statut_pro')
             .eq('uid', widget.uid)) as List;
         p = rows.firstWhere(

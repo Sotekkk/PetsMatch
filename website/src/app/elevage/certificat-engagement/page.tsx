@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { apiFetch } from '@/lib/api-fetch';
+import { rechercherUtilisateurs } from '@/lib/user-lookup';
 
 interface Certificat {
   id: string;
@@ -86,7 +87,7 @@ export default function CertificatEngagementPage() {
         return profilSource === 'association' ? q.eq('profil_source', 'association') : q.or('profil_source.is.null,profil_source.eq.eleveur'); })(),
       (() => { const q = supabaseAdmin.from('animaux').select('id,nom,espece,race,date_naissance,identification').eq('uid_eleveur', user.uid).order('nom');
         return profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'); })(),
-      supabaseAdmin.from('user_profiles').select('nom,siret,phone_number,rue_pro,ville_pro,code_postal_pro,firstname,lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
+      supabaseAdmin.from('user_profiles_complet').select('nom,siret,phone_number,rue_pro,ville_pro,code_postal_pro,firstname,lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
     ]).then(([certs, anim, prof]) => {
       setCertificats((certs.data ?? []) as Certificat[]);
       setAnimaux((anim.data ?? []) as Animal[]);
@@ -114,22 +115,22 @@ export default function CertificatEngagementPage() {
       rue_elevage: cp.rue_pro as string | undefined, ville_elevage: cp.ville_pro as string | undefined, code_postal_elevage: cp.code_postal_pro as string | undefined,
     });
     if (q.includes('@')) {
-      const { data: users } = await supabaseAdmin.from('users').select('uid,email').ilike('email', `%${q}%`).neq('uid', user?.uid ?? '').limit(6);
+      const users = await rechercherUtilisateurs(q, { exclureUid: user?.uid, limit: 6 });
       const uids = (users ?? []).map(u => u.uid);
       const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
       const { data: cps } = uids.length
-        ? await supabaseAdmin.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true)
+        ? await supabaseAdmin.from('user_profiles_complet').select(cpFields).in('uid', uids).eq('is_main', true)
         : { data: [] as Record<string, unknown>[] };
       setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     } else {
-      const { data: cps } = await supabaseAdmin.from('user_profiles').select(cpFields)
+      const { data: cps } = await supabaseAdmin.from('user_profiles_complet').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).eq('is_main', true).neq('uid', user?.uid ?? '').limit(6);
       // email_contact est souvent vide alors que le compte a bien un email
       // de connexion (table users) — sans ce complément, un utilisateur
       // pourtant déjà inscrit ressort sans email pré-rempli.
       const uids = (cps ?? []).map(c => c.uid as string);
       const { data: loginUsers } = uids.length
-        ? await supabaseAdmin.from('users').select('uid,email').in('uid', uids)
+        ? await supabaseAdmin.from('users_complet').select('uid,email').in('uid', uids)
         : { data: [] as { uid: string; email: string }[] };
       const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
       setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));

@@ -122,12 +122,12 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     final pid = User_Info.activeProfileId;
     try {
       if (pid.isNotEmpty) {
-        final r = await _supa.from('user_profiles').select(cols).eq('id', pid).maybeSingle();
+        final r = await _supa.from('user_profiles_complet').select(cols).eq('id', pid).maybeSingle();
         _profileRowId = pid;
         _profileRowIsMain = false;
         return r;
       }
-      final r = await _supa.from('user_profiles').select('$cols, id')
+      final r = await _supa.from('user_profiles_complet').select('$cols, id')
           .eq('uid', User_Info.uid).eq('is_main', true).maybeSingle();
       _profileRowId = r?['id'] as String?;
       _profileRowIsMain = true;
@@ -402,7 +402,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           .toList();
       final Map<String, String> names = {};
       if (cedantUids.isNotEmpty) {
-        final users = await _supa.from('user_profiles')
+        final users = await _supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, nom')
             .inFilter('uid', cedantUids).eq('is_main', true);
         for (final u in (users as List)) {

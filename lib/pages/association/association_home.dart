@@ -117,7 +117,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
     String? bannerUrl;
     try {
       final profiles = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('banner_url')
           .eq('uid', uid)
           .eq('profile_type', 'association')

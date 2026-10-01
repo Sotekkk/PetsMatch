@@ -747,7 +747,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (isElevage || isPro) {
       // Fetch full data for éleveur/pro profile page
       try {
-        final d = await _supa.from('users').select(
+        final d = await _supa.from('users_complet').select(
           'name_elevage, profile_picture_url_elevage, desc_entreprise, is_partenaire, '
           'cat_pro, profession_pro, code_iso_elevage, numero_elevage, adress_elevage, '
           'is_validate, is_elevage, is_pro, is_dog, is_cat, dog_breeds, cat_breeds, '

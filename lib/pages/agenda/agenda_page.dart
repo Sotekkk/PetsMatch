@@ -175,7 +175,7 @@ class _AgendaPageState extends State<AgendaPage> {
     if (pid.isEmpty) return _uid;
     if (_effectiveUidCache != null && _effectiveUidForPid == pid) return _effectiveUidCache!;
     try {
-      final row = await _supa.from('user_profiles').select('uid').eq('id', pid).maybeSingle();
+      final row = await _supa.from('user_profiles_complet').select('uid').eq('id', pid).maybeSingle();
       final resolved = (row?['uid'] as String?) ?? _uid;
       _effectiveUidCache = resolved;
       _effectiveUidForPid = pid;
@@ -226,7 +226,7 @@ class _AgendaPageState extends State<AgendaPage> {
 
   Future<void> _loadColorPrefs() async {
     try {
-      final row = await _supa.from('users').select('agenda_couleurs_types').eq('uid', _uid).maybeSingle();
+      final row = await _supa.from('users_complet').select('agenda_couleurs_types').eq('uid', _uid).maybeSingle();
       final raw = row?['agenda_couleurs_types'];
       if (raw is Map) {
         _agendaCustomColors = raw.map((k, v) => MapEntry(k.toString(), v.toString()));
@@ -284,10 +284,10 @@ class _AgendaPageState extends State<AgendaPage> {
       String? eleveurProfileId = pid.isNotEmpty ? pid : null;
       Map<String, dynamic>? eleveurProfileData;
       if (eleveurProfileId != null) {
-        eleveurProfileData = await _supa.from('user_profiles')
+        eleveurProfileData = await _supa.from('user_profiles_complet')
             .select('id,firstname,lastname,nom,profile_type').eq('id', eleveurProfileId).maybeSingle();
       } else {
-        eleveurProfileData = await _supa.from('user_profiles')
+        eleveurProfileData = await _supa.from('user_profiles_complet')
             .select('id,firstname,lastname,nom,profile_type').eq('uid', _uid).eq('is_main', true).maybeSingle();
         eleveurProfileId = eleveurProfileData?['id'] as String?;
       }
@@ -316,7 +316,7 @@ class _AgendaPageState extends State<AgendaPage> {
       for (final e in emps) {
         final profileId = e['employe_profile_id'] as String?;
         if (profileId != null) {
-          final pd = await _supa.from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
+          final pd = await _supa.from('user_profiles_complet').select('uid').eq('id', profileId).maybeSingle();
           final uid = pd?['uid'] as String?;
           if (uid != null) uids.add(uid);
         } else {
@@ -329,7 +329,7 @@ class _AgendaPageState extends State<AgendaPage> {
         return;
       }
 
-      final users = await _supa.from('user_profiles')
+      final users = await _supa.from('user_profiles_complet')
           .select('uid,firstname,lastname').inFilter('uid', uids).eq('is_main', true);
       if (mounted) {
         setState(() {
@@ -494,14 +494,14 @@ class _AgendaPageState extends State<AgendaPage> {
           final limiteByProfileId = <String, int>{};
           final limiteByUid = <String, int>{};
           if (proProfileIds.isNotEmpty) {
-            final rows = await _supa.from('user_profiles')
+            final rows = await _supa.from('user_profiles_complet')
                 .select('id, annulation_limite_h').inFilter('id', proProfileIds.toList());
             for (final p in rows as List) {
               limiteByProfileId[p['id'].toString()] = (p['annulation_limite_h'] as num?)?.toInt() ?? 0;
             }
           }
           if (proUids.isNotEmpty) {
-            final rows = await _supa.from('user_profiles')
+            final rows = await _supa.from('user_profiles_complet')
                 .select('uid, annulation_limite_h').inFilter('uid', proUids.toList()).eq('is_main', true);
             for (final p in rows as List) {
               limiteByUid[p['uid'].toString()] = (p['annulation_limite_h'] as num?)?.toInt() ?? 0;
@@ -684,7 +684,7 @@ class _AgendaPageState extends State<AgendaPage> {
       }
       if (uids.isNotEmpty) {
         try {
-          final users = await _supa.from('user_profiles')
+          final users = await _supa.from('user_profiles_complet')
               .select('uid,firstname,lastname,nom,profile_type,is_main')
               .inFilter('uid', uids.toList());
           // Un compte peut avoir plusieurs profils pour le même uid (ex: éleveur
@@ -725,7 +725,7 @@ class _AgendaPageState extends State<AgendaPage> {
           final profileIds = assignedByOthers.map((t) => t['eleveur_profile_id'] as String?).whereType<String>().toSet();
           final profileNomMap = <String, String>{};
           if (profileIds.isNotEmpty) {
-            final profs = await _supa.from('user_profiles').select('id,nom').inFilter('id', profileIds.toList());
+            final profs = await _supa.from('user_profiles_complet').select('id,nom').inFilter('id', profileIds.toList());
             for (final p in (profs as List)) {
               final nom = p['nom'] as String?;
               if (nom != null && nom.isNotEmpty) profileNomMap[p['id'] as String] = nom;
@@ -734,7 +734,7 @@ class _AgendaPageState extends State<AgendaPage> {
           final uidNomMap = <String, String>{};
           final ownerUids = assignedByOthers.map((t) => t['uid_eleveur'] as String).toSet();
           if (ownerUids.isNotEmpty) {
-            final users = await _supa.from('user_profiles')
+            final users = await _supa.from('user_profiles_complet')
                 .select('uid,firstname,lastname,nom,profile_type,is_main')
                 .inFilter('uid', ownerUids.toList());
             final byUid = <String, List<Map<String, dynamic>>>{};
@@ -2491,10 +2491,10 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
       try {
         final ppid = _rdv!['pro_profile_id']?.toString();
         final proRows = (ppid != null && ppid.isNotEmpty)
-            ? await _supa.from('user_profiles')
+            ? await _supa.from('user_profiles_complet')
                 .select('uid, firstname, lastname, name_elevage:nom, profession_pro, adress_elevage:adresse, lat, lng')
                 .eq('id', ppid).maybeSingle()
-            : await _supa.from('user_profiles')
+            : await _supa.from('user_profiles_complet')
                 .select('uid, firstname, lastname, name_elevage:nom, profession_pro, adress_elevage:adresse, lat, lng')
                 .eq('uid', _rdv!['pro_uid']).eq('is_main', true).maybeSingle();
         if (proRows != null) _pro = Map<String, dynamic>.from(proRows);
@@ -2516,11 +2516,11 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
         final cpid = _rdv!['client_profile_id']?.toString();
         Map<String, dynamic>? c;
         if (cpid != null && cpid.isNotEmpty) {
-          c = await _supa.from('user_profiles')
+          c = await _supa.from('user_profiles_complet')
               .select('firstname, lastname, nom, phone_number, telephone')
               .eq('id', cpid).maybeSingle();
         } else if ((_rdv!['client_uid']?.toString() ?? '').isNotEmpty) {
-          c = await _supa.from('user_profiles')
+          c = await _supa.from('user_profiles_complet')
               .select('firstname, lastname, nom, phone_number, telephone')
               .eq('uid', _rdv!['client_uid']).eq('is_main', true).maybeSingle();
         }
@@ -3313,7 +3313,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     final profileId = User_Info.activeProfileId;
     String? employeProfileId;
     if (_selectedEmployeUid != null) {
-      final p = await supa.from('user_profiles')
+      final p = await supa.from('user_profiles_complet')
           .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
       employeProfileId = p?['id'] as String?;
     }
@@ -3344,7 +3344,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
 
     if (_selectedEmployeUid != null) {
       try {
-        final moi = await supa.from('user_profiles')
+        final moi = await supa.from('user_profiles_complet')
             .select('firstname,lastname,nom,profile_type')
             .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null
@@ -3616,7 +3616,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       if (isSelfAssign) {
         assigneProfileId = profileIdTache.isNotEmpty ? profileIdTache : null;
       } else if (_selectedEmployeUid != null) {
-        final assigneProfileData = await supa.from('user_profiles')
+        final assigneProfileData = await supa.from('user_profiles_complet')
             .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
         assigneProfileId = assigneProfileData?['id'] as String?;
       }
@@ -3651,7 +3651,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
 
       if (_selectedEmployeUid != null && !isSelfAssign) {
         try {
-          final moi = await supa.from('user_profiles')
+          final moi = await supa.from('user_profiles_complet')
               .select('firstname,lastname,nom,profile_type')
               .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
           final nomEleveur = moi != null
@@ -3961,7 +3961,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     final newAssigne = _selectedEmployeUid;
     String? newAssigneProfileId;
     if (newAssigne != null) {
-      final assigneProfileData = await supa.from('user_profiles')
+      final assigneProfileData = await supa.from('user_profiles_complet')
           .select('id').eq('uid', newAssigne).eq('profile_type', 'particulier').maybeSingle();
       newAssigneProfileId = assigneProfileData?['id'] as String?;
     }
@@ -3975,7 +3975,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     }).eq('id', widget.tache['id'] as String);
     if (newAssigne != null && newAssigne != prevAssigne) {
       try {
-        final moi = await supa.from('user_profiles')
+        final moi = await supa.from('user_profiles_complet')
             .select('firstname,lastname,nom,profile_type')
             .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null
@@ -4163,7 +4163,7 @@ class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
     final newAssigned = _selectedEmployeUid;
     String? newAssignedProfileId;
     if (newAssigned != null) {
-      final p = await supa.from('user_profiles')
+      final p = await supa.from('user_profiles_complet')
           .select('id').eq('uid', newAssigned).eq('profile_type', 'particulier').maybeSingle();
       newAssignedProfileId = p?['id'] as String?;
     }
@@ -4175,7 +4175,7 @@ class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
     }).inFilter('id', ids);
     if (newAssigned != null && newAssigned != prevAssigned) {
       try {
-        final moi = await supa.from('user_profiles')
+        final moi = await supa.from('user_profiles_complet')
             .select('firstname,lastname,nom,profile_type')
             .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null

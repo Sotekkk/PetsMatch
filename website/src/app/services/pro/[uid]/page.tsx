@@ -302,7 +302,7 @@ function ProDetailContent() {
     try {
       let row: Record<string, unknown> | null = null;
       if (profileTableId) {
-        const { data } = await supabase.from('user_profiles').select('*').eq('id', profileTableId).maybeSingle();
+        const { data } = await supabase.from('user_profiles_complet').select('*').eq('id', profileTableId).maybeSingle();
         if (data) row = {
           uid: data.uid, name: (data.nom as string) || (data.name_elevage as string) || '',
           profession: data.profession_pro || '',
@@ -341,7 +341,7 @@ function ProDetailContent() {
           lat: (data.lat as number | null) ?? null, lng: (data.lng as number | null) ?? null,
         };
       } else {
-        const { data } = await supabase.from('user_profiles').select('*').eq('uid', uid).eq('is_main', true).maybeSingle();
+        const { data } = await supabase.from('user_profiles_complet').select('*').eq('uid', uid).eq('is_main', true).maybeSingle();
         if (data) row = {
           uid: data.uid, name: data.nom || data.firstname || '',
           profession: data.profession_pro || '',
@@ -489,7 +489,7 @@ function ProDetailContent() {
       }
 
       const animalNom = animaux.find(a => a.id === inscriptionAnimalId)?.nom ?? 'son animal';
-      const { data: userData } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      const { data: userData } = await supabase.from('user_profiles_complet').select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const clientName = userData ? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim() : 'Un client';
       const dateStr = new Date(inscriptionCours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
       await supabase.from('notifications').insert({

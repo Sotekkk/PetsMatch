@@ -45,7 +45,7 @@ class _ClassementPageState extends State<ClassementPage> with SingleTickerProvid
       ...createursTries.map((c) => c['createur_profile_id'] as String),
     }.toList();
     if (profileIds.isNotEmpty) {
-      final profiles = await _supa.from('user_profiles')
+      final profiles = await _supa.from('user_profiles_complet')
           .select('id, nom, firstname, lastname, profile_label').inFilter('id', profileIds);
       final nameById = <String, String>{};
       for (final p in List<Map<String, dynamic>>.from(profiles as List)) {

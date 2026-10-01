@@ -16,7 +16,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 async function resolveOwnerUid(fallbackUid: string, activeProfileId: string): Promise<string> {
   if (!activeProfileId) return fallbackUid;
   try {
-    const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+    const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
     return (data?.uid as string | undefined) ?? fallbackUid;
   } catch {
     return fallbackUid;

@@ -435,7 +435,7 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
   const [adresseElevage, setAdresseElevage] = useState('');
 
   useEffect(() => {
-    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', uid).eq('is_main', true).maybeSingle()
+    supabase.from('user_profiles_complet').select('nom, rue_pro, ville_pro').eq('uid', uid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setNomElevage((data as { nom?: string }).nom ?? '');

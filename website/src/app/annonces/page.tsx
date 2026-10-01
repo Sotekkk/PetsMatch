@@ -112,8 +112,8 @@ export default function AnnoncesPage() {
         const uids = [...new Set(rows.map(a => a.uid_eleveur).filter(Boolean))] as string[];
         if (uids.length > 0) {
           const [{ data: profiles }, { data: users }] = await Promise.all([
-            supabase.from('user_profiles').select('uid, statut_pro, siret').in('uid', uids).eq('is_main', true),
-            supabase.from('users').select('uid, is_premium').in('uid', uids),
+            supabase.from('user_profiles_complet').select('uid, statut_pro, siret').in('uid', uids).eq('is_main', true),
+            supabase.from('users_complet').select('uid, is_premium').in('uid', uids),
           ]);
           const premiumByUid = new Map((users ?? []).map(u => [u.uid, u.is_premium]));
           const map: Record<string, EleveurVerif> = {};

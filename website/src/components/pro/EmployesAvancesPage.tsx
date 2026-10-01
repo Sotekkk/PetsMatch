@@ -80,7 +80,7 @@ export default function EmployesAvancesPage({
     if (!user) return;
     let pid = activeProfileId || null;
     if (!pid) {
-      const { data: mainProfile } = await supabase.from('user_profiles')
+      const { data: mainProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       pid = mainProfile?.id ?? null;
     }

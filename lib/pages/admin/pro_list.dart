@@ -83,7 +83,7 @@ class _ProListState extends State<ProList> {
     List<dynamic> secondaryRows = [];
     try {
       secondaryRows = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select()
           .not('profile_type', 'is', null);
     } catch (_) {}
@@ -102,11 +102,11 @@ class _ProListState extends State<ProList> {
       if (allUids.isNotEmpty) {
         try {
           final profileRows = await _supa
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('uid, firstname, lastname, avatar_url, profile_picture_url_pro')
               .inFilter('uid', allUids.toList()).eq('is_main', true);
           final emailRows = await _supa
-              .from('users').select('uid, email').inFilter('uid', allUids.toList());
+              .from('users_complet').select('uid, email').inFilter('uid', allUids.toList());
           final emailByUid = { for (final u in (emailRows as List)) u['uid'] as String: u['email'] };
           for (final p in (profileRows as List)) {
             fireMap[p['uid'] as String] = {

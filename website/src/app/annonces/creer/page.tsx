@@ -776,7 +776,7 @@ function CreerAnnoncePageInner() {
       // (activeProfileId) reste celle du gérant.
       let ownerUid = user!.uid;
       if (activeProfileId) {
-        const { data: ownerProf } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        const { data: ownerProf } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
         ownerUid = (ownerProf?.uid as string | undefined) ?? user!.uid;
       }
 
@@ -841,7 +841,7 @@ function CreerAnnoncePageInner() {
       // ── Déclencher la validation auto du profil si encore en attente ────────
       if (activeProfileId) {
         const { data: profil } = await supabase
-          .from('user_profiles').select('validation_status, profile_type')
+          .from('user_profiles_complet').select('validation_status, profile_type')
           .eq('id', activeProfileId).maybeSingle();
         if (profil && profil.profile_type !== 'particulier' && profil.validation_status === 'pending') {
           // Fire-and-forget : ne bloque pas la redirection

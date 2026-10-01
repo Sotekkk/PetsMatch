@@ -19,9 +19,9 @@ export default function AssociationLayout({ children }: { children: React.ReactN
     if (!user) { router.push('/connexion'); return; }
 
     Promise.all([
-      supabase.from('users').select('is_association, name_elevage, firstname, lastname').eq('uid', user.uid).single(),
+      supabase.from('users_complet').select('is_association, name_elevage, firstname, lastname').eq('uid', user.uid).single(),
       activeProfileId
-        ? supabase.from('user_profiles').select('profile_type, nom').eq('id', activeProfileId).single()
+        ? supabase.from('user_profiles_complet').select('profile_type, nom').eq('id', activeProfileId).single()
         : Promise.resolve({ data: null }),
     ]).then(([{ data }, { data: secProfile }]) => {
       // Accès autorisé si compte primaire association OU profil actif de type association

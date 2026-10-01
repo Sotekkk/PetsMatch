@@ -32,7 +32,7 @@ class _ChatProfilePageState extends State<ChatProfilePage> {
   Future<void> _load() async {
     try {
       final p = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('firstname, lastname, ville, avatar_url')
           .eq('uid', widget.uid)
           .eq('is_main', true)

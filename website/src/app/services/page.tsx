@@ -189,7 +189,7 @@ export default function ServicesPage() {
     (async () => {
       try {
         const { data: profilesData } = await supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id, uid, nom, profile_type, avatar_url, ville_pro, accept_new_clients')
           .in('statut_pro', ['actif', 'validated'])
           .not('profile_type', 'in', '(eleveur,association)')

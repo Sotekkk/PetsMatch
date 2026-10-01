@@ -80,10 +80,10 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       const cols = '$kSocialAuthorCols, ville';
       Map<String, dynamic>? up;
       if (targetProfileId != null && targetProfileId.isNotEmpty) {
-        up = await _supa.from('user_profiles').select(cols)
+        up = await _supa.from('user_profiles_complet').select(cols)
             .eq('id', targetProfileId).maybeSingle();
       }
-      up ??= await _supa.from('user_profiles').select(cols)
+      up ??= await _supa.from('user_profiles_complet').select(cols)
           .eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
       if (up != null) {
         targetProfileId = up['id']?.toString();
@@ -175,9 +175,9 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       // demande), pas forcément le profil principal du compte.
       Map<String, dynamic>? me;
       if (myProfileId.isNotEmpty) {
-        me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+        me = await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
       }
-      me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      me ??= await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
       final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
       await _supa.from('notifications').insert({
         'uid': widget.targetUid,
@@ -223,9 +223,9 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     final myProfileId = await _myProfileId() ?? '';
     Map<String, dynamic>? me;
     if (myProfileId.isNotEmpty) {
-      me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+      me = await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
     }
-    me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+    me ??= await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
     await _supa.from('notifications').insert({
       'uid': widget.targetUid,

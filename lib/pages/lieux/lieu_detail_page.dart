@@ -56,7 +56,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
       bool favori = false;
       if (_uid != null) {
         if (_profileId == null) {
-          final row = await _supabase.from('user_profiles').select('id').eq('uid', _uid!).eq('is_main', true).maybeSingle();
+          final row = await _supabase.from('user_profiles_complet').select('id').eq('uid', _uid!).eq('is_main', true).maybeSingle();
           _profileId = row?['id'] as String?;
         }
         final filterCol = _profileId != null ? 'user_profile_id' : 'user_uid';
@@ -70,7 +70,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
       final uids = avisList.map((a) => a['user_uid'] as String?).whereType<String>().toSet();
       if (uids.isNotEmpty) {
         try {
-          final usersData = await _supabase.from('user_profiles')
+          final usersData = await _supabase.from('user_profiles_complet')
               .select('uid, firstname, lastname, profile_type, nom')
               .inFilter('uid', uids.toList()).eq('is_main', true);
           for (final u in (usersData as List)) {
@@ -124,7 +124,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
       final ownerUid = _lieu?['uid_pro'] as String?;
       if (ownerUid != null && ownerUid != _uid) {
         try {
-          final me = await _supabase.from('user_profiles').select('firstname, lastname').eq('uid', _uid).eq('is_main', true).maybeSingle();
+          final me = await _supabase.from('user_profiles_complet').select('firstname, lastname').eq('uid', _uid).eq('is_main', true).maybeSingle();
           final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
           final nomLieu = (_lieu?['name'] ?? _lieu?['nom'] ?? 'votre établissement').toString();
           await _supabase.from('notifications').insert({
@@ -1071,7 +1071,7 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
     setState(() => _saving = true);
     try {
       final profileRow = await Supabase.instance.client
-          .from('user_profiles').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
+          .from('user_profiles_complet').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
       final userProfileId = profileRow?['id'] as String?;
       await Supabase.instance.client.from('petfriendly_review_contests').insert({
         'review_id': widget.avis['id'],
@@ -1397,7 +1397,7 @@ class _AvisFormState extends State<_AvisForm> {
     setState(() => _saving = true);
     try {
       final profileRow = await Supabase.instance.client
-          .from('user_profiles').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
+          .from('user_profiles_complet').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
       final userProfileId = profileRow?['id'] as String?;
       await Supabase.instance.client.from('petfriendly_reviews').insert({
         'place_id': widget.placeId,

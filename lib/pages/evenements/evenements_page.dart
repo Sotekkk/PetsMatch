@@ -52,7 +52,7 @@ class _EvenementsPageState extends State<EvenementsPage> {
     try {
       // Résoudre le profile_id une fois
       if (_uid.isNotEmpty && _profileId == null) {
-        final pd = await _supa.from('user_profiles')
+        final pd = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
         _profileId = pd?['id'] as String?;
       }

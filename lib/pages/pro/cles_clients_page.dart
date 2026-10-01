@@ -82,10 +82,10 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
             ? _supa.from('animaux').select('id, nom').inFilter('id', animalIds)
             : Future.value(<Map<String, dynamic>>[]),
         pids.isNotEmpty
-            ? _supa.from('user_profiles').select('id, firstname, lastname, nom').inFilter('id', pids)
+            ? _supa.from('user_profiles_complet').select('id, firstname, lastname, nom').inFilter('id', pids)
             : Future.value(<Map<String, dynamic>>[]),
         uidsNoPid.isNotEmpty
-            ? _supa.from('user_profiles').select('uid, firstname, lastname, nom').inFilter('uid', uidsNoPid).eq('is_main', true)
+            ? _supa.from('user_profiles_complet').select('uid, firstname, lastname, nom').inFilter('uid', uidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
       ]);
 

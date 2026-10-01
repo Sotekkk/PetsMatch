@@ -56,7 +56,7 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return;
       if (_profileId == null) {
-        final row = await _supa.from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+        final row = await _supa.from('user_profiles_complet').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
         _profileId = row?['id'] as String?;
       }
       final filterCol = _profileId != null ? 'partageur_profile_id' : 'uid_partageur';

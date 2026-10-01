@@ -28,7 +28,7 @@ class _AnimauxEnAccueilPageState extends State<AnimauxEnAccueilPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final profRow = await _supa.from('user_profiles')
+      final profRow = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       final profileId = profRow?['id'] as String?;
 

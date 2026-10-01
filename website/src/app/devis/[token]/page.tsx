@@ -59,7 +59,7 @@ export default function DevisPublicPage({ params }: { params: Promise<{ token: s
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setDevis(data as Devis);
-        const { data: p } = await supabase.from('user_profiles')
+        const { data: p } = await supabase.from('user_profiles_complet')
           .select('nom,firstname,lastname,profession_pro,phone_number,siret')
           .eq('uid', data.pro_uid).eq('is_main', true).maybeSingle();
         setPro(p ? {

@@ -134,7 +134,7 @@ export default function AnimalFichePensionWebPage() {
     // Vérifier l'accès — animal_access, résolu via le profil principal si activeProfileId absent
     let proProfileId: string | null = activeProfileId || null;
     if (!proProfileId) {
-      const { data: mainProfile } = await supabase.from('user_profiles')
+      const { data: mainProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       proProfileId = mainProfile?.id ?? null;
     }

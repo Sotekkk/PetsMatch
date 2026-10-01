@@ -178,7 +178,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
         // Stocker le nom de l'expéditeur dans participants_info
         final updatedInfo = Map<String, dynamic>.from(_participantsInfo);
         if (myName.isEmpty) {
-          final me = await _supa.from('user_profiles')
+          final me = await _supa.from('user_profiles_complet')
               .select('firstname, lastname, avatar_url')
               .eq('uid', _myUid).eq('is_main', true).maybeSingle();
           if (me != null) {
@@ -233,7 +233,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     // Exclure les PetFriends déjà membres du groupe.
     uidByProfileId.removeWhere((_, uid) => _participants.contains(uid));
     if (uidByProfileId.isEmpty) return [];
-    final profiles = await _supa.from('user_profiles')
+    final profiles = await _supa.from('user_profiles_complet')
         .select(kSocialAuthorCols)
         .inFilter('id', uidByProfileId.keys.toList());
     return (profiles as List).map((p) {
@@ -448,7 +448,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
 
   Future<String?> _resolveMyProfileId() async {
     if (_myProfileId != null) return _myProfileId;
-    final row = await _supa.from('user_profiles')
+    final row = await _supa.from('user_profiles_complet')
         .select('id')
         .eq('uid', _myUid).eq('profile_type', 'particulier').eq('is_main', true)
         .maybeSingle();
@@ -482,7 +482,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     final members = List<String>.from((conv?['participants'] as List?)?.map((e) => e.toString()) ?? []);
     final otherUid = members.firstWhere((u) => u != _myUid, orElse: () => '');
     if (otherUid.isEmpty) return;
-    final otherProfile = await _supa.from('user_profiles')
+    final otherProfile = await _supa.from('user_profiles_complet')
         .select('id').eq('uid', otherUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
 
     final animaux = await _loadMyAnimaux(myProfileId);

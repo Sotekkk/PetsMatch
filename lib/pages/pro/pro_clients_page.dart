@@ -170,7 +170,7 @@ class _ProClientsPageState extends State<ProClientsPage>
       Map<String, String> ownerNames = {};
       if (ownerProfileIds.isNotEmpty) {
         final profiles = await supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('id, firstname, lastname, nom')
             .inFilter('id', ownerProfileIds);
         for (final u in profiles) {
@@ -270,7 +270,7 @@ class _ProClientsPageState extends State<ProClientsPage>
       Map<String, Map<String, dynamic>> animalData = {};
 
       if (clientUids.isNotEmpty) {
-        final users = await supa.from('user_profiles').select('uid, firstname, lastname, nom')
+        final users = await supa.from('user_profiles_complet').select('uid, firstname, lastname, nom')
             .inFilter('uid', clientUids).eq('is_main', true);
         for (final u in users) {
           final uid = u['uid'] as String;

@@ -220,7 +220,7 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
       if (uid.isEmpty) { setState(() { _loadingPlaces = false; }); return; }
-      final profileRow = await _supa.from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      final profileRow = await _supa.from('user_profiles_complet').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       final profileId = profileRow?['id'] as String?;
       final filterCol = profileId != null ? 'user_profile_id' : 'user_uid';
       final filterVal = profileId ?? uid;

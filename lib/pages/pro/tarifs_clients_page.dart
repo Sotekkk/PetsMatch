@@ -51,7 +51,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
     final pid = User_Info.activeProfileId;
     if (uid == null || pid.isEmpty) { setState(() => _loading = false); return; }
     try {
-      final profileRowFuture = _supa.from('user_profiles').select('tarifs_garde, tarifs_garde_extra').eq('id', pid).maybeSingle();
+      final profileRowFuture = _supa.from('user_profiles_complet').select('tarifs_garde, tarifs_garde_extra').eq('id', pid).maybeSingle();
       final rdvRowsFuture = _supa.from('rdv').select('client_uid, client_profile_id, animal_id')
           .eq('pro_uid', uid).eq('pro_profile_id', pid)
           .inFilter('statut', ['confirme', 'termine'])
@@ -102,7 +102,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
       final clientProfileIds = seenClients.keys.toList();
       Map<String, String> clientNames = {};
       if (clientProfileIds.isNotEmpty) {
-        final profiles = await _supa.from('user_profiles')
+        final profiles = await _supa.from('user_profiles_complet')
             .select('id, firstname, lastname, nom').inFilter('id', clientProfileIds);
         for (final p in List<Map<String, dynamic>>.from(profiles as List)) {
           final nom = (p['nom'] as String?)?.trim();

@@ -398,7 +398,7 @@ function MesAnimauxPageInner() {
     (async () => {
       let resolved = user.uid;
       if (activeProfileId) {
-        const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
         resolved = (data?.uid as string | undefined) ?? user.uid;
       }
       if (!cancelled) setOwnerUid(resolved);
@@ -442,7 +442,7 @@ function MesAnimauxPageInner() {
 
   useEffect(() => {
     if (!user || !isEleveur || !ownerUid) return;
-    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', ownerUid).eq('is_main', true).maybeSingle()
+    supabase.from('user_profiles_complet').select('nom, rue_pro, ville_pro').eq('uid', ownerUid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setNomElevage((data as {nom?:string}).nom ?? '');
@@ -465,7 +465,7 @@ function MesAnimauxPageInner() {
       // dépendre du state `ownerUid` pour éviter tout décalage de timing).
       let resolvedOwnerUid = uid;
       if (activeProfileId) {
-        const { data: ownerRow } = await supabase.from('user_profiles')
+        const { data: ownerRow } = await supabase.from('user_profiles_complet')
           .select('uid').eq('id', activeProfileId).maybeSingle();
         resolvedOwnerUid = (ownerRow?.uid as string | undefined) ?? uid;
       }

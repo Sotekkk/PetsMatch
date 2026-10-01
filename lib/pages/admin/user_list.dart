@@ -34,7 +34,7 @@ class _UserListState extends State<UserList> {
   Future<void> _loadSupaRoles() async {
     try {
       final rows = await Supabase.instance.client
-          .from('users')
+          .from('users_complet')
           .select('uid, is_pro, is_elevage');
       final map = <String, Map<String, dynamic>>{};
       for (final row in (rows as List)) {

@@ -23,6 +23,7 @@ import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, especeMatchesLogement,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 class RegistrePensionPage extends StatefulWidget {
   const RegistrePensionPage({super.key});
@@ -1822,7 +1823,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
         ownerProfileId = propRow?['profile_id_proprio'] as String?;
       } catch (_) {}
       if (ownerProfileId == null) {
-        final ownerProfiles = await widget.supa.from('user_profiles')
+        final ownerProfiles = await widget.supa.from('user_profiles_complet')
             .select('id, is_main').eq('uid', ownerUid) as List;
         ownerProfileId = ownerProfiles.isEmpty ? null : (ownerProfiles.firstWhere(
             (p) => (p as Map)['is_main'] == true, orElse: () => ownerProfiles.first) as Map)['id'] as String?;
@@ -2437,8 +2438,8 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
           // profil "principal" n'est pas forcément celui qui possède cet
           // animal, ex: animal du profil particulier d'un éleveur).
           final d = ownerProfileId != null
-              ? await supa.from('user_profiles').select().eq('id', ownerProfileId).maybeSingle()
-              : await supa.from('user_profiles').select().eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+              ? await supa.from('user_profiles_complet').select().eq('id', ownerProfileId).maybeSingle()
+              : await supa.from('user_profiles_complet').select().eq('uid', ownerUid).eq('is_main', true).maybeSingle();
           if (d != null) {
             // Éleveur/pro → nom d'élevage + adresse pro en priorité, sinon nom perso.
             final nameElevage = d['nom'] as String?;
@@ -2456,7 +2457,7 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
                 : ((phone?.isNotEmpty ?? false) ? phone! : (numeroElevage ?? ''));
             // email : aucun équivalent fiable sur user_profiles, reste sur users.
             try {
-              final userRow = await supa.from('users').select('email').eq('uid', ownerUid).maybeSingle();
+              final userRow = await supa.from('users_complet').select('email').eq('uid', ownerUid).maybeSingle();
               ownerEmail = (userRow?['email'] as String?) ?? '';
             } catch (_) {}
 
@@ -2909,7 +2910,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         ownerProfileId = propRow?['profile_id_proprio'] as String?;
       } catch (_) {}
       if (ownerProfileId == null) {
-        final ownerProfile = await _supa.from('user_profiles')
+        final ownerProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
         ownerProfileId = ownerProfile?['id'] as String?;
       }
@@ -3236,7 +3237,7 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
       final animalId  = widget.animal['id']?.toString()  ?? '';
       final animalNom = widget.animal['nom']?.toString()  ?? 'Animal';
 
-      final proProfile = await widget.supa.from('user_profiles')
+      final proProfile = await widget.supa.from('user_profiles_complet')
           .select('id').eq('uid', widget.pensionUid).eq('is_main', true).maybeSingle();
       final proProfileId = proProfile?['id'] as String?;
       // Profil propriétaire PRÉCIS via animaux_proprietes en priorité.
@@ -3249,7 +3250,7 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
         ownerProfileId = propRow?['profile_id_proprio'] as String?;
       } catch (_) {}
       if (ownerProfileId == null) {
-        final ownerProfile = await widget.supa.from('user_profiles')
+        final ownerProfile = await widget.supa.from('user_profiles_complet')
             .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
         ownerProfileId = ownerProfile?['id'] as String?;
       }
@@ -3429,7 +3430,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     final pid = User_Info.activeProfileId;
     if (pid.isEmpty) return;
     try {
-      final profil = await Supabase.instance.client.from('user_profiles')
+      final profil = await Supabase.instance.client.from('user_profiles_complet')
           .select('tarifs_pension').eq('id', pid).maybeSingle();
       final config = profil?['tarifs_pension'];
       if (config is! Map) return;
@@ -3788,7 +3789,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
       final ownerEmail = (e['proprietaire_email'] ?? '').toString().trim();
       String? ownerUid;
       if (ownerEmail.isNotEmpty) {
-        final row = await supa.from('users').select('uid').eq('email', ownerEmail).maybeSingle();
+        final row = await trouverUtilisateurParEmail(ownerEmail);
         ownerUid = row?['uid'] as String?;
       }
       final animalId = e['animal_id']?.toString();

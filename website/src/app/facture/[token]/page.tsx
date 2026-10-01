@@ -105,7 +105,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
         setFacture(data as Facture);
         // Repli : anciennes factures sans identité émetteur figée
         if (!data.nom_emetteur || !data.siret_emetteur || !data.rue_emetteur) {
-          let q = supabase.from('user_profiles')
+          let q = supabase.from('user_profiles_complet')
             .select('nom,firstname,lastname,phone_number,siret,numero_tva,rue_pro,code_postal_pro,ville_pro');
           q = data.profile_id
             ? q.eq('id', data.profile_id)

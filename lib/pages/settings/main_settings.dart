@@ -94,7 +94,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
 
     try {
       final supa = Supabase.instance.client;
-      final userProfile = await supa.from('users').select().eq('uid', uid).maybeSingle();
+      final userProfile = await supa.from('users_complet').select().eq('uid', uid).maybeSingle();
       final animaux = await supa.from('animaux').select().eq('uid_eleveur', uid);
       final annonces = await supa.from('annonces').select().eq('uid_eleveur', uid);
       final fsUser = await FirebaseFirestore.instance.collection('users').doc(uid).get();

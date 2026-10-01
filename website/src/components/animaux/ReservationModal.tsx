@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 interface Animal {
   id: string;
@@ -275,13 +276,13 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     const isEmail = q.includes('@');
     let rows: Record<string, unknown>[] = [];
     if (isEmail) {
-      const { data: userRow } = await supabase.from('users').select('uid, email').eq('email', q.toLowerCase()).maybeSingle();
+      const userRow = await trouverUtilisateurParEmail(q.toLowerCase());
       if (userRow) {
-        const { data: cp } = await supabase.from('user_profiles').select(CP_FIELDS).eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
+        const { data: cp } = await supabase.from('user_profiles_complet').select(CP_FIELDS).eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
         if (cp) rows = [mapProfile(cp, userRow.email)];
       }
     } else {
-      const { data } = await supabase.from('user_profiles').select(CP_FIELDS)
+      const { data } = await supabase.from('user_profiles_complet').select(CP_FIELDS)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`)
         .eq('is_main', true)
         .limit(6);

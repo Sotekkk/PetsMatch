@@ -213,7 +213,7 @@ class _ServicesPageState extends State<ServicesPage> {
     setState(() => _loadingPros = true);
     try {
       final rows = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select(
               'id, uid, nom, profile_type, profession_pro, avatar_url, ville_pro, accept_new_clients')
           .inFilter('statut_pro', ['actif', 'validated'])

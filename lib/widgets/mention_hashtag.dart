@@ -19,7 +19,7 @@ Future<List<Map<String, dynamic>>> searchMentionableProfiles(String query, {Stri
   if (q.isEmpty) return [];
   final supa = Supabase.instance.client;
   try {
-    var builder = supa.from('user_profiles')
+    var builder = supa.from('user_profiles_complet')
         .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, social_pseudo')
         .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%,social_pseudo.ilike.%$q%');
     if (excludeUid != null && excludeUid.isNotEmpty) builder = builder.neq('uid', excludeUid);
@@ -57,7 +57,7 @@ Future<void> notifyMentions({
   if (profileIds.isEmpty) return;
   try {
     final supa = Supabase.instance.client;
-    final rows = await supa.from('user_profiles').select('id, uid').inFilter('id', profileIds.toList());
+    final rows = await supa.from('user_profiles_complet').select('id, uid').inFilter('id', profileIds.toList());
     for (final r in rows as List) {
       final targetUid = r['uid'] as String?;
       final targetPid = r['id'] as String?;

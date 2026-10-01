@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 class CertificatsEngagementPage extends StatefulWidget {
   final bool isAssociation;
@@ -172,11 +173,10 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
           final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
           List<Map<String, dynamic>> results;
           if (query.contains('@')) {
-            final users = await _supa.from('users').select('uid,email')
-                .ilike('email', '%$query%').neq('uid', currentUid).limit(5);
+            final users = await rechercherUtilisateurs(query, exclureUid: currentUid, limit: 5);
             final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
             final uids = emailByUid.keys.toList();
-            final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles')
+            final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles_complet')
                 .select('uid,firstname,lastname,phone_number,rue,ville,code_postal')
                 .inFilter('uid', uids).eq('is_main', true);
             results = List<Map<String, dynamic>>.from(cps).map((cp) => {
@@ -185,7 +185,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
               'rue': cp['rue'], 'ville': cp['ville'], 'code_postal': cp['code_postal'],
             }).toList();
           } else {
-            final cps = await _supa.from('user_profiles')
+            final cps = await _supa.from('user_profiles_complet')
                 .select('uid,firstname,lastname,email_contact,phone_number,rue,ville,code_postal')
                 .or('firstname.ilike.%$query%,lastname.ilike.%$query%')
                 .neq('uid', currentUid).eq('is_main', true).limit(5);

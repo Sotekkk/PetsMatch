@@ -60,7 +60,7 @@ class _ToilettagePlanningEmployesPageState extends State<ToilettagePlanningEmplo
 
       final clientUids = rdvs.map((r) => r['client_uid'] as String?).whereType<String>().toSet().toList();
       if (clientUids.isNotEmpty) {
-        final profiles = await _supa.from('user_profiles')
+        final profiles = await _supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, nom').inFilter('uid', clientUids).eq('is_main', true);
         final names = <String, String>{};
         for (final c in profiles as List) {

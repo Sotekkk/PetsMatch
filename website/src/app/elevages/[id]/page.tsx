@@ -146,7 +146,7 @@ export default function EleveurProfilePage() {
     const euid = eleveur?.uid;
     if (!euid) return;
     (async () => {
-      const { data: prof } = await supabase.from('user_profiles')
+      const { data: prof } = await supabase.from('user_profiles_complet')
         .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, numero_elevage')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof) return;
@@ -176,7 +176,7 @@ export default function EleveurProfilePage() {
 
     if (isProfileUUID) {
       // UUID de profil : query user_profiles directement (bypass RLS)
-      supabase.from('user_profiles')
+      supabase.from('user_profiles_complet')
         .select('uid, nom, firstname, lastname, avatar_url, banner_url, ville, especes_elevees, desc_entreprise, lat, lng, statut_pro, siret, is_premium, phone_number, site_web, instagram, facebook, pays, is_validate')
         .eq('id', id).maybeSingle()
         .then(({ data: p }) => {
@@ -236,14 +236,14 @@ export default function EleveurProfilePage() {
         setLoading(false);
         return;
       }
-      return supabase.from('user_profiles').select('*').eq('uid', id).eq('is_main', true).maybeSingle()
+      return supabase.from('user_profiles_complet').select('*').eq('uid', id).eq('is_main', true).maybeSingle()
         .then(({ data }) => {
           if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));
           else setNotFound(true);
           setLoading(false);
         });
     }).catch(() => {
-      supabase.from('user_profiles').select('*').eq('uid', id).eq('is_main', true).maybeSingle()
+      supabase.from('user_profiles_complet').select('*').eq('uid', id).eq('is_main', true).maybeSingle()
         .then(({ data }) => {
           if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));
           else setNotFound(true);

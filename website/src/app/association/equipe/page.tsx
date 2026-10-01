@@ -168,7 +168,7 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
         let taches: Tache[] = [];
 
         if (row.uid_employe) {
-          const { data: p } = await supabase.from('user_profiles')
+          const { data: p } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, profile_label, avatar_url, profile_picture_url_pro')
             .eq('uid', row.uid_employe)
             .eq('is_main', true)
@@ -586,7 +586,7 @@ function EmployesTab({ uid }: { uid: string }) {
 
       const result: Employe[] = [];
       for (const e of (rows ?? [])) {
-        const { data: u } = await supabase.from('users')
+        const { data: u } = await supabase.from('users_complet')
           .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
           .eq('uid', e.uid_employe).maybeSingle();
         const p = u as UserProfile | null;
@@ -716,7 +716,7 @@ function BenevolesTab({ uid }: { uid: string }) {
       const result: Benevole[] = [];
       for (const row of (rows ?? [])) {
         if (row.uid_employe) {
-          const { data: u } = await supabase.from('users')
+          const { data: u } = await supabase.from('users_complet')
             .select('firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage, phone_number')
             .eq('uid', row.uid_employe).maybeSingle();
           const p = u as Omit<UserProfile, 'uid'> | null;
@@ -1019,7 +1019,7 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
     e.preventDefault();
     if (!form.titre.trim() || !form.date) return;
     setSaving(true);
-    const { data: assigneeProfile } = await supabase.from('user_profiles')
+    const { data: assigneeProfile } = await supabase.from('user_profiles_complet')
       .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
     const payload: Record<string, unknown> = {
       uid_eleveur: uid,
@@ -1041,7 +1041,7 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
     setSaving(false);
     if (error) { alert(`Erreur: ${error.message}`); return; }
     if (assigneeUid) {
-      const { data: assigneeProfile } = await supabase.from('user_profiles')
+      const { data: assigneeProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: assigneeUid, type: 'tache',
@@ -1148,7 +1148,7 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
   const [adding, setAdding] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('user_profiles')
+    supabase.from('user_profiles_complet')
       .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, phone_number')
       .neq('uid', uid).eq('is_main', true).limit(500)
       .then(({ data }) => {
@@ -1189,7 +1189,7 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
           ...(eleveurProfileId ? { eleveur_profile_id: eleveurProfileId } : {}),
         });
       }
-      const { data: targetParticulier } = await supabase.from('user_profiles')
+      const { data: targetParticulier } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',

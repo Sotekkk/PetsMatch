@@ -82,12 +82,12 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
       final List<dynamic> secondaryRows = hasFilter
           ? await _supa
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select()
               .inFilter('profile_type', widget.catProValues)
               .inFilter('statut_pro', ['actif', 'validated'])
           : await _supa
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select()
               .inFilter('statut_pro', ['actif', 'validated'])
               .not('profile_type', 'in', _excluded);
@@ -252,7 +252,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
         return;
       }
       final row = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('lat, lng')
           .eq('uid', uid)
           .eq('is_main', true)

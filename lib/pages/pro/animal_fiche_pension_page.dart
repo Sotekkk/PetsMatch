@@ -78,7 +78,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
       var proProfileId = User_Info.activeProfileId;
       if (proProfileId.isEmpty) {
         final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-        final mainProfile = myUid.isEmpty ? null : await _supa.from('user_profiles')
+        final mainProfile = myUid.isEmpty ? null : await _supa.from('user_profiles_complet')
             .select('id').eq('uid', myUid).eq('is_main', true).maybeSingle();
         proProfileId = mainProfile?['id'] as String? ?? '';
       }
@@ -136,11 +136,11 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
       if (lien != null) {
         final profileId = lien['profile_id_proprio'] as String?;
         if (profileId != null && profileId.isNotEmpty) {
-          profil = await _supa.from('user_profiles').select()
+          profil = await _supa.from('user_profiles_complet').select()
               .eq('id', profileId).maybeSingle();
         }
         // Repli : uid seul (données antérieures au multi-profil) → profil principal.
-        profil ??= await _supa.from('user_profiles').select()
+        profil ??= await _supa.from('user_profiles_complet').select()
             .eq('uid', lien['uid_proprio']).eq('is_main', true).maybeSingle();
 
         // Repli téléphone : user_profiles.phone_number contient parfois le
@@ -149,7 +149,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         final tel = (profil?['phone_number'] as String?)?.trim() ?? '';
         if (profil != null && (tel.isEmpty || tel == '0000000000')) {
           try {
-            final u = await _supa.from('users').select('phone_number')
+            final u = await _supa.from('users_complet').select('phone_number')
                 .eq('uid', lien['uid_proprio']).maybeSingle();
             final uTel = (u?['phone_number'] as String?)?.trim() ?? '';
             if (uTel.isNotEmpty) profil = {...profil, 'phone_number': uTel};

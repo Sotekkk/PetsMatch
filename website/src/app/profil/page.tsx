@@ -307,7 +307,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   const arretePrefDocRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    supabase.from('user_profiles').select('*').eq('id', profileId).single()
+    supabase.from('user_profiles_complet').select('*').eq('id', profileId).single()
       .then(async ({ data }) => {
         if (!data) { setLoading(false); return; }
         const r = data as Record<string, unknown>;
@@ -316,7 +316,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         // stockées sur users, jamais recopiées automatiquement sur user_profiles.
         let onboarding: Record<string, unknown> | null = null;
         if (r.uid) {
-          const { data: u } = await supabase.from('users')
+          const { data: u } = await supabase.from('users_complet')
             .select('agrement_prefectoral, capacite_accueil, especes_accueillies, email')
             .eq('uid', r.uid as string).maybeSingle();
           onboarding = u as Record<string, unknown> | null;
@@ -934,7 +934,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [adressePredictions, setAdressePredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
 
   useEffect(() => {
-    supabase.from('user_profiles').select('*').eq('id', profileId).single()
+    supabase.from('user_profiles_complet').select('*').eq('id', profileId).single()
       .then(({ data: row }) => {
         if (!row) { setLoading(false); return; }
         const r = row as Record<string, unknown>;
@@ -2245,7 +2245,7 @@ export default function ProfilPage() {
     setResolvedType(null); // loading
     (async () => {
       try {
-        const { data } = await supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single();
+        const { data } = await supabase.from('user_profiles_complet').select('profile_type').eq('id', activeProfileId).single();
         setResolvedType((data as Record<string, unknown>)?.profile_type as string ?? '');
       } catch {
         setResolvedType('');
@@ -2260,7 +2260,7 @@ export default function ProfilPage() {
     if (!(activeProfileId && resolvedType === 'particulier')) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from('user_profiles')
+      const { data } = await supabase.from('user_profiles_complet')
         .select('firstname,lastname,date_of_birth,phone_number,telephone,rue,ville,code_postal,avatar_url')
         .eq('id', activeProfileId).single();
       if (cancelled || !data) return;
@@ -2800,7 +2800,7 @@ export default function ProfilPage() {
         )
       );
       const [profileRes, annoncesRes, abosRes] = await Promise.all([
-        supabase.from('users').select('*').eq('uid', uid).maybeSingle(),
+        supabase.from('users_complet').select('*').eq('uid', uid).maybeSingle(),
         supabase.from('annonces').select('*').eq('uid_eleveur', uid),
         supabase.from('abonnements').select('plan_code,periodicite,statut,date_debut,date_fin').eq('uid', uid),
       ]);

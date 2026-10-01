@@ -68,7 +68,7 @@ class _ToilettageEmployesPageState extends State<ToilettageEmployesPage> {
           .toSet()
           .toList();
       if (profileIds.isNotEmpty) {
-        final profiles = await _supa.from('user_profiles')
+        final profiles = await _supa.from('user_profiles_complet')
             .select('id, firstname, lastname, avatar_url')
             .inFilter('id', profileIds);
         final byId = { for (final p in (profiles as List)) p['id'] as String: p };

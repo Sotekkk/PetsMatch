@@ -10,6 +10,7 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 /// Choix pour le certificat d'engagement (loi 2021-1539) — jamais imposé :
 /// l'éleveur peut toujours passer l'étape ou apporter son propre document.
@@ -45,7 +46,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     if (uid == null) return;
 
     // Récupérer l'id du profil éleveur pour filtrer les animaux
-    final profileRes = await _supa.from('user_profiles')
+    final profileRes = await _supa.from('user_profiles_complet')
         .select('id')
         .eq('uid', uid)
         .eq('profile_type', 'eleveur')
@@ -73,7 +74,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
               .eq('uid_eleveur', uid)
               .not('statut', 'in', '(sorti,decede)')
               .order('nom'),
-      _supa.from('users')
+      _supa.from('users_complet')
           .select('firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, rue, ville, code_postal, siret, email, numero_elevage, code_iso_elevage, phone_number, code_iso')
           .eq('uid', uid)
           .maybeSingle(),
@@ -450,9 +451,18 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
     final isEmail = q.contains('@');
     final supa = Supabase.instance.client;
     const fields = 'uid, firstname, lastname, name_elevage, is_elevage, email, phone_number, numero_elevage, code_iso_elevage, rue, ville, code_postal, adress_elevage, siret';
-    final data = isEmail
-        ? await supa.from('users').select(fields).ilike('email', '%$q%').limit(5)
-        : await supa.from('users').select(fields).or('firstname.ilike.%$q%,lastname.ilike.%$q%,name_elevage.ilike.%$q%').limit(8);
+    // E-mail : correspondance EXACTE (pm_trouver_utilisateur) — l'e-mail est
+    // masqué dans users_complet, plus de recherche « contient » sur les e-mails.
+    final List data;
+    if (isEmail) {
+      final found = await trouverUtilisateurParEmail(q);
+      data = found == null
+          ? []
+          : ((await supa.from('users_complet').select(fields).eq('uid', found['uid']).limit(1)) as List)
+              .map((r) => {...Map<String, dynamic>.from(r as Map), 'email': found['email']}).toList();
+    } else {
+      data = await supa.from('users_complet').select(fields).or('firstname.ilike.%$q%,lastname.ilike.%$q%,name_elevage.ilike.%$q%').limit(8);
+    }
     setState(() => _searchResults = List<Map<String, dynamic>>.from(data as List));
   }
 
@@ -600,11 +610,10 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
           final acqEmail = _acqEmailCtrl.text.trim();
           if (acqEmail.isNotEmpty) {
             try {
-              final targetRes = await widget.supa
-                  .from('users').select('uid').eq('email', acqEmail).maybeSingle();
+              final targetRes = await trouverUtilisateurParEmail(acqEmail);
               final targetUid = targetRes?['uid'] as String?;
               if (targetUid != null) {
-                final targetProfile = await widget.supa.from('user_profiles')
+                final targetProfile = await widget.supa.from('user_profiles_complet')
                     .select('id').eq('uid', targetUid).eq('profile_type', 'eleveur').maybeSingle();
                 await widget.supa.from('notifications').insert({
                   'uid': targetUid,

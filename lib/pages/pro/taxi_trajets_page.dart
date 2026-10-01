@@ -52,7 +52,7 @@ class _TaxiTrajetsPageState extends State<TaxiTrajetsPage> {
       final clientUids = list.map((r) => r['client_uid'] as String?).whereType<String>().toSet().toList();
       final clientNames = <String, String>{};
       if (clientUids.isNotEmpty) {
-        final profiles = await _supa.from('user_profiles')
+        final profiles = await _supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, nom').inFilter('uid', clientUids).eq('is_main', true);
         for (final c in profiles as List) {
           final nom = (c['nom'] as String?)?.trim();

@@ -83,7 +83,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           .single();
 
       final org = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('firstname, lastname, profile_picture_url:avatar_url')
           .eq('uid', p['organisateur_uid'].toString())
           .eq('is_main', true)
@@ -99,7 +99,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
       final uids = (rawParts as List).map((r) => r['user_uid'].toString()).toList();
       if (uids.isNotEmpty) {
         final usersData = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, firstname, lastname, profile_picture_url:avatar_url')
             .inFilter('uid', uids).eq('is_main', true);
         final usersMap = {
@@ -159,7 +159,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
       final List<Map<String, dynamic>> msgs = [];
       if ((rawMsgs as List).isNotEmpty) {
         final msgUids = rawMsgs.map((m) => m['user_uid'].toString()).toSet().toList();
-        final msgUsers = await _supa.from('user_profiles')
+        final msgUsers = await _supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, profile_picture_url:avatar_url')
             .inFilter('uid', msgUids).eq('is_main', true);
         final msgUsersMap = {for (final u in (msgUsers as List)) u['uid'].toString(): u};
@@ -175,7 +175,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     if (_uid.isEmpty) return;
     setState(() => _saving = true);
     try {
-      final profileRow = await _supa.from('user_profiles').select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final profileRow = await _supa.from('user_profiles_complet').select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
       final pid = profileRow?['id'] as String?;
       await _supa.from('promenades_participants').insert({
         'promenade_id': widget.promenadeId,
@@ -224,9 +224,9 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         }
         return;
       }
-      final profiles = await _supa.from('user_profiles').select(kSocialAuthorCols)
+      final profiles = await _supa.from('user_profiles_complet').select(kSocialAuthorCols)
           .inFilter('id', friendUidByProfileId.keys.toList());
-      final myProfile = await _supa.from('user_profiles').select(kSocialAuthorCols)
+      final myProfile = await _supa.from('user_profiles_complet').select(kSocialAuthorCols)
           .eq('id', myProfileId).maybeSingle();
       final myName = myProfile != null ? socialProfileName(myProfile) : 'Quelqu\'un';
       final alreadyUids = _participants.map((p) => p['user_uid']?.toString() ?? '').toSet();
@@ -334,7 +334,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     if (orgUid.isEmpty || orgUid == _uid) return;
     try {
       final me = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('firstname, lastname')
           .eq('uid', _uid)
           .eq('is_main', true)
@@ -547,7 +547,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
   Future<void> _notifyGroupMessage(String? text, String? imageUrl) async {
     if (_uid.isEmpty || _promenade == null) return;
     try {
-      final me = await _supa.from('user_profiles')
+      final me = await _supa.from('user_profiles_complet')
           .select('firstname, lastname').eq('uid', _uid).eq('is_main', true).maybeSingle();
       final nom = me != null
           ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()

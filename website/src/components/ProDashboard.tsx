@@ -180,7 +180,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       ])];
       if (allUids.length > 0) {
         const { data: usersData } = await supabase
-          .from('user_profiles').select('uid, firstname, lastname')
+          .from('user_profiles_complet').select('uid, firstname, lastname')
           .in('uid', allUids).eq('is_main', true);
         const names: Record<string, string> = {};
         for (const u of (usersData ?? [])) {

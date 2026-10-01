@@ -132,7 +132,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final activeProfileId = User_Info.activeProfileId;
     if (activeProfileId.isEmpty) return _uid;
     try {
-      final row = await _supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+      final row = await _supa.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
       return (row?['uid'] as String?) ?? _uid;
     } catch (_) {
       return _uid;
@@ -1338,7 +1338,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     try {
       // Résoudre tous les profils du compte pension — la demande a pu être
       // envoyée depuis un profil secondaire (pas forcément is_main).
-      final proProfiles = await _supa.from('user_profiles')
+      final proProfiles = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', pensionUid);
       final proProfileIds = (proProfiles as List).map((p) => p['id'] as String).toList();
 
@@ -1433,7 +1433,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     try {
       // Résoudre tous les profils du compte vet — la demande a pu être
       // envoyée depuis un profil secondaire (pas forcément is_main).
-      final vetProfiles = await _supa.from('user_profiles')
+      final vetProfiles = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', vetId);
       final vetProfileIds = (vetProfiles as List).map((p) => p['id'] as String).toList();
       String? requestingProfileId;
@@ -1827,7 +1827,7 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     final activeProfileId = User_Info.activeProfileId;
     if (activeProfileId.isEmpty) return _uid;
     try {
-      final row = await _supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+      final row = await _supa.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
       return (row?['uid'] as String?) ?? _uid;
     } catch (_) {
       return _uid;

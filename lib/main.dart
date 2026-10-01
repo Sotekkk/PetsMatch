@@ -641,7 +641,7 @@ class User_Info {
   static Future<void> loadProfiles(String firebaseUid) async {
     try {
       final rows = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select()
           .eq('uid', firebaseUid)
           .order('is_main', ascending: false)

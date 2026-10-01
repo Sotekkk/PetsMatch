@@ -234,7 +234,7 @@ export default function GroupeDetailPage() {
       ])];
       if (authorUids.length > 0) {
         const { data: profiles } = await supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .in('uid', authorUids).eq('is_main', true);
         const map: Record<string, UserProfile> = {};
@@ -336,7 +336,7 @@ export default function GroupeDetailPage() {
       if (data) {
         setPosts(prev => [data as Post, ...prev]);
         if (user.uid && !userProfiles[user.uid]) {
-          const { data: me } = await supabase.from('user_profiles')
+          const { data: me } = await supabase.from('user_profiles_complet')
             .select('uid, firstname, lastname, avatar_url, profile_type, nom')
             .eq('uid', user.uid).eq('is_main', true).single();
           if (me) setUserProfiles(prev => ({ ...prev, [user.uid]: toUserProfile(me) }));
@@ -357,7 +357,7 @@ export default function GroupeDetailPage() {
     const missing = uids.filter((u: string) => !userProfiles[u]);
     const profiles = { ...userProfiles };
     if (missing.length > 0) {
-      const { data: pd } = await supabase.from('user_profiles')
+      const { data: pd } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
         .in('uid', missing).eq('is_main', true);
       for (const p of (pd ?? [])) profiles[p.uid] = toUserProfile(p);
@@ -420,7 +420,7 @@ export default function GroupeDetailPage() {
     setSignalements(rows);
     const missing = [...new Set(rows.map(s => s.reporter_uid))].filter(u => !userProfiles[u]);
     if (missing.length > 0) {
-      const { data: pd } = await supabase.from('user_profiles')
+      const { data: pd } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
         .in('uid', missing).eq('is_main', true);
       if (pd) {
@@ -469,7 +469,7 @@ export default function GroupeDetailPage() {
     // Load missing profiles for comment authors
     const missing = [...new Set(commentsList.map(c => c.auteur_uid))].filter(u => !userProfiles[u]);
     if (missing.length > 0) {
-      const { data: pd } = await supabase.from('user_profiles')
+      const { data: pd } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
         .in('uid', missing).eq('is_main', true);
       if (pd) {
@@ -542,7 +542,7 @@ export default function GroupeDetailPage() {
     setMembres(rows);
     const missing = [...new Set(rows.map(m => m.user_uid))].filter(u => !userProfiles[u]);
     if (missing.length > 0) {
-      const { data: pd } = await supabase.from('user_profiles')
+      const { data: pd } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
         .in('uid', missing).eq('is_main', true);
       if (pd) {

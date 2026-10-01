@@ -103,7 +103,7 @@ class _InfluencerRequestPageState extends State<InfluencerRequestPage> {
 
     setState(() => _loading = true);
     try {
-      final profs = await _supa.from('user_profiles')
+      final profs = await _supa.from('user_profiles_complet')
           .select('firstname, lastname')
           .eq('uid', uid)
           .eq('profile_type', 'particulier')

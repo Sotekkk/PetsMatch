@@ -90,10 +90,10 @@ export default function ClesClientsPage() {
         ? supabase.from('animaux').select('id, nom').in('id', animalIds)
         : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
       pids.size
-        ? supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', [...pids])
+        ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', [...pids])
         : Promise.resolve({ data: [] as Prof[] }),
       uidsNoPid.size
-        ? supabase.from('user_profiles').select('uid, firstname, lastname, nom').in('uid', [...uidsNoPid]).eq('is_main', true)
+        ? supabase.from('user_profiles_complet').select('uid, firstname, lastname, nom').in('uid', [...uidsNoPid]).eq('is_main', true)
         : Promise.resolve({ data: [] as Prof[] }),
     ]);
 

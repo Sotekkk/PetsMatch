@@ -40,7 +40,7 @@ export default function PhotographeDashboardPage() {
           .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId || '').eq('statut', 'termine')
           .gte('date_heure', startOfMonth).not('lat_depart', 'is', null),
         activeProfileId
-          ? supabase.from('user_profiles').select('lat, lng, note_moyenne, nb_avis').eq('id', activeProfileId).maybeSingle()
+          ? supabase.from('user_profiles_complet').select('lat, lng, note_moyenne, nb_avis').eq('id', activeProfileId).maybeSingle()
           : Promise.resolve({ data: null }),
       ]);
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -62,7 +63,7 @@ class _ProprietairesAnimalSheetState extends State<_ProprietairesAnimalSheet> {
       final uid = _uid;
       if (_myProfileId == null && uid != null) {
         final me = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('id, firstname, lastname, nom')
             .eq('uid', uid)
             .eq('profile_type', 'particulier')
@@ -90,7 +91,7 @@ class _ProprietairesAnimalSheetState extends State<_ProprietairesAnimalSheet> {
       final Map<String, Map<String, dynamic>> byId = {};
       if (ids.isNotEmpty) {
         final profs = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('id, firstname, lastname, nom, avatar_url')
             .inFilter('id', ids);
         for (final p in (profs as List)) {
@@ -536,15 +537,10 @@ class _RechercheProprietaireSheetState extends State<_RechercheProprietaireSheet
     try {
       List<Map<String, dynamic>> users;
       if (q.contains('@')) {
-        final rows = await _supa
-            .from('users')
-            .select('uid, firstname, lastname, email')
-            .eq('email', q.toLowerCase())
-            .limit(5);
-        users = List<Map<String, dynamic>>.from(rows as List);
+        users = await rechercherUtilisateurs(q, limit: 5);
       } else {
         final rows = await _supa
-            .from('users')
+            .from('users_complet')
             .select('uid, firstname, lastname, email')
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%')
             .limit(15);
@@ -557,7 +553,7 @@ class _RechercheProprietaireSheetState extends State<_RechercheProprietaireSheet
       final Map<String, String> profileByUid = {};
       if (uids.isNotEmpty) {
         final profs = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, id')
             .inFilter('uid', uids)
             .eq('profile_type', 'particulier');

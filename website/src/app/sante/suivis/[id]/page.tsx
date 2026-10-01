@@ -90,7 +90,7 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
       }
       const proProfileId = s.pro_profile_id as string | null;
       if (proProfileId) {
-        const { data: p } = await supabase.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('id', proProfileId).maybeSingle();
+        const { data: p } = await supabase.from('user_profiles_complet').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('id', proProfileId).maybeSingle();
         const nom = (p?.nom as string)?.trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
         setPro({ nom, profession: p?.profession_pro as string, adresse: p?.adress as string, tel: p?.phone_number as string, email: p?.email_contact as string });
       }

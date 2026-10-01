@@ -59,7 +59,7 @@ class _VerificationDetailState extends State<VerificationDetail> {
           ? 'eleveur'
           : (widget.data['catPro'] as String? ?? '');
       final label = _profileLabels[profileType] ?? profileType;
-      final prof = await supa.from('user_profiles')
+      final prof = await supa.from('user_profiles_complet')
           .select('id').eq('uid', widget.uid).eq('profile_type', 'particulier').maybeSingle();
       await supa.from('notifications').insert({
         'uid': widget.uid,

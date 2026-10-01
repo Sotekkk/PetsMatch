@@ -1179,7 +1179,7 @@ export default function Header() {
     // particulier de la personne : on résout ce profile_id avant d'interroger
     // `employes`, pour éviter que le même employeur n'apparaisse dans tous
     // les profils du compte (association, pro…).
-    supabase.from('user_profiles').select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle()
+    supabase.from('user_profiles_complet').select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle()
       .then(({ data: particulierProfile }) => {
         const particulierProfileId = particulierProfile?.id as string | undefined;
         if (!particulierProfileId) { setIsEmploye(false); setIsBenevole(false); return; }
@@ -2035,7 +2035,7 @@ export default function Header() {
 
             // Tous les profils du compte pension — la demande a pu être envoyée
             // depuis un profil secondaire (pas forcément is_main).
-            const { data: proProfiles } = await supabase.from('user_profiles')
+            const { data: proProfiles } = await supabase.from('user_profiles_complet')
               .select('id').eq('uid', pensionUid);
             const proProfileIds = (proProfiles ?? []).map(p => p.id);
             let requestingProfileId: string | null = null;

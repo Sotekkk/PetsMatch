@@ -72,10 +72,10 @@ export default function GardeContratPage() {
     type Prof = { id: string; uid: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null };
     const [{ data: byPid }, { data: byUid }] = await Promise.all([
       clientPids.length
-        ? supabase.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').in('id', clientPids)
+        ? supabase.from('user_profiles_complet').select('id, uid, firstname, lastname, nom, email_contact').in('id', clientPids)
         : Promise.resolve({ data: [] as Prof[] }),
       uidsNoPid.length
-        ? supabase.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').in('uid', uidsNoPid).eq('is_main', true)
+        ? supabase.from('user_profiles_complet').select('id, uid, firstname, lastname, nom, email_contact').in('uid', uidsNoPid).eq('is_main', true)
         : Promise.resolve({ data: [] as Prof[] }),
     ]);
     const nomOf = (c: Prof) => c.nom?.trim() || `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim() || 'Client';

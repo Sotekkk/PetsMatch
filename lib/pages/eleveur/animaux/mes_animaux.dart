@@ -162,7 +162,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       // le compte personnel du cogérant (0 animal trouvé).
       String ownerUid = _uid!;
       if (activeProfileId.isNotEmpty) {
-        final ownerRow = await supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        final ownerRow = await supa.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? _uid!;
       }
       _ownerUid = ownerUid;

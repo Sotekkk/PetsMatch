@@ -257,7 +257,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
       if (!emps || emps.length === 0) return;
       const profileIds = emps.map(e => (e as { employe_profile_id: string | null }).employe_profile_id).filter(Boolean) as string[];
       if (profileIds.length === 0) return;
-      const { data: profs } = await supabase.from('user_profiles').select('id, uid').in('id', profileIds);
+      const { data: profs } = await supabase.from('user_profiles_complet').select('id, uid').in('id', profileIds);
       const uidByProfileId: Record<string, string> = {};
       for (const p of (profs ?? [])) {
         const rec = p as { id: string; uid: string };
@@ -265,7 +265,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
       }
       const uids = Object.values(uidByProfileId);
       if (uids.length === 0) return;
-      const { data: users } = await supabase.from('users').select('uid, firstname, lastname').in('uid', uids);
+      const { data: users } = await supabase.from('users_complet').select('uid, firstname, lastname').in('uid', uids);
       const nameByUid: Record<string, string> = {};
       for (const u of (users ?? [])) {
         const rec = u as { uid: string; firstname?: string; lastname?: string };
@@ -1024,7 +1024,7 @@ export default function MesRdvPage() {
   useEffect(() => {
     async function resolveCatPro() {
       if (activeProfileId) {
-        const { data } = await supabase.from('user_profiles')
+        const { data } = await supabase.from('user_profiles_complet')
           .select('profile_type, cat_pro').eq('id', activeProfileId).single();
         if (data) {
           const r = data as { profile_type: string; cat_pro: string };
@@ -1058,8 +1058,8 @@ export default function MesRdvPage() {
       // ⚠ Multi-profil : le nom vient du profil client_profile_id du RDV
       // (pas de name_elevage / is_main, qui affichent le nom d'élevage).
       const [profilesRes, usersRes, animauxRes] = await Promise.all([
-        clientProfileIds.length ? supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', clientProfileIds) : Promise.resolve({ data: [] }),
-        clientUids.length ? supabase.from('users').select('uid, firstname, lastname, prenom, nom').in('uid', clientUids) : Promise.resolve({ data: [] }),
+        clientProfileIds.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', clientProfileIds) : Promise.resolve({ data: [] }),
+        clientUids.length ? supabase.from('users_complet').select('uid, firstname, lastname, prenom, nom').in('uid', clientUids) : Promise.resolve({ data: [] }),
         animalIds.length  ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] }),
       ]);
 

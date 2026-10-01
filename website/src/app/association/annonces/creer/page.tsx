@@ -192,10 +192,10 @@ function CreerAnnonceAssoPageInner() {
       } else {
         // Mode création — INSERT
         const [{ data: userData }, { data: assoProfile }] = await Promise.all([
-          supabase.from('user_profiles')
+          supabase.from('user_profiles_complet')
             .select('nom, firstname, lastname, ville_pro, departement_pro, region_pro, pays_pro')
             .eq('uid', user.uid).eq('is_main', true).single(),
-          supabase.from('user_profiles')
+          supabase.from('user_profiles_complet')
             .select('profile_label')
             .eq('uid', user.uid).eq('profile_type', 'association').maybeSingle(),
         ]);

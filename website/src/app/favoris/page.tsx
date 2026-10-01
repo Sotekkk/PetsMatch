@@ -105,7 +105,7 @@ export default function FavorisPage() {
         : 'particulier'
       );
     } else {
-      supabase.from('user_profiles').select('profile_type').eq('id', activeProfileId).single()
+      supabase.from('user_profiles_complet').select('profile_type').eq('id', activeProfileId).single()
         .then(({ data }) => setProfileType((data as Record<string, unknown>)?.profile_type as string ?? 'particulier'));
     }
   }, [activeProfileId, userData]);

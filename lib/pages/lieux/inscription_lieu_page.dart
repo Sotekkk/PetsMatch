@@ -202,7 +202,7 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
     setState(() => _saving = true);
     try {
       final profileRow = await Supabase.instance.client
-          .from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+          .from('user_profiles_complet').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       final profileId = profileRow?['id'] as String?;
 
       final id = DateTime.now().millisecondsSinceEpoch.toString();

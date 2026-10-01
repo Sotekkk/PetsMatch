@@ -90,7 +90,7 @@ function EmployesTab({ uid }: { uid: string }) {
 
       const result: Employe[] = [];
       for (const e of (rows ?? [])) {
-        const { data: cp } = await supabase.from('user_profiles')
+        const { data: cp } = await supabase.from('user_profiles_complet')
           .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
           .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
         const p: UserProfile | null = cp ? {
@@ -171,7 +171,7 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
   const [adding, setAdding] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('user_profiles')
+    supabase.from('user_profiles_complet')
       .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
       .neq('uid', uid).eq('is_main', true).limit(500)
       .then(({ data }) => {
@@ -210,7 +210,7 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
           type: type === 'benevole' ? 'benevole' : null,
         });
       }
-      const { data: targetParticulier } = await supabase.from('user_profiles')
+      const { data: targetParticulier } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',

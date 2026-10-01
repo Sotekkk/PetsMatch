@@ -355,7 +355,7 @@ export default function EleveurProfilEditPage() {
   // (source de vérité, jamais is_main / Firestore contaminés par un autre profil).
   useEffect(() => {
     if (!user) return;
-    supabase.from('user_profiles')
+    supabase.from('user_profiles_complet')
       .select('montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, numero_elevage, phone_number')
       .eq('uid', user.uid).eq('profile_type', 'eleveur').maybeSingle()
       .then(({ data }) => {

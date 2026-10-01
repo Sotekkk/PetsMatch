@@ -57,7 +57,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
 
   Future<void> _loadAnnivSetting() async {
     try {
-      final row = await _supa.from('user_profiles')
+      final row = await _supa.from('user_profiles_complet')
           .select('cession_anniv_auto')
           .eq('uid', widget.uid ?? '')
           .eq('is_main', true)
@@ -180,7 +180,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       // Notifier l'acquéreur
       final acqUid = a['uid_acquereur'] as String?;
       if (acqUid != null && acqUid.isNotEmpty) {
-        final acqProfile = await _supa.from('user_profiles')
+        final acqProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   acqUid,
@@ -350,10 +350,10 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     final direct = '${a['profile_id_acquereur'] ?? ''}';
     if (direct.isNotEmpty) return direct;
     try {
-      final part = await _supa.from('user_profiles')
+      final part = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
       if (part?['id'] != null) return part!['id'] as String;
-      final main = await _supa.from('user_profiles')
+      final main = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
       return main?['id'] as String?;
     } catch (_) {
@@ -366,7 +366,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   /// masque la conversation à l'acquéreur.
   Future<void> _taguerConversation(String convId, String acqUid, String? acqProfileId) async {
     try {
-      final elevP = await _supa.from('user_profiles')
+      final elevP = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', widget.uid ?? '').eq('profile_type', 'eleveur').maybeSingle();
       final conv = await _supa.from('conversations')
           .select('pro_profile_id, consumer_profile_id, categorie, deleted_for').eq('id', convId).maybeSingle();

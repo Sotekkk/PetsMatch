@@ -204,7 +204,7 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
       if (!rows?.length) { setLoading(false); return; }
       // Dédupliquer par user_uid (un même compte peut avoir liké depuis plusieurs profils)
       const uids = [...new Set((rows as { user_uid: string }[]).map(r => r.user_uid))];
-      const { data: u } = await supabase.from('user_profiles')
+      const { data: u } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, profile_picture_url:avatar_url').in('uid', uids).eq('is_main', true);
       setUsers((u ?? []) as typeof users);
       setLoading(false);
@@ -558,10 +558,10 @@ function AnnonceDetailPageInner() {
           if (data.profil_source === 'association') {
             // Charge le profil association — query sans profile_type (RLS bloque) + filter client-side
             Promise.all([
-              supabase.from('user_profiles')
+              supabase.from('user_profiles_complet')
                 .select('id, profile_type, nom, profile_label, avatar_url, ville')
                 .eq('uid', data.uid_eleveur),
-              supabase.from('user_profiles')
+              supabase.from('user_profiles_complet')
                 .select('nom, profile_picture_url_pro, ville_pro')
                 .eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
             ]).then(([{ data: allProfiles }, { data: u }]) => {
@@ -579,10 +579,10 @@ function AnnonceDetailPageInner() {
             });
           } else {
             Promise.all([
-              supabase.from('user_profiles')
+              supabase.from('user_profiles_complet')
                 .select('profile_picture_url_pro, nom, ville_pro, pays_pro, statut_pro, siret')
                 .eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
-              supabase.from('users').select('is_premium').eq('uid', data.uid_eleveur).maybeSingle(),
+              supabase.from('users_complet').select('is_premium').eq('uid', data.uid_eleveur).maybeSingle(),
             ]).then(([{ data: cp }, { data: premiumRow }]) => {
               if (!cp) return;
               setPro({
@@ -651,7 +651,7 @@ function AnnonceDetailPageInner() {
     try {
       // Récupère le profil Supabase de l'éleveur pour taguer la conversation
       const { data: proProfile } = await supabase
-        .from('user_profiles').select('id').eq('uid', annonce.uid_eleveur)
+        .from('user_profiles_complet').select('id').eq('uid', annonce.uid_eleveur)
         .order('is_main', { ascending: false }).limit(1).maybeSingle();
 
       const participants = [user.uid, annonce.uid_eleveur].sort();

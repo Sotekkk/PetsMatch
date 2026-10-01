@@ -80,7 +80,7 @@ function ServicesCarteContent() {
     try {
       // Profils (user_profiles) — latitude/longitude OU lat/lng, inclus même sans lat/lng
       const { data: secondaryData } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('id, uid, profile_type, nom, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
         .not('profile_type', 'is', null)
         .in('statut_pro', ['actif', 'validated']);
@@ -122,7 +122,7 @@ function ServicesCarteContent() {
     setLocating(true);
     try {
       const { data } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('lat, lng')
         .eq('uid', user.uid)
         .eq('is_main', true)

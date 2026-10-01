@@ -60,8 +60,8 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       int streakCount = 0;
       try {
         final prow = activeProfileId.isNotEmpty
-            ? await _supa.from('user_profiles').select('avatar_url, streak_count').eq('id', activeProfileId).maybeSingle()
-            : await _supa.from('user_profiles').select('avatar_url, streak_count')
+            ? await _supa.from('user_profiles_complet').select('avatar_url, streak_count').eq('id', activeProfileId).maybeSingle()
+            : await _supa.from('user_profiles_complet').select('avatar_url, streak_count')
                 .eq('uid', uid).eq('is_main', true).maybeSingle();
         profileAvatar = (prow?['avatar_url'] as String?)?.trim();
         streakCount = (prow?['streak_count'] as num?)?.toInt() ?? 0;

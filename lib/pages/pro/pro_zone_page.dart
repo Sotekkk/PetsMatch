@@ -40,7 +40,7 @@ class _ProZonePageState extends State<ProZonePage> {
 
       // Charger lat/lng depuis le profil pro
       final user = await _supa
-          .from('users')
+          .from('users_complet')
           .select('lat, lng, rayon_intervention')
           .eq('uid', _uid)
           .maybeSingle();

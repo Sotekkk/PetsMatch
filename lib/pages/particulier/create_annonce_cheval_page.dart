@@ -308,7 +308,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       }
 
       // Profil particulier actif (géo + nom).
-      final q = Supabase.instance.client.from('user_profiles').select(
+      final q = Supabase.instance.client.from('user_profiles_complet').select(
           'firstname, lastname, nom, ville, code_postal, departement, region, pays');
       final row = pid.isEmpty
           ? await q.eq('uid', uid).eq('is_main', true).maybeSingle()

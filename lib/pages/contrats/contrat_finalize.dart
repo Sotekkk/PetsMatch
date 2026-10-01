@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 /// Effets déclenchés quand un contrat `documents_animaux` vient d'être signé par
 /// les deux parties. Réplique `website/src/app/signer-contrat/[token]/page.tsx`
@@ -16,10 +17,10 @@ Future<String?> _acquereurProfileId(
       ? 'eleveur'
       : qualite == 'refuge' || qualite == 'association' ? 'association' : 'particulier';
   try {
-    final byType = await supa.from('user_profiles')
+    final byType = await supa.from('user_profiles_complet')
         .select('id').eq('uid', acqUid).eq('profile_type', wanted).maybeSingle();
     if (byType?['id'] != null) return byType!['id'] as String;
-    final main = await supa.from('user_profiles')
+    final main = await supa.from('user_profiles_complet')
         .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
     return main?['id'] as String?;
   } catch (_) {
@@ -90,7 +91,7 @@ Future<void> finalizeContratSigne({
               .eq('motif', 'cession')
               .limit(1);
           if ((dejaSorti as List).isEmpty && cedantUid0 != null && acqUid0 != null) {
-            final acqU = await supa.from('users')
+            final acqU = await supa.from('users_complet')
                 .select('firstname, lastname, name_elevage, is_elevage, is_association')
                 .eq('uid', acqUid0).maybeSingle();
             final acqNom = (acqU?['name_elevage'] as String? ?? '').isNotEmpty
@@ -109,7 +110,7 @@ Future<void> finalizeContratSigne({
               if (cessionId != null) 'cession_id': cessionId,
             });
             if (acqEleveur || acqAsso) {
-              final acqProf = await supa.from('user_profiles')
+              final acqProf = await supa.from('user_profiles_complet')
                   .select('id').eq('uid', acqUid0).eq('is_main', true).maybeSingle();
               await supa.from('registre_mouvements').insert({
                 'animal_id':           animalId,
@@ -261,7 +262,7 @@ Future<void> notifierContratSignature({
     final email = (meta['acquereur_email'] as String?)?.trim();
     if (email != null && email.isNotEmpty) {
       try {
-        final u = await supa.from('users').select('uid').eq('email', email).maybeSingle();
+        final u = await trouverUtilisateurParEmail(email);
         acqUid = u?['uid'] as String?;
       } catch (_) {}
     }
@@ -291,7 +292,7 @@ Future<void> notifierContratSignature({
         profId = proProfileId; // profil pro émetteur (garde / pension / éducation…)
       }
       if (profId == null) {
-        final prof = await supa.from('user_profiles')
+        final prof = await supa.from('user_profiles_complet')
             .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
         profId = prof?['id'] as String?;
       }

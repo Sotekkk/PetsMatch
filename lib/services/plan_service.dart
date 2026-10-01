@@ -232,7 +232,7 @@ class PlanService {
     if (pid.isEmpty) return uid;
     try {
       final row = await Supabase.instance.client
-          .from('user_profiles').select('uid').eq('id', pid).maybeSingle();
+          .from('user_profiles_complet').select('uid').eq('id', pid).maybeSingle();
       return (row?['uid'] as String?) ?? uid;
     } catch (_) {
       return uid;

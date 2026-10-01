@@ -30,7 +30,7 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final profRow = await _supa.from('user_profiles')
+      final profRow = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
       final assocProfileId = profRow?['id'] as String?;
 
@@ -424,11 +424,11 @@ class _FaSheetState extends State<_FaSheet> {
     setState(() => _loadingUsers = true);
     try {
       final profiles = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, phone_number, ville_pro, code_postal_pro, rue, avatar_url')
           .neq('uid', myUid).eq('is_main', true)
           .limit(500);
-      final users = await _supa.from('users').select('uid, email').neq('uid', myUid).limit(500);
+      final users = await _supa.from('users_complet').select('uid, email').neq('uid', myUid).limit(500);
       final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
       if (mounted) setState(() {
         _allUsers = List<Map<String, dynamic>>.from(profiles as List).map((p) => {
@@ -455,7 +455,7 @@ class _FaSheetState extends State<_FaSheet> {
   }
 
   Future<void> _selectUser(Map<String, dynamic> u) async {
-    final profRow = await _supa.from('user_profiles')
+    final profRow = await _supa.from('user_profiles_complet')
         .select('id').eq('uid', u['uid'] as String).eq('is_main', true).maybeSingle();
     if (!mounted) return;
     setState(() {
@@ -514,7 +514,7 @@ class _FaSheetState extends State<_FaSheet> {
     try {
       String? assocProfileId;
       if (!_isEdit) {
-        final profRow = await _supa.from('user_profiles')
+        final profRow = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
         assocProfileId = profRow?['id'] as String?;
       }
@@ -842,7 +842,7 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
       final faUid = widget.fa['fa_uid'] as String?;
       if (faUid != null) {
         final faName = '${widget.fa['prenom'] ?? ''} ${widget.fa['nom'] ?? ''}'.trim();
-        final faProfile = await _supa.from('user_profiles')
+        final faProfile = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', faUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   faUid,

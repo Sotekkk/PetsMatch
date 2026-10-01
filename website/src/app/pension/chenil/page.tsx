@@ -57,7 +57,7 @@ export default function PensionChenilPage() {
       supabase.from('enclos_chenil').select('*').eq('uid_eleveur', user.uid).order('nom'),
       supabase.from('pension_entrees').select('id, animal_nom, espece, logement_id')
         .eq('pro_uid', user.uid).eq('statut', 'en_pension').order('date_entree'),
-      supabase.from('user_profiles').select('especes_acceptees')
+      supabase.from('user_profiles_complet').select('especes_acceptees')
         .eq('uid', user.uid).eq('profile_type', 'pension').maybeSingle(),
     ]);
     setLogements(log ?? []);

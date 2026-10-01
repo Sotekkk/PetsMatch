@@ -88,7 +88,7 @@ async function fetchCogerances(uid: string): Promise<Profile[]> {
       .eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null);
     const ids = (links ?? []).map(l => l.elevage_profile_id).filter(Boolean) as string[];
     if (ids.length === 0) return [];
-    const { data: profs } = await supabase.from('user_profiles').select('*').in('id', ids);
+    const { data: profs } = await supabase.from('user_profiles_complet').select('*').in('id', ids);
     return ((profs ?? []) as Profile[]).map(p => ({ ...p, _is_cogerance: true }));
   } catch {
     return [];
@@ -243,10 +243,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfiles = useCallback(async (uid: string) => {
     try {
       const [profilesRes, userRes] = await Promise.all([
-        supabase.from('user_profiles').select('*').eq('uid', uid)
+        supabase.from('user_profiles_complet').select('*').eq('uid', uid)
           .order('is_main', { ascending: false })
           .order('created_at', { ascending: true }),
-        supabase.from('users')
+        supabase.from('users_complet')
           .select('cgu_accepted_at, bio, banner_url, phone_number, siret, instagram, facebook, site_web, numero_elevage, profile_picture_url, profile_picture_url_elevage')
           .eq('uid', uid).maybeSingle(),
       ]);

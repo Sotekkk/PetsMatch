@@ -24,12 +24,12 @@ export default function ReproducteursPage() {
       // 1. UID Firebase de l'éleveur
       let euid = id;
       if (UUID_RE.test(id)) {
-        const { data } = await supabase.from('user_profiles').select('uid').eq('id', id).maybeSingle();
+        const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', id).maybeSingle();
         euid = (data?.uid as string) ?? id;
       }
       setEuid(euid);
       // 2. Profil ÉLEVEUR uniquement (jamais un autre profil du même compte)
-      const { data: prof } = await supabase.from('user_profiles')
+      const { data: prof } = await supabase.from('user_profiles_complet')
         .select('id, nom, montre_reproducteurs, statut_pro')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       setNomElevage((prof?.nom as string) ?? '');

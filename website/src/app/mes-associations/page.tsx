@@ -57,7 +57,7 @@ export default function MesAssociationsPage() {
 
     // Le bénévolat est toujours rattaché au profil particulier de la personne
     // (jamais à un profil pro/éleveur/association actif).
-    const { data: particulierProfile } = await supabase.from('user_profiles')
+    const { data: particulierProfile } = await supabase.from('user_profiles_complet')
       .select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle();
     const profileId = particulierProfile?.id as string | undefined;
 
@@ -93,7 +93,7 @@ export default function MesAssociationsPage() {
 
     // 1. Query par ID direct (lignes employes avec eleveur_profile_id rempli)
     if (eleveurProfileIds.length > 0) {
-      const { data: pRows } = await supabase.from('user_profiles')
+      const { data: pRows } = await supabase.from('user_profiles_complet')
         .select('id, uid, profile_type, nom, profile_label, avatar_url, ville')
         .in('id', eleveurProfileIds) as unknown as { data: ProfileRow[] | null };
       for (const p of pRows ?? []) { profileByPid[p.id] = p; }
@@ -102,7 +102,7 @@ export default function MesAssociationsPage() {
     // 2. Fallback : lignes sans eleveur_profile_id → chercher le profil association par uid
     const missingUids = empRows.filter(r => !r.eleveur_profile_id).map(r => r.uid_eleveur as string).filter(Boolean);
     if (missingUids.length > 0) {
-      const { data: fbRows } = await supabase.from('user_profiles')
+      const { data: fbRows } = await supabase.from('user_profiles_complet')
         .select('id, uid, profile_type, nom, profile_label, avatar_url, ville')
         .in('uid', missingUids) as unknown as { data: (ProfileRow & { profile_type?: string })[] | null };
       for (const p of (fbRows ?? [])) {
@@ -127,7 +127,7 @@ export default function MesAssociationsPage() {
       { data: tachesRaw },
       { data: planTachesRaw },
     ] = await Promise.all([
-      supabase.from('user_profiles').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville').eq('is_main', true).in('uid', uids) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
+      supabase.from('user_profiles_complet').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville').eq('is_main', true).in('uid', uids) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
       supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date') as unknown as Promise<{ data: TacheRow[] | null }>,
       supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);

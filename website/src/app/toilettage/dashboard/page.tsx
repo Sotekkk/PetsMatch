@@ -35,7 +35,7 @@ export default function ToilettageDashboardPage() {
           .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId || '').eq('statut', 'termine'),
         supabase.from('toilettage_factures').select('montant').eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId || '').eq('statut', 'payee'),
         activeProfileId
-          ? supabase.from('user_profiles').select('note_moyenne, nb_avis').eq('id', activeProfileId).maybeSingle()
+          ? supabase.from('user_profiles_complet').select('note_moyenne, nb_avis').eq('id', activeProfileId).maybeSingle()
           : Promise.resolve({ data: null }),
       ]);
 

@@ -32,7 +32,7 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
     try {
       // name_elevage n'existe pas dans user_profiles → utiliser nom + profile_label
       final profiles = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id,uid,nom,profile_label,avatar_url,profile_type,ville,latitude,longitude,statut_pro')
           .eq('profile_type', 'association')
           .order('nom');

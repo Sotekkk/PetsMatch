@@ -22,7 +22,7 @@ export interface MembreOption { uid: string; nom: string; type: 'employe' | 'ben
 export async function loadMembres(uid: string, profilSource: 'eleveur' | 'association' | 'pension', myUid?: string): Promise<MembreOption[]> {
   const moiUid = myUid ?? uid;
   const [{ data: moi }, { data: employesRows }] = await Promise.all([
-    supabase.from('user_profiles').select('firstname, lastname, nom, profile_type')
+    supabase.from('user_profiles_complet').select('firstname, lastname, nom, profile_type')
       .eq('uid', moiUid).eq('is_main', true).maybeSingle(),
     supabase.from('employes').select('uid_employe, employe_profile_id, type, prenom, nom')
       .eq('uid_eleveur', uid).eq('actif', true).eq('profil_source', profilSource),
@@ -40,7 +40,7 @@ export async function loadMembres(uid: string, profilSource: 'eleveur' | 'associ
   const accountUids = accountRows.map(e => e.uid_employe as string);
   const profilesByUid = new Map<string, { firstname?: string; lastname?: string; nom?: string; profile_type?: string }>();
   if (accountUids.length > 0) {
-    const { data: profiles } = await supabase.from('user_profiles')
+    const { data: profiles } = await supabase.from('user_profiles_complet')
       .select('uid, firstname, lastname, nom, profile_type')
       .in('uid', accountUids).eq('is_main', true);
     for (const p of (profiles ?? [])) profilesByUid.set(p.uid as string, p);
@@ -127,7 +127,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
     const isSelf = assigneUid === (myUid ?? uid);
     let assigneProfileId: string | null = null;
     if (assigneUid && !isSelf) {
-      const { data } = await supabase.from('user_profiles')
+      const { data } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', assigneUid).eq('profile_type', 'particulier').maybeSingle();
       assigneProfileId = data?.id ?? null;
     } else if (isSelf) {

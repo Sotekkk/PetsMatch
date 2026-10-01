@@ -86,7 +86,7 @@ class _GroupesPageState extends State<GroupesPage>
       if (_uid.isNotEmpty) {
         // Résolution profile_id (une seule fois)
         if (_profileId == null) {
-          final profRow = await _supa.from('user_profiles')
+          final profRow = await _supa.from('user_profiles_complet')
               .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
           _profileId = profRow?['id'] as String?;
         }
@@ -637,7 +637,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
     _formKey.currentState!.save();
     setState(() => _saving = true);
     try {
-      final profRow = await _supa.from('user_profiles')
+      final profRow = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
       final profileId = profRow?['id'] as String?;
 

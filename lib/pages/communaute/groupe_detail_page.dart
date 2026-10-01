@@ -181,7 +181,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       Map<String, dynamic>? myMem;
       if (_uid.isNotEmpty) {
         if (_profileId == null) {
-          final profRow = await _supa.from('user_profiles')
+          final profRow = await _supa.from('user_profiles_complet')
               .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
           _profileId = profRow?['id'] as String?;
         }
@@ -257,7 +257,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       bool currentIsPro = false;
       if (allUids.isNotEmpty) {
         final profilesData = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, firstname, lastname, avatar_url, profile_type, nom')
             .inFilter('uid', allUids).eq('is_main', true);
         for (final p in (profilesData as List)) {
@@ -1453,7 +1453,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   Future<void> _load() async {
     // Résolution profile_id une seule fois
     if (_profileId == null && _uid.isNotEmpty) {
-      final profRow = await _supa.from('user_profiles')
+      final profRow = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
       _profileId = profRow?['id'] as String?;
     }
@@ -1474,7 +1474,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         .toList();
     if (missingUids.isNotEmpty) {
       final pd = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', missingUids).eq('is_main', true);
       for (final p in (pd as List)) {
@@ -1602,7 +1602,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       }
       final pidForNotif = _profileId;
       unawaited(() async {
-        final me = pidForNotif != null ? await _supa.from('user_profiles').select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', pidForNotif).maybeSingle() : null;
+        final me = pidForNotif != null ? await _supa.from('user_profiles_complet').select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', pidForNotif).maybeSingle() : null;
         final actorName = me != null ? _profileName(_toProfileMap(Map<String, dynamic>.from(me))) : 'Quelqu\'un';
         await notifyMentions(
           text: text,
@@ -1943,7 +1943,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         final path = 'groupes/posts/${widget.groupeId}/${_uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
         imageUrl = await storage.uploadPhoto(_imageFile!, path, quality: 82);
       }
-      final profRow = await _supa.from('user_profiles')
+      final profRow = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
       final profileId = profRow?['id'] as String?;
 
@@ -1957,7 +1957,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
       });
       if (text.isNotEmpty) {
         unawaited(() async {
-          final me = profileId != null ? await _supa.from('user_profiles').select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', profileId).maybeSingle() : null;
+          final me = profileId != null ? await _supa.from('user_profiles_complet').select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', profileId).maybeSingle() : null;
           final actorName = me != null ? _profileName(_toProfileMap(Map<String, dynamic>.from(me))) : 'Quelqu\'un';
           await notifyMentions(
             text: text,
@@ -2138,7 +2138,7 @@ class _LikesSheetState extends State<_LikesSheet> {
     final missingUids = uids.where((u) => !profiles.containsKey(u)).toList();
     if (missingUids.isNotEmpty) {
       final pd = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', missingUids).eq('is_main', true);
       for (final p in (pd as List)) {
@@ -2328,7 +2328,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
         .toList();
     if (missing.isNotEmpty) {
       final pd = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', missing).eq('is_main', true);
       for (final p in (pd as List)) {
@@ -2361,7 +2361,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
           .toList();
       if (missing.isNotEmpty) {
         final pd = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, firstname, lastname, avatar_url, profile_type, nom')
             .inFilter('uid', missing).eq('is_main', true);
         for (final p in (pd as List)) {

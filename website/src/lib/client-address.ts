@@ -27,7 +27,7 @@ export async function getClientKnownAddress(
     let row: Record<string, unknown> | null = null;
     if (activeProfileId) {
       const { data } = await supabase
-        .from('user_profiles')
+        .from('user_profiles_complet')
         .select('rue, ville, code_postal, pays, lat, lng, rue_elevage, ville_elevage, code_postal_elevage, pays_elevage')
         .eq('id', activeProfileId)
         .maybeSingle();
@@ -35,7 +35,7 @@ export async function getClientKnownAddress(
     }
     if (!row) {
       const { data } = await supabase
-        .from('users')
+        .from('users_complet')
         .select('rue, ville, code_postal, pays, lat, lng')
         .eq('uid', uid)
         .maybeSingle();

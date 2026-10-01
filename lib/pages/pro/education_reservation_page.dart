@@ -139,7 +139,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       return;
     }
     try {
-      final row = await _supa.from('user_profiles').select('id')
+      final row = await _supa.from('user_profiles_complet').select('id')
           .eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
       _resolvedProfileId = row?['id']?.toString();
     } catch (_) {}
@@ -149,8 +149,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     try {
       const cols = 'education_bilan_requis, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
-          ? await _supa.from('user_profiles').select(cols).eq('id', widget.proProfileId!).maybeSingle()
-          : await _supa.from('user_profiles').select(cols).eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
+          ? await _supa.from('user_profiles_complet').select(cols).eq('id', widget.proProfileId!).maybeSingle()
+          : await _supa.from('user_profiles_complet').select(cols).eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
       _educationBilanRequis = row?['education_bilan_requis'] as bool? ?? true;
       _delaiMinReservationH = (row?['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
       _origineDefaut = row?['trajet_origine_defaut']?.toString() ?? 'cabinet';

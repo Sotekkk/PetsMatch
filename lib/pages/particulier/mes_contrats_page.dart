@@ -41,7 +41,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
     if (uid.isEmpty) return null;
     try {
-      final base = _supa.from('user_profiles').select('id').eq('uid', uid);
+      final base = _supa.from('user_profiles_complet').select('id').eq('uid', uid);
       final rows = User_Info.activeType.isNotEmpty
           ? await base.eq('profile_type', User_Info.activeType).order('is_main', ascending: false).limit(1)
           : await base.order('is_main', ascending: false).limit(1);

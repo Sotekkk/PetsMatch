@@ -127,7 +127,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       final activeProfileIdEarly = User_Info.activeProfileId;
       String ownerUid = uid;
       if (activeProfileIdEarly.isNotEmpty) {
-        final ownerRow = await supa.from('user_profiles')
+        final ownerRow = await supa.from('user_profiles_complet')
             .select('uid').eq('id', activeProfileIdEarly).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? uid;
       }

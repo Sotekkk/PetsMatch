@@ -961,7 +961,7 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
       .map(t => t.created_by_profile_id)
       .filter((id): id is string => !!id && id !== ownerProfileId))];
     if (ids.length === 0) { setCreatorNames({}); return; }
-    supabase.from('user_profiles').select('id, nom, prenom').in('id', ids).then(({ data }) => {
+    supabase.from('user_profiles_complet').select('id, nom, prenom').in('id', ids).then(({ data }) => {
       const map: Record<string, string> = {};
       for (const p of data ?? []) {
         map[p.id] = [p.prenom, p.nom].filter(Boolean).join(' ');
@@ -1167,7 +1167,7 @@ function ProtocolAuthModal({ templateId, templateNom, eleveurProfileId, onClose 
       const ids = (empRows ?? []).map(e => e.employe_profile_id).filter((id): id is string => !!id);
       let result: { employe_profile_id: string; nom: string }[] = [];
       if (ids.length > 0) {
-        const { data: profs } = await supabase.from('user_profiles').select('id, firstname, lastname').in('id', ids);
+        const { data: profs } = await supabase.from('user_profiles_complet').select('id, firstname, lastname').in('id', ids);
         result = ids.map(id => {
           const p = (profs ?? []).find(pr => pr.id === id);
           const nom = p ? `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() : '';

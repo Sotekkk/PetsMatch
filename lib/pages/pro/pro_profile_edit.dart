@@ -240,13 +240,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       Map<String, dynamic>? row;
       if (widget.secondaryProfileId != null) {
         row = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select()
             .eq('id', widget.secondaryProfileId!)
             .maybeSingle();
       } else {
         row = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select()
             .eq('uid', User_Info.uid)
             .eq('is_main', true)
@@ -794,7 +794,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         }).eq('id', widget.secondaryProfileId!);
 
         // Reload secondary profile and re-apply in memory
-        final updated = await _supa.from('user_profiles')
+        final updated = await _supa.from('user_profiles_complet')
             .select().eq('id', widget.secondaryProfileId!).maybeSingle();
         if (updated != null) User_Info.applyProfile(updated);
         // Force le rechargement du cache profils (bandeau du menu, switcher).

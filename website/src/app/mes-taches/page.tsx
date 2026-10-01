@@ -76,7 +76,7 @@ function MesTachesPageInner() {
           const { data: a } = await supabase.from('animaux').select('nom').eq('id', t.animal_id).maybeSingle();
           animalNom = a?.nom ?? undefined;
         }
-        const { data: u } = await supabase.from('user_profiles')
+        const { data: u } = await supabase.from('user_profiles_complet')
           .select('firstname, lastname, nom, profile_type')
           .eq('uid', t.uid_eleveur).eq('is_main', true).maybeSingle();
         if (u) {
@@ -98,7 +98,7 @@ function MesTachesPageInner() {
   // du gérant. Miroir de elevage/agenda/page.tsx::resolveEffectiveUid.
   const resolveEffectiveUid = useCallback(async (): Promise<string> => {
     if (!profileId) return user!.uid;
-    const { data } = await supabase.from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
+    const { data } = await supabase.from('user_profiles_complet').select('uid').eq('id', profileId).maybeSingle();
     return (data?.uid as string | undefined) ?? user!.uid;
   }, [profileId, user]);
 
@@ -187,7 +187,7 @@ function MesTachesPageInner() {
       } else {
         // Notification à l'employeur quand l'employé valide
         try {
-          const { data: moi } = await supabase.from('user_profiles')
+          const { data: moi } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, profile_type')
             .eq('uid', user!.uid).eq('is_main', true).maybeSingle();
           const nomEmploye = moi

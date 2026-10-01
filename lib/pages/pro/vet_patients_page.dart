@@ -200,7 +200,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       if (clientUids.isNotEmpty) {
         try {
           final clients = await Supabase.instance.client
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, profile_type')
               .inFilter('uid', clientUids)
               .eq('is_main', true);

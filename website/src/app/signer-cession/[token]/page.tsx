@@ -75,7 +75,7 @@ export default function SignerCessionPage({ params }: { params: Promise<{ token:
     try {
       const { data, error: e } = await supabase
         .from('cessions')
-        .select(`*, animaux!animal_id(nom, espece, race, sexe, identification, date_naissance), users!uid_eleveur(firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, email)`)
+        .select(`*, animaux!animal_id(nom, espece, race, sexe, identification, date_naissance), users!uid_eleveur(firstname, lastname, name_elevage, is_elevage, adress_elevage, siret)`)
         .eq('token', token)
         .setHeader('x-pm-token', token)
         .maybeSingle();
@@ -83,8 +83,17 @@ export default function SignerCessionPage({ params }: { params: Promise<{ token:
       if (e || !data) { setError('Lien invalide ou expiré.'); return; }
       if (data.statut === 'confirme') { setSigned(true); setConfirmed(true); }
 
+      // Adresse / e-mail du cédant : colonnes privées, lues via la vue masquée
+      // users_complet — visibles ici grâce au lien de signature (x-pm-token).
+      const { data: cedantPrive } = await supabase.from('users_complet')
+        .select('adress, email').eq('uid', data.uid_eleveur)
+        .setHeader('x-pm-token', token).maybeSingle();
+
       const animalData = (data as Record<string, unknown>).animaux as Record<string, unknown> || {};
-      const userData   = (data as Record<string, unknown>).users   as Record<string, unknown> || {};
+      const userData: Record<string, unknown> = {
+        ...((data as Record<string, unknown>).users as Record<string, unknown> || {}),
+        ...((cedantPrive as Record<string, unknown> | null) ?? {}),
+      };
       const isElv = userData.is_elevage === true;
       const eleveurNom = isElv
         ? ((userData.name_elevage as string) || `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim())

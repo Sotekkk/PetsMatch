@@ -114,7 +114,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (bannerFromFirestore == null || bannerFromFirestore.isEmpty) {
       try {
         final row = await Supabase.instance.client
-            .from('user_profiles').select('banner_url').eq('uid', uid).eq('is_main', true).maybeSingle();
+            .from('user_profiles_complet').select('banner_url').eq('uid', uid).eq('is_main', true).maybeSingle();
         final url = row?['banner_url'] as String?;
         if (url != null && url.isNotEmpty) bannerFromFirestore = url;
       } catch (_) {}
@@ -126,7 +126,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     Map<String, dynamic>? elevRow;
     try {
       elevRow = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('montre_reproducteurs, desc_entreprise, description, '
               'instagram, facebook, site_web, numero_elevage, phone_number')
           .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
@@ -370,7 +370,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     // Les annonces antérieures au multi-profil (profile_id nul) suivent aussi.
     try {
       final supa = Supabase.instance.client;
-      final prof = await supa.from('user_profiles')
+      final prof = await supa.from('user_profiles_complet')
           .select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
       final profileId = prof?['id'] as String?;
       var q = supa.from('annonces').update({
@@ -612,7 +612,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         bool siretDuplicate = false;
         if (siretFormatOk) {
           final dup = await Supabase.instance.client
-              .from('users').select('uid').eq('siret', siretRaw).neq('uid', uid);
+              .from('users_complet').select('uid').eq('siret', siretRaw).neq('uid', uid);
           siretDuplicate = (dup as List).isNotEmpty;
         }
         final hasSiretDoc = siretDocUrl != null && siretDocUrl.isNotEmpty;

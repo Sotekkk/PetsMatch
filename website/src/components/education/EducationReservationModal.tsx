@@ -106,8 +106,8 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     (async () => {
       const cols = 'id, education_bilan_requis, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       const proRow = proProfileId
-        ? await supabase.from('user_profiles').select(cols).eq('id', proProfileId).maybeSingle()
-        : await supabase.from('user_profiles').select(cols).eq('uid', proUid).eq('is_main', true).maybeSingle();
+        ? await supabase.from('user_profiles_complet').select(cols).eq('id', proProfileId).maybeSingle()
+        : await supabase.from('user_profiles_complet').select(cols).eq('uid', proUid).eq('is_main', true).maybeSingle();
       const proData = proRow.data as {
         id?: string; education_bilan_requis?: boolean; delai_min_reservation_h?: number | null;
         trajet_origine_defaut?: string;
@@ -415,14 +415,14 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   // (pas is_main, qui renvoie le nom d'élevage au lieu du particulier).
   async function resolveClientName(): Promise<string> {
     if (activeProfileId) {
-      const { data } = await supabase.from('user_profiles').select('firstname, lastname, nom').eq('id', activeProfileId).maybeSingle();
+      const { data } = await supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', activeProfileId).maybeSingle();
       if (data) {
         const name = (data.nom ?? '').trim() || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim();
         if (name) return name;
       }
     }
     if (user) {
-      const { data } = await supabase.from('users').select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+      const { data } = await supabase.from('users_complet').select('firstname, lastname').eq('uid', user.uid).maybeSingle();
       const name = data ? `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim() : '';
       if (name) return name;
     }

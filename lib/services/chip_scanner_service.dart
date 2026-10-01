@@ -255,11 +255,11 @@ class ChipScannerService {
 
           const pcols = 'id,uid,profile_type,nom,firstname,lastname,avatar_url';
           if (ownerProfileId != null) {
-            autreOwnerProfile = await _supa.from('user_profiles')
+            autreOwnerProfile = await _supa.from('user_profiles_complet')
                 .select(pcols).eq('id', ownerProfileId).maybeSingle();
           }
           if (autreOwnerProfile == null && autreOwnerUid != null) {
-            autreOwnerProfile = await _supa.from('user_profiles')
+            autreOwnerProfile = await _supa.from('user_profiles_complet')
                 .select(pcols).eq('uid', autreOwnerUid).eq('is_main', true).maybeSingle();
           }
         }
@@ -712,7 +712,7 @@ class _VetResultSheetState extends State<_VetResultSheet> {
     try {
       // Idem _loadGrant : le profil ACTIF, pas is_main.
       final vetProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
-      final ownerProfile = await Supabase.instance.client.from('user_profiles')
+      final ownerProfile = await Supabase.instance.client.from('user_profiles_complet')
           .select('id').eq('uid', ownerId).eq('is_main', true).maybeSingle();
       final ownerProfileId = ownerProfile?['id'] as String?;
       if (vetProfileId == null || ownerProfileId == null) throw Exception('Profils introuvables');
@@ -731,7 +731,7 @@ class _VetResultSheetState extends State<_VetResultSheet> {
       bool isClinic = false;
       try {
         final vetUser = await Supabase.instance.client
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('firstname, lastname, nom')
             .eq('id', vetProfileId)
             .maybeSingle();

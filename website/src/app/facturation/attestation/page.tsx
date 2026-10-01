@@ -23,7 +23,7 @@ export default function AttestationPage() {
 
   useEffect(() => {
     if (!user) return;
-    let q = supabase.from('user_profiles').select('nom, siret, rue_pro, code_postal_pro, ville_pro');
+    let q = supabase.from('user_profiles_complet').select('nom, siret, rue_pro, code_postal_pro, ville_pro');
     q = activeProfileId ? q.eq('id', activeProfileId) : q.eq('uid', user.uid).eq('is_main', true);
     q.maybeSingle().then(({ data }) => { setIdent(data ?? null); setLoading(false); });
   }, [user, activeProfileId]);

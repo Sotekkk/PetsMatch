@@ -43,7 +43,7 @@ Future<AcquereurContact> fetchContactAcquereur(
   final acqUid = (animal['uid_acquereur'] ?? '').toString();
   if (acqUid.isNotEmpty) {
     try {
-      final p = await supa.from('user_profiles')
+      final p = await supa.from('user_profiles_complet')
           .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
           .eq('uid', acqUid)
           .eq('profile_type', 'particulier')

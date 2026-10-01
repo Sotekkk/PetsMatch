@@ -66,7 +66,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
     // particulier de la personne : on résout ce profile_id avant d'interroger
     // `employes`, pour éviter que le même employeur n'apparaisse dans tous
     // les profils du compte (association, pro…).
-    final particulierProfile = await supa.from('user_profiles')
+    final particulierProfile = await supa.from('user_profiles_complet')
         .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     final particulierProfileId = particulierProfile?['id'] as String?;
     if (particulierProfileId == null) return;

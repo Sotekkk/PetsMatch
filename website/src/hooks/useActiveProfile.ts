@@ -44,7 +44,7 @@ export function useProfileSource(): 'eleveur' | 'association' | 'pension' {
   useEffect(() => {
     if (!loaded) return;
     if (!id) { setProfileSource('eleveur'); return; }
-    supabase.from('user_profiles').select('profile_type').eq('id', id).single()
+    supabase.from('user_profiles_complet').select('profile_type').eq('id', id).single()
       .then(({ data }) => {
         const t = data?.profile_type;
         setProfileSource(t === 'association' ? 'association' : t === 'pension' ? 'pension' : 'eleveur');

@@ -17,10 +17,10 @@ export async function resolveAcquereurProfileId(
     qualite === 'eleveur' ? 'eleveur'
     : qualite === 'refuge' || qualite === 'association' ? 'association'
     : 'particulier';
-  const { data: byType } = await supabase.from('user_profiles')
+  const { data: byType } = await supabase.from('user_profiles_complet')
     .select('id').eq('uid', acqUid).eq('profile_type', wanted).maybeSingle();
   if (byType?.id) return byType.id as string;
-  const { data: main } = await supabase.from('user_profiles')
+  const { data: main } = await supabase.from('user_profiles_complet')
     .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
   return (main?.id as string | undefined) ?? null;
 }

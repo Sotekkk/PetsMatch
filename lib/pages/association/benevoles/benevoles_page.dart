@@ -44,7 +44,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
     // Le profil ACTIF (association), pas le profil "is_main" du compte —
     // sinon on mélange les bénévoles avec un autre profil du même compte.
     if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
-    final mainProfile = await _supa.from('user_profiles')
+    final mainProfile = await _supa.from('user_profiles_complet')
         .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
     return mainProfile?['id'] as String?;
   }
@@ -430,7 +430,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
 
   Future<void> _loadUsers() async {
     try {
-      final rows = await _supa.from('user_profiles')
+      final rows = await _supa.from('user_profiles_complet')
           .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
           .neq('uid', widget.uid).eq('is_main', true).limit(500);
       if (mounted) setState(() {
@@ -472,7 +472,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
     // Le profil ACTIF (association), pas le profil "is_main" du compte.
     String? profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
     if (profileId == null) {
-      final mainProfile = await _supa.from('user_profiles')
+      final mainProfile = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
       profileId = mainProfile?['id'] as String?;
     }
@@ -505,7 +505,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
     // Rejoindre une équipe est une notion particulier — résoudre ce profil
     // précis du destinataire (le picker ci-dessus liste tout profil is_main,
     // pas seulement particulier).
-    final targetParticulier = await _supa.from('user_profiles')
+    final targetParticulier = await _supa.from('user_profiles_complet')
         .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     await _supa.from('notifications').insert({
       'uid':   uid,

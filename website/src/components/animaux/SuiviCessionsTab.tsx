@@ -62,7 +62,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
   const [voeuxMsg, setVoeuxMsg] = useState('');
 
   useEffect(() => {
-    supabase.from('user_profiles').select('cession_anniv_auto')
+    supabase.from('user_profiles_complet').select('cession_anniv_auto')
       .eq('uid', uid).eq('is_main', true).maybeSingle()
       .then(({ data }) => { setAnnivAuto(data?.cession_anniv_auto === true); setAnnivLoaded(true); });
   }, [uid]);
@@ -115,7 +115,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
         .update({ sterilisation_validee: true, sterilisation_validee_at: new Date().toISOString() })
         .eq('animal_id', a.id).eq('sterilisation_requise', true);
       if (a.uid_acquereur) {
-        const { data: acqProfile } = await supabase.from('user_profiles')
+        const { data: acqProfile } = await supabase.from('user_profiles_complet')
           .select('id').eq('uid', a.uid_acquereur).eq('is_main', true).maybeSingle();
         await supabase.from('notifications').insert({
           uid: a.uid_acquereur,
@@ -156,16 +156,16 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
   /// profil particulier, sinon principal. Ce profil-là doit voir la conversation
   /// ET la notification (cohérence). Sans tag, /messages masque la conversation.
   async function convTags(acqUid: string, a?: AnimalLite) {
-    const { data: elevP } = await supabase.from('user_profiles')
+    const { data: elevP } = await supabase.from('user_profiles_complet')
       .select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
     let consumer = (a?.profile_id_acquereur ?? null) as string | null;
     if (!consumer) {
-      const { data: part } = await supabase.from('user_profiles')
+      const { data: part } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
       consumer = part?.id ?? null;
     }
     if (!consumer) {
-      const { data: main } = await supabase.from('user_profiles')
+      const { data: main } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
       consumer = main?.id ?? null;
     }
@@ -187,9 +187,9 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
       if (Object.keys(patch).length) await supabase.from('conversations').update(patch).eq('id', existing.id);
       return existing.id;
     }
-    const { data: me } = await supabase.from('user_profiles')
+    const { data: me } = await supabase.from('user_profiles_complet')
       .select('firstname, lastname, nom, avatar_url').eq('uid', senderUid).eq('is_main', true).maybeSingle();
-    const { data: other } = await supabase.from('user_profiles')
+    const { data: other } = await supabase.from('user_profiles_complet')
       .select('firstname, lastname, nom, avatar_url').eq('uid', acqUid).eq('is_main', true).maybeSingle();
     const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Élevage';
     const otherName = `${other?.firstname ?? ''} ${other?.lastname ?? ''}`.trim() || (other?.nom ?? 'Utilisateur');
@@ -485,7 +485,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
               <div className="flex flex-wrap gap-2">
                 {a.uid_acquereur && (
                   <button onClick={async () => {
-                      const { data: me } = await supabase.from('user_profiles')
+                      const { data: me } = await supabase.from('user_profiles_complet')
                         .select('firstname, lastname, nom').eq('uid', senderUid).eq('is_main', true).maybeSingle();
                       const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Votre éleveur';
                       envoyerInApp(a, voeuxMsg.trim(), 'message', `💬 ${myName}`, () => setVoeux(null));

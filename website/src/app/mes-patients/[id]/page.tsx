@@ -318,7 +318,7 @@ function PatientDetailPageInner() {
   // Pro type
   useEffect(() => {
     if (activeProfileId) {
-      supabase.from('user_profiles').select('profile_type, cat_pro').eq('id', activeProfileId).single()
+      supabase.from('user_profiles_complet').select('profile_type, cat_pro').eq('id', activeProfileId).single()
         .then(({ data }) => {
           if (data) { const r = data as { profile_type: string; cat_pro: string }; setCatPro(r.profile_type ?? r.cat_pro ?? ''); }
         });
@@ -378,7 +378,7 @@ function PatientDetailPageInner() {
 
       const results = await Promise.allSettled([
         ownerUid
-          ? supabase.from('users').select('uid, firstname, lastname, name_elevage, email, phone_number, numero_elevage, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, ville, code_postal, is_elevage, is_pro').eq('uid', ownerUid).maybeSingle()
+          ? supabase.from('users_complet').select('uid, firstname, lastname, name_elevage, email, phone_number, numero_elevage, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, ville, code_postal, is_elevage, is_pro').eq('uid', ownerUid).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('visites').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
@@ -500,7 +500,7 @@ function PatientDetailPageInner() {
         const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
         let ownerProfileId: string | null = null;
         if (ownerUid) {
-          const { data: ownerProfile } = await supabase.from('user_profiles').select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+          const { data: ownerProfile } = await supabase.from('user_profiles_complet').select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
           ownerProfileId = ownerProfile?.id ?? null;
         }
         const pid = activeProfileId || null;

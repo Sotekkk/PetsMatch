@@ -12,7 +12,7 @@ Future<String?> _activeReviewerProfileId(String uid) async {
   if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
   try {
     final row = await Supabase.instance.client
-        .from('user_profiles').select('id')
+        .from('user_profiles_complet').select('id')
         .eq('uid', uid).eq('is_main', true).maybeSingle();
     return row?['id'] as String?;
   } catch (_) {
@@ -72,7 +72,7 @@ class _AvisProSectionState extends State<AvisProSection> {
       final clientUids = list.map((a) => a['client_uid']?.toString()).whereType<String>().toSet().toList();
       if (clientUids.isNotEmpty) {
         try {
-          final profs = await _supa.from('user_profiles')
+          final profs = await _supa.from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, avatar_url, profile_type')
               .inFilter('uid', clientUids).eq('is_main', true);
           for (final p in profs as List) {

@@ -35,6 +35,7 @@ import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/widgets/document_viewer_page.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/user_lookup.dart';
 
 class _ContactUrgenceP {
   final TextEditingController nom;
@@ -329,7 +330,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final Map<String, String> nameById = {};
       if (ids.isNotEmpty) {
         final profs = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('id, firstname, lastname, nom')
             .inFilter('id', ids);
         for (final p in (profs as List)) {
@@ -941,7 +942,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         final inviteurProfileId = invit['invite_par_profile_id'] as String?;
         if (inviteurProfileId != null) {
           final inviteur = await _supa
-              .from('user_profiles')
+              .from('user_profiles_complet')
               .select('uid')
               .eq('id', inviteurProfileId)
               .maybeSingle();
@@ -3576,19 +3577,18 @@ class _ContactPetsMatchSearchSheetState extends State<_ContactPetsMatchSearchShe
       final isEmail = q.contains('@');
       List<Map<String, dynamic>> rows;
       if (isEmail) {
-        final userRow = await _supa.from('users').select('uid, email')
-            .eq('email', q.toLowerCase()).maybeSingle();
+        final userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow == null) {
           rows = [];
         } else {
-          final cp = await _supa.from('user_profiles')
+          final cp = await _supa.from('user_profiles_complet')
               .select('uid, firstname, lastname, phone_number')
               .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
           rows = cp != null ? [Map<String, dynamic>.from(cp)] : [];
         }
       } else {
         final cps = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select('uid, firstname, lastname, phone_number')
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%')
             .eq('is_main', true)
@@ -6714,7 +6714,7 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
       final proNames = <String, String>{};
       if (proUids.isNotEmpty) {
         try {
-          final profs = await _supa.from('user_profiles')
+          final profs = await _supa.from('user_profiles_complet')
               .select('uid, nom, firstname, lastname, profile_type')
               .inFilter('uid', proUids);
           for (final p in profs as List) {

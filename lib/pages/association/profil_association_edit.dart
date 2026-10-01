@@ -86,7 +86,7 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
 
     try {
       final profiles = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('*')
           .eq('uid', uid)
           .eq('profile_type', 'association');
@@ -99,7 +99,7 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       Map<String, dynamic>? onboarding;
       try {
         onboarding = await _supa
-            .from('users')
+            .from('users_complet')
             .select('agrement_prefectoral, capacite_accueil, especes_accueillies, email')
             .eq('uid', uid)
             .maybeSingle();
@@ -144,7 +144,7 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       } else {
         // Pas encore de profil secondaire → fallback sur users
         final userRow = await _supa
-            .from('users')
+            .from('users_complet')
             .select('name_elevage, ville_elevage, description_elevage, phone, profile_picture_url_elevage')
             .eq('uid', uid)
             .maybeSingle();
@@ -257,7 +257,9 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       if (_secondaryProfileId != null) {
         await _supa.from('user_profiles').update(data).eq('id', _secondaryProfileId!);
       } else {
-        final inserted = await _supa.from('user_profiles').insert(data).select().single();
+        // select('id') : relire toute la ligne exigerait le droit de lire les
+        // colonnes privées (réservé à la vue user_profiles_complet).
+        final inserted = await _supa.from('user_profiles').insert(data).select('id').single();
         if (mounted) setState(() => _secondaryProfileId = inserted['id']?.toString());
       }
 

@@ -87,7 +87,7 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
     setState(() => _loading = true);
     try {
       final animauxFuture = _loadAnimauxAcquis();
-      final profilFuture = _supa.from('user_profiles')
+      final profilFuture = _supa.from('user_profiles_complet')
           .select('firstname, lastname, nom')
           .eq('uid', _uid)
           .eq('is_main', true)
@@ -107,7 +107,7 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
           .toSet().cast<String>().toList();
       final Map<String, String> names = {};
       if (cedantUids.isNotEmpty) {
-        final users = await _supa.from('user_profiles')
+        final users = await _supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, nom')
             .inFilter('uid', cedantUids).eq('is_main', true);
         for (final u in (users as List)) {

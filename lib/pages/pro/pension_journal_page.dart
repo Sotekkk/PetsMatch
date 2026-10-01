@@ -182,7 +182,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
     try {
       final proUid = u['pro_uid'] as String?;
       if (proUid == null || proUid.isEmpty) return;
-      final proProfile = await _supa.from('user_profiles')
+      final proProfile = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', proUid).eq('profile_type', 'pension').maybeSingle();
       final proProfileId = proProfile?['id'] as String?;
       await _supa.from('notifications').insert({
@@ -218,7 +218,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
       // profil éleveur/pro → la notif n'apparaîtrait pas dans sa liste).
       if (ownerProfileId == null || ownerProfileId.isEmpty) {
         try {
-          final p = await _supa.from('user_profiles')
+          final p = await _supa.from('user_profiles_complet')
               .select('id').eq('uid', ownerUid).eq('profile_type', 'particulier')
               .order('is_main', ascending: false).limit(1).maybeSingle();
           ownerProfileId = p?['id'] as String?;

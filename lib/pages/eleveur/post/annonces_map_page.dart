@@ -125,7 +125,7 @@ class _AnnoncesMapPageState extends State<AnnoncesMapPage> {
           if (uid.isNotEmpty) {
             try {
               final userRow = await Supabase.instance.client
-                  .from('user_profiles').select().eq('uid', uid).eq('is_main', true).maybeSingle();
+                  .from('user_profiles_complet').select().eq('uid', uid).eq('is_main', true).maybeSingle();
               if (userRow != null) {
                 final villeElevage = ((userRow['ville_pro'] as String?) ?? '').trim();
                 final cpElevage    = ((userRow['code_postal_pro'] as String?) ?? '').trim();

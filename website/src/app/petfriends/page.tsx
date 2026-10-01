@@ -52,10 +52,10 @@ function profileDisplayName(p: { social_pseudo?: string | null; nom?: string | n
 async function activeProfileName(uid: string, activePid: string | null): Promise<string> {
   const cols = 'social_pseudo, nom, firstname, lastname, profile_type';
   if (activePid) {
-    const { data } = await supabase.from('user_profiles').select(cols).eq('id', activePid).maybeSingle();
+    const { data } = await supabase.from('user_profiles_complet').select(cols).eq('id', activePid).maybeSingle();
     if (data) return profileDisplayName(data);
   }
-  const { data } = await supabase.from('user_profiles').select(cols).eq('uid', uid).eq('is_main', true).maybeSingle();
+  const { data } = await supabase.from('user_profiles_complet').select(cols).eq('uid', uid).eq('is_main', true).maybeSingle();
   return profileDisplayName(data);
 }
 
@@ -116,7 +116,7 @@ export default function PetFriendsPage() {
       const uids = Object.keys(byUid);
       if (uids.length === 0) { setFriends([]); setReceived([]); setSent([]); return; }
 
-      const { data: profiles } = await supabase.from('user_profiles')
+      const { data: profiles } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville').in('uid', uids).eq('is_main', true);
       const profMap: Record<string, { firstname?: string; lastname?: string; profile_picture_url?: string; ville?: string }> = {};
       for (const p of profiles ?? []) profMap[p.uid] = p;
@@ -163,7 +163,7 @@ export default function PetFriendsPage() {
 
   useEffect(() => {
     if (!myUid) return;
-    supabase.from('user_profiles').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
+    supabase.from('user_profiles_complet').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
       .neq('uid', myUid).eq('is_main', true).limit(500)
       .then(({ data }) => { setAllUsers((data ?? []) as SearchUser[]); setLoadingUsers(false); });
   }, [myUid]);
@@ -200,7 +200,7 @@ export default function PetFriendsPage() {
     const myPid = activeProfileId || null;
     let tgPid: string | null = null;
     if (targetUid) {
-      const { data: tgRow } = await supabase.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
+      const { data: tgRow } = await supabase.from('user_profiles_complet').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
       tgPid = tgRow?.id ?? null;
     }
     await supabase.from('petfriends').insert({
@@ -223,7 +223,7 @@ export default function PetFriendsPage() {
   async function accept(row: FriendRow) {
     await supabase.from('petfriends').update({ statut: 'accepte', updated_at: new Date().toISOString() }).eq('id', row.relId);
     const nom = await activeProfileName(myUid, activeProfileId || null);
-    const { data: targetProfile } = await supabase.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
+    const { data: targetProfile } = await supabase.from('user_profiles_complet').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
     await supabase.from('notifications').insert({
       uid: row.uid, type: 'petfriend_accepted',
       title: '🐾 PetFriend accepté !', body: `${nom} a accepté ta demande PetFriend.`,
@@ -253,9 +253,9 @@ export default function PetFriendsPage() {
     if (existing) {
       convId = existing.id;
     } else {
-      const { data: otherData } = await supabase.from('user_profiles')
+      const { data: otherData } = await supabase.from('user_profiles_complet')
         .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', friendRow.uid).eq('is_main', true).maybeSingle();
-      const { data: myData } = await supabase.from('user_profiles')
+      const { data: myData } = await supabase.from('user_profiles_complet')
         .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', myUid).eq('is_main', true).maybeSingle();
       const myName    = `${myData?.firstname ?? ''} ${myData?.lastname ?? ''}`.trim() || 'Utilisateur';
       const otherName = `${otherData?.firstname ?? ''} ${otherData?.lastname ?? ''}`.trim() || 'Utilisateur';
@@ -288,7 +288,7 @@ export default function PetFriendsPage() {
     setCreatingGroupe(true);
     try {
       const members = [myUid, ...selectedGroupeUids];
-      const { data: myData } = await supabase.from('user_profiles')
+      const { data: myData } = await supabase.from('user_profiles_complet')
         .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', myUid).eq('is_main', true).maybeSingle();
       const myName = `${myData?.firstname ?? ''} ${myData?.lastname ?? ''}`.trim() || 'Utilisateur';
       const participantsInfo: Record<string, unknown> = {
@@ -296,7 +296,7 @@ export default function PetFriendsPage() {
       };
       // Infos des autres membres
       if (selectedGroupeUids.size > 0) {
-        const { data: others } = await supabase.from('user_profiles')
+        const { data: others } = await supabase.from('user_profiles_complet')
           .select('uid, firstname, lastname, profile_picture_url:avatar_url').in('uid', [...selectedGroupeUids]).eq('is_main', true);
         for (const o of others ?? []) {
           const oName = `${o.firstname ?? ''} ${o.lastname ?? ''}`.trim() || 'Utilisateur';

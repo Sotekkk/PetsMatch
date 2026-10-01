@@ -73,10 +73,10 @@ export default function RegistreVisitesPage() {
 
     const [{ data: byPid }, { data: byUid }, { data: animaux }] = await Promise.all([
       clientPids.length
-        ? supabase.from('user_profiles').select('id, firstname, lastname, nom, email_contact, phone_number').in('id', clientPids)
+        ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, email_contact, phone_number').in('id', clientPids)
         : Promise.resolve({ data: [] as { id: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null; phone_number: string | null }[] }),
       uidsNoPid.length
-        ? supabase.from('user_profiles').select('uid, firstname, lastname, nom, email_contact, phone_number').in('uid', uidsNoPid).eq('is_main', true)
+        ? supabase.from('user_profiles_complet').select('uid, firstname, lastname, nom, email_contact, phone_number').in('uid', uidsNoPid).eq('is_main', true)
         : Promise.resolve({ data: [] as { uid: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null; phone_number: string | null }[] }),
       animalIds.length
         ? supabase.from('animaux').select('id, nom, espece, race, identification').in('id', animalIds)

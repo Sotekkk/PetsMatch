@@ -114,7 +114,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       // plusieurs de ses profils (particulier, éleveur, pro…), chacun étant
       // une identité PetFriends distincte avec sa propre liste d'amis.
       final rows = await _supa
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('$kSocialAuthorCols, ville')
           .neq('uid', _myUid)
           .limit(500);
@@ -155,7 +155,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         return;
       }
 
-      final profiles = await _supa.from('user_profiles')
+      final profiles = await _supa.from('user_profiles_complet')
           .select('$kSocialAuthorCols, ville')
           .inFilter('id', byProfileId.keys.toList());
       final Map<String, Map<String, dynamic>> profMap = {
@@ -218,9 +218,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       });
       Map<String, dynamic>? me;
       if (myProfileId.isNotEmpty) {
-        me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+        me = await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
       }
-      me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      me ??= await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
       final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
       await _supa.from('notifications').insert({
         'uid': targetUid, 'type': 'petfriend_request',
@@ -238,9 +238,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     final myProfileId = await _myProfileId() ?? '';
     Map<String, dynamic>? me;
     if (myProfileId.isNotEmpty) {
-      me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+      me = await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
     }
-    me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+    me ??= await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
     await _supa.from('notifications').insert({
       'uid': row.uid, 'type': 'petfriend_accepted',
@@ -437,7 +437,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                       final nom = nomCtrl.text.trim();
                       if (nom.isEmpty) return;
                       final members = [_myUid, ...selectedUids];
-                      final myData = await _supa.from('user_profiles')
+                      final myData = await _supa.from('user_profiles_complet')
                           .select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
                       final myName = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
                       final unread = {for (final u in members) u: 0};
@@ -446,7 +446,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                       };
                       // Charger les noms des autres membres
                       if (selectedUids.isNotEmpty) {
-                        final others = await _supa.from('user_profiles')
+                        final others = await _supa.from('user_profiles_complet')
                             .select('uid, firstname, lastname, profile_picture_url:avatar_url')
                             .inFilter('uid', selectedUids.toList()).eq('is_main', true);
                         for (final o in (others as List)) {

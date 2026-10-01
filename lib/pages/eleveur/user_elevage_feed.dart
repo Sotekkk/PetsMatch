@@ -115,7 +115,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
     String? banner = d['bannerUrl'] as String?;
     if (banner == null || banner.isEmpty) {
       try {
-        final row = await _supa.from('users').select('banner_url').eq('uid', uid).maybeSingle();
+        final row = await _supa.from('users_complet').select('banner_url').eq('uid', uid).maybeSingle();
         final url = row?['banner_url'] as String?;
         if (url != null && url.isNotEmpty) banner = url;
       } catch (_) {}

@@ -71,7 +71,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       Map<String, dynamic>? row;
       if (widget.profileTableId != null) {
         final raw = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select()
             .eq('id', widget.profileTableId!)
             .maybeSingle();
@@ -103,7 +103,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         }
       } else {
         final raw = await _supa
-            .from('user_profiles')
+            .from('user_profiles_complet')
             .select()
             .eq('uid', widget.proUid)
             .eq('is_main', true)

@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlanGarde } from '@/lib/use-plan';
 import { apiFetch } from '@/lib/api-fetch';
+import { rechercherUtilisateurs } from '@/lib/user-lookup';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
 
@@ -120,7 +121,7 @@ function DevisPageInner() {
       : supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false });
     Promise.all([
       devisQ,
-      supabase.from('user_profiles').select('tarifs_education, tarifs_education_extra, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('user_profiles_complet').select('tarifs_education, tarifs_education_extra, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])
         : Promise.resolve({ data: [] }),
@@ -213,12 +214,11 @@ function DevisPageInner() {
     setUserSearchLoading(true);
     const cpFields = 'id,uid,firstname,lastname,phone_number';
     if (query.includes('@')) {
-      const { data: users } = await supabase.from('users').select('uid, email')
-        .ilike('email', `%${query}%`).neq('uid', user?.uid ?? '').limit(6);
+      const users = await rechercherUtilisateurs(query, { exclureUid: user?.uid, limit: 6 });
       const uids = (users ?? []).map(u => u.uid);
       const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
       const { data: cps } = uids.length
-        ? await supabase.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true)
+        ? await supabase.from('user_profiles_complet').select(cpFields).in('uid', uids).eq('is_main', true)
         : { data: [] as Record<string, unknown>[] };
       setUserResults((cps ?? []).map(cp => ({
         uid: cp.uid as string, firstname: cp.firstname as string, lastname: cp.lastname as string,
@@ -226,7 +226,7 @@ function DevisPageInner() {
         profile_id: cp.id as string,
       })));
     } else {
-      const { data: cps } = await supabase.from('user_profiles').select(`${cpFields},email_contact`)
+      const { data: cps } = await supabase.from('user_profiles_complet').select(`${cpFields},email_contact`)
         .or(`firstname.ilike.%${query}%,lastname.ilike.%${query}%`)
         .neq('uid', user?.uid ?? '').eq('is_main', true).limit(6);
       setUserResults((cps ?? []).map(cp => ({

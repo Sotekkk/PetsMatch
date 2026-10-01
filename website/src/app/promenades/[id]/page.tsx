@@ -134,7 +134,7 @@ function InviteModal({ myUid, myProfileId, promenadeId, titre, alreadyUids, onCl
 
   useEffect(() => {
     (async () => {
-      const { data: me } = await supabase.from('user_profiles')
+      const { data: me } = await supabase.from('user_profiles_complet')
         .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, social_pseudo')
         .eq('id', myProfileId).maybeSingle();
       if (me) setMyName(friendName(me as FriendProfile));
@@ -153,7 +153,7 @@ function InviteModal({ myUid, myProfileId, promenadeId, titre, alreadyUids, onCl
         if (r.demandeur_profile_id) byProfileId.set(r.demandeur_profile_id, r.uid_demandeur);
       });
       if (byProfileId.size === 0) { setLoading(false); return; }
-      const { data: profiles } = await supabase.from('user_profiles')
+      const { data: profiles } = await supabase.from('user_profiles_complet')
         .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, social_pseudo')
         .in('id', Array.from(byProfileId.keys()));
       setFriends((profiles ?? []).map((p: FriendProfile) => ({ profile: p, uid: byProfileId.get(p.id) ?? p.uid })));
@@ -471,7 +471,7 @@ export default function PromenadeDetailPage() {
       setPromenade(p as Promenade);
 
       // Organizer profile
-      const { data: org } = await supabase.from('user_profiles')
+      const { data: org } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, profile_picture_url:avatar_url')
         .eq('uid', p.organisateur_uid).eq('is_main', true).maybeSingle();
       setOrganizer(org as UserProfile ?? null);
@@ -484,7 +484,7 @@ export default function PromenadeDetailPage() {
 
       if (parts && parts.length > 0) {
         const uids = parts.map((r: { user_uid: string }) => r.user_uid);
-        const { data: users } = await supabase.from('user_profiles')
+        const { data: users } = await supabase.from('user_profiles_complet')
           .select('uid, firstname, lastname, profile_picture_url:avatar_url')
           .in('uid', uids).eq('is_main', true);
         const usersMap: Record<string, UserProfile> = {};
@@ -531,7 +531,7 @@ export default function PromenadeDetailPage() {
       .order('created_at');
     if (!rawMsgs || rawMsgs.length === 0) { setMessages([]); return; }
     const uids = [...new Set(rawMsgs.map((m: { user_uid: string }) => m.user_uid))];
-    const { data: users } = await supabase.from('user_profiles')
+    const { data: users } = await supabase.from('user_profiles_complet')
       .select('uid, firstname, lastname, profile_picture_url:avatar_url').in('uid', uids).eq('is_main', true);
     const uMap: Record<string, UserProfile> = {};
     (users ?? []).forEach((u: UserProfile) => { uMap[u.uid] = u; });
@@ -604,7 +604,7 @@ export default function PromenadeDetailPage() {
 
   async function notifyParticipantsMsg(text: string | null, _imageUrl: string | null) {
     if (!user || !promenade) return;
-    const { data: me } = await supabase.from('user_profiles')
+    const { data: me } = await supabase.from('user_profiles_complet')
       .select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
     const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
     const body = text ? `${nom} : ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`
@@ -638,7 +638,7 @@ export default function PromenadeDetailPage() {
       });
       // Notify organizer
       if (promenade && promenade.organisateur_uid !== user.uid) {
-        const { data: me } = await supabase.from('user_profiles')
+        const { data: me } = await supabase.from('user_profiles_complet')
           .select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
         const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
         await supabase.from('notifications').insert({

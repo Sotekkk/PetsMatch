@@ -49,7 +49,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
     if (pid.isEmpty || _uid == null) { setState(() => _ownerUid = _uid); return; }
     try {
       final row = await Supabase.instance.client
-          .from('user_profiles').select('uid').eq('id', pid).maybeSingle();
+          .from('user_profiles_complet').select('uid').eq('id', pid).maybeSingle();
       if (mounted) setState(() => _ownerUid = (row?['uid'] as String?) ?? _uid);
     } catch (_) {
       if (mounted) setState(() => _ownerUid = _uid);

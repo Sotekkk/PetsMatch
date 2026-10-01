@@ -93,7 +93,7 @@ export default function SanteSuivisPage() {
     const ownerProfileIds = [...new Set([...seen.values()].filter((v): v is string => !!v))];
     const ownerNames = new Map<string, string>();
     if (ownerProfileIds.length) {
-      const { data: profiles } = await supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', ownerProfileIds);
+      const { data: profiles } = await supabase.from('user_profiles_complet').select('id, firstname, lastname, nom').in('id', ownerProfileIds);
       for (const u of (profiles ?? []) as { id: string; firstname: string | null; lastname: string | null; nom: string | null }[]) {
         const name = u.nom?.trim() || `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         ownerNames.set(u.id, name || 'Propriétaire');

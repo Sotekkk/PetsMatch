@@ -125,7 +125,7 @@ export default function SharedPostPage({ params }: { params: Promise<{ id: strin
       let author: Author | null = null;
       if (post.author_profile_id) {
         const { data } = await supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
           .eq('id', post.author_profile_id)
           .maybeSingle();
@@ -133,7 +133,7 @@ export default function SharedPostPage({ params }: { params: Promise<{ id: strin
       }
       if (!author) {
         const { data } = await supabase
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('id, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
           .eq('uid', post.uid)
           .eq('profile_type', 'particulier')

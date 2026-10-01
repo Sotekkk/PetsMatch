@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
 import { factureVentePdfBlob } from '@/lib/facture-vente';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
+import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 interface Animal {
   id: string;
   nom?: string;
@@ -232,7 +233,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
    * `email_contact` (champ optionnel du profil) n'a jamais été rempli —
    * très fréquent, à ne pas confondre avec un email manquant. */
   async function loginEmailForUid(uidVal: string): Promise<string | undefined> {
-    const { data } = await supabase.from('users').select('email').eq('uid', uidVal).maybeSingle();
+    const { data } = await supabase.from('users_complet').select('email').eq('uid', uidVal).maybeSingle();
     return data?.email as string | undefined;
   }
 
@@ -243,13 +244,13 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
    * être tout autre (pro, pension...) selon le compte trouvé. Repli sur
    * `is_main` puis n'importe quel profil si le type voulu n'existe pas. */
   async function fetchContactProfile(uidVal: string, profileType: string): Promise<Record<string, unknown> | null> {
-    const { data: byType } = await supabase.from('user_profiles').select(CONTACT_FIELDS)
+    const { data: byType } = await supabase.from('user_profiles_complet').select(CONTACT_FIELDS)
       .eq('uid', uidVal).eq('profile_type', profileType).maybeSingle();
     if (byType) return byType;
-    const { data: main } = await supabase.from('user_profiles').select(CONTACT_FIELDS)
+    const { data: main } = await supabase.from('user_profiles_complet').select(CONTACT_FIELDS)
       .eq('uid', uidVal).eq('is_main', true).maybeSingle();
     if (main) return main;
-    const { data: any } = await supabase.from('user_profiles').select(CONTACT_FIELDS)
+    const { data: any } = await supabase.from('user_profiles_complet').select(CONTACT_FIELDS)
       .eq('uid', uidVal).limit(1).maybeSingle();
     return any ?? null;
   }
@@ -332,13 +333,13 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     const isEmail = q.includes('@');
     let rows: Record<string, unknown>[] = [];
     if (isEmail) {
-      const { data: userRow } = await supabase.from('users').select('uid, email').eq('email', q.toLowerCase()).maybeSingle();
+      const userRow = await trouverUtilisateurParEmail(q.toLowerCase());
       if (userRow) {
-        const { data: cp } = await supabase.from('user_profiles').select(CP_FIELDS).eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
+        const { data: cp } = await supabase.from('user_profiles_complet').select(CP_FIELDS).eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
         if (cp) rows = [mapProfile(cp, userRow.email)];
       }
     } else {
-      const { data } = await supabase.from('user_profiles').select(CP_FIELDS)
+      const { data } = await supabase.from('user_profiles_complet').select(CP_FIELDS)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`)
         .eq('is_main', true)
         .limit(6);
@@ -564,7 +565,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       });
       // Entrée pour l'acquéreur s'il a un compte éleveur ou association
       if (acqUid && (qualite === 'eleveur' || qualite === 'refuge')) {
-        const { data: acqProfRow } = await supabase.from('user_profiles')
+        const { data: acqProfRow } = await supabase.from('user_profiles_complet')
           .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
         const acqProfileId = (acqProfRow as { id: string } | null)?.id ?? null;
         await supabase.from('registre_mouvements').insert({

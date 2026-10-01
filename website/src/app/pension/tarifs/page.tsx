@@ -50,14 +50,14 @@ export default function PensionTarifsPage() {
     if (!user) return;
     let pid = activeProfileId || null;
     if (!pid) {
-      const { data: mainProfile } = await supabase.from('user_profiles')
+      const { data: mainProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       pid = mainProfile?.id ?? null;
     }
     setProfileId(pid);
     if (!pid) { setLoading(false); return; }
 
-    const { data } = await supabase.from('user_profiles')
+    const { data } = await supabase.from('user_profiles_complet')
       .select('tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
     const t = (data?.tarifs_pension ?? null) as (TarifsPension & { afficher_public?: boolean }) | null;
     const acceptees = new Set((data?.especes_acceptees as string[] | undefined) ?? []);

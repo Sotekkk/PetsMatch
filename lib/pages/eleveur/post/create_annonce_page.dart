@@ -577,7 +577,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final activeProfId = User_Info.activeProfileId;
     if (activeProfId.isNotEmpty) {
       final prof = await Supabase.instance.client
-          .from('user_profiles')
+          .from('user_profiles_complet')
           .select('statut_pro')
           .eq('id', activeProfId)
           .maybeSingle();
@@ -673,8 +673,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       // uid du gérant pour uid_eleveur plus bas.
       final activeProfileId = User_Info.activeProfileId;
       final userRow = activeProfileId.isNotEmpty
-          ? await Supabase.instance.client.from('user_profiles').select().eq('id', activeProfileId).single()
-          : await Supabase.instance.client.from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
+          ? await Supabase.instance.client.from('user_profiles_complet').select().eq('id', activeProfileId).single()
+          : await Supabase.instance.client.from('user_profiles_complet').select().eq('uid', uid).eq('is_main', true).single();
       final ownerUid = (userRow['uid'] as String?) ?? uid;
 
       final nomEleveur = (userRow['nom'] as String?)?.isNotEmpty == true

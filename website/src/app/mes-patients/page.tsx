@@ -105,7 +105,7 @@ export default function MesPatientsPage() {
     if (!ownerUid) return;
     setChipRequesting(true);
     try {
-      const { data: ownerProfile } = await supabase.from('user_profiles')
+      const { data: ownerProfile } = await supabase.from('user_profiles_complet')
         .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
       if (!ownerProfile) throw new Error('Profil propriétaire introuvable');
       await supabase.from('animal_access').upsert({
@@ -119,7 +119,7 @@ export default function MesPatientsPage() {
       // Le profil ACTIF (véto/santé...) par son id, jamais is_main (le profil
       // particulier) — sinon le nom affiché est celui d'un autre métier du
       // même compte.
-      const { data: myProfile } = await supabase.from('user_profiles')
+      const { data: myProfile } = await supabase.from('user_profiles_complet')
         .select('firstname, lastname, nom').eq('id', activeProfileId).maybeSingle();
       const clinic = (myProfile?.nom ?? '').trim();
       const isClinic = clinic.length > 0;
@@ -150,7 +150,7 @@ export default function MesPatientsPage() {
 
   useEffect(() => {
     if (activeProfileId) {
-      supabase.from('user_profiles').select('profile_type, cat_pro').eq('id', activeProfileId).single()
+      supabase.from('user_profiles_complet').select('profile_type, cat_pro').eq('id', activeProfileId).single()
         .then(({ data }) => { if (data) { const r = data as { profile_type: string; cat_pro: string }; setCatPro(r.profile_type ?? r.cat_pro ?? ''); } });
     } else {
       setCatPro(userData?.catPro ?? '');

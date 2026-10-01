@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { rechercherUtilisateurs } from '@/lib/user-lookup';
 
 const TEAL = '#0C5C6C';
 const GREEN = '#6E9E57';
@@ -70,12 +71,12 @@ export default function CogerancePage() {
     if (!user) return;
     setLoading(true);
     try {
-      const me = await supabase.from('user_profiles').select('id, firstname, lastname, nom')
+      const me = await supabase.from('user_profiles_complet').select('id, firstname, lastname, nom')
         .eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle();
       const n = nomFromProfile(me.data);
       if (n) setMyName(n);
 
-      const elevage = await supabase.from('user_profiles').select('id')
+      const elevage = await supabase.from('user_profiles_complet').select('id')
         .eq('uid', user.uid).eq('profile_type', 'eleveur').maybeSingle();
       const eid = (elevage.data?.id as string | undefined) ?? null;
       setElevageProfileId(eid);
@@ -100,7 +101,7 @@ export default function CogerancePage() {
 
       const byId: Record<string, { firstname?: string | null; lastname?: string | null; nom?: string | null; avatar_url?: string | null }> = {};
       if (profileIds.length > 0) {
-        const { data: profs } = await supabase.from('user_profiles')
+        const { data: profs } = await supabase.from('user_profiles_complet')
           .select('id, firstname, lastname, nom, avatar_url').in('id', profileIds);
         for (const p of profs ?? []) byId[p.id as string] = p;
       }
@@ -153,14 +154,14 @@ export default function CogerancePage() {
     setSearched(true);
     try {
       const usersRes = q.includes('@')
-        ? await supabase.from('users').select('uid, firstname, lastname, email').eq('email', q.toLowerCase()).limit(5)
-        : await supabase.from('users').select('uid, firstname, lastname, email')
+        ? { data: await rechercherUtilisateurs(q, { limit: 5 }) }
+        : await supabase.from('users_complet').select('uid, firstname, lastname, email')
             .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).limit(15);
       const users = (usersRes.data ?? []).filter(u => u.uid !== user?.uid);
       const uids = users.map(u => u.uid as string);
       const profileByUid: Record<string, string> = {};
       if (uids.length > 0) {
-        const { data: profs } = await supabase.from('user_profiles').select('uid, id')
+        const { data: profs } = await supabase.from('user_profiles_complet').select('uid, id')
           .in('uid', uids).eq('profile_type', 'particulier');
         for (const p of profs ?? []) profileByUid[p.uid as string] = p.id as string;
       }
@@ -230,7 +231,7 @@ export default function CogerancePage() {
 
   async function accepter(row: CogeranceRow) {
     await run(async () => {
-      const me = await supabase.from('user_profiles').select('id')
+      const me = await supabase.from('user_profiles_complet').select('id')
         .eq('uid', user!.uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('elevage_cogerants').update({
         statut: 'actif',

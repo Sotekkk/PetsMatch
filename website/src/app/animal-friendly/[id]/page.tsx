@@ -131,7 +131,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
     setError('');
     try {
       const { data: profileRow } = await supabase
-        .from('user_profiles').select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+        .from('user_profiles_complet').select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const { error: err } = await supabase.from('petfriendly_reviews').insert({
         place_id: id,
         user_uid: user.uid,

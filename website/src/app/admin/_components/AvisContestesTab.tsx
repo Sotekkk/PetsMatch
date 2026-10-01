@@ -44,7 +44,7 @@ export default function AvisContestesTab({ adminUid }: { adminUid: string }) {
       ]));
       if (uids.length > 0) {
         const { data: profiles } = await supabase
-          .from('user_profiles').select('uid, nom, firstname, lastname, profile_type')
+          .from('user_profiles_complet').select('uid, nom, firstname, lastname, profile_type')
           .in('uid', uids).eq('is_main', true);
         const proMap: Record<string, string> = {};
         const clientMap: Record<string, string> = {};

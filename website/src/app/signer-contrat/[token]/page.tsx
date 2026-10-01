@@ -117,13 +117,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
       // Le profil créateur du contrat : celui rattaché au document (pro_profile_id) si
       // renseigné, sinon le profil principal du compte (contrats créés avant ce champ).
-      const profQuery = supabase.from('user_profiles')
+      const profQuery = supabase.from('user_profiles_complet')
         .select('firstname,lastname,nom,adresse,siret,numero_elevage,ville_pro,ville,phone_number,email_contact,rue,code_postal,phone,telephone');
       const [{ data: cp }, { data: userRow }] = await Promise.all([
         data.pro_profile_id
           ? profQuery.eq('id', data.pro_profile_id).maybeSingle()
           : profQuery.eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
-        supabase.from('users').select('email').eq('uid', data.uid_eleveur).maybeSingle(),
+        supabase.from('users_complet').select('email').eq('uid', data.uid_eleveur).maybeSingle(),
       ]);
       const profil = cp ? {
         firstname: cp.firstname, lastname: cp.lastname, name_elevage: cp.nom,
@@ -242,7 +242,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         }
         const clientPid = meta.client_profile_id as string | undefined;
         if (clientPid) {
-          const { data: cp2 } = await supabase.from('user_profiles')
+          const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, email_contact').eq('id', clientPid).maybeSingle();
           if (cp2) clientInfo = {
             nom: (cp2.nom?.trim() || `${cp2.firstname ?? ''} ${cp2.lastname ?? ''}`.trim()),
@@ -250,7 +250,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           };
         }
         if (!clientInfo.nom && clientUid) {
-          const { data: cp2 } = await supabase.from('user_profiles')
+          const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, email_contact').eq('uid', clientUid).eq('is_main', true).maybeSingle();
           clientInfo = {
             nom: (cp2?.nom?.trim() || `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim()),
@@ -297,7 +297,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           animalInfo = an ?? {};
         }
         if (rdv?.client_uid) {
-          const { data: cp2 } = await supabase.from('user_profiles')
+          const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
           clientInfo = {
             nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
@@ -347,7 +347,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           animalInfo = an ?? {};
         }
         if (rdv?.client_uid) {
-          const { data: cp2 } = await supabase.from('user_profiles')
+          const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
           clientInfo = {
             nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
@@ -394,7 +394,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           animalInfo = an ?? {};
         }
         if (rdv?.client_uid) {
-          const { data: cp2 } = await supabase.from('user_profiles')
+          const { data: cp2 } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
           clientInfo = {
             nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
@@ -439,7 +439,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             animalInfo = an ?? {};
           }
           if (rdv?.client_uid) {
-            const { data: cp2 } = await supabase.from('user_profiles')
+            const { data: cp2 } = await supabase.from('user_profiles_complet')
               .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
             clientInfo = {
               nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),

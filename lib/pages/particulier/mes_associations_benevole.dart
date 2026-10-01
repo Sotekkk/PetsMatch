@@ -33,7 +33,7 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
     try {
       // Le bénévolat est toujours rattaché au profil particulier de la
       // personne (jamais à un profil pro/éleveur/association).
-      final myProfileData = await _supa.from('user_profiles')
+      final myProfileData = await _supa.from('user_profiles_complet')
           .select('id').eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
       final myProfileId = myProfileData?['id'] as String?;
 
@@ -75,7 +75,7 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
       // Profils pour les noms/avatars : query par ID direct
       final profileByPid = <String, Map<String, dynamic>>{};
       if (eleveurProfileIds.isNotEmpty) {
-        final pRows = await _supa.from('user_profiles')
+        final pRows = await _supa.from('user_profiles_complet')
             .select('id, uid, name_elevage, profile_label, nom, avatar_url, ville')
             .inFilter('id', eleveurProfileIds) as List;
         for (final p in pRows) {
@@ -89,7 +89,7 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
       final planAssigneValue    = myProfileId ?? _uid;
 
       final results = await Future.wait([
-        _supa.from('user_profiles')
+        _supa.from('user_profiles_complet')
             .select('uid, firstname, lastname, name_elevage:nom, profile_picture_url:avatar_url, ville')
             .inFilter('uid', uids).eq('is_main', true),
         _supa.from('taches_elevage')

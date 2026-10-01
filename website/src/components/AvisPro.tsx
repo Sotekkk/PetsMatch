@@ -16,7 +16,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 // réellement enregistrée, pas systématiquement au profil particulier.
 async function resolveReviewerProfileId(uid: string, activeId: string): Promise<string | null> {
   if (activeId) return activeId;
-  const { data } = await supabase.from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+  const { data } = await supabase.from('user_profiles_complet').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
   return data?.id ?? null;
 }
 
@@ -46,7 +46,7 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
     // Résout le nom + photo de chaque auteur d'avis (profil principal).
     const uids = Array.from(new Set(list.map(a => a.client_uid)));
     if (uids.length > 0) {
-      const { data: profs } = await supabase.from('user_profiles')
+      const { data: profs } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, nom, avatar_url, profile_type')
         .in('uid', uids).eq('is_main', true);
       const map: Record<string, { name: string; photo: string | null }> = {};

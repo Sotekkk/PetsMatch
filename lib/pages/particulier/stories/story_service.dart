@@ -176,7 +176,7 @@ class StoryService {
 
     // Profils auteurs (mêmes colonnes que Pets Social pour un rendu cohérent).
     final authorIds = items.map((s) => s.authorProfileId).toSet().toList();
-    final profRows = await _supa.from('user_profiles')
+    final profRows = await _supa.from('user_profiles_complet')
         .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, is_influencer, social_pseudo')
         .inFilter('id', authorIds);
     final profByI = {for (final p in (profRows as List)) p['id'].toString(): Map<String, dynamic>.from(p)};
@@ -223,7 +223,7 @@ class StoryService {
         .eq('story_id', storyId).order('viewed_at', ascending: false);
     final ids = (rows as List).map((r) => r['viewer_profile_id']?.toString()).whereType<String>().toList();
     if (ids.isEmpty) return [];
-    final profRows = await _supa.from('user_profiles')
+    final profRows = await _supa.from('user_profiles_complet')
         .select('id, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, social_pseudo')
         .inFilter('id', ids);
     final profByI = {for (final p in (profRows as List)) p['id'].toString(): Map<String, dynamic>.from(p)};
@@ -269,7 +269,7 @@ class StoryService {
             .contains('data', {'story_id': storyId, 'liker_profile_id': profileId})
             .gte('created_at', since).limit(1).maybeSingle();
         if (dup == null) {
-          final me = await _supa.from('user_profiles').select('firstname, lastname, nom, social_pseudo, profile_type')
+          final me = await _supa.from('user_profiles_complet').select('firstname, lastname, nom, social_pseudo, profile_type')
               .eq('id', profileId).maybeSingle();
           final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
           await _supa.from('notifications').insert({

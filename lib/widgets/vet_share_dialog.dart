@@ -13,7 +13,7 @@ Future<void> showVetShareSheet(BuildContext context, String animalId) async {
   if (uid == null) return;
 
   final profileRow = await Supabase.instance.client
-      .from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      .from('user_profiles_complet').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
   final profileId = profileRow?['id'] as String?;
 
   final now = DateTime.now().toUtc();

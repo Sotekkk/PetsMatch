@@ -100,7 +100,7 @@ async function resolveAuthors(rows: { auteur_profile_id?: string | null; auteur_
   const out: Record<string, Author> = {};
   const profIds = Array.from(new Set(rows.map(r => r.auteur_profile_id).filter((id): id is string => !!id)));
   if (profIds.length > 0) {
-    const { data } = await supabase.from('user_profiles').select(AUTHOR_COLS).in('id', profIds);
+    const { data } = await supabase.from('user_profiles_complet').select(AUTHOR_COLS).in('id', profIds);
     for (const r of (data ?? []) as Author[]) out[r.id] = r;
   }
   const legacyUids = Array.from(new Set(
@@ -111,7 +111,7 @@ async function resolveAuthors(rows: { auteur_profile_id?: string | null; auteur_
     // compte peut avoir un profil pro/éleveur comme principal et un profil
     // particulier secondaire ; filtrer is_main affichait "Membre" à la
     // place du vrai nom. Même logique que côté appli.
-    const { data } = await supabase.from('user_profiles').select(AUTHOR_COLS)
+    const { data } = await supabase.from('user_profiles_complet').select(AUTHOR_COLS)
       .in('uid', legacyUids).eq('profile_type', 'particulier');
     for (const r of (data ?? []) as Author[]) {
       const key = `u:${r.uid}`;
