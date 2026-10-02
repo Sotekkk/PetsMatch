@@ -81,6 +81,7 @@ Future<Uint8List> morphoSuiviPdfBytes({
   required Map<String, dynamic> suivi,
   required Map<String, dynamic> animal,
   required Map<String, dynamic> pro,
+  Map<String, dynamic> proprietaire = const {},
   required List<Map<String, dynamic>> photos,
   required List<Map<String, dynamic>> points,
   required List<Map<String, dynamic>> observations,
@@ -156,6 +157,10 @@ Future<Uint8List> morphoSuiviPdfBytes({
           pw.SizedBox(height: 4),
           _line('Nom', animal['nom'] as String?),
           _line('Espèce / race', [animal['espece'], animal['race']].where((e) => e != null && '$e'.trim().isNotEmpty).join(' — ')),
+          if ((animal['sexe']?.toString() ?? '').isNotEmpty) _line('Sexe', animal['sexe'].toString()),
+          if (DateTime.tryParse(animal['date_naissance']?.toString() ?? '') != null)
+            _line('Né(e) le', _fmt(DateTime.parse(animal['date_naissance'].toString()))),
+          if ((animal['identification']?.toString() ?? '').isNotEmpty) _line('Identification', animal['identification'].toString()),
           if (suivi['poids'] != null) _line('Poids', '${suivi['poids']} kg'),
           if (suivi['taille'] != null) _line('Taille', '${suivi['taille']} cm'),
           if ((suivi['checkpoint_age'] as String?)?.isNotEmpty == true) _line('Étape', suivi['checkpoint_age']),
@@ -171,6 +176,14 @@ Future<Uint8List> morphoSuiviPdfBytes({
           _line('Source', kSourceLabels[source]),
         ])),
       ]),
+
+      if (proprietaire.values.any((v) => '${v ?? ''}'.trim().isNotEmpty)) ...[
+        pw.SizedBox(height: 12),
+        pw.Text('Propriétaire', style: _artTitle()),
+        pw.SizedBox(height: 4),
+        for (final e in [('Nom', 'nom'), ('Adresse', 'adresse'), ('Téléphone', 'tel'), ('E-mail', 'email'), ('Contact', 'contact')])
+          if ('${proprietaire[e.$2] ?? ''}'.trim().isNotEmpty) _line(e.$1, proprietaire[e.$2].toString()),
+      ],
 
       if ((suivi['commentaires'] as String?)?.isNotEmpty == true) ...[
         pw.SizedBox(height: 10),

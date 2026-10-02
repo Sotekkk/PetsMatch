@@ -35,6 +35,7 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
   late String _vue = vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien').first.$1;
   Map<String, dynamic> _animal = {};
   Map<String, dynamic> _pro = {};
+  Map<String, dynamic> _proprio = {};
   bool _exporting = false;
   bool _sendingNotif = false;
   late DateTime? _notifieA = DateTime.tryParse(widget.suivi['notifie_a']?.toString() ?? '');
@@ -72,47 +73,91 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
   }
 
   Future<void> _loadAnimalEtPro() async {
+    final animalId = widget.suivi['animal_id']?.toString();
+    final proProfileId = widget.suivi['pro_profile_id']?.toString();
+    final uidAuteur = widget.suivi['uid_auteur']?.toString();
+    String s(dynamic v) => v?.toString().trim() ?? '';
+    String joindre(List<dynamic> parts, [String sep = ' ']) =>
+        parts.map(s).where((x) => x.isNotEmpty).join(sep);
+
+    // Chargements indépendants : une erreur sur l'un ne vide plus les autres
+    // (avant : une colonne inexistante dans la requête du pro faisait échouer
+    // tout le bloc → « Réalisé par » sans nom et PDF sans l'animal).
+    Map<String, dynamic>? animalRow;
+    if (animalId != null) {
+      try {
+        animalRow = await _supa.from('animaux')
+            .select('nom, espece, race, sexe, date_naissance, identification, uid_eleveur, uid_proprietaire')
+            .eq('id', animalId).maybeSingle();
+      } catch (_) {}
+    }
+
+    Map<String, dynamic>? proRow;
     try {
-      final animalId = widget.suivi['animal_id']?.toString();
-      final proProfileId = widget.suivi['pro_profile_id']?.toString();
-      final uidAuteur = widget.suivi['uid_auteur']?.toString();
-      final futures = <Future<dynamic>>[
-        if (animalId != null) _supa.from('animaux').select('nom, espece, race').eq('id', animalId).maybeSingle() else Future.value(null),
-        if (proProfileId != null)
-          _supa.from('user_profiles_complet').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('id', proProfileId).maybeSingle()
-        else if (uidAuteur != null)
-          _supa.from('user_profiles_complet').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('uid', uidAuteur).eq('is_main', true).maybeSingle()
-        else
-          Future.value(null),
-      ];
-      final res = await Future.wait(futures);
-      if (!mounted) return;
-      final animalRow = res[0] as Map<String, dynamic>?;
-      final proRow = res[1] as Map<String, dynamic>?;
-      final proNom = (proRow?['nom'] as String?)?.trim().isNotEmpty == true
-          ? proRow!['nom'] as String
-          : '${proRow?['firstname'] ?? ''} ${proRow?['lastname'] ?? ''}'.trim();
-      setState(() {
-        _animal = animalRow ?? {
-          'nom': widget.suivi['animal_nom_libre'] ?? 'Animal',
-          'espece': widget.suivi['espece_libre'] ?? widget.espece,
-        };
-        _pro = {
-          'nom': proNom.isNotEmpty ? proNom : '',
-          'profession': proRow?['profession_pro'] ?? '',
-          'adresse': proRow?['adress'] ?? '',
-          'tel': proRow?['phone_number'] ?? '',
-          'email': proRow?['email_contact'] ?? '',
-        };
-      });
+      const cols = 'nom, firstname, lastname, adresse, rue, code_postal, ville, phone, telephone, phone_number, email_contact, profession_pro';
+      if (proProfileId != null) {
+        proRow = await _supa.from('user_profiles_complet').select(cols).eq('id', proProfileId).maybeSingle();
+      } else if (uidAuteur != null) {
+        proRow = await _supa.from('user_profiles_complet').select(cols)
+            .eq('uid', uidAuteur).eq('is_main', true).maybeSingle();
+      }
     } catch (_) {}
+
+    // Propriétaire : comme l'onglet Propriétaire de la fiche pro
+    // (animaux.uid_eleveur / uid_proprietaire → users_complet) ; suivi libre :
+    // champs « client » saisis dans le formulaire.
+    Map<String, dynamic> proprio = {};
+    final ownerUid = s(animalRow?['uid_eleveur']).isNotEmpty ? s(animalRow?['uid_eleveur']) : s(animalRow?['uid_proprietaire']);
+    if (ownerUid.isNotEmpty) {
+      try {
+        final o = await _supa.from('users_complet').select('*').eq('uid', ownerUid).maybeSingle();
+        if (o != null) {
+          final elevage = o['is_elevage'] == true && s(o['name_elevage']).isNotEmpty;
+          proprio = {
+            'nom': elevage
+                ? '${s(o['name_elevage'])} (${joindre([o['firstname'], o['lastname']])})'
+                : joindre([o['firstname'], o['lastname']]),
+            'adresse': elevage
+                ? joindre([o['rue_elevage'], o['code_postal_elevage'], o['ville_elevage']])
+                : joindre([o['rue'], o['code_postal'], o['ville']]),
+            'tel': s(o['phone_number']),
+            'email': s(o['email']),
+          };
+        }
+      } catch (_) {}
+    } else if (s(widget.suivi['client_nom_libre']).isNotEmpty || s(widget.suivi['client_contact_libre']).isNotEmpty) {
+      proprio = {
+        'nom': s(widget.suivi['client_nom_libre']),
+        'contact': s(widget.suivi['client_contact_libre']),
+      };
+    }
+
+    if (!mounted) return;
+    final proNom = s(proRow?['nom']).isNotEmpty ? s(proRow?['nom']) : joindre([proRow?['firstname'], proRow?['lastname']]);
+    setState(() {
+      _animal = animalRow ?? {
+        'nom': widget.suivi['animal_nom_libre'] ?? 'Animal',
+        'espece': widget.suivi['espece_libre'] ?? widget.espece,
+      };
+      _pro = {
+        'nom': proNom,
+        'profession': s(proRow?['profession_pro']),
+        'adresse': s(proRow?['adresse']).isNotEmpty
+            ? s(proRow?['adresse'])
+            : joindre([proRow?['rue'], proRow?['code_postal'], proRow?['ville']]),
+        'tel': [proRow?['phone_number'], proRow?['phone'], proRow?['telephone']].map(s)
+            .firstWhere((x) => x.isNotEmpty, orElse: () => ''),
+        'email': s(proRow?['email_contact']),
+      };
+      _proprio = proprio;
+    });
   }
 
   Future<void> _exporterPdf() async {
     setState(() => _exporting = true);
     try {
       final bytes = await morphoSuiviPdfBytes(
-        suivi: widget.suivi, animal: _animal, pro: _pro,
+        suivi: widget.suivi, animal: _animal, pro: _pro, proprietaire: _proprio,
         photos: _photos, points: _points, observations: _observations, mouvements: _mouvements,
       );
       final nomAnimal = (_animal['nom'] as String?)?.replaceAll(' ', '_') ?? 'animal';
