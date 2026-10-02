@@ -119,7 +119,8 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
           _secondaryProfileId = p['id']?.toString();
           _nomCtrl.text         = nomProfil.isNotEmpty ? nomProfil : label;
           _responsableCtrl.text = p['profession_pro']?.toString() ?? '';
-          _rnaCtrl.text         = p['ordre_veterinaire']?.toString() ?? '';
+          // RNA : référence user_profiles.rna (ordre_veterinaire = ancien emplacement).
+          _rnaCtrl.text         = (p['rna'] ?? p['ordre_veterinaire'])?.toString() ?? '';
           _siretCtrl.text       = p['siret']?.toString() ?? '';
           _acacedCtrl.text      = acaCert?['numero']?.toString() ?? '';
           _acacedDateCtrl.text  = acaCert?['date_obtention']?.toString() ?? '';
@@ -231,7 +232,8 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
         'nom':              nom,
         'profile_label':    nom,
         'profession_pro':   _responsableCtrl.text.trim().isEmpty ? null : _responsableCtrl.text.trim(),
-        'ordre_veterinaire': _rnaCtrl.text.trim().isEmpty ? null : _rnaCtrl.text.trim(),
+        'rna':               _rnaCtrl.text.trim().isEmpty ? null : _rnaCtrl.text.replaceAll(' ', '').toUpperCase(),
+        'ordre_veterinaire': _rnaCtrl.text.trim().isEmpty ? null : _rnaCtrl.text.replaceAll(' ', '').toUpperCase(),
         'siret':            _siretCtrl.text.trim().isEmpty ? null : _siretCtrl.text.trim(),
         'certifications':   certs,
         'desc_entreprise':  _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),

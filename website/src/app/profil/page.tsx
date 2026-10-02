@@ -327,7 +327,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         setProfileLabel((r.profile_label as string) ?? '');
         setNomAsso(((r.nom ?? r.name_elevage) as string) ?? '');
         setNomResponsable((r.profession_pro as string) ?? '');
-        setRna((r.ordre_veterinaire as string) ?? '');
+        setRna(((r.rna ?? r.ordre_veterinaire) as string) ?? ''); // RNA : user_profiles.rna (ordre_veterinaire = ancien emplacement)
         setSiret((r.siret as string) ?? '');
         // ACACED stocké dans certifications[0]
         const certs = (r.certifications as {nom?: string; numero?: string; date_obtention?: string}[]) ?? [];
@@ -384,6 +384,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         profile_label:     profileLabel.trim() || nomAsso.trim(),
         nom:               nomAsso.trim(),
         profession_pro:    nomResponsable.trim(),
+        rna:               rna.replace(/\s/g, '').toUpperCase() || null,
         ordre_veterinaire: rna.trim(),
         siret:             siret.trim(),
         certifications:    certs,

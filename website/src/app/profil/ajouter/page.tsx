@@ -734,6 +734,7 @@ function AssociationForm({ uid, onBack, onSaved }: {
         profile_label:     nomAsso.trim(),
         name_elevage:      nomAsso.trim(),
         profession_pro:    nomResponsable.trim(),
+        rna:               rna.replace(/\s/g, '').toUpperCase() || null,
         ordre_veterinaire: rna.replace(/\s/g, '').toUpperCase() || null,
         siret:             siret.trim(),
         certifications:    [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate }],
