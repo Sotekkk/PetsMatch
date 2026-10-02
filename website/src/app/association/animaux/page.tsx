@@ -20,6 +20,7 @@ interface Animal {
   photo_url?: string | null;
   date_entree?: string | null;
   uid_eleveur?: string | null;
+  identification?: string | null;
 }
 
 const DETENUS_STATUTS = [
@@ -65,7 +66,7 @@ function AnimauxAssoPageInner() {
   useEffect(() => {
     if (!user) return;
     setMyUid(user.uid);
-    const cols = 'id, nom, espece, race, sexe, statut, fa_id, date_naissance, age_estime, photo_url, date_entree, uid_eleveur';
+    const cols = 'id, nom, espece, race, sexe, statut, fa_id, date_naissance, age_estime, photo_url, date_entree, uid_eleveur, identification';
 
     async function load() {
       const uid = user!.uid;
@@ -123,7 +124,8 @@ function AnimauxAssoPageInner() {
         const matchS = filterStatut === 'tous'
           || (filterStatut === 'en_fa' ? !!a.fa_id : a.statut === filterStatut);
         const q = search.toLowerCase();
-        const matchQ = !q || a.nom?.toLowerCase().includes(q) || a.espece?.toLowerCase().includes(q) || a.race?.toLowerCase().includes(q);
+        const matchQ = !q || a.nom?.toLowerCase().includes(q) || a.espece?.toLowerCase().includes(q) || a.race?.toLowerCase().includes(q)
+          || (!!a.identification && a.identification.replace(/\s/g, '').includes(q.replace(/\s/g, '')));
         return matchS && matchQ;
       })
     );
@@ -175,7 +177,7 @@ function AnimauxAssoPageInner() {
       {/* Search */}
       <input
         type="text"
-        placeholder="Rechercher un animal…"
+        placeholder="Rechercher par nom, race ou n° de puce…"
         value={search}
         onChange={e => setSearch(e.target.value)}
         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300"

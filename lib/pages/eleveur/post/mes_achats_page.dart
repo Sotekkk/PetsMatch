@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -35,9 +36,26 @@ class _MesAchatsPageState extends State<MesAchatsPage> {
           .select('id, annonce_id, statut, date_achat, date_expiration, produits_ponctuels(label, prix, description)')
           .eq('uid', uid)
           .order('date_achat', ascending: false);
+      // Multi-profil : un boost appartient au profil de l'annonce boostée —
+      // ne pas montrer les achats de l'élevage côté association (et inverse).
+      final achats = List<Map<String, dynamic>>.from(rows as List);
+      final annonceIds = achats.map((a) => a['annonce_id']).whereType<Object>().map((e) => e.toString()).toSet().toList();
+      final profilParAnnonce = <String, String?>{};
+      if (annonceIds.isNotEmpty) {
+        final ann = await Supabase.instance.client.from('annonces')
+            .select('id, profile_id').inFilter('id', annonceIds);
+        for (final r in ann as List) {
+          profilParAnnonce[r['id'].toString()] = r['profile_id']?.toString();
+        }
+      }
+      final actif = User_Info.activeProfileId;
+      achats.removeWhere((a) {
+        final pid = profilParAnnonce[a['annonce_id']?.toString()];
+        return actif.isNotEmpty && pid != null && pid != actif;
+      });
       if (mounted) {
         setState(() {
-          _achats = List<Map<String, dynamic>>.from(rows as List);
+          _achats = achats;
           _loading = false;
         });
       }

@@ -70,7 +70,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
     if (uid == null) return;
     _myUid = uid;
     try {
-      const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,age_estime,photo_url,date_entree,date_sortie,uid_eleveur';
+      const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,age_estime,photo_url,date_entree,date_sortie,uid_eleveur,identification';
       final owned = List<Map<String, dynamic>>.from(
         await _supa.from('animaux').select(cols)
             .eq('uid_eleveur', uid).eq('is_association', true).order('nom') as List,
@@ -208,7 +208,9 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
       final matchSearch = _search.isEmpty ||
           (a['nom']?.toString().toLowerCase().contains(_search.toLowerCase()) ?? false) ||
           (a['espece']?.toString().toLowerCase().contains(_search.toLowerCase()) ?? false) ||
-          (a['race']?.toString().toLowerCase().contains(_search.toLowerCase()) ?? false);
+          (a['race']?.toString().toLowerCase().contains(_search.toLowerCase()) ?? false) ||
+          // Numéro de puce saisi à la main (espaces ignorés)
+          (a['identification']?.toString().replaceAll(' ', '').contains(_search.replaceAll(' ', '')) ?? false);
       return matchStatut && matchSearch;
     }).toList();
   }
@@ -273,7 +275,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
             child: TextField(
               onChanged: (v) => setState(() { _search = v; _applyFilters(); }),
               decoration: InputDecoration(
-                hintText: 'Rechercher un animal…',
+                hintText: 'Rechercher par nom, race ou n° de puce…',
                 hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
                 prefixIcon: const Icon(Icons.search, color: Colors.grey),
                 filled: true,

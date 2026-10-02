@@ -21,7 +21,7 @@ const STATUT_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 export default function MesAchatsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, activeProfileId } = useAuth();
   const [achats, setAchats] = useState<Achat[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -32,11 +32,23 @@ export default function MesAchatsPage() {
       .select('id, annonce_id, statut, date_achat, date_expiration, produits_ponctuels(label, prix, description)')
       .eq('uid', user.uid)
       .order('date_achat', { ascending: false })
-      .then(({ data }) => {
-        setAchats((data ?? []) as unknown as Achat[]);
+      .then(async ({ data }) => {
+        // Multi-profil (miroir appli) : un boost appartient au profil de
+        // l'annonce boostée — pas d'achats de l'élevage côté association.
+        const achats = (data ?? []) as unknown as Achat[];
+        const ids = [...new Set(achats.map(a => a.annonce_id).filter(Boolean))] as string[];
+        const profilParAnnonce = new Map<string, string | null>();
+        if (ids.length) {
+          const { data: ann } = await supabase.from('annonces').select('id, profile_id').in('id', ids);
+          (ann ?? []).forEach((r: { id: string; profile_id: string | null }) => profilParAnnonce.set(String(r.id), r.profile_id));
+        }
+        setAchats(achats.filter(a => {
+          const pid = a.annonce_id ? profilParAnnonce.get(String(a.annonce_id)) : null;
+          return !activeProfileId || !pid || pid === activeProfileId;
+        }));
         setLoading(false);
       });
-  }, [user]);
+  }, [user, activeProfileId]);
 
   if (authLoading) {
     return (

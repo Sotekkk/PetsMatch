@@ -351,7 +351,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   void initState() {
     super.initState();
     _tabs = TabController(length: _tabCount, vsync: this); // réajusté après chargement via _refreshFromSupabase si _tabCount change
-    if (widget.isAssociation && widget.animalId == null) _statut = 'en_soin';
+    if (widget.isAssociation && widget.animalId == null) {
+      _statut = 'en_soin';
+      // Registre : un animal recueilli entre au refuge le jour de sa saisie
+      // (modifiable dans « Registre Entrée / Sortie »).
+      final now = DateTime.now();
+      _dateEntree = DateTime(now.year, now.month, now.day);
+    }
     if (widget.initialTabIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (widget.initialTabIndex! < _tabs.length) _tabs.animateTo(widget.initialTabIndex!);
@@ -3176,6 +3182,9 @@ class _IdentiteTab extends StatelessWidget {
                 Switch(
                   value: s._ageEstime,
                   activeColor: const Color(0xFF6E9E57),
+                  // Désactivé : piste grise visible (blanc sur blanc avant).
+                  inactiveThumbColor: Colors.grey.shade500,
+                  inactiveTrackColor: Colors.grey.shade300,
                   onChanged: s._toggleAgeEstime,
                 ),
                 const Expanded(

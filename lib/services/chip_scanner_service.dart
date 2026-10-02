@@ -478,7 +478,49 @@ class _ScannerDialogState extends State<_ScannerDialog>
               ),
             ),
 
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
+            // Pas de lecteur sous la main : saisie du numéro au clavier
+            // (même recherche ensuite, pour tous les profils).
+            OutlinedButton.icon(
+              onPressed: () async {
+                final ctrl = TextEditingController();
+                final chip = await showDialog<String>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Saisir le numéro de puce',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                    content: TextField(
+                      controller: ctrl,
+                      autofocus: true,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Galey'),
+                      decoration: const InputDecoration(hintText: 'Ex : 250269802005832'),
+                      onSubmitted: (v) { if (v.trim().isNotEmpty) Navigator.pop(ctx, v.trim()); },
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C)),
+                        onPressed: () { if (ctrl.text.trim().isNotEmpty) Navigator.pop(ctx, ctrl.text.trim()); },
+                        child: const Text('Rechercher', style: TextStyle(fontFamily: 'Galey')),
+                      ),
+                    ],
+                  ),
+                );
+                ctrl.dispose();
+                if (chip != null && chip.isNotEmpty && context.mounted) Navigator.pop(context, chip);
+              },
+              icon: const Icon(Icons.keyboard_outlined, size: 18),
+              label: const Text('Saisir le numéro', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF0C5C6C),
+                side: const BorderSide(color: Color(0xFF0C5C6C)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 8),
             TextButton(
               onPressed: () => Navigator.pop(context, null),
               child: const Text(
