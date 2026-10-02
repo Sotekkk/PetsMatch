@@ -133,7 +133,15 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
     try {
       final rows = await _supa.from('suivis_morpho').select()
           .eq('animal_id', widget.animalId).order('date', ascending: false);
-      if (mounted) setState(() { _suivis = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
+      // Bilan d'un pro NON ENVOYÉ : visible seulement de son profil auteur.
+      // La RLS le cache aux autres comptes ; ce filtre couvre le même compte
+      // (ex. profil ostéo + profil élevage propriétaire de l'animal).
+      final pid = widget.proProfileId;
+      final visibles = List<Map<String, dynamic>>.from(rows as List).where((s) =>
+          s['source'] != 'professionnel' ||
+          s['notifie_a'] != null ||
+          (pid != null && s['pro_profile_id']?.toString() == pid)).toList();
+      if (mounted) setState(() { _suivis = visibles; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

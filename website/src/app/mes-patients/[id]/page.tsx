@@ -2070,7 +2070,7 @@ function PatientDetailPageInner() {
         )}
 
         {tab === 'Morphologie' && animal && (
-          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} />
+          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} />
         )}
       </div>
 

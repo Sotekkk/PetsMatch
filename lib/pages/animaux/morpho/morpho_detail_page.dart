@@ -1,7 +1,9 @@
 import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/inline_video.dart';
 import 'morpho_constants.dart';
@@ -196,6 +198,34 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
   /// Envoi manuel de la notification au(x) propriétaire(s) — décidé par le
   /// pro (pas automatique à l'enregistrement), pour ne prévenir le client
   /// qu'une fois le suivi réellement complet.
+  /// Client hors application (suivi libre) : envoi du PDF via le menu de
+  /// partage du téléphone (WhatsApp, Gmail, Mail…), puis suivi marqué envoyé.
+  Future<void> _envoyerHorsAppli() async {
+    setState(() => _sendingNotif = true);
+    try {
+      final bytes = await morphoSuiviPdfBytes(
+        suivi: widget.suivi, animal: _animal, pro: _pro, proprietaire: _proprio,
+        photos: _photos, points: _points, observations: _observations, mouvements: _mouvements,
+      );
+      final nomAnimal = (_animal['nom'] as String?)?.trim().isNotEmpty == true ? _animal['nom'] as String : 'votre animal';
+      final signature = (_pro['nom'] as String?)?.trim().isNotEmpty == true ? '\n\n${_pro['nom']}' : '';
+      final res = await Share.shareXFiles(
+        [XFile.fromData(bytes, mimeType: 'application/pdf',
+            name: 'bilan_${nomAnimal.replaceAll(' ', '_')}_${(widget.suivi['date']?.toString() ?? '').split('T').first}.pdf')],
+        subject: 'Bilan de suivi — $nomAnimal',
+        text: 'Bonjour,\n\nVous trouverez ci-joint le bilan de suivi de $nomAnimal.$signature',
+      );
+      if (res.status == ShareResultStatus.dismissed) return;
+      final now = DateTime.now();
+      await _supa.from('suivis_morpho').update({'notifie_a': now.toUtc().toIso8601String()}).eq('id', _suiviId);
+      if (mounted) setState(() => _notifieA = now);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi impossible : $e')));
+    } finally {
+      if (mounted) setState(() => _sendingNotif = false);
+    }
+  }
+
   Future<void> _envoyerNotification() async {
     if (widget.suivi['animal_id'] == null) return;
     setState(() => _sendingNotif = true);
@@ -395,6 +425,54 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                         ),
                       ]),
                 ),
+              ],
+
+              // Client hors application (suivi libre) : envoi WhatsApp / e-mail.
+              if (!widget.readOnly && s['animal_id'] == null) ...[
+                const SizedBox(height: 10),
+                _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Icon(_notifieA != null ? Icons.check_circle : Icons.person_outline,
+                        color: kMorphoTeal, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_notifieA != null
+                        ? 'Envoyé au client le ${DateFormat('d MMM à HH:mm', 'fr_FR').format(_notifieA!)}'
+                        : 'Client hors application',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: kMorphoDark))),
+                  ]),
+                  if ((s['client_nom_libre'] ?? '').toString().isNotEmpty || (s['client_contact_libre'] ?? '').toString().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Expanded(child: Text(
+                          [s['client_nom_libre'], s['client_contact_libre']].where((v) => (v ?? '').toString().isNotEmpty).join('  ·  '),
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600))),
+                      if ((s['client_contact_libre'] ?? '').toString().isNotEmpty)
+                        IconButton(
+                          tooltip: 'Copier le contact', visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.copy, size: 16, color: kMorphoTeal),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: s['client_contact_libre'].toString()));
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contact copié')));
+                          },
+                        ),
+                    ]),
+                  ],
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _sendingNotif ? null : _envoyerHorsAppli,
+                      icon: _sendingNotif
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.share, size: 16),
+                      label: Text(_notifieA != null ? 'Renvoyer le bilan (WhatsApp, e-mail…)' : 'Envoyer le bilan (WhatsApp, e-mail…)',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+                      style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    ),
+                  ),
+                ])),
               ],
 
               if (kVuesPhotos.any((v) => _photoForVue(v.$1) != null)) ...[
