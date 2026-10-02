@@ -2369,6 +2369,18 @@ class _IdentiteTab extends StatelessWidget {
             certificatUrl: s._cessionCertificatUrl,
           ),
           if (s._statut == 'sorti') const SizedBox(height: 12),
+          // Association : statut visible et modifiable en un geste (avant :
+          // caché dans « Registre Entrée / Sortie », replié, en mode édition).
+          if (s.widget.isAssociation && s.widget.animalId != null && !s.widget.readOnly) ...[
+            _StatutAssoBar(
+              statut: s._statut,
+              onChange: (v) async {
+                s.setState(() => s._statut = v);
+                await s._save(); // enregistrement habituel : registre / propriété si sortie
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
           if (_joursAvantRetraite != null && _joursAvantRetraite! <= 30)
             _RetraiteBanner(jours: _joursAvantRetraite!, espece: s._espece),
           if (_joursAvantRetraite != null && _joursAvantRetraite! <= 30)
@@ -14459,4 +14471,91 @@ Future<void> _notifyOwnerVetEntry({
         .httpsCallable('notifyOwnerVetEntry');
     await fn.call({'animalId': animalId, 'vetName': vetName, 'typeActe': typeActe});
   } catch (_) {} // fire-and-forget : n'interrompt pas le flux principal
+}
+
+
+/// Statut d'un animal d'association — pastille cliquable en haut de la fiche.
+class _StatutAssoBar extends StatelessWidget {
+  final String statut;
+  final Future<void> Function(String) onChange;
+  const _StatutAssoBar({required this.statut, required this.onChange});
+
+  static const _statuts = [
+    ('en_soin', 'En soin', Colors.orange, Icons.healing_outlined),
+    ('disponible', 'Disponible à l\'adoption', Color(0xFF6E9E57), Icons.favorite_outline),
+    ('adopte', 'Adopté', Color(0xFF0C5C6C), Icons.home_outlined),
+    ('transfere', 'Transféré', Colors.blue, Icons.swap_horiz),
+    ('decede', 'Décédé', Colors.redAccent, Icons.sentiment_dissatisfied_outlined),
+  ];
+  static const _sorties = {'adopte', 'transfere', 'decede'};
+
+  Future<void> _choisir(BuildContext context) async {
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Statut de l\'animal', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text('« En famille d\'accueil » se règle depuis Familles d\'accueil.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 8),
+          for (final e in _statuts)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(e.$4, color: e.$3),
+              title: Text(e.$2, style: TextStyle(fontFamily: 'Galey',
+                  fontWeight: e.$1 == statut ? FontWeight.w700 : FontWeight.w500)),
+              trailing: e.$1 == statut ? Icon(Icons.check, color: e.$3) : null,
+              onTap: () => Navigator.pop(ctx, e.$1),
+            ),
+        ]),
+      )),
+    );
+    if (choix == null || choix == statut || !context.mounted) return;
+    if (_sorties.contains(choix)) {
+      final label = _statuts.firstWhere((e) => e.$1 == choix).$2;
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: Text('Passer en « $label » ?', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('L\'animal sortira de vos animaux présents et la sortie sera inscrite au registre. '
+            'Complétez au besoin le destinataire dans « Registre Entrée / Sortie ».',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Confirmer')),
+        ],
+      ));
+      if (ok != true) return;
+    }
+    await onChange(choix);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final e = _statuts.firstWhere((x) => x.$1 == statut,
+        orElse: () => (statut, statut, Colors.grey, Icons.label_outline));
+    return GestureDetector(
+      onTap: () => _choisir(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: e.$3.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: e.$3.withValues(alpha: 0.4)),
+        ),
+        child: Row(children: [
+          Icon(e.$4, color: e.$3, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text.rich(TextSpan(children: [
+            TextSpan(text: 'Statut : ', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+            TextSpan(text: e.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: e.$3)),
+          ]))),
+          Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: e.$3)),
+          Icon(Icons.expand_more, color: e.$3, size: 18),
+        ]),
+      ),
+    );
+  }
 }

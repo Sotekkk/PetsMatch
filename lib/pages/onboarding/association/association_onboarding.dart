@@ -1,6 +1,4 @@
-import 'package:PetsMatch/pages/association/admin/chenil_planning_page.dart';
 import 'package:PetsMatch/pages/association/benevoles/benevoles_page.dart';
-import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_page.dart';
 import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_action_step.dart';
@@ -8,6 +6,7 @@ import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_step.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_theme.dart';
 import 'package:flutter/material.dart';
+import 'hebergement_guide.dart';
 
 /// Onboarding association — docs/PetsMatch_Specs_Onboarding_Anatomie.md §4.
 void registerAssociationOnboarding() {
@@ -51,7 +50,7 @@ final List<OnboardingStepDef> _steps = [
     key: 'chenil_ou_fa',
     label: 'FA / Chenil',
     builder: (context, {required profileId, required onNext, required onSkip}) =>
-        _ChenilOuFaStep(onNext: onNext, onSkip: onSkip),
+        _ChenilOuFaStep(profileId: profileId, onNext: onNext, onSkip: onSkip),
   ),
   OnboardingStepDef(
     key: 'benevole',
@@ -74,14 +73,17 @@ final List<OnboardingStepDef> _steps = [
 /// Étape 3 — choix dédié (pas une simple action unique) : familles d'accueil,
 /// chenil, les deux, ou passer.
 class _ChenilOuFaStep extends StatelessWidget {
+  final String? profileId;
   final VoidCallback onNext;
   final VoidCallback onSkip;
 
-  const _ChenilOuFaStep({required this.onNext, required this.onSkip});
+  const _ChenilOuFaStep({required this.profileId, required this.onNext, required this.onSkip});
 
-  Future<void> _open(BuildContext context, Widget page) async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-    onNext();
+  /// Parcours guidé : créer le premier hébergement / la première FA et y
+  /// placer un animal, sans quitter la configuration (hebergement_guide.dart).
+  Future<void> _guider(BuildContext context, Future<bool> Function(BuildContext, {required String? profileId}) guide) async {
+    final ok = await guide(context, profileId: profileId);
+    if (ok) onNext();
   }
 
   @override
@@ -112,7 +114,7 @@ class _ChenilOuFaStep extends StatelessWidget {
           color: OnboardingTheme.green,
           title: 'Familles d\'accueil',
           subtitle: 'Placer des animaux chez des particuliers bénévoles',
-          onTap: () => _open(context, const FamillesAccueilPage()),
+          onTap: () => _guider(context, guiderFamilleAccueil),
         ),
         const SizedBox(height: 12),
         _ChoiceCard(
@@ -120,7 +122,7 @@ class _ChenilOuFaStep extends StatelessWidget {
           color: OnboardingTheme.teal,
           title: 'Chenil / Enclos',
           subtitle: 'Gérer les logements de votre refuge',
-          onTap: () => _open(context, const ChenilPlanningPage()),
+          onTap: () => _guider(context, guiderChenil),
         ),
         const SizedBox(height: 20),
         TextButton(

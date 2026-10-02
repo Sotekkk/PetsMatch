@@ -10,6 +10,7 @@ import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
 import LienDocument from '@/components/LienDocument';
+import { changerStatutAnimalAsso, confirmerSortie } from '@/lib/statut-animal-asso';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -364,12 +365,20 @@ export default function AnimalAssoFichePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Miroir de l'appli : sortie → registre + propriété clôturée (statut-animal-asso).
   const handleStatutChange = async (s: string) => {
+    if (!user || !animal || !confirmerSortie(s)) return;
     setEditStatut(s);
     setSavingStatut(true);
-    await supabase.from('animaux').update({ statut: s }).eq('id', id);
-    setAnimal(prev => prev ? { ...prev, statut: s } : prev);
-    setSavingStatut(false);
+    try {
+      await changerStatutAnimalAsso(String(id), animal.statut, s, user.uid);
+      setAnimal(prev => prev ? { ...prev, statut: s } : prev);
+    } catch (e) {
+      alert(`Erreur : ${(e as Error).message}`);
+      setEditStatut(animal.statut ?? '');
+    } finally {
+      setSavingStatut(false);
+    }
   };
 
   const handleDelete = async () => {

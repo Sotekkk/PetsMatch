@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
+import { changerStatutAnimalAsso, confirmerSortie } from '@/lib/statut-animal-asso';
 interface Animal {
   id: string;
   nom: string;
@@ -135,9 +136,16 @@ function AnimauxAssoPageInner() {
     return estime ? `~${val} (estimation)` : val;
   };
 
+  // Miroir de l'appli : sortie → registre + propriété clôturée (statut-animal-asso).
   const handleChangeStatut = async (animalId: string, newStatut: string) => {
-    await supabase.from('animaux').update({ statut: newStatut }).eq('id', animalId);
-    setAnimaux(prev => prev.map(a => a.id === animalId ? { ...a, statut: newStatut } : a));
+    const animal = animaux.find(x => x.id === animalId);
+    if (!user || !confirmerSortie(newStatut)) return;
+    try {
+      await changerStatutAnimalAsso(animalId, animal?.statut, newStatut, animal?.uid_eleveur ?? user.uid);
+      setAnimaux(prev => prev.map(a => a.id === animalId ? { ...a, statut: newStatut } : a));
+    } catch (e) {
+      alert(`Erreur : ${(e as Error).message}`);
+    }
   };
 
   const statuts = tab === 'detenus' ? DETENUS_STATUTS : ANCIEN_STATUTS;

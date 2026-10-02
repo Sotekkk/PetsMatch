@@ -133,6 +133,57 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
     }
   }
 
+  /// Statut rapide : En soin / Disponible directement ; sortie (adopté,
+  /// transféré, décédé) → fiche, qui inscrit la sortie au registre.
+  Future<void> _changerStatut(Map<String, dynamic> a, bool isCession) async {
+    final actuel = a['statut']?.toString() ?? 'en_soin';
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text("Statut de ${a['nom'] ?? "l'animal"}",
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 8),
+          for (final e in const [
+            ('en_soin', 'En soin', Colors.orange, Icons.healing_outlined),
+            ('disponible', "Disponible à l'adoption", Color(0xFF6E9E57), Icons.favorite_outline),
+          ])
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(e.$4, color: e.$3),
+              title: Text(e.$2, style: TextStyle(fontFamily: 'Galey', fontWeight: e.$1 == actuel ? FontWeight.w700 : FontWeight.w500)),
+              trailing: e.$1 == actuel ? Icon(Icons.check, color: e.$3) : null,
+              onTap: () => Navigator.pop(ctx, e.$1),
+            ),
+          const Divider(),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.logout, color: Color(0xFF0C5C6C)),
+            title: const Text('Adopté, transféré ou décédé…', style: TextStyle(fontFamily: 'Galey')),
+            subtitle: const Text('Ouvre la fiche pour inscrire la sortie au registre',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            onTap: () => Navigator.pop(ctx, '_fiche'),
+          ),
+        ]),
+      )),
+    );
+    if (choix == null || choix == actuel || !mounted) return;
+    if (choix == '_fiche') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => AnimalFichePage(
+        animalId: a['id'], initialData: a, isAssociation: true)));
+    } else {
+      try {
+        await Supabase.instance.client.from('animaux').update({'statut': choix}).eq('id', a['id']);
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+    _load();
+  }
+
   Future<void> _deleteAnimal(String id) async {
     try {
       await _supa.from('animaux').delete().eq('id', id);
@@ -298,6 +349,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
                             age: _age(a['date_naissance'], a['age_estime']),
                             isCession: isCession,
                             onDelete: isCession ? null : () => _deleteAnimal(a['id'].toString()),
+                            onStatut: isCession ? null : () => _changerStatut(a, isCession),
                             onTap: () async {
                               await Navigator.push(context, MaterialPageRoute(
                                 builder: (_) => AnimalFichePage(
@@ -332,11 +384,13 @@ class _AnimalCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onAddAnnonce;
   final VoidCallback? onDelete;
+  final VoidCallback? onStatut;
 
   const _AnimalCard({
     required this.animal,
     required this.age,
     required this.onTap,
+    this.onStatut,
     required this.onAddAnnonce,
     this.isCession = false,
     this.onDelete,
@@ -396,6 +450,16 @@ class _AnimalCard extends StatelessWidget {
                   fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
               const SizedBox(height: 6),
               const Divider(),
+              if (onStatut != null)
+                ListTile(
+                  leading: const Icon(Icons.swap_vert_circle_outlined, color: Color(0xFF0C5C6C)),
+                  title: const Text('Changer le statut',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Color(0xFF0C5C6C))),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onStatut!();
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
                 title: const Text('Supprimer',
