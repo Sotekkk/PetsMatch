@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { typeFromMotif } from '@/lib/agenda-type';
 
+import TuilesSanteVet from '@/components/dashboard/TuilesSanteVet';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface ProProfile {
@@ -378,7 +379,10 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
           </Link>
         )}
 
-        {/* Accès rapides */}
+        {/* Accès rapides — santé / vétérinaire : miroir de l'appli (TuilesSanteVet) */}
+        {(catPro === 'sante' || catPro === 'veterinaire') ? (
+          <TuilesSanteVet catPro={catPro} uid={uid ?? ''} profileId={profileId} abonnementHref={abonnementHref} />
+        ) : (
         <div>
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Accès rapide</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -464,6 +468,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
             )}
           </div>
         </div>
+        )}
 
         {/* RDV en attente */}
         {(loading || pendingRdvs.length > 0) && (

@@ -1,3 +1,4 @@
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
@@ -250,6 +251,150 @@ class _EleveurNavState extends State<EleveurNav> {
                     setState(() => _selectedIndex = 0);
                   },
                 ),
+                // « Mon activité santé » — sections repliables, calquées sur
+                // la branche pet-sitting (« Mon activité pet sitting » /
+                // « Administratif »).
+                if (User_Info.catPro == 'sante') ...[
+                  _DrawerSection(
+                    icon: Icons.self_improvement_outlined,
+                    label: 'Mon activité santé',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Mon agenda RDV',
+                        icon: Icons.event_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes patients',
+                        icon: Icons.medical_information_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProClientsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes suivis',
+                        icon: Icons.accessibility_new,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const SanteSuivisMorphoPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon abonnement',
+                        icon: Icons.workspace_premium_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const SanteAbonnementPage(profilType: 'sante'),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.folder_open_outlined,
+                    label: 'Administratif',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Facturation',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const FacturationPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes contrats',
+                        icon: Icons.description_outlined,
+                        locked: _planCode != 'pro',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _planCode != 'pro'
+                                ? const SanteAbonnementPage(profilType: 'sante')
+                                : const SanteContratsPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+                // « Mon activité vétérinaire » + « Administratif » — même
+                // schéma que santé / éducateur, juste sous « Accueil ».
+                if (User_Info.catPro == 'veterinaire') ...[
+                  _DrawerSection(
+                    icon: Icons.medical_services_outlined,
+                    label: 'Mon activité vétérinaire',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Mon agenda RDV',
+                        icon: Icons.event_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes patients',
+                        icon: Icons.medical_information_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const VetPatientsPage()));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes clients',
+                        icon: Icons.people_outline,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage()));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Scanner une puce',
+                        icon: Icons.qr_code_scanner,
+                        onTap: () {
+                          Navigator.pop(context);
+                          ChipScannerService.scanFromVet(context);
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon abonnement',
+                        icon: Icons.workspace_premium_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const VetAbonnementPage()));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.folder_open_outlined,
+                    label: 'Administratif',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Facturation',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturationPage()));
+                        },
+                      ),
+                    ],
+                  ),
+                ],
                 if (User_Info.catPro == 'education') ...[
                   _DrawerSection(
                     icon: Icons.work_outline,
@@ -1011,7 +1156,8 @@ class _EleveurNavState extends State<EleveurNav> {
                 if (User_Info.isPro && User_Info.catPro != 'restauration') ...[
                   // Pension : compte forcément pro, le separateur "Espace pro"
                   // n'a pas de sens (pas de mode "non-pro" a distinguer).
-                  if (User_Info.catPro != 'pension') ...[
+                  // Santé / vétérinaire : leurs sections sont en haut du menu.
+                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'sante' && User_Info.catPro != 'veterinaire') ...[
                     const Divider(height: 24),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
@@ -1020,7 +1166,7 @@ class _EleveurNavState extends State<EleveurNav> {
                               fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
                     ),
                   ],
-                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education' && User_Info.catPro != 'garde' && User_Info.catPro != 'sante' &&
+                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education' && User_Info.catPro != 'garde' && User_Info.catPro != 'sante' && User_Info.catPro != 'veterinaire' &&
                       User_Info.catPro != 'photographe' && User_Info.catPro != 'toilettage' && User_Info.catPro != 'marechal_ferrant') _DrawerItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'Mon agenda RDV',
@@ -1031,16 +1177,6 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'veterinaire') _DrawerItem(
-                    icon: Icons.medical_information_outlined,
-                    label: 'Mes patients',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const VetPatientsPage(),
-                      ));
-                    },
-                  ),
                   if (User_Info.catPro == 'photographe') _DrawerItem(
                     icon: Icons.people_outline,
                     label: 'Mes clients',
@@ -1048,30 +1184,6 @@ class _EleveurNavState extends State<EleveurNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const ProClientsPage(),
-                      ));
-                    },
-                  ),
-                  // Veterinaire n'a pas de bloc dédié plus bas (contrairement à
-                  // garde/taxi/photographe/toilettage/sante/maréchal-ferrant) —
-                  // ajouté ici pour qu'une facture créée depuis
-                  // _facturerConsultation (pro_agenda.dart) reste consultable.
-                  if (User_Info.catPro == 'veterinaire') _DrawerItem(
-                    icon: Icons.receipt_long_outlined,
-                    label: 'Mes Factures',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const FacturationPage(),
-                      ));
-                    },
-                  ),
-                  if (User_Info.catPro == 'veterinaire') _DrawerItem(
-                    icon: Icons.workspace_premium_outlined,
-                    label: 'Mon abonnement',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const VetAbonnementPage(),
                       ));
                     },
                   ),
@@ -1231,86 +1343,6 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const FacturationPage(),
-                            ));
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                  // « Mon activité santé » — sections repliables, calquées sur
-                  // la branche pet-sitting (« Mon activité pet sitting » /
-                  // « Administratif »).
-                  if (User_Info.catPro == 'sante') ...[
-                    _DrawerSection(
-                      icon: Icons.self_improvement_outlined,
-                      label: 'Mon activité santé',
-                      children: [
-                        _DrawerSubItem(
-                          label: 'Mon agenda RDV',
-                          icon: Icons.event_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ProAgendaPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes patients',
-                          icon: Icons.medical_information_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ProClientsPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes suivis',
-                          icon: Icons.accessibility_new,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const SanteSuivisMorphoPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mon abonnement',
-                          icon: Icons.workspace_premium_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const SanteAbonnementPage(profilType: 'sante'),
-                            ));
-                          },
-                        ),
-                      ],
-                    ),
-                    _DrawerSection(
-                      icon: Icons.folder_open_outlined,
-                      label: 'Administratif',
-                      children: [
-                        _DrawerSubItem(
-                          label: 'Facturation',
-                          icon: Icons.receipt_long_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const FacturationPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes contrats',
-                          icon: Icons.description_outlined,
-                          locked: _planCode != 'pro',
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => _planCode != 'pro'
-                                  ? const SanteAbonnementPage(profilType: 'sante')
-                                  : const SanteContratsPage(),
                             ));
                           },
                         ),

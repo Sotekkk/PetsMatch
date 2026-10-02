@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
@@ -771,7 +772,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => go(const VetPatientsPage())),
         _QuickTile(icon: Icons.event_outlined, label: 'Agenda\nRDV', color: const Color(0xFF5F9EAA),
             onTap: () => go(const ProAgendaPage())),
-        _QuickTile(icon: Icons.qr_code_scanner, label: 'Scanner\nune puce', color: const Color(0xFF475569),
+        _QuickTile(icon: Icons.qr_code_scanner, label: 'Rechercher une puce', color: const Color(0xFF475569),
             onTap: () => ChipScannerService.scanFromVet(context)),
         _QuickTile(icon: Icons.medication_outlined, label: 'Ordonnance', color: const Color(0xFF7B5EA7),
             onTap: () => _ouvrirPatientVet(context, ongletFiche: 4, acte: 'une ordonnance')),
@@ -779,8 +780,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => _ouvrirPatientVet(context, ongletFiche: 1, acte: 'un vaccin')),
         _QuickTile(icon: Icons.description_outlined, label: 'Compte\nrendu', color: const Color(0xFFB8860B),
             onTap: () => _ouvrirPatientVet(context, ongletFiche: 4, acte: 'un compte rendu')),
-        _QuickTile(icon: Icons.people_outline, label: 'Mes\nclients', color: const Color(0xFF5F9EAA),
-            onTap: () => go(const ProClientsPage())),
+        _QuickTile(icon: Icons.chat_bubble_outline, label: 'Messages', color: const Color(0xFF5F9EAA),
+            onTap: () => go(const MessagePage())),
         _QuickTile(icon: Icons.receipt_long_outlined, label: 'Facturation', color: const Color(0xFF6E9E57),
             onTap: () => go(const FacturationPage())),
         _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),

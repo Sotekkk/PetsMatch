@@ -193,7 +193,7 @@ const MENU_VET = [
     section: 'Administratif',
     icon: '🗂️',
     items: [
-      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾', premium: true },
+      { href: '/elevage/facturation', label: 'Facturation', icon: '🧾', premium: true },
     ],
   },
   {
@@ -1099,16 +1099,25 @@ export default function Header() {
   };
   const effectiveSubCatPro = resolvedProfileType || (isPrimaryPro ? primaryCatPro : '');
   const abonnementHref = ABONNEMENT_HREF[effectiveSubCatPro];
-  const withAbonnement = (isEffectivelyPro && !effectiveIsPension && !effectiveIsEducation && !effectiveIsGarde && abonnementHref)
-    ? withEmployeurs.map((sec, i) => i === 1
-        ? { ...sec, items: [...sec.items, { href: abonnementHref, label: 'Mon abonnement', icon: '💳' }] }
-        : sec)
-    : withEmployeurs;
+  // Santé / vétérinaire : menu en MIROIR de l'appli (eleveur_nav.dart) —
+  // « Mon activité santé / vétérinaire » (… Mes suivis pour santé, puis Mon
+  // abonnement) puis « Administratif ».
+  const isSanteOuVet = effectiveSubCatPro === 'sante' || effectiveSubCatPro === 'veterinaire';
   // « Mes suivis » (suivi morphologique — santé/ostéo·kiné uniquement,
   // dans "Mon Activité" comme côté appli, pas verrouillé par plan).
-  const withSanteSuivis = (effectiveSubCatPro === 'sante')
-    ? withAbonnement.map((sec, i) => i === 0
+  const withSuivisAvantAbo = (effectiveSubCatPro === 'sante')
+    ? withEmployeurs.map((sec, i) => i === 0
         ? { ...sec, items: [...sec.items, { href: '/sante/suivis', label: 'Mes suivis', icon: '🦴' }] }
+        : sec)
+    : withEmployeurs;
+  const withAbonnement = (isEffectivelyPro && !effectiveIsPension && !effectiveIsEducation && !effectiveIsGarde && abonnementHref)
+    ? withSuivisAvantAbo.map((sec, i) => i === (isSanteOuVet ? 0 : 1)
+        ? { ...sec, items: [...sec.items, { href: abonnementHref, label: 'Mon abonnement', icon: '💳' }] }
+        : sec)
+    : withSuivisAvantAbo;
+  const withSanteSuivis = isSanteOuVet
+    ? withAbonnement.map((sec, i) => i === 0
+        ? { ...sec, section: effectiveSubCatPro === 'sante' ? 'Mon activité santé' : 'Mon activité vétérinaire' }
         : sec)
     : withAbonnement;
   // « Mes Contrats » (santé/ostéo·kiné uniquement — MENU_VET est aussi
