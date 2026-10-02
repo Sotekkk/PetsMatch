@@ -1495,36 +1495,34 @@ class _QuickTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Stack(children: [
+      // StackFit.expand : la tuile REMPLIT sa case (avant, le Stack la
+      // laissait à la taille de son contenu → largeurs différentes).
+      // Style sobre et identique : fond blanc, fin contour coloré, petite
+      // icône, texte foncé de même taille.
+      child: Stack(fit: StackFit.expand, children: [
         Container(
           decoration: BoxDecoration(
-            color: color.withOpacity(isLocked ? 0.06 : 0.12),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-                color: color.withOpacity(isLocked ? 0.15 : 0.3),
-                style: isLocked ? BorderStyle.solid : BorderStyle.solid),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: (isLocked ? Colors.grey : color).withOpacity(0.35)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 1))],
           ),
-          // Mise en page FIXE et identique pour toutes les tuiles : icône
-          // au-dessus, texte de même taille sur 2 lignes max, centré (plus de
-          // texte redimensionné tuile par tuile).
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, color: color.withOpacity(isLocked ? 0.4 : 1.0), size: 26),
-              const SizedBox(height: 6),
-              Text(label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: color.withOpacity(isLocked ? 0.4 : 1.0),
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    height: 1.25,
-                  )),
-            ]),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, color: isLocked ? Colors.grey.shade400 : color, size: 20),
+            const SizedBox(height: 6),
+            Text(label.replaceAll('\n', ' ').replaceAll('- ', ''),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isLocked ? Colors.grey.shade500 : const Color(0xFF1F2A2E),
+                  fontFamily: 'Galey',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  height: 1.25,
+                )),
+          ]),
         ),
         if (isLocked)
           Positioned(
