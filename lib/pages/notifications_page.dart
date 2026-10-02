@@ -333,6 +333,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final isClinic  = data is Map ? (data['is_clinic'] as bool? ?? false) : false;
       final animalId  = data is Map ? data['animal_id'] as String? : null;
       final animalNom = data is Map ? (data['animal_nom'] as String? ?? 'votre animal') : 'votre animal';
+      final proProfileId = data is Map ? data['pro_profile_id'] as String? : null;
       if (vetId != null && animalId != null) {
         await _showVetAccesDialog(
           vetId: vetId,
@@ -340,6 +341,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           isClinic: isClinic,
           animalId: animalId,
           animalNom: animalNom,
+          proProfileId: proProfileId,
         );
       }
       return;
@@ -1393,6 +1395,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     required bool isClinic,
     required String animalId,
     required String animalNom,
+    String? proProfileId,
   }) async {
     final displayNom = vetNom.isNotEmpty
         ? (isClinic ? vetNom : 'Dr. $vetNom')
@@ -1432,22 +1435,34 @@ class _NotificationsPageState extends State<NotificationsPage> {
     try {
       // Résoudre tous les profils du compte vet — la demande a pu être
       // envoyée depuis un profil secondaire (pas forcément is_main).
-      final vetProfiles = await _supa.from('user_profiles_complet')
-          .select('id').eq('uid', vetId);
-      final vetProfileIds = (vetProfiles as List).map((p) => p['id'] as String).toList();
+      // Profil demandeur transmis dans la notification (récent) : on ne
+      // touche QUE sa demande. Sinon (anciennes notifications) : les profils
+      // du compte, mais uniquement les demandes EN ATTENTE — jamais réactiver
+      // un accès qu'on avait révoqué à un autre profil du même pro.
+      List<String> vetProfileIds;
+      if (proProfileId != null && proProfileId.isNotEmpty) {
+        vetProfileIds = [proProfileId];
+      } else {
+        final vetProfiles = await _supa.from('user_profiles_complet')
+            .select('id').eq('uid', vetId);
+        vetProfileIds = (vetProfiles as List).map((p) => p['id'] as String).toList();
+      }
       String? requestingProfileId;
       if (vetProfileIds.isNotEmpty) {
-        await _supa.from('animal_access').update({
-          'statut': result ? 'active' : 'revoked',
-          if (result) 'granted_at': DateTime.now().toUtc().toIso8601String(),
-          if (!result) 'revoked_at': DateTime.now().toUtc().toIso8601String(),
-        }).inFilter('pro_profile_id', vetProfileIds).eq('animal_id', animalId);
-        final accessRow = await _supa.from('animal_access')
+        final demandes = await _supa.from('animal_access')
             .select('pro_profile_id')
             .inFilter('pro_profile_id', vetProfileIds)
             .eq('animal_id', animalId)
-            .maybeSingle();
-        requestingProfileId = accessRow?['pro_profile_id'] as String?;
+            .eq('statut', 'pending');
+        final ids = (demandes as List).map((d) => d['pro_profile_id'] as String).toList();
+        if (ids.isNotEmpty) {
+          await _supa.from('animal_access').update({
+            'statut': result ? 'active' : 'revoked',
+            if (result) 'granted_at': DateTime.now().toUtc().toIso8601String(),
+            if (!result) 'revoked_at': DateTime.now().toUtc().toIso8601String(),
+          }).inFilter('pro_profile_id', ids).eq('animal_id', animalId).eq('statut', 'pending');
+          requestingProfileId = ids.first;
+        }
       }
 
       // Notification retour au vétérinaire

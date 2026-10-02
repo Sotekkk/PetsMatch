@@ -414,7 +414,14 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+        // Refus RLS (42501) : accès à l'animal non accordé par le propriétaire.
+        final refus = e is PostgrestException && e.code == '42501';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(refus
+              ? 'Accès non autorisé : demandez l\'accès au propriétaire de l\'animal (onglet Morphologie).'
+              : 'Erreur : $e'),
+          backgroundColor: refus ? Colors.red : null,
+        ));
       }
     }
   }

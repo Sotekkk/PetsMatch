@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/services/acces_animal_service.dart';
 import 'morpho_constants.dart';
 import 'morpho_form_page.dart';
 import 'morpho_detail_page.dart';
@@ -36,11 +37,100 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
   final _supa = Supabase.instance.client;
   bool _loading = true;
   List<Map<String, dynamic>> _suivis = [];
+  // Pro (proProfileId renseigné) : accès réel à l'animal — sans accès
+  // accordé par le propriétaire, la base refuse l'enregistrement.
+  String? _acces;
+  bool _demandeEnCours = false;
+  bool _accesCharge = false;
+
+  bool get _modePro => widget.canWrite && widget.proProfileId != null;
+  bool get _peutEcrire => widget.canWrite &&
+      (!_modePro || const ['proprietaire', 'active', 'active_write'].contains(_acces));
+
+  Future<void> _chargerAcces() async {
+    if (!_modePro) return;
+    try {
+      final a = await AccesAnimalService.statut(widget.animalId);
+      if (mounted) setState(() => _acces = a);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _accesCharge = true);
+    }
+  }
+
+  Future<void> _demanderAcces() async {
+    setState(() => _demandeEnCours = true);
+    try {
+      String? nom;
+      try {
+        final a = await _supa.from('animaux').select('nom').eq('id', widget.animalId).maybeSingle();
+        nom = a?['nom']?.toString();
+      } catch (_) {}
+      await AccesAnimalService.demander(widget.animalId, animalNom: nom);
+      if (mounted) {
+        setState(() => _acces = 'pending');
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Demande envoyée au propriétaire', style: TextStyle(fontFamily: 'Galey'))));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Demande impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _demandeEnCours = false);
+    }
+  }
+
+  Widget _bandeauAcces() {
+    final enAttente = _acces == 'pending';
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: enAttente ? const Color(0xFFFFF7E6) : const Color(0xFFFDECEC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: enAttente ? const Color(0xFFF5C26B) : const Color(0xFFF2A7A7)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(enAttente ? Icons.hourglass_top_rounded : Icons.lock_outline,
+              size: 18, color: enAttente ? const Color(0xFFB7791F) : const Color(0xFFC53030)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(enAttente ? "Demande d'accès envoyée" : 'Accès non autorisé',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14))),
+        ]),
+        const SizedBox(height: 6),
+        Text(enAttente
+              ? "En attente de la réponse du propriétaire. Vous pourrez créer des suivis dès qu'il aura accepté."
+              : "Le propriétaire ne vous a pas encore donné accès au dossier de cet animal. Demandez-lui l'accès pour enregistrer des suivis.",
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+        if (!enAttente) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _demandeEnCours ? null : _demanderAcces,
+              icon: const Icon(Icons.vpn_key_outlined, size: 18),
+              label: Text(_demandeEnCours ? 'Envoi…' : "Demander l'accès",
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     _load();
+    _chargerAcces();
   }
 
   Future<void> _load() async {
@@ -98,7 +188,11 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
               style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600))),
         ]),
       ),
-      if (widget.canWrite)
+      if (_modePro && !_accesCharge)
+        const SizedBox(height: 12)
+      else if (_modePro && !_peutEcrire)
+        _bandeauAcces()
+      else if (_peutEcrire)
         Padding(
           padding: const EdgeInsets.all(16),
           child: SizedBox(

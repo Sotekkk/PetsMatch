@@ -132,7 +132,7 @@ export default function MesPatientsPage() {
         title: `Demande d'accès — ${vetDisplay}`,
         body: `${vetDisplay} demande l'accès au carnet de santé de ${chipResult.nom}.`,
         profile_id: ownerProfile.id,
-        data: { animal_id: chipResult.id, vet_id: user.uid, vet_nom: displayName, is_clinic: isClinic, animal_nom: chipResult.nom },
+        data: { animal_id: chipResult.id, vet_id: user.uid, vet_nom: displayName, is_clinic: isClinic, animal_nom: chipResult.nom, pro_profile_id: activeProfileId },
         read: false,
       });
       setChipRequestStatus('pending');

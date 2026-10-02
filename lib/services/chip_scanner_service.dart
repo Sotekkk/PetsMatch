@@ -762,6 +762,7 @@ class _VetResultSheetState extends State<_VetResultSheet> {
           'vet_nom':    vetNom,
           'is_clinic':  isClinic,
           'animal_nom': animalNom,
+          'pro_profile_id': vetProfileId, // la réponse ne touche que CETTE demande
         },
         'read':  false,
       });
