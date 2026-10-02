@@ -146,6 +146,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/contrat',               label: 'Mes Contrats',      icon: '📄', premium: true },
       { href: '/mes-contrats',                  label: 'Mes Contrats reçus', icon: '📄' },
       { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -194,6 +195,7 @@ const MENU_VET = [
     icon: '🗂️',
     items: [
       { href: '/elevage/facturation', label: 'Facturation', icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -238,6 +240,7 @@ const MENU_MARECHAL = [
       { href: '/marechal-ferrant/devis',   label: 'Devis',        icon: '📝' },
       { href: '/marechal-ferrant/contrat', label: 'Mes contrats', icon: '✍️' },
       { href: '/elevage/facturation',      label: 'Facturation',  icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -275,6 +278,7 @@ const MENU_PRO = [
     icon: '🗂️',
     items: [
       { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -324,6 +328,7 @@ const MENU_PENSION = [
       { href: '/pension/contrat',    label: 'Contrats',      icon: '✍️', pro: true },
       { href: '/elevage/facturation', label: 'Facturation',  icon: '🧾', premium: true },
       { href: '/pension/tarifs',     label: 'Tarification',  icon: '💶' },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -386,6 +391,7 @@ const MENU_GARDE = [
       { href: '/garde/contrat',        label: 'Mes contrats',   icon: '✍️' },
       { href: '/garde/tarifs-clients', label: 'Tarifs clients', icon: '🏷️' },
       { href: '/elevage/facturation',  label: 'Facturation',    icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -428,6 +434,7 @@ const MENU_EDUCATION = [
       { href: '/education/devis',     label: 'Devis',        icon: '📋' },
       { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾', premium: true },
       { href: '/education/contrat',    label: 'Mes Contrats', icon: '📄' },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -471,6 +478,7 @@ const MENU_PHOTOGRAPHE = [
       { href: '/photographe/devis',   label: 'Devis',        icon: '📝' },
       { href: '/photographe/contrat', label: 'Mes contrats', icon: '✍️' },
       { href: '/elevage/facturation', label: 'Facturation',  icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -514,6 +522,7 @@ const MENU_TOILETTAGE = [
       { href: '/toilettage/devis',   label: 'Devis',        icon: '📝' },
       { href: '/toilettage/contrat', label: 'Mes contrats', icon: '✍️' },
       { href: '/elevage/facturation', label: 'Facturation', icon: '🧾', premium: true },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -566,6 +575,7 @@ const MENU_ASSOCIATION = [
       { href: '/association/contrat',               label: 'Contrats d\'adoption', icon: '📋' },
       { href: '/association/certificat-engagement', label: 'Certificats',           icon: '✍️' },
       { href: '/association/facturation',           label: 'Facturation',           icon: '🧾' },
+      { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
   },
   {
@@ -692,6 +702,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/pension/contrat': ['contrat pension', 'contrat de garde'],
   '/pension/factures': ['factures pension', 'facturation pension', 'acompte'],
   '/pension/tarifs': ['tarifs', 'prix', 'tarification pension'],
+  '/mes-achats': ['mes achats', 'achats', 'boost', 'crédits', 'pets social', 'paiement'],
   '/pension/abonnement': ['abonnement', 'formule', 'plan pension'],
   // Garde
   '/garde/registre': ['visites', 'passages', 'registre visites'],
@@ -1130,9 +1141,23 @@ export default function Header() {
   // Petites annonces « matériel & objets » liées aux animaux — accessible à
   // tous les profils (particulier, éleveur, association, pro). Section propre
   // pour éviter toute confusion avec les annonces d'animaux.
+  // « Achats & crédits » : la page renvoie vers « Mon abonnement » du profil
+  // (miroir de l'appli, MesAchatsPage(abonnement: …)). Pas d'abonnement pour
+  // une association. Attention : effectiveIsEleveur inclut pension/garde.
+  const aboHrefAchats = effectiveIsAssociation ? null
+    : effectiveIsPension ? '/pension/abonnement'
+    : effectiveIsGarde ? '/garde/abonnement'
+    : effectiveIsEducation ? '/education/abonnement'
+    : abonnementHref ?? (effectiveIsEleveur ? '/abonnement' : null);
+  const withAchats = withSanteContrats.map(sec => ({
+    ...sec,
+    items: sec.items.map(it => it.href === '/mes-achats' && aboHrefAchats
+      ? { ...it, href: `/mes-achats?abo=${encodeURIComponent(aboHrefAchats)}` }
+      : it),
+  }));
   const menuSections = user
     ? [
-        ...withSanteContrats,
+        ...withAchats,
         {
           section: 'Petites annonces (matériel)',
           icon: '📦',
@@ -1143,7 +1168,7 @@ export default function Header() {
           ],
         },
       ]
-    : withSanteContrats;
+    : withAchats;
 
   // ── Index de recherche rapide (loupe) ────────────────────────────────────
   // À plat : tous les items du menu du profil actif + les liens de nav + les

@@ -24,6 +24,27 @@ export default function MesAchatsPage() {
   const { user, loading: authLoading, activeProfileId } = useAuth();
   const [achats, setAchats] = useState<Achat[]>([]);
   const [loading, setLoading] = useState(true);
+  // Crédits Pets Social : porte-monnaie global du compte (tous profils).
+  const [solde, setSolde] = useState(0);
+  const [packs, setPacks] = useState<{ motif: string | null; montant: number; created_at: string }[]>([]);
+  // Lien « Mon abonnement » du profil, transmis par le menu (?abo=…).
+  // window.location plutôt que useSearchParams (évite le Suspense requis au build).
+  const [aboHref, setAboHref] = useState<string | null>(null);
+  useEffect(() => {
+    const abo = new URLSearchParams(window.location.search).get('abo');
+    setAboHref(abo && /^\/[a-z-]*\/?abonnement$/.test(abo) ? abo : null);
+  }, []);
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      supabase.from('credit_wallets').select('solde').eq('uid', user.uid).maybeSingle(),
+      supabase.from('credit_transactions').select('motif, montant, created_at')
+        .eq('uid', user.uid).gt('montant', 0).order('created_at', { ascending: false }).limit(50),
+    ]).then(([w, t]) => {
+      setSolde((w.data?.solde as number | undefined) ?? 0);
+      setPacks((t.data ?? []) as { motif: string | null; montant: number; created_at: string }[]);
+    });
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -71,15 +92,32 @@ export default function MesAchatsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/mes-annonces" className="text-gray-400 hover:text-[#0C5C6C] text-xl">←</Link>
+        <button onClick={() => history.back()} className="text-gray-400 hover:text-[#0C5C6C] text-xl">←</button>
         <div>
-          <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Mes achats</h1>
-          <p className="text-xs text-gray-400">{achats.length} achat{achats.length !== 1 ? 's' : ''} (boosts, annonces supplémentaires…)</p>
+          <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Achats &amp; crédits</h1>
+          <p className="text-xs text-gray-400">Tout ce que vous avez payé sur PetsMatch</p>
         </div>
       </div>
 
+      {aboHref && (
+        <>
+          <h2 className="font-bold text-[#1F2A2E] text-sm mb-2">Abonnement</h2>
+          <Link href={aboHref} className="mb-6 bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
+            <span className="text-xl">💳</span>
+            <div className="flex-1">
+              <p className="font-semibold text-[#1F2A2E] text-sm">Mon abonnement</p>
+              <p className="text-xs text-gray-500">Formule, échéances et factures d&apos;abonnement</p>
+            </div>
+            <span className="text-[#0C5C6C]">→</span>
+          </Link>
+        </>
+      )}
+
+      <h2 className="font-bold text-[#1F2A2E] text-sm">Boosts et options d&apos;annonces</h2>
+      <p className="text-xs text-gray-500 mb-2">Achats liés aux annonces de ce profil</p>
+
       {achats.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 text-sm">Aucun achat pour le moment.</div>
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 text-gray-400 text-sm">Aucun achat pour le moment.</div>
       ) : (
         <div className="space-y-3">
           {achats.map(a => {
@@ -109,6 +147,29 @@ export default function MesAchatsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      <h2 className="font-bold text-[#1F2A2E] text-sm mt-6">Crédits Pets Social</h2>
+      <p className="text-xs text-gray-500 mb-2">Partagés entre tous les profils de votre compte</p>
+      <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 mb-3">
+        <span className="text-xl">🪙</span>
+        <p className="flex-1 text-sm text-[#1F2A2E]">Solde actuel</p>
+        <p className="font-bold text-[#6E9E57] text-sm">{solde} crédit{solde > 1 ? 's' : ''}</p>
+      </div>
+      {packs.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 text-gray-400 text-sm">Aucun achat de crédits.</div>
+      ) : (
+        <div className="space-y-3">
+          {packs.map((t, i) => (
+            <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-[#1F2A2E] text-sm truncate">{t.motif ?? 'Achat de crédits'}</p>
+                <p className="text-xs text-gray-400">{new Date(t.created_at).toLocaleDateString('fr-FR', { dateStyle: 'medium' })}</p>
+              </div>
+              <p className="font-bold text-[#6E9E57] text-sm">+{t.montant}</p>
+            </div>
+          ))}
         </div>
       )}
     </div>

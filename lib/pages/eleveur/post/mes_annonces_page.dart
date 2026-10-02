@@ -161,10 +161,11 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
         elevation: 0,
         actions: [
           IconButton(
-            tooltip: 'Mes achats',
+            tooltip: 'Achats & crédits',
             icon: const Icon(Icons.receipt_long_outlined),
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const MesAchatsPage())),
+                MaterialPageRoute(builder: (_) => MesAchatsPage(
+                    abonnement: !widget.isAssociation && User_Info.isElevage ? const AbonnementPage() : null))),
           ),
         ],
         bottom: TabBar(

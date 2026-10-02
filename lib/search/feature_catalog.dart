@@ -7,6 +7,7 @@
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
@@ -446,6 +447,13 @@ List<QuickAction> _all(BuildContext ctx) => [
     keywords: ['contrats reçus', 'animaux acquis', 'mes acquisitions'],
     icon: Icons.shopping_bag_outlined, group: 'Administratif',
     visible: () => _eleveur, open: (c) => _push(c, const MesContratsParticulierPage()),
+  ),
+  QuickAction(
+    label: 'Achats & crédits',
+    keywords: ['mes achats', 'achats', 'boost', 'crédits', 'pets social', 'paiement'],
+    icon: Icons.shopping_bag_outlined, group: 'Administratif',
+    // Tous les profils sauf particulier (qui a « Abonnements & achats »).
+    visible: () => !_particulier, open: (c) => _push(c, const MesAchatsPage()),
   ),
   QuickAction(
     label: 'Facturation',

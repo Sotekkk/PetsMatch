@@ -33,6 +33,7 @@ import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AssociationNav extends StatefulWidget {
@@ -413,6 +414,16 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const CertificatsEngagementPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Achats & crédits',
+                      icon: Icons.shopping_bag_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAchatsPage(),
                         ));
                       },
                     ),
