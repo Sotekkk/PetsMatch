@@ -174,7 +174,11 @@ Future<Uint8List> morphoSuiviPdfBytes({
           if ((pro['nom'] as String?)?.trim().isNotEmpty != true && (suivi['professionnel_nom'] as String?)?.isNotEmpty == true)
             _line('Professionnel', suivi['professionnel_nom'] as String?),
           _line('Motif', suivi['motif'] as String?),
-          _line('Source', kSourceLabels[source]),
+          // Profil pro connu : son nom plutôt que « Réalisé par un professionnel ».
+          if ((pro['nom'] as String?)?.trim().isNotEmpty == true)
+            _line('Réalisé par', pro['nom'] as String)
+          else
+            _line('Source', kSourceLabels[source]),
         ])),
       ]),
 
