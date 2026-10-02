@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import PushInit from "@/components/PushInit";
 import SiteShell from "@/components/SiteShell";
+import EmailVerificationGuard from "@/components/EmailVerificationGuard";
 
 export const metadata: Metadata = {
   title: "PetsMatch — Connecter · Prendre soin · Partager",
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-full flex flex-col antialiased">
         <AuthProvider>
           <PushInit />
+          <EmailVerificationGuard />
           <SiteShell>{children}</SiteShell>
         </AuthProvider>
       </body>

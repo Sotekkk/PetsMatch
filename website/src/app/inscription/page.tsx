@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, sendEmailVerification } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
@@ -413,11 +413,9 @@ export default function InscriptionPage() {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(cred.user, { displayName: `${firstname} ${lastname}`.trim() });
       await createProfile(cred.user.uid, email);
-      if (isEleveurOrPro) {
-        router.push('/en-attente-validation');
-      } else {
-        router.push('/');
-      }
+      // Vérification de l'adresse e-mail (comme l'appli) avant d'accéder au site.
+      try { await sendEmailVerification(cred.user); } catch { /* renvoi possible depuis /verifier-email */ }
+      router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : '/')}`);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
       if (code === 'auth/email-already-in-use') {
@@ -426,8 +424,11 @@ export default function InscriptionPage() {
           const existing = await signInWithEmailAndPassword(auth, email, password);
           await updateProfile(existing.user, { displayName: `${firstname} ${lastname}`.trim() });
           await createProfile(existing.user.uid, email); // upsert idempotent
-          if (isEleveurOrPro) router.push('/en-attente-validation');
-          else router.push('/');
+          const suite = isEleveurOrPro ? '/en-attente-validation' : '/';
+          if (!existing.user.emailVerified) {
+            try { await sendEmailVerification(existing.user); } catch { /* renvoi possible depuis /verifier-email */ }
+            router.push(`/verifier-email?suite=${encodeURIComponent(suite)}`);
+          } else router.push(suite);
           return;
         } catch {
           setError('Cet email est déjà utilisé. Connectez-vous depuis la page de connexion, ou réinitialisez votre mot de passe.');
