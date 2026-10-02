@@ -320,7 +320,9 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                   _infoLine('Client', s['client_nom_libre']),
                 if ((s['client_contact_libre'] as String?)?.isNotEmpty == true)
                   _infoLine('Contact', s['client_contact_libre']),
-                if ((s['professionnel_nom'] as String?)?.isNotEmpty == true)
+                // Rattaché à un profil pro : « Réalisé par » fait foi (le texte
+                // libre pouvait contenir un autre nom, ex. le profil élevage).
+                if ((s['professionnel_nom'] as String?)?.isNotEmpty == true && (_pro['nom'] as String?)?.isNotEmpty != true)
                   _infoLine('Professionnel', s['professionnel_nom']),
                 if ((s['motif'] as String?)?.isNotEmpty == true) _infoLine('Motif', s['motif']),
                 if (s['poids'] != null) _infoLine('Poids', '${s['poids']} kg'),

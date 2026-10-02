@@ -170,8 +170,9 @@ Future<Uint8List> morphoSuiviPdfBytes({
           pw.Text('Suivi', style: _artTitle()),
           pw.SizedBox(height: 4),
           _line('Date', date != null ? _fmt(date) : null),
-          if (((suivi['professionnel_nom'] as String?) ?? pro['nom'] as String?) != pro['nom'])
-            _line('Professionnel', (suivi['professionnel_nom'] as String?) ?? pro['nom'] as String?),
+          // Profil pro identifié : le bloc « Réalisé par » fait foi.
+          if ((pro['nom'] as String?)?.trim().isNotEmpty != true && (suivi['professionnel_nom'] as String?)?.isNotEmpty == true)
+            _line('Professionnel', suivi['professionnel_nom'] as String?),
           _line('Motif', suivi['motif'] as String?),
           _line('Source', kSourceLabels[source]),
         ])),
@@ -213,34 +214,46 @@ Future<Uint8List> morphoSuiviPdfBytes({
 
       if (silhouettes.isNotEmpty) ...[
         pw.SizedBox(height: 16),
-        pw.Text('Silhouette — points relevés', style: _artTitle()),
-        pw.SizedBox(height: 6),
-        for (final v in vuesAvecPoints)
-          if (silhouettes[v] != null) ...[
-            pw.Container(
-              width: 260,
-              child: pw.AspectRatio(
-                aspectRatio: (kMorphoSilhouetteAssets[espece]?[v]?.ratio) ?? 1.5,
-                child: pw.Stack(children: [
-                  pw.Positioned.fill(child: pw.Image(silhouettes[v]!, fit: pw.BoxFit.contain)),
-                  for (final p in points.where((p) => p['vue'] == v))
-                    pw.Positioned(
-                      left: ((p['x_pct'] as num).toDouble() / 100) * 260 - 5,
-                      top: ((p['y_pct'] as num).toDouble() / 100) * (260 / ((kMorphoSilhouetteAssets[espece]?[v]?.ratio) ?? 1.5)) - 5,
-                      child: pw.Container(
-                        width: 10, height: 10,
-                        decoration: pw.BoxDecoration(
-                          shape: pw.BoxShape.circle,
-                          color: _pdfColor(colorPointEffectif(p['categorie']?.toString() ?? 'autre', p['couleur']?.toString())),
-                          border: pw.Border.all(color: PdfColors.white, width: 1),
+        // Un bloc INSÉCABLE par vue (Container non découpable) : si la
+        // silhouette ne tient plus, elle passe sur la page suivante AVEC le
+        // titre (avant : titre orphelin en bas de page). Silhouettes centrées.
+        for (final (i, v) in vuesAvecPoints.where((v) => silhouettes[v] != null).indexed)
+          pw.Container(
+            width: double.infinity,
+            margin: const pw.EdgeInsets.only(bottom: 12),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              if (i == 0) ...[
+                pw.Text('Silhouette — points relevés', style: _artTitle()),
+                pw.SizedBox(height: 6),
+              ],
+              pw.Center(child: pw.Text(
+                vuesDisponibles(espece).firstWhere((e) => e.$1 == v, orElse: () => (v, v)).$2,
+                style: _small())),
+              pw.SizedBox(height: 4),
+              pw.Center(child: pw.Container(
+                width: 260,
+                child: pw.AspectRatio(
+                  aspectRatio: (kMorphoSilhouetteAssets[espece]?[v]?.ratio) ?? 1.5,
+                  child: pw.Stack(children: [
+                    pw.Positioned.fill(child: pw.Image(silhouettes[v]!, fit: pw.BoxFit.contain)),
+                    for (final p in points.where((p) => p['vue'] == v))
+                      pw.Positioned(
+                        left: ((p['x_pct'] as num).toDouble() / 100) * 260 - 5,
+                        top: ((p['y_pct'] as num).toDouble() / 100) * (260 / ((kMorphoSilhouetteAssets[espece]?[v]?.ratio) ?? 1.5)) - 5,
+                        child: pw.Container(
+                          width: 10, height: 10,
+                          decoration: pw.BoxDecoration(
+                            shape: pw.BoxShape.circle,
+                            color: _pdfColor(colorPointEffectif(p['categorie']?.toString() ?? 'autre', p['couleur']?.toString())),
+                            border: pw.Border.all(color: PdfColors.white, width: 1),
+                          ),
                         ),
                       ),
-                    ),
-                ]),
-              ),
-            ),
-            pw.SizedBox(height: 4),
-          ],
+                  ]),
+                ),
+              )),
+            ]),
+          ),
         // Légende par point : couleur propre + libellé (ce qui a été
         // travaillé) — plus lisible que par catégorie quand deux points de
         // même catégorie ont une couleur ou un motif différents.

@@ -88,8 +88,23 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       _prefillFromExisting();
     } else {
       if (widget.proNom != null) _professionnelCtrl.text = widget.proNom!;
+      if (widget.proNom == null && widget.proProfileId != null) _prefillPro();
       if (widget.animalId != null) _prefillAnimal();
     }
+  }
+
+  /// Nom du profil pro ACTIF (jamais is_main : « Pomsky de la Luna » sortait
+  /// pour un suivi fait depuis le profil ostéo).
+  Future<void> _prefillPro() async {
+    try {
+      final p = await _supa.from('user_profiles_complet')
+          .select('nom, firstname, lastname').eq('id', widget.proProfileId!).maybeSingle();
+      final nom = (p?['nom'] ?? '').toString().trim();
+      final complet = nom.isNotEmpty ? nom : '${p?['firstname'] ?? ''} ${p?['lastname'] ?? ''}'.trim();
+      if (mounted && complet.isNotEmpty && _professionnelCtrl.text.trim().isEmpty) {
+        setState(() => _professionnelCtrl.text = complet);
+      }
+    } catch (_) {}
   }
 
   Future<void> _prefillFromExisting() async {
