@@ -360,6 +360,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                           const SizedBox(height: 12),
                           _buildSanteShortcuts(context),
                         ],
+                        if (User_Info.catPro == 'veterinaire') ...[
+                          const SizedBox(height: 12),
+                          _buildVetShortcuts(context),
+                        ],
                         if (User_Info.catPro == 'photographe') ...[
                           const SizedBox(height: 12),
                           _buildPhotographeShortcuts(context),
@@ -744,6 +748,33 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => go(const FacturationPage())),
         _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
             onTap: () => go(const SanteAbonnementPage(profilType: 'sante'))),
+      ],
+    );
+  }
+
+  Widget _buildVetShortcuts(BuildContext context) {
+    void go(Widget page) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.0,
+      children: [
+        _QuickTile(icon: Icons.favorite_outline, label: 'Mes\npatients', color: _teal,
+            onTap: () => go(const VetPatientsPage())),
+        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF5F9EAA),
+            onTap: () => go(const ProAgendaPage())),
+        _QuickTile(icon: Icons.accessibility_new, label: 'Mes\nsuivis', color: const Color(0xFF7B5EA7),
+            onTap: () => go(const SanteSuivisMorphoPage())),
+        _QuickTile(icon: Icons.people_outline, label: 'Mes\nclients', color: const Color(0xFFB8860B),
+            onTap: () => go(const ProClientsPage())),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+            onTap: () => go(const FacturationPage())),
+        _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
+            onTap: () => go(const VetAbonnementPage())),
       ],
     );
   }
@@ -1334,10 +1365,18 @@ class _StatCard extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFF6E9E57), size: 22),
           const SizedBox(height: 4),
-          Text(value,
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1F2A2E))),
-          Text(label,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+          // Réduit au besoin plutôt que de déborder (« Vétérinaire »,
+          // « RDV aujourd'hui » sur petit écran).
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(value, maxLines: 1,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1F2A2E))),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(label, maxLines: 1,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+          ),
         ],
       ),
     );
@@ -1374,21 +1413,46 @@ class _QuickTile extends StatelessWidget {
                 color: color.withOpacity(isLocked ? 0.15 : 0.3),
                 style: isLocked ? BorderStyle.solid : BorderStyle.solid),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color.withOpacity(isLocked ? 0.4 : 1.0), size: 28),
-              const SizedBox(width: 10),
-              Text(label,
-                  style: TextStyle(
-                    color: color.withOpacity(isLocked ? 0.4 : 1.0),
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    height: 1.3,
+          // Tuile étroite (grilles 3 colonnes) : icône AU-DESSUS du texte,
+          // centrée — sinon « Mon abonnement » débordait de la case. Le texte
+          // se réduit au besoin plutôt que de dépasser.
+          child: LayoutBuilder(builder: (ctx, c) {
+            final style = TextStyle(
+              color: color.withOpacity(isLocked ? 0.4 : 1.0),
+              fontFamily: 'Galey',
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              height: 1.3,
+            );
+            final iconW = Icon(icon, color: color.withOpacity(isLocked ? 0.4 : 1.0), size: 28);
+            if (c.maxWidth < 150) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  iconW,
+                  const SizedBox(height: 6),
+                  Flexible(child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(label, textAlign: TextAlign.center, style: style),
                   )),
-            ],
-          ),
+                ]),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  iconW,
+                  const SizedBox(width: 10),
+                  Flexible(child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(label, style: style),
+                  )),
+                ],
+              ),
+            );
+          }),
         ),
         if (isLocked)
           Positioned(

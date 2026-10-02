@@ -416,18 +416,21 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                   <div className="text-2xl mb-1">🐾</div>
                   <p className="text-xs font-semibold text-[#1F2A2E]">Mes patients</p>
                 </Link>
+                {/* Suivis morpho : ostéo / kiné ET vétérinaire (mêmes écrans que l'appli) */}
+                <Link href="/sante/suivis" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">🦴</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Mes suivis</p>
+                </Link>
                 {catPro === 'sante' && (
-                  <>
-                    <Link href="/sante/suivis" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                      <div className="text-2xl mb-1">🦴</div>
-                      <p className="text-xs font-semibold text-[#1F2A2E]">Mes suivis</p>
-                    </Link>
-                    <Link href="/sante/contrat" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                      <div className="text-2xl mb-1">📄</div>
-                      <p className="text-xs font-semibold text-[#1F2A2E]">Mes contrats</p>
-                    </Link>
-                  </>
+                  <Link href="/sante/contrat" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                    <div className="text-2xl mb-1">📄</div>
+                    <p className="text-xs font-semibold text-[#1F2A2E]">Mes contrats</p>
+                  </Link>
                 )}
+                <Link href="/elevage/facturation" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">🧾</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Facturation</p>
+                </Link>
                 <Link href={abonnementHref} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
                   <div className="text-2xl mb-1">⭐</div>
                   <p className="text-xs font-semibold text-[#1F2A2E]">Mon abonnement</p>
