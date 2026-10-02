@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 
 class PensionDocumentsPage extends StatefulWidget {
   const PensionDocumentsPage({super.key});
@@ -20,8 +20,10 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
   bool _loading  = false;
   bool _uploading = false;
 
-  List<Reference> _contrats = [];
-  List<Reference> _factures = [];
+  // Stockage privé Supabase (bucket `documents`) :
+  // pension_documents/<uid>/contrats|factures/<nom>. Chemins complets.
+  List<String> _contrats = [];
+  List<String> _factures = [];
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -41,16 +43,18 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
   Future<void> _loadDocuments() async {
     setState(() => _loading = true);
     try {
-      final uid = _uid;
-      final results = await Future.wait([
-        FirebaseStorage.instance.ref('contrats/$uid').listAll(),
-        FirebaseStorage.instance.ref('factures/$uid').listAll(),
-      ]).catchError((_) => <ListResult>[]);
-
-      if (mounted && results.length == 2) {
+      final store = Supabase.instance.client.storage.from('documents');
+      Future<List<String>> lister(String dossier) async {
+        final base = 'pension_documents/$_uid/$dossier';
+        final items = await store.list(path: base);
+        return items.where((f) => f.id != null).map((f) => '$base/${f.name}').toList();
+      }
+      final contrats = await lister('contrats');
+      final factures = await lister('factures');
+      if (mounted) {
         setState(() {
-          _contrats = results[0].items;
-          _factures = results[1].items;
+          _contrats = contrats;
+          _factures = factures;
         });
       }
     } catch (_) {
@@ -70,7 +74,9 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     try {
       final file = File(result!.files.single.path!);
       final name = result.files.single.name;
-      await FirebaseStorage.instance.ref('contrats/$_uid/$name').putFile(file);
+      await Supabase.instance.client.storage.from('documents').upload(
+          'pension_documents/$_uid/contrats/$name', file,
+          fileOptions: const FileOptions(upsert: true));
       await _loadDocuments();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -86,13 +92,10 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     }
   }
 
-  Future<void> _openDocument(Reference ref) async {
+  Future<void> _openDocument(String chemin) async {
     try {
-      final url = await ref.getDownloadURL();
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+      final url = Supabase.instance.client.storage.from('documents').getPublicUrl(chemin);
+      await ouvrirDocument(context, url); // lien temporaire (déposant)
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -101,7 +104,7 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     }
   }
 
-  Future<void> _deleteContrat(Reference ref) async {
+  Future<void> _deleteContrat(String chemin) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -127,7 +130,7 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     );
     if (ok != true) return;
     try {
-      await ref.delete();
+      await Supabase.instance.client.storage.from('documents').remove([chemin]);
       await _loadDocuments();
     } catch (e) {
       if (mounted) {
@@ -137,8 +140,8 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     }
   }
 
-  Widget _buildDocItem(Reference ref, {required bool canDelete}) {
-    final name = ref.name;
+  Widget _buildDocItem(String chemin, {required bool canDelete}) {
+    final name = chemin.split('/').last;
     final lower = name.toLowerCase();
     final isPdf = lower.endsWith('.pdf');
     final isDoc = lower.endsWith('.doc') || lower.endsWith('.docx');
@@ -192,13 +195,13 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
               icon: const Icon(Icons.open_in_new_rounded, size: 20),
               color: _teal,
               tooltip: 'Ouvrir',
-              onPressed: () => _openDocument(ref),
+              onPressed: () => _openDocument(chemin),
             ),
             if (canDelete)
               IconButton(
                 icon: Icon(Icons.delete_outline, size: 20, color: Colors.red.shade400),
                 tooltip: 'Supprimer',
-                onPressed: () => _deleteContrat(ref),
+                onPressed: () => _deleteContrat(chemin),
               ),
           ],
         ),

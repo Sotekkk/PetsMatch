@@ -5,8 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, storage } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
@@ -153,10 +152,12 @@ function normalizeForComparison(s: string): string {
   return s.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, '');
 }
 
+// Stockage privé Supabase (bucket `documents`) : appelé APRÈS la création du
+// compte (jeton Firebase) ; ouverture via lien temporaire (lien-document).
 async function uploadToStorage(file: File, path: string): Promise<string> {
-  const r = storageRef(storage, path);
-  const snap = await uploadBytes(r, file);
-  return getDownloadURL(snap.ref);
+  const { error } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
 }
 
 // ── Page principale ────────────────────────────────────────────────────────────
@@ -306,10 +307,10 @@ export default function InscriptionPage() {
     let acacedDocUrl = '';
 
     if (kbisFile) {
-      kbisUrl = await uploadToStorage(kbisFile, `documentElevage/Siret/${uid}_${ts}_${kbisFile.name}`);
+      kbisUrl = await uploadToStorage(kbisFile, `documents/${uid}/kbis_${ts}_${kbisFile.name}`);
     }
     if (acacedFile) {
-      acacedDocUrl = await uploadToStorage(acacedFile, `documentElevage/Acaced/${uid}_${ts}_${acacedFile.name}`);
+      acacedDocUrl = await uploadToStorage(acacedFile, `documents/${uid}/acaced_${ts}_${acacedFile.name}`);
     }
 
     const catPro = professionPro ? CAT_PRO_MAP[professionPro] ?? 'autre' : undefined;

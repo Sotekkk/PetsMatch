@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:typed_data';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/post/details_post.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:video_player/video_player.dart';
 import 'package:PetsMatch/main.dart';
 
@@ -154,13 +155,10 @@ class _NewVideoPostPageState extends State<NewVideoPostPage> {
     });
 
     String fileName = _selectedVideoFile!.path.split('/').last;
-    UploadTask uploadTask = FirebaseStorage.instance
-        .ref()
-        .child('uploads/$fileName')
-        .putFile(_selectedVideoFile!);
-
-    TaskSnapshot taskSnapshot = await uploadTask;
-    String downloadURL = await taskSnapshot.ref.getDownloadURL();
+    // Stockage Supabase (bucket public media, 50 Mo max)
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonyme';
+    String downloadURL = await stockage.uploadRawFile(_selectedVideoFile!,
+        'uploads/$uid/${DateTime.now().millisecondsSinceEpoch}_$fileName');
 
     setState(() {
       NewPostClass.mediaStockage = [{'path': downloadURL, 'isPhoto': false, 'isMuted': _isMuted}];

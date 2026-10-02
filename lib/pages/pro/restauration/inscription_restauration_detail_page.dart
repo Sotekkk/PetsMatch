@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:image_picker/image_picker.dart';
@@ -173,9 +173,8 @@ class _InscriptionRestaurationDetailPageState
 
   Future<String> _upload(File f, String path) async {
     final uid = FirebaseAuth.instance.currentUser!.uid;
-    final ref = FirebaseStorage.instance.ref('restauration_pros/$uid/$path');
-    await ref.putFile(f);
-    return await ref.getDownloadURL();
+    // Stockage Supabase (bucket public media)
+    return stockage.uploadPhoto(f, 'restauration_pros/$uid/$path');
   }
 
   Future<File?> _pickImg() async {

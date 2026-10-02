@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:image_picker/image_picker.dart';
@@ -182,9 +182,8 @@ class _InscriptionRestaurationProPageState
   // ── Upload Firebase Storage ────────────────────────────────────────────────
 
   Future<String> _upload(File file, String path) async {
-    final ref = FirebaseStorage.instance.ref('restauration_pros/$path');
-    await ref.putFile(file);
-    return await ref.getDownloadURL();
+    // Stockage Supabase (bucket public media)
+    return stockage.uploadPhoto(file, 'restauration_pros/$path');
   }
 
   // ── Validation par étape ──────────────────────────────────────────────────

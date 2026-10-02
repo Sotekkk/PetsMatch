@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -142,13 +142,11 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
     final id = place['id'].toString();
     setState(() => _loading = true);
     try {
-      // Suppression Firebase Storage
+      // Suppression des photos (stockage Supabase, bucket media)
       try {
-        final ref = FirebaseStorage.instance.ref('lieux/$id');
-        final listing = await ref.listAll();
-        for (final item in listing.items) {
-          await item.delete().catchError((_) {});
-        }
+        final store = _supabase.storage.from('media');
+        final items = await store.list(path: 'lieux/$id');
+        if (items.isNotEmpty) await store.remove(items.map((f) => 'lieux/$id/${f.name}').toList());
       } catch (_) {}
 
       // Suppression Supabase (enfants d'abord)
@@ -625,9 +623,8 @@ class _EditLieuPageState extends State<_EditLieuPage>
   }
 
   Future<String> _upload(File file, String path) async {
-    final ref = FirebaseStorage.instance.ref('lieux/$path');
-    await ref.putFile(file);
-    return await ref.getDownloadURL();
+    // Stockage Supabase (bucket public media)
+    return stockage.uploadPhoto(file, 'lieux/$path');
   }
 
   Future<void> _save() async {

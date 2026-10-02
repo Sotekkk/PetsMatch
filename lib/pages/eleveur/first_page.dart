@@ -1,6 +1,6 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/pages/particulier/securityregister.dart';
-import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'dart:io';
@@ -19,7 +19,6 @@ class _RegisterEleveurInformationPageState
   final _dobCtrl = TextEditingController();
 
   File? _imageFile;
-  String? _imageUrl;
   bool _isImagePickerActive = false;
 
   bool _nomOk = true;
@@ -51,12 +50,9 @@ class _RegisterEleveurInformationPageState
     }
   }
 
+  // Photo retenue : déposée après la création du compte (PhotosInscription).
   Future<void> _uploadImage() async {
-    if (_imageFile == null) return;
-    try {
-      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      _imageUrl = await uploadPhoto(_imageFile!, 'profiles/$name');
-    } catch (_) {}
+    PhotosInscription.photo = _imageFile;
   }
 
   void _continue() {

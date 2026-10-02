@@ -1,8 +1,8 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:convert';
 import 'dart:math';
 import 'package:http/http.dart' as http;
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -407,8 +407,8 @@ class _CessionSheetState extends State<CessionSheet> {
     loadSetter(true);
     try {
       final path = 'cessions/${widget.uid}/${widget.animal['id']}/${type}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final snap = await FirebaseStorage.instance.ref(path).putFile(file);
-      final url  = await snap.ref.getDownloadURL();
+      // Stockage privé Supabase : ouverture via lien temporaire (lien-document)
+      final url  = await stockage.uploadDocument(file, path);
       setState(() { setter(url); });
     } catch (e) {
       setState(() => _error = 'Erreur upload : $e');
@@ -566,8 +566,8 @@ class _CessionSheetState extends State<CessionSheet> {
 
       final animalId = widget.animal['id'] as String;
       final path = 'cessions/${widget.uid}/$animalId/facture_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final snap = await FirebaseStorage.instance.ref(path).putData(bytes);
-      final url = await snap.ref.getDownloadURL();
+      // Stockage privé Supabase : ouverture via lien temporaire (lien-document)
+      final url = await stockage.uploadDocumentBytes(bytes, path);
 
       final pid = User_Info.activeProfileId;
       final row = await _supa.from('documents_animaux').insert({
@@ -634,6 +634,7 @@ class _CessionSheetState extends State<CessionSheet> {
           'siret_emetteur': eleveur['siret'],
           'email_emetteur': eleveur['email_contact'],
           'statut': 'emise',
+          'pdf_url': url, // PDF de la cession (bouton PDF de « Mes factures »)
         });
       } catch (e) {
         // La facture PDF reste attachée à l'animal même si l'insert échoue,

@@ -1,9 +1,9 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/condition_general.dart';
 import 'package:PetsMatch/pages/particulier/securityregister.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
-import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:flutter/material.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,12 +66,8 @@ class _RegisterAssociationFirstInfoPageState
     User_Info.lastname    = _nomCtrl.text.trim();
     User_Info.dateofbirth = _dobCtrl.text.isNotEmpty ? _dobCtrl.text : '01/01/1900';
 
-    if (_imageFile != null) {
-      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      uploadPhoto(_imageFile!, 'profiles/$name')
-          .then((url) => User_Info.profilePictureUrl = url)
-          .catchError((_) => '');
-    }
+    // Photo retenue : déposée après la création du compte (PhotosInscription).
+    PhotosInscription.photo = _imageFile;
 
     Navigator.push(context,
         MaterialPageRoute(builder: (_) => const RegisterSecurity()));
@@ -342,12 +338,8 @@ class _RegisterAssociationInformationPageState
     User_Info.capaciteAccueil      = _capacite;
     User_Info.especesElevees       = _especes;
 
-    if (_logoFile != null) {
-      final name = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      uploadPhoto(_logoFile!, 'profiles/$name')
-          .then((url) { User_Info.profilePictureUrlElevage = url; })
-          .catchError((_) {});
-    }
+    // Logo retenu : déposé après la création du compte (PhotosInscription).
+    PhotosInscription.photoElevage = _logoFile;
 
     Navigator.push(context,
         MaterialPageRoute(builder: (_) => ConditionGeneral()));

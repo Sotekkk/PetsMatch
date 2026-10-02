@@ -1,11 +1,11 @@
 import 'dart:convert';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:http/http.dart' as http;
@@ -1603,8 +1603,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     try {
       final file = File(res.files.first.path!);
       final path = 'contrats/${_doc!['uid_eleveur']}/${_doc!['id']}/import_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final snap = await FirebaseStorage.instance.ref(path).putFile(file);
-      final url = await snap.ref.getDownloadURL();
+      // Stockage privé Supabase : ouverture via lien temporaire (lien-document)
+      final url = await stockage.uploadDocument(file, path);
       await _supa.from('documents_animaux').update({'url': url}).eq('id', _doc!['id']);
       _doc!['url'] = url;
       _importedPdfUrl = url;

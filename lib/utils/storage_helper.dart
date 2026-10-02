@@ -70,6 +70,17 @@ Future<String> uploadRawFile(File file, String storagePath) async {
 }
 
 /// Upload document/medical file to the `documents` bucket (allows PDF).
+/// Octets déjà encodés (PDF généré…) → bucket PRIVÉ `documents`.
+Future<String> uploadDocumentBytes(Uint8List bytes, String storagePath,
+    {String contentType = 'application/pdf'}) async {
+  final supa = Supabase.instance.client;
+  await supa.storage.from('documents').uploadBinary(
+    storagePath, bytes,
+    fileOptions: FileOptions(contentType: contentType, upsert: true),
+  );
+  return supa.storage.from('documents').getPublicUrl(storagePath);
+}
+
 Future<String> uploadDocument(File file, String storagePath) async {
   return _uploadDoc(file, storagePath, 'documents');
 }

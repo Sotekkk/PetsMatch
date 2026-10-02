@@ -1,9 +1,9 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/desc_entreprise.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
 
@@ -83,10 +83,9 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
     // remplacer le fichier d'un autre.
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonyme';
     final i = path.lastIndexOf('/');
-    path = '${path.substring(0, i + 1)}${uid}_${DateTime.now().millisecondsSinceEpoch}_${path.substring(i + 1)}';
-    final ref = FirebaseStorage.instance.ref().child(path);
-    final snap = await ref.putFile(file);
-    return snap.ref.getDownloadURL();
+    path = '${path.substring(0, i + 1)}$uid/${DateTime.now().millisecondsSinceEpoch}_${path.substring(i + 1)}';
+    // Stockage privé Supabase : ouverture via lien temporaire (lien-document)
+    return stockage.uploadDocument(file, path);
   }
 
   Future<void> _pickSiret() async {

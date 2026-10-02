@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/pages/eleveur/board.dart';
@@ -8,7 +9,6 @@ import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
@@ -168,10 +168,10 @@ class _BoostAdPageState extends State<BoostAdPage> {
             throw Exception("Compression échouée pour $fileName");
           }
 
-          final ref = FirebaseStorage.instance.ref().child('uploads/$fileName');
-          final snapshot =
-              await ref.putData(Uint8List.fromList(compressedData));
-          final downloadURL = await snapshot.ref.getDownloadURL();
+          // Stockage Supabase (bucket public media)
+          final uid = FirebaseAuth.instance.currentUser?.uid ?? 'anonyme';
+          final downloadURL = await stockage.uploadPhotoBytes(Uint8List.fromList(compressedData),
+              'uploads/$uid/${DateTime.now().millisecondsSinceEpoch}_$fileName');
 
           return {'path': downloadURL, 'isPhoto': true};
         });

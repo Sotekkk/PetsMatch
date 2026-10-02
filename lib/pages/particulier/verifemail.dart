@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
@@ -24,6 +25,8 @@ class VerifyEmailPage extends StatefulWidget {
 Future<bool> registerUser(String email, String password) async {
   try {
     String uid = User_Info.uid;
+    // Compte créé et connecté : dépôt des photos choisies à l'inscription.
+    await PhotosInscription.deposer();
 
     // Ajouter des informations à Firestore dans la collection 'users'
     await FirebaseFirestore.instance.collection('users').doc(uid).set({
@@ -102,6 +105,8 @@ Future<bool> registerUser(String email, String password) async {
 Future<Object> registerElevage(String email, String password) async {
   try {
     String uid = User_Info.uid;
+    // Compte créé et connecté : dépôt des photos choisies à l'inscription.
+    await PhotosInscription.deposer();
 
     // Ajouter des informations à Firestore dans la collection 'users'
     await FirebaseFirestore.instance.collection('users').doc(uid).set({
