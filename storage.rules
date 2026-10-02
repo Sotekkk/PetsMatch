@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Stockage Firebase (ancien stockage, encore utilisé par quelques écrans :
+// cessions, contrats / factures de pension, documents d'élevage, lieux,
+// restauration, vidéos / boost, suppression de compte).
+//
+// Avant le 02/10/2026 : `allow read, write: if true` → n'importe qui, sans
+// compte, pouvait lister, télécharger, remplacer ou supprimer tous les
+// fichiers (KBIS, ACACED, cessions, documents personnels…).
+//
+// Principes :
+// - l'affichage passe par les liens de téléchargement (avec jeton) que
+//   l'appli et le site enregistrent : ils ne dépendent PAS de ces règles,
+//   les fichiers existants restent donc affichés ;
+// - déposer un fichier NEUF : être connecté (taille max 100 Mo) ;
+// - remplacer / supprimer / lister : uniquement dans SES dossiers
+//   (dossier = son uid) ; sinon interdit (plus d'écrasement des fichiers
+//   des autres).
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /{allPaths=**} {
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.size < 100 * 1024 * 1024;
+    }
+
+    // Dossiers personnels : <dossier>/<uid>/…
+    match /files/{uid}/{rest=**} {
+      allow list, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+    match /contrats/{uid}/{rest=**} {
+      allow list, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+    match /factures/{uid}/{rest=**} {
+      allow list, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+    match /cessions/{uid}/{rest=**} {
+      allow list, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+    match /restauration_pros/{uid}/{rest=**} {
+      allow list, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Photos d'un établissement (lieux/<id établissement>/…) : l'appartenance
+    // est en base Supabase, inaccessible ici → tout compte connecté peut
+    // lister / remplacer (noms fixes logo.jpg, banniere.jpg). À resserrer
+    // lors du passage de ces écrans au stockage Supabase.
+    match /lieux/{id}/{rest=**} {
+      allow list, update: if request.auth != null
+                          && (request.resource == null || request.resource.size < 100 * 1024 * 1024);
+    }
+  }
+}
