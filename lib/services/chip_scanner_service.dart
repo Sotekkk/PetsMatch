@@ -355,8 +355,13 @@ class _ScannerDialogState extends State<_ScannerDialog>
   String _buffer    = '';
   bool   _completed = false;
 
+  bool _saisieManuelle = false;
+
   // Capture directe des keystrokes HID — pas de TextField, pas de focus Android
   bool _handleKey(KeyEvent event) {
+    // Saisie manuelle ouverte : laisser le clavier au champ texte (sinon les
+    // chiffres tapés étaient avalés ici et affichés sous « Prêt à scanner »).
+    if (_saisieManuelle) return false;
     if (_completed || !mounted) return false;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
 
@@ -483,6 +488,7 @@ class _ScannerDialogState extends State<_ScannerDialog>
             // (même recherche ensuite, pour tous les profils).
             OutlinedButton.icon(
               onPressed: () async {
+                setState(() { _saisieManuelle = true; _buffer = ''; });
                 final ctrl = TextEditingController();
                 final chip = await showDialog<String>(
                   context: context,
@@ -510,7 +516,11 @@ class _ScannerDialogState extends State<_ScannerDialog>
                   ),
                 );
                 ctrl.dispose();
-                if (chip != null && chip.isNotEmpty && context.mounted) Navigator.pop(context, chip);
+                if (mounted) setState(() => _saisieManuelle = false);
+                if (chip != null && chip.isNotEmpty && context.mounted) {
+                  _completed = true;
+                  Navigator.pop(context, chip);
+                }
               },
               icon: const Icon(Icons.keyboard_outlined, size: 18),
               label: const Text('Saisir le numéro', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
