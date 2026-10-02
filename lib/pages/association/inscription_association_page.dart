@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:PetsMatch/utils/photos_inscription.dart';
+import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/condition_general.dart';
 import 'package:PetsMatch/pages/particulier/securityregister.dart';
@@ -288,6 +289,9 @@ class _RegisterAssociationInformationPageState
   final _adresseCtrl    = TextEditingController();
   final _cpCtrl         = TextEditingController();
   final _villeCtrl      = TextEditingController();
+  final _autreEspeceCtrl = TextEditingController();
+  double? _lat;
+  double? _lng;
 
   int _capacite = 0;
   final List<String> _especes = [];
@@ -305,6 +309,7 @@ class _RegisterAssociationInformationPageState
     _adresseCtrl.dispose();
     _cpCtrl.dispose();
     _villeCtrl.dispose();
+    _autreEspeceCtrl.dispose();
     super.dispose();
   }
 
@@ -335,8 +340,16 @@ class _RegisterAssociationInformationPageState
     User_Info.codePostalElevage    = _cpCtrl.text.trim();
     User_Info.villeElevage         = _villeCtrl.text.trim();
     User_Info.paysElevage          = 'France';
+    User_Info.latElevage           = _lat;
+    User_Info.lngElevage           = _lng;
     User_Info.capaciteAccueil      = _capacite;
-    User_Info.especesElevees       = _especes;
+    // « Autre » : remplacé par les espèces précisées (ex. « furet, tortue »).
+    final precisees = _autreEspeceCtrl.text.split(RegExp(r'[,;/]'))
+        .map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty).toList();
+    User_Info.especesElevees = [
+      ..._especes.where((e) => e != 'autre' || precisees.isEmpty),
+      if (_especes.contains('autre')) ...precisees,
+    ];
 
     // Logo retenu : déposé après la création du compte (PhotosInscription).
     PhotosInscription.photoElevage = _logoFile;
@@ -432,6 +445,16 @@ class _RegisterAssociationInformationPageState
           _card([
             _sectionTitle('Adresse du siège'),
             const SizedBox(height: 12),
+            // Recherche Google Maps : adresse vérifiée + géolocalisation ;
+            // les champs restent modifiables.
+            AdresseRechercheField(onSelection: (a) => setState(() {
+              _adresseCtrl.text = a.rue;
+              _cpCtrl.text = a.codePostal;
+              _villeCtrl.text = a.ville;
+              _lat = a.lat;
+              _lng = a.lng;
+            })),
+            const SizedBox(height: 12),
             _field(ctrl: _adresseCtrl, label: 'Rue', icon: Icons.location_on_outlined),
             const SizedBox(height: 12),
             Row(children: [
@@ -507,6 +530,11 @@ class _RegisterAssociationInformationPageState
                 );
               }).toList(),
             ),
+            if (_especes.contains('autre')) ...[
+              const SizedBox(height: 12),
+              _field(ctrl: _autreEspeceCtrl, label: 'Précisez les autres espèces (ex : furet, tortue)',
+                  icon: Icons.edit_outlined),
+            ],
           ]),
           const SizedBox(height: 32),
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -275,7 +276,8 @@ class _InscriptionRestaurationProPageState
       });
 
       // 4 — Supabase users
-      await Supabase.instance.client.from('users').upsert({
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      await ecrireLigne('users', {
         'uid': uid,
         'firstname': _prenomCtrl.text.trim(),
         'lastname': _nomCtrl.text.trim(),
@@ -290,10 +292,11 @@ class _InscriptionRestaurationProPageState
         if (photoUrl != null) 'profile_picture_url': photoUrl,
         if (bannerUrl != null) 'banner_url': bannerUrl,
         'cgu_accepted_at': DateTime.now().toIso8601String(),
-      });
+      }, {'uid': uid});
 
       // 5 — Supabase user_profiles
-      await Supabase.instance.client.from('user_profiles').upsert({
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      await ecrireLigne('user_profiles', {
         'uid': uid,
         'profile_type': 'restauration',
         'cat_pro': 'restauration',
@@ -320,7 +323,7 @@ class _InscriptionRestaurationProPageState
         'verification_status': 'pending',
         'statut_pro': 'en_attente',
         'plan_code': 'free',
-      });
+      }, {'uid': uid, 'profile_type': 'restauration'}, colRetour: 'id');
 
       // 6 — Email de vérification
       await cred.user!.sendEmailVerification();

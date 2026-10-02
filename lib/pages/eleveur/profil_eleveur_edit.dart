@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -521,7 +522,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       // Sync address + geo to Supabase users table
       try {
         final supa = Supabase.instance.client;
-        await supa.from('users').upsert({
+        // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+        await ecrireLigne('users', {
           'uid': uid,
           'firstname':           _prenomCtrl.text.trim(),
           'lastname':            _nomCtrl.text.trim(),
@@ -545,7 +547,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'bio':            _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
-        }, onConflict: 'uid');
+        }, {'uid': uid});
 
         // Sync user_profiles (source V2) — description prend le même contenu
         // que users.bio, et phone_number celui de numero_elevage (jamais

@@ -6,6 +6,9 @@ interface Suggestion {
   label: string;
   lat: number;
   lon: number;
+  rue: string;
+  codePostal: string;
+  ville: string;
 }
 
 interface Props {
@@ -17,13 +20,15 @@ interface Props {
    * parent a besoin des coordonnées GPS (ex. lieu d'un cours), pas
    * seulement du libellé formaté. */
   onSelectCoords?: (coords: { lat: number; lng: number }) => void;
+  /** Adresse décomposée (rue / CP / ville + GPS) pour remplir des champs séparés. */
+  onSelectDetails?: (d: { rue: string; codePostal: string; ville: string; lat: number; lng: number }) => void;
 }
 
 /**
  * Autocomplete d'adresse française via api-adresse.data.gouv.fr (gratuit, sans clé).
  * Affiche une mini-carte OpenStreetMap après sélection.
  */
-export default function AddressAutocomplete({ value, onChange, placeholder, className, onSelectCoords }: Props) {
+export default function AddressAutocomplete({ value, onChange, placeholder, className, onSelectCoords, onSelectDetails }: Props) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
@@ -52,10 +57,13 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
         );
         const json = await res.json();
         const list: Suggestion[] = (json.features ?? []).map(
-          (f: { properties: { label: string }; geometry: { coordinates: [number, number] } }) => ({
+          (f: { properties: { label: string; name?: string; postcode?: string; city?: string }; geometry: { coordinates: [number, number] } }) => ({
             label: f.properties.label,
             lon: f.geometry.coordinates[0],
             lat: f.geometry.coordinates[1],
+            rue: f.properties.name ?? '',
+            codePostal: f.properties.postcode ?? '',
+            ville: f.properties.city ?? '',
           })
         );
         setSuggestions(list);
@@ -70,6 +78,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
     setSuggestions([]);
     setOpen(false);
     onSelectCoords?.({ lat: s.lat, lng: s.lon });
+    onSelectDetails?.({ rue: s.rue, codePostal: s.codePostal, ville: s.ville, lat: s.lat, lng: s.lon });
   };
 
   const mapSrc = coords

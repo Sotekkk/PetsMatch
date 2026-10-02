@@ -9,6 +9,7 @@ import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
+import { ecrireLigne } from '@/lib/ecriture-sure';
 const MAPS_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '';
 
 type Role = 'particulier' | 'eleveur' | 'pro';
@@ -368,7 +369,8 @@ export default function InscriptionPage() {
       });
     }
 
-    await supabase.from('users').upsert(base, { onConflict: 'uid' });
+    // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+    await ecrireLigne('users', base, { uid });
 
     // Le numéro d'ordre vétérinaire n'est packé que dans `certifications`
     // (JSONB sur `users`) — le trigger d'auto-création du profil principal
@@ -428,7 +430,8 @@ export default function InscriptionPage() {
       const ln = cred.user.displayName?.split(' ').slice(1).join(' ') ?? '';
       setFirstname(fn); setLastname(ln);
       // Google inscription → particulier seulement (les pros/éleveurs doivent passer par le flow complet)
-      await supabase.from('users').upsert({
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      await ecrireLigne('users', {
         uid: cred.user.uid,
         email: cred.user.email ?? '',
         firstname: fn,
@@ -436,7 +439,7 @@ export default function InscriptionPage() {
         is_elevage: false,
         is_pro: false,
         cgu_accepted_at: new Date().toISOString(),
-      }, { onConflict: 'uid' });
+      }, { uid: cred.user.uid });
       router.push('/');
     } catch {
       setError('Connexion Google annulée ou échouée.');

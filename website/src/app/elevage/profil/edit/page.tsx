@@ -14,6 +14,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { fromPostalCode } from '@/lib/french-geo';
 
+import { ecrireLigne } from '@/lib/ecriture-sure';
 // ── Species config ─────────────────────────────────────────────────────────────
 
 const ESPECES_CONFIG = [
@@ -582,7 +583,7 @@ export default function EleveurProfilEditPage() {
       }
 
       // Save to Supabase users
-      const { error: usersErr } = await supabase.from('users').upsert(payload, { onConflict: 'uid' });
+      const { error: usersErr } = await ecrireLigne('users', payload, { uid: String(payload.uid) });
       if (usersErr) { setFormErrors([`[users] ${usersErr.message}`]); return; }
 
       // Sync to user_profiles

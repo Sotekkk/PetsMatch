@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfileService {
@@ -42,9 +43,9 @@ class ProfileService {
   }
 
   static Future<void> upsertProfile(Map<String, dynamic> data) async {
-    await _supa
-        .from('user_profiles')
-        .upsert(data, onConflict: 'uid,profile_type');
+    // Pas d'upsert : colonnes privées non lisibles (phase 2 données perso).
+    await ecrireLigne('user_profiles', data,
+        {'uid': data['uid'] as Object, 'profile_type': data['profile_type'] as Object}, colRetour: 'id');
   }
 
   static Future<void> deleteProfile(String id) async {

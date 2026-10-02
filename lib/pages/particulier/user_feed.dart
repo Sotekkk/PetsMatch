@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -230,13 +231,14 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
         });
       } catch (_) {}
       try {
-        await _supa.from('users').upsert({
+        // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+        await ecrireLigne('users', {
           'uid': uid,
           'rue': rue, 'code_postal': cp, 'ville': ville,
           'departement': dept, 'region': reg,
           if (_profileLat != null) 'lat': _profileLat,
           if (_profileLng != null) 'lng': _profileLng,
-        }, onConflict: 'uid');
+        }, {'uid': uid});
       } catch (_) {}
       User_Info.rue = rue;
       User_Info.codePostal = cp;

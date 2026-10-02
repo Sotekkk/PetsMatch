@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -801,7 +802,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         User_Info.availableProfiles = [];
       } else {
         // ── Profil principal → users ───────────────────────────────────────────
-        await _supa.from('users').upsert({
+        // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+        await ecrireLigne('users', {
           'uid':                  User_Info.uid,
           'name_elevage':         _nomStructureCtrl.text.trim(),
           'profession_pro':       _professionCtrl.text.trim(),
@@ -843,7 +845,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'lng':                  _lng,
           if (photoUrl  != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
-        }, onConflict: 'uid');
+        }, {'uid': User_Info.uid});
 
         // Sync user_profiles (source V2) — sinon les données restent figées
         // après le tout premier edit, jamais répercutées côté user_profiles.

@@ -19,6 +19,7 @@ import { fromPostalCode } from '@/lib/french-geo';
 import { geocodeAddress } from '@/lib/geocoding';
 
 import LienDocument from '@/components/LienDocument';
+import { ecrireLigne } from '@/lib/ecriture-sure';
 // ── Species config ────────────────────────────────────────────────────────────
 
 const ESPECES_CONFIG = [
@@ -2555,7 +2556,7 @@ export default function ProfilPage() {
       // Miroir legacy (users partagé) — sauté pour un profil particulier
       // secondaire (sinon on écrase l'identité du profil principal).
       if (!secondaryParticulier) {
-        const { error: usersErr } = await supabase.from('users').upsert(payload, { onConflict: 'uid' });
+        const { error: usersErr } = await ecrireLigne('users', payload, { uid: String(payload.uid) });
         if (usersErr) { setFormErrors([`[users] ${usersErr.message}`]); return; }
       }
 

@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
@@ -72,7 +73,8 @@ Future<bool> registerUser(String email, String password) async {
 
     // Sync Supabase (particulier — pas d'élevage ni pro)
     try {
-      await Supabase.instance.client.from('users').upsert({
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      await ecrireLigne('users', {
         'uid':                 uid,
         'firstname':           User_Info.firstname,
         'lastname':            User_Info.lastname,
@@ -90,7 +92,7 @@ Future<bool> registerUser(String email, String password) async {
         'is_dev':              User_Info.isDev,
         'is_association':      false,
         'cgu_accepted_at':     DateTime.now().toIso8601String(),
-      });
+      }, {'uid': uid});
     } catch (e) {
       debugPrint("Supabase sync error (particulier): $e");
     }
@@ -201,7 +203,8 @@ Future<Object> registerElevage(String email, String password) async {
               .toList()
           : null;
 
-      await Supabase.instance.client.from('users').upsert({
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      await ecrireLigne('users', {
         'uid':                   uid,
         'firstname':             User_Info.firstname,
         'lastname':              User_Info.lastname,
@@ -261,7 +264,7 @@ Future<Object> registerElevage(String email, String password) async {
         if (User_Info.profilePictureUrlElevage.isNotEmpty)
           'profile_picture_url_elevage': User_Info.profilePictureUrlElevage,
         'cgu_accepted_at': DateTime.now().toIso8601String(),
-      });
+      }, {'uid': uid});
     } catch (e) {
       print("Supabase user sync error: $e");
       // Affiche l'erreur en développement pour diagnostic

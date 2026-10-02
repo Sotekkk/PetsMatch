@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { notifyProfilePendingValidation } from '@/lib/notifications';
 
+import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { ecrireLigne } from '@/lib/ecriture-sure';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 const PROFILE_TYPES = [
@@ -361,10 +363,10 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.statut_pro = 'en_attente';
       }
 
-      const { data: rows, error: err } = await supabase
-        .from('user_profiles')
-        .upsert(data, { onConflict: 'uid,profile_type' })
-        .select('id');
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      const { id: idProfil, error: err } = await ecrireLigne('user_profiles', data,
+        { uid: String(data.uid), profile_type: String(data.profile_type) }, 'id');
+      const rows = idProfil ? [{ id: idProfil as string }] : [];
 
       if (err) throw err;
 
@@ -378,7 +380,8 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         if (isEleveur) usersPayload.siret = siret.trim();
         if (data.kbis_url) usersPayload.kbis_url = data.kbis_url;
         if (data.acaced_doc_url) usersPayload.acaced_doc_url = data.acaced_doc_url;
-        await supabase.from('users').upsert(usersPayload, { onConflict: 'uid' });
+        // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+        await ecrireLigne('users', usersPayload, { uid });
       }
 
       const id = (rows as { id: string }[])[0]?.id ?? '';
@@ -696,6 +699,11 @@ function AssociationForm({ uid, onBack, onSaved }: {
   const [rue, setRue]                       = useState('');
   const [ville, setVille]                   = useState('');
   const [cp, setCp]                         = useState('');
+  const [adresseRecherche, setAdresseRecherche] = useState('');
+  const [latAsso, setLatAsso]               = useState<number | null>(null);
+  const [lngAsso, setLngAsso]               = useState<number | null>(null);
+  const [especesAsso, setEspecesAsso]       = useState<Set<string>>(new Set());
+  const [autreEspece, setAutreEspece]       = useState('');
 
   const [siretDocFile, setSiretDocFile]     = useState<File | null>(null);
   const [acacedDocFile, setAcacedDocFile]   = useState<File | null>(null);
@@ -734,6 +742,13 @@ function AssociationForm({ uid, onBack, onSaved }: {
         ville:             ville.trim(),
         code_postal:       cp.trim(),
         pays:              'France',
+        ...(latAsso != null && lngAsso != null ? { lat: latAsso, lng: lngAsso } : {}),
+        // « Autre » remplacé par les espèces précisées (miroir de l'appli).
+        especes_accueil:   (() => {
+          const precisees = autreEspece.split(/[,;/]/).map(e => e.trim().toLowerCase()).filter(Boolean);
+          const base = Array.from(especesAsso).filter(e => e !== 'autre' || precisees.length === 0);
+          return especesAsso.has('autre') ? [...base, ...precisees] : base;
+        })(),
         statut_pro:        'en_attente',
       };
 
@@ -758,10 +773,10 @@ function AssociationForm({ uid, onBack, onSaved }: {
         }
       }
 
-      const { data: rows, error: err } = await supabase
-        .from('user_profiles')
-        .upsert(profileData, { onConflict: 'uid,profile_type' })
-        .select('id');
+      // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
+      const { id: idProfil, error: err } = await ecrireLigne('user_profiles', profileData,
+        { uid: String(profileData.uid), profile_type: String(profileData.profile_type) }, 'id');
+      const rows = idProfil ? [{ id: idProfil as string }] : [];
       if (err) throw err;
 
       // Marque le profil primaire comme association
@@ -870,6 +885,11 @@ function AssociationForm({ uid, onBack, onSaved }: {
 
           <div>
             <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Adresse du siège</p>
+            <div className="mb-2">
+              <AddressAutocomplete value={adresseRecherche} onChange={setAdresseRecherche}
+                placeholder="Rechercher l'adresse, puis la choisir dans la liste"
+                onSelectDetails={d => { setRue(d.rue); setCp(d.codePostal); setVille(d.ville); setLatAsso(d.lat); setLngAsso(d.lng); }} />
+            </div>
             <input value={rue} onChange={e => setRue(e.target.value)}
               className="w-full input-field mb-2" placeholder="Rue / numéro *" />
             <div className="flex gap-2">
@@ -879,6 +899,23 @@ function AssociationForm({ uid, onBack, onSaved }: {
                 className="flex-1 input-field" placeholder="Ville *" />
             </div>
           </div>
+
+          <AssocField label="Espèces accueillies">
+            <div className="flex flex-wrap gap-2">
+              {[['chien', 'Chien'], ['chat', 'Chat'], ['cheval', 'Cheval'], ['lapin', 'Lapin'], ['oiseau', 'Oiseau'], ['ovin', 'Ovin'], ['autre', 'Autre']].map(([v, l]) => (
+                <button key={v} type="button"
+                  onClick={() => setEspecesAsso(prev => { const n = new Set(prev); if (n.has(v)) n.delete(v); else n.add(v); return n; })}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                    especesAsso.has(v) ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'bg-white border-gray-200 text-gray-600 hover:border-[#0C5C6C]'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {especesAsso.has('autre') && (
+              <input value={autreEspece} onChange={e => setAutreEspece(e.target.value)}
+                className="w-full input-field mt-2" placeholder="Précisez les autres espèces (ex : furet, tortue)" />
+            )}
+          </AssocField>
 
           <AssocField label="Téléphone">
             <input value={phone} onChange={e => setPhone(e.target.value)}
