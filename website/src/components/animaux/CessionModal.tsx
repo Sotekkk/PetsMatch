@@ -6,6 +6,7 @@ import { uploadDocument } from '@/lib/upload-media';
 import { factureVentePdfBlob } from '@/lib/facture-vente';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import LienDocument from '@/components/LienDocument';
 interface Animal {
   id: string;
   nom?: string;
@@ -1031,9 +1032,9 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                               <p className="text-[10px] text-gray-500">🧾 Facture générée{date ? `  ·  ${date}` : ''}</p>
                             </div>
                             {d.url && (
-                              <a href={d.url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-[#0C5C6C]" title="Ouvrir">
+                              <LienDocument href={d.url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-[#0C5C6C]" title="Ouvrir">
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                              </a>
+                              </LienDocument>
                             )}
                             <button onClick={async () => { if (confirm('Supprimer cette facture ?')) { await supabase.from('documents_animaux').delete().eq('id', d.id); reloadDocs(); } }}
                               className="p-2 text-gray-300 hover:text-red-500" title="Supprimer">

@@ -35,6 +35,7 @@ import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/widgets/document_viewer_page.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 
 class _ContactUrgenceP {
@@ -7031,10 +7032,10 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
         leading: (doc['type']?.toString().startsWith('image/') ?? false) && (doc['url']?.toString().isNotEmpty ?? false)
             ? ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: doc['url'].toString(),
+                child: ImagePrivee(
+                  doc['url'].toString(),
                   width: 40, height: 40, fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => Icon(_docCatIcon(doc['categorie']?.toString()), color: _kTealDoc, size: 20),
+                  enErreur: (_) => Icon(_docCatIcon(doc['categorie']?.toString()), color: _kTealDoc, size: 20),
                 ),
               )
             : CircleAvatar(
@@ -7483,7 +7484,7 @@ class _EducationTabPState extends State<_EducationTabP> {
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
         ])),
         TextButton(
-          onPressed: url.isEmpty ? null : () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+          onPressed: url.isEmpty ? null : () => ouvrirDocument(context, url),
           child: const Text('Ouvrir', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF4A7A32))),
         ),
       ]),

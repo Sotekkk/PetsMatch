@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { pensionInvoiceHtml, type PensionFactureData } from '@/lib/pension-facture-html';
 
+import LienDocument from '@/components/LienDocument';
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -77,12 +78,12 @@ export default function FacturePensionPage({ params }: { params: Promise<{ token
           🖨️ Imprimer / PDF
         </button>
         {row.pdf_url && (
-          <a href={row.pdf_url} target="_blank" rel="noopener noreferrer" style={{
+          <LienDocument  lienSecret={token} href={row.pdf_url} target="_blank" rel="noopener noreferrer" style={{
             fontFamily: 'Galey, sans-serif', fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 10,
             border: '1px solid #0C5C6C', background: '#0C5C6C', color: 'white', textDecoration: 'none',
           }}>
             PDF ↗
-          </a>
+          </LienDocument>
         )}
       </div>
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', background: 'white' }}

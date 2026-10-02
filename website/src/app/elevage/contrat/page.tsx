@@ -14,6 +14,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 import { rechercherUtilisateurs } from '@/lib/user-lookup';
 
+import LienDocument from '@/components/LienDocument';
 interface DocAnimal {
   id: string;
   animal_id: string;
@@ -715,8 +716,8 @@ export default function ContratsPage() {
                     )}
                     {/* PREP07 — Télécharger PDF signé */}
                     {d.statut === 'signe' && d.pdf_signe_url && (
-                      <a href={d.pdf_signe_url} download target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-green-600 hover:underline font-medium">📥 PDF</a>
+                      <LienDocument href={d.pdf_signe_url} download target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-green-600 hover:underline font-medium">📥 PDF</LienDocument>
                     )}
                     {/* PREP08 — Annuler */}
                     {!['signe','annule','expire','refuse'].includes(d.statut) && (
@@ -731,8 +732,8 @@ export default function ContratsPage() {
                       {auditOpen[d.id] ? '▲' : '📋'}
                     </button>
                     {d.url && !d.token && (
-                      <a href={d.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-[#0C5C6C] hover:underline font-medium">Voir</a>
+                      <LienDocument href={d.url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-[#0C5C6C] hover:underline font-medium">Voir</LienDocument>
                     )}
                     <button onClick={() => deleteDoc(d.id, d.titre)} disabled={deleting === d.id}
                       className="text-xs text-red-400 hover:text-red-600 font-medium disabled:opacity-40">

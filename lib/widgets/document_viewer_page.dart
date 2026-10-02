@@ -4,18 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 
 /// Lecteur de document plein écran, dans l'appli (image ou PDF).
 /// Ouvre via `DocumentViewerPage.open(context, url, title: …)`.
+/// Document privé (stockage `documents` / `contrats`) : lien temporaire
+/// demandé à lien-document ([lienSecret] = jeton d'un lien de partage).
 class DocumentViewerPage extends StatefulWidget {
   final String url;
   final String title;
-  const DocumentViewerPage({super.key, required this.url, this.title = 'Document'});
+  final String? lienSecret;
+  const DocumentViewerPage({super.key, required this.url, this.title = 'Document', this.lienSecret});
 
-  static Future<void> open(BuildContext context, String url, {String title = 'Document'}) {
+  static Future<void> open(BuildContext context, String url, {String title = 'Document', String? lienSecret}) {
     if (url.trim().isEmpty) return Future.value();
     return Navigator.push(context, MaterialPageRoute(
-      builder: (_) => DocumentViewerPage(url: url, title: title),
+      builder: (_) => DocumentViewerPage(url: url, title: title, lienSecret: lienSecret),
     ));
   }
 
@@ -30,22 +34,24 @@ class DocumentViewerPage extends StatefulWidget {
 
 class _DocumentViewerPageState extends State<DocumentViewerPage> {
   Uint8List? _bytes;
+  String? _lien; // lien utilisable (temporaire si document privé)
   bool _loading = true;
   bool _error = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget._isImage) {
-      _loading = false;
-    } else {
-      _fetch();
-    }
+    _fetch();
   }
 
   Future<void> _fetch() async {
     try {
-      final res = await http.get(Uri.parse(widget.url));
+      _lien = await lienDocument(widget.url, lienSecret: widget.lienSecret);
+      if (widget._isImage) {
+        if (mounted) setState(() => _loading = false);
+        return;
+      }
+      final res = await http.get(Uri.parse(_lien!));
       if (!mounted) return;
       if (res.statusCode == 200) {
         setState(() { _bytes = res.bodyBytes; _loading = false; });
@@ -58,8 +64,10 @@ class _DocumentViewerPageState extends State<DocumentViewerPage> {
   }
 
   Future<void> _openExternal() async {
-    final uri = Uri.tryParse(widget.url);
-    if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      final uri = Uri.tryParse(_lien ?? await lienDocument(widget.url, lienSecret: widget.lienSecret));
+      if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
   }
 
   @override
@@ -85,17 +93,18 @@ class _DocumentViewerPageState extends State<DocumentViewerPage> {
   }
 
   Widget _build() {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)));
     if (widget._isImage) {
+      if (_error || _lien == null) return _errorView();
       return InteractiveViewer(
         maxScale: 5,
         child: Center(
-          child: Image.network(widget.url,
+          child: Image.network(_lien!,
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => _errorView()),
         ),
       );
     }
-    if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)));
     if (_error || _bytes == null) return _errorView();
     return PdfPreview(
       build: (_) => _bytes!,

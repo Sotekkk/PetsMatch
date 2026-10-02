@@ -304,9 +304,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         if (siretDocFile) {
           const ext = siretDocFile.name.split('.').pop() ?? 'jpg';
           const path = `documents/${uid}/kbis.${ext}`;
-          const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+          const { data: up } = await supabase.storage.from('documents').upload(path, siretDocFile, { upsert: true });
           if (up) {
-            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
             data.kbis_url = pub.publicUrl;
           }
         }
@@ -314,9 +314,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         if (acacedDocFile) {
           const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
           const path = `documents/${uid}/acaced.${ext}`;
-          const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+          const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
           if (up) {
-            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
             data.acaced_doc_url = pub.publicUrl;
           }
         }
@@ -340,9 +340,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           if (acacedDocFile) {
             const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
             const path = `documents/${uid}/acaced.${ext}`;
-            const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+            const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
             if (up) {
-              const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+              const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
               data.acaced_doc_url = pub.publicUrl;
             }
           }
@@ -741,9 +741,9 @@ function AssociationForm({ uid, onBack, onSaved }: {
       if (siretDocFile) {
         const ext = siretDocFile.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_kbis.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, siretDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           profileData.kbis_url = pub.publicUrl;
         }
       }
@@ -751,9 +751,9 @@ function AssociationForm({ uid, onBack, onSaved }: {
       if (acacedDocFile) {
         const ext = acacedDocFile.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_acaced.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           profileData.acaced_doc_url = pub.publicUrl;
         }
       }

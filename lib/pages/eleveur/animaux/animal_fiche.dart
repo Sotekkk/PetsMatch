@@ -27,6 +27,7 @@ import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
@@ -4236,13 +4237,23 @@ bool _isImageUrl(String url) {
       lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.gif');
 }
 
-void _openDoc(BuildContext context, String url) {
+Future<void> _openDoc(BuildContext context, String url) async {
   if (_isImageUrl(url)) {
+    final String lien;
+    try {
+      lien = await lienDocument(url); // document privé → lien temporaire
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Impossible d'ouvrir le document.")));
+      }
+      return;
+    }
+    if (!context.mounted) return;
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => _ImageViewerPage(url: url),
+      builder: (_) => _ImageViewerPage(url: lien),
     ));
   } else {
-    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    await ouvrirDocument(context, url);
   }
 }
 
@@ -4303,8 +4314,8 @@ class _PedigreePreview extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: isImage
-                  ? Image.network(url, width: 48, height: 48, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const _DocIcon())
+                  ? ImagePrivee(url, width: 48, height: 48, fit: BoxFit.cover,
+                      enErreur: (_) => const _DocIcon())
                   : const _DocIcon(),
             ),
             const SizedBox(width: 10),
@@ -4514,7 +4525,7 @@ class _CessionEnCoursBanner extends StatelessWidget {
         ] else if (contratUrl != null) ...[
           const SizedBox(height: 4),
           GestureDetector(
-            onTap: () => launchUrl(Uri.parse(contratUrl), mode: LaunchMode.externalApplication),
+            onTap: () => ouvrirDocument(context, contratUrl),
             child: const Text('📄 Voir le contrat', style: TextStyle(fontSize: 11, color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
           ),
         ],
@@ -13027,8 +13038,7 @@ class _VetConsultCrCard extends StatelessWidget {
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () async {
-              final uri = Uri.tryParse(docUrl);
-              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              await ouvrirDocument(context, docUrl);
             },
             child: Row(children: [
               Icon(Icons.attach_file, size: 14, color: color),
@@ -13078,8 +13088,7 @@ class _VetConsultOrdoCard extends StatelessWidget {
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () async {
-              final uri = Uri.tryParse(docUrl);
-              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              await ouvrirDocument(context, docUrl);
             },
             child: Row(children: [
               Icon(Icons.attach_file, size: 14, color: color),
@@ -13131,8 +13140,7 @@ class _OwnerConsultCrCard extends StatelessWidget {
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () async {
-              final uri = Uri.tryParse(docUrl);
-              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              await ouvrirDocument(context, docUrl);
             },
             child: Row(children: [
               Icon(Icons.attach_file, size: 14, color: color),
@@ -13193,8 +13201,7 @@ class _OwnerConsultOrdoCard extends StatelessWidget {
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () async {
-              final uri = Uri.tryParse(docUrl);
-              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              await ouvrirDocument(context, docUrl);
             },
             child: Row(children: [
               Icon(Icons.attach_file, size: 14, color: color),
@@ -14039,8 +14046,7 @@ class _OrdonnanceLinkSectionState extends State<_OrdonnanceLinkSection> {
                 color: Color(0xFF6F767B), fontWeight: FontWeight.w500))),
         Expanded(child: GestureDetector(
           onTap: () async {
-            final uri = Uri.tryParse(_url!);
-            if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            await ouvrirDocument(context, _url!);
           },
           child: const Text('Voir le document',
             style: TextStyle(fontFamily: 'Galey', fontSize: 14,
@@ -14302,7 +14308,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
               ] else if (url != null && !isBrouillon)
                 IconButton(
                   icon: const Icon(Icons.open_in_new, size: 18, color: _green),
-                  onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                  onPressed: () => ouvrirDocument(context, url),
                 ),
             ],
           ),

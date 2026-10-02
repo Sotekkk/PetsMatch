@@ -15,6 +15,7 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -1574,7 +1575,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           OutlinedButton.icon(
             onPressed: () {
               final u = _importedPdfUrl;
-              if (u != null) launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
+              if (u != null) ouvrirDocument(context, u);
             },
             icon: const Icon(Icons.open_in_new, size: 15),
             label: const Text('Ouvrir le document'),

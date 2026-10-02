@@ -13,6 +13,7 @@ import { facturePdfBlob } from '@/lib/facture-pdf';
 import { apiFetch } from '@/lib/api-fetch';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
+import LienDocument from '@/components/LienDocument';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Ligne {
@@ -430,10 +431,10 @@ export default function FacturationPage() {
               </button>
             )}
             {selected.pdf_url && (
-              <a href={selected.pdf_url} target="_blank" rel="noopener noreferrer"
+              <LienDocument href={selected.pdf_url} target="_blank" rel="noopener noreferrer"
                 className="block w-full border border-gray-200 text-gray-600 font-medium py-2 rounded-xl text-sm hover:bg-gray-50 transition-colors text-center mb-3">
                 📄 PDF archivé
-              </a>
+              </LienDocument>
             )}
             {selected.token && (
               <div className="flex gap-2 mb-3">
@@ -689,9 +690,10 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       });
       const buf = await blob.arrayBuffer();
       const path = `factures/${uid}/${f.id}.pdf`;
-      const { error: upErr } = await supabase.storage.from('media')
+      // Stockage privé : ouverture via lien temporaire (lien-document)
+      const { error: upErr } = await supabase.storage.from('documents')
         .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
-      const pdfUrl = upErr ? null : supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+      const pdfUrl = upErr ? null : supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
       const hashBuf = await crypto.subtle.digest('SHA-256', buf);
       const pdfHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
       await supabase.from('factures').update({

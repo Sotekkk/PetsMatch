@@ -541,9 +541,9 @@ export default function EleveurProfilEditPage() {
       if (siretDocFile) {
         const ext = siretDocFile.name.split('.').pop() ?? 'jpg';
         const path = `documents/${user!.uid}/kbis.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, siretDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           payload.kbis_url = pub.publicUrl;
           setSiretDocUrl(pub.publicUrl);
         }
@@ -553,9 +553,9 @@ export default function EleveurProfilEditPage() {
       if (acacedDocFile) {
         const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
         const path = `documents/${user!.uid}/acaced.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           payload.acaced_doc_url = pub.publicUrl;
           setAcacedDocUrl(pub.publicUrl);
         }

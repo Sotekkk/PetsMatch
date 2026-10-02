@@ -16,6 +16,7 @@ import AvisContestesTab from './_components/AvisContestesTab';
 import PlanEditor from './_components/PlanEditor';
 import { apiFetch } from '@/lib/api-fetch';
 
+import LienDocument from '@/components/LienDocument';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface FireUser {
@@ -2863,18 +2864,18 @@ export default function AdminPage() {
 
               <Section title="Documents">
                 {selectedDossier.kbisUrl ? (
-                  <a href={selectedDossier.kbisUrl} target="_blank" rel="noopener noreferrer"
+                  <LienDocument href={selectedDossier.kbisUrl} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold">
                     📄 Kbis / Justificatif SIRET ↗
-                  </a>
+                  </LienDocument>
                 ) : (
                   <p className="text-sm text-gray-400 italic">Aucun Kbis fourni</p>
                 )}
                 {selectedDossier.acacedDocUrl && (
-                  <a href={selectedDossier.acacedDocUrl} target="_blank" rel="noopener noreferrer"
+                  <LienDocument href={selectedDossier.acacedDocUrl} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
                     📄 Document ACACED ↗
-                  </a>
+                  </LienDocument>
                 )}
                 {selectedDossier.certifications && selectedDossier.certifications.length > 0 && (
                   <div className="mt-3">

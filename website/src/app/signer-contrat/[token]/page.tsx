@@ -18,6 +18,7 @@ import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
 import { apiFetch } from '@/lib/api-fetch';
 
+import LienDocument from '@/components/LienDocument';
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -1061,10 +1062,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
               ✅ Valider et fermer
             </button>
             {doc?.pdf_signe_url ? (
-              <a href={doc.pdf_signe_url} download
+              <LienDocument  lienSecret={token} href={doc.pdf_signe_url} download
                 className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                 📥 Télécharger le PDF signé
-              </a>
+              </LienDocument>
             ) : (
               <button onClick={handlePrint}
                 className="flex items-center gap-2 border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">

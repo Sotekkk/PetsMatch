@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -422,7 +423,7 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
                         Wrap(spacing: 8, runSpacing: 8, children: [
                           if ((f['pdf_url'] as String?)?.isNotEmpty == true)
                             OutlinedButton.icon(
-                              onPressed: () => launchUrl(Uri.parse(f['pdf_url'] as String), mode: LaunchMode.externalApplication),
+                              onPressed: () => ouvrirDocument(context, f['pdf_url'] as String),
                               icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
                               label: const Text('PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                               style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -457,11 +458,11 @@ petsmatch.contact@gmail.com
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(14),
-                          child: Image.network(
+                          child: ImagePrivee(
                             kbisUrl,
                             fit: BoxFit.cover,
                             width: double.infinity,
-                            errorBuilder: (_, __, ___) => Center(
+                            enErreur: (_) => Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: const [
@@ -587,7 +588,7 @@ petsmatch.contact@gmail.com
       context: context,
       builder: (_) => Dialog(
         child: InteractiveViewer(
-          child: Image.network(url, fit: BoxFit.contain),
+          child: ImagePrivee(url, fit: BoxFit.contain),
         ),
       ),
     );

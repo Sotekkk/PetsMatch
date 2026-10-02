@@ -29,6 +29,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FactureDetailPage;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
@@ -482,9 +483,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'facture_pension') {
       var url = data is Map ? data['url'] as String? : null;
       if (url != null && url.startsWith('/')) url = '$kSiteBaseUrl$url';
-      if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      }
+      if (url != null) await ouvrirDocument(context, url);
       return;
     }
     // Suivi éducatif (rapport de séance, objectif atteint, exercices) — propriétaire

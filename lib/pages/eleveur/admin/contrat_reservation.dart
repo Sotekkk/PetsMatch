@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
@@ -365,7 +366,7 @@ class _DocCard extends StatelessWidget {
             // PREP07 — Télécharger PDF signé
             if (statut == 'signe' && pdfSigneUrl != null) ...[
               OutlinedButton(
-                onPressed: () => launchUrl(Uri.parse(pdfSigneUrl), mode: LaunchMode.externalApplication),
+                onPressed: () => ouvrirDocument(context, pdfSigneUrl),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF6E9E57),
                   side: const BorderSide(color: Color(0xFF6E9E57)),

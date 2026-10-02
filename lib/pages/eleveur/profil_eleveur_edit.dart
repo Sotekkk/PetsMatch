@@ -433,13 +433,13 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       // Upload document SIRET
       String? siretDocUrl = _siretDocUrl;
       if (_siretDocFile != null) {
-        siretDocUrl = await uploadPhoto(_siretDocFile!, 'profiles/$uid/kbis.jpg');
+        siretDocUrl = await uploadPhotoPrive(_siretDocFile!, 'profiles/$uid/kbis.jpg');
         setState(() => _siretDocUrl = siretDocUrl);
       }
       // Upload document ACACED
       String? acacedDocUrl = _acacedDocUrl;
       if (_acacedDocFile != null) {
-        acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
+        acacedDocUrl = await uploadPhotoPrive(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
         setState(() => _acacedDocUrl = acacedDocUrl);
       }
 

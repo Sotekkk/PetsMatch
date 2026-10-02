@@ -14,6 +14,8 @@ import { AnatomieSeances } from '@/components/AnatomiePoints';
 import MorphoAnimalTab from '@/components/morpho/MorphoAnimalTab';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
+import LienDocument from '@/components/LienDocument';
+import { ouvrirDocument } from '@/lib/document-prive';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -852,9 +854,10 @@ function PatientDetailPageInner() {
       doc.text(proNom, 515, 760, { align: 'right' });
       const blob = doc.output('blob');
       const path = `attestations/${user.uid}/${animalId}_${Date.now()}.pdf`;
-      const { error } = await supabase.storage.from('media').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+      // Stockage privé : ouverture via lien temporaire (lien-document)
+      const { error } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
       if (error) throw error;
-      const { data: pub } = supabase.storage.from('media').getPublicUrl(path);
+      const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
       const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
       await supabase.from('education_attestations').insert({
         animal_id: animalId, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
@@ -869,7 +872,7 @@ function PatientDetailPageInner() {
           data: { animalId, url: `/mes-animaux/${animalId}?tab=education` },
         });
       }
-      window.open(pub.publicUrl, '_blank');
+      void ouvrirDocument(pub.publicUrl);
     } finally {
       setGenAttest(false);
     }
@@ -2028,11 +2031,11 @@ function PatientDetailPageInner() {
                         {o.notes && <p className="text-xs text-gray-400">{o.notes}</p>}
                       </div>
                       {o.doc_url && (
-                        <a href={o.doc_url} target="_blank" rel="noopener noreferrer"
+                        <LienDocument href={o.doc_url} target="_blank" rel="noopener noreferrer"
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex-shrink-0"
                           style={{ background: TEAL }}>
                           Voir
-                        </a>
+                        </LienDocument>
                       )}
                     </div>
                   ))}

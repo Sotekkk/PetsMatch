@@ -9,6 +9,7 @@ import HealthSection from '@/components/animaux/HealthSection';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
+import LienDocument from '@/components/LienDocument';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -305,10 +306,10 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
                 {date && <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(date)}</p>}
                 {notes && <p className="text-xs text-gray-500 mt-0.5">{notes}</p>}
                 {!!r.doc_url && (
-                  <a href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
+                  <LienDocument href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-[#0C5C6C] font-semibold hover:underline mt-1 inline-flex items-center gap-1">
                     📎 Voir le document
-                  </a>
+                  </LienDocument>
                 )}
               </div>
             );
@@ -325,10 +326,10 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
                 {date && <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(date)}</p>}
                 {notes && <p className="text-xs text-gray-500 mt-0.5">{notes}</p>}
                 {!!r.doc_url && (
-                  <a href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
+                  <LienDocument href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-[#0C5C6C] font-semibold hover:underline mt-1 inline-flex items-center gap-1">
                     📎 Voir l'ordonnance
-                  </a>
+                  </LienDocument>
                 )}
               </div>
             );

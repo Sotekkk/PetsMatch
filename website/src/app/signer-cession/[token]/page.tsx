@@ -3,6 +3,7 @@
 import { use, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+import LienDocument from '@/components/LienDocument';
 interface Cession {
   id: string;
   animal_id: string;
@@ -289,10 +290,10 @@ ${cession!.notes ? `<div class="notes"><strong>Notes : </strong>${cession!.notes
                 </div>
               )}
               {cession.contrat_url && (
-                <a href={cession.contrat_url} target="_blank" rel="noreferrer"
+                <LienDocument  lienSecret={token} href={cession.contrat_url} target="_blank" rel="noreferrer"
                   className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline">
                   📄 Lire le contrat complet
-                </a>
+                </LienDocument>
               )}
             </div>
 
@@ -362,10 +363,10 @@ ${cession!.notes ? `<div class="notes"><strong>Notes : </strong>${cession!.notes
                 </div>
               )}
               {cession.contrat_url && (
-                <a href={cession.contrat_url} target="_blank" rel="noreferrer"
+                <LienDocument  lienSecret={token} href={cession.contrat_url} target="_blank" rel="noreferrer"
                   className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline">
                   📄 Lire le contrat complet
-                </a>
+                </LienDocument>
               )}
             </div>
 

@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { openPensionInvoice, type PensionFactureData } from '@/lib/pension-facture-html';
 import { apiFetch } from '@/lib/api-fetch';
 
+import LienDocument from '@/components/LienDocument';
 const TEAL = '#0C5C6C';
 const GREEN = '#6E9E57';
 
@@ -272,10 +273,10 @@ export default function PensionFacturesPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}
                     onClick={e => e.stopPropagation()}>
                     {f.pdf_url && (
-                      <a href={f.pdf_url} target="_blank" rel="noopener noreferrer"
+                      <LienDocument href={f.pdf_url} target="_blank" rel="noopener noreferrer"
                         style={{ fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700, color: TEAL, whiteSpace: 'nowrap' }}>
                         PDF ↗
-                      </a>
+                      </LienDocument>
                     )}
                     <button onClick={() => renvoyer(f)} disabled={busyId === f.id} title="Renvoyer au propriétaire" style={{
                       padding: '6px 12px', borderRadius: 20, border: `1px solid ${TEAL}`,

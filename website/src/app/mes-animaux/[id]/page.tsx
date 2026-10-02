@@ -23,6 +23,7 @@ import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
+import LienDocument from '@/components/LienDocument';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -1039,7 +1040,7 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
                   )}
                 </p>
               </div>
-              <a href={d.url} target="_blank" rel="noreferrer" className="text-xs text-[#0C5C6C] hover:underline">Voir</a>
+              <LienDocument href={d.url} target="_blank" rel="noreferrer" className="text-xs text-[#0C5C6C] hover:underline">Voir</LienDocument>
               <button onClick={() => saveLibres(libres.filter((_, j) => j !== i))}
                 className="text-red-300 hover:text-red-500 text-lg leading-none">×</button>
             </div>
@@ -1084,12 +1085,12 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
                   </div>
                 </div>
                 {(!!doc.url || !!doc.token) && (
-                  <a href={doc.pdf_signe_url ? String(doc.pdf_signe_url) : doc.url ? String(doc.url) : `/signer-contrat/${doc.token}`}
+                  <LienDocument href={doc.pdf_signe_url ? String(doc.pdf_signe_url) : doc.url ? String(doc.url) : `/signer-contrat/${doc.token}`}
                     target="_blank" rel="noreferrer"
                     className="text-[#0C5C6C] hover:text-[#0a4a58] flex-shrink-0"
                     title={!doc.url ? 'Ouvrir / Signer' : 'Ouvrir le document'}>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                  </a>
+                  </LienDocument>
                 )}
               </div>
             );
@@ -1293,14 +1294,14 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
   return (
     <div className="space-y-3 mt-4">
       {attestations.map(a => (
-        <a key={a.id} href={a.pdf_url} target="_blank" rel="noopener noreferrer"
+        <LienDocument key={a.id} href={a.pdf_url} target="_blank" rel="noopener noreferrer"
           className="flex items-center justify-between rounded-2xl border border-[#6E9E57]/30 bg-[#EEF5EA] p-3">
           <div>
             <p className="text-sm font-bold text-gray-800">🎓 Attestation de fin de programme</p>
             <p className="text-xs text-gray-500">Émise le {new Date(a.emise_le).toLocaleDateString('fr-FR')}</p>
           </div>
           <span className="text-xs font-semibold text-[#4A7A32]">Ouvrir →</span>
-        </a>
+        </LienDocument>
       ))}
       {forfaits.map(f => {
         const actif = f.statut === 'actif';
@@ -3691,16 +3692,16 @@ function AnimalFichePageInner() {
               {animal.cession_prix && <p className="text-xs text-blue-600">Prix : {animal.cession_prix} €</p>}
               <div className="flex gap-2 mt-2 flex-wrap">
                 {animal.cession_certificat_url && (
-                  <a href={animal.cession_certificat_url} target="_blank" rel="noopener"
+                  <LienDocument href={animal.cession_certificat_url} target="_blank" rel="noopener"
                     className="text-xs font-semibold text-blue-700 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors">
                     📜 Certificat de cession
-                  </a>
+                  </LienDocument>
                 )}
                 {animal.cession_contrat_url && (
-                  <a href={animal.cession_contrat_url} target="_blank" rel="noopener"
+                  <LienDocument href={animal.cession_contrat_url} target="_blank" rel="noopener"
                     className="text-xs font-semibold text-blue-700 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors">
                     🤝 Contrat de vente
-                  </a>
+                  </LienDocument>
                 )}
                 {animal.uid_acquereur && (
                   <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-lg">
@@ -4319,8 +4320,8 @@ function AnimalFichePageInner() {
                         <p className="text-xs text-gray-400">{DOC_TYPES.find(t => t.value === doc.categorie)?.label}</p>
                       )}
                     </div>
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-[#0C5C6C] hover:underline mr-2">Voir</a>
+                    <LienDocument href={doc.url} target="_blank" rel="noopener noreferrer"
+                      className="text-xs text-[#0C5C6C] hover:underline mr-2">Voir</LienDocument>
                     <button onClick={() => deleteDocument(i)} className="text-red-300 hover:text-red-500 text-lg">×</button>
                   </div>
                 ))}

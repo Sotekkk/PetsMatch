@@ -22,6 +22,24 @@ Future<String> uploadPhoto(
   return _upload(bytes, storagePath);
 }
 
+/// Comme [uploadPhoto], mais dans le stockage PRIVÉ `documents` (KBIS,
+/// ACACED…) : s'ouvre ensuite via lienDocument / ImagePrivee.
+Future<String> uploadPhotoPrive(File file, String storagePath, {int maxDim = 1600, int quality = 85}) async {
+  final result = await FlutterImageCompress.compressWithFile(
+    file.absolute.path,
+    minWidth: maxDim, minHeight: maxDim,
+    quality: quality, keepExif: false,
+  );
+  final bytes = result ?? await file.readAsBytes();
+  final supa = Supabase.instance.client;
+  await supa.storage.from('documents').uploadBinary(
+    storagePath, bytes,
+    fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+  );
+  final url = supa.storage.from('documents').getPublicUrl(storagePath);
+  return '$url?v=${DateTime.now().millisecondsSinceEpoch}';
+}
+
 /// Upload already-encoded [bytes] to Supabase Storage at [storagePath].
 /// Returns the public URL.
 Future<String> uploadPhotoBytes(

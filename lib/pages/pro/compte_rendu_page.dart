@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
@@ -609,8 +610,7 @@ class _CrCard extends StatelessWidget {
           const SizedBox(height: 6),
           GestureDetector(
             onTap: () async {
-              final uri = Uri.tryParse(docUrl);
-              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              await ouvrirDocument(context, docUrl);
             },
             child: Row(children: [
               Icon(Icons.attach_file, size: 13, color: color),
@@ -661,8 +661,7 @@ class _OrdoCard extends StatelessWidget {
           const SizedBox(height: 6),
           GestureDetector(
             onTap: () async {
-              final uri = Uri.tryParse(docUrl);
-              if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+              await ouvrirDocument(context, docUrl);
             },
             child: Row(children: [
               Icon(Icons.description_outlined, size: 14, color: color),

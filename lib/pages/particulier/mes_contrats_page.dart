@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
@@ -345,7 +346,7 @@ class _DocCard extends StatelessWidget {
               if (isSigned && pdfSigneUrl != null) ...[
                 const SizedBox(width: 8),
                 OutlinedButton(
-                  onPressed: () => launchUrl(Uri.parse(pdfSigneUrl), mode: LaunchMode.externalApplication),
+                  onPressed: () => ouvrirDocument(context, pdfSigneUrl),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _green, side: const BorderSide(color: _green),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

@@ -18,6 +18,7 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { fromPostalCode } from '@/lib/french-geo';
 import { geocodeAddress } from '@/lib/geocoding';
 
+import LienDocument from '@/components/LienDocument';
 // ── Species config ────────────────────────────────────────────────────────────
 
 const ESPECES_CONFIG = [
@@ -425,9 +426,9 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
       if (siretDocFile) {
         const ext = siretDocFile.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_kbis.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, siretDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           payload.kbis_url = pub.publicUrl;
           setSiretDocUrl(pub.publicUrl);
         }
@@ -435,9 +436,9 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
       if (acacedDocFile) {
         const ext = acacedDocFile.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_acaced.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           payload.acaced_doc_url = pub.publicUrl;
           setAcacedDocUrl(pub.publicUrl);
         }
@@ -445,9 +446,9 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
       if (statutsDocFile) {
         const ext = statutsDocFile.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_statuts.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, statutsDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, statutsDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           payload.statuts_url = pub.publicUrl;
           setStatutsDocUrl(pub.publicUrl);
         }
@@ -455,9 +456,9 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
       if (arretePrefDocFile) {
         const ext = arretePrefDocFile.name.split('.').pop() ?? 'pdf';
         const path = `documents/${uid}/asso_arrete_prefectoral.${ext}`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, arretePrefDocFile, { upsert: true });
+        const { data: up } = await supabase.storage.from('documents').upload(path, arretePrefDocFile, { upsert: true });
         if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
           payload.arrete_prefectoral_url = pub.publicUrl;
           setArretePrefDocUrl(pub.publicUrl);
         }
@@ -619,7 +620,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
             <div className="mb-3">
               <p className="text-xs font-medium text-gray-500 mb-1">Statuts de l&apos;association</p>
               {statutsDocUrl && !statutsDocFile && (
-                <a href={statutsDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</a>
+                <LienDocument href={statutsDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</LienDocument>
               )}
               {statutsDocFile ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -639,7 +640,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
             <div>
               <p className="text-xs font-medium text-gray-500 mb-1">Arrêté préfectoral</p>
               {arretePrefDocUrl && !arretePrefDocFile && (
-                <a href={arretePrefDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</a>
+                <LienDocument href={arretePrefDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Document actuel</LienDocument>
               )}
               {arretePrefDocFile ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -697,7 +698,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
             <div>
               <p className="text-xs font-medium text-gray-500 mb-1">Certificat ACACED</p>
               {acacedDocUrl && !acacedDocFile && (
-                <a href={acacedDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Certificat actuel</a>
+                <LienDocument href={acacedDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Certificat actuel</LienDocument>
               )}
               {acacedDocFile ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -1277,9 +1278,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
     if (acacedDocFile) {
       const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
       const path = `documents/${uid}/pro_${profileId}_acaced.${ext}`;
-      const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+      const { data: uploaded } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
       if (uploaded) {
-        const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+        const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
         payload.acaced_doc_url = pub.publicUrl;
         setAcacedDocUrl(pub.publicUrl);
       }
@@ -1551,7 +1552,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <div>
               <p className="text-xs font-medium text-gray-500 mb-1">Certificat ACACED</p>
               {acacedDocUrl && !acacedDocFile && (
-                <a href={acacedDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Certificat actuel</a>
+                <LienDocument href={acacedDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Certificat actuel</LienDocument>
               )}
               {acacedDocFile ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -2495,9 +2496,9 @@ export default function ProfilPage() {
         if (siretDocFile) {
           const ext = siretDocFile.name.split('.').pop() ?? 'jpg';
           const path = `documents/${user!.uid}/kbis.${ext}`;
-          const { data: up } = await supabase.storage.from('petsmatch').upload(path, siretDocFile, { upsert: true });
+          const { data: up } = await supabase.storage.from('documents').upload(path, siretDocFile, { upsert: true });
           if (up) {
-            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
             payload.kbis_url = pub.publicUrl;
             setSiretDocUrl(pub.publicUrl);
           }
@@ -2506,9 +2507,9 @@ export default function ProfilPage() {
         if (acacedDocFile) {
           const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
           const path = `documents/${user!.uid}/acaced.${ext}`;
-          const { data: up } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+          const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
           if (up) {
-            const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+            const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
             payload.acaced_doc_url = pub.publicUrl;
             setAcacedDocUrl(pub.publicUrl);
           }

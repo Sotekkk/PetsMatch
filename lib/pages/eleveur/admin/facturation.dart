@@ -1052,11 +1052,12 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     String? pdfUrl;
     try {
       final path = 'factures/$uid/$factureId.pdf';
-      await supa.storage.from('media').uploadBinary(
+      // Stockage privé : la facture s'ouvre via un lien temporaire (lien-document)
+      await supa.storage.from('documents').uploadBinary(
         path, bytes,
         fileOptions: const FileOptions(contentType: 'application/pdf', upsert: true),
       );
-      pdfUrl = supa.storage.from('media').getPublicUrl(path);
+      pdfUrl = supa.storage.from('documents').getPublicUrl(path);
       final hash = sha256.convert(bytes).toString();
       await supa.from('factures').update({
         'pdf_url': pdfUrl,

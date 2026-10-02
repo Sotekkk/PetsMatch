@@ -705,7 +705,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
       String? acacedDocUrl = _acacedDocUrl;
       if (_acacedDocFile != null) {
-        acacedDocUrl = await uploadPhoto(_acacedDocFile!, acacedPath);
+        acacedDocUrl = await uploadPhotoPrive(_acacedDocFile!, acacedPath);
       }
 
       // photos_galerie : liste de {url, legende} (jsonb).

@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
+import LienDocument from '@/components/LienDocument';
 interface DocRow {
   id: string;
   type: string;
@@ -171,10 +172,10 @@ export default function MesContratsPage() {
                   )}
                   {/* PREP07 — Télécharger PDF signé */}
                   {doc.statut === 'signe' && doc.pdf_signe_url && (
-                    <a href={doc.pdf_signe_url} download target="_blank" rel="noopener noreferrer"
+                    <LienDocument href={doc.pdf_signe_url} download target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1 border border-green-300 text-green-600 text-sm font-medium px-3 py-2.5 rounded-xl hover:bg-green-50">
                       📥
-                    </a>
+                    </LienDocument>
                   )}
                   {doc.statut === 'signe' && !doc.pdf_signe_url && signingUrl && (
                     <a href={signingUrl} target="_blank" rel="noopener noreferrer"
