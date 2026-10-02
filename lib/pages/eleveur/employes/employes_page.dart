@@ -1044,6 +1044,11 @@ class _PermSwitch extends StatelessWidget {
     subtitle: Text(subtitle, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
     value: value,
     activeColor: teal,
+    // Désactivé : gris franc + contour (sinon blanc sur fond blanc)
+    inactiveThumbColor: Colors.grey.shade600,
+    inactiveTrackColor: Colors.grey.shade300,
+    trackOutlineColor: WidgetStateProperty.resolveWith(
+        (s) => s.contains(WidgetState.selected) ? teal : Colors.grey.shade500),
     onChanged: onChanged,
     contentPadding: EdgeInsets.zero,
   );
