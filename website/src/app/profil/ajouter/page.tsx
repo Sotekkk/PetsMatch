@@ -713,6 +713,8 @@ function AssociationForm({ uid, onBack, onSaved }: {
   async function handleSave() {
     const errs: string[] = [];
     if (!nomAsso.trim())        errs.push("Nom de l'association");
+    // RNA obligatoire (Répertoire National des Associations : W + 9 chiffres) — miroir de l'appli.
+    if (!/^W\d{9}$/.test(rna.replace(/\s/g, '').toUpperCase())) errs.push('N° RNA (W suivi de 9 chiffres)');
     if (!nomResponsable.trim()) errs.push('Nom du responsable');
     if (!siret.trim())          errs.push('SIRET / SIREN');
     if (!siretDocFile)          errs.push('Justificatif SIRET');
@@ -732,7 +734,7 @@ function AssociationForm({ uid, onBack, onSaved }: {
         profile_label:     nomAsso.trim(),
         name_elevage:      nomAsso.trim(),
         profession_pro:    nomResponsable.trim(),
-        ordre_veterinaire: rna.trim() || null,
+        ordre_veterinaire: rna.replace(/\s/g, '').toUpperCase() || null,
         siret:             siret.trim(),
         certifications:    [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate }],
         phone:             phone.trim() || null,
@@ -848,7 +850,7 @@ function AssociationForm({ uid, onBack, onSaved }: {
             )}
           </div>
 
-          <AssocField label="Numéro RNA" hint="Répertoire National des Associations — format W123456789">
+          <AssocField label="Numéro RNA" required hint="Répertoire National des Associations — format W123456789">
             <input value={rna} onChange={e => setRna(e.target.value)}
               className="w-full input-field" placeholder="W123456789" />
           </AssocField>

@@ -304,6 +304,7 @@ class _RegisterAssociationInformationPageState
   int _capacite = 0;
   final List<String> _especes = [];
   bool _nomAssoOk = true;
+  bool _rnaOk = true;
 
   File? _logoFile;
   bool _isImagePickerActive = false;
@@ -336,8 +337,14 @@ class _RegisterAssociationInformationPageState
   }
 
   void _continue() {
-    setState(() => _nomAssoOk = _nomAssoCtrl.text.trim().isNotEmpty);
-    if (!_nomAssoOk) return;
+    // RNA obligatoire (Répertoire National des Associations : W + 9 chiffres).
+    final rna = _rnaCtrl.text.replaceAll(' ', '').toUpperCase();
+    setState(() {
+      _nomAssoOk = _nomAssoCtrl.text.trim().isNotEmpty;
+      _rnaOk = RegExp(r'^W\d{9}$').hasMatch(rna);
+    });
+    if (!_nomAssoOk || !_rnaOk) return;
+    _rnaCtrl.text = rna;
 
     User_Info.nameElevage          = _nomAssoCtrl.text.trim();
     User_Info.rna                  = _rnaCtrl.text.trim();
@@ -437,8 +444,9 @@ class _RegisterAssociationInformationPageState
             _field(ctrl: _nomAssoCtrl, label: "Nom de l'association",
                 icon: Icons.handshake_outlined, valid: _nomAssoOk, error: 'Nom requis'),
             const SizedBox(height: 12),
-            _field(ctrl: _rnaCtrl, label: 'N° RNA (ex: W123456789)',
-                icon: Icons.numbers_outlined),
+            _field(ctrl: _rnaCtrl, label: 'N° RNA * (ex : W123456789)',
+                icon: Icons.numbers_outlined, valid: _rnaOk,
+                error: 'N° RNA requis : W suivi de 9 chiffres'),
             const SizedBox(height: 12),
             _field(ctrl: _agrementCtrl, label: 'Agrément préfectoral (optionnel)',
                 icon: Icons.verified_outlined),
