@@ -32,6 +32,7 @@ interface Animal {
   uid_eleveur?: string;
   is_association?: boolean | null;
   _viaMouvement?: boolean;
+  _viaProfil?: boolean;
 }
 
 interface Mouvement {
@@ -45,6 +46,7 @@ interface Mouvement {
   destinataire_nom?: string | null;
   destinataire_adresse?: string | null;
   cause_mort?: string | null;
+  eleveur_profile_id?: string | null;
 }
 
 // Retraduit un animal du point de vue de MOI (uid) à partir de mes propres
@@ -64,7 +66,9 @@ function resolveForViewer(doc: Animal, mouvements: Mouvement[], myUid: string): 
   }
 
   const last = mine[mine.length - 1];
-  const resolved: Animal = { ...doc, _viaMouvement: true };
+  // _viaProfil : mouvement rattaché explicitement au profil actif (sinon,
+  // ancien mouvement sans profil → départage par is_association).
+  const resolved: Animal = { ...doc, _viaMouvement: true, _viaProfil: mine.some(m => !!m.eleveur_profile_id) };
   if (last.type === 'entree') {
     resolved.statut = 'present';
     resolved.date_entree = last.date_mouvement;
@@ -121,7 +125,7 @@ function fmtDate(s?: string) {
 }
 
 export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAssociation?: boolean }) {
-  const { user, loading } = useAuth();
+  const { user, loading, activeProfileId } = useAuth();
   const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -169,10 +173,13 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         supabase.from('animaux').select(cols).eq('uid_eleveur', user.uid).or(assoCond).order('date_entree', { ascending: false }),
         supabase.from('animaux').select(cols).eq('uid_acquereur', user.uid).neq('uid_eleveur', user.uid),
         supabase.from('registre_mouvements')
-          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort')
+          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, eleveur_profile_id')
           .eq('uid_eleveur', user.uid),
       ]);
-      const mouvements = (mvtsRes.data ?? []) as unknown as Mouvement[];
+      // Multi-profil : un même compte (élevage + association) partage l'uid —
+      // ne garder que les mouvements du profil actif (miroir de l'appli).
+      const mouvements = ((mvtsRes.data ?? []) as unknown as Mouvement[])
+        .filter(m => !m.eleveur_profile_id || !activeProfileId || m.eleveur_profile_id === activeProfileId);
       const seen = new Set<string>();
       const merged: Animal[] = [...(r1.data ?? []), ...(r2.data ?? [])].filter((a) => {
         if (seen.has((a as Animal).id)) return false;
@@ -201,14 +208,14 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         // Isolation multi-profil : filtre is_association pour ne pas mélanger
         // — sauf pour les animaux résolus via un mouvement, déjà scopés à moi
         // donc pertinents quel que soit le nav d'origine.
-        .filter(a => a._viaMouvement || (isAssociation ? a.is_association === true : !a.is_association));
+        .filter(a => a._viaProfil || (isAssociation ? a.is_association === true : !a.is_association));
       setAnimaux(resolved);
     } catch { /* ignore */ } finally {
       setFetching(false);
     }
   }
 
-  useEffect(() => { loadData(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData(); }, [user, activeProfileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
@@ -419,6 +426,7 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
   animal: Animal; uid: string;
   onClose: () => void; onSaved: (a: Animal) => void;
 }) {
+  const { activeProfileId } = useAuth();
   const [statut, setStatut] = useState(animal.statut ?? 'present');
   const [dateEntree, setDateEntree] = useState(animal.date_entree?.substring(0, 10) ?? '');
   const [provQualite, setProvQualite] = useState(animal.provenance_qualite ?? '');
@@ -479,6 +487,7 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
           await supabase.from('registre_mouvements').insert({
             animal_id: animal.id, uid_eleveur: ownerUid, type: 'sortie', date_mouvement: dateMvt,
             motif: statut === 'decede' ? 'autre' : 'cession',
+            ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
             ...(destQualite ? { destinataire_qualite: destQualite } : {}),
             ...(destNom ? { destinataire_nom: destNom } : {}),
             ...(destAdresse ? { destinataire_adresse: destAdresse } : {}),

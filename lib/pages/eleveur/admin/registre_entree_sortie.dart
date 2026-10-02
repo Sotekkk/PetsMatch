@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
@@ -78,9 +79,17 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
     try {
       final mvts = await _supa
           .from('registre_mouvements')
-          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort')
+          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, eleveur_profile_id')
           .eq('uid_eleveur', uid);
-      final mouvements = List<Map<String, dynamic>>.from(mvts);
+      // Multi-profil : un même compte (élevage + association) partage
+      // l'uid — ne garder que les mouvements du profil actif. Les anciens
+      // mouvements sans profil restent, départagés plus bas par
+      // animaux.is_association.
+      final actif = User_Info.activeProfileId;
+      final mouvements = List<Map<String, dynamic>>.from(mvts).where((m) {
+        final pid = m['eleveur_profile_id'];
+        return pid == null || actif.isEmpty || pid == actif;
+      }).toList();
       if (mounted) setState(() => _mouvements = mouvements);
       final animalIds = mouvements.map((m) => m['animal_id'] as String).toSet().toList();
       if (animalIds.isEmpty) return;
@@ -110,7 +119,11 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
     }
 
     final last = mine.last;
-    final resolved = Map<String, dynamic>.from(doc)..['_via_mouvement'] = true;
+    final resolved = Map<String, dynamic>.from(doc)
+      ..['_via_mouvement'] = true
+      // Mouvement rattaché explicitement au profil actif (sinon : ancien
+      // mouvement sans profil → départage par is_association).
+      ..['_via_profil'] = mine.any((m) => m['eleveur_profile_id'] != null);
     if (last['type'] == 'entree') {
       resolved['statut']               = 'present';
       resolved['date_entree']          = last['date_mouvement'];
@@ -449,7 +462,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
         // (uid_eleveur du mouvement) donc pertinents quel que soit le nav
         // d'origine.
         allDocs = allDocs.where((d) {
-          if (d['_via_mouvement'] == true) return true;
+          if (d['_via_profil'] == true) return true;
           final flag = d['is_association'];
           return widget.isAssociation
               ? flag == true
@@ -887,6 +900,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
               'type':                 'sortie',
               'date_mouvement':       dateMvt,
               'motif':                _statut == 'decede' ? 'autre' : 'cession',
+              if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
               if (_destinataireQualite.isNotEmpty) 'destinataire_qualite': _destinataireQualite,
               if (_destinataireNomCtrl.text.trim().isNotEmpty) 'destinataire_nom': _destinataireNomCtrl.text.trim(),
               if (_destinataireAdresseCtrl.text.trim().isNotEmpty) 'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),

@@ -1557,6 +1557,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               'type':                 'sortie',
               'date_mouvement':       dateMvt,
               'motif':                _statut == 'decede' ? 'autre' : 'cession',
+              if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
               if (_destinataireQualite.isNotEmpty) 'destinataire_qualite': _destinataireQualite,
               if (_destinataireNomCtrl.text.trim().isNotEmpty) 'destinataire_nom': _destinataireNomCtrl.text.trim(),
               if (_destinataireAdresseCtrl.text.trim().isNotEmpty) 'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),

@@ -79,8 +79,14 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
       PlanService.countActiveAnnonces(ownerUid),
     ]);
     if (!mounted) return;
-    final planCode = results[0] as String;
-    final config = await PlanService.getConfig(planCode);
+    // Associations : annonces illimitées (le plan du compte est celui de
+    // l'élevage quand un même compte a les deux profils → « limite atteinte »
+    // affichée à tort côté association).
+    final planCode = widget.isAssociation ? 'association' : results[0] as String;
+    final config = widget.isAssociation
+        ? const PlanConfig(code: 'association', label: 'Association', maxAnnonces: -1,
+            dureeDays: 30, hasRegistres: true, badge: '❤️')
+        : await PlanService.getConfig(planCode);
     if (!mounted) return;
     setState(() {
       _planCode    = planCode;
