@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/age_minimum.dart';
 import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/main.dart';
@@ -65,7 +66,14 @@ class _RegisterAssociationFirstInfoPageState
 
     User_Info.firstname   = _prenomCtrl.text.trim();
     User_Info.lastname    = _nomCtrl.text.trim();
-    User_Info.dateofbirth = _dobCtrl.text.isNotEmpty ? _dobCtrl.text : '01/01/1900';
+    // Âge minimum (CGU : 18 ans révolus) — date de naissance obligatoire.
+    final erreurAge = erreurAgeInscription(_dobCtrl.text);
+    if (erreurAge != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(erreurAge, style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
+      return;
+    }
+    User_Info.dateofbirth = _dobCtrl.text.trim();
 
     // Photo retenue : déposée après la création du compte (PhotosInscription).
     PhotosInscription.photo = _imageFile;

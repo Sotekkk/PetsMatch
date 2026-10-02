@@ -10,6 +10,22 @@ import { supabase } from '@/lib/supabase';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 import { ecrireLigne } from '@/lib/ecriture-sure';
+
+// Âge minimum pour créer un compte (CGU : personne physique majeure, 18 ans
+// révolus — cessions / ventes d'animaux, contrats, paiements). Miroir de
+// lib/utils/age_minimum.dart (appli).
+const AGE_MINIMUM = 18;
+function erreurAgeInscription(dateIso: string): string | null {
+  if (!dateIso) return 'Indiquez votre date de naissance.';
+  const n = new Date(`${dateIso}T00:00:00`);
+  if (Number.isNaN(n.getTime())) return 'Date de naissance invalide.';
+  const now = new Date();
+  let age = now.getFullYear() - n.getFullYear();
+  if (now.getMonth() < n.getMonth() || (now.getMonth() === n.getMonth() && now.getDate() < n.getDate())) age--;
+  if (age < AGE_MINIMUM) return `Vous devez avoir au moins ${AGE_MINIMUM} ans pour créer un compte PetsMatch.`;
+  if (age > 120) return 'Date de naissance invalide.';
+  return null;
+}
 const MAPS_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '';
 
 type Role = 'particulier' | 'eleveur' | 'pro';
@@ -218,6 +234,9 @@ export default function InscriptionPage() {
       setError('Veuillez renseigner votre prénom et nom.');
       return;
     }
+    // Âge minimum (CGU : 18 ans révolus) — date de naissance obligatoire.
+    const erreurAge = erreurAgeInscription(dateOfBirth);
+    if (erreurAge) { setError(erreurAge); return; }
     setError('');
     setStep(isEleveurOrPro ? 'docs' : 'account');
   }
@@ -536,8 +555,8 @@ export default function InscriptionPage() {
                   </div>
                 </div>
                 <div>
-                  <label className={labelCls}>Date de naissance</label>
-                  <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className={inputCls} />
+                  <label className={labelCls}>Date de naissance * <span className="text-gray-400 font-normal">(18 ans minimum)</span></label>
+                  <input type="date" value={dateOfBirth} max={new Date(Date.now() - 18 * 365.25 * 864e5).toISOString().slice(0, 10)} onChange={(e) => setDateOfBirth(e.target.value)} className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Téléphone</label>

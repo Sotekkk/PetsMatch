@@ -88,7 +88,7 @@ class _ConditionGeneralState extends State<ConditionGeneral>
 3.Accès à l'application
   3.1. Conditions d'accès
     - L'accès à certaines fonctionnalités de l'application nécessite la création d'un compte utilisateur.
-    - L'utilisation de l'application est interdite aux mineurs de moins de 18 ans sans consentement parental explicite.
+    - L'utilisation de l'application est réservée aux personnes physiques majeures (18 ans révolus) et aux personnes morales. La date de naissance est demandée à l'inscription.
     - Les utilisateurs doivent fournir des informations exactes lors de leur inscription et sont responsables de la sécurité de leurs identifiants de connexion.
   3.2. Services disponibles
     L'application propose des services de mise en relation entre particuliers, éleveurs et professionnels pour :
@@ -159,8 +159,8 @@ Droits d'Accès
 
 3. Accès des Mineurs
 
-   - Restrictions d'âge: L'utilisation de notre application est interdite aux personnes de moins de [âge minimum] sans le consentement explicite d'un parent ou d'un tuteur.
-   - Vérification du consentement: Nous pouvons demander des preuves du consentement parental pour les utilisateurs mineurs.
+   - Restrictions d'âge : l'utilisation de l'application est interdite aux personnes de moins de 18 ans. PetsMatch permet notamment la cession et la vente d'animaux, la signature de contrats et des paiements, réservés aux personnes majeures.
+   - Vérification : PetsMatch peut demander tout justificatif d'âge et suspendre un compte ouvert par une personne mineure.
 
 4. Accès au Contenu Utilisateur
 
@@ -409,7 +409,7 @@ I. Acceptation des conditions
   L'utilisation de PetsMatch implique l'acceptation pleine et entière de ces conditions. Si vous n'acceptez pas ces termes, veuillez ne pas utiliser l'application.
 
 II. Compte utilisateur
-    - Vous devez être âgé de 18 ans ou plus pour utiliser PetsMatch.
+    - Vous devez être âgé de 18 ans révolus pour utiliser PetsMatch.
     - Vous êtes responsable de l'exactitude des informations fournies lors de votre inscription.
     - Toute usurpation d'identité, contenu frauduleux ou non conforme pourra entraîner une suspension
       immédiate de votre compte.
