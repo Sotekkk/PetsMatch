@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -612,7 +613,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     setState(() => _sending = true);
     try {
       final path = 'chat_images/${_myUid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final url = await storage.uploadPhoto(File(file.path), path, quality: 70);
+      final url = await storage.uploadPhotoPrive(File(file.path), path, quality: 70);
       await _send(imageUrl: url);
     } catch (_) {
       if (mounted) setState(() => _sending = false);
@@ -815,10 +816,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
                   child: imageUrl.isNotEmpty
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(14),
-                          child: CachedNetworkImage(
-                            imageUrl: imageUrl,
-                            width: 200, height: 200, fit: BoxFit.cover,
-                          ),
+                          child: ImagePrivee(imageUrl, width: 200, height: 200, fit: BoxFit.cover),
                         )
                       : isLocation
                           ? LocationCard(

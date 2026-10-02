@@ -90,7 +90,7 @@ Future<void> showVisiteRapportSheet(BuildContext context, Map<String, dynamic> r
       String? photoUrl;
       if (photoFile != null) {
         final path = 'visite_rapports/${uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        photoUrl = await storage.uploadPhoto(photoFile!, path, quality: 75);
+        photoUrl = await storage.uploadPhotoPrive(photoFile!, path, quality: 75);
       }
       await supa.from('pension_updates').insert({
         'animal_id': rdv['animal_id'],

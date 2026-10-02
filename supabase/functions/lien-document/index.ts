@@ -45,7 +45,7 @@ const REFERENCES: [string, string[]][] = [
   ['tests_genetiques', ['url']],
   ['messages', ['image_url']],
   ['promenades_messages', ['image_url']],
-  ['pension_updates', ['photo_url']],
+  ['pension_updates', ['photo_url', 'video_url']],
   ['user_profiles_complet', ['kbis_url', 'acaced_doc_url', 'diplome_url', 'statuts_url', 'arrete_prefectoral_url']],
   ['users_complet', ['kbis_url', 'acaced_doc_url', 'document_elevage']],
 ];

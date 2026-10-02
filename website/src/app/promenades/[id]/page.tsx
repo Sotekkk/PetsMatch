@@ -9,6 +9,8 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+import LienDocument from '@/components/LienDocument';
+import ImagePrivee from '@/components/ImagePrivee';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Promenade {
@@ -581,10 +583,11 @@ export default function PromenadeDetailPage() {
     setUploadingPhoto(true);
     try {
       const ext = file.name.split('.').pop() ?? 'jpg';
-      const path = `${id}/${Date.now()}_${user.uid}.${ext}`;
-      const { error } = await supabase.storage.from('promenades-photos').upload(path, file);
+      // Stockage privé (membres de la promenade) : affichage via lien temporaire
+      const path = `promenades/${id}/${Date.now()}_${user.uid}.${ext}`;
+      const { error } = await supabase.storage.from('documents').upload(path, file);
       if (error) throw error;
-      const { data: pub } = supabase.storage.from('promenades-photos').getPublicUrl(path);
+      const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
       const pid = activeProfileId || null;
       await supabase.from('promenades_messages').insert({
         promenade_id: id,
@@ -901,10 +904,10 @@ export default function PromenadeDetailPage() {
                           <span className="text-[11px] font-bold text-[#2E7D5E] mb-0.5">{nom}</span>
                         )}
                         {m.image_url && (
-                          <a href={m.image_url} target="_blank" rel="noopener noreferrer" className="mb-1">
-                            <Image src={m.image_url} alt="photo" width={180} height={180}
-                              className="rounded-xl object-cover max-w-[180px]" unoptimized />
-                          </a>
+                          <LienDocument href={m.image_url} target="_blank" rel="noopener noreferrer" className="mb-1">
+                            <ImagePrivee src={m.image_url} alt="photo" width={180} height={180}
+                              className="rounded-xl object-cover max-w-[180px] w-[180px] h-[180px]" />
+                          </LienDocument>
                         )}
                         {m.message && (
                           <div className={`px-3 py-2 rounded-2xl text-[13px] max-w-[80%] break-words ${

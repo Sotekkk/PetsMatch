@@ -9,6 +9,8 @@ import { useActiveProfile, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from 
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
+import LienDocument from '@/components/LienDocument';
+import ImagePrivee from '@/components/ImagePrivee';
 type ConvCategorie = 'animaux-perdus' | 'annonces' | 'communaute' | 'contact-elevage' | 'service-professionnel' | '__archived__' | null;
 
 const CAT_CONFIG: { key: ConvCategorie; label: string; emoji: string; bg: string; text: string }[] = [
@@ -891,9 +893,9 @@ function MessagesPageInner() {
                           style={isMe ? { background: theme.sentColor, color: theme.sentText } : {}}>
                           {/* Image */}
                           {msg.image_url && (
-                            <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
-                              <Image src={msg.image_url} alt="photo" width={200} height={200} className="rounded-xl object-cover" unoptimized />
-                            </a>
+                            <LienDocument href={msg.image_url} target="_blank" rel="noopener noreferrer">
+                              <ImagePrivee src={msg.image_url} alt="photo" width={200} height={200} className="rounded-xl object-cover w-[200px] h-[200px]" />
+                            </LienDocument>
                           )}
                           {/* Location */}
                           {isLocation && msg.lat != null && msg.lng != null && (

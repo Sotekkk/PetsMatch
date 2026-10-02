@@ -8090,10 +8090,9 @@ class _PensionTabPState extends State<_PensionTabP> {
       clipBehavior: Clip.antiAlias,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (photo != null)
-          CachedNetworkImage(
-            imageUrl: photo, width: double.infinity, height: 200, fit: BoxFit.cover,
-            placeholder: (_, __) => Container(height: 200, color: const Color(0xFFEFEFEF)),
-            errorWidget: (_, __, ___) => Container(height: 200, color: const Color(0xFFEFEFEF),
+          ImagePrivee(
+            photo, width: double.infinity, height: 200, fit: BoxFit.cover,
+            enErreur: (_) => Container(height: 200, color: const Color(0xFFEFEFEF),
                 child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
           )
         else if (video != null)

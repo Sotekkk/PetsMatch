@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -110,12 +111,12 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
       String? videoUrl;
       if (_photoFile != null) {
         final path = 'pension_updates/${uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        photoUrl = await storage.uploadPhoto(_photoFile!, path, quality: 75);
+        photoUrl = await storage.uploadPhotoPrive(_photoFile!, path, quality: 75);
       }
       if (_videoFile != null) {
         final ext = _videoFile!.path.split('.').last.toLowerCase();
         final path = 'pension_updates/${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-        videoUrl = await storage.uploadRawFile(_videoFile!, path);
+        videoUrl = await storage.uploadDocument(_videoFile!, path);
       }
       await _supa.from('pension_updates').insert({
         'pension_entree_id': widget.pensionEntreeId,
@@ -285,12 +286,12 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                             if (u['photo_url'] != null)
                               ClipRRect(
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                child: Image.network(u['photo_url'] as String, width: double.infinity, height: 220, fit: BoxFit.cover),
+                                child: ImagePrivee(u['photo_url'] as String, width: double.infinity, height: 220, fit: BoxFit.cover),
                               )
                             else if (u['video_url'] != null)
                               ClipRRect(
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                child: InlineVideo(url: u['video_url'] as String),
+                                child: LienPriveBuilder(url: u['video_url'] as String, builder: (_, lien) => InlineVideo(url: lien)),
                               ),
                             Padding(
                               padding: const EdgeInsets.all(14),

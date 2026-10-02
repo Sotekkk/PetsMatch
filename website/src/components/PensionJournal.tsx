@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
+import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 Mo
 
 interface Update {
@@ -62,18 +63,19 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
       let videoUrl: string | null = null;
       if (photoFile) {
         const path = `pension_updates/${proUid}_${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage.from('media').upload(path, photoFile, { upsert: true });
+        // Stockage privé : affichage via lien temporaire (lien-document)
+        const { error: upErr } = await supabase.storage.from('documents').upload(path, photoFile, { upsert: true });
         if (!upErr) {
-          photoUrl = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+          photoUrl = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
         }
       }
       if (videoFile) {
         const ext = videoFile.name.split('.').pop()?.toLowerCase() || 'mp4';
         const path = `pension_updates/${proUid}_${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from('media')
+        const { error: upErr } = await supabase.storage.from('documents')
           .upload(path, videoFile, { upsert: true, contentType: videoFile.type || 'video/mp4' });
         if (!upErr) {
-          videoUrl = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+          videoUrl = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
         } else {
           setError(`Échec de l'envoi de la vidéo : ${upErr.message}`);
         }
@@ -179,9 +181,9 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
                 <div key={u.id} className="rounded-xl border border-gray-100 overflow-hidden shadow-sm">
                   {u.photo_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={u.photo_url} alt="" className="w-full h-48 object-cover" />
+                    <ImagePrivee src={u.photo_url} alt="" className="w-full h-48 object-cover" />
                   ) : u.video_url && (
-                    <video src={u.video_url} controls className="w-full h-48 object-cover bg-black" />
+                    <VideoPrivee src={u.video_url} controls className="w-full h-48 object-cover bg-black" />
                   )}
                   <div className="p-3">
                     {u.note && <p className="text-sm font-galey text-gray-800 mb-1">{u.note}</p>}

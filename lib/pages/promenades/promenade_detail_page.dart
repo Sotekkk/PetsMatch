@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'dart:io';
 import 'dart:ui';
 
@@ -521,9 +522,10 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     try {
       final file = File(xfile.path);
       final ext  = xfile.path.split('.').last;
-      final path = '${widget.promenadeId}/${DateTime.now().millisecondsSinceEpoch}_$_uid.$ext';
-      await _supa.storage.from('promenades-photos').upload(path, file);
-      final imageUrl = _supa.storage.from('promenades-photos').getPublicUrl(path);
+      // Stockage privé (membres de la promenade) : affichage via lien temporaire
+      final path = 'promenades/${widget.promenadeId}/${DateTime.now().millisecondsSinceEpoch}_$_uid.$ext';
+      await _supa.storage.from('documents').upload(path, file);
+      final imageUrl = _supa.storage.from('documents').getPublicUrl(path);
       final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       await _supa.from('promenades_messages').insert({
         'promenade_id': widget.promenadeId,
@@ -1254,10 +1256,8 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                                               if (m['image_url'] != null)
                                                 ClipRRect(
                                                   borderRadius: BorderRadius.circular(8),
-                                                  child: CachedNetworkImage(
-                                                    imageUrl: m['image_url'].toString(),
-                                                    width: 180, fit: BoxFit.cover,
-                                                  ),
+                                                  child: ImagePrivee(m['image_url'].toString(),
+                                                    width: 180, fit: BoxFit.cover),
                                                 ),
                                               if (m['message'] != null)
                                                 Text(m['message']?.toString() ?? '',

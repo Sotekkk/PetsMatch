@@ -78,3 +78,26 @@ class ImagePrivee extends StatelessWidget {
     );
   }
 }
+
+/// Construit [builder] avec le lien utilisable de [url] (temporaire si
+/// privé) — pour les lecteurs vidéo, visionneuses, etc.
+class LienPriveBuilder extends StatelessWidget {
+  final String url;
+  final String? lienSecret;
+  final Widget Function(BuildContext context, String lien) builder;
+
+  const LienPriveBuilder({super.key, required this.url, required this.builder, this.lienSecret});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!estDocumentPrive(url)) return builder(context, url);
+    return FutureBuilder<String>(
+      future: lienDocument(url, lienSecret: lienSecret),
+      builder: (c, snap) {
+        if (snap.hasError) return const Center(child: Icon(Icons.lock_outline));
+        if (!snap.hasData) return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+        return builder(c, snap.data!);
+      },
+    );
+  }
+}

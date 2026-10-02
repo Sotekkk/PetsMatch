@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:PetsMatch/utils/document_prive.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:PetsMatch/main.dart';
@@ -800,7 +801,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     setState(() => _sending = true);
     try {
       final path = 'chat_images/${_uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final url  = await storage.uploadPhoto(File(file.path), path, quality: 70);
+      final url  = await storage.uploadPhotoPrive(File(file.path), path, quality: 70);
       await _sendMessage('', imageUrl: url);
     } catch (_) {
       if (mounted) setState(() => _sending = false);
@@ -834,7 +835,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               setState(() => _sending = true);
               try {
                 final path = 'chat_images/${_uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                final url  = await storage.uploadPhoto(_imageFile!, path, quality: 70);
+                final url  = await storage.uploadPhotoPrive(_imageFile!, path, quality: 70);
                 await _sendMessage('', imageUrl: url);
               } catch (_) {
                 if (mounted) setState(() => _sending = false);
@@ -976,7 +977,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     showDialog(context: context, builder: (_) => Dialog(
       backgroundColor: Colors.black, insetPadding: EdgeInsets.zero,
       child: Stack(fit: StackFit.loose, children: [
-        Positioned.fill(child: InteractiveViewer(child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain))),
+        Positioned.fill(child: InteractiveViewer(child: ImagePrivee(url, fit: BoxFit.contain))),
         Positioned(top: 12, right: 12, child: IconButton(
           icon: const Icon(Icons.close, color: Colors.white),
           onPressed: () => Navigator.pop(context),
@@ -1483,10 +1484,7 @@ class _MessageBubble extends StatelessWidget {
                             onTap: () => onImageTap(imageUrl),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(18),
-                              child: CachedNetworkImage(imageUrl: imageUrl, width: 200, height: 200, fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(width: 200, height: 200,
-                                    color: Colors.grey.shade200, child: const Center(child: CircularProgressIndicator(strokeWidth: 2))),
-                              ),
+                              child: ImagePrivee(imageUrl, width: 200, height: 200, fit: BoxFit.cover),
                             ),
                           ),
                         if (isLocation)

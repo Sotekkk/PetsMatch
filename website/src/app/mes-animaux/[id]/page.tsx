@@ -24,6 +24,7 @@ import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/v
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
 import LienDocument from '@/components/LienDocument';
+import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -1564,9 +1565,9 @@ function PensionJournalTab({ animalId, animalNom }: { animalId: string; animalNo
       {updates.map(u => (
         <div key={u.id} className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm">
           {u.photo_url
-            ? <img src={u.photo_url} alt="" className="w-full max-h-72 object-cover" />
+            ? <ImagePrivee src={u.photo_url} alt="" className="w-full max-h-72 object-cover" />
             : u.video_url
-            ? <video src={u.video_url} controls className="w-full max-h-72 bg-black" />
+            ? <VideoPrivee src={u.video_url} controls className="w-full max-h-72 bg-black" />
             : null}
           <div className="p-3">
             {u.note && <p className="text-sm text-gray-800 whitespace-pre-line">{u.note}</p>}
