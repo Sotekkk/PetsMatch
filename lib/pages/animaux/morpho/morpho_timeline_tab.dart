@@ -61,21 +61,16 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
   Future<void> _demanderAcces() async {
     setState(() => _demandeEnCours = true);
     try {
-      String? nom;
-      try {
-        final a = await _supa.from('animaux').select('nom').eq('id', widget.animalId).maybeSingle();
-        nom = a?['nom']?.toString();
-      } catch (_) {}
-      await AccesAnimalService.demander(widget.animalId, animalNom: nom);
+      final statut = await AccesAnimalService.demander(widget.animalId);
       if (mounted) {
-        setState(() => _acces = 'pending');
+        setState(() => _acces = statut == 'envoyee' ? 'pending' : statut);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Demande envoyée au propriétaire', style: TextStyle(fontFamily: 'Galey'))));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Demande impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+            content: Text('Demande impossible : ${e is PostgrestException ? e.message : e}', style: const TextStyle(fontFamily: 'Galey')),
             backgroundColor: Colors.red));
       }
     } finally {
