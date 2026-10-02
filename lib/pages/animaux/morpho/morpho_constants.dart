@@ -31,6 +31,7 @@ const List<(String, String)> kTypesSuivi = [
   ('suivi_veterinaire', 'Suivi vétérinaire'),
   ('suivi_sportif', 'Suivi sportif'),
   ('suivi_post_operatoire', 'Suivi post-opératoire'),
+  ('suivi_reproduction', 'Suivi reproduction'),
   ('prevention', 'Prévention'),
   ('autre', 'Autre'),
 ];

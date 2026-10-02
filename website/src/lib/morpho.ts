@@ -22,6 +22,7 @@ export const TYPES_SUIVI: { key: string; label: string }[] = [
   { key: 'suivi_veterinaire', label: 'Suivi vétérinaire' },
   { key: 'suivi_sportif', label: 'Suivi sportif' },
   { key: 'suivi_post_operatoire', label: 'Suivi post-opératoire' },
+  { key: 'suivi_reproduction', label: 'Suivi reproduction' },
   { key: 'prevention', label: 'Prévention' },
   { key: 'autre', label: 'Autre' },
 ];

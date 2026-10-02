@@ -79,7 +79,7 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: Text('Le suivi morphologique est disponible pour chien et chat pour le moment.',
+          child: Text('Le suivi morphologique est disponible pour le chien, le chat et le cheval pour le moment.',
               textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
         ),
       );

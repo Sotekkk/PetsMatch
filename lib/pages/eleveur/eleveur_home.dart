@@ -220,6 +220,30 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     }
   }
 
+
+  /// Patients du profil pro actif — MÊME calcul que « Mes patients »
+  /// (pro_clients_page.dart) : accès actifs / écriture demandée / écriture
+  /// accordée + animaux des RDV confirmés ou terminés, sans doublon.
+  Future<List<String>> _patientsIds(SupabaseClient supa, String uid, String pid) async {
+    final ids = <String>{};
+    final grants = await supa.from('animal_access').select('animal_id')
+        .eq('pro_profile_id', pid)
+        .inFilter('statut', ['active', 'write_requested', 'active_write']);
+    for (final g in grants as List) {
+      final id = g['animal_id']?.toString();
+      if (id != null) ids.add(id);
+    }
+    final rdvs = await supa.from('rdv').select('animal_id')
+        .eq('pro_uid', uid).eq('pro_profile_id', pid)
+        .inFilter('statut', ['confirme', 'termine'])
+        .not('animal_id', 'is', null);
+    for (final r in rdvs as List) {
+      final id = r['animal_id']?.toString();
+      if (id != null) ids.add(id);
+    }
+    return ids.toList();
+  }
+
   Future<void> _loadProStats(String uid, dynamic supa) async {
     final now = DateTime.now();
     final todayStart = '${DateFormat('yyyy-MM-dd').format(now)}T00:00:00';
@@ -235,8 +259,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
 
     try {
       if (User_Info.catPro == 'veterinaire') {
-        final patients = await pf(supa.from('animal_access')
-            .select('id').eq('pro_profile_id', pid).eq('statut', 'active'));
+        final patients = await _patientsIds(supa, uid, pid);
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
@@ -247,8 +270,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           _rdvTodayCount = (rdvToday as List).length;
         });
       } else if (User_Info.catPro == 'sante') {
-        final patients = await pf(supa.from('animal_access')
-            .select('id').eq('pro_profile_id', pid).eq('statut', 'active'));
+        final patients = await _patientsIds(supa, uid, pid);
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)
