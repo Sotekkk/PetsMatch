@@ -15,6 +15,7 @@ import StoryMusicTab from './_components/StoryMusicTab';
 import InfluenceursTab from './_components/InfluenceursTab';
 import PubsStoriesTab from './_components/PubsStoriesTab';
 import LieuxPetFriendlyTab from './_components/LieuxPetFriendlyTab';
+import NaturalPlacesTousTab from './_components/NaturalPlacesTousTab';
 import AvisContestesTab from './_components/AvisContestesTab';
 import PlanEditor from './_components/PlanEditor';
 import { apiFetch } from '@/lib/api-fetch';
@@ -206,7 +207,7 @@ export default function AdminPage() {
   const [naturalPlacesEnAttente, setNaturalPlacesEnAttente] = useState<NaturalPlaceAdmin[]>([]);
   const [naturalPlacesLoading, setNaturalPlacesLoading] = useState(false);
   const [naturalPlaceSaving, setNaturalPlaceSaving] = useState<string | null>(null);
-  const [naturalPlacesSubTab, setNaturalPlacesSubTab] = useState<'lieux' | 'equipements' | 'photos'>('lieux');
+  const [naturalPlacesSubTab, setNaturalPlacesSubTab] = useState<'lieux' | 'equipements' | 'photos' | 'tous'>('lieux');
 
   interface PhotoSuggestionAdmin {
     id: string; place_id: string; photo_url: string;
@@ -2126,7 +2127,7 @@ export default function AdminPage() {
                 onClick={() => {
                   if (naturalPlacesSubTab === 'lieux') loadNaturalPlacesEnAttente();
                   else if (naturalPlacesSubTab === 'equipements') loadAmenitySuggestions();
-                  else loadPhotoSuggestions();
+                  else if (naturalPlacesSubTab === 'photos') loadPhotoSuggestions();
                 }}
                 className="text-xs text-gray-400 hover:text-[#0C5C6C]"
               >↺ Rafraîchir</button>
@@ -2137,6 +2138,7 @@ export default function AdminPage() {
                 { key: 'lieux',       label: '📍 Nouveaux lieux',       count: naturalPlacesEnAttente.length },
                 { key: 'equipements', label: '🧰 Équipements signalés', count: amenitySuggestions.length },
                 { key: 'photos',      label: '🖼️ Photos signalées',    count: photoSuggestions.length },
+                { key: 'tous',        label: '🗺️ Tous les lieux',      count: 0 },
               ] as const).map(t => (
                 <button key={t.key} onClick={() => setNaturalPlacesSubTab(t.key)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
@@ -2154,7 +2156,9 @@ export default function AdminPage() {
               ))}
             </div>
 
-            {naturalPlacesSubTab === 'photos' ? (
+            {naturalPlacesSubTab === 'tous' ? (
+              <NaturalPlacesTousTab />
+            ) : naturalPlacesSubTab === 'photos' ? (
               photoSuggestionsLoading ? (
                 <div className="flex justify-center py-16">
                   <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
