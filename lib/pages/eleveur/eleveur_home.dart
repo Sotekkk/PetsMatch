@@ -1,3 +1,5 @@
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
@@ -755,6 +757,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   Widget _buildVetShortcuts(BuildContext context) {
     void go(Widget page) =>
         Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    // Onglets de la fiche patient côté vétérinaire : 1 = Santé (vaccins…),
+    // 4 = Consultations (ordonnances, comptes rendus).
     return GridView.count(
       crossAxisCount: 3,
       shrinkWrap: true,
@@ -765,18 +769,112 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       children: [
         _QuickTile(icon: Icons.favorite_outline, label: 'Mes\npatients', color: _teal,
             onTap: () => go(const VetPatientsPage())),
-        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF5F9EAA),
+        _QuickTile(icon: Icons.event_outlined, label: 'Agenda\nRDV', color: const Color(0xFF5F9EAA),
             onTap: () => go(const ProAgendaPage())),
-        _QuickTile(icon: Icons.accessibility_new, label: 'Mes\nsuivis', color: const Color(0xFF7B5EA7),
-            onTap: () => go(const SanteSuivisMorphoPage())),
-        _QuickTile(icon: Icons.people_outline, label: 'Mes\nclients', color: const Color(0xFFB8860B),
+        _QuickTile(icon: Icons.qr_code_scanner, label: 'Scanner\nune puce', color: const Color(0xFF475569),
+            onTap: () => ChipScannerService.scanFromVet(context)),
+        _QuickTile(icon: Icons.medication_outlined, label: 'Ordonnance', color: const Color(0xFF7B5EA7),
+            onTap: () => _ouvrirPatientVet(context, ongletFiche: 4, acte: 'une ordonnance')),
+        _QuickTile(icon: Icons.vaccines_outlined, label: 'Vaccin', color: const Color(0xFF2E7D5E),
+            onTap: () => _ouvrirPatientVet(context, ongletFiche: 1, acte: 'un vaccin')),
+        _QuickTile(icon: Icons.description_outlined, label: 'Compte\nrendu', color: const Color(0xFFB8860B),
+            onTap: () => _ouvrirPatientVet(context, ongletFiche: 4, acte: 'un compte rendu')),
+        _QuickTile(icon: Icons.people_outline, label: 'Mes\nclients', color: const Color(0xFF5F9EAA),
             onTap: () => go(const ProClientsPage())),
-        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Facturation', color: const Color(0xFF6E9E57),
             onTap: () => go(const FacturationPage())),
         _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
             onTap: () => go(const VetAbonnementPage())),
       ],
     );
+  }
+
+  /// Acte vétérinaire depuis l'accueil : choisir le patient (accès accordé
+  /// par le propriétaire, profil ACTIF), puis ouvrir sa fiche sur l'onglet
+  /// voulu.
+  Future<void> _ouvrirPatientVet(BuildContext context, {required int ongletFiche, required String acte}) async {
+    final supa = Supabase.instance.client;
+    final pid = User_Info.activeProfileId;
+    List<Map<String, dynamic>> patients = [];
+    try {
+      final grants = await supa.from('animal_access').select('animal_id')
+          .eq('pro_profile_id', pid).inFilter('statut', ['active', 'active_write']);
+      final ids = (grants as List).map((g) => g['animal_id']?.toString()).whereType<String>().toSet().toList();
+      if (ids.isNotEmpty) {
+        final rows = await supa.from('animaux').select('id, nom, espece, race, photo_url')
+            .inFilter('id', ids).order('nom', ascending: true);
+        patients = List<Map<String, dynamic>>.from(rows as List);
+      }
+    } catch (_) {}
+    if (!context.mounted) return;
+    if (patients.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+          'Aucun patient avec accès accordé. Scannez une puce ou demandez l\'accès depuis « Mes patients ».',
+          style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    final choisi = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        var filtre = '';
+        return StatefulBuilder(builder: (ctx, setS) {
+          final liste = patients.where((p) =>
+              (p['nom'] ?? '').toString().toLowerCase().contains(filtre.toLowerCase())).toList();
+          return SafeArea(child: Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.6,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Pour quel patient ? ($acte)',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(height: 10),
+                TextField(
+                  onChanged: (v) => setS(() => filtre = v),
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher un patient…', prefixIcon: const Icon(Icons.search),
+                    isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(child: ListView.separated(
+                  itemCount: liste.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final p = liste[i];
+                    final photo = (p['photo_url'] ?? '').toString();
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFFEEF5EA),
+                        backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                        child: photo.isEmpty ? const Icon(Icons.pets, color: _teal, size: 18) : null,
+                      ),
+                      title: Text(p['nom']?.toString() ?? 'Animal',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                      subtitle: Text([p['espece'], p['race']].where((v) => (v ?? '').toString().isNotEmpty).join(' · '),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.pop(ctx, p),
+                    );
+                  },
+                )),
+              ]),
+            ),
+          ));
+        });
+      },
+    );
+    if (choisi == null || !context.mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => AnimalFichePage(
+      animalId: choisi['id']?.toString(),
+      initialData: choisi,
+      readOnly: true,
+      vetMode: true,
+      initialTabIndex: ongletFiche,
+    )));
   }
 
   Widget _buildPhotographeShortcuts(BuildContext context) {
@@ -1365,18 +1463,11 @@ class _StatCard extends StatelessWidget {
         children: [
           Icon(icon, color: const Color(0xFF6E9E57), size: 22),
           const SizedBox(height: 4),
-          // Réduit au besoin plutôt que de déborder (« Vétérinaire »,
-          // « RDV aujourd'hui » sur petit écran).
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(value, maxLines: 1,
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1F2A2E))),
-          ),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(label, maxLines: 1,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-          ),
+          // Tailles FIXES (identiques d'une carte à l'autre), 1 ligne.
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
         ],
       ),
     );
@@ -1413,46 +1504,27 @@ class _QuickTile extends StatelessWidget {
                 color: color.withOpacity(isLocked ? 0.15 : 0.3),
                 style: isLocked ? BorderStyle.solid : BorderStyle.solid),
           ),
-          // Tuile étroite (grilles 3 colonnes) : icône AU-DESSUS du texte,
-          // centrée — sinon « Mon abonnement » débordait de la case. Le texte
-          // se réduit au besoin plutôt que de dépasser.
-          child: LayoutBuilder(builder: (ctx, c) {
-            final style = TextStyle(
-              color: color.withOpacity(isLocked ? 0.4 : 1.0),
-              fontFamily: 'Galey',
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              height: 1.3,
-            );
-            final iconW = Icon(icon, color: color.withOpacity(isLocked ? 0.4 : 1.0), size: 28);
-            if (c.maxWidth < 150) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  iconW,
-                  const SizedBox(height: 6),
-                  Flexible(child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(label, textAlign: TextAlign.center, style: style),
+          // Mise en page FIXE et identique pour toutes les tuiles : icône
+          // au-dessus, texte de même taille sur 2 lignes max, centré (plus de
+          // texte redimensionné tuile par tuile).
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, color: color.withOpacity(isLocked ? 0.4 : 1.0), size: 26),
+              const SizedBox(height: 6),
+              Text(label,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color.withOpacity(isLocked ? 0.4 : 1.0),
+                    fontFamily: 'Galey',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    height: 1.25,
                   )),
-                ]),
-              );
-            }
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  iconW,
-                  const SizedBox(width: 10),
-                  Flexible(child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(label, style: style),
-                  )),
-                ],
-              ),
-            );
-          }),
+            ]),
+          ),
         ),
         if (isLocked)
           Positioned(
