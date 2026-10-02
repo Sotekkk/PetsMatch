@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/admin/admin_panel.dart';
+import 'package:PetsMatch/config.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/association/association_nav.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
@@ -182,17 +183,17 @@ class _BottomNavState extends State<BottomNav> {
             ),
             const SizedBox(height: 16),
 
-            // Panel admin
+            // Administration : uniquement sur le site (un seul panneau à
+            // maintenir, actions sensibles via routes serveur admin).
             ListTile(
               leading: const Icon(Icons.admin_panel_settings,
                   color: Color(0xFF6E9E57)),
-              title: const Text('Panel Admin',
+              title: const Text('Administration (site)',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500)),
+              trailing: const Icon(Icons.open_in_new, size: 18),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => AdminPanel()),
-                );
+                launchUrl(Uri.parse('$kSiteBaseUrl/admin'), mode: LaunchMode.externalApplication);
               },
             ),
 

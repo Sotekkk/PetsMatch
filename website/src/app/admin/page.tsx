@@ -12,6 +12,9 @@ import AlimentsTab from './_components/AlimentsTab';
 import AnnoncesToutesTab from './_components/AnnoncesToutesTab';
 import ConsommationTab from './_components/ConsommationTab';
 import StoryMusicTab from './_components/StoryMusicTab';
+import InfluenceursTab from './_components/InfluenceursTab';
+import PubsStoriesTab from './_components/PubsStoriesTab';
+import LieuxPetFriendlyTab from './_components/LieuxPetFriendlyTab';
 import AvisContestesTab from './_components/AvisContestesTab';
 import PlanEditor from './_components/PlanEditor';
 import { apiFetch } from '@/lib/api-fetch';
@@ -89,7 +92,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'comptes' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'comptes' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes' | 'influenceurs' | 'pubs_stories' | 'lieux_petfriendly';
 // 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
 // valeur est une catégorie dynamique (eleveur, association, particulier, ou
 // un métier pro), générée depuis les données — cf. entryCategory().
@@ -1243,13 +1246,16 @@ export default function AdminPage() {
           consommation:       { label: 'Consommation',     icon: '📈' },
           tarification:       { label: 'Tarification',     icon: '💰' },
           story_music:        { label: 'Musique Stories',  icon: '🎵' },
+          influenceurs:       { label: 'Influenceurs',     icon: '⭐' },
+          pubs_stories:       { label: 'Pubs stories',     icon: '📣' },
+          lieux_petfriendly:  { label: 'Lieux pet-friendly', icon: '🏨' },
         };
         const GROUPS: { key: string; label: string; icon: string; tabs: AdminTab[] }[] = [
           { key: 'dashboard',    label: 'Dashboard',      icon: '📊', tabs: ['dashboard'] },
           { key: 'moderation',   label: 'Modération',     icon: '🚨', tabs: ['signalements', 'signalements_conv', 'avis_contestes'] },
           { key: 'comptes',      label: 'Comptes',        icon: '👥', tabs: ['comptes', 'dossiers', 'utilisateurs'] },
-          { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'aliments', 'annonces', 'lieux_naturels'] },
-          { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'tarification', 'story_music'] },
+          { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'aliments', 'annonces', 'lieux_naturels', 'lieux_petfriendly', 'influenceurs'] },
+          { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'tarification', 'story_music', 'pubs_stories'] },
         ];
         const activeGroup = GROUPS.find(g => g.tabs.includes(tab)) ?? GROUPS[0];
         const groupBadge = (g: typeof GROUPS[number]) => g.tabs.reduce((s, k) => s + (TAB_META[k].badge ?? 0), 0);
@@ -1921,6 +1927,9 @@ export default function AdminPage() {
 
         {/* ─── Musique Stories ───────────────────────────────────────────── */}
         {tab === 'story_music' && <StoryMusicTab />}
+        {tab === 'influenceurs' && <InfluenceursTab />}
+        {tab === 'pubs_stories' && <PubsStoriesTab />}
+        {tab === 'lieux_petfriendly' && <LieuxPetFriendlyTab />}
 
         {tab === 'avis_contestes' && user && <AvisContestesTab adminUid={user.uid} />}
 
