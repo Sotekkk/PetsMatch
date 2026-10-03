@@ -1346,7 +1346,7 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
       );
       const { data } = await supabase.from('user_profiles_complet')
         .select('uid, firstname, lastname, nom, profile_type, cat_pro')
-        .neq('uid', uid).eq('is_main', true).limit(500);
+        .neq('uid', uid).eq('profile_type', 'particulier').limit(2000);
       const filtered = (data ?? []).map(u => ({
         uid: u.uid as string,
         firstname: u.firstname as string | null,

@@ -1084,14 +1084,16 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
 
   Future<void> _loadAllUsers() async {
     try {
-      // Seuls les profils "particulier" peuvent être employés
+      // Seuls les profils "particulier" peuvent être employés — y compris
+      // le profil particulier SECONDAIRE d'un compte pro / association
+      // (chaque compte en a un, cf. règle « particulier toujours présent ») :
+      // filtrer sur is_main excluait tous les pros et associations.
       final profileRows = await _supa
           .from('user_profiles_complet')
           .select('uid, id, firstname, lastname, avatar_url')
           .eq('profile_type', 'particulier')
-          .eq('is_main', true)
           .neq('uid', widget.uid)
-          .limit(500);
+          .limit(2000);
 
       if (mounted) setState(() {
         _allUsers = (profileRows as List<dynamic>).map((p) {

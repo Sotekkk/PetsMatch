@@ -92,7 +92,7 @@ function EmployesTab({ uid }: { uid: string }) {
       for (const e of (rows ?? [])) {
         const { data: cp } = await supabase.from('user_profiles_complet')
           .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
-          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
+          .eq('uid', e.uid_employe).eq('profile_type', 'particulier').maybeSingle();
         const p: UserProfile | null = cp ? {
           uid: cp.uid, firstname: cp.firstname, lastname: cp.lastname,
           name_elevage: cp.nom, is_elevage: cp.profile_type === 'eleveur',
@@ -173,7 +173,7 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
   useEffect(() => {
     supabase.from('user_profiles_complet')
       .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
-      .neq('uid', uid).eq('is_main', true).limit(500)
+      .neq('uid', uid).eq('profile_type', 'particulier').limit(2000)
       .then(({ data }) => {
         setAllUsers((data ?? []).map(cp => ({
           uid: cp.uid, firstname: cp.firstname, lastname: cp.lastname,

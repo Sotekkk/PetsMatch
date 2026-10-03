@@ -57,9 +57,29 @@ class _BenevolesPageState extends State<BenevolesPage> {
       var q = _supa.from('employes').select().eq('type', 'benevole');
       q = profileId != null ? q.eq('eleveur_profile_id', profileId) : q.eq('uid_eleveur', uid);
       final data = await q.order('nom');
+      final benevoles = List<Map<String, dynamic>>.from(data as List);
+      // Bénévole ajouté depuis la recherche d'utilisateurs : prénom / nom
+      // vides dans employes → carte « ? ». Compléter depuis son profil
+      // particulier.
+      final sansNom = benevoles
+          .where((b) => (b['prenom']?.toString() ?? '').isEmpty && b['uid_employe'] != null)
+          .map((b) => b['uid_employe'].toString()).toSet().toList();
+      if (sansNom.isNotEmpty) {
+        final profils = await _supa.from('user_profiles_complet')
+            .select('uid, firstname, lastname')
+            .inFilter('uid', sansNom).eq('profile_type', 'particulier');
+        final parUid = {for (final p in profils as List) p['uid'].toString(): p};
+        for (final b in benevoles) {
+          final p = parUid[b['uid_employe']?.toString()];
+          if (p != null && (b['prenom']?.toString() ?? '').isEmpty) {
+            b['prenom'] = p['firstname'];
+            b['nom'] = p['lastname'];
+          }
+        }
+      }
       if (mounted) {
         setState(() {
-          _benevoles = List<Map<String, dynamic>>.from(data as List);
+          _benevoles = benevoles;
           _loading = false;
         });
       }
@@ -430,9 +450,13 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
 
   Future<void> _loadUsers() async {
     try {
+      // Bénévole = notion particulier : tous les profils particuliers, y
+      // compris le profil secondaire d'un compte pro / association (filtrer
+      // sur is_main les excluait).
       final rows = await _supa.from('user_profiles_complet')
           .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
-          .neq('uid', widget.uid).eq('is_main', true).limit(500);
+          .eq('profile_type', 'particulier')
+          .neq('uid', widget.uid).limit(2000);
       if (mounted) setState(() {
         _allUsers = List<Map<String, dynamic>>.from(rows as List).map((cp) => {
           'uid': cp['uid'], 'firstname': cp['firstname'], 'lastname': cp['lastname'],

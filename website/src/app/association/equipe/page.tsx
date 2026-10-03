@@ -171,7 +171,7 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
           const { data: p } = await supabase.from('user_profiles_complet')
             .select('firstname, lastname, nom, profile_label, avatar_url, profile_picture_url_pro')
             .eq('uid', row.uid_employe)
-            .eq('is_main', true)
+            .eq('profile_type', 'particulier')
             .maybeSingle();
 
           const fullNom = p?.profile_label?.trim()
@@ -1150,7 +1150,7 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
   useEffect(() => {
     supabase.from('user_profiles_complet')
       .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, phone_number')
-      .neq('uid', uid).eq('is_main', true).limit(500)
+      .neq('uid', uid).eq('profile_type', 'particulier').limit(2000)
       .then(({ data }) => {
         setAllUsers((data ?? []).map(p => ({
           uid: p.uid, firstname: p.firstname, lastname: p.lastname,
