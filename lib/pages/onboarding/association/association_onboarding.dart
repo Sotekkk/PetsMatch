@@ -1,4 +1,4 @@
-import 'package:PetsMatch/pages/association/benevoles/benevoles_page.dart';
+import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
 import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_action_step.dart';
@@ -62,7 +62,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Ajoutez un bénévole ou un employé pour qu\'il puisse voir les animaux '
           'et valider ses tâches.',
       primaryLabel: 'Ajouter un bénévole →',
-      pageBuilder: (_) => const BenevolesPage(),
+      pageBuilder: (_) => const EquipePage(),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',

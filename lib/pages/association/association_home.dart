@@ -80,15 +80,16 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         .limit(6)
         .catchError((_) => <dynamic>[]);
 
-    // Bénévoles
+    // Équipe : mêmes membres que la page Équipe (employés + bénévoles actifs
+    // du profil association) — avant : bénévoles seuls, sur tout le compte.
     List<dynamic> benevoles = [];
     try {
-      benevoles = await _supa
-          .from('employes')
-          .select('id')
-          .eq('uid_eleveur', uid)
-          .eq('actif', true)
-          .eq('type', 'benevole');
+      final asso = await _supa.from('user_profiles_complet')
+          .select('id').eq('uid', uid).eq('profile_type', 'association').maybeSingle();
+      var q = _supa.from('employes').select('id')
+          .eq('actif', true).eq('profil_source', 'association');
+      q = asso?['id'] != null ? q.eq('eleveur_profile_id', asso!['id']) : q.eq('uid_eleveur', uid);
+      benevoles = await q;
     } catch (_) {}
 
     // Animaux disponibles à l'adoption

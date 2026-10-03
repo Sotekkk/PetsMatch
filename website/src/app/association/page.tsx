@@ -24,7 +24,7 @@ const STATUT_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 export default function AssociationDashboard() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const [stats, setStats] = useState<Stats>({ total: 0, enSoin: 0, disponible: 0, enFa: 0, adopte: 0, benevoles: 0 });
   const [recentAnimaux, setRecentAnimaux] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +33,11 @@ export default function AssociationDashboard() {
     if (!user) return;
     Promise.all([
       supabase.from('animaux').select('statut, fa_id').eq('uid_eleveur', user.uid).eq('is_association', true),
-      supabase.from('employes').select('id').eq('uid_eleveur', user.uid).eq('actif', true).eq('type', 'benevole'),
+      // Équipe (miroir appli) : employés + bénévoles actifs du profil association.
+      (activeProfileId
+        ? supabase.from('employes').select('id').eq('eleveur_profile_id', activeProfileId)
+        : supabase.from('employes').select('id').eq('uid_eleveur', user.uid))
+        .eq('actif', true).eq('profil_source', 'association'),
       supabase.from('animaux').select('id, nom, espece, photo_url, statut')
         .eq('uid_eleveur', user.uid).eq('is_association', true).order('created_at', { ascending: false }).limit(6),
     ]).then(([{ data: animaux }, { data: benvl }, { data: recent }]) => {
@@ -49,7 +53,7 @@ export default function AssociationDashboard() {
       setRecentAnimaux(recent ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
-  }, [user]);
+  }, [user, activeProfileId]);
 
   if (loading) {
     return (
@@ -70,7 +74,7 @@ export default function AssociationDashboard() {
         <StatCard label="En soin" value={stats.enSoin} color="orange" icon="🏥" href="/association/animaux?statut=en_soin" />
         <StatCard label="En famille d'accueil" value={stats.enFa} color="purple" icon="🏡" href="/association/animaux?statut=en_fa" />
         <StatCard label="Adoptés" value={stats.adopte} color="blue" icon="🎉" href="/association/animaux?statut=adopte" />
-        <StatCard label="Bénévoles actifs" value={stats.benevoles} color="teal" icon="🤝" href="/association/benevoles" />
+        <StatCard label="Équipe" value={stats.benevoles} color="teal" icon="🤝" href="/association/equipe" />
       </div>
 
       {/* Animaux récents */}

@@ -357,44 +357,71 @@ class _EmployesTabState extends State<_EmployesTab> {
         SnackBar(content: Text('$nom a été retiré de votre élevage')));
   }
 
-  Future<void> _openSearchSheet() async {
+  Future<void> _openSearchSheet([String type = 'employe']) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddEmployeSheet(uid: _ownerUid ?? _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
-          isAssociation: widget.isAssociation, profileType: widget.profileType),
+          isAssociation: widget.isAssociation, profileType: widget.profileType, type: type),
     );
     _load();
   }
 
-  Future<void> _openManuelSheet() async {
+  Future<void> _openManuelSheet([String type = 'employe']) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => AddEmployeManuelSheet(
         uid: _ownerUid ?? _uid, teal: widget.teal,
-        profilSource: _profileType,
+        profilSource: _profileType, type: type,
       ),
     );
     _load();
   }
 
+  // Association : une seule équipe (employés + bénévoles) — le rôle se
+  // choisit ici, puis recherche PetsMatch ou ajout manuel.
   void _showAddChoiceSheet() {
+    var type = 'employe';
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
+      builder: (_) => StatefulBuilder(builder: (ctx, setS) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Ajouter un employé',
+            const Text("Ajouter à l'équipe",
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            Row(children: [
+              for (final r in const [('employe', 'Employé', Icons.badge_outlined), ('benevole', 'Bénévole', Icons.volunteer_activism_outlined)])
+                Expanded(child: Padding(
+                  padding: EdgeInsets.only(right: r.$1 == 'employe' ? 6 : 0, left: r.$1 == 'benevole' ? 6 : 0),
+                  child: GestureDetector(
+                    onTap: () => setS(() => type = r.$1),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: type == r.$1 ? widget.teal : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: widget.teal),
+                      ),
+                      child: Column(children: [
+                        Icon(r.$3, color: type == r.$1 ? Colors.white : widget.teal),
+                        const SizedBox(height: 4),
+                        Text(r.$2, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            color: type == r.$1 ? Colors.white : widget.teal)),
+                      ]),
+                    ),
+                  ),
+                )),
+            ]),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -407,7 +434,7 @@ class _EmployesTabState extends State<_EmployesTab> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: () {
                   Navigator.pop(context);
-                  _openSearchSheet();
+                  _openSearchSheet(type);
                 },
               ),
             ),
@@ -424,13 +451,13 @@ class _EmployesTabState extends State<_EmployesTab> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: () {
                   Navigator.pop(context);
-                  _openManuelSheet();
+                  _openManuelSheet(type);
                 },
               ),
             ),
           ],
         ),
-      ),
+      )),
     );
   }
 
@@ -463,6 +490,9 @@ class _EmployesTabState extends State<_EmployesTab> {
                     final employeProfileId = e['employe_profile_id'] as String?;
                     return _EmployeCard(
                       nom: nom, photoUrl: photoUrl,
+                      role: widget.isAssociation
+                          ? (e['type'] == 'benevole' ? 'Bénévole' : 'Employé')
+                          : null,
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
                       showChaleursButton: _suiviChaleursByEmploye[e['id'].toString()] ?? false,
@@ -487,8 +517,11 @@ class _EmployeCard extends StatelessWidget {
       required this.teal, required this.dark, required this.onRevoquer,
       required this.employeId, required this.onPermissionsChanged,
       this.showChaleursButton = false,
+      this.role,
       this.onTap});
   final String nom, employeId;
+  /// Association : « Employé » ou « Bénévole » (null ailleurs).
+  final String? role;
   final String? photoUrl;
   final Color teal, dark;
   final VoidCallback onRevoquer;
@@ -517,8 +550,21 @@ class _EmployeCard extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(nom, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-              fontSize: 14, color: dark)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(nom, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                fontSize: 14, color: dark)),
+            if (role != null)
+              Container(
+                margin: const EdgeInsets.only(top: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (role == 'Bénévole' ? const Color(0xFF6E9E57) : teal).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(role!, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
+                    color: role == 'Bénévole' ? const Color(0xFF6E9E57) : teal)),
+              ),
+          ]),
         ),
         if (showChaleursButton)
           IconButton(
@@ -1063,7 +1109,9 @@ class _AddEmployeSheet extends StatefulWidget {
   final bool isAssociation;
   final String? profileType;
   const _AddEmployeSheet({required this.uid, required this.nomElevage, required this.teal, required this.dark,
-      this.isAssociation = false, this.profileType});
+      this.isAssociation = false, this.profileType, this.type = 'employe'});
+  /// 'employe' | 'benevole' (association).
+  final String type;
   @override
   State<_AddEmployeSheet> createState() => _AddEmployeSheetState();
 }
@@ -1195,6 +1243,7 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       }
       await _supa.from('employes').update({
         'actif': true,
+        'type': widget.type,
         'employe_profile_id': employeProfileId,
         'eleveur_profile_id': eleveurProfileId,
       }).eq('id', existing['id']);
@@ -1205,6 +1254,7 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
         'employe_profile_id': employeProfileId,
         'eleveur_profile_id': eleveurProfileId,
         'actif':              true,
+        'type':               widget.type,
         'profil_source':      profilSource,
       });
     }
@@ -1215,7 +1265,7 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     await _supa.from('notifications').insert({
       'uid':   uid,
       'type':  'employee_invite',
-      'title': 'Invitation à rejoindre $structureLabel',
+      'title': widget.type == 'benevole' ? 'Invitation bénévole' : 'Invitation à rejoindre $structureLabel',
       'body':  'Vous avez été ajouté à l\'équipe de $nomElevage',
       if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
       'data':  {'eleveurUid': widget.uid, 'eleveurNom': nomElevage},
@@ -1326,7 +1376,9 @@ class AddEmployeManuelSheet extends StatefulWidget {
   final String uid;
   final Color teal;
   final String profilSource;
-  const AddEmployeManuelSheet({super.key, required this.uid, required this.teal, this.profilSource = 'eleveur'});
+  /// 'employe' | 'benevole' (association).
+  final String type;
+  const AddEmployeManuelSheet({super.key, required this.uid, required this.teal, this.profilSource = 'eleveur', this.type = 'employe'});
   @override
   State<AddEmployeManuelSheet> createState() => _AddEmployeManuelSheetState();
 }
@@ -1364,7 +1416,7 @@ class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
         'telephone': _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'actif': true,
-        'type': 'employe',
+        'type': widget.type,
         'profil_source': widget.profilSource,
       });
       if (mounted) Navigator.pop(context, true);
