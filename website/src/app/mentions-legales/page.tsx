@@ -26,7 +26,7 @@ export default function MentionsLegalesPage() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-[#0C5C6C] mb-3">Hébergement</h2>
         <p className="text-sm text-gray-700 leading-relaxed">
-          <strong>Site web :</strong> Vercel Inc., 340 Pine Street Suite 701, San Francisco, CA 94104, États-Unis<br />
+          <strong>Site web :</strong> Google Firebase App Hosting (Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, États-Unis)<br />
           <strong>Base de données :</strong> Supabase Inc., 970 Toa Payoh North #07-04, Singapour<br />
           <strong>Authentification &amp; notifications :</strong> Google Firebase (Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, États-Unis)
         </p>
