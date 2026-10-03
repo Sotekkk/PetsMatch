@@ -30,9 +30,10 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final profRow = await _supa.from('user_profiles_complet')
-          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
-      final assocProfileId = profRow?['id'] as String?;
+      // Multi-profil : le profil ASSOCIATION, pas is_main (= l'élevage pour un
+      // compte élevage + association → familles rangées sous le mauvais
+      // profil, invisibles sur le site qui filtre par profil actif).
+      final assocProfileId = await _profilAssociationId(uid);
 
       final data = assocProfileId != null
           ? await _supa.from('familles_accueil')
@@ -514,9 +515,7 @@ class _FaSheetState extends State<_FaSheet> {
     try {
       String? assocProfileId;
       if (!_isEdit) {
-        final profRow = await _supa.from('user_profiles_complet')
-            .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
-        assocProfileId = profRow?['id'] as String?;
+        assocProfileId = await _profilAssociationId(uid);
       }
 
       final payload = <String, dynamic>{
@@ -953,4 +952,11 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
       ]),
     );
   }
+}
+
+/// Profil association du compte (le profil actif s'il est association).
+Future<String?> _profilAssociationId(String uid) async {
+  final row = await Supabase.instance.client.from('user_profiles_complet')
+      .select('id').eq('uid', uid).eq('profile_type', 'association').maybeSingle();
+  return row?['id'] as String?;
 }
