@@ -108,6 +108,11 @@ class _CessionSheetState extends State<CessionSheet> {
   List<Map<String, dynamic>> _existingFactures      = [];
   Map<String, dynamic>? _selectedContrat;
   Map<String, dynamic>? _selectedCertificat;
+  // Certificat d'engagement (table certificats_engagement) — distinct du
+  // certificat de cession : doit être signé ≥ 7 jours avant le départ
+  // (chien / chat), dans l'appli ou hors appli avec attestation du cédant.
+  List<Map<String, dynamic>> _certsEngagement = [];
+  bool _creatingEngagement = false;
   bool _loadingDocs = true;
 
   // Par défaut, on attend la signature de l'acquéreur avant de transférer
@@ -153,6 +158,181 @@ class _CessionSheetState extends State<CessionSheet> {
     }
   }
 
+  bool get _delaiLegalEngagement {
+    final esp = (widget.animal['espece'] as String? ?? '').toLowerCase();
+    return esp == 'chien' || esp == 'chat';
+  }
+
+  DateTime? _dateSignatureCert(Map<String, dynamic> c) =>
+      DateTime.tryParse((c['signe_le'] ?? c['date_signature_acquereur'] ?? '').toString());
+
+  Future<void> _loadCertsEngagement() async {
+    final animalId = widget.animal['id'] as String?;
+    if (animalId == null) return;
+    try {
+      final rows = await _supa.from('certificats_engagement')
+          .select('id, token_signature, statut, acquereur_nom, acquereur_prenom, signe_le, date_signature_acquereur, date_limite_signature, notes, created_at')
+          .eq('animal_id', animalId).eq('cedant_uid', widget.uid)
+          .order('created_at', ascending: false);
+      if (mounted) setState(() => _certsEngagement = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
+  }
+
+  /// Message d'alerte à la cession, ou null si tout est en ordre.
+  String? _alerteEngagement() {
+    if (!_delaiLegalEngagement) return null;
+    final signes = _certsEngagement.where((c) => c['statut'] == 'signe').toList();
+    if (signes.isEmpty) {
+      return 'Aucun certificat d\'engagement signé pour cet animal. La loi impose qu\'il soit signé par '
+          'l\'acquéreur au moins 7 jours avant le départ (chien, chat).';
+    }
+    final dates = signes.map(_dateSignatureCert).whereType<DateTime>().toList()..sort();
+    if (dates.isEmpty) return null;
+    final jours = DateTime(_dateCession.year, _dateCession.month, _dateCession.day)
+        .difference(DateTime(dates.first.year, dates.first.month, dates.first.day)).inDays;
+    if (jours < 7) {
+      return 'Le certificat d\'engagement a été signé il y a $jours jour${jours > 1 ? 's' : ''} seulement '
+          'avant la date de cession : le délai légal est de 7 jours.';
+    }
+    return null;
+  }
+
+  List<Widget> _certsEngagementTiles() {
+    if (_certsEngagement.isEmpty) return [_docEmptyHint('Aucun certificat d\'engagement')];
+    return [
+      for (final c in _certsEngagement)
+        Builder(builder: (ctx) {
+          final signe = c['statut'] == 'signe';
+          final d = _dateSignatureCert(c);
+          final horsAppli = (c['notes']?.toString() ?? '').contains('hors application');
+          final nom = '${c['acquereur_prenom'] ?? ''} ${c['acquereur_nom'] ?? ''}'.trim();
+          final label = signe
+              ? 'Signé${d != null ? ' le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}' : ''}'
+                '${horsAppli ? ' (hors appli, attesté)' : ''}'
+              : 'En attente de signature';
+          return Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            child: ListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: (signe ? _green : Colors.orange).withOpacity(0.4))),
+              leading: Icon(signe ? Icons.verified : Icons.hourglass_top, color: signe ? _green : Colors.orange, size: 20),
+              title: Text(nom.isEmpty ? 'Certificat d\'engagement' : nom,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+              trailing: c['token_signature'] != null ? const Icon(Icons.open_in_new, size: 16) : null,
+              onTap: c['token_signature'] == null ? null : () async {
+                await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                    ContratSignaturePage(certificatEngagementToken: c['token_signature'] as String)));
+                _loadCertsEngagement();
+              },
+            ),
+          );
+        }),
+    ];
+  }
+
+  Map<String, dynamic> _payloadEngagement() {
+    final now = DateTime.now();
+    return {
+      'cedant_uid':            widget.uid,
+      'animal_id':             widget.animal['id'],
+      'espece':                widget.animal['espece'] ?? '',
+      'race':                  widget.animal['race'],
+      'nom_animal':            widget.animal['nom'] ?? '',
+      'date_naissance_animal': widget.animal['date_naissance'],
+      'num_identification':    widget.animal['identification'],
+      if (_foundUser?['uid'] != null) 'acquereur_uid': _foundUser?['uid'],
+      'acquereur_nom':         _nomCtrl.text.trim(),
+      'acquereur_prenom':      _prenomCtrl.text.trim(),
+      'acquereur_email':       _emailCtrl.text.trim(),
+      'acquereur_telephone':   _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+      'acquereur_adresse':     _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+      'modalite_cession':      widget.animal['is_association'] == true ? 'adoption' : 'vente',
+      'date_remise':           now.toIso8601String(),
+      'profil_source':         widget.animal['is_association'] == true ? 'association' : 'eleveur',
+    };
+  }
+
+  Future<void> _creerCertEngagement() async {
+    if (_nomCtrl.text.trim().isEmpty || _emailCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Nom et e-mail de l\'acquéreur requis pour le certificat d\'engagement.');
+      return;
+    }
+    setState(() { _creatingEngagement = true; _error = null; });
+    try {
+      final row = await _supa.from('certificats_engagement').insert({
+        ..._payloadEngagement(),
+        'date_limite_signature': _delaiLegalEngagement
+            ? DateTime.now().add(const Duration(days: 7)).toIso8601String() : null,
+      }).select('token_signature').single();
+      if (mounted) {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+            ContratSignaturePage(certificatEngagementToken: row['token_signature'] as String)));
+      }
+      await _loadCertsEngagement();
+    } catch (e) {
+      setState(() => _error = 'Erreur : $e');
+    } finally {
+      if (mounted) setState(() => _creatingEngagement = false);
+    }
+  }
+
+  /// Signé hors appli (papier, autre outil) : le cédant atteste la signature
+  /// et sa date — enregistré comme certificat signé, mention « attesté ».
+  Future<void> _attesterCertEngagement() async {
+    if (_nomCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Le nom de l\'acquéreur est requis.');
+      return;
+    }
+    DateTime date = DateTime.now().subtract(const Duration(days: 7));
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: const Text('Certificat signé hors appli', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Je certifie que ${_prenomCtrl.text.trim()} ${_nomCtrl.text.trim()} a signé le certificat '
+              'd\'engagement et de connaissance des besoins de l\'animal le :',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.calendar_today_outlined, size: 16),
+            label: Text('${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}',
+                style: const TextStyle(fontFamily: 'Galey')),
+            onPressed: () async {
+              final d = await showDatePicker(context: ctx, initialDate: date,
+                  firstDate: DateTime(2020), lastDate: DateTime.now());
+              if (d != null) setD(() => date = d);
+            },
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('J\'atteste')),
+        ],
+      ),
+    ));
+    if (ok != true) return;
+    setState(() { _creatingEngagement = true; _error = null; });
+    try {
+      final iso = DateTime(date.year, date.month, date.day).toIso8601String();
+      await _supa.from('certificats_engagement').insert({
+        ..._payloadEngagement(),
+        'statut': 'signe',
+        'signe_le': iso,
+        'date_signature_acquereur': iso,
+        'signataire_nom': '${_prenomCtrl.text.trim()} ${_nomCtrl.text.trim()}'.trim(),
+        'notes': 'Signé hors application — signature attestée par le cédant le '
+            '${DateTime.now().toIso8601String().split('T').first}.',
+      });
+      await _loadCertsEngagement();
+    } catch (e) {
+      setState(() => _error = 'Erreur : $e');
+    } finally {
+      if (mounted) setState(() => _creatingEngagement = false);
+    }
+  }
+
   Future<void> _loadExistingDocs() async {
     final animalId = widget.animal['id'] as String?;
     if (animalId == null) { setState(() => _loadingDocs = false); return; }
@@ -173,6 +353,7 @@ class _CessionSheetState extends State<CessionSheet> {
           _loadingDocs = false;
         });
       }
+      _loadCertsEngagement();
       _supa.from('user_profiles_complet')
           .select('nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, email_contact')
           .eq('uid', widget.uid).eq('is_main', true).maybeSingle()
@@ -712,6 +893,20 @@ class _CessionSheetState extends State<CessionSheet> {
     if (_nomCtrl.text.trim().isEmpty) {
       setState(() => _error = 'Le nom de l\'acquéreur est requis.');
       return;
+    }
+    // Chien / chat : alerte (non bloquante) si le certificat d'engagement
+    // n'est pas signé, ou signé moins de 7 jours avant le départ.
+    final alerte = _alerteEngagement();
+    if (alerte != null) {
+      final continuer = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Certificat d\'engagement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(alerte, style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Revenir')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Céder quand même')),
+        ],
+      ));
+      if (continuer != true) return;
     }
     setState(() { _saving = true; _error = null; });
     try {
@@ -1305,7 +1500,7 @@ class _CessionSheetState extends State<CessionSheet> {
               const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 16), child: CircularProgressIndicator()))
             else ...[
               // ── Certificat de cession ───────────────────────
-              _docSectionHeader('📜 Certificat de cession / engagement'),
+              _docSectionHeader('📜 Certificat de cession'),
               const SizedBox(height: 8),
               if (_existingCertificats.isEmpty)
                 _docEmptyHint('Aucun certificat existant')
@@ -1345,6 +1540,36 @@ class _CessionSheetState extends State<CessionSheet> {
                   const Icon(Icons.check_circle, color: _green, size: 14),
                   const Text(' importé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
                 ],
+              ]),
+
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // ── Certificat d'engagement ─────────────────────
+              _docSectionHeader('✍️ Certificat d\'engagement et de connaissance'),
+              const SizedBox(height: 4),
+              Text(_delaiLegalEngagement
+                  ? 'Obligatoire : signé par l\'acquéreur au moins 7 jours avant le départ.'
+                  : 'Recommandé : à faire signer à l\'acquéreur avant le départ.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+              const SizedBox(height: 8),
+              ..._certsEngagementTiles(),
+              Wrap(spacing: 16, children: [
+                TextButton.icon(
+                  onPressed: _creatingEngagement ? null : _creerCertEngagement,
+                  icon: _creatingEngagement
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.add_circle_outline, size: 14),
+                  label: const Text('Créer et faire signer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                ),
+                TextButton.icon(
+                  onPressed: _creatingEngagement ? null : _attesterCertEngagement,
+                  icon: const Icon(Icons.verified_outlined, size: 14),
+                  label: const Text('Signé hors appli', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                ),
               ]),
 
               const SizedBox(height: 16),

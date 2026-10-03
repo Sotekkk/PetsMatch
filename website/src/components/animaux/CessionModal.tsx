@@ -7,6 +7,7 @@ import { factureVentePdfBlob } from '@/lib/facture-vente';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 import LienDocument from '@/components/LienDocument';
+import CertificatEngagementSection, { alerteEngagement, type CertEngagement } from '@/components/animaux/CertificatEngagementSection';
 interface Animal {
   id: string;
   nom?: string;
@@ -106,6 +107,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   const [tel, setTel]               = useState(reservation?.tel ?? '');
   const [adresse, setAdresse]       = useState(reservation?.adresse ?? '');
   const [dateCession, setDateCession] = useState(new Date().toISOString().split('T')[0]);
+  const [certsEngagement, setCertsEngagement] = useState<CertEngagement[]>([]);
   const [prix, setPrix]             = useState('');
   const [notes, setNotes]           = useState(reservation?.notes ?? '');
 
@@ -510,6 +512,11 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   async function save() {
     if (!nomComplet && !searchResult) { setError('Le nom de l\'acquéreur est requis.'); return; }
     if (!dateCession) { setError('La date de cession est requise.'); return; }
+    // Chien / chat : alerte non bloquante sur le certificat d'engagement (miroir appli).
+    const alerteEng = alerteEngagement(certsEngagement, animal.espece, dateCession);
+    if (alerteEng && !confirm(`${alerteEng}
+
+Céder quand même ?`)) return;
     setSaving(true);
     setError('');
     try {
@@ -906,7 +913,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                 <>
                   {/* ── Certificat de cession ── */}
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat de cession / engagement</p>
+                    <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat de cession</p>
                     <button onClick={() => openContratCreation('certificat_cession')}
                       className="text-xs font-semibold text-[#0C5C6C] hover:underline">
                       + Créer un certificat
@@ -951,6 +958,16 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                       {uploadingCertificat ? '⏳…' : certificatUrl ? '✓ Importé · Remplacer' : '⬆️ Importer PDF'}
                     </button>
                   </div>
+
+                  <hr className="my-1 border-gray-100" />
+
+                  {/* ── Certificat d'engagement (distinct du certificat de cession) ── */}
+                  <CertificatEngagementSection
+                    animal={animal}
+                    cedantUid={uid}
+                    acquereur={{ uid: searchResult?.uid ?? null, prenom, nom, email, tel, adresse }}
+                    onChange={setCertsEngagement}
+                  />
 
                   <hr className="my-1 border-gray-100" />
 
