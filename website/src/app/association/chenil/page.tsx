@@ -59,12 +59,14 @@ function fmtDate(d: string | null) {
 // ── Composant enclos card ─────────────────────────────────────────────────────
 
 function EnclosCard({
-  enclos, occupants, allAnimaux,
+  enclos, occupants, allAnimaux, autresEnclos,
   onEdit, onClean, onAssign,
 }: {
   enclos: Enclos;
   occupants: Animal[];
   allAnimaux: Animal[];
+  /** Enclos ayant encore de la place (déplacement d'un occupant). */
+  autresEnclos: Enclos[];
   onEdit: (e: Enclos) => void;
   onClean: (id: string) => void;
   onAssign: (enclosId: string, animalId: string, assign: boolean) => void;
@@ -159,10 +161,21 @@ function EnclosCard({
                     </span>
                   )}
                 </div>
-                <button onClick={() => onAssign(enclos.id, a.id, false)}
-                  className="text-xs text-red-400 hover:text-red-600 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors">
-                  ✕
-                </button>
+                {/* Miroir de l'appli : changer d'enclos / retirer, explicites
+                    (avant : un ✕ seul, sans déplacement possible). */}
+                <div className="flex items-center gap-1">
+                  {autresEnclos.length > 0 && (
+                    <select value="" onChange={ev => { if (ev.target.value) onAssign(ev.target.value, a.id, true); }}
+                      className="text-xs text-teal-700 border border-teal-200 rounded-lg px-1.5 py-0.5 bg-white font-galey">
+                      <option value="">Déplacer…</option>
+                      {autresEnclos.map(o => <option key={o.id} value={o.id}>{o.nom}</option>)}
+                    </select>
+                  )}
+                  <button onClick={() => onAssign(enclos.id, a.id, false)}
+                    className="text-xs text-red-500 hover:text-red-700 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors font-galey">
+                    Retirer
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -451,6 +464,8 @@ export default function ChenilWebPage() {
                     enclos={e}
                     occupants={animaux.filter(a => a.enclos_id === e.id)}
                     allAnimaux={animaux}
+                    autresEnclos={enclos.filter(o => o.id !== e.id
+                      && animaux.filter(a => a.enclos_id === o.id).length < o.capacite)}
                     onEdit={enc => setEditEnclos(enc)}
                     onClean={handleClean}
                     onAssign={handleAssign}

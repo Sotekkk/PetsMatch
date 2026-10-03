@@ -154,6 +154,50 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     });
   }
 
+  /// « Ajouter » sur une carte : liste des animaux sans enclos (y compris en
+  /// famille d'accueil), au choix, placés dans [enc].
+  Future<void> _ajouterDansEnclos(_Enclos enc) async {
+    final libres = _animaux.where((a) =>
+        a['enclos_id'] == null && !_kStatutsSortis.contains(a['statut']?.toString())).toList();
+    if (libres.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Tous vos animaux sont déjà dans un enclos.')));
+      return;
+    }
+    final choisi = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Ajouter dans ${enc.nom}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.5),
+            child: ListView(shrinkWrap: true, children: [
+              for (final a in libres)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: _photoWidget(a['photo_url']?.toString() ?? '', radius: 18),
+                  title: Text(a['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  subtitle: Text(a['fa_id'] != null ? "${a['espece'] ?? ''} · en famille d'accueil" : (a['espece']?.toString() ?? ''),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  onTap: () => Navigator.pop(ctx, a),
+                ),
+            ]),
+          ),
+        ]),
+      )),
+    );
+    if (choisi == null) return;
+    // Un animal ne peut pas être en FA et en enclos en même temps.
+    await _supa.from('animaux').update({'enclos_id': enc.id, 'fa_id': null}).eq('id', choisi['id']);
+    _load();
+  }
+
   Future<void> _assignEnclos(Map<String, dynamic> animal) async {
     if (_enclos.isEmpty) return;
     if (_kStatutsSortis.contains(animal['statut']?.toString())) {
@@ -326,7 +370,9 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
               enclos: enc,
               animals: inEnclos,
               allAnimaux: _animaux,
-              onAssign: (a) => _assignEnclos(a),
+              // « Ajouter » : choisir QUEL animal placer dans CET enclos (avant :
+              // le 1er animal libre partait dans la feuille de choix d'enclos).
+              onAssign: (_) => _ajouterDansEnclos(enc),
               onAnimalTap: _showAnimalSheet,
               onClean: () => _markClean(enc.id),
             );
@@ -370,12 +416,13 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
   }
 
   void _showAnimalSheet(Map<String, dynamic> a) {
+    // Adopté / transféré / décédé : depuis la fiche (inscription au registre
+    // des sorties), pas d'ici.
     final statuts = [
       ('en_soin', 'En soin', Colors.orange),
       ('disponible', 'Disponible', _green),
-      ('adopte', 'Adopté', _teal),
-      ('transfere', 'Transféré', Colors.blue),
     ];
+    final enEnclos = a['enclos_id'] != null;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -394,6 +441,36 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
             ])),
           ]),
           const Divider(height: 20),
+          const Text('Hébergement',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: Icon(enEnclos ? Icons.swap_horiz : Icons.home_work_outlined, size: 16),
+                label: Text(enEnclos ? "Changer d'enclos" : 'Placer dans un enclos',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                style: OutlinedButton.styleFrom(foregroundColor: _teal),
+                onPressed: () { Navigator.pop(context); _assignEnclos(a); },
+              ),
+            ),
+            if (enEnclos) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.logout, size: 16),
+                  label: const Text("Retirer de l'enclos", style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _supa.from('animaux').update({'enclos_id': null}).eq('id', a['id']);
+                    _load();
+                  },
+                ),
+              ),
+            ],
+          ]),
+          const SizedBox(height: 14),
           const Text('Changer statut',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 8),
