@@ -1,0 +1,70 @@
+# Configuration Firebase App Hosting — backend de secours (Netlify reste la
+# prod principale). Rollouts automatiques désactivés (cf. Rollout triggers
+# dans la console), déploiement manuel uniquement.
+runConfig:
+  minInstances: 0
+
+env:
+  # ── Variables publiques (embarquées dans le bundle client Next.js) ──
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyCbhS2noQdmSZN6QnOsEjAN73uX5vjl6sI"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_CHECK_KEY
+    value: "6LdQVxktAAAAAFlDoaowEnX-aCoOu14gkSPg9Le6"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:910914025100:web:petsmatch"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "petsmatch-eb96d.firebaseapp.com"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "910914025100"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "petsmatch-eb96d"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "petsmatch-eb96d.appspot.com"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    value: "AIzaSyCbhS2noQdmSZN6QnOsEjAN73uX5vjl6sI"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_SITE_URL
+    value: "https://petsmatchapp.com"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+    value: "pk_test_51Pagp22MpEB6OUl5WhTICWegB3ibkSKDcVlmUDMFDdm7SWnfLmI8XM1aIKXWeslNjK7CSzJwe2yu64CW1bl0s3s100iwTo71nt"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_SUPABASE_ANON_KEY
+    value: "sb_publishable_a48hAJ3vGsQsgWVUbkReYQ_J71heKGK"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_SUPABASE_URL
+    value: "https://zyvpngcvzrkdytypjlyq.supabase.co"
+    availability: [BUILD, RUNTIME]
+
+  # ── Secrets (Google Secret Manager, jamais en clair) ──
+  - variable: SUPABASE_SERVICE_ROLE_KEY
+    secret: SUPABASE_SERVICE_ROLE_KEY
+    availability: [BUILD, RUNTIME]
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability: [BUILD, RUNTIME]
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability: [BUILD, RUNTIME]
+  - variable: BETA_PASSWORD
+    secret: BETA_PASSWORD
+    availability: [BUILD, RUNTIME]
+  - variable: STRIPE_PRICE_ELEVEUR_PREMIUM_ANNUEL
+    secret: STRIPE_PRICE_ELEVEUR_PREMIUM_ANNUEL
+    availability: [BUILD, RUNTIME]
+  - variable: STRIPE_PRICE_ELEVEUR_PREMIUM_MENSUEL
+    secret: STRIPE_PRICE_ELEVEUR_PREMIUM_MENSUEL
+    availability: [BUILD, RUNTIME]
+  - variable: STRIPE_PRICE_ELEVEUR_PRO_ANNUEL
+    secret: STRIPE_PRICE_ELEVEUR_PRO_ANNUEL
+    availability: [BUILD, RUNTIME]
+  - variable: STRIPE_PRICE_ELEVEUR_PRO_MENSUEL
+    secret: STRIPE_PRICE_ELEVEUR_PRO_MENSUEL
+    availability: [BUILD, RUNTIME]
