@@ -255,9 +255,14 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
         // Loi 2021-1539 : le délai de 7 jours court APRÈS la signature (la
         // cession ne peut intervenir qu'ensuite) — la signature n'est plus
         // différée (miroir appli). Contrôle du délai : à la cession.
-        const { data: cp } = await supabase.from('user_profiles_complet')
-          .select('nom,firstname,lastname,siret,phone_number,numero_elevage,rue_pro,ville_pro,code_postal_pro,rue,ville,code_postal,profile_type,cat_pro')
+        // Profil émetteur (association / élevage, cf. profil_source), pas
+        // is_main — miroir appli.
+        const colsCed = 'nom,firstname,lastname,siret,phone_number,numero_elevage,rue_pro,ville_pro,code_postal_pro,rue,ville,code_postal,profile_type,cat_pro';
+        const { data: cpType } = await supabase.from('user_profiles_complet').select(colsCed)
+          .eq('uid', data.cedant_uid).eq('profile_type', data.profil_source === 'association' ? 'association' : 'eleveur').maybeSingle();
+        const { data: cpMain } = cpType ? { data: null } : await supabase.from('user_profiles_complet').select(colsCed)
           .eq('uid', data.cedant_uid).eq('is_main', true).maybeSingle();
+        const cp = cpType ?? cpMain;
         const ced = cp ? {
           name_elevage: cp.nom, firstname: cp.firstname, lastname: cp.lastname,
           siret: cp.siret, phone_number: cp.phone_number, numero_elevage: cp.numero_elevage,

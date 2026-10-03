@@ -248,7 +248,12 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       const f = 'nom, firstname, lastname, siret, phone_number, numero_elevage, '
           'email_contact, adresse, rue, ville, code_postal, rue_pro, ville_pro, '
           'code_postal_pro';
+      // Profil ÉMETTEUR (association ou élevage, cf. profil_source) — pas
+      // is_main : un compte élevage + association affichait l'élevage sur
+      // le certificat d'une adoption.
       up = await _supa.from('user_profiles_complet').select(f)
+          .eq('uid', cedantUid).eq('profile_type', _certProfileType).maybeSingle()
+        ?? await _supa.from('user_profiles_complet').select(f)
           .eq('uid', cedantUid).eq('is_main', true).maybeSingle();
     }
     // Adapte les colonnes *_pro vers ce que _mapEleveur attend.
@@ -661,6 +666,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   // ── Certificat d'engagement ──────────────────────────────────────────────
 
+  String get _certProfileType =>
+      (_cert?['profil_source'] as String?) == 'association' ? 'association' : 'eleveur';
+
   DateTime? get _certDelaiLimite {
     final v = _cert?['date_limite_signature'];
     return v == null ? null : DateTime.tryParse('$v')?.toLocal();
@@ -720,7 +728,10 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       // Notifier le cédant.
       final cedantUid = _cert!['cedant_uid'] as String?;
       if (cedantUid != null) {
+        // Notif sur le profil émetteur (association / élevage), pas is_main.
         final prof = await _supa.from('user_profiles_complet')
+            .select('id').eq('uid', cedantUid).eq('profile_type', _certProfileType).maybeSingle()
+          ?? await _supa.from('user_profiles_complet')
             .select('id').eq('uid', cedantUid).eq('is_main', true).maybeSingle();
         final who = (nom.trim().isNotEmpty ? nom.trim()
             : '${_cert!['acquereur_prenom'] ?? ''} ${_cert!['acquereur_nom'] ?? ''}'.trim());

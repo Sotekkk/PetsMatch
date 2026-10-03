@@ -98,10 +98,11 @@ class _AssociationNavState extends State<AssociationNav> {
                     active: _selectedIndex == 1,
                     onTap: () => setState(() => _selectedIndex = 1),
                   ),
-                  _NavItem(
+                  // Cloche avec pastille des non-lues (comme l'élevage) — avant :
+                  // icône simple, aucune bulle pour une notif reçue.
+                  NotifBadge(
                     icon: Icons.notifications_outlined,
                     activeIcon: Icons.notifications,
-                    label: 'Alertes',
                     active: _selectedIndex == 2,
                     onTap: () => setState(() => _selectedIndex = 2),
                   ),

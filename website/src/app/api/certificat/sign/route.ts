@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const { data: cert } = await supabase
       .from('certificats_engagement')
-      .select('id, cedant_uid, nom_animal, statut, date_limite_signature, acquereur_prenom, acquereur_nom')
+      .select('id, cedant_uid, nom_animal, statut, date_limite_signature, acquereur_prenom, acquereur_nom, profil_source')
       .eq('token_signature', token)
       .maybeSingle();
 
@@ -64,8 +64,13 @@ export async function POST(req: NextRequest) {
     // Notifier le cédant à la signature.
     if (action === 'signe' && cert.cedant_uid) {
       try {
-        const { data: prof } = await supabase.from('user_profiles')
+        // Profil émetteur (association / élevage), pas is_main — miroir appli.
+        const typeEmetteur = cert.profil_source === 'association' ? 'association' : 'eleveur';
+        const { data: profType } = await supabase.from('user_profiles')
+          .select('id').eq('uid', cert.cedant_uid).eq('profile_type', typeEmetteur).maybeSingle();
+        const { data: profMain } = profType ? { data: null } : await supabase.from('user_profiles')
           .select('id').eq('uid', cert.cedant_uid).eq('is_main', true).maybeSingle();
+        const prof = profType ?? profMain;
         const who = (signataire_nom
           || `${cert.acquereur_prenom ?? ''} ${cert.acquereur_nom ?? ''}`.trim()
           || "L'acquéreur");

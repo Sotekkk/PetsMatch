@@ -275,7 +275,9 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // `notification` FCM — c'est ce handler qui doit l'afficher. Sur iOS on ne
   // touche à rien : l'alerte native (apns.payload.aps.alert) continue de
   // s'afficher seule comme avant, donc on ne duplique pas ici.
-  if (Platform.isAndroid) {
+  // Message avec bloc `notification` (sendPush serveur depuis 10/2026) :
+  // déjà affiché par le système Android — ne pas le doubler ici.
+  if (Platform.isAndroid && message.notification == null) {
     final title = message.data['title'] as String?;
     final body = message.data['body'] as String?;
     if (title != null || body != null) {

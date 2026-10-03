@@ -161,7 +161,16 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
                         body,
                         ...(opts.profileId ? {recipient_profile_id: opts.profileId} : {}),
                     },
-                    android: {priority: "high"},
+                    // Bloc notification Android : affichée par le SYSTÈME même appli
+                    // fermée. Les messages data-only étaient perdus sur les
+                    // téléphones à économie de batterie agressive (Xiaomi / MIUI…) :
+                    // rappel « chaleurs » envoyé sans erreur mais jamais affiché.
+                    // L'appli (main.dart) n'affiche plus elle-même un message qui
+                    // porte ce bloc, pour éviter un doublon.
+                    android: {
+                        priority: "high",
+                        notification: {title: finalTitle, body, channelId: "high_importance_channel"},
+                    },
                     apns: {
                         headers: {"apns-priority": "10"},
                         payload: {aps: {alert: {title: finalTitle, body}, sound: "default", badge: 1}},
