@@ -307,7 +307,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       if (User_Info.catPro == 'garde') return 5; // + Alimentation (essentiel pour un pet-sitter)
       return 4; // toilettage / photographe / taxi animalier… : pas de Consultations
     }
-    if (widget.isAssociation) return 5;
+    if (widget.isAssociation) return 6; // + Documents (contrats, certificats)
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
     return 7; // éleveur / employé élevage : tous les onglets + Morphologie
@@ -2211,7 +2211,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Morphologie'), Tab(text: 'Documents')]
                       : (_statut == 'sorti' && !_isNewOwner
                           ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
                           : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
@@ -2273,6 +2273,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                     MorphoTimelineTab(animalId: widget.animalId ?? '', espece: _espece, canWrite: false),
+                    // Contrats (réservation, adoption, cession) + certificats
+                    // d'engagement — en dernier pour ne pas décaler les index.
+                    _DocumentsTab(animalId: widget.animalId ?? ''),
                   ]
                 : (_statut == 'sorti' && !_isNewOwner
                     ? [

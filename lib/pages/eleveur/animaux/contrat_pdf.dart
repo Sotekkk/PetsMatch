@@ -1561,8 +1561,10 @@ Future<Uint8List> contratReservationPdfBytes({
       pw.Text('L\'acompte sera versé par : ', style: _body()),
       _checkbox(modePaiementAcompte == 'virement', 'Virement'),
       pw.SizedBox(width: 10),
+      _checkbox(modePaiementAcompte == 'cheque', 'Chèque'),
+      pw.SizedBox(width: 10),
       _checkbox(modePaiementAcompte == 'especes', 'Espèces'),
-      if (modePaiementAcompte.isNotEmpty && modePaiementAcompte != 'virement' && modePaiementAcompte != 'especes') ...[
+      if (modePaiementAcompte.isNotEmpty && !const ['virement', 'cheque', 'especes'].contains(modePaiementAcompte)) ...[
         pw.SizedBox(width: 10),
         _checkbox(true, modePaiementAcompte),
       ],

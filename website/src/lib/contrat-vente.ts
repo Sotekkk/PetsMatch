@@ -1053,6 +1053,7 @@ export function generateContratReservationHTML(
   const mpA = (data.modePaiement ?? '').toLowerCase();
   const cbV = mpA === 'virement' ? '☑' : '☐';
   const cbE = mpA === 'especes' || mpA === 'espèces' ? '☑' : '☐';
+  const cbC = mpA === 'cheque' || mpA === 'chèque' ? '☑' : '☐';
   const tranche2 = data.montantTranche2 ? `${fmtMontant(data.montantTranche2)} euros` : '2 000 euros';
   const delaiSteril = data.sterilisationClause || '7 mois à compter de la date de naissance';
   const prix      = data.prix ? `${fmtMontant(data.prix)} euros` : '';
@@ -1137,7 +1138,7 @@ Le présent contrat de réservation devient valide une fois complété, signé e
 <div class="article">
 <div class="art-title">Article 3 – Paiement</div>
 <div class="block">
-L'acompte sera versé par le Futur Acheteur par <span class="cb" onclick="toggleCb(this)">${cbV}</span> VIREMENT ou <span class="cb" onclick="toggleCb(this)">${cbE}</span> ESPÈCES.<br>
+L'acompte sera versé par le Futur Acheteur par <span class="cb" onclick="toggleCb(this)">${cbV}</span> VIREMENT, <span class="cb" onclick="toggleCb(this)">${cbC}</span> CHÈQUE ou <span class="cb" onclick="toggleCb(this)">${cbE}</span> ESPÈCES.<br>
 Le solde du paiement total du ${jeune} sera réceptionné comme décrit à l'article 6.
 </div>
 </div>

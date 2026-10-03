@@ -94,6 +94,9 @@ class _ReservationSheetState extends State<ReservationSheet> {
   bool _certifSaving = false;
   String? _certifError;
   String? _certifToken;
+  // Contrat de réservation créé : affiché en bas de l'étape Documents
+  // (avant : rien ne restait visible après la création).
+  String? _contratToken;
 
   bool _saving = false;
   String? _error;
@@ -289,6 +292,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
       }).select('token').single();
 
       final token = res['token'] as String;
+      setState(() => _contratToken = token);
       if (uploadedUrl == null && mounted) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => ContratSignaturePage(token: token),
@@ -403,6 +407,17 @@ class _ReservationSheetState extends State<ReservationSheet> {
       setState(() => _certifSaving = false);
     }
   }
+
+  Widget _docCree({required String titre, required String action, required VoidCallback onOpen}) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF6E9E57).withValues(alpha: 0.3))),
+        child: Row(children: [
+          Expanded(child: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+              fontSize: 12, color: Color(0xFF3D6B2E)))),
+          TextButton(onPressed: onOpen, child: Text(action, style: const TextStyle(fontFamily: 'Galey', fontSize: 12))),
+        ]),
+      );
 
   Future<void> _save() async {
     if (_nomCtrl.text.trim().isEmpty) {
@@ -664,7 +679,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
             )),
             const SizedBox(height: 10),
             _FieldBlock("Paiement de l'acompte", child: Wrap(spacing: 8, children: [
-              for (final mp in const [('virement', 'Virement'), ('especes', 'Espèces')])
+              for (final mp in const [('virement', 'Virement'), ('cheque', 'Chèque'), ('especes', 'Espèces')])
                 ChoiceChip(
                   label: Text(mp.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                   selected: _modePaiementAcompte == mp.$1,
@@ -772,6 +787,15 @@ class _ReservationSheetState extends State<ReservationSheet> {
                   Expanded(child: Text(_contratFile!.name, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57)), overflow: TextOverflow.ellipsis)),
                   TextButton(onPressed: _pickContratFile, child: const Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
                 ])),
+              if (_contratToken != null) ...[
+                _docCree(
+                  titre: _contratChoice == _DocChoice.upload ? '✅ Contrat ajouté' : '✅ Contrat de réservation créé',
+                  action: 'Ouvrir · faire signer',
+                  onOpen: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => ContratSignaturePage(token: _contratToken!))),
+                ),
+                const SizedBox(height: 16),
+              ] else
               OutlinedButton.icon(
                 onPressed: _generatingContrat ? null : _creerContratReservation,
                 icon: _generatingContrat
@@ -793,7 +817,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
               const Text('📜 Certificat d\'engagement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
               if (_needsDelaiLegal && _certifChoice == _DocChoice.generate) ...[
                 const SizedBox(height: 4),
-                const Text('⚠ Signature possible par l\'acquéreur seulement 7 jours après la remise (loi 30/11/2021).',
+                const Text('⚠ La cession ne pourra intervenir que 7 jours après la signature du certificat (loi du 30/11/2021).',
                     style: TextStyle(fontSize: 11, color: _amber)),
               ],
               const SizedBox(height: 8),
@@ -822,8 +846,23 @@ class _ReservationSheetState extends State<ReservationSheet> {
                   decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: const Color(0xFF6E9E57).withValues(alpha: 0.3))),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(_certifChoice == _DocChoice.upload ? '✅ Certificat ajouté — lien :' : '✅ Certificat créé — partagez ce lien :',
+                    Text(_certifChoice == _DocChoice.upload ? '✅ Certificat ajouté' : '✅ Certificat créé',
                         style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF3D6B2E))),
+                    if (_certifChoice != _DocChoice.upload) ...[
+                      const SizedBox(height: 8),
+                      // Comme le contrat : ouvrir le certificat, l'acquéreur
+                      // peut le signer sur cet appareil (ou via le lien).
+                      FilledButton.icon(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => ContratSignaturePage(certificatEngagementToken: _certifToken!))),
+                        icon: const Icon(Icons.draw_outlined, size: 16),
+                        label: const Text('Ouvrir · faire signer l\'acquéreur', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        style: FilledButton.styleFrom(backgroundColor: _teal),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('Ou partagez le lien de signature :',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF3D6B2E))),
+                    ],
                     const SizedBox(height: 6),
                     Text('$kSiteBaseUrl/certificat/$_certifToken',
                         style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF3D6B2E))),

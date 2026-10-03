@@ -252,11 +252,9 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
           await fetch('/api/certificat/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token, action: 'lu' }) });
         }
-        if (data.date_limite_signature) {
-          const now = new Date();
-          const limite = new Date(data.date_limite_signature);
-          if (now < limite) { setDelaiBloq(true); setJoursRestants(Math.ceil((limite.getTime() - now.getTime()) / 86400_000)); }
-        }
+        // Loi 2021-1539 : le délai de 7 jours court APRÈS la signature (la
+        // cession ne peut intervenir qu'ensuite) — la signature n'est plus
+        // différée (miroir appli). Contrôle du délai : à la cession.
         const { data: cp } = await supabase.from('user_profiles_complet')
           .select('nom,firstname,lastname,siret,phone_number,numero_elevage,rue_pro,ville_pro,code_postal_pro,rue,ville,code_postal,profile_type,cat_pro')
           .eq('uid', data.cedant_uid).eq('is_main', true).maybeSingle();

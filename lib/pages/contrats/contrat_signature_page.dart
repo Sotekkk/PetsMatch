@@ -696,11 +696,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   }
 
   Future<void> _signerCertificatEngagement(String dataUrl, String nom) async {
-    if (!_certDelaiEcoule) {
-      _snack('Signature possible à partir du '
-          '${DateFormat('dd/MM/yyyy').format(_certDelaiLimite!)}.');
-      return;
-    }
+    // Loi 2021-1539 : le délai de 7 jours court APRÈS la signature du
+    // certificat (la cession ne peut intervenir qu'ensuite) — la signature
+    // elle-même n'est pas différée. Contrôle du délai : à la cession.
     setState(() => _saving = true);
     try {
       final now = DateTime.now().toIso8601String();
@@ -1018,7 +1016,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     final isSigned = statut == 'signe' || sig != null;
     final acqNom = '${_cert?['acquereur_prenom'] ?? ''} ${_cert?['acquereur_nom'] ?? ''}'.trim();
     final limite = _certDelaiLimite;
-    final delaiBloque = !isSigned && !_certDelaiEcoule;
+    // La signature n'est plus différée (cf. _signerCertificatEngagement).
+    const delaiBloque = false;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -1072,7 +1071,17 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           ),
         ],
 
-        if (!isSigned && _isAcquereur && !delaiBloque) ...[
+        // Acquéreur sur son appareil, OU cédant qui fait signer l'acquéreur en
+        // sa présence sur cet appareil (comme les contrats).
+        if (!isSigned && (_isAcquereur || _isEleveur) && !delaiBloque) ...[
+          if (!_isAcquereur) ...[
+            const SizedBox(height: 14),
+            const Text("Faire signer l'acquéreur sur cet appareil",
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
+            const SizedBox(height: 2),
+            Text('À faire en présence du futur propriétaire. La cession pourra intervenir 7 jours après la signature.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+          ],
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(12),
@@ -1088,8 +1097,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
             ),
           ),
           const SizedBox(height: 14),
-          const Text('Votre signature',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+          Text(_isAcquereur ? 'Votre signature' : "Signature de l'acquéreur",
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
           const SizedBox(height: 6),
           _CertNomField(
             initial: acqNom,

@@ -145,6 +145,7 @@ const MENU_ELEVEUR = [
     items: [
       { href: '/elevage/contrat',               label: 'Mes Contrats',      icon: '📄', premium: true },
       { href: '/mes-contrats',                  label: 'Mes Contrats reçus', icon: '📄' },
+      { href: '/elevage/certificat-engagement', label: "Certificats d'engagement", icon: '✍️' },
       { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', premium: true },
       { href: '/mes-achats', label: 'Achats & crédits', icon: '🛍️' },
     ],
@@ -730,6 +731,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/association/agenda': ['agenda association', 'calendrier association'],
   '/association/contrat': ['contrat adoption'],
   '/association/certificat-engagement': ['certificat engagement', 'certificat'],
+  '/elevage/certificat-engagement': ['certificat engagement', 'certificat', 'loi 2021'],
   '/association/facturation': ['dons', 'factures', 'recus fiscaux', 'facturation association'],
   '/association/annonces': ['annonces association'],
   '/association/annonces/creer': ['nouvelle annonce adoption'],
