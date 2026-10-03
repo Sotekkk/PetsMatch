@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
@@ -748,6 +749,22 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   /// Transmet le certificat au futur propriétaire : notif in-app si compte
   /// PetsMatch + e-mail. Calqué sur `_envoyerAcquereur`.
+  /// Client sans l'appli (ou e-mail non reçu) : partager soi-même le lien de
+  /// signature par SMS / WhatsApp / e-mail.
+  Widget _boutonPartagerLien(String? url, String sujet) {
+    if (url == null) return const SizedBox.shrink();
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        onPressed: () => Share.share('$sujet\n$url', subject: sujet),
+        icon: const Icon(Icons.share_outlined, size: 16),
+        label: const Text('Partager le lien de signature (SMS, WhatsApp…)',
+            style: TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        style: TextButton.styleFrom(foregroundColor: _teal),
+      ),
+    );
+  }
+
   Future<void> _envoyerCertificatEngagement() async {
     setState(() => _saving = true);
     try {
@@ -1044,6 +1061,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
               ),
             ),
           ),
+          const SizedBox(height: 6),
+          _boutonPartagerLien(
+            _cert?['token_signature'] == null ? null : '$kSiteBaseUrl/certificat/${_cert!['token_signature']}',
+            'Certificat d\'engagement à lire et signer — ${_cert?['nom_animal'] ?? 'Animal'}',
+          ),
           const SizedBox(height: 4),
           Text(
             'Le futur propriétaire reçoit une notification dans l\'appli (s\'il a un '
@@ -1249,6 +1271,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                     minimumSize: const Size(0, 42),
                   ),
                 ),
+              ),
+              const SizedBox(height: 6),
+              _boutonPartagerLien(
+                _doc?['token'] == null ? null : '$kSiteBaseUrl/signer-contrat/${_doc!['token']}',
+                '${_doc?['titre'] ?? 'Contrat'} — à lire et signer',
               ),
             ],
 

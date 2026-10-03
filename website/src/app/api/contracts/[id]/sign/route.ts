@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const { data: doc } = await supabase
       .from('documents_animaux')
-      .select('id, animal_id, uid_eleveur, type, titre, statut, metadata')
+      .select('id, animal_id, uid_eleveur, type, titre, statut, metadata, pro_profile_id')
       .eq('id', id)
       .maybeSingle();
     if (!doc) return NextResponse.json({ error: 'Contrat introuvable' }, { status: 404 });
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Notifications inter-parties
     const isAdoption = doc.type === 'contrat_adoption';
-    const { partieVendeur, partieAcquereurDefaut } = (() => {
+    const { partieVendeur: partieVendeurType, partieAcquereurDefaut } = (() => {
       switch (doc.type) {
         case 'contrat_garde':
         case 'contrat_hebergement':
@@ -142,6 +142,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           return { partieVendeur: 'L\'éleveur', partieAcquereurDefaut: 'L\'acquéreur' };
       }
     })();
+    // Nom réel de la structure émettrice (« Refuge de la Marne a signé ») —
+    // miroir appli (contrat_finalize.dart) ; avant : « L'éleveur a signé »
+    // même pour une association.
+    let partieVendeur = partieVendeurType;
+    if (doc.pro_profile_id) {
+      const { data: emetteur } = await supabase.from('user_profiles')
+        .select('nom, profile_type').eq('id', doc.pro_profile_id).maybeSingle();
+      if (emetteur?.nom?.trim()) partieVendeur = emetteur.nom.trim();
+      else if (emetteur?.profile_type === 'association') partieVendeur = "L'association";
+    }
     const proProfileType = (() => {
       switch (doc.type) {
         case 'contrat_garde': return 'garde';

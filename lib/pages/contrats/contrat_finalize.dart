@@ -249,11 +249,25 @@ Future<void> notifierContratSignature({
   final titre = (doc['titre'] as String?) ?? 'le contrat';
   final labels = _partiesLabels(type);
   final acqNom = (meta['acquereur_nom'] as String?) ?? labels.acquereur;
-  final partieVendeur = labels.vendeur;
+  var partieVendeur = labels.vendeur;
   final eleveurUid = doc['uid_eleveur'] as String?;
   // Profil PRO qui a émis le contrat (garde, pension, éducation…) — la notif
   // « signé » doit y atterrir, pas sur is_main (souvent un autre profil).
   final proProfileId = doc['pro_profile_id'] as String?;
+  // Nom réel de la structure émettrice (« Refuge de la Marne a signé ») —
+  // avant : « L'éleveur a signé » même pour une association.
+  if (proProfileId != null && proProfileId.isNotEmpty) {
+    try {
+      final p = await supa.from('user_profiles_complet')
+          .select('nom, profile_type').eq('id', proProfileId).maybeSingle();
+      final nom = (p?['nom'] as String?)?.trim() ?? '';
+      if (nom.isNotEmpty) {
+        partieVendeur = nom;
+      } else if (p?['profile_type'] == 'association') {
+        partieVendeur = "L'association";
+      }
+    } catch (_) {}
+  }
   var acqUid = meta['acquereur_uid'] as String? ?? doc['uid_acquereur'] as String?
       ?? meta['client_uid'] as String?;
   // Repli : retrouver l'acquéreur PetsMatch via son email si l'uid manque

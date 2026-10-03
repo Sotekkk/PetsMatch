@@ -25,6 +25,9 @@ class MesContratsParticulierPage extends StatefulWidget {
 class _MesContratsParticulierPageState extends State<MesContratsParticulierPage> {
   static final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _docs = [];
+  // Certificats d'engagement reçus (à signer / signés) — avant : absents de
+  // « Mes contrats », le client ne les retrouvait que via la notification.
+  List<Map<String, dynamic>> _certs = [];
   bool _loading = true;
   bool _openedHighlight = false;
 
@@ -88,13 +91,49 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
         if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;
         return target == activePid;
       }).toList();
+      List<Map<String, dynamic>> certs = [];
+      try {
+        final cr = await _supa.from('certificats_engagement')
+            .select('id, token_signature, statut, nom_animal, espece, signe_le, date_signature_acquereur, created_at, cedant_uid')
+            .or([
+              if (uid != null) 'acquereur_uid.eq.$uid',
+              if (email != null) 'acquereur_email.ilike.$email',
+            ].join(','))
+            .order('created_at', ascending: false);
+        certs = List<Map<String, dynamic>>.from(cr as List)
+            .where((c) => uid == null || c['cedant_uid'] != uid).toList();
+      } catch (_) {}
       if (mounted) {
-        setState(() { _docs = filtered; _loading = false; });
+        setState(() { _docs = filtered; _certs = certs; _loading = false; });
         _maybeOpenHighlight();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Widget _certCard(Map<String, dynamic> c) {
+    final signe = c['statut'] == 'signe';
+    final d = DateTime.tryParse((c['signe_le'] ?? c['date_signature_acquereur'] ?? '').toString());
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        leading: Icon(signe ? Icons.verified : Icons.draw_outlined, color: signe ? const Color(0xFF6E9E57) : Colors.orange),
+        title: Text('Certificat d\'engagement — ${c['nom_animal'] ?? 'Animal'}',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+        subtitle: Text(signe
+                ? 'Signé${d != null ? ' le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}' : ''}'
+                : 'À lire et signer',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: c['token_signature'] == null ? null : () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+              ContratSignaturePage(certificatEngagementToken: c['token_signature'] as String)));
+          _load();
+        },
+      ),
+    );
   }
 
   void _maybeOpenHighlight() {
@@ -131,7 +170,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
           : RefreshIndicator(
               onRefresh: _load,
               color: _teal,
-              child: _docs.isEmpty
+              child: _docs.isEmpty && _certs.isEmpty
                   ? ListView(children: [
                       const SizedBox(height: 80),
                       Center(
@@ -147,10 +186,12 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
                         ]),
                       ),
                     ])
-                  : ListView.builder(
+                  : ListView(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                      itemCount: _docs.length,
-                      itemBuilder: (context, i) => _DocCard(doc: _docs[i], onRefresh: _load),
+                      children: [
+                        for (final c in _certs) _certCard(c),
+                        for (final d in _docs) _DocCard(doc: d, onRefresh: _load),
+                      ],
                     ),
             ),
     );
