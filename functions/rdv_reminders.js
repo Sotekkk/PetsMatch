@@ -432,8 +432,14 @@ exports.sendCoursCollectifReminders = functions
                         {type: "cours_collectif_rappel", cours_id: cours.id},
                         {profileId: cours.pro_profile_id || null});
 
-                    // Rappel à chaque participant inscrit.
+                    // Rappel à chaque participant inscrit — une seule fois par
+                    // personne : pas au pro s'il est aussi inscrit (déjà
+                    // prévenu ci-dessus), ni deux fois à un client inscrit
+                    // plusieurs fois (plusieurs chiens) — sinon doublons.
+                    const dejaPrevenus = new Set([cours.pro_uid]);
                     for (const p of participants) {
+                        if (!p.client_uid || dejaPrevenus.has(p.client_uid)) continue;
+                        dejaPrevenus.add(p.client_uid);
                         await supabaseInsert("notifications", [{
                             uid: p.client_uid,
                             type: "cours_collectif_rappel",
