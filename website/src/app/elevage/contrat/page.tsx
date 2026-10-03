@@ -371,7 +371,9 @@ export default function ContratsPage() {
     const nom = profile.is_elevage ? (profile.name_elevage || `${profile.firstname} ${profile.lastname}`.trim()) : `${profile.firstname} ${profile.lastname}`.trim();
     const adresse = profile.is_elevage ? (profile.adress_elevage || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', ')) : (profile.adress || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', '));
     const tel = profile.is_elevage ? `${profile.code_iso_elevage ?? '+33'} ${profile.numero_elevage ?? ''}`.trim() : `${profile.code_iso ?? '+33'} ${profile.phone_number ?? ''}`.trim();
-    return { nom, adresse, tel, siret: profile.siret ?? '', email: profile.email ?? '' };
+    // Représentant (« Prénom Nom ») : contrat de réservation, modèle éleveur.
+    const representant = `${profile.firstname ?? ''} ${profile.lastname ?? ''}`.trim();
+    return { nom, adresse, tel, siret: profile.siret ?? '', email: profile.email ?? '', representant };
   }
 
   async function uploadCertificatFile(file: File, uid: string): Promise<string> {
@@ -418,7 +420,7 @@ export default function ContratsPage() {
     const acqNomFull = `${acqPrenom} ${acqNom}`.trim();
     const opts = { animalId: selectedAnimal.id, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! };
     const dataContrat = { nom: acqNomFull, prenom: acqPrenom, nomFamille: acqNom, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes, ...tvaFields };
-    const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
+    const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel, representant: elv.representant };
     const animalEnrichi = animalEnrichiForm();
 
     // Sauvegarder d'abord pour obtenir le token, puis ouvrir via /signer-contrat/[token]
@@ -476,7 +478,7 @@ export default function ContratsPage() {
     const elv = eleveurInfo();
     const acqNomFull = `${acqPrenom} ${acqNom}`.trim();
     const dataContrat = { nom: acqNomFull, prenom: acqPrenom, nomFamille: acqNom, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes, ...tvaFields };
-    const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
+    const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel, representant: elv.representant };
     const animalEnrichi = animalEnrichiForm();
     const opts = { animalId: selectedAnimal.id, supabaseUrl: '', supabaseKey: '' };
     let html = '';

@@ -4,6 +4,8 @@
 
 export interface EleveurContrat {
   nom: string;
+  /** « Madame Prénom Nom » — représentant (contrat de réservation). */
+  representant?: string;
   adresse?: string;
   tel?: string;
   email?: string;
@@ -54,6 +56,9 @@ export interface DataContrat {
   clausesOff?: string[];
   mediateurNom?: string;
   mediateurUrl?: string;
+  /** Réservation : âge minimum de vente / délai de récupération (au choix du vendeur). */
+  ageVente?: string;
+  delaiRecuperation?: string;
 }
 
 // ⚠️ Garder identique à `_termes()` de l'appli (lib/pages/eleveur/animaux/contrat_pdf.dart).
@@ -1042,7 +1047,14 @@ export function generateContratReservationHTML(
   const jeune = t.jeune;
   const today = new Date().toLocaleDateString('fr-FR');
   const dn = animal.date_naissance ? new Date(animal.date_naissance).toLocaleDateString('fr-FR') : '';
-  const acqNom    = data.nom ?? '';
+  const acqNom    = [data.prenom, data.nomFamille].filter(Boolean).join(' ') || (data.nom ?? '');
+  // Mode de paiement de l'acompte et tranche de stérilisation (modèle éleveur,
+  // miroir de contratReservationPdfBytes dans l'appli).
+  const mpA = (data.modePaiement ?? '').toLowerCase();
+  const cbV = mpA === 'virement' ? '☑' : '☐';
+  const cbE = mpA === 'especes' || mpA === 'espèces' ? '☑' : '☐';
+  const tranche2 = data.montantTranche2 ? `${fmtMontant(data.montantTranche2)} euros` : '2 000 euros';
+  const delaiSteril = data.sterilisationClause || '7 mois à compter de la date de naissance';
   const prix      = data.prix ? `${fmtMontant(data.prix)} euros` : '';
   const acompte   = data.acompte ? `${fmtMontant(data.acompte)} euros` : '';
   const tranche1  = data.tranche1 ? `${fmtMontant(data.tranche1)} euros` : '';
@@ -1080,18 +1092,18 @@ export function generateContratReservationHTML(
 
 <div class="parties">
 <strong>ENTRE :</strong><br>
-${eleveur.nom}${eleveur.adresse ? `, demeurant ${eleveur.adresse}` : ''}${eleveur.siret ? `, SIRET ${eleveur.siret}` : ''}${eleveur.tel ? `, ${eleveur.tel}` : ''}<br>
+${eleveur.nom}${eleveur.representant && eleveur.representant !== eleveur.nom ? `, ${eleveur.representant}` : ''}${eleveur.adresse ? `, demeurant ${eleveur.adresse}` : ''}${eleveur.siret ? `, SIRET ${eleveur.siret}` : ''}${eleveur.tel ? `, ${eleveur.tel}` : ''}<br>
 <em>Le Vendeur</em>
 </div>
 
 <div class="between">ET :</div>
 
 <div class="parties">
-<span class="cb" onclick="toggleCb(this)">☐</span> Monsieur &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Madame<br>
-Nom : <span class="e wide" contenteditable="true" data-ph="Nom">${acqNom ? acqNom.split(' ').slice(-1)[0] : ''}</span> &nbsp;
-Prénom : <span class="e wide" contenteditable="true" data-ph="Prénom">${acqNom ? acqNom.split(' ').slice(0,-1).join(' ') : ''}</span><br>
+<span class="cb" onclick="toggleCb(this)">${data.civilite === 'M.' || data.civilite === 'Monsieur' ? '☑' : '☐'}</span> Monsieur &nbsp; <span class="cb" onclick="toggleCb(this)">${data.civilite === 'Mme' || data.civilite === 'Madame' ? '☑' : '☐'}</span> Madame<br>
+Nom : <span class="e wide" contenteditable="true" data-ph="Nom">${data.nomFamille ?? (acqNom ? acqNom.split(' ').slice(-1)[0] : '')}</span> &nbsp;
+Prénom : <span class="e wide" contenteditable="true" data-ph="Prénom">${data.prenom ?? (acqNom ? acqNom.split(' ').slice(0,-1).join(' ') : '')}</span><br>
 Demeurant à : <span class="e full" contenteditable="true" data-ph="Adresse">${data.adresse ?? ''}</span>
-Ville, code postal : <span class="e wide" contenteditable="true" data-ph="Ville, code postal"></span><br>
+Ville, code postal : <span class="e wide" contenteditable="true" data-ph="Ville, code postal">${[data.cp, data.ville].filter(Boolean).join(' ')}</span><br>
 Téléphone : <span class="e wide" contenteditable="true" data-ph="Téléphone">${data.tel ?? ''}</span> &nbsp;
 Mail : <span class="e wide" contenteditable="true" data-ph="Email">${data.email ?? ''}</span>
 </div>
@@ -1125,7 +1137,7 @@ Le présent contrat de réservation devient valide une fois complété, signé e
 <div class="article">
 <div class="art-title">Article 3 – Paiement</div>
 <div class="block">
-L'acompte sera versé par le Futur Acheteur par <span class="cb" onclick="toggleCb(this)">☐</span> VIREMENT ou <span class="cb" onclick="toggleCb(this)">☐</span> ESPÈCES.<br>
+L'acompte sera versé par le Futur Acheteur par <span class="cb" onclick="toggleCb(this)">${cbV}</span> VIREMENT ou <span class="cb" onclick="toggleCb(this)">${cbE}</span> ESPÈCES.<br>
 Le solde du paiement total du ${jeune} sera réceptionné comme décrit à l'article 6.
 </div>
 </div>
@@ -1149,7 +1161,8 @@ ${eleveur.nom} s'engage à donner au Futur Acheteur des nouvelles régulières d
 <div class="article">
 <div class="art-title">Article 5 – Contrat de vente</div>
 <div class="block">
-Le Vendeur et le Futur Acheteur finaliseront la vente par la signature du contrat définitif de vente de l'animal, au maximum à ses <span class="e" contenteditable="true" data-ph="10">10</span> semaines sans quoi des frais de gardiennage seront facturés et la vente pourra être annulée au-delà des <span class="e" contenteditable="true" data-ph="12">12</span> semaines du ${jeune} si celui-ci n'a pas été récupéré par sa famille. Dans ce cas, aucun acompte ne sera restitué.
+Le Vendeur et le Futur Acheteur finaliseront la vente par la signature du contrat définitif de vente de l'animal, au plus tôt à ses <span class="e" contenteditable="true" data-ph="12 semaines">${data.ageVente || '12 semaines'}</span>. La vente pourra être annulée au-delà des <span class="e" contenteditable="true" data-ph="6 mois">${data.delaiRecuperation || '6 mois'}</span> du ${jeune} si celui-ci n'a pas été récupéré par sa famille. Dans ce cas, aucun acompte ne sera restitué.<br><br>
+Un certificat d'engagement et de connaissance des besoins de l'animal devra être signé par le Futur Acheteur au moins 7 jours avant le départ de l'animal.
 </div>
 </div>
 
@@ -1160,7 +1173,7 @@ Le prix du ${jeune} est fixé à <span class="e wide" contenteditable="true" dat
 — Acompte : <span class="e wide" contenteditable="true" data-ph="montant acompte">${acompte}</span><br>
 — Tranche 1 (payable au départ effectif du ${jeune}) : <span class="e wide" contenteditable="true" data-ph="montant tranche 1">${tranche1}</span><br>
 — Tranche 2 (payable au terme du délai de stérilisation
-[<span class="e" contenteditable="true">${isMasculin ? sterilDelaiM : sterilDelaiF}</span> mois à compter de la date de naissance pour un ${jeune} ${isMasculin ? 'mâle' : 'femelle'}] en cas de non-présentation du certificat de stérilisation par un vétérinaire agréé) : <span class="e wide" contenteditable="true" data-ph="montant tranche 2">2.000 euros</span><br><br>
+[<span class="e wide" contenteditable="true">${delaiSteril}</span>] en cas de non-présentation du certificat de stérilisation par un vétérinaire agréé) : <span class="e wide" contenteditable="true" data-ph="montant tranche 2">${tranche2}</span><br><br>
 La Tranche 2 n'est pas due par l'Acheteur si la stérilisation a été effectuée par le Vendeur avant la livraison effective de l'animal.
 </div>
 </div>

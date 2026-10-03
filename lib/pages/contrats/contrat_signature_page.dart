@@ -326,7 +326,33 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     };
 
     try {
-      if (type == 'contrat_vente' || type == 'contrat_reservation') {
+      if (type == 'contrat_reservation') {
+        // Modèle dédié (avant : le contrat de VENTE était généré pour une
+        // réservation). Association = réservation d'adoption.
+        _pdfBytes = await contratReservationPdfBytes(
+          animal: animalPdf, eleveur: _eleveur!,
+          isAssociation: _animal?['is_association'] == true,
+          acquereurNom: m('acquereur_nom'),
+          acquereurAdresse: m('acquereur_adresse'),
+          acquereurEmail: m('acquereur_email'),
+          acquereurTel: m('acquereur_tel'),
+          civiliteAcheteur: m('acquereur_civilite'),
+          prenomAcheteur: m('acquereur_prenom'),
+          nomAcheteur: m('acquereur_nom_famille'),
+          cpAcheteur: m('acquereur_cp'),
+          villeAcheteur: m('acquereur_ville'),
+          acompte: m('acompte').isNotEmpty ? m('acompte') : m('prix'),
+          modePaiementAcompte: m('mode_paiement_acompte'),
+          prixTotal: m('prix_total'),
+          clauseSterilisation: m('clause_sterilisation') == 'true',
+          montantTranche2: m('montant_tranche2'),
+          delaiSterilisation: m('delai_sterilisation'),
+          ageMinimumVente: m('age_vente').isEmpty ? '12 semaines' : m('age_vente'),
+          delaiRecuperation: m('delai_recuperation').isEmpty ? '6 mois' : m('delai_recuperation'),
+          dateReservation: dateCession, notes: m('notes'),
+          sigVendeur: sigElv, sigAcheteur: sigAcq, villeSignature: ville,
+        );
+      } else if (type == 'contrat_vente') {
         _pdfBytes = await contratVentePdfBytes(
           animal: animalPdf, eleveur: _eleveur!,
           acquereurNom: m('acquereur_nom'),

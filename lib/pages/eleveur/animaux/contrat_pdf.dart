@@ -1486,3 +1486,190 @@ Future<Uint8List> certificatEngagementPdfBytes({
 
   return pdf.save();
 }
+
+
+// ─── CONTRAT DE RÉSERVATION ───────────────────────────────────────────────────
+// Modèle fourni par l'éleveuse (Pomsky de la Luna), généralisé : le nom de
+// l'élevage remplace « POMSKY DE LA LUNA », vendeur et futur acheteur sont
+// remplis depuis les profils / la fiche. Variante association : réservation
+// d'adoption (participation aux frais, pas de tranche de stérilisation).
+// Miroir : website/src/lib/contrat-reservation.ts.
+
+Future<Uint8List> contratReservationPdfBytes({
+  required Map<String, dynamic> animal,
+  required Map<String, dynamic> eleveur,
+  bool isAssociation = false,
+  String acquereurNom = '', String acquereurAdresse = '', String acquereurEmail = '', String acquereurTel = '',
+  String civiliteAcheteur = '', String prenomAcheteur = '', String nomAcheteur = '',
+  String cpAcheteur = '', String villeAcheteur = '',
+  String acompte = '', String modePaiementAcompte = '', String prixTotal = '',
+  bool clauseSterilisation = false, String montantTranche2 = '', String delaiSterilisation = '',
+  String ageMinimumVente = '12 semaines', String delaiRecuperation = '6 mois',
+  DateTime? dateReservation, String notes = '',
+  String? sigVendeur, String? sigAcheteur, String villeSignature = '',
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final t = _termes(animal['espece'] as String?);
+  final p = _parties(eleveur);
+  final jeune = t['jeune'] ?? 'animal';
+  final today = _fmt(DateTime.now());
+  final dateStr = dateReservation != null ? _fmt(dateReservation) : today;
+  final dn = animal['date_naissance'] != null
+      ? _fmt(DateTime.tryParse(animal['date_naissance'].toString()) ?? DateTime.now()) : '';
+  final representant = '${eleveur['firstname'] ?? ''} ${eleveur['lastname'] ?? ''}'.trim();
+  final nomStructure = p.eleveurNom.toUpperCase();
+  final acheteurNomComplet = [civiliteAcheteur, prenomAcheteur, nomAcheteur]
+      .where((s) => s.trim().isNotEmpty).join(' ').trim();
+  final acheteurLabel = acheteurNomComplet.isNotEmpty ? acheteurNomComplet : acquereurNom;
+  double num(String s) => double.tryParse(s.replaceAll(',', '.').replaceAll(' ', '')) ?? 0;
+  String eur(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+  final prix = num(prixTotal);
+  final ac = num(acompte);
+  final tranche1 = prix > 0 ? prix - ac : 0.0;
+
+  final vendeurLbl = isAssociation ? 'L\'Association' : 'Le Vendeur';
+  final acheteurLbl = isAssociation ? 'Le Futur Adoptant' : 'Le Futur Acheteur';
+  final contratFinal = isAssociation ? 'contrat d\'adoption' : 'contrat de vente';
+  final prixLbl = isAssociation ? 'participation aux frais' : 'prix';
+  final acheteurDu = isAssociation ? 'du Futur Adoptant' : 'du Futur Acheteur';
+  final acheteurAu = isAssociation ? 'au Futur Adoptant' : 'au Futur Acheteur';
+
+  final articles = <pw.Widget>[
+    pw.SizedBox(height: 9),
+    pw.Text('Article 1 - Objet du contrat', style: _artTitle()),
+    pw.SizedBox(height: 3),
+    _para('$acheteurLbl réserve auprès ${isAssociation ? 'de l\'Association' : 'du Vendeur'}, pour en devenir '
+        'le futur propriétaire, le $jeune désigné :'),
+    _line('Nom', animal['nom'] as String?),
+    _line('Race', animal['race'] as String?),
+    _line('Né le', dn.isEmpty ? null : dn),
+    _line('Identification', animal['identification'] as String?),
+    _line('Père', _avecPuce(animal['nom_pere'], animal['puce_pere'])),
+    _line('Mère', _avecPuce(animal['nom_mere'], animal['puce_mere'])),
+
+    pw.SizedBox(height: 9),
+    pw.Text('Article 2 - Réservation', style: _artTitle()),
+    pw.SizedBox(height: 3),
+    _para('Le présent contrat de réservation devient valide une fois complété, signé et retourné '
+        '${isAssociation ? 'à l\'Association' : 'au Vendeur'} et accompagné du règlement de l\'acompte à hauteur de '
+        '${ac > 0 ? '${eur(ac)} euros' : '………… euros'}, qui viendra en déduction du $prixLbl final.'),
+
+    pw.SizedBox(height: 9),
+    pw.Text('Article 3 - Paiement', style: _artTitle()),
+    pw.SizedBox(height: 3),
+    pw.Row(children: [
+      pw.Text('L\'acompte sera versé par : ', style: _body()),
+      _checkbox(modePaiementAcompte == 'virement', 'Virement'),
+      pw.SizedBox(width: 10),
+      _checkbox(modePaiementAcompte == 'especes', 'Espèces'),
+      if (modePaiementAcompte.isNotEmpty && modePaiementAcompte != 'virement' && modePaiementAcompte != 'especes') ...[
+        pw.SizedBox(width: 10),
+        _checkbox(true, modePaiementAcompte),
+      ],
+    ]),
+    _para('Le solde sera réglé comme décrit à l\'article 6.'),
+
+    pw.SizedBox(height: 9),
+    pw.Text('Article 4 - Annulation', style: _artTitle()),
+    pw.SizedBox(height: 3),
+    _para('En cas d\'annulation du contrat de réservation par $acheteurLbl avant la signature du $contratFinal '
+        'final, l\'acompte ne sera en aucun cas restitué.'),
+    _para('$nomStructure peut se prévaloir de mettre fin à une réservation dans un ou plusieurs des cas suivants : '
+        'i) problème de santé du $jeune découvert après le jour de la réservation, ii) décès du $jeune, '
+        'iii) découverte d\'une difficulté liée aux futures conditions d\'accueil du $jeune qui pourrait mettre en '
+        'péril sa santé ou son équilibre.'),
+    _para('Dans ces cas-là, $nomStructure procèdera, au choix $acheteurDu, soit au remboursement total de l\'acompte, '
+        'soit proposera un autre $jeune suivant disponibilité.'),
+
+    pw.SizedBox(height: 9),
+    pw.Text('Article 5 - Information', style: _artTitle()),
+    pw.SizedBox(height: 3),
+    _para('$nomStructure s\'engage à donner $acheteurAu des nouvelles régulières '
+        'du $jeune ${isAssociation ? 'jusqu\'à son départ' : 'tout au long du sevrage'}.'),
+
+    pw.SizedBox(height: 9),
+    pw.Text('Article 6 - ${isAssociation ? 'Contrat d\'adoption' : 'Contrat de vente'}', style: _artTitle()),
+    pw.SizedBox(height: 3),
+    _para(isAssociation
+        ? 'L\'Association et le Futur Adoptant finaliseront l\'adoption par la signature du contrat d\'adoption '
+          'définitif. La réservation pourra être annulée au-delà de $delaiRecuperation si l\'animal n\'a pas été '
+          'récupéré par sa famille ; dans ce cas, aucun acompte ne sera restitué.'
+        : 'Le Vendeur et le Futur Acheteur finaliseront la vente par la signature du contrat définitif de vente '
+          'de l\'animal, au plus tôt à ses $ageMinimumVente. La vente pourra être annulée au-delà des '
+          '$delaiRecuperation du $jeune si celui-ci n\'a pas été récupéré par sa famille ; dans ce cas, aucun '
+          'acompte ne sera restitué.'),
+    _para('Un certificat d\'engagement et de connaissance des besoins de l\'animal devra être signé par '
+        '${acheteurLbl.replaceFirst('Le ', 'le ')} au moins 7 jours avant le départ de l\'animal.'),
+
+    pw.SizedBox(height: 9),
+    pw.Text('Article 7 - ${isAssociation ? 'Participation aux frais' : 'Prix${clauseSterilisation ? ' - Stérilisation' : ''}'}',
+        style: _artTitle()),
+    pw.SizedBox(height: 3),
+    _para('Le $prixLbl ${isAssociation ? 'est fixée' : 'du $jeune est fixé'} à '
+        '${prix > 0 ? '${eur(prix)} euros' : '………… euros'}. ${isAssociation ? 'Elle' : 'Le prix'} est décomposé${isAssociation ? 'e' : ''} comme suit :'),
+    _line('Acompte', ac > 0 ? '${eur(ac)} €' : null),
+    _line(isAssociation ? 'Solde (payable au départ de l\'animal)' : 'Tranche 1 (payable au départ effectif du $jeune)',
+        prix > 0 ? '${eur(tranche1)} €' : null),
+    if (!isAssociation && clauseSterilisation) ...[
+      _para('Tranche 2 (payable au terme du délai de stérilisation '
+          '[${delaiSterilisation.trim().isEmpty ? 'à compter de la date de naissance' : delaiSterilisation.trim()}] '
+          'en cas de non-présentation du certificat de stérilisation par un vétérinaire agréé) : '
+          '${montantTranche2.trim().isEmpty ? '………… ' : '${montantTranche2.trim()} '}euros.'),
+      _para('La Tranche 2 n\'est pas due par l\'Acheteur si la stérilisation a été effectuée par le Vendeur '
+          'avant la livraison effective de l\'animal.'),
+    ],
+    if (notes.trim().isNotEmpty) ...[
+      pw.SizedBox(height: 9),
+      pw.Text('Conditions particulières', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para(notes.trim()),
+    ],
+  ];
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text(isAssociation ? 'CONTRAT DE RÉSERVATION D\'ADOPTION' : 'CONTRAT DE RÉSERVATION',
+          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _dark, letterSpacing: 1.5))),
+      pw.SizedBox(height: 16),
+      pw.Text('ENTRE :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line(isAssociation ? 'Association' : 'Vendeur',
+          representant.isNotEmpty && representant != p.eleveurNom ? '${p.eleveurNom}, représenté par $representant' : p.eleveurNom),
+      _line('Demeurant à', p.eleveurAdresse),
+      _line(isAssociation ? 'RNA / SIRET' : 'SIRET', p.eleveurSiret),
+      _line('Téléphone', p.eleveurTel),
+      _line('Email', p.eleveurEmail),
+      pw.Text(vendeurLbl, style: pw.TextStyle(fontSize: 8, color: _grey, fontStyle: pw.FontStyle.italic)),
+      pw.SizedBox(height: 10),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Nom', acheteurLabel.isEmpty ? null : acheteurLabel),
+      _line('Demeurant à', acquereurAdresse),
+      _line('Ville, code postal', [cpAcheteur, villeAcheteur].where((s) => s.trim().isNotEmpty).join(' ')),
+      _line('Téléphone', acquereurTel),
+      _line('Email', acquereurEmail),
+      pw.Text(acheteurLbl, style: pw.TextStyle(fontSize: 8, color: _grey, fontStyle: pw.FontStyle.italic)),
+      pw.SizedBox(height: 8),
+      pw.Text('Désignés séparément comme la « Partie » et collectivement comme les « Parties ».', style: _body()),
+      pw.SizedBox(height: 4),
+      pw.Text('Il a été convenu ce qui suit :', style: pw.TextStyle(fontSize: 9, color: _dark, fontStyle: pw.FontStyle.italic)),
+      pw.SizedBox(height: 4),
+      pw.Divider(color: PdfColors.grey300, thickness: 0.5),
+      ...articles,
+      pw.SizedBox(height: 12),
+      pw.Text(villeSignature.trim().isEmpty ? 'Le $dateStr.' : 'Fait à ${villeSignature.trim()}, le $dateStr.', style: _body()),
+      pw.SizedBox(height: 8),
+      _copyBanner('« Lu et approuvé » — contrat établi en deux exemplaires, un pour chaque partie.'),
+      pw.Row(children: [
+        _signBlock(vendeurLbl, p.eleveurNom, signature: sigVendeur),
+        pw.SizedBox(width: 16),
+        _signBlock(acheteurLbl, acheteurLabel, signature: sigAcheteur),
+      ]),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today · PetsMatch', style: _small())),
+    ],
+  ));
+  return pdf.save();
+}

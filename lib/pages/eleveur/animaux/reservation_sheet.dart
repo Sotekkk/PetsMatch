@@ -64,8 +64,19 @@ class _ReservationSheetState extends State<ReservationSheet> {
   final _telCtrl     = TextEditingController();
   final _adresseCtrl = TextEditingController();
   final _acompteCtrl = TextEditingController();
+  // Contrat de réservation (modèle éleveur) : prix total, mode de paiement de
+  // l'acompte, tranche de stérilisation (élevage uniquement).
+  final _prixTotalCtrl = TextEditingController();
+  String _modePaiementAcompte = '';
+  bool _clauseSteril = false;
+  final _tranche2Ctrl = TextEditingController();
+  final _delaiSterilCtrl = TextEditingController(text: '7 mois à compter de la date de naissance');
+  // Âges au choix du vendeur (article « Contrat de vente » du modèle).
+  final _ageVenteCtrl = TextEditingController(text: '12 semaines');
+  final _delaiRecupCtrl = TextEditingController(text: '6 mois');
   final _notesCtrl   = TextEditingController();
   late DateTime _dateReservation;
+  bool get _isAsso => widget.animal['is_association'] == true;
 
   // Documents optionnels — contrat de réservation et/ou certificat
   // d'engagement (légal, chien/chat). Chacun : passer l'étape, générer dans
@@ -114,6 +125,11 @@ class _ReservationSheetState extends State<ReservationSheet> {
     _telCtrl.dispose();
     _adresseCtrl.dispose();
     _acompteCtrl.dispose();
+    _prixTotalCtrl.dispose();
+    _tranche2Ctrl.dispose();
+    _delaiSterilCtrl.dispose();
+    _ageVenteCtrl.dispose();
+    _delaiRecupCtrl.dispose();
     _notesCtrl.dispose();
     _certifPrenomCtrl.dispose();
     _certifNomCtrl.dispose();
@@ -257,6 +273,16 @@ class _ReservationSheetState extends State<ReservationSheet> {
           'acquereur_tel':     _telCtrl.text.trim(),
           'acquereur_adresse': _adresseCtrl.text.trim(),
           'prix':              _acompteCtrl.text.trim(),
+          'acompte':           _acompteCtrl.text.trim(),
+          'prix_total':        _prixTotalCtrl.text.trim(),
+          'mode_paiement_acompte': _modePaiementAcompte,
+          'clause_sterilisation': (!_isAsso && _clauseSteril).toString(),
+          'montant_tranche2':  _tranche2Ctrl.text.trim(),
+          'delai_sterilisation': _delaiSterilCtrl.text.trim(),
+          'age_vente':         _ageVenteCtrl.text.trim(),
+          'delai_recuperation': _delaiRecupCtrl.text.trim(),
+          'acquereur_prenom':  _certifPrenomCtrl.text.trim(),
+          'acquereur_nom_famille': _certifNomCtrl.text.trim(),
           'date_cession':      _dateReservation.toIso8601String().split('T').first,
           'notes':             _notesCtrl.text.trim(),
         },
@@ -337,36 +363,32 @@ class _ReservationSheetState extends State<ReservationSheet> {
     try {
       final dateRemise = DateTime.now();
       final dateLimite = _needsDelaiLegal ? dateRemise.add(const Duration(days: 7)) : null;
-      final res = await http.post(
-        Uri.parse('$kSiteBaseUrl/api/certificat/create'),
-        headers: await siteApiHeaders(),
-        body: jsonEncode({
-          'uid':                    widget.uid,
-          'animal_id':              widget.animal['id'],
-          'espece':                 widget.animal['espece'] ?? '',
-          'race':                   widget.animal['race'],
-          'nom_animal':             widget.animal['nom'] ?? '',
-          'date_naissance_animal':  widget.animal['date_naissance'],
-          'num_identification':     widget.animal['identification'],
-          'acquereur_uid':          _foundUser?['uid'],
-          'acquereur_nom':          _certifNomCtrl.text.trim(),
-          'acquereur_prenom':       _certifPrenomCtrl.text.trim(),
-          'acquereur_email':        _emailCtrl.text.trim(),
-          'acquereur_telephone':    _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
-          'acquereur_adresse':      _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
-          'modalite_cession':       _qualite == 'autre' ? 'gratuit' : 'vente',
-          'prix':                   _acompteCtrl.text.trim().isEmpty ? null : double.tryParse(_acompteCtrl.text.replaceAll(',', '.')),
-          'date_remise':            dateRemise.toIso8601String(),
-          'date_limite_signature':  dateLimite?.toIso8601String(),
-          'notes':                  _notesCtrl.text.trim(),
-        }),
-      );
-      final json = jsonDecode(res.body) as Map<String, dynamic>;
-      if (res.statusCode != 200) {
-        setState(() => _certifError = json['error'] as String? ?? 'Erreur serveur');
-        return;
-      }
-      final token = json['token'] as String?;
+      // Insertion directe (RLS : cédant ou cogérant) — avant : appel à
+      // /api/certificat/create du site, dont la réponse vide (route absente
+      // de la version en ligne / accès bêta) donnait « Unexpected end of
+      // input at character 1 ».
+      final row = await _supa.from('certificats_engagement').insert({
+        'cedant_uid':             widget.uid,
+        'animal_id':              widget.animal['id'],
+        'espece':                 widget.animal['espece'] ?? '',
+        'race':                   widget.animal['race'],
+        'nom_animal':             widget.animal['nom'] ?? '',
+        'date_naissance_animal':  widget.animal['date_naissance'],
+        'num_identification':     widget.animal['identification'],
+        if (_foundUser?['uid'] != null) 'acquereur_uid': _foundUser?['uid'],
+        'acquereur_nom':          _certifNomCtrl.text.trim(),
+        'acquereur_prenom':       _certifPrenomCtrl.text.trim(),
+        'acquereur_email':        _emailCtrl.text.trim(),
+        'acquereur_telephone':    _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'acquereur_adresse':      _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+        'modalite_cession':       _qualite == 'autre' ? 'gratuit' : 'vente',
+        'prix':                   _acompteCtrl.text.trim().isEmpty ? null : double.tryParse(_acompteCtrl.text.replaceAll(',', '.')),
+        'date_remise':            dateRemise.toIso8601String(),
+        'date_limite_signature':  dateLimite?.toIso8601String(),
+        'notes':                  _notesCtrl.text.trim(),
+        'profil_source':          widget.animal['is_association'] == true ? 'association' : 'eleveur',
+      }).select('token_signature').single();
+      final token = row['token_signature'] as String?;
       setState(() => _certifToken = token);
       // Ouvre le certificat dans l'appli (lecture + « Envoyer au futur
       // propriétaire ») — comme _creerContratReservation pour le contrat.
@@ -631,10 +653,62 @@ class _ReservationSheetState extends State<ReservationSheet> {
               decoration: _inputDec('Adresse du futur propriétaire'),
             )),
             const SizedBox(height: 10),
+            _FieldBlock(_isAsso ? 'Participation aux frais totale (€)' : 'Prix total (€)', child: TextField(
+              controller: _prixTotalCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _inputDec('Ex : 2500'),
+            )),
+            const SizedBox(height: 10),
             _FieldBlock('Acompte / arrhes versé (€) — optionnel', child: TextField(
               controller: _acompteCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: _inputDec('0'),
             )),
+            const SizedBox(height: 10),
+            _FieldBlock("Paiement de l'acompte", child: Wrap(spacing: 8, children: [
+              for (final mp in const [('virement', 'Virement'), ('especes', 'Espèces')])
+                ChoiceChip(
+                  label: Text(mp.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  selected: _modePaiementAcompte == mp.$1,
+                  selectedColor: _teal.withValues(alpha: 0.15),
+                  onSelected: (v) => setState(() => _modePaiementAcompte = v ? mp.$1 : ''),
+                ),
+            ])),
+            Row(children: [
+              if (!_isAsso) ...[
+                Expanded(child: _FieldBlock('Vente au plus tôt à', child: TextField(
+                  controller: _ageVenteCtrl, decoration: _inputDec('12 semaines'),
+                ))),
+                const SizedBox(width: 10),
+              ],
+              Expanded(child: _FieldBlock('Annulée si non récupéré après', child: TextField(
+                controller: _delaiRecupCtrl, decoration: _inputDec('6 mois'),
+              ))),
+            ]),
+            const SizedBox(height: 10),
+            if (!_isAsso) ...[
+              const SizedBox(height: 6),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _clauseSteril,
+                activeColor: _teal,
+                inactiveThumbColor: Colors.grey.shade500,
+                inactiveTrackColor: Colors.grey.shade300,
+                title: const Text('Clause de stérilisation (tranche 2)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                subtitle: const Text("Due si le certificat de stérilisation n'est pas présenté dans le délai",
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                onChanged: (v) => setState(() => _clauseSteril = v),
+              ),
+              if (_clauseSteril) ...[
+                _FieldBlock('Montant de la tranche 2 (€)', child: TextField(
+                  controller: _tranche2Ctrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: _inputDec('Ex : 2000'),
+                )),
+                const SizedBox(height: 10),
+                _FieldBlock('Délai de stérilisation', child: TextField(
+                  controller: _delaiSterilCtrl,
+                  decoration: _inputDec('Ex : 7 mois à compter de la date de naissance'),
+                )),
+              ],
+            ],
             const SizedBox(height: 10),
             _FieldBlock('Notes', child: TextField(
               controller: _notesCtrl, maxLines: 2,
