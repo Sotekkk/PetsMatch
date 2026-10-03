@@ -13,6 +13,10 @@ const WHITELISTED_PATHS = [
   // Lien de facture pension envoyé au propriétaire (token UUID) — doit rester
   // consultable même si le destinataire n'a pas l'accès bêta.
   '/facture-pension/',
+  // Politique de confidentialité — doit être accessible sans connexion ni
+  // mot de passe bêta (exigence Google Play/App Store, cf. rejet "Invalid
+  // Privacy policy" : le robot de review n'a pas l'accès bêta).
+  '/confidentialite',
 ];
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf)$/;
