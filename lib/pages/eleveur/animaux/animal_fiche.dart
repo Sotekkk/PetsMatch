@@ -2038,6 +2038,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             builder: (_) => ReservationSheet(
               animal: {
                 'id': widget.animalId,
+                // Profil émetteur des documents (certificat, contrat) :
+                // association vs élevage — absent jusqu'ici, le certificat
+                // d'un animal du refuge était rangé côté élevage.
+                'is_association': widget.isAssociation,
                 'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
                 'espece': _espece,
                 'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
@@ -2077,7 +2081,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             await _supa.from('reservations_animaux')
                 .update({'statut': 'annulee', 'updated_at': DateTime.now().toIso8601String()})
                 .eq('id', _reservation!['id']);
-            await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
+            // Association : l'animal redevient « disponible » à l'adoption
+            // (« present » est un statut d'élevage, inconnu côté refuge).
+            await _supa.from('animaux').update({'statut': widget.isAssociation ? 'disponible' : 'present'})
+                .eq('id', widget.animalId!);
             if (mounted) _refreshFromSupabase();
           },
         ));
@@ -2095,6 +2102,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             builder: (_) => CessionSheet(
               animal: {
                 'id': widget.animalId,
+                'is_association': widget.isAssociation,
                 'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
                 'espece': _espece,
                 'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
