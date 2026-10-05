@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_complete_page.dart';
@@ -155,4 +156,32 @@ class _OnboardingFlowPageState extends State<OnboardingFlowPage> {
         return OnboardingDiscoveryPage(items: _discoveryItems, onFinish: _finish);
     }
   }
+}
+
+/// « Reprendre le guide de démarrage » (Paramètres, menus). Résout le profil
+/// même si aucun changement de profil n'a eu lieu (activeProfileId vide
+/// juste après l'inscription → l'entrée disparaissait et ne faisait rien).
+Future<void> relancerGuideDemarrage(BuildContext context) async {
+  var pid = User_Info.activeProfileId;
+  var ptype = User_Info.activeType;
+  if (pid.isEmpty || ptype.isEmpty) {
+    if (User_Info.availableProfiles.isEmpty) {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) await User_Info.loadProfiles(uid);
+    }
+    final profils = User_Info.availableProfiles;
+    final p = profils.where((x) => ptype.isNotEmpty && x['profile_type'] == ptype).firstOrNull
+        ?? profils.where((x) => x['is_main'] == true).firstOrNull
+        ?? profils.firstOrNull;
+    if (p == null) return;
+    pid = p['id']?.toString() ?? '';
+    ptype = p['profile_type']?.toString() ?? '';
+  }
+  if (pid.isEmpty || !onboardingRegistry.containsKey(ptype)) return;
+  await OnboardingService.reset(pid);
+  if (!context.mounted) return;
+  await Navigator.of(context).push(MaterialPageRoute(
+    fullscreenDialog: true,
+    builder: (_) => OnboardingFlowPage(profileId: pid, profileType: ptype, resume: false),
+  ));
 }

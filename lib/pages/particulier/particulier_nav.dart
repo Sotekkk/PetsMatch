@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -439,6 +440,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   ),
                 ],
                 const Divider(height: 16),
+                // Revoir l'onboarding à tout moment (avant : uniquement caché
+                // dans Paramètres, et invisible juste après l'inscription).
+                _DrawerItem(
+                  icon: Icons.flag_outlined,
+                  label: 'Guide de démarrage',
+                  onTap: () {
+                    Navigator.pop(context);
+                    relancerGuideDemarrage(context);
+                  },
+                ),
                 _DrawerItem(
                   icon: Icons.settings_outlined,
                   label: 'Paramètres',

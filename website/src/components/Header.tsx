@@ -1151,7 +1151,12 @@ export default function Header() {
     : effectiveIsGarde ? '/garde/abonnement'
     : effectiveIsEducation ? '/education/abonnement'
     : abonnementHref ?? (effectiveIsEleveur ? '/abonnement' : null);
-  const withAchats = withSanteContrats.map(sec => ({
+  // « Guide de démarrage » dans la section Mon Profil de chaque menu
+  // (miroir appli : menu particulier + Paramètres) — rouvre l'onboarding.
+  const withGuide = withSanteContrats.map(sec => sec.section === 'Mon Profil'
+    ? { ...sec, items: [...sec.items, { href: '/guide', label: 'Guide de démarrage', icon: '🚩' }] }
+    : sec);
+  const withAchats = withGuide.map(sec => ({
     ...sec,
     items: sec.items.map(it => it.href === '/mes-achats' && aboHrefAchats
       ? { ...it, href: `/mes-achats?abo=${encodeURIComponent(aboHrefAchats)}` }
