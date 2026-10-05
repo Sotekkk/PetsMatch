@@ -25,6 +25,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
   Map<String, dynamic>? _progression;
   List<String> _badgesDebloquees = [];
   int? _xpGagne;
+  bool _rejeu = false;
   int? _xpTotal;
   bool _showIndice = false;
 
@@ -46,6 +47,16 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     progression ??= await _supa.from('balades_ludiques_progressions').insert({
       'balade_id': widget.baladeId, 'joueur_uid': _uid, 'joueur_profile_id': _pid,
     }).select().single();
+    // Rejouer un parcours terminé : on repart de l'étape 1 (avant : toutes
+    // les étapes restaient validées → écran de fin immédiat). completed_at
+    // est conservé — il marque la 1re réussite, seule à rapporter des XP.
+    if (progression['statut'] == 'termine') {
+      _rejeu = true;
+      progression = await _supa.from('balades_ludiques_progressions')
+          .update({'statut': 'en_cours', 'nb_points_valides': 0})
+          .eq('id', progression['id']).select().single();
+      await _supa.from('balades_ludiques_validations').delete().eq('progression_id', progression['id']);
+    }
 
     if (mounted) {
       setState(() {
@@ -109,7 +120,8 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     final update = <String, dynamic>{'nb_points_valides': nouveauNb};
     if (estTermine) {
       update['statut'] = 'termine';
-      update['completed_at'] = DateTime.now().toIso8601String();
+      // 1re réussite seulement (un rejeu garde la date d'origine).
+      if (_progression?['completed_at'] == null) update['completed_at'] = DateTime.now().toIso8601String();
     }
     final updated = await _supa.from('balades_ludiques_progressions')
         .update(update).eq('id', progressionId).select().single();
@@ -125,7 +137,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     // 10 XP par étape + bonus de difficulté — même règle que la base
     // (pm_balade_xp_defaut, migration_balades_ludiques_compteurs.sql).
     final xpBase = (b['xp_recompense'] as int?) ?? 0;
-    final xpGagne = xpBase > 0
+    final xpGagne = _rejeu ? 0 : xpBase > 0
         ? xpBase
         : 10 * _points.length + switch (b['difficulte']) { 'difficile' => 50, 'modere' => 20, _ => 0 };
 
@@ -221,7 +233,11 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
           const SizedBox(height: 16),
           const Text('Parcours terminé !', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 22)),
           const SizedBox(height: 8),
-          if (_xpGagne != null)
+          if (_rejeu)
+            Text("Parcours rejoué — les XP ne sont gagnés qu'à la première réussite.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600))
+          else if (_xpGagne != null)
             Text('+$_xpGagne XP', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: kBlOrange)),
           if (_xpTotal != null)
             Padding(

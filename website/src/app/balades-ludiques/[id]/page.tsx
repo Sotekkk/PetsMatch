@@ -16,7 +16,8 @@ interface Balade {
   type_evenement?: string; partenaire_nom?: string;
 }
 interface Point { id: string; ordre: number; titre: string; type_defi: string; }
-interface Avis { id: string; user_uid: string; note: number; commentaire?: string; }
+interface Avis { id: string; user_uid: string; profile_id?: string; note: number; commentaire?: string; created_at?: string; }
+interface AuteurAvis { id: string; uid: string; social_pseudo?: string | null; firstname?: string | null; lastname?: string | null; avatar_url?: string | null; }
 
 export default function BaladeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,6 +27,9 @@ export default function BaladeDetailPage() {
   const [balade, setBalade] = useState<Balade | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
   const [avis, setAvis] = useState<Avis[]>([]);
+  // Auteurs (photo + pseudo Pets Social) et nombre d'avis de chacun — miroir appli.
+  const [auteurs, setAuteurs] = useState<Record<string, AuteurAvis>>({});
+  const [nbAvisAuteur, setNbAvisAuteur] = useState<Record<string, number>>({});
   const [progression, setProgression] = useState<{ statut: string } | null>(null);
   const [isFavori, setIsFavori] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -43,6 +47,17 @@ export default function BaladeDetailPage() {
     setBalade(b as Balade);
     setPoints((pts ?? []) as Point[]);
     setAvis((av ?? []) as Avis[]);
+    const ids = [...new Set(((av ?? []) as Avis[]).map(a => a.profile_id).filter(Boolean))] as string[];
+    if (ids.length) {
+      const [{ data: profs }, { data: tous }] = await Promise.all([
+        supabase.from('user_profiles_complet').select('id, uid, social_pseudo, firstname, lastname, avatar_url').in('id', ids),
+        supabase.from('balades_ludiques_avis').select('profile_id').in('profile_id', ids),
+      ]);
+      setAuteurs(Object.fromEntries(((profs ?? []) as AuteurAvis[]).map(p => [p.id, p])));
+      const nb: Record<string, number> = {};
+      ((tous ?? []) as { profile_id: string }[]).forEach(r => { nb[r.profile_id] = (nb[r.profile_id] ?? 0) + 1; });
+      setNbAvisAuteur(nb);
+    }
 
     if (user && activeProfileId) {
       const [{ data: prog }, { data: fav }] = await Promise.all([
@@ -194,12 +209,32 @@ export default function BaladeDetailPage() {
           {avis.length > 0 && (
             <div className="mt-6 pt-4 border-t border-gray-100">
               <p className="font-galey font-bold text-sm text-gray-800 mb-2">Avis ({avis.length})</p>
-              {avis.map(a => (
-                <div key={a.id} className="mb-2">
-                  <div className="text-amber-500 text-sm">{'⭐'.repeat(a.note)}</div>
-                  {a.commentaire && <p className="text-sm font-galey text-gray-600">{a.commentaire}</p>}
-                </div>
-              ))}
+              {avis.map(a => {
+                const au = a.profile_id ? auteurs[a.profile_id] : undefined;
+                const nom = au?.social_pseudo?.trim()
+                  || [au?.firstname, au?.lastname ? `${au.lastname[0]}.` : ''].filter(Boolean).join(' ')
+                  || 'Utilisateur PetsMatch';
+                const lien = au ? `/profil/${au.uid}?fromProfileId=${au.id}` : null;
+                return (
+                  <div key={a.id} className="mb-3">
+                    <div className={`flex items-center gap-2 ${lien ? 'cursor-pointer' : ''}`}
+                      onClick={() => { if (lien) router.push(lien); }}>
+                      {au?.avatar_url
+                        ? <img src={au.avatar_url} alt={nom} className="w-9 h-9 rounded-full object-cover" />
+                        : <div className="w-9 h-9 rounded-full bg-teal-50 text-teal-700 font-bold flex items-center justify-center">{nom[0]?.toUpperCase()}</div>}
+                      <div>
+                        <p className="text-sm font-galey font-bold text-gray-800 hover:underline">{nom}</p>
+                        <p className="text-[11px] text-gray-500">{a.profile_id ? (nbAvisAuteur[a.profile_id] ?? 0) : 0} avis</p>
+                      </div>
+                    </div>
+                    <div className="text-amber-500 text-sm mt-1">
+                      {'⭐'.repeat(a.note)}
+                      {a.created_at && <span className="text-[11px] text-gray-400 ml-2">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>}
+                    </div>
+                    {a.commentaire && <p className="text-sm font-galey text-gray-600">{a.commentaire}</p>}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

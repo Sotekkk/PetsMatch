@@ -7,6 +7,7 @@ import 'balades_ludiques_shared.dart';
 import 'balade_ludique_jouer_page.dart';
 import 'creation/creation_flow_page.dart';
 import 'parcours_stats_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
 
 class BaladeLudiqueDetailPage extends StatefulWidget {
   final String baladeId;
@@ -22,6 +23,8 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
   Map<String, dynamic>? _balade;
   List<Map<String, dynamic>> _points = [];
   List<Map<String, dynamic>> _avis = [];
+  Map<String, Map<String, dynamic>> _auteursAvis = {};
+  Map<String, int> _nbAvisParAuteur = {};
   Map<String, dynamic>? _progression;
   bool _isFavori = false;
   bool _busy = false;
@@ -42,6 +45,27 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
       final balade = await _supa.from('balades_ludiques').select().eq('id', widget.baladeId).single();
       final points = await _supa.from('balades_ludiques_points_complet').select().eq('balade_id', widget.baladeId).order('ordre', ascending: true);
       final avis = await _supa.from('balades_ludiques_avis').select().eq('balade_id', widget.baladeId).order('created_at', ascending: false);
+      // Auteurs des avis (photo + pseudo Pets Social) et nombre total
+      // d'avis laissés par chacun — affichage façon « avis Google ».
+      final auteursIds = List<Map<String, dynamic>>.from(avis as List)
+          .map((a) => a['profile_id']?.toString()).whereType<String>().toSet().toList();
+      final auteurs = <String, Map<String, dynamic>>{};
+      final nbAvisParAuteur = <String, int>{};
+      if (auteursIds.isNotEmpty) {
+        try {
+          final profs = await _supa.from('user_profiles_complet')
+              .select('id, uid, social_pseudo, firstname, lastname, nom, avatar_url')
+              .inFilter('id', auteursIds);
+          for (final p in profs as List) {
+            auteurs[p['id'].toString()] = Map<String, dynamic>.from(p);
+          }
+          final tous = await _supa.from('balades_ludiques_avis').select('profile_id').inFilter('profile_id', auteursIds);
+          for (final r in tous as List) {
+            final k = r['profile_id'].toString();
+            nbAvisParAuteur[k] = (nbAvisParAuteur[k] ?? 0) + 1;
+          }
+        } catch (_) {}
+      }
 
       Map<String, dynamic>? progression;
       bool isFavori = false;
@@ -58,7 +82,9 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
         setState(() {
           _balade = balade;
           _points = List<Map<String, dynamic>>.from(points as List);
-          _avis = List<Map<String, dynamic>>.from(avis as List);
+          _avis = List<Map<String, dynamic>>.from(avis);
+          _auteursAvis = auteurs;
+          _nbAvisParAuteur = nbAvisParAuteur;
           _progression = progression;
           _isFavori = isFavori;
           _loading = false;
@@ -383,22 +409,76 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
                 const Divider(),
                 Text('Avis (${_avis.length})', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                 const SizedBox(height: 8),
-                ..._avis.map((a) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: List.generate(5, (i) =>
-                      Icon(i < (a['note'] as num).toInt() ? Icons.star : Icons.star_border, size: 14, color: Colors.amber),
-                    )),
-                    if ((a['commentaire'] as String?)?.isNotEmpty == true)
-                      Text(a['commentaire'], style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                  ]),
-                )),
+                ..._avis.map(_avisTile),
               ],
               const SizedBox(height: 30),
             ]),
           ),
         ),
       ]),
+    );
+  }
+
+  /// Un avis façon « avis Google » : photo + pseudo + nombre d'avis de
+  /// l'auteur, note, date, commentaire. Appui → son profil Pets Social.
+  Widget _avisTile(Map<String, dynamic> a) {
+    final pid = a['profile_id']?.toString();
+    final auteur = pid == null ? null : _auteursAvis[pid];
+    final pseudo = (auteur?['social_pseudo'] as String?)?.trim();
+    final prenom = (auteur?['firstname'] as String?)?.trim() ?? '';
+    final nomFamille = (auteur?['lastname'] as String?)?.trim() ?? '';
+    final nom = pseudo != null && pseudo.isNotEmpty
+        ? pseudo
+        : [prenom, if (nomFamille.isNotEmpty) '${nomFamille[0]}.'].where((x) => x.isNotEmpty).join(' ');
+    final photo = auteur?['avatar_url'] as String?;
+    final nbAvis = pid == null ? 0 : (_nbAvisParAuteur[pid] ?? 0);
+    final date = DateTime.tryParse(a['created_at']?.toString() ?? '');
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: auteur == null || myUid == null ? null : () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => SocialProfilePage(
+          targetUid: auteur['uid'].toString(), myUid: myUid,
+          targetProfileId: pid, myProfileId: _pid,
+        ),
+      )),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: kBlTeal.withValues(alpha: 0.12),
+              backgroundImage: photo != null && photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
+              child: photo == null || photo.isEmpty
+                  ? Text(nom.isNotEmpty ? nom[0].toUpperCase() : '?',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: kBlTeal))
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(nom.isEmpty ? 'Utilisateur PetsMatch' : nom,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              Text('$nbAvis avis', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+            ])),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            ...List.generate(5, (i) =>
+                Icon(i < (a['note'] as num).toInt() ? Icons.star : Icons.star_border, size: 14, color: Colors.amber)),
+            if (date != null) ...[
+              const SizedBox(width: 8),
+              Text('${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+            ],
+          ]),
+          if ((a['commentaire'] as String?)?.isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(a['commentaire'], style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            ),
+        ]),
+      ),
     );
   }
 

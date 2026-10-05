@@ -14,7 +14,7 @@ interface Point {
   rayon_validation_m?: number; type_defi: string; question_texte?: string; question_reponse?: string;
   consigne_texte?: string; qr_code_value?: string; indice?: string;
 }
-interface Progression { id: string; nb_points_valides: number; }
+interface Progression { id: string; nb_points_valides: number; statut?: string; completed_at?: string | null; }
 
 function distanceMetres(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371000;
@@ -43,6 +43,7 @@ export default function JouerPage() {
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [termine, setTermine] = useState<{ xp: number; badges: string[] } | null>(null);
+  const [rejeu, setRejeu] = useState(false);
 
   const load = useCallback(async () => {
     if (!user || !activeProfileId) return;
@@ -53,6 +54,15 @@ export default function JouerPage() {
     if (!prog) {
       const { data: inserted } = await supabase.from('balades_ludiques_progressions').insert({ balade_id: id, joueur_uid: user.uid, joueur_profile_id: activeProfileId }).select().single();
       prog = inserted;
+    }
+    // Rejouer un parcours terminé : retour à l'étape 1 (miroir appli) ;
+    // completed_at conservé = 1re réussite, seule à rapporter des XP.
+    if (prog && prog.statut === 'termine') {
+      setRejeu(true);
+      const { data: reset } = await supabase.from('balades_ludiques_progressions')
+        .update({ statut: 'en_cours', nb_points_valides: 0 }).eq('id', prog.id).select().single();
+      await supabase.from('balades_ludiques_validations').delete().eq('progression_id', prog.id);
+      prog = reset;
     }
     setBalade(b as Balade);
     setPoints((pts ?? []) as Point[]);
@@ -71,7 +81,7 @@ export default function JouerPage() {
     if (!user || !balade || !activeProfileId) return;
     // Repli si la récompense n'est pas renseignée : 10 XP par étape + bonus
     // de difficulté (même règle que la base, pm_balade_xp_defaut).
-    const xp = (balade.xp_recompense ?? 0) > 0
+    const xp = rejeu ? 0 : (balade.xp_recompense ?? 0) > 0
       ? (balade.xp_recompense as number)
       : 10 * points.length + (balade.difficulte === 'difficile' ? 50 : balade.difficulte === 'modere' ? 20 : 0);
 
@@ -126,7 +136,10 @@ export default function JouerPage() {
     const nouveauNb = (progression.nb_points_valides ?? 0) + 1;
     const estTermine = nouveauNb >= points.length;
     const update: Record<string, unknown> = { nb_points_valides: nouveauNb };
-    if (estTermine) { update.statut = 'termine'; update.completed_at = new Date().toISOString(); }
+    if (estTermine) {
+      update.statut = 'termine';
+      if (!progression?.completed_at) update.completed_at = new Date().toISOString();
+    }
     const { data: updated } = await supabase.from('balades_ludiques_progressions').update(update).eq('id', progression.id).select().single();
     setProgression(updated as Progression);
     setShowIndice(false); setReponse(''); setErreurReponse(false); setCodeQr(''); setErreurQr(false); setGpsMessage(null);
@@ -192,7 +205,9 @@ export default function JouerPage() {
         <div className="text-center max-w-sm">
           <p className="text-6xl mb-4">🎉</p>
           <h1 className="text-2xl font-bold font-galey text-gray-900">Parcours terminé !</h1>
-          <p className="text-orange-600 font-galey font-bold text-lg mt-2">+{termine.xp} XP</p>
+          {rejeu
+            ? <p className="text-gray-500 font-galey text-sm mt-2">Parcours rejoué — les XP ne sont gagnés qu&apos;à la première réussite.</p>
+            : <p className="text-orange-600 font-galey font-bold text-lg mt-2">+{termine.xp} XP</p>}
           {termine.badges.length > 0 && (
             <div className="mt-4">
               <p className="font-galey font-semibold text-sm text-gray-700">Badges débloqués :</p>
