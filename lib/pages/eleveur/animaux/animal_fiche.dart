@@ -315,6 +315,18 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return 7; // éleveur / employé élevage : tous les onglets + Morphologie
   }
 
+  /// Reconstitue le TabController si le nombre d'onglets a changé (statut /
+  /// acquéreur connus seulement après chargement). Sans ça, un animal cédé
+  /// ouvert en lecture seule affichait 2 onglets avec un contrôleur à 7 →
+  /// « BOTTOM OVERFLOWED BY 99896 PIXELS » et onglets cassés.
+  void _syncTabs() {
+    final needed = _tabCount;
+    if (_tabs.length == needed) return;
+    final index = _tabs.index.clamp(0, needed - 1);
+    _tabs.dispose();
+    _tabs = TabController(length: needed, vsync: this, initialIndex: index);
+  }
+
   void _onPucePereChanged() {
     _pucePereDebounce?.cancel();
     final puce = _pucePereCtrl.text.trim();
@@ -478,14 +490,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .single();
       if (mounted) {
         await _fillFromData(Map<String, dynamic>.from(data));
-        setState(() {
-          // Reconstituer le TabController si le nombre d'onglets a changé
-          final needed = _tabCount;
-          if (_tabs.length != needed) {
-            _tabs.dispose();
-            _tabs = TabController(length: needed, vsync: this);
-          }
-        });
+        setState(_syncTabs);
       }
     } catch (_) {}
     _loadPensionAcces();
@@ -1131,6 +1136,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _dateSortie      = _parseDate(d['date_sortie']);
     // Cession
     _uidAcquereur          = d['uid_acquereur'] as String?;
+    // Statut + acquéreur connus → nombre d'onglets définitif, rebuild
+    // immédiat (la suite du chargement attend le réseau).
+    if (mounted) { setState(_syncTabs); } else { _syncTabs(); }
     _cessionContratUrl     = d['cession_contrat_url'] as String?;
     _cessionCertificatUrl  = d['cession_certificat_url'] as String?;
     _cessionPrix           = (d['cession_prix'] as num?)?.toDouble();
