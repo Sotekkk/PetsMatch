@@ -11,6 +11,7 @@ import 'package:printing/printing.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart' show adresseComplete;
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
@@ -176,9 +177,7 @@ class _CessionSheetState extends State<CessionSheet> {
       final prof = await _fetchContactProfile(acqUid, wantedType);
       fn = (prof?['firstname'] as String? ?? '').trim();
       ln = (prof?['lastname'] as String? ?? '').trim();
-      addr = (prof?['adresse'] as String?) ??
-          [prof?['rue'], prof?['code_postal'], prof?['ville']]
-              .where((e) => e != null && '$e'.isNotEmpty).join(', ');
+      addr = adresseComplete(prof?['adresse'], prof?['code_postal'], prof?['ville'], rue: prof?['rue']);
     }
     final animalId = widget.animal['id'] as String?;
     if ((fn.isEmpty || ln.isEmpty || addr.isEmpty) && animalId != null) {
@@ -573,9 +572,7 @@ class _CessionSheetState extends State<CessionSheet> {
     if (!mounted) return;
 
     final emailContact = prof?['email_contact'] as String?;
-    final adresse = (prof?['adresse'] as String?) ??
-        [prof?['rue'], prof?['code_postal'], prof?['ville']]
-            .where((e) => e != null && '$e'.isNotEmpty).join(', ');
+    final adresse = adresseComplete(prof?['adresse'], prof?['code_postal'], prof?['ville'], rue: prof?['rue']);
     final tel = isElv
         ? '+33 ${prof?['numero_elevage'] ?? ''}'.trim()
         : '+33 ${prof?['phone_number'] ?? ''}'.trim();

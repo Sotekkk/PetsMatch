@@ -9,6 +9,7 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart' show adresseComplete;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/utils/user_lookup.dart';
 
@@ -211,8 +212,8 @@ class _ReservationSheetState extends State<ReservationSheet> {
   void _selectUser(Map<String, dynamic> r) {
     final isElv = r['is_elevage'] == true;
     final adresse = isElv
-        ? (r['adress_elevage'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '))
-        : (r['adress'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '));
+        ? adresseComplete(r['adress_elevage'], r['code_postal'], r['ville'], rue: r['rue'])
+        : adresseComplete(r['adress'], r['code_postal'], r['ville'], rue: r['rue']);
     final tel = isElv
         ? '${r['code_iso_elevage'] ?? '+33'} ${r['numero_elevage'] ?? ''}'.trim()
         : '${r['code_iso'] ?? '+33'} ${r['phone_number'] ?? ''}'.trim();

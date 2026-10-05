@@ -22,6 +22,8 @@ import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import { fetchContactAcquereur, type ContactAcquereur } from '@/lib/contact-acquereur';
+import EditCessionModal from '@/components/animaux/EditCessionModal';
 
 import LienDocument from '@/components/LienDocument';
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
@@ -2354,6 +2356,7 @@ function AnimalFichePageInner() {
   const [cessionEnCours, setCessionEnCours] = useState<Record<string, unknown> | null>(null);
   const [confirmingCession, setConfirmingCession] = useState(false);
   const [revokingCession, setRevokingCession] = useState(false);
+  const [editingCession, setEditingCession] = useState(false);
 
   // ── Réservation (avant cession)
   const [showReservation, setShowReservation] = useState(false);
@@ -2562,12 +2565,15 @@ function AnimalFichePageInner() {
   }, [id, isNew, user, animal.uid_eleveur, ownerUid]);
 
   const loadCessionEnCours = useCallback(async () => {
-    if (!id || isNew || animal.statut !== 'cession_en_cours') return;
+    // 'cession_en_cours' = cession lancée depuis l'app (ligne `cessions`),
+    // 'en_attente_cession' = cession du site (pas toujours de ligne `cessions`).
+    if (!id || isNew || (animal.statut !== 'cession_en_cours' && animal.statut !== 'en_attente_cession')) return;
     const { data } = await supabase
       .from('cessions')
       .select('*')
       .eq('animal_id', id)
-      .neq('statut', 'revoquee')
+      // Pas une cession déjà confirmée d'un précédent passage de main
+      .not('statut', 'in', '(revoquee,confirme)')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -2665,14 +2671,41 @@ function AnimalFichePageInner() {
   }
 
   async function revoquerCession() {
-    if (!cessionEnCours || !confirm('Révoquer la cession ? L\'animal restera dans votre élevage.')) return;
+    if (!user || !confirm('Annuler la cession ? L\'animal restera dans votre élevage.')) return;
     setRevokingCession(true);
-    await supabase.from('cessions').update({ statut: 'revoquee' }).eq('id', cessionEnCours.id);
-    await supabase.from('animaux').update({ statut: 'present' }).eq('id', id);
-    setAnimal(p => ({ ...p, statut: 'present' }));
+    const cedantUid = animal.uid_eleveur ?? ownerUid ?? user.uid;
+    if (cessionEnCours) await supabase.from('cessions').update({ statut: 'revoquee' }).eq('id', cessionEnCours.id);
+    if (animal.statut === 'en_attente_cession') {
+      // Cession du site : la sortie avait déjà été inscrite au registre et la
+      // date de sortie posée sur la fiche — l'animal n'est finalement pas parti.
+      await supabase.from('animaux').update({ statut: 'present', date_sortie: null }).eq('id', id);
+      await supabase.from('registre_mouvements').delete()
+        .eq('animal_id', id).eq('uid_eleveur', cedantUid).eq('type', 'sortie').eq('motif', 'cession');
+    } else {
+      await supabase.from('animaux').update({ statut: 'present' }).eq('id', id);
+    }
+    // Contrats non signés de cette cession avortée
+    await supabase.from('documents_animaux').delete()
+      .eq('animal_id', id)
+      .in('type', ['contrat_vente', 'certificat_cession'])
+      .in('statut', ['brouillon', 'en_attente']);
+    setAnimal(p => ({ ...p, statut: 'present', ...(p.statut === 'en_attente_cession' ? { date_sortie: undefined } : {}) }));
     setCessionEnCours(null);
     setRevokingCession(false);
+    loadMouvements();
   }
+
+  // Téléphone / email du destinataire (registre, animal sorti) — pas stockés
+  // sur la fiche : mêmes sources que le bouton « Coordonnées » des cartes.
+  const [destContact, setDestContact] = useState<ContactAcquereur | null>(null);
+  useEffect(() => {
+    if (!animal.id || animal.statut !== 'sorti') { setDestContact(null); return; }
+    let cancelled = false;
+    fetchContactAcquereur({ id: animal.id, uid_acquereur: animal.uid_acquereur, destinataire_nom: animal.destinataire_nom })
+      .then(r => { if (!cancelled) setDestContact(r.contact); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [animal.id, animal.statut, animal.uid_acquereur, animal.destinataire_nom]);
 
   const loadReservation = useCallback(async () => {
     if (!id || isNew || animal.statut !== 'reserve') { setReservation(null); return; }
@@ -3616,15 +3649,22 @@ function AnimalFichePageInner() {
         </div>
       )}
 
-      {/* Bannière cession EN COURS — cédant (peut confirmer / révoquer) */}
-      {animal.statut === 'cession_en_cours' && !isAcquereur && (
+      {/* Bannière cession EN COURS — cédant (peut modifier / confirmer / annuler
+          tant que les deux parties n'ont pas signé) */}
+      {(animal.statut === 'cession_en_cours' || animal.statut === 'en_attente_cession') && !isAcquereur && (
         <div className="mb-4 bg-amber-50 border border-amber-300 rounded-2xl p-4">
           <div className="flex items-start gap-3">
             <span className="text-2xl">⏳</span>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-amber-800" style={{ fontFamily:'Galey,sans-serif' }}>
-                Cession en attente de confirmation
+                Cession en attente de signature
               </p>
+              {!cessionEnCours && animal.destinataire_nom && (
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Acquéreur : <strong>{animal.destinataire_nom}</strong>
+                  {animal.date_sortie ? ` · Date prévue : ${new Date(animal.date_sortie).toLocaleDateString('fr-FR')}` : ''}
+                </p>
+              )}
               {cessionEnCours && (
                 <p className="text-xs text-amber-700 mt-0.5">
                   Acquéreur : <strong>{cessionEnCours.nom_acquereur as string}</strong>
@@ -3636,21 +3676,36 @@ function AnimalFichePageInner() {
               )}
               <div className="flex gap-2 mt-3 flex-wrap">
                 <button
+                  onClick={() => setEditingCession(true)}
+                  disabled={confirmingCession || revokingCession}
+                  className="text-xs font-semibold border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#0C5C6C]/5 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                  ✏️ Modifier la cession
+                </button>
+                {cessionEnCours && <button
                   onClick={confirmerCession}
                   disabled={confirmingCession || revokingCession}
                   className="text-xs font-semibold bg-[#6E9E57] hover:bg-[#5a8a45] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
                   {confirmingCession ? '…' : '✅ Confirmer le transfert'}
-                </button>
+                </button>}
                 <button
                   onClick={revoquerCession}
                   disabled={confirmingCession || revokingCession}
                   className="text-xs font-semibold border border-red-300 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                  {revokingCession ? '…' : '✕ Révoquer'}
+                  {revokingCession ? '…' : '✕ Annuler la cession'}
                 </button>
               </div>
             </div>
           </div>
         </div>
+      )}
+      {editingCession && user && (
+        <EditCessionModal
+          animal={animal}
+          cession={cessionEnCours}
+          cedantUid={animal.uid_eleveur ?? ownerUid ?? user.uid}
+          onClose={() => setEditingCession(false)}
+          onSaved={() => { setEditingCession(false); loadAnimal(); loadCessionEnCours(); loadMouvements(); }}
+        />
       )}
 
       {/* Bannière condition de stérilisation — vue propriétaire / acquéreur */}
@@ -4173,15 +4228,21 @@ function AnimalFichePageInner() {
                           { label:'Destinataire', value: DEST_FR[animal.destinataire_qualite??''] },
                           { label:'Nom destinataire', value: animal.destinataire_nom },
                           { label:'Adresse dest.', value: animal.destinataire_adresse },
+                          { label:'Tél. dest.', value: destContact?.tel,
+                            href: destContact?.tel ? `tel:${destContact.tel}` : undefined },
+                          { label:'Email dest.', value: destContact?.email,
+                            href: destContact?.email ? `mailto:${destContact.email}` : undefined },
                         ] : []),
                         ...(animal.statut==='decede' ? [
                           { label:'Date de décès', value: animal.date_sortie ? new Date(animal.date_sortie).toLocaleDateString('fr-FR') : undefined },
                           { label:'Cause', value: MORT_FR[animal.cause_mort??''] },
                         ] : []),
-                      ].filter(r=>r.value).map(r=>(
+                      ].filter(r=>r.value).map((r: { label: string; value?: string; href?: string })=>(
                         <div key={r.label} className="flex gap-2 text-sm">
                           <span className="text-gray-400 w-36 flex-shrink-0">{r.label}</span>
-                          <span className="text-[#1F2A2E] font-medium">{r.value}</span>
+                          {r.href
+                            ? <a href={r.href} className="text-[#0C5C6C] font-medium hover:underline break-all">{r.value}</a>
+                            : <span className="text-[#1F2A2E] font-medium">{r.value}</span>}
                         </div>
                       ))}
                     </div>

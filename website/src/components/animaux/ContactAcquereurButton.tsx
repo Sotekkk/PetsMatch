@@ -122,9 +122,12 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
             ) : (
               <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm space-y-1 mb-4">
                 {nomComplet && <p>👤 {nomComplet}</p>}
-                {contact.tel && <p>📞 {contact.tel}</p>}
-                {contact.email && <p>✉️ {contact.email}</p>}
-                {contact.adresse && <p>🏠 {contact.adresse}</p>}
+                {contact.tel && <p>📞 <a href={`tel:${contact.tel}`} className="hover:underline">{contact.tel}</a></p>}
+                {contact.email && <p>✉️ <a href={`mailto:${contact.email}`} className="hover:underline break-all">{contact.email}</a></p>}
+                {contact.adresse && (
+                  <p>🏠 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.adresse)}`}
+                    target="_blank" rel="noopener noreferrer" className="hover:underline">{contact.adresse}</a></p>
+                )}
               </div>
             )}
 

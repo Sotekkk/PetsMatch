@@ -6,6 +6,19 @@ import 'package:url_launcher/url_launcher.dart';
 const _teal  = Color(0xFF0C5C6C);
 const _dark  = Color(0xFF1F2A2E);
 
+/// Adresse complète d'un profil : `adresse` (souvent la rue seule, sinon
+/// [rue]) + code postal + ville, sans répéter ce qu'elle contient déjà.
+String adresseComplete(dynamic adresse, dynamic cp, dynamic ville, {dynamic rue}) {
+  var r = (adresse ?? '').toString().trim();
+  if (r.isEmpty) r = (rue ?? '').toString().trim();
+  final low = r.toLowerCase();
+  final suite = [cp, ville]
+      .map((e) => (e ?? '').toString().trim())
+      .where((e) => e.isNotEmpty && !low.contains(e.toLowerCase()))
+      .join(' ');
+  return [r, suite].where((e) => e.isNotEmpty).join(', ');
+}
+
 /// Coordonnées de l'acquéreur d'un animal cédé + indique si elles peuvent être
 /// corrigées à la main (`editable` = aucun compte PetsMatch actif derrière —
 /// sinon c'est le propriétaire lui-même qui maîtrise ses données).
@@ -25,14 +38,22 @@ class AcquereurContact {
 /// particulier** PetsMatch de l'acquéreur (à jour, qu'il maîtrise) → **saisie
 /// manuelle de l'éleveur** (`animaux.acquereur_contact_manuel`, uniquement si
 /// pas de profil PetsMatch actif) → contrat signé (`documents_animaux`) →
-/// ligne `cessions` → `destinataire_nom` de secours. `put` conserve la 1re
+/// ligne `cessions` (cessions faites dans l'app) → réservation et certificat
+/// d'engagement (seules traces du téléphone / email pour les cessions faites
+/// sur le site avant qu'elles remplissent `acquereur_contact_manuel`) →
+/// `destinataire_nom` / `destinataire_adresse` de secours. `put` conserve la 1re
 /// valeur non vide trouvée.
 Future<AcquereurContact> fetchContactAcquereur(
     SupabaseClient supa, Map<String, dynamic> animal) async {
   final out = <String, String>{};
+  final cpRe = RegExp(r'\b\d{5}\b');
   void put(String k, dynamic v) {
     final s = (v ?? '').toString().trim();
-    if (s.isNotEmpty && (out[k] == null || out[k]!.isEmpty)) out[k] = s;
+    if (s.isEmpty) return;
+    final cur = out[k] ?? '';
+    // Adresse : une source plus loin peut avoir l'adresse complète (code
+    // postal + ville) alors que la première n'a que la rue → on la préfère.
+    if (cur.isEmpty || (k == 'adresse' && !cpRe.hasMatch(cur) && cpRe.hasMatch(s))) out[k] = s;
   }
   String joinNonEmpty(Iterable parts, String sep) => parts
       .where((e) => (e ?? '').toString().trim().isNotEmpty)
@@ -54,8 +75,7 @@ Future<AcquereurContact> fetchContactAcquereur(
         put('nom', p['lastname']);
         put('tel', p['phone_number']);
         put('email', p['email_contact']);
-        put('adresse', p['adresse'] ??
-            joinNonEmpty([p['rue'], p['code_postal'], p['ville']], ' '));
+        put('adresse', adresseComplete(p['adresse'], p['code_postal'], p['ville'], rue: p['rue']));
       }
     } catch (_) {}
   }
@@ -112,7 +132,55 @@ Future<AcquereurContact> fetchContactAcquereur(
     }
   } catch (_) {}
 
+  try {
+    final r = await supa.from('reservations_animaux')
+        .select()
+        .eq('animal_id', animal['id']).neq('statut', 'annulee')
+        .order('created_at', ascending: false)
+        .limit(1).maybeSingle();
+    if (r != null) {
+      // Ancien format : `nom` = nom complet, à ne reprendre que s'il est
+      // accompagné d'un prénom séparé (sinon « Prénom Prénom Nom »).
+      if ((r['prenom'] ?? '').toString().trim().isNotEmpty) {
+        put('prenom', r['prenom']);
+        put('nom', r['nom']);
+      }
+      put('tel', r['tel']);
+      put('email', r['email']);
+      put('adresse', r['adresse']);
+    }
+  } catch (_) {}
+
+  try {
+    final ce = await supa.from('certificats_engagement')
+        .select('acquereur_prenom, acquereur_nom, acquereur_telephone, acquereur_email, acquereur_adresse')
+        .eq('animal_id', animal['id'])
+        .order('created_at', ascending: false)
+        .limit(1).maybeSingle();
+    if (ce != null) {
+      put('prenom', ce['acquereur_prenom']);
+      put('nom', ce['acquereur_nom']);
+      put('tel', ce['acquereur_telephone']);
+      put('email', ce['acquereur_email']);
+      put('adresse', ce['acquereur_adresse']);
+    }
+  } catch (_) {}
+
   put('nom', animal['destinataire_nom']);
+  if (!cpRe.hasMatch(out['adresse'] ?? '')) {
+    try {
+      final an = await supa.from('animaux')
+          .select('destinataire_adresse').eq('id', animal['id']).maybeSingle();
+      put('adresse', an?['destinataire_adresse']);
+    } catch (_) {}
+  }
+  // Les cessions de l'app stockent le nom complet dans `nom_acquereur` :
+  // évite « Leslie Leslie de Mesquita » quand le prénom vient d'ailleurs.
+  final pre = (out['prenom'] ?? '').toLowerCase();
+  final nomC = out['nom'] ?? '';
+  if (pre.isNotEmpty && nomC.toLowerCase().startsWith('$pre ')) {
+    out['nom'] = nomC.substring(pre.length).trim();
+  }
   return AcquereurContact(out, !hasLiveProfile);
 }
 
@@ -281,9 +349,12 @@ class _ContactAcquereurButtonState extends State<ContactAcquereurButton> {
                 else ...[
                   if ([c.prenom, c.nom].where((e) => e.isNotEmpty).isNotEmpty)
                     _line(Icons.person_outline, [c.prenom, c.nom].where((e) => e.isNotEmpty).join(' ')),
-                  if (c.tel.isNotEmpty) _line(Icons.phone_outlined, c.tel),
-                  if (c.email.isNotEmpty) _line(Icons.mail_outline, c.email),
-                  if (c.adresse.isNotEmpty) _line(Icons.home_outlined, c.adresse),
+                  if (c.tel.isNotEmpty) _line(Icons.phone_outlined, c.tel,
+                      onTap: () => _openUri(context, Uri(scheme: 'tel', path: _telDigits(c.tel)))),
+                  if (c.email.isNotEmpty) _line(Icons.mail_outline, c.email,
+                      onTap: () => _openUri(context, Uri.parse('mailto:${c.email}'))),
+                  if (c.adresse.isNotEmpty) _line(Icons.home_outlined, c.adresse,
+                      onTap: () => _openUri(context, Uri.https('www.google.com', '/maps/search/', {'api': '1', 'query': c.adresse}))),
                   const SizedBox(height: 14),
                   Wrap(spacing: 10, runSpacing: 10, children: [
                     if (c.tel.isNotEmpty)
@@ -322,13 +393,21 @@ class _ContactAcquereurButtonState extends State<ContactAcquereurButton> {
     );
   }
 
-  Widget _line(IconData icon, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Icon(icon, size: 15, color: Colors.grey.shade500),
-          const SizedBox(width: 8),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: _dark))),
-        ]),
+  /// Ligne de coordonnée ; avec [onTap] elle est cliquable (appel, email,
+  /// itinéraire) et affichée en couleur de lien.
+  Widget _line(IconData icon, String value, {VoidCallback? onTap}) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon, size: 15, color: onTap != null ? _teal : Colors.grey.shade500),
+            const SizedBox(width: 8),
+            Expanded(child: Text(value, style: TextStyle(fontSize: 13,
+                color: onTap != null ? _teal : _dark,
+                fontWeight: onTap != null ? FontWeight.w600 : FontWeight.normal))),
+          ]),
+        ),
       );
 
   Widget _actionBtn(String label, Widget icon, Color color, VoidCallback onTap) => InkWell(

@@ -6,6 +6,7 @@ import { uploadDocument } from '@/lib/upload-media';
 import { factureVentePdfBlob } from '@/lib/facture-vente';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import { adresseComplete } from '@/lib/contact-acquereur';
 import LienDocument from '@/components/LienDocument';
 import CertificatEngagementSection, { alerteEngagement, type CertEngagement } from '@/components/animaux/CertificatEngagementSection';
 interface Animal {
@@ -298,7 +299,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       ? `+33 ${prof?.numero_elevage ?? ''}`.trim()
       : `+33 ${prof?.phone_number ?? ''}`.trim();
     setTel(tel.replace(/^\+33\s*$/, ''));
-    const addr = (prof?.adresse as string) || [prof?.rue, prof?.code_postal, prof?.ville].filter(Boolean).join(', ');
+    const addr = adresseComplete(prof?.adresse, prof?.code_postal, prof?.ville, prof?.rue);
     setAdresse(addr || '');
   }
 
@@ -330,7 +331,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
           fn = ((prof?.firstname as string) ?? '').trim();
           ln = ((prof?.lastname as string) ?? '').trim();
         }
-        addr = (prof?.adresse as string) || [prof?.rue, prof?.code_postal, prof?.ville].filter(Boolean).join(', ');
+        addr = adresseComplete(prof?.adresse, prof?.code_postal, prof?.ville, prof?.rue);
       }
       if (wantedType !== 'eleveur' && (!fn || !ln || !addr)) {
         const { data: cert } = await supabase.from('certificats_engagement')
@@ -583,6 +584,12 @@ Céder quand même ?`)) return;
         destinataire_qualite:   qualite,
         destinataire_nom:       nomComplet,
         destinataire_adresse:   adresse.trim() || null,
+        // Seule trace du téléphone / email de l'acquéreur pour une cession
+        // faite sur le site (l'app les met dans `cessions`) : lus par le
+        // bouton « Coordonnées » des cartes cédées.
+        acquereur_contact_manuel: Object.fromEntries(Object.entries({
+          prenom: prenom.trim(), nom: nom.trim(), tel: tel.trim(), email: email.trim(), adresse: adresse.trim(),
+        }).filter(([, v]) => v)),
         uid_acquereur:          searchResult?.uid ?? null,
         ...(acqProfileId ? { profile_id_acquereur: acqProfileId } : {}),
         cession_contrat_url:    finalContratUrl,

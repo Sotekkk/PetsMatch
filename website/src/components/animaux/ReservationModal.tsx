@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
+import { adresseComplete } from '@/lib/contact-acquereur';
 
 interface Animal {
   id: string;
@@ -228,8 +229,8 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
       ? `${data.code_iso_elevage ?? '+33'} ${data.numero_elevage ?? ''}`.trim()
       : `${data.code_iso ?? '+33'} ${data.phone_number ?? ''}`.trim();
     const addr = isElv
-      ? ((data.adress_elevage as string) || '')
-      : ((data.adress as string) || [data.rue, data.code_postal, data.ville].filter(Boolean).join(', '));
+      ? adresseComplete(data.adress_elevage, data.code_postal, data.ville, data.rue)
+      : adresseComplete(data.adress, data.code_postal, data.ville, data.rue);
     if (isElv) {
       setPrenom('');
       setNom(n || 'Utilisateur PetsMatch');

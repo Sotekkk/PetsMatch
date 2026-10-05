@@ -44,6 +44,7 @@ import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/edit_cession_sheet.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -1135,12 +1136,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _cessionPrix           = (d['cession_prix'] as num?)?.toDouble();
     _cessionNotes          = d['cession_notes'] as String?;
     // Charger la cession active si en cours
-    if (_statut == 'cession_en_cours' && widget.animalId != null) {
+    // 'cession_en_cours' = cession lancée depuis l'app (ligne `cessions`),
+    // 'en_attente_cession' = cession du site (pas toujours de ligne `cessions`).
+    if (_cessionEnAttente && widget.animalId != null) {
       final cessions = await _supa
           .from('cessions')
           .select()
           .eq('animal_id', widget.animalId!)
-          .neq('statut', 'revoquee')
+          // Pas une cession déjà confirmée d'un précédent passage de main
+          .not('statut', 'in', '(revoquee,confirme)')
           .order('created_at', ascending: false)
           .limit(1);
       _cessionEnCours = cessions.isNotEmpty ? cessions.first : null;
@@ -1446,8 +1450,40 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   }
 
   // ── Révoquer la cession ────────────────────────────────────────────────────
+  bool get _cessionEnAttente => _statut == 'cession_en_cours' || _statut == 'en_attente_cession';
+
+  /// Modifier la cession en attente sans la refaire (tant que les deux
+  /// parties n'ont pas signé).
+  Future<void> _modifierCession() async {
+    if (widget.animalId == null) return;
+    final cedantUid = _ownerUid ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+    final ok = await showEditCessionSheet(
+      context,
+      animal: {
+        'id': widget.animalId,
+        'nom': _nomCtrl.text,
+        'statut': _statut,
+        'uid_acquereur': _uidAcquereur,
+        'destinataire_qualite': _destinataireQualite,
+        'destinataire_nom': _destinataireNomCtrl.text,
+        'destinataire_adresse': _destinataireAdresseCtrl.text,
+        'cession_prix': _cessionPrix,
+        'cession_notes': _cessionNotes,
+        'date_sortie': _dateSortie?.toIso8601String().split('T').first,
+      },
+      cession: _cessionEnCours,
+      cedantUid: cedantUid,
+    );
+    if (!ok || !mounted) return;
+    await _refreshFromSupabase();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cession modifiée'), backgroundColor: Color(0xFF6E9E57)));
+    }
+  }
+
   Future<void> _revoquerCession() async {
-    if (_cessionEnCours == null) return;
+    if (_cessionEnCours == null && _statut != 'en_attente_cession') return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1463,9 +1499,23 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (ok != true) return;
     setState(() => _revokingCession = true);
     try {
-      final uidAcq = _cessionEnCours!['uid_acquereur'] as String?;
-      await _supa.from('cessions').update({'statut': 'revoquee'}).eq('id', _cessionEnCours!['id']);
-      await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
+      final uidAcq = (_cessionEnCours?['uid_acquereur'] as String?) ?? _uidAcquereur;
+      if (_cessionEnCours != null) {
+        await _supa.from('cessions').update({'statut': 'revoquee'}).eq('id', _cessionEnCours!['id']);
+      }
+      if (_statut == 'en_attente_cession') {
+        // Cession du site : la sortie avait déjà été inscrite au registre et
+        // la date de sortie posée — l'animal n'est finalement pas parti.
+        await _supa.from('animaux').update({'statut': 'present', 'date_sortie': null}).eq('id', widget.animalId!);
+        try {
+          await _supa.from('registre_mouvements').delete()
+              .eq('animal_id', widget.animalId!)
+              .eq('uid_eleveur', _ownerUid ?? FirebaseAuth.instance.currentUser?.uid ?? '')
+              .eq('type', 'sortie').eq('motif', 'cession');
+        } catch (_) {}
+      } else {
+        await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
+      }
       // Supprimer les contrats non signés générés pour cette cession avortée
       try {
         await _supa.from('documents_animaux')
@@ -2391,18 +2441,22 @@ class _IdentiteTab extends StatelessWidget {
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (s._statut == 'cession_en_cours' && s._cessionEnCours != null)
-            s._uidAcquereur == FirebaseAuth.instance.currentUser?.uid
-                ? _CessionAcquereurBanner(cession: s._cessionEnCours!)
-                : _CessionEnCoursBanner(
-                    cession: s._cessionEnCours!,
-                    contratSigne: s._cessionContratSigne,
-                    confirming: s._confirmingCession,
-                    revoking: s._revokingCession,
-                    onConfirm: s._confirmerCession,
-                    onRevoke: s._revoquerCession,
-                  ),
-          if (s._statut == 'cession_en_cours') const SizedBox(height: 12),
+          if (s._cessionEnAttente && s._uidAcquereur == FirebaseAuth.instance.currentUser?.uid)
+            ...[if (s._cessionEnCours != null) _CessionAcquereurBanner(cession: s._cessionEnCours!)]
+          else if (s._cessionEnAttente)
+            _CessionEnCoursBanner(
+              cession: s._cessionEnCours,
+              nomAcquereurFiche: s._destinataireNomCtrl.text,
+              dateFiche: s._dateSortie,
+              prixFiche: s._cessionPrix,
+              contratSigne: s._cessionContratSigne,
+              confirming: s._confirmingCession,
+              revoking: s._revokingCession,
+              onConfirm: s._confirmerCession,
+              onRevoke: s._revoquerCession,
+              onEdit: s._modifierCession,
+            ),
+          if (s._cessionEnAttente) const SizedBox(height: 12),
           if (s._statut == 'sorti') _CessionBanner(
             dateDepart: s._dateSortie,
             nomDestinataire: s._destinataireNomCtrl.text,
@@ -4531,30 +4585,40 @@ class _CessionAcquereurBanner extends StatelessWidget {
 // ── Bannière cession en cours (côté cédant) ────────────────────────────────
 
 class _CessionEnCoursBanner extends StatelessWidget {
-  final Map<String, dynamic> cession;
+  /// Ligne `cessions` (circuit app) ; null pour une cession lancée depuis le
+  /// site, dont les infos sont alors celles de la fiche (`*Fiche`).
+  final Map<String, dynamic>? cession;
+  final String nomAcquereurFiche;
+  final DateTime? dateFiche;
+  final double? prixFiche;
   final bool contratSigne;
   final bool confirming;
   final bool revoking;
   final VoidCallback onConfirm;
   final VoidCallback onRevoke;
+  final VoidCallback onEdit;
 
   const _CessionEnCoursBanner({
-    required this.cession, required this.contratSigne,
+    required this.cession, required this.nomAcquereurFiche,
+    required this.dateFiche, required this.prixFiche,
+    required this.contratSigne,
     required this.confirming, required this.revoking,
-    required this.onConfirm, required this.onRevoke,
+    required this.onConfirm, required this.onRevoke, required this.onEdit,
   });
 
   @override
   Widget build(BuildContext context) {
-    final nomAcq  = (cession['nom_acquereur'] as String?) ?? '…';
-    final statut  = (cession['statut'] as String?) ?? '';
+    final c = cession ?? const <String, dynamic>{};
+    final nomAcq  = (c['nom_acquereur'] as String?) ?? (nomAcquereurFiche.isNotEmpty ? nomAcquereurFiche : '…');
+    final statut  = (c['statut'] as String?) ?? '';
     // Récap signé OU contrat de vente/certificat entièrement signé → l'éleveur
     // peut confirmer le transfert.
     final signedByAcq = statut == 'signe_acquereur' || statut == 'confirme' || contratSigne;
-    final dateC   = cession['date_cession'] as String?;
-    final prix    = (cession['prix'] as num?)?.toDouble();
-    final contratUrl = cession['contrat_url'] as String?;
-    final token   = cession['token'] as String?;
+    final dateC   = (c['date_cession'] as String?)
+        ?? (dateFiche == null ? null : '${dateFiche!.day.toString().padLeft(2, '0')}/${dateFiche!.month.toString().padLeft(2, '0')}/${dateFiche!.year}');
+    final prix    = (c['prix'] as num?)?.toDouble() ?? prixFiche;
+    final contratUrl = c['contrat_url'] as String?;
+    final token   = c['token'] as String?;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -4596,9 +4660,24 @@ class _CessionEnCoursBanner extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: confirming || revoking ? null : onEdit,
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            label: const Text('Modifier la cession', style: TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF0C5C6C),
+              side: const BorderSide(color: Color(0xFF0C5C6C)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         // Boutons
         Row(children: [
-          Expanded(
+          if (cession != null) Expanded(
             child: ElevatedButton(
               onPressed: (confirming || !signedByAcq) ? null : onConfirm,
               style: ElevatedButton.styleFrom(
@@ -4613,7 +4692,7 @@ class _CessionEnCoursBanner extends StatelessWidget {
                       style: const TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             ),
           ),
-          const SizedBox(width: 8),
+          if (cession != null) const SizedBox(width: 8),
           OutlinedButton(
             onPressed: revoking ? null : onRevoke,
             style: OutlinedButton.styleFrom(
@@ -4624,10 +4703,10 @@ class _CessionEnCoursBanner extends StatelessWidget {
             ),
             child: revoking
                 ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.red, strokeWidth: 2))
-                : const Text('Révoquer', style: TextStyle(fontSize: 12, fontFamily: 'Galey')),
+                : const Text('Annuler la cession', style: TextStyle(fontSize: 12, fontFamily: 'Galey')),
           ),
         ]),
-        if (!signedByAcq)
+        if (cession != null && !signedByAcq)
           const Padding(
             padding: EdgeInsets.only(top: 6),
             child: Text('La confirmation sera possible une fois l\'acquéreur signé.',
