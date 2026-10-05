@@ -182,7 +182,7 @@ class _LoginPageState extends State<LoginPage> {
             alignment: Alignment.centerRight,
             child: GestureDetector(
               onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => PasswordResetPage())),
+                  MaterialPageRoute(builder: (_) => PasswordResetPage(emailInitial: _emailCtrl.text.trim()))),
               child: const Text('Mot de passe oublié ?',
                   style: TextStyle(
                       fontFamily: 'Galey',

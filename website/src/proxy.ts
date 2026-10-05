@@ -19,6 +19,11 @@ const WHITELISTED_PATHS = [
   '/confidentialite',
   '/cgu',
   '/mentions-legales',
+  // Mot de passe oublié + gestionnaire d'actions Firebase (lien de
+  // réinitialisation / vérification d'e-mail) : sans accès bêta, la
+  // redirection vers /beta-login perdait le code du lien (« lien expiré »).
+  '/mot-de-passe-oublie',
+  '/__/auth/',
 ];
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf)$/;

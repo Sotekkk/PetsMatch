@@ -103,6 +103,13 @@ export default function ConnexionPage() {
                   )}
                 </button>
               </div>
+              {/* Miroir appli : « Mot de passe oublié ? » sous le champ. */}
+              <div className="text-right mt-1.5">
+                <Link href={`/mot-de-passe-oublie${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+                  className="text-xs text-[#6E9E57] hover:underline font-semibold">
+                  Mot de passe oublié ?
+                </Link>
+              </div>
             </div>
 
             {error && (
