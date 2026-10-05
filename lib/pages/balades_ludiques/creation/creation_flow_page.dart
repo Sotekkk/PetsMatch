@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart' show ImageSource;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -14,6 +15,28 @@ part 'step_infos_generales.dart';
 part 'step_points_carte.dart';
 part 'step_defi_point.dart';
 part 'step_recap_publication.dart';
+
+/// Durée saisie librement (« 45 », « 45 min », « 1h30 », « 1 h ») → minutes.
+/// Avant : int.tryParse seul → toute saisie non purement numérique était
+/// enregistrée vide, sans message.
+int? parseDureeMin(String raw) {
+  final t = raw.toLowerCase().replaceAll(' ', '');
+  if (t.isEmpty) return null;
+  final h = RegExp(r'^(\d+)h(\d+)?').firstMatch(t);
+  if (h != null) return int.parse(h.group(1)!) * 60 + (int.tryParse(h.group(2) ?? '') ?? 0);
+  final m = RegExp(r'^(\d+)').firstMatch(t);
+  return m == null ? null : int.parse(m.group(1)!);
+}
+
+/// Distance saisie librement (« 3,5 », « 3.5 km », « 800 m ») → km.
+double? parseDistanceKm(String raw) {
+  final t = raw.toLowerCase().replaceAll(' ', '').replaceAll(',', '.');
+  if (t.isEmpty) return null;
+  final m = RegExp(r'^(\d+(\.\d+)?)(km|m)?').firstMatch(t);
+  if (m == null) return null;
+  final v = double.parse(m.group(1)!);
+  return m.group(3) == 'm' ? v / 1000 : v;
+}
 
 class CreationFlowPage extends StatefulWidget {
   final String? baladeId;
@@ -149,8 +172,8 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
         'gratuit': gratuit,
         'prix': gratuit ? null : double.tryParse(prixCtrl.text.replaceAll(',', '.')),
         'difficulte': difficulte,
-        'duree_min': int.tryParse(dureeCtrl.text),
-        'distance_km': double.tryParse(distanceCtrl.text.replaceAll(',', '.')),
+        'duree_min': parseDureeMin(dureeCtrl.text),
+        'distance_km': parseDistanceKm(distanceCtrl.text),
         'lat_depart': premierPoint['lat'],
         'lng_depart': premierPoint['lng'],
         'type_evenement': User_Info.isAdmin ? typeEvenement : 'communautaire',

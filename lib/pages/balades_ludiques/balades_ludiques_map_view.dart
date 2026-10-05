@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -39,6 +41,14 @@ class _BaladesLudiquesMapViewState extends State<BaladesLudiquesMapView> {
       markers: markers,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: true,
+      // La carte est dans un CustomScrollView (accueil des balades) : sans
+      // ces recognizers, la page captait pincement / glissement → impossible
+      // de zoomer ou de déplacer la carte.
+      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+      },
+      // Boutons de zoom au-dessus du bouton fixe « + Créer un parcours ».
+      padding: const EdgeInsets.only(bottom: 110),
     );
   }
 }

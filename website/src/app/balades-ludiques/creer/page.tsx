@@ -13,6 +13,27 @@ import ImageCropModal from '@/components/ImageCropModal';
 import { ESPECES, DIFFICULTES, TYPES_DEFI, dureeLabel, especeLabel, difficulteLabel, typeDefiIcon } from '../shared';
 import type { EditablePoint } from '@/components/BaladesLudiquesPointsEditor';
 
+
+// Saisie libre (miroir appli, creation_flow_page.dart) : « 45 », « 45 min »,
+// « 1h30 » → minutes ; « 3,5 », « 3.5 km », « 800 m » → km. Avant : Number()
+// → NaN → valeur perdue sans message.
+function parseDureeMin(raw: string): number | null {
+  const t = (raw ?? '').toLowerCase().replace(/\s/g, '');
+  if (!t) return null;
+  const h = /^(\d+)h(\d+)?/.exec(t);
+  if (h) return Number(h[1]) * 60 + (h[2] ? Number(h[2]) : 0);
+  const m = /^(\d+)/.exec(t);
+  return m ? Number(m[1]) : null;
+}
+function parseDistanceKm(raw: string): number | null {
+  const t = (raw ?? '').toLowerCase().replace(/\s/g, '').replace(',', '.');
+  if (!t) return null;
+  const m = /^(\d+(\.\d+)?)(km|m)?/.exec(t);
+  if (!m) return null;
+  const v = Number(m[1]);
+  return m[3] === 'm' ? v / 1000 : v;
+}
+
 const PointsEditor = dynamic(() => import('@/components/BaladesLudiquesPointsEditor'), {
   ssr: false,
   loading: () => <div className="flex items-center justify-center h-full bg-gray-100">
@@ -143,8 +164,8 @@ function CreerBaladeContent() {
         famille, sportif, accessible_pmr: pmr,
         gratuit, prix: gratuit ? null : Number(prix.replace(',', '.')) || null,
         difficulte,
-        duree_min: duree ? Number(duree) : null,
-        distance_km: distance ? Number(distance.replace(',', '.')) : null,
+        duree_min: parseDureeMin(duree),
+        distance_km: parseDistanceKm(distance),
         lat_depart: points[0].lat,
         lng_depart: points[0].lng,
         type_evenement: isAdmin ? typeEvenement : 'communautaire',

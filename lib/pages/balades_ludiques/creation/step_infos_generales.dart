@@ -9,8 +9,27 @@ class _StepInfosGenerales extends StatefulWidget {
 }
 
 class _StepInfosGeneralesState extends State<_StepInfosGenerales> {
+  // Appareil photo OU galerie (avant : galerie uniquement).
   Future<void> _pickCover() async {
-    final f = await pickAndCropBanner();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(
+          leading: const Icon(Icons.photo_camera_outlined, color: kBlGreen),
+          title: const Text('Prendre une photo', style: TextStyle(fontFamily: 'Galey')),
+          onTap: () => Navigator.pop(ctx, ImageSource.camera),
+        ),
+        ListTile(
+          leading: const Icon(Icons.photo_library_outlined, color: kBlGreen),
+          title: const Text('Choisir dans la galerie', style: TextStyle(fontFamily: 'Galey')),
+          onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+        ),
+      ])),
+    );
+    if (source == null) return;
+    final f = await pickAndCropBanner(source: source);
     if (f != null) setState(() => widget.s.coverFile = f);
   }
 

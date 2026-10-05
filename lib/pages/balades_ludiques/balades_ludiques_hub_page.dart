@@ -309,12 +309,12 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
                 ]),
               ),
-              _glassAction(Icons.emoji_events_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClassementPage()))),
+              _glassAction(Icons.emoji_events_outlined, 'Classement', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClassementPage()))),
               if (uid != null) ...[
                 const SizedBox(width: 8),
-                _glassAction(Icons.workspace_premium_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesBadgesPage()))),
+                _glassAction(Icons.workspace_premium_outlined, 'Badges', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesBadgesPage()))),
                 const SizedBox(width: 8),
-                _glassAction(Icons.list_alt_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesParcoursPage()))),
+                _glassAction(Icons.list_alt_outlined, 'Mes parcours', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesParcoursPage()))),
               ],
             ]),
           ),
@@ -323,9 +323,12 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
     ]);
   }
 
-  Widget _glassAction(IconData icon, VoidCallback onPressed) => GestureDetector(
+  // Icône + libellé : « Mes parcours », « Badges », « Classement » n'étaient
+  // que des icônes sans texte, difficiles à trouver.
+  Widget _glassAction(IconData icon, String label, VoidCallback onPressed) => GestureDetector(
     onTap: onPressed,
-    child: ClipRRect(
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
@@ -340,6 +343,9 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
         ),
       ),
     ),
+      const SizedBox(height: 3),
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 9.5, fontWeight: FontWeight.w600, color: Colors.white)),
+    ]),
   );
 
   Widget _glassButton({required IconData icon, required VoidCallback onTap, bool active = false, String? badge}) =>

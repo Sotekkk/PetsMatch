@@ -28,7 +28,7 @@ class _StepRecapPublication extends StatelessWidget {
             const SizedBox(height: 10),
             _row('Espèce', blEspeceLabel(s.espece)),
             _row('Difficulté', blDifficulteLabel(s.difficulte)),
-            _row('Durée', s.dureeCtrl.text.isEmpty ? '—' : blDureeLabel(int.tryParse(s.dureeCtrl.text))),
+            _row('Durée', s.dureeCtrl.text.isEmpty ? '—' : blDureeLabel(parseDureeMin(s.dureeCtrl.text))),
             _row('Distance', s.distanceCtrl.text.isEmpty ? '—' : '${s.distanceCtrl.text} km'),
             _row('Tarif', s.gratuit ? 'Gratuit' : '${s.prixCtrl.text} €'),
             _row('Étapes', '${s.points.length}'),
