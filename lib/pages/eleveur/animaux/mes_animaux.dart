@@ -72,9 +72,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   String _filterRace     = '';
   String _presentsSubTab = 'tous'; // 'tous', 'repro', 'bebes'
   String _selectedPorteeId = ''; // '' = toutes les portées (filtre "Bébés")
-  // Filtre "Bébés" : présents seulement (défaut) ou tous, cédés inclus — pour
-  // retrouver une portée entière et ses données après les départs.
-  bool _bebesTous = false;
+  // Filtre "Bébés" : présents (défaut) ou cédés — pour retrouver une portée
+  // et ses données après les départs.
+  bool _bebesCedes = false;
   bool _filterRetraite = false;
   bool _filterRepro    = false;
   bool _filterGestante = false;
@@ -1188,16 +1188,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   }
 
   Widget _buildBebesVueToggle() {
-    const vues = [(false, 'Présents'), (true, 'Tous (cédés inclus)')];
+    const vues = [(false, 'Présents'), (true, 'Cédés')];
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: Row(children: vues.map((v) {
-        final active = _bebesTous == v.$1;
+        final active = _bebesCedes == v.$1;
         return Padding(
           padding: const EdgeInsets.only(right: 8),
           child: GestureDetector(
-            onTap: () => setState(() { _bebesTous = v.$1; _selectedPorteeId = ''; }),
+            onTap: () => setState(() { _bebesCedes = v.$1; _selectedPorteeId = ''; }),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               decoration: BoxDecoration(
@@ -1311,7 +1311,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       docs = base.where((d) => d['reproducteur'] == true).toList();
     } else if (_presentsSubTab == 'bebes') {
       // Un bébé vendu/cédé (statut 'sorti') est masqué par défaut (filtre
-      // « Présents ») et affiché grisé avec « Tous » — ce n'est plus le sien
+      // « Présents ») et seul affiché, grisé, avec « Cédés » — ce n'est plus le sien
       // mais l'éleveur garde l'historique de la portée (courbe de poids
       // saisie lui-même) : contrairement à `base`, on ne filtre donc PAS sur
       // _currentOwnerIds ici.
@@ -1320,7 +1320,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         final statut = d['statut'] as String? ?? '';
         if (pid.isEmpty || d['reproducteur'] == true) return false;
         if (statut == 'decede') return false;
-        if (!_bebesTous && statut == 'sorti') return false;
+        if (_bebesCedes != (statut == 'sorti')) return false;
         if (_filterEspece != 'tous' && d['espece'] != _filterEspece) return false;
         if (_filterSexe != 'tous' && d['sexe'] != _filterSexe) return false;
         if (_filterRace.isNotEmpty &&
@@ -1341,9 +1341,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (_presentsSubTab == 'repro') {
         emptyMsg = 'Aucun animal reproducteur\nAppui long sur une carte pour en marquer un';
       } else if (_presentsSubTab == 'bebes') {
-        emptyMsg = _bebesTous
-            ? 'Aucun bébé dans une portée'
-            : 'Aucun bébé présent\nChoisissez « Tous (cédés inclus) » pour\nretrouver les portées déjà parties';
+        emptyMsg = _bebesCedes
+            ? 'Aucun bébé cédé'
+            : 'Aucun bébé présent\nChoisissez « Cédés » pour retrouver\nles portées déjà parties';
       } else {
         emptyMsg = _presentsFilterCount > 0
             ? 'Aucun animal présent\ncorrespondant aux filtres'
@@ -1436,7 +1436,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         final aPid = (a['portee_id'] as String?) ?? '';
         final statut = (a['statut'] as String?) ?? '';
         return aPid == pid && !existingIds.contains(a['id']) && statut != 'decede'
-            && (_bebesTous || statut != 'sorti');
+            && _bebesCedes == (statut == 'sorti');
       });
       groups[pid]!.addAll(siblings);
     }
@@ -1630,11 +1630,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             itemBuilder: (_, i) {
               final data = members[i];
               final id = data['id'] as String? ?? '';
-              // Vendu/cédé : plus le sien, la carte reste visible (grisée) —
-              // elle garde l'historique (dont la courbe de poids qu'elle a
-              // elle-même saisie), mais ne peut plus le modifier.
+              // Vendu/cédé (filtre « Cédés ») : plus le sien, la carte reste
+              // visible — l'éleveur garde l'historique (dont la courbe de
+              // poids saisie lui-même), mais ne peut plus le modifier.
               final cede = (data['statut'] as String? ?? '') == 'sorti';
-              final card = _AnimalCard(
+              return _AnimalCard(
                 id: id,
                 data: data,
                 showPorteeBadge: true,
@@ -1657,7 +1657,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 reproPublic: data['reproducteur_public'] == true,
                 onToggleReproPublic: cede || id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
               );
-              return cede ? Opacity(opacity: 0.55, child: card) : card;
             },
           ),
         ]);
@@ -2561,7 +2560,16 @@ class _AnimalCard extends StatelessWidget {
                   ],
                   if (showStatut && statut == 'sorti') ...[
                     const Spacer(),
-                    ContactAcquereurButton(animal: data, size: 16),
+                    // Le bouton fait 32 px de haut minimum : sans plafond, il
+                    // agrandissait la ligne des chips et la carte débordait
+                    // (« BOTTOM OVERFLOWED BY 13 PIXELS » sur les cédés).
+                    SizedBox(
+                      width: 24, height: 18,
+                      child: OverflowBox(
+                        maxWidth: 32, maxHeight: 32,
+                        child: ContactAcquereurButton(animal: data, size: 16),
+                      ),
+                    ),
                   ],
                 ]),
               ]),

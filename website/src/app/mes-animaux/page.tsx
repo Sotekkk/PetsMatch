@@ -99,8 +99,8 @@ function Chip({
 
 function AnimalCard({ a, tab, showPorteeBadge = false, cede = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
   a: Animal; tab: 'presents' | 'anciens' | 'decedes'; showPorteeBadge?: boolean;
-  // Carte "Bébés" vendue/cédée (statut 'sorti') : reste affichée (historique,
-  // courbe de poids) mais grisée et non modifiable — indépendant de `tab`
+  // Carte "Bébés" vendue/cédée (statut 'sorti', filtre « Cédés ») : reste
+  // affichée (historique, courbe de poids) mais non modifiable — indépendant de `tab`
   // (toujours 'presents' ici), donc un prop dédié plutôt que réutiliser le
   // badge Sorti/Décédé lié à tab==='anciens'|'decedes'.
   cede?: boolean;
@@ -222,7 +222,7 @@ function AnimalCard({ a, tab, showPorteeBadge = false, cede = false, reproducteu
     </div>
   );
 
-  const innerCls = `bg-white rounded-2xl shadow-sm overflow-hidden transition-all ${selected ? 'ring-2 ring-[#0C5C6C]' : ''} ${!selectMode ? 'hover:shadow-md' : ''} ${cede ? 'opacity-55' : ''}`;
+  const innerCls = `bg-white rounded-2xl shadow-sm overflow-hidden transition-all ${selected ? 'ring-2 ring-[#0C5C6C]' : ''} ${!selectMode ? 'hover:shadow-md' : ''}`;
 
   return (
     <div className="relative group">
@@ -334,7 +334,7 @@ function MesAnimauxPageInner() {
   const initialSubTab: 'tous' | 'repro' | 'bebes' =
     initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
   const initialPortee = searchParams.get('portee') ?? '';
-  const initialBebesVue: 'presents' | 'tous' = searchParams.get('bebes') === 'tous' ? 'tous' : 'presents';
+  const initialBebesVue: 'presents' | 'cedes' = searchParams.get('bebes') === 'cedes' ? 'cedes' : 'presents';
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
@@ -349,9 +349,9 @@ function MesAnimauxPageInner() {
   const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>(initialSubTab);
   // Portée sélectionnée dans le filtre "Bébés" — '' = toutes les portées.
   const [selectedPortee, setSelectedPortee] = useState(initialPortee);
-  // Filtre "Bébés" : présents seulement (défaut) ou tous, cédés inclus — pour
-  // retrouver une portée entière et ses données après les départs.
-  const [bebesVue, setBebesVue] = useState<'presents' | 'tous'>(initialBebesVue);
+  // Filtre "Bébés" : présents (défaut) ou cédés — pour retrouver une portée
+  // et ses données après les départs.
+  const [bebesVue, setBebesVue] = useState<'presents' | 'cedes'>(initialBebesVue);
 
   // Garde l'URL synchro avec les filtres actifs (remplace l'entrée d'historique,
   // pas de nouvelle entrée à chaque clic) pour que le retour depuis une fiche
@@ -361,7 +361,7 @@ function MesAnimauxPageInner() {
     if (tab !== 'presents') params.set('tab', tab);
     if (presentsSubTab !== 'tous') params.set('sub', presentsSubTab);
     if (presentsSubTab === 'bebes' && selectedPortee) params.set('portee', selectedPortee);
-    if (presentsSubTab === 'bebes' && bebesVue === 'tous') params.set('bebes', 'tous');
+    if (presentsSubTab === 'bebes' && bebesVue === 'cedes') params.set('bebes', 'cedes');
     const qs = params.toString();
     router.replace(qs ? `/mes-animaux?${qs}` : '/mes-animaux', { scroll: false });
   }, [tab, presentsSubTab, selectedPortee, bebesVue, router]);
@@ -724,12 +724,12 @@ function MesAnimauxPageInner() {
     : (anciensEspece !== 'tous' ? 1 : 0);
 
   // Bébés vendus/cédés (statut 'sorti') : masqués par défaut (filtre
-  // « Présents »), affichés grisés avec « Tous » — la carte garde alors
+  // « Présents »), seuls affichés (grisés) avec « Cédés » — la carte garde
   // l'historique de la portée (dont la courbe de poids saisie par
   // l'éleveur). Décédés toujours exclus.
   const filteredBebes = animaux.filter(a => {
     if (a.statut === 'decede') return false;
-    if (bebesVue === 'presents' && a.statut === 'sorti') return false;
+    if ((bebesVue === 'cedes') !== (a.statut === 'sorti')) return false;
     if (filtreEspece !== 'tous' && a.espece !== filtreEspece) return false;
     if (filtreSexe !== 'tous') {
       const s = (a.sexe ?? '').toLowerCase();
@@ -926,10 +926,10 @@ function MesAnimauxPageInner() {
         </div>
       )}
 
-      {/* Filtre Bébés : présents (défaut) ou tous, cédés inclus */}
+      {/* Filtre Bébés : présents (défaut) ou cédés */}
       {tab === 'presents' && presentsSubTab === 'bebes' && (
         <div className="flex gap-2 mb-3">
-          {([['presents', 'Présents'], ['tous', 'Tous (cédés inclus)']] as const).map(([v, l]) => (
+          {([['presents', 'Présents'], ['cedes', 'Cédés']] as const).map(([v, l]) => (
             <button key={v} onClick={() => { setBebesVue(v); setSelectedPortee(''); }}
               className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                 bebesVue === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
@@ -1101,7 +1101,7 @@ function MesAnimauxPageInner() {
             {tab === 'presents' && presentsSubTab === 'repro'
               ? 'Aucun animal reproducteur'
               : tab === 'presents' && presentsSubTab === 'bebes'
-              ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé dans une portée')
+              ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé cédé')
               : tab === 'presents' ? 'Aucun animal présent'
               : tab === 'decedes' ? 'Aucun animal décédé'
               : 'Aucun animal cédé'}
@@ -1110,7 +1110,7 @@ function MesAnimauxPageInner() {
             {tab === 'presents' && presentsSubTab === 'repro'
               ? 'Survolez une carte et cliquez ⭐ pour marquer un reproducteur'
               : tab === 'presents' && presentsSubTab === 'bebes' && bebesVue === 'presents'
-              ? 'Choisissez « Tous (cédés inclus) » pour retrouver les portées déjà parties'
+              ? 'Choisissez « Cédés » pour retrouver les portées déjà parties'
               : tab === 'presents' && animaux.length === 0
               ? 'Ajoutez votre premier animal'
               : 'Modifiez les filtres pour voir plus de résultats'}
