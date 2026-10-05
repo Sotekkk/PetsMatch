@@ -1448,7 +1448,7 @@ class _SaillieCardState extends State<_SaillieCard> {
           .select('nb_petits_produits, historique_fertilite, profil_adn_etabli')
           .eq('id', etalonId).maybeSingle();
       final tests = await supa.from('tests_genetiques')
-          .select('categorie, nom, resultat, genotype')
+          .select('categorie, nom, resultat, genotype, lien_resultat')
           .eq('animal_id', etalonId);
       if (mounted) {
         setState(() {
@@ -1501,7 +1501,14 @@ class _SaillieCardState extends State<_SaillieCard> {
           Wrap(spacing: 8, runSpacing: 8, children: [
             if (_adnEtabli) _genChip('Profil ADN établi', const Color(0xFFEEF5EA), const Color(0xFF4d7a3c)),
             for (final t in maladies)
-              _genChip(_testLabel(t), _resBg(t['resultat'] as String?), _resFg(t['resultat'] as String?)),
+              // Résultat en ligne (Embark…) : la pastille ouvre le lien.
+              GestureDetector(
+                onTap: (t['lien_resultat'] as String?)?.isNotEmpty == true
+                    ? () => launchUrl(Uri.parse(t['lien_resultat'] as String), mode: LaunchMode.externalApplication)
+                    : null,
+                child: _genChip('${_testLabel(t)}${(t['lien_resultat'] as String?)?.isNotEmpty == true ? ' 🔗' : ''}',
+                    _resBg(t['resultat'] as String?), _resFg(t['resultat'] as String?)),
+              ),
           ])
         else
           Text(genLibre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _dark, height: 1.5)),

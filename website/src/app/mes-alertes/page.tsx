@@ -76,7 +76,20 @@ export default function MesAlertesPage() {
         query = query.or(`profile_id.eq.${activeProfileId},profile_id.is.null`);
       }
       const { data } = await query.order('created_at', { ascending: false });
-      setAlertes((data as Alerte[]) ?? []);
+      const alertes = (data as Alerte[]) ?? [];
+      // + alertes des animaux dont je suis co-propriétaire (miroir appli).
+      let propQ = supabase.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', user.uid).is('date_fin', null);
+      if (activeProfileId) propQ = propQ.eq('profile_id_proprio', activeProfileId);
+      const { data: props } = await propQ;
+      const ids = [...new Set((props ?? []).map((r: { animal_id: string }) => r.animal_id))];
+      if (ids.length) {
+        const { data: copro } = await supabase.from('alertes_perdus').select('*')
+          .in('animal_id', ids).neq('uid_proprietaire', user.uid).order('created_at', { ascending: false });
+        const vus = new Set(alertes.map(a => a.id));
+        ((copro as Alerte[]) ?? []).forEach(a => { if (!vus.has(a.id)) alertes.push(a); });
+      }
+      setAlertes(alertes);
     } catch { /* ignore */ } finally {
       setFetching(false);
     }

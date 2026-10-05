@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -466,7 +467,7 @@ class _TestsBadgesState extends State<_TestsBadges> {
     try {
       final rows = await Supabase.instance.client
           .from('tests_genetiques')
-          .select('categorie, code, nom, resultat, genotype')
+          .select('categorie, code, nom, resultat, genotype, lien_resultat')
           .eq('animal_id', widget.animalId);
       if (mounted) {
         setState(() {
@@ -491,10 +492,16 @@ class _TestsBadgesState extends State<_TestsBadges> {
         if (_adnEtabli)
           _chip('Profil ADN établi', const Color(0xFFEEF5EA), const Color(0xFF4d7a3c)),
         for (final t in maladies)
-          _chip(
-            _testChipLabel(t),
-            resultatBg(t['resultat'] as String?),
-            resultatColor(t['resultat'] as String?),
+          // Résultat en ligne (Embark…) : la pastille ouvre le lien.
+          GestureDetector(
+            onTap: (t['lien_resultat'] as String?)?.isNotEmpty == true
+                ? () => launchUrl(Uri.parse(t['lien_resultat'] as String), mode: LaunchMode.externalApplication)
+                : null,
+            child: _chip(
+              '${_testChipLabel(t)}${(t['lien_resultat'] as String?)?.isNotEmpty == true ? ' 🔗' : ''}',
+              resultatBg(t['resultat'] as String?),
+              resultatColor(t['resultat'] as String?),
+            ),
           ),
       ]),
       if (robes.isNotEmpty) ...[

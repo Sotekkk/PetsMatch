@@ -55,7 +55,23 @@ class _MesAlertesPageState extends State<MesAlertesPage>
         alertesQ = alertesQ.or('profile_id.eq.$activePid,profile_id.is.null');
       }
       final data = await alertesQ.order('created_at', ascending: false);
-      if (mounted) setState(() { _alertes = List<Map<String, dynamic>>.from(data); _loading = false; });
+      final alertes = List<Map<String, dynamic>>.from(data);
+      // + alertes des animaux dont je suis co-propriétaire (déclarées par /
+      // portées par un autre propriétaire), sur ce profil.
+      try {
+        var propQ = _supa.from('animaux_proprietes').select('animal_id')
+            .eq('uid_proprio', uid).isFilter('date_fin', null);
+        if (activePid.isNotEmpty) propQ = propQ.eq('profile_id_proprio', activePid);
+        final ids = (await propQ as List).map((r) => r['animal_id'].toString()).toSet().toList();
+        if (ids.isNotEmpty) {
+          final copro = await _supa.from('alertes_perdus').select()
+              .inFilter('animal_id', ids).neq('uid_proprietaire', uid)
+              .order('created_at', ascending: false);
+          final dejaVus = alertes.map((a) => a['id']).toSet();
+          alertes.addAll(List<Map<String, dynamic>>.from(copro as List).where((a) => !dejaVus.contains(a['id'])));
+        }
+      } catch (_) {}
+      if (mounted) setState(() { _alertes = alertes; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

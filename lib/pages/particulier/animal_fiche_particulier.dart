@@ -1985,7 +1985,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 onTap: () => _showRecordDetail('Test génétique', r, const [
                   ('Test', 'nom'), ('Catégorie', 'categorie'), ('Résultat', 'resultat'),
                   ('Génotype', 'genotype'), ('Laboratoire', 'laboratoire'),
-                  ('Date', 'date_test'), ('Notes', 'notes'),
+                  ('Date', 'date_test'), ('Résultat en ligne', 'lien_resultat'), ('Notes', 'notes'),
                 ]),
               ),
             ),
@@ -2698,7 +2698,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   void _showTestGenetiqueSheet() {
     final nomCtrl = TextEditingController(), genoCtrl = TextEditingController(),
-        laboCtrl = TextEditingController(), notesCtrl = TextEditingController();
+        laboCtrl = TextEditingController(), notesCtrl = TextEditingController(),
+        lienCtrl = TextEditingController();
     DateTime? date;
     String categorie = 'maladie';
     String? selectedCode;
@@ -2778,6 +2779,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _SFld(ctrl: genoCtrl, label: 'Génotype / notation labo', hint: 'N/N, N/WFFS, HD-A/A…'),
         _SFld(ctrl: laboCtrl, label: 'Laboratoire', hint: 'Labéo, Antagene, UC Davis…'),
         _SDate(label: 'Date du test', date: date, onPicked: (d) => ss(() => date = d)),
+        _SFld(ctrl: lienCtrl, label: 'Lien du résultat en ligne', hint: 'https://… (Embark, Wisdom Panel…)'),
         Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: OutlinedButton.icon(
@@ -2808,6 +2810,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'laboratoire': laboCtrl.text.trim().isEmpty ? null : laboCtrl.text.trim(),
         'date_test': date?.toIso8601String().substring(0, 10),
         'url': url,
+        if (lienCtrl.text.trim().isNotEmpty) 'lien_resultat': lienCtrl.text.trim(),
         'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -2896,11 +2899,19 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                                 fontWeight: FontWeight.w500)),
                       ),
                       Expanded(
-                        child: Text(e.$2,
-                            style: const TextStyle(
-                                fontFamily: 'Galey',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600)),
+                        // Lien (ex. résultat de test génétique en ligne) : cliquable.
+                        child: e.$2.startsWith('http')
+                            ? GestureDetector(
+                                onTap: () => launchUrl(Uri.parse(e.$2), mode: LaunchMode.externalApplication),
+                                child: Text(e.$2,
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600,
+                                        color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
+                              )
+                            : Text(e.$2,
+                                style: const TextStyle(
+                                    fontFamily: 'Galey',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),
@@ -3041,9 +3052,11 @@ class _AiScanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const teal = Color(0xFF0C5C6C);
+    // Fonction pas encore finalisée : grisée et inactive, « Bientôt
+    // disponible » (prévue en V2). Remettre `teal` / `onTap` pour l'activer.
+    const teal = Colors.grey;
     return InkWell(
-      onTap: busy ? null : onTap,
+      onTap: null,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -3068,18 +3081,27 @@ class _AiScanCard extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(busy ? 'Analyse en cours...' : 'Remplir depuis une photo',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: teal)),
+              Row(children: [
+                const Flexible(
+                  child: Text('Remplir depuis une photo',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: teal)),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(8)),
+                  child: const Text('Bientôt disponible',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: Colors.black54)),
+                ),
+              ]),
               const SizedBox(height: 2),
               Text(
-                busy
-                    ? 'Ça peut prendre quelques secondes.'
-                    : 'Ordonnance, compte-rendu, carnet vaccinal... on remplit pour vous.',
+                'Ordonnance, compte-rendu, carnet vaccinal… remplis automatiquement (prévu en V2).',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700),
               ),
             ]),
           ),
-          if (!busy) Icon(Icons.chevron_right, color: teal.withValues(alpha: 0.6)),
+          Icon(Icons.lock_outline, color: teal.withValues(alpha: 0.6), size: 18),
         ]),
       ),
     );

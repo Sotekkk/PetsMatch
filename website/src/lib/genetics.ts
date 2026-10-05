@@ -15,6 +15,8 @@ export interface TestGenetique {
   nom?: string;
   resultat?: string | null;
   genotype?: string | null;
+  /** Lien du résultat en ligne (Embark, Wisdom Panel…). */
+  lien_resultat?: string | null;
 }
 
 export const GENETIC_TEST_CATEGORIES = ['maladie', 'adn', 'robe', 'aptitude', 'autre'];

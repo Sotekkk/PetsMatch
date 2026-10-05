@@ -213,7 +213,11 @@ function DeclarerPerduPageInner() {
 
   // ── Animal picker ──────────────────────────────────────────────────────────
 
+  // Animal choisi : l'alerte lui est rattachée (avant : animal_id jamais enregistré).
+  const [animalIdChoisi, setAnimalIdChoisi] = useState<string | null>(null);
+
   function fillFromAnimal(a: UserAnimal) {
+    setAnimalIdChoisi(a.id);
     setNom(a.nom ?? '');
     setIdentification(a.identification ?? '');
     setEspece(a.espece ?? 'chien');
@@ -280,9 +284,28 @@ function DeclarerPerduPageInner() {
     try {
       const photoUrl = await uploadAlertPhoto();
       const localisation = [rue.trim(), cp.trim(), ville.trim()].filter(Boolean).join(', ');
+      // Co-propriété (miroir appli) : alerte portée par le propriétaire
+      // PRINCIPAL (contact n° 1), les autres propriétaires sont prévenus.
+      type Proprio = { uid_proprio: string; profile_id_proprio: string | null; role_proprio: string | null };
+      let proprietaires: Proprio[] = [];
+      let porteurUid = user!.uid;
+      let porteurProfileId: string | null = activeProfileId ?? null;
+      if (animalIdChoisi) {
+        const { data: pr } = await supabase.from('animaux_proprietes')
+          .select('uid_proprio, profile_id_proprio, role_proprio')
+          .eq('animal_id', animalIdChoisi).is('date_fin', null);
+        proprietaires = (pr ?? []) as Proprio[];
+        const principal = proprietaires.find(p => p.role_proprio === 'principal');
+        if (principal && principal.uid_proprio !== user!.uid) {
+          porteurUid = principal.uid_proprio;
+          porteurProfileId = principal.profile_id_proprio ?? porteurProfileId;
+        }
+      }
+      const alerteId = `${Date.now()}`;
       await supabase.from('alertes_perdus').insert({
-        id: `${Date.now()}`,
-        uid_proprietaire: user!.uid,
+        id: alerteId,
+        uid_proprietaire: porteurUid,
+        ...(animalIdChoisi ? { animal_id: animalIdChoisi } : {}),
         nom_animal: nom.trim(),
         identification: identification.trim() || null,
         espece,
@@ -303,8 +326,18 @@ function DeclarerPerduPageInner() {
         contact_messagerie: contactMessagerie,
         numero_alerte: numeroAlerte,
         statut: 'perdu',
-        ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+        ...(porteurProfileId ? { profile_id: porteurProfileId } : {}),
       });
+      for (const p of proprietaires) {
+        if (p.uid_proprio === user!.uid) continue;
+        await supabase.from('notifications').insert({
+          uid: p.uid_proprio, type: 'alerte_perdu_copro',
+          title: `🚨 ${nom.trim()} est déclaré(e) perdu(e)`,
+          body: `Alerte N° ${numeroAlerte} — retrouvez-la dans Mes alertes.`,
+          ...(p.profile_id_proprio ? { profile_id: p.profile_id_proprio } : {}),
+          data: { alerteId, animalId: animalIdChoisi, url: '/mes-alertes' }, read: false,
+        });
+      }
       router.push('/mes-alertes?success=1');
     } catch (err) {
       setErrors([`Erreur : ${err}`]);

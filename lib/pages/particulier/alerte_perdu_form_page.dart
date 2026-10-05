@@ -252,8 +252,13 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     );
   }
 
+  String? _animalIdChoisi;
+
   void _fillFromAnimal(Map<String, dynamic> d) {
     final newEspece = (d['espece'] as String?) ?? 'chien';
+    // Animal choisi dans « Mes animaux » : l'alerte lui est rattachée (avant :
+    // seul le formulaire était pré-rempli, animal_id restait vide).
+    if (d['id'] != null) _animalIdChoisi = d['id'].toString();
     setState(() {
       _nomCtrl.text     = (d['nom'] as String?) ?? '';
       _identCtrl.text   = (d['identification'] as String?) ?? '';
@@ -576,7 +581,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
 
       final payload = {
         'uid_proprietaire':        User_Info.uid,
-        'animal_id':               widget.animalId,
+        'animal_id':               widget.animalId ?? _animalIdChoisi,
         'nom_animal':              _nomCtrl.text.trim(),
         'identification':          _identCtrl.text.trim().isEmpty ? null : _identCtrl.text.trim(),
         'espece':                  _espece,
@@ -602,6 +607,24 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
       };
 
+      // Co-propriété : l'alerte est portée par le propriétaire PRINCIPAL
+      // (contact n° 1 : messagerie, « Mes alertes ») même si c'est un
+      // co-propriétaire qui la déclare ; les autres sont prévenus.
+      final animalId = widget.animalId ?? _animalIdChoisi;
+      List<Map<String, dynamic>> proprietaires = [];
+      if (animalId != null && !_isEdit) {
+        try {
+          proprietaires = List<Map<String, dynamic>>.from(await _supa.from('animaux_proprietes')
+              .select('uid_proprio, profile_id_proprio, role_proprio')
+              .eq('animal_id', animalId).isFilter('date_fin', null) as List);
+          final principal = proprietaires.where((p) => p['role_proprio'] == 'principal').firstOrNull;
+          if (principal != null && principal['uid_proprio'] != User_Info.uid) {
+            payload['uid_proprietaire'] = principal['uid_proprio'];
+            if (principal['profile_id_proprio'] != null) payload['profile_id'] = principal['profile_id_proprio'];
+          }
+        } catch (_) {}
+      }
+
       String? newAlertId;
       if (_isEdit) {
         await _supa.from('alertes_perdus').update(payload).eq('id', widget.alerteId!);
@@ -611,6 +634,20 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           'id': newAlertId,
           ...payload,
         });
+        for (final p in proprietaires) {
+          if (p['uid_proprio'] == User_Info.uid) continue;
+          try {
+            await _supa.from('notifications').insert({
+              'uid': p['uid_proprio'],
+              'type': 'alerte_perdu_copro',
+              'title': '🚨 ${_nomCtrl.text.trim()} est déclaré(e) perdu(e)',
+              'body': 'Alerte N° $_numeroAlerte — retrouvez-la dans Mes alertes.',
+              if (p['profile_id_proprio'] != null) 'profile_id': p['profile_id_proprio'],
+              'data': {'alerteId': newAlertId, 'animalId': animalId},
+              'read': false,
+            });
+          } catch (_) {}
+        }
       }
 
       final effectiveAlertId = _isEdit ? widget.alerteId! : newAlertId!;

@@ -7785,6 +7785,13 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
                       style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, fontWeight: FontWeight.w600, color: resultatColor(res)),
                     ),
                   ),
+                if ((t['lien_resultat'] as String?)?.isNotEmpty == true)
+                  IconButton(
+                    tooltip: 'Résultat en ligne',
+                    icon: const Icon(Icons.link, size: 16, color: Color(0xFF0C5C6C)),
+                    padding: const EdgeInsets.only(left: 4), constraints: const BoxConstraints(),
+                    onPressed: () => launchUrl(Uri.parse(t['lien_resultat'] as String), mode: LaunchMode.externalApplication),
+                  ),
                 if ((t['url'] as String?)?.isNotEmpty == true)
                   IconButton(
                     icon: const Icon(Icons.open_in_new, size: 16, color: Color(0xFF0C5C6C)),
@@ -7824,6 +7831,8 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
   final _genoCtrl  = TextEditingController();
   final _laboCtrl  = TextEditingController();
   final _notesCtrl = TextEditingController();
+  // Lien du résultat en ligne (Embark, Wisdom Panel…) — en plus du fichier.
+  final _lienCtrl  = TextEditingController();
   String _categorie = 'maladie';
   String? _selectedCode; // '' = saisie libre
   String _resultat = 'clair';
@@ -7854,7 +7863,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
 
   @override
   void dispose() {
-    _nomCtrl.dispose(); _genoCtrl.dispose(); _laboCtrl.dispose(); _notesCtrl.dispose();
+    _nomCtrl.dispose(); _genoCtrl.dispose(); _laboCtrl.dispose(); _notesCtrl.dispose(); _lienCtrl.dispose();
     super.dispose();
   }
 
@@ -7919,6 +7928,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
             (v) => setState(() => _resultat = v ?? 'clair')),
       _DF('Génotype / notation labo', _genoCtrl),
       _DF('Laboratoire', _laboCtrl),
+      _DF('Lien du résultat en ligne (Embark, Wisdom Panel…)', _lienCtrl),
       _DD('Date du test', _date, (d) => setState(() => _date = d)),
       _DCustom(Align(
         alignment: Alignment.centerLeft,
@@ -7951,6 +7961,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
         'laboratoire': _laboCtrl.text.trim().isEmpty ? null : _laboCtrl.text.trim(),
         'date_test': _date?.toIso8601String().substring(0, 10),
         'url': _url,
+        if (_lienCtrl.text.trim().isNotEmpty) 'lien_resultat': _lienCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       });
       return true;

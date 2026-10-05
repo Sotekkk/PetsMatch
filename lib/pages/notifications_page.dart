@@ -34,6 +34,7 @@ import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FactureDetailPage;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/balades_ludiques/balade_ludique_detail_page.dart';
+import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
@@ -635,6 +636,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Balades ludiques : nouvel avis (créateur) ou parcours terminé (joueur)
     // → fiche du parcours.
+    // Animal en co-propriété déclaré perdu → Mes alertes.
+    if (type == 'alerte_perdu_copro') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
+      return;
+    }
     if (type == 'balade_ludique_avis' || type == 'balade_ludique_xp') {
       final baladeId = data is Map ? data['balade_id']?.toString() : null;
       if (baladeId != null) {

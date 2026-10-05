@@ -627,7 +627,7 @@ function AnnonceDetailPageInner() {
           .select('nb_petits_produits, historique_fertilite, profil_adn_etabli')
           .eq('id', etalonId).maybeSingle(),
         supabase.from('tests_genetiques')
-          .select('categorie, code, nom, resultat, genotype').eq('animal_id', etalonId),
+          .select('categorie, code, nom, resultat, genotype, lien_resultat').eq('animal_id', etalonId),
       ]);
       setEtalonInfo(a ?? null);
       setEtalonTests((tg ?? []) as TestGenetique[]);
@@ -1008,6 +1008,9 @@ function AnnonceDetailPageInner() {
                       {maladies.map((t, i) => (
                         <span key={i} className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${resultatChipClass(t.resultat)}`}>
                           {testChipLabel(t)}
+                          {t.lien_resultat && (
+                            <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="ml-1 underline" title="Résultat en ligne">🔗</a>
+                          )}
                         </span>
                       ))}
                     </div>
