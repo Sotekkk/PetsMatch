@@ -93,6 +93,9 @@ class _ParticulierNavState extends State<ParticulierNav> {
         1 => MessagePage(),
         2 => const NotificationsPage(),
         3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0), isParticulier: true),
+        // Tableau de bord (entrée du menu) : affiché DANS la navigation pour
+        // garder la barre du bas (Accueil, Messages, Alertes, Agenda).
+        4 => const ParticulierHomePage(),
         // Accueil = Pets Social (choix produit) ; le tableau de bord du
         // particulier est accessible depuis le menu (« Tableau de bord »).
         _ => const SocialFeedPage(),
@@ -198,7 +201,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   label: 'Tableau de bord',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const ParticulierHomePage()));
+                    setState(() => _selectedIndex = 4);
                   },
                 ),
                 _DrawerSection(

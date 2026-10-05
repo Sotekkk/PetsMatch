@@ -191,10 +191,9 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
               expandedHeight: 180,
               floating: false,
               pinned: true,
-              // Ouvert depuis le menu (« Tableau de bord ») : flèche retour
-              // vers Pets Social.
-              automaticallyImplyLeading: true,
-              foregroundColor: Colors.white,
+              // Affiché dans la navigation du particulier (barre du bas) :
+              // pas de flèche retour.
+              automaticallyImplyLeading: false,
               actions: const [QuickSearchButton()],
               flexibleSpace: FlexibleSpaceBar(
                 background: Container(
