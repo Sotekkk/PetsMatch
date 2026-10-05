@@ -1699,10 +1699,10 @@ export default function AdminPage() {
                       <div className="flex gap-1.5 mb-2">
                         <button
                           onClick={e => { e.stopPropagation(); runAutoValidate(d); }}
-                          disabled={validationChecking === (d.isSecondary ? d.profileTableId : d.uid) || dossierSaving === (d.isSecondary ? d.profileTableId : d.uid)}
+                          disabled={validationChecking === validationKey(d) || dossierSaving === (d.isSecondary ? d.profileTableId : d.uid)}
                           className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white text-xs font-semibold py-2 rounded-xl transition-colors"
                           style={{ fontFamily: 'Galey, sans-serif' }}>
-                          {validationChecking === (d.isSecondary ? d.profileTableId : d.uid) ? '⏳ Vérif…' : '🔍 Vérifier auto'}
+                          {validationChecking === validationKey(d) ? '⏳ Vérif…' : '🔍 Vérifier auto'}
                         </button>
                       </div>
                       <div className="flex gap-2">
@@ -2956,10 +2956,10 @@ export default function AdminPage() {
                 <>
                   <button
                     onClick={() => runAutoValidate(selectedDossier)}
-                    disabled={validationChecking === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) || dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
+                    disabled={validationChecking === validationKey(selectedDossier) || dossierSaving === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid)}
                     className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors mb-2"
                     style={{ fontFamily: 'Galey, sans-serif' }}>
-                    {validationChecking === (selectedDossier.isSecondary ? selectedDossier.profileTableId : selectedDossier.uid) ? '⏳ Vérification SIRET/RNA en cours…' : '🔍 Vérifier automatiquement (SIRET/RNA)'}
+                    {validationChecking === validationKey(selectedDossier) ? '⏳ Vérification SIRET/RNA en cours…' : '🔍 Vérifier automatiquement (SIRET/RNA)'}
                   </button>
                   <div className="flex gap-3">
                     <button
