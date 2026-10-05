@@ -568,6 +568,40 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
+    // Côté ÉMETTEUR (association, élevage, pro…) : « contrat signé » ouvre
+    // directement le contrat — avant : « Mes contrats » du particulier
+    // (contrat_signe_complet est envoyé aux deux parties) ou les contrats de
+    // l'élevage même pour une association.
+    if (type == 'contrat_signe_complet' || type == 'contrat_signe_acquereur') {
+      final token = (data is Map ? data['token'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['url'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['signingUrl'] as String? : null);
+      final docId = data is Map ? data['documentId'] as String? : null;
+      final myUid = FirebaseAuth.instance.currentUser?.uid;
+      try {
+        final supa = Supabase.instance.client;
+        Map<String, dynamic>? doc;
+        if (token != null) {
+          doc = await supa.from('documents_animaux').select('id, token, uid_eleveur')
+              .eq('token', token).setHeader('x-pm-token', token).maybeSingle();
+        }
+        // Notifs créées par le site : `token` contient l'id du document.
+        final idRecherche = docId ?? (doc == null ? token : null);
+        if (doc == null && idRecherche != null) {
+          try {
+            doc = await supa.from('documents_animaux').select('id, token, uid_eleveur')
+                .eq('id', idRecherche).maybeSingle();
+          } catch (_) {}
+        }
+        if (doc != null && doc['uid_eleveur'] == myUid) {
+          if (!mounted) return;
+          await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ContratSignaturePage(token: doc!['token'] as String?, documentId: doc['id']?.toString()),
+          ));
+          return;
+        }
+      } catch (_) {}
+    }
     // Notifications contrats reçues par l'ACQUÉREUR → sa page « Mes contrats »
     // (le contrat concerné y est mis en avant « À signer »), jamais le lien web.
     if (type == 'contrat_signe_eleveur' ||

@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -2025,6 +2026,30 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       // pas exactement « present » en base (vide/legacy) faisait disparaître
       // ce bouton alors que Céder/Décéder, eux, restaient visibles
       // (conditions par exclusion) — mêmes règles ici pour rester cohérent.
+      // Association : publier l'annonce d'adoption depuis la fiche (animal
+      // pré-rempli), sans repasser par Annonces.
+      if (widget.isAssociation && (_statut == 'disponible' || _statut == 'en_soin')) {
+        actions.add(_QuickAction(
+          icon: Icons.campaign_outlined,
+          label: "Annonce d'adoption",
+          color: const Color(0xFF6E9E57),
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => CreateAnnonceAssoPage(
+              animalId: widget.animalId,
+              initialAnimal: {
+                'id': widget.animalId,
+                'nom': _nomCtrl.text,
+                'espece': _espece,
+                'race': _raceCtrl.text,
+                'sexe': _sexe,
+                'date_naissance': _dateNaissance?.toIso8601String(),
+                'age_estime': _ageEstime,
+                'photo_url': _photoUrl,
+              },
+            ),
+          )),
+        ));
+      }
       if (_statut != 'reserve' && _statut != 'sorti'
           && _statut != 'decede' && _statut != 'cession_en_cours') {
         actions.add(_QuickAction(

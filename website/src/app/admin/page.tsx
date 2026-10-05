@@ -84,6 +84,7 @@ interface DossierEntry {
   firstname: string; lastname: string; email: string;
   siret: string | null;
   kbisUrl: string | null; acacedDocUrl: string | null; acaced: string | null;
+  statutsUrl?: string | null; arretePrefUrl?: string | null;
   catPro: string | null; professionPro: string | null;
   certifications: { nom?: string; organisme?: string; numero?: string }[] | null;
   isElevage: boolean; isPro: boolean;
@@ -498,6 +499,9 @@ export default function AdminPage() {
         siret:          (r['siret'] as string) ?? null,
         kbisUrl:        (r['kbis_url'] as string) ?? null,
         acacedDocUrl:   (r['acaced_doc_url'] as string) ?? null,
+        // Association : statuts + arrêté préfectoral (dépôt depuis le profil).
+        statutsUrl:     (r['statuts_url'] as string) ?? null,
+        arretePrefUrl:  (r['arrete_prefectoral_url'] as string) ?? null,
         acaced:         (r['acaced'] as string) ?? null,
         catPro:         (r['cat_pro'] as string) ?? ptype ?? null,
         professionPro:  (r['profession_pro'] as string) ?? null,
@@ -515,7 +519,7 @@ export default function AdminPage() {
   const loadDossiers = useCallback(async () => {
     setDossiersLoading(true);
     try {
-      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro';
+      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, statuts_url, arrete_prefectoral_url, acaced, rejection_reason, created_at, is_validate, statut_pro';
       const [
         { data: pending, error: err1 },
         { data: refused, error: err2 },
@@ -2888,6 +2892,18 @@ export default function AdminPage() {
                   <LienDocument href={selectedDossier.acacedDocUrl} target="_blank" rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
                     📄 Document ACACED ↗
+                  </LienDocument>
+                )}
+                {selectedDossier.statutsUrl && (
+                  <LienDocument href={selectedDossier.statutsUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
+                    📄 Statuts de l&apos;association ↗
+                  </LienDocument>
+                )}
+                {selectedDossier.arretePrefUrl && (
+                  <LienDocument href={selectedDossier.arretePrefUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm text-[#0C5C6C] hover:underline font-semibold mt-2">
+                    📄 Arrêté préfectoral ↗
                   </LienDocument>
                 )}
                 {selectedDossier.certifications && selectedDossier.certifications.length > 0 && (
