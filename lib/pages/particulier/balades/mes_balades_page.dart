@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'choix_animaux_balade.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -36,15 +37,17 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
     setState(() => _loading = true);
     try {
       var q = _supa.from('balades_perso').select().eq('uid', User_Info.uid).eq('statut', 'terminee');
-      if (widget.animalId != null) q = q.eq('animal_id', widget.animalId as Object);
+      // Balades de CET animal, y compris celles faites à plusieurs
+      // (animal_ids contient l'animal sans en être le principal).
+      if (widget.animalId != null) {
+        q = q.or('animal_id.eq.${widget.animalId},animal_ids.cs.{"${widget.animalId}"}');
+      }
       final rows = await q.order('started_at', ascending: false);
       final list = List<Map<String, dynamic>>.from(rows as List);
-      if (widget.animalId == null) {
-        final ids = list.map((r) => r['animal_id']?.toString()).whereType<String>().toSet().toList();
-        if (ids.isNotEmpty) {
-          final animRows = await _supa.from('animaux').select('id, nom').inFilter('id', ids);
-          _animalNoms = {for (final a in (animRows as List)) (a as Map)['id'].toString(): a['nom']?.toString() ?? 'Animal'};
-        }
+      final ids = list.expand((r) => _idsBalade(r)).toSet().toList();
+      if (ids.isNotEmpty) {
+        final animRows = await _supa.from('animaux').select('id, nom').inFilter('id', ids);
+        _animalNoms = {for (final a in (animRows as List)) (a as Map)['id'].toString(): a['nom']?.toString() ?? 'Animal'};
       }
       if (mounted) setState(() { _balades = list; _loading = false; });
     } catch (_) {
@@ -53,6 +56,15 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
   }
 
   final Set<String> _deletingIds = {};
+
+  /// Animaux d'une balade : principal + autres (balade à plusieurs).
+  List<String> _idsBalade(Map<String, dynamic> b) => <String>{
+        if (b['animal_id'] != null) b['animal_id'].toString(),
+        ...((b['animal_ids'] as List?) ?? const []).map((e) => e.toString()),
+      }.toList();
+
+  String _nomsBalade(Map<String, dynamic> b) =>
+      nomsAnimaux(_idsBalade(b).map((id) => {'nom': _animalNoms[id] ?? 'Animal'}).toList());
 
   Future<void> _supprimer(Map<String, dynamic> b) async {
     final id = b['id']?.toString();
@@ -115,6 +127,18 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
         title: Text(widget.animalNom != null ? 'Balades avec ${widget.animalNom}' : 'Mes balades',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
+      // Démarrer une balade d'ici, avec un ou plusieurs animaux (l'animal de
+      // la page coché d'office).
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.directions_walk),
+        label: const Text('Démarrer une balade', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        onPressed: () async {
+          await demarrerBalade(context, preselectId: widget.animalId);
+          if (mounted) _load();
+        },
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
           : _balades.isEmpty
@@ -137,7 +161,7 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
                     final b = _balades[i];
                     final photos = (b['photos'] as List?)?.cast<String>() ?? const [];
                     final started = DateTime.tryParse(b['started_at']?.toString() ?? '');
-                    final animalNom = widget.animalNom ?? _animalNoms[b['animal_id']?.toString()] ?? 'Animal';
+                    final animalNom = _nomsBalade(b);
                     return InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () => _openDetail(b, animalNom),
@@ -199,6 +223,7 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
         baladeId: b['id']?.toString(),
         animalId: b['animal_id']?.toString() ?? '',
         animalNom: animalNom,
+        autresAnimaux: _idsBalade(b).skip(1).map((id) => <String, dynamic>{'id': id, 'nom': _animalNoms[id]}).toList(),
         espece: '',
         distanceM: (b['distance_m'] as num?)?.toDouble() ?? 0,
         dureeSecondes: (b['duree_s'] as int?) ?? 0,

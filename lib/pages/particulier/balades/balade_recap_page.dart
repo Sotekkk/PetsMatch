@@ -34,6 +34,9 @@ class BaladeRecapPage extends StatefulWidget {
   // automatique seraient recréés à chaque ouverture de l'historique.
   final bool alreadySaved;
   final int? existingXpEarned;
+  /// Autres animaux de la balade (id, nom, espece) : XP / flamme pour chacun
+  /// et tous tagués au partage.
+  final List<Map<String, dynamic>> autresAnimaux;
 
   const BaladeRecapPage({
     super.key,
@@ -47,6 +50,7 @@ class BaladeRecapPage extends StatefulWidget {
     required this.photoUrls,
     this.alreadySaved = false,
     this.existingXpEarned,
+    this.autresAnimaux = const [],
   });
 
   @override
@@ -172,6 +176,19 @@ class _BaladeRecapPageState extends State<BaladeRecapPage> {
         distanceKm: widget.distanceM > 0 ? widget.distanceM / 1000 : null,
         dureeMinutes: widget.dureeSecondes > 0 ? (widget.dureeSecondes / 60).round() : null,
       );
+      // Chaque autre animal de la balade gagne aussi son XP / sa flamme.
+      for (final a in widget.autresAnimaux) {
+        try {
+          await GamificationService.instance.recordBalade(
+            uid: User_Info.uid,
+            profileId: User_Info.activeProfileId,
+            animalId: a['id'].toString(),
+            espece: a['espece']?.toString() ?? widget.espece,
+            distanceKm: widget.distanceM > 0 ? widget.distanceM / 1000 : null,
+            dureeMinutes: widget.dureeSecondes > 0 ? (widget.dureeSecondes / 60).round() : null,
+          );
+        } catch (_) {}
+      }
       if (widget.baladeId != null) {
         try {
           await _supa.from('balades_perso').update({'xp_earned': result.xpEarned}).eq('id', widget.baladeId as Object);
@@ -356,7 +373,7 @@ class _BaladeRecapPageState extends State<BaladeRecapPage> {
       myUid: uid,
       initialText: '🚶 Balade avec ${widget.animalNom} — $_distanceLabel en $_dureeLabel',
       initialImages: [file, ...photos],
-      initialTaggedAnimalIds: {widget.animalId},
+      initialTaggedAnimalIds: {widget.animalId, ...widget.autresAnimaux.map((a) => a['id'].toString())},
     );
     if (posted == true) await _markShared(story: false, post: true);
   }

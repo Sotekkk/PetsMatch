@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
@@ -24,7 +25,6 @@ import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
-import 'package:PetsMatch/pages/particulier/balades/balade_live_page.dart';
 import 'package:PetsMatch/pages/particulier/balades/mes_balades_page.dart';
 import 'package:PetsMatch/services/gamification_service.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
@@ -214,13 +214,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   Future<void> _ouvrirEnregistrerBalade() async {
     if (_animalId == null) return;
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => BaladeLivePage(
-        animalId: _animalId!,
-        animalNom: _nomCtrl.text.trim().isEmpty ? 'cet animal' : _nomCtrl.text.trim(),
-        espece: _espece,
-      ),
-    ));
+    // Cet animal coché d'office ; on peut en ajouter d'autres.
+    await demarrerBalade(context, preselectId: _animalId);
     if (!mounted) return;
     await _refreshFromSupabase();
   }

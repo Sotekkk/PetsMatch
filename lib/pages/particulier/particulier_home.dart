@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -365,49 +366,8 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     );
   }
 
-  Future<void> _demarrerBalade() async {
-    if (_animaux.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Ajoutez un animal avant de démarrer une balade.', style: TextStyle(fontFamily: 'Galey')),
-      ));
-      return;
-    }
-    Map<String, dynamic>? chosen = _animaux.length == 1 ? _animaux.first : null;
-    if (chosen == null) {
-      chosen = await showModalBottomSheet<Map<String, dynamic>>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (_) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Avec qui balade-t-on ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-              const SizedBox(height: 12),
-              for (final a in _animaux)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(backgroundColor: _teal.withValues(alpha: 0.12),
-                      backgroundImage: (a['photo_url'] as String?)?.isNotEmpty == true ? CachedNetworkImageProvider(a['photo_url']) : null,
-                      child: (a['photo_url'] as String?)?.isNotEmpty != true ? const Icon(Icons.pets, color: _teal) : null),
-                  title: Text(a['nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                  onTap: () => Navigator.pop(context, a),
-                ),
-            ]),
-          ),
-        ),
-      );
-    }
-    if (chosen == null || !mounted) return;
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => BaladeLivePage(
-        animalId: chosen!['id'].toString(),
-        animalNom: chosen['nom']?.toString() ?? 'cet animal',
-        espece: chosen['espece']?.toString() ?? '',
-      ),
-    ));
-  }
+  // Un ou plusieurs animaux (choix_animaux_balade.dart).
+  Future<void> _demarrerBalade() => demarrerBalade(context);
 
   Widget _buildQuickAccess() {
     return Column(children: [

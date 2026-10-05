@@ -27,14 +27,18 @@ import 'package:PetsMatch/pages/particulier/balades/balade_utils.dart';
 /// de service natif dédiée, hors scope ici).
 class BaladeLivePage extends StatefulWidget {
   final String animalId;
+  /// Nom affiché — « Luna » ou « Luna et Rocky » pour plusieurs animaux.
   final String animalNom;
   final String espece;
+  /// Autres animaux de la balade (id, nom, espece) en plus de [animalId].
+  final List<Map<String, dynamic>> autresAnimaux;
 
   const BaladeLivePage({
     super.key,
     required this.animalId,
     required this.animalNom,
     required this.espece,
+    this.autresAnimaux = const [],
   });
 
   @override
@@ -132,6 +136,8 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
         'uid': uid,
         if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
         'animal_id': widget.animalId,
+        // Tous les animaux de la balade (principal en tête).
+        'animal_ids': [widget.animalId, ...widget.autresAnimaux.map((a) => a['id'].toString())],
         'statut': 'en_cours',
       }).select().single();
       _baladeId = row['id']?.toString();
@@ -318,6 +324,7 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
         animalId: widget.animalId,
         animalNom: widget.animalNom,
         espece: widget.espece,
+        autresAnimaux: widget.autresAnimaux,
         distanceM: _distanceM,
         dureeSecondes: duree.inSeconds,
         routePoints: _routePoints,

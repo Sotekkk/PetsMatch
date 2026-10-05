@@ -41,14 +41,21 @@ Future<bool> supprimerBalade(String baladeId) async {
   final xp = (b['xp_earned'] as num?)?.toInt() ?? 0;
   final ended = DateTime.tryParse(b['ended_at']?.toString() ?? '');
 
-  if (xp > 0 && animalId.isNotEmpty) {
-    try {
-      final a = await supa.from('animaux').select('xp').eq('id', animalId).maybeSingle();
-      if (a != null) {
-        final cur = (a['xp'] as num?)?.toInt() ?? 0;
-        await supa.from('animaux').update({'xp': math.max(0, cur - xp)}).eq('id', animalId);
-      }
-    } catch (_) {}
+  // Balade à plusieurs animaux : l'XP est retirée à chacun.
+  final ids = <String>{
+    if (animalId.isNotEmpty) animalId,
+    ...((b['animal_ids'] as List?) ?? const []).map((e) => e.toString()),
+  };
+  if (xp > 0) {
+    for (final id in ids) {
+      try {
+        final a = await supa.from('animaux').select('xp').eq('id', id).maybeSingle();
+        if (a != null) {
+          final cur = (a['xp'] as num?)?.toInt() ?? 0;
+          await supa.from('animaux').update({'xp': math.max(0, cur - xp)}).eq('id', id);
+        }
+      } catch (_) {}
+    }
   }
 
   if (ended != null && xp > 0) {
