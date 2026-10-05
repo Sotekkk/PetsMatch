@@ -69,6 +69,23 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     }
   }
 
+  Future<void> _recommencer() async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Recommencer du début ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: const Text('Les étapes déjà validées seront remises à zéro.', style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Recommencer')),
+      ],
+    ));
+    if (ok != true || _progression == null) return;
+    final id = _progression!['id'];
+    await _supa.from('balades_ludiques_validations').delete().eq('progression_id', id);
+    final reset = await _supa.from('balades_ludiques_progressions')
+        .update({'statut': 'en_cours', 'nb_points_valides': 0}).eq('id', id).select().single();
+    if (mounted) setState(() { _progression = reset; _showIndice = false; });
+  }
+
   Map<String, dynamic>? get _currentPoint {
     final idx = (_progression?['nb_points_valides'] as int?) ?? 0;
     if (idx >= _points.length) return null;
@@ -153,7 +170,8 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     try {
       final existing = await _supa.from('joueurs_xp').select().eq('profile_id', _pid).maybeSingle();
       final nouveauXp = ((existing?['xp_total'] as int?) ?? 0) + xpGagne;
-      final nouveauNbCompletes = ((existing?['nb_parcours_completes'] as int?) ?? 0) + 1;
+      // Un rejeu ne compte pas comme un nouveau parcours terminé.
+      final nouveauNbCompletes = ((existing?['nb_parcours_completes'] as int?) ?? 0) + (_rejeu ? 0 : 1);
       xpRow = await _supa.from('joueurs_xp').upsert({
         'profile_id': _pid,
         'user_uid': _uid,
@@ -219,6 +237,16 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
       appBar: AppBar(
         backgroundColor: kBlTeal, foregroundColor: Colors.white, elevation: 0,
         title: Text(_balade?['titre']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          // Arrêter puis reprendre plus tard DU DÉBUT (la reprise à l'étape
+          // en cours reste le comportement par défaut).
+          if ((_progression?['nb_points_valides'] as int? ?? 0) > 0 && _currentPoint != null)
+            IconButton(
+              tooltip: 'Recommencer du début',
+              icon: const Icon(Icons.restart_alt),
+              onPressed: _recommencer,
+            ),
+        ],
       ),
       body: point == null ? _buildTermine() : _buildEtape(point),
     );

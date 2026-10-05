@@ -77,6 +77,15 @@ export default function JouerPage() {
   const idx = progression?.nb_points_valides ?? 0;
   const currentPoint = idx < points.length ? points[idx] : null;
 
+  async function recommencer() {
+    if (!progression || !confirm('Recommencer du début ? Les étapes déjà validées seront remises à zéro.')) return;
+    await supabase.from('balades_ludiques_validations').delete().eq('progression_id', progression.id);
+    const { data: reset } = await supabase.from('balades_ludiques_progressions')
+      .update({ statut: 'en_cours', nb_points_valides: 0 }).eq('id', progression.id).select().single();
+    if (reset) setProgression(reset as Progression);
+    setShowIndice(false);
+  }
+
   async function onCompletion() {
     if (!user || !balade || !activeProfileId) return;
     // Repli si la récompense n'est pas renseignée : 10 XP par étape + bonus
@@ -90,7 +99,8 @@ export default function JouerPage() {
 
     const { data: existingXp } = await supabase.from('joueurs_xp').select('*').eq('profile_id', activeProfileId).maybeSingle();
     const nouveauXp = (existingXp?.xp_total ?? 0) + xp;
-    const nouveauNb = (existingXp?.nb_parcours_completes ?? 0) + 1;
+    // Un rejeu ne compte pas comme un nouveau parcours terminé (miroir appli).
+    const nouveauNb = (existingXp?.nb_parcours_completes ?? 0) + (rejeu ? 0 : 1);
     await supabase.from('joueurs_xp').upsert({
       profile_id: activeProfileId, user_uid: user.uid, xp_total: nouveauXp, nb_parcours_completes: nouveauNb, updated_at: new Date().toISOString(),
     }, { onConflict: 'profile_id' });
@@ -234,7 +244,13 @@ export default function JouerPage() {
         </div>
       </div>
       <div className="max-w-xl mx-auto px-4 py-6">
-        <p className="text-xs font-galey text-gray-400 mb-1">Étape {idx + 1} / {points.length}</p>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-xs font-galey text-gray-400">Étape {idx + 1} / {points.length}</p>
+          {/* Arrêter puis reprendre plus tard DU DÉBUT (miroir appli). */}
+          {idx > 0 && (
+            <button onClick={recommencer} className="text-xs font-galey text-teal-700 hover:underline">↺ Recommencer du début</button>
+          )}
+        </div>
         <h2 className="text-xl font-bold font-galey text-gray-900">{currentPoint.titre}</h2>
         {currentPoint.description && <p className="text-sm font-galey text-gray-500 mt-1">{currentPoint.description}</p>}
 
