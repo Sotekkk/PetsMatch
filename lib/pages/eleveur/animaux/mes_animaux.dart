@@ -72,6 +72,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   String _filterRace     = '';
   String _presentsSubTab = 'tous'; // 'tous', 'repro', 'bebes'
   String _selectedPorteeId = ''; // '' = toutes les portées (filtre "Bébés")
+  // Filtre "Bébés" : présents seulement (défaut) ou tous, cédés inclus — pour
+  // retrouver une portée entière et ses données après les départs.
+  bool _bebesTous = false;
   bool _filterRetraite = false;
   bool _filterRepro    = false;
   bool _filterGestante = false;
@@ -1143,6 +1146,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     return Column(children: [
       _buildSearchField(),
       _buildPresentsSubTabs(),
+      if (_presentsSubTab == 'bebes') _buildBebesVueToggle(),
       if (_presentsFilterCount > 0) _buildPresentsFiltersRow(),
       Expanded(child: _buildPresentsList()),
     ]);
@@ -1174,6 +1178,36 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               child: Text(t.$2, style: TextStyle(
                 fontFamily: 'Galey', fontSize: 13,
                 color: active ? Colors.white : Colors.black87,
+                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+              )),
+            ),
+          ),
+        );
+      }).toList()),
+    );
+  }
+
+  Widget _buildBebesVueToggle() {
+    const vues = [(false, 'Présents'), (true, 'Tous (cédés inclus)')];
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(children: vues.map((v) {
+        final active = _bebesTous == v.$1;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: GestureDetector(
+            onTap: () => setState(() { _bebesTous = v.$1; _selectedPorteeId = ''; }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              decoration: BoxDecoration(
+                color: active ? _teal.withValues(alpha: 0.12) : Colors.transparent,
+                border: Border.all(color: active ? _teal : Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(v.$2, style: TextStyle(
+                fontFamily: 'Galey', fontSize: 12,
+                color: active ? _teal : Colors.black54,
                 fontWeight: active ? FontWeight.w600 : FontWeight.normal,
               )),
             ),
@@ -1276,15 +1310,17 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_presentsSubTab == 'repro') {
       docs = base.where((d) => d['reproducteur'] == true).toList();
     } else if (_presentsSubTab == 'bebes') {
-      // Un bébé vendu/cédé (statut 'sorti') reste affiché ici, grisé — ce
-      // n'est plus le sien mais elle garde l'historique (courbe de poids
-      // qu'elle a elle-même saisie) : contrairement à `base`, on ne filtre
-      // donc PAS sur _currentOwnerIds/statut sorti ici, seulement décédé.
+      // Un bébé vendu/cédé (statut 'sorti') est masqué par défaut (filtre
+      // « Présents ») et affiché grisé avec « Tous » — ce n'est plus le sien
+      // mais l'éleveur garde l'historique de la portée (courbe de poids
+      // saisie lui-même) : contrairement à `base`, on ne filtre donc PAS sur
+      // _currentOwnerIds ici.
       docs = _animauxData.where((d) {
         final pid = d['portee_id'] as String? ?? '';
         final statut = d['statut'] as String? ?? '';
         if (pid.isEmpty || d['reproducteur'] == true) return false;
         if (statut == 'decede') return false;
+        if (!_bebesTous && statut == 'sorti') return false;
         if (_filterEspece != 'tous' && d['espece'] != _filterEspece) return false;
         if (_filterSexe != 'tous' && d['sexe'] != _filterSexe) return false;
         if (_filterRace.isNotEmpty &&
@@ -1305,7 +1341,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       if (_presentsSubTab == 'repro') {
         emptyMsg = 'Aucun animal reproducteur\nAppui long sur une carte pour en marquer un';
       } else if (_presentsSubTab == 'bebes') {
-        emptyMsg = 'Aucun bébé dans une portée';
+        emptyMsg = _bebesTous
+            ? 'Aucun bébé dans une portée'
+            : 'Aucun bébé présent\nChoisissez « Tous (cédés inclus) » pour\nretrouver les portées déjà parties';
       } else {
         emptyMsg = _presentsFilterCount > 0
             ? 'Aucun animal présent\ncorrespondant aux filtres'
@@ -1397,7 +1435,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       final siblings = _animauxData.where((a) {
         final aPid = (a['portee_id'] as String?) ?? '';
         final statut = (a['statut'] as String?) ?? '';
-        return aPid == pid && !existingIds.contains(a['id']) && statut != 'decede';
+        return aPid == pid && !existingIds.contains(a['id']) && statut != 'decede'
+            && (_bebesTous || statut != 'sorti');
       });
       groups[pid]!.addAll(siblings);
     }

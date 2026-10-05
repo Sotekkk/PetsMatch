@@ -334,6 +334,7 @@ function MesAnimauxPageInner() {
   const initialSubTab: 'tous' | 'repro' | 'bebes' =
     initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
   const initialPortee = searchParams.get('portee') ?? '';
+  const initialBebesVue: 'presents' | 'tous' = searchParams.get('bebes') === 'tous' ? 'tous' : 'presents';
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
@@ -348,6 +349,9 @@ function MesAnimauxPageInner() {
   const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>(initialSubTab);
   // Portée sélectionnée dans le filtre "Bébés" — '' = toutes les portées.
   const [selectedPortee, setSelectedPortee] = useState(initialPortee);
+  // Filtre "Bébés" : présents seulement (défaut) ou tous, cédés inclus — pour
+  // retrouver une portée entière et ses données après les départs.
+  const [bebesVue, setBebesVue] = useState<'presents' | 'tous'>(initialBebesVue);
 
   // Garde l'URL synchro avec les filtres actifs (remplace l'entrée d'historique,
   // pas de nouvelle entrée à chaque clic) pour que le retour depuis une fiche
@@ -357,9 +361,10 @@ function MesAnimauxPageInner() {
     if (tab !== 'presents') params.set('tab', tab);
     if (presentsSubTab !== 'tous') params.set('sub', presentsSubTab);
     if (presentsSubTab === 'bebes' && selectedPortee) params.set('portee', selectedPortee);
+    if (presentsSubTab === 'bebes' && bebesVue === 'tous') params.set('bebes', 'tous');
     const qs = params.toString();
     router.replace(qs ? `/mes-animaux?${qs}` : '/mes-animaux', { scroll: false });
-  }, [tab, presentsSubTab, selectedPortee, router]);
+  }, [tab, presentsSubTab, selectedPortee, bebesVue, router]);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -718,12 +723,13 @@ function MesAnimauxPageInner() {
     ? (decedesEspece !== 'tous' ? 1 : 0)
     : (anciensEspece !== 'tous' ? 1 : 0);
 
-  // Bébés vendus/cédés (statut 'sorti') : contrairement à filteredPresents,
-  // on les garde ici — la carte reste visible (grisée), elle garde
-  // l'historique (dont la courbe de poids qu'elle a elle-même saisie), juste
-  // exclus du reste de "Présents". Décédés toujours exclus.
+  // Bébés vendus/cédés (statut 'sorti') : masqués par défaut (filtre
+  // « Présents »), affichés grisés avec « Tous » — la carte garde alors
+  // l'historique de la portée (dont la courbe de poids saisie par
+  // l'éleveur). Décédés toujours exclus.
   const filteredBebes = animaux.filter(a => {
     if (a.statut === 'decede') return false;
+    if (bebesVue === 'presents' && a.statut === 'sorti') return false;
     if (filtreEspece !== 'tous' && a.espece !== filtreEspece) return false;
     if (filtreSexe !== 'tous') {
       const s = (a.sexe ?? '').toLowerCase();
@@ -920,6 +926,21 @@ function MesAnimauxPageInner() {
         </div>
       )}
 
+      {/* Filtre Bébés : présents (défaut) ou tous, cédés inclus */}
+      {tab === 'presents' && presentsSubTab === 'bebes' && (
+        <div className="flex gap-2 mb-3">
+          {([['presents', 'Présents'], ['tous', 'Tous (cédés inclus)']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => { setBebesVue(v); setSelectedPortee(''); }}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                bebesVue === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+              }`}
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Filtre portée (une seule portée à la fois, uniquement si plusieurs) */}
       {tab === 'presents' && presentsSubTab === 'bebes' && porteeGroups.size > 1 && (
         <div className="mb-4">
@@ -1080,7 +1101,7 @@ function MesAnimauxPageInner() {
             {tab === 'presents' && presentsSubTab === 'repro'
               ? 'Aucun animal reproducteur'
               : tab === 'presents' && presentsSubTab === 'bebes'
-              ? 'Aucun bébé dans une portée'
+              ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé dans une portée')
               : tab === 'presents' ? 'Aucun animal présent'
               : tab === 'decedes' ? 'Aucun animal décédé'
               : 'Aucun animal cédé'}
@@ -1088,6 +1109,8 @@ function MesAnimauxPageInner() {
           <p className="text-gray-400 text-sm mt-1">
             {tab === 'presents' && presentsSubTab === 'repro'
               ? 'Survolez une carte et cliquez ⭐ pour marquer un reproducteur'
+              : tab === 'presents' && presentsSubTab === 'bebes' && bebesVue === 'presents'
+              ? 'Choisissez « Tous (cédés inclus) » pour retrouver les portées déjà parties'
               : tab === 'presents' && animaux.length === 0
               ? 'Ajoutez votre premier animal'
               : 'Modifiez les filtres pour voir plus de résultats'}
