@@ -630,8 +630,13 @@ export default function AdminPage() {
     }
   }
 
+  // Clé du cache de vérification — LA MÊME à l'écriture et à la lecture
+  // (avant : écrit sous profileTableId, lu sous uid pour un profil principal
+  // → résultat jamais affiché, « rien ne se passe »).
+  const validationKey = (d: DossierEntry) => d.profileTableId ?? d.uid;
+
   async function runAutoValidate(d: DossierEntry) {
-    const key = d.profileTableId ?? d.uid;
+    const key = validationKey(d);
     setValidationChecking(key);
     try {
       const res = await apiFetch('/api/admin/validate-profile', {
@@ -645,8 +650,14 @@ export default function AdminPage() {
           adminUid: user?.uid,
         }),
       });
-      const json = await res.json() as { results?: { profileId: string; score: number; reasons: string[]; autoValidated: boolean; skipped?: boolean }[] };
+      const json = await res.json() as { error?: string; results?: { profileId: string; score: number; reasons: string[]; autoValidated: boolean; skipped?: boolean; reason?: string }[] };
+      if (!res.ok || json.error) {
+        alert(`Vérification automatique impossible : ${json.error ?? res.status}`);
+        return;
+      }
       const result = json.results?.[0];
+      if (!result) { alert('Vérification automatique : aucun résultat renvoyé.'); return; }
+      if (result.skipped) { alert(`Vérification automatique non applicable (${result.reason ?? 'profil ignoré'}).`); return; }
       if (result && !result.skipped) {
         setValidationCache(prev => ({ ...prev, [key]: { score: result.score, reasons: result.reasons, autoValidated: result.autoValidated } }));
         if (result.autoValidated) {
@@ -1710,8 +1721,8 @@ export default function AdminPage() {
                           ❌ Refuser
                         </button>
                       </div>
-                      {validationCache[d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid] && (() => {
-                        const vr = validationCache[d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid];
+                      {validationCache[validationKey(d)] && (() => {
+                        const vr = validationCache[validationKey(d)];
                         return (
                           <div className={`mt-2 rounded-xl p-2 text-xs ${vr.autoValidated ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
                             <p className="font-semibold mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -2919,8 +2930,8 @@ export default function AdminPage() {
               </Section>
 
               {/* ── Résultat vérification automatique ── */}
-              {validationCache[selectedDossier.isSecondary ? (selectedDossier.profileTableId ?? selectedDossier.uid) : selectedDossier.uid] && (() => {
-                const vr = validationCache[selectedDossier.isSecondary ? (selectedDossier.profileTableId ?? selectedDossier.uid) : selectedDossier.uid];
+              {validationCache[validationKey(selectedDossier)] && (() => {
+                const vr = validationCache[validationKey(selectedDossier)];
                 return (
                   <div className={`rounded-xl p-3 text-xs ${vr.autoValidated ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
                     <p className="font-bold mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
