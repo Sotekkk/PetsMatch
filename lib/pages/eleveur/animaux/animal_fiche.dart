@@ -2418,8 +2418,16 @@ class _IdentiteTab extends StatelessWidget {
             _StatutAssoBar(
               statut: s._statut,
               onChange: (v) async {
-                s.setState(() => s._statut = v);
-                await s._save(); // enregistrement habituel : registre / propriété si sortie
+                s.setState(() {
+                  s._statut = v;
+                  // Sortie (adopté / transféré / décédé) : date du jour par
+                  // défaut, modifiable ensuite dans « Registre Entrée / Sortie ».
+                  if (_AnimalFichePageState._statutSorti(v)) s._dateSortie ??= DateTime.now();
+                });
+                // _saveRegistre (et non _save) : c'est lui qui inscrit la
+                // sortie au registre et clôture la propriété — avec _save,
+                // Loup était passé « adopté » sans sortie au registre.
+                await s._saveRegistre();
               },
             ),
             const SizedBox(height: 12),
