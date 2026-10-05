@@ -42,6 +42,7 @@ interface CessionData {
 export interface Reservation {
   id: string;
   qualite?: string | null;
+  prenom?: string | null;
   nom?: string | null;
   email?: string | null;
   tel?: string | null;
@@ -101,7 +102,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
 
   // Détails
   const [qualite, setQualite]       = useState(reservation?.qualite || 'particulier');
-  const [prenom, setPrenom]         = useState('');
+  const [prenom, setPrenom]         = useState(reservation?.prenom ?? '');
   const [nom, setNom]               = useState(reservation?.nom ?? '');
   const [email, setEmail]           = useState(reservation?.email ?? '');
   const [tel, setTel]               = useState(reservation?.tel ?? '');
@@ -308,6 +309,47 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     setQualite(q);
     if (searchResult?.uid) applyContactForQualite(searchResult.uid, searchResult.nom);
   }
+
+  /** Cession depuis une réservation : les anciennes réservations (avant la
+   * colonne `prenom`) ne stockent qu'un « nom complet » (ex. « Delafresnaye
+   * Catherine »), qui atterrissait tel quel dans Nom avec Prénom vide. On
+   * retrouve prénom / nom séparés (et l'adresse si absente) depuis le profil
+   * PetsMatch de l'acquéreur, sinon depuis le certificat d'engagement fait à
+   * la réservation. Sans source fiable, on ne devine pas l'ordre prénom /
+   * nom : l'éleveur corrige. */
+  useEffect(() => {
+    if (!reservation) return;
+    let cancelled = false;
+    (async () => {
+      const wantedType = profileTypeForQualite(qualite);
+      const aDejaPrenom = !!reservation.prenom?.trim();
+      let fn = '', ln = '', addr = '';
+      if (reservation.uid_acquereur) {
+        const prof = await fetchContactProfile(reservation.uid_acquereur, wantedType);
+        if (wantedType !== 'eleveur') {
+          fn = ((prof?.firstname as string) ?? '').trim();
+          ln = ((prof?.lastname as string) ?? '').trim();
+        }
+        addr = (prof?.adresse as string) || [prof?.rue, prof?.code_postal, prof?.ville].filter(Boolean).join(', ');
+      }
+      if (wantedType !== 'eleveur' && (!fn || !ln || !addr)) {
+        const { data: cert } = await supabase.from('certificats_engagement')
+          .select('acquereur_prenom, acquereur_nom, acquereur_adresse')
+          .eq('animal_id', animal.id).eq('cedant_uid', uid)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (cert && (!fn || !ln)) {
+          fn = ((cert.acquereur_prenom as string) ?? '').trim();
+          ln = ((cert.acquereur_nom as string) ?? '').trim();
+        }
+        if (!addr) addr = ((cert?.acquereur_adresse as string) ?? '').trim();
+      }
+      if (cancelled) return;
+      if (fn && ln && !aDejaPrenom) { setPrenom(fn); setNom(ln); }
+      if (addr) setAdresse(a => a.trim() ? a : addr);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservation?.id]);
 
   function mapProfile(cp: Record<string, unknown>, email?: string): Record<string, unknown> {
     return {

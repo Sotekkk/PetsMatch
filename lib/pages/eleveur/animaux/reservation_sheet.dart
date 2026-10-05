@@ -23,12 +23,6 @@ const _especesDelaiLegal = {'chien', 'chat'};
 /// générer dans l'app, ou apporter son propre document déjà signé.
 enum _DocChoice { skip, generate, upload }
 
-({String prenom, String nom}) _splitNom(String nomComplet) {
-  final parts = nomComplet.trim().split(RegExp(r'\s+'));
-  if (parts.length <= 1) return (prenom: parts.isEmpty ? '' : parts.first, nom: '');
-  return (prenom: parts.first, nom: parts.skip(1).join(' '));
-}
-
 // ── Feuille de réservation (avant cession) ─────────────────────────────────────
 
 class ReservationSheet extends StatefulWidget {
@@ -59,6 +53,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
   bool _searchDone = false;
 
   String _qualite = 'particulier';
+  final _prenomCtrl  = TextEditingController();
   final _nomCtrl     = TextEditingController();
   final _emailCtrl   = TextEditingController();
   final _telCtrl     = TextEditingController();
@@ -109,19 +104,26 @@ class _ReservationSheetState extends State<ReservationSheet> {
   void initState() {
     super.initState();
     _dateReservation = DateTime.now();
+    _prenomCtrl.addListener(_syncCertifName);
     _nomCtrl.addListener(_syncCertifName);
   }
 
+  /// Reprend Prénom / Nom dans les champs du certificat d'engagement tant
+  /// que l'éleveur ne les a pas corrigés lui-même.
   void _syncCertifName() {
     if (_certifNameTouched) return;
-    final split = _splitNom(_nomCtrl.text);
-    _certifPrenomCtrl.text = split.prenom;
-    _certifNomCtrl.text = split.nom;
+    _certifPrenomCtrl.text = _prenomCtrl.text.trim();
+    _certifNomCtrl.text = _nomCtrl.text.trim();
   }
+
+  String get _nomComplet =>
+      [_prenomCtrl.text.trim(), _nomCtrl.text.trim()].where((s) => s.isNotEmpty).join(' ');
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _prenomCtrl.removeListener(_syncCertifName);
+    _prenomCtrl.dispose();
     _nomCtrl.removeListener(_syncCertifName);
     _nomCtrl.dispose();
     _emailCtrl.dispose();
@@ -216,17 +218,20 @@ class _ReservationSheetState extends State<ReservationSheet> {
         : '${r['code_iso'] ?? '+33'} ${r['phone_number'] ?? ''}'.trim();
     setState(() {
       _foundUser = r;
-      _nomCtrl.text    = r['nom'] as String;
+      _certifNameTouched = false;
+      if (isElv) {
+        _prenomCtrl.text = '';
+        _nomCtrl.text    = r['nom'] as String;
+      } else {
+        final ln = ((r['lastname'] as String?) ?? '').trim();
+        _prenomCtrl.text = ((r['firstname'] as String?) ?? '').trim();
+        _nomCtrl.text    = ln.isNotEmpty ? ln : r['nom'] as String;
+      }
       _emailCtrl.text  = (r['email'] as String? ?? '');
       _telCtrl.text    = tel;
       _adresseCtrl.text = adresse;
       _searchResults   = [];
       if (isElv) _qualite = 'eleveur';
-      if (!isElv) {
-        _certifNameTouched = true;
-        _certifPrenomCtrl.text = (r['firstname'] as String?) ?? '';
-        _certifNomCtrl.text    = (r['lastname'] as String?) ?? '';
-      }
     });
   }
 
@@ -271,7 +276,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
         'statut':      uploadedUrl != null ? 'signe' : 'brouillon',
         if (uploadedUrl != null) 'pdf_signe_url': uploadedUrl,
         'metadata': {
-          'acquereur_nom':     _nomCtrl.text.trim(),
+          'acquereur_nom':     _nomComplet,
           'acquereur_email':   _emailCtrl.text.trim(),
           'acquereur_tel':     _telCtrl.text.trim(),
           'acquereur_adresse': _adresseCtrl.text.trim(),
@@ -427,12 +432,14 @@ class _ReservationSheetState extends State<ReservationSheet> {
     setState(() { _saving = true; _error = null; });
     try {
       final profileId = User_Info.activeProfileId;
-      await _supa.from('reservations_animaux').insert({
+      final prenom = _prenomCtrl.text.trim();
+      final row = <String, dynamic>{
         'animal_id':   widget.animal['id'],
         'uid_eleveur': widget.uid,
         if (profileId.isNotEmpty) 'eleveur_profile_id': profileId,
         'statut':      'active',
         'qualite':     _qualite,
+        'prenom':      prenom.isEmpty ? null : prenom,
         'nom':         _nomCtrl.text.trim(),
         'email':       _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         'tel':         _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
@@ -440,7 +447,18 @@ class _ReservationSheetState extends State<ReservationSheet> {
         'uid_acquereur': _foundUser?['uid'],
         'date_reservation': _dateReservation.toIso8601String().split('T').first,
         'notes':       _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      });
+      };
+      try {
+        await _supa.from('reservations_animaux').insert(row);
+      } on PostgrestException catch (e) {
+        // Colonne `prenom` pas encore créée (migration_reservations_prenom.sql
+        // non appliquée) : on enregistre l'ancien format, nom complet dans `nom`.
+        if (e.code != 'PGRST204') rethrow;
+        await _supa.from('reservations_animaux').insert({
+          ...row..remove('prenom'),
+          'nom': _nomComplet,
+        });
+      }
       await _supa.from('animaux').update({'statut': 'reserve'}).eq('id', widget.animal['id']);
       if (mounted) {
         Navigator.pop(context);
@@ -646,10 +664,27 @@ class _ReservationSheetState extends State<ReservationSheet> {
               decoration: _inputDec('Qualité'),
             )),
             const SizedBox(height: 10),
-            _FieldBlock('Nom du futur propriétaire *', child: TextField(
-              controller: _nomCtrl,
-              decoration: _inputDec('Nom complet'),
-            )),
+            if (_qualite == 'eleveur')
+              _FieldBlock('Nom de l\'élevage *', child: TextField(
+                controller: _nomCtrl,
+                onChanged: (_) => setState(() {}),
+                decoration: _inputDec('Nom de l\'élevage'),
+              ))
+            else
+              Row(children: [
+                Expanded(child: _FieldBlock('Prénom', child: TextField(
+                  controller: _prenomCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: _inputDec('Prénom'),
+                ))),
+                const SizedBox(width: 8),
+                Expanded(child: _FieldBlock('Nom *', child: TextField(
+                  controller: _nomCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  onChanged: (_) => setState(() {}),
+                  decoration: _inputDec('Nom'),
+                ))),
+              ]),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(child: _FieldBlock('Email', child: TextField(

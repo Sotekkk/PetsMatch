@@ -36,12 +36,6 @@ const ESPECES_DELAI_LEGAL = ['chien', 'chat'];
 
 type DocEntry = { id: string; type: string; statut: string; url: string; created_at: string };
 
-function splitNom(nomComplet: string): { prenom: string; nom: string } {
-  const parts = nomComplet.trim().split(/\s+/);
-  if (parts.length <= 1) return { prenom: parts[0] ?? '', nom: '' };
-  return { prenom: parts[0], nom: parts.slice(1).join(' ') };
-}
-
 export default function ReservationModal({ animal, uid, profileId, onClose, onReserved }: Props) {
   const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>('acquéreur');
 
@@ -61,6 +55,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
 
   // Détails
   const [qualite, setQualite]           = useState('particulier');
+  const [prenom, setPrenom]             = useState('');
   const [nom, setNom]                   = useState('');
   const [email, setEmail]               = useState('');
   const [tel, setTel]                   = useState('');
@@ -75,8 +70,8 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
   // reste possible en dehors de l'app.
   const [wantContrat, setWantContrat]       = useState(false);
   const [wantCertificat, setWantCertificat] = useState(false);
-  // Prénom/nom séparés pour le certificat d'engagement (dérivés de `nom`,
-  // éditables si l'éleveur veut corriger la coupure automatique)
+  // Prénom/nom du certificat d'engagement (repris des champs Prénom / Nom,
+  // éditables si l'éleveur veut les corriger pour le certificat)
   const [certifPrenom, setCertifPrenom] = useState('');
   const [certifNom, setCertifNom]       = useState('');
   const [certifPrenomTouched, setCertifPrenomTouched] = useState(false);
@@ -97,14 +92,13 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
-  // Reprend prénom/nom depuis le nom complet tant que l'éleveur n'a pas
+  // Reprend prénom/nom des champs Prénom / Nom tant que l'éleveur n'a pas
   // corrigé lui-même les champs dédiés du certificat d'engagement.
   useEffect(() => {
     if (certifPrenomTouched) return;
-    const { prenom, nom: n } = splitNom(nom);
-    setCertifPrenom(prenom);
-    setCertifNom(n);
-  }, [nom, certifPrenomTouched]);
+    setCertifPrenom(prenom.trim());
+    setCertifNom(nom.trim());
+  }, [prenom, nom, certifPrenomTouched]);
 
   // Charge les contrats de réservation déjà créés pour cet animal
   useEffect(() => {
@@ -143,8 +137,8 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
       acq_is_eleveur:     isElv,
       acq_raison_sociale: isElv ? (selectedUserData?.name_elevage as string ?? '') : '',
       acq_siret:          isElv ? (selectedUserData?.siret as string ?? '') : '',
-      acq_prenom:         (selectedUserData?.firstname as string ?? ''),
-      acq_nom_famille:    (selectedUserData?.lastname as string ?? ''),
+      acq_prenom:         isElv ? '' : prenom.trim(),
+      acq_nom_famille:    isElv ? '' : nom.trim(),
       acq_email:          email.trim(),
       acq_tel:            tel.trim(),
       acq_adresse:        adresse.trim(),
@@ -236,17 +230,18 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     const addr = isElv
       ? ((data.adress_elevage as string) || '')
       : ((data.adress as string) || [data.rue, data.code_postal, data.ville].filter(Boolean).join(', '));
-    setNom(n || 'Utilisateur PetsMatch');
+    if (isElv) {
+      setPrenom('');
+      setNom(n || 'Utilisateur PetsMatch');
+    } else {
+      setPrenom(((data.firstname as string) ?? '').trim());
+      setNom(((data.lastname as string) ?? '').trim() || n || 'Utilisateur PetsMatch');
+    }
     setEmail((data.email as string) ?? '');
     setTel(phone.replace(/^\+33\s*$/, ''));
     setAdresse(addr || '');
     if (isElv) setQualite('eleveur');
-    if (!isElv) {
-      setCertifPrenomTouched(false);
-      setCertifPrenom((data.firstname as string) ?? '');
-      setCertifNom((data.lastname as string) ?? '');
-      setCertifPrenomTouched(true);
-    }
+    setCertifPrenomTouched(false);
   }
 
   function mapProfile(cp: Record<string, unknown>, email?: string): Record<string, unknown> {
@@ -329,12 +324,13 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     setSaving(true);
     setError('');
     try {
-      const { error: insertError } = await supabase.from('reservations_animaux').insert({
+      const row = {
         animal_id:     animal.id,
         uid_eleveur:   uid,
         ...(profileId ? { eleveur_profile_id: profileId } : {}),
         statut:        'active',
         qualite,
+        prenom:        prenom.trim() || null,
         nom:           nom.trim(),
         email:         email.trim() || null,
         tel:           tel.trim() || null,
@@ -342,7 +338,15 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
         uid_acquereur: searchResult?.uid ?? null,
         date_reservation: dateReservation || null,
         notes:         notes.trim() || null,
-      });
+      };
+      let { error: insertError } = await supabase.from('reservations_animaux').insert(row);
+      // Colonne `prenom` pas encore créée (migration_reservations_prenom.sql
+      // non appliquée) : on enregistre l'ancien format, nom complet dans `nom`.
+      if (insertError?.code === 'PGRST204') {
+        const { prenom: p, ...ancien } = row;
+        ({ error: insertError } = await supabase.from('reservations_animaux')
+          .insert({ ...ancien, nom: [p, ancien.nom].filter(Boolean).join(' ') }));
+      }
       if (insertError) throw insertError;
       const { error: updateError } = await supabase.from('animaux').update({ statut: 'reserve' }).eq('id', animal.id);
       if (updateError) throw updateError;
@@ -470,11 +474,26 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Nom du futur propriétaire *</label>
-                <input type="text" placeholder="Nom complet" value={nom} onChange={e => setNom(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-              </div>
+              {qualite === 'eleveur' ? (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Nom de l&apos;élevage *</label>
+                  <input type="text" placeholder="Nom de l'élevage" value={nom} onChange={e => setNom(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Prénom</label>
+                    <input type="text" placeholder="Prénom" value={prenom} onChange={e => setPrenom(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Nom *</label>
+                    <input type="text" placeholder="Nom" value={nom} onChange={e => setNom(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

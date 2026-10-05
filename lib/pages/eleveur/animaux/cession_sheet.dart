@@ -146,6 +146,7 @@ class _CessionSheetState extends State<CessionSheet> {
     if (r != null) {
       _step = 1;
       _qualite = r['qualite'] as String? ?? 'particulier';
+      _prenomCtrl.text  = r['prenom'] as String? ?? '';
       _nomCtrl.text     = r['nom'] as String? ?? '';
       _emailCtrl.text   = r['email'] as String? ?? '';
       _telCtrl.text     = r['tel'] as String? ?? '';
@@ -155,7 +156,52 @@ class _CessionSheetState extends State<CessionSheet> {
       if (acqUid != null && acqUid.isNotEmpty) {
         _foundUser = {'uid': acqUid, 'nom': r['nom'] as String? ?? 'Utilisateur PetsMatch'};
       }
+      _prefillNomDepuisReservation(r);
     }
+  }
+
+  /// Cession depuis une réservation : les anciennes réservations (avant la
+  /// colonne `prenom`) ne stockent qu'un « nom complet » (ex. « Delafresnaye
+  /// Catherine »), qui atterrissait tel quel dans Nom avec Prénom vide. On retrouve prénom / nom séparés (et
+  /// l'adresse si absente) depuis le profil PetsMatch de l'acquéreur, sinon
+  /// depuis le certificat d'engagement fait à la réservation. Sans source
+  /// fiable, on ne devine pas l'ordre prénom / nom : l'éleveur corrige.
+  Future<void> _prefillNomDepuisReservation(Map<String, dynamic> r) async {
+    final wantedType = _profileTypeForQualite(_qualite);
+    if (wantedType == 'eleveur') return;
+    final aDejaPrenom = (r['prenom'] as String? ?? '').trim().isNotEmpty;
+    var fn = '', ln = '', addr = '';
+    final acqUid = r['uid_acquereur'] as String?;
+    if (acqUid != null && acqUid.isNotEmpty) {
+      final prof = await _fetchContactProfile(acqUid, wantedType);
+      fn = (prof?['firstname'] as String? ?? '').trim();
+      ln = (prof?['lastname'] as String? ?? '').trim();
+      addr = (prof?['adresse'] as String?) ??
+          [prof?['rue'], prof?['code_postal'], prof?['ville']]
+              .where((e) => e != null && '$e'.isNotEmpty).join(', ');
+    }
+    final animalId = widget.animal['id'] as String?;
+    if ((fn.isEmpty || ln.isEmpty || addr.isEmpty) && animalId != null) {
+      try {
+        final cert = await _supa.from('certificats_engagement')
+            .select('acquereur_prenom, acquereur_nom, acquereur_adresse')
+            .eq('animal_id', animalId).eq('cedant_uid', widget.uid)
+            .order('created_at', ascending: false).limit(1).maybeSingle();
+        if (cert != null && (fn.isEmpty || ln.isEmpty)) {
+          fn = (cert['acquereur_prenom'] as String? ?? '').trim();
+          ln = (cert['acquereur_nom'] as String? ?? '').trim();
+        }
+        if (addr.isEmpty) addr = (cert?['acquereur_adresse'] as String? ?? '').trim();
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      if (fn.isNotEmpty && ln.isNotEmpty && !aDejaPrenom) {
+        _prenomCtrl.text = fn;
+        _nomCtrl.text    = ln;
+      }
+      if (addr.isNotEmpty && _adresseCtrl.text.trim().isEmpty) _adresseCtrl.text = addr;
+    });
   }
 
   bool get _delaiLegalEngagement {

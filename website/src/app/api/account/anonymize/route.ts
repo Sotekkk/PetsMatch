@@ -98,6 +98,9 @@ export async function POST(req: NextRequest) {
       supabase.from('reservations_animaux').update({
         nom: ANON, email: null, tel: null, adresse: null,
       }).eq('uid_acquereur', uid),
+      // Mise à jour séparée : sans la colonne `prenom` (migration pas encore
+      // appliquée), elle échoue seule sans bloquer l'anonymisation ci-dessus.
+      supabase.from('reservations_animaux').update({ prenom: null }).eq('uid_acquereur', uid),
     ]);
 
     return NextResponse.json({ ok: true });
