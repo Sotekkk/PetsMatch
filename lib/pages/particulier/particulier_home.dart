@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialFeedPage;
 import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -371,6 +372,14 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
 
   Widget _buildQuickAccess() {
     return Column(children: [
+      _QuickTileWide(
+        icon: Icons.dynamic_feed_outlined,
+        label: 'Pets Social',
+        subtitle: "Fil d'actualité, stories et publications de la communauté",
+        color: const Color(0xFF6E9E57),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialFeedPage())),
+      ),
+      const SizedBox(height: 10),
       _QuickTileWide(
         icon: Icons.directions_walk,
         label: 'Démarrer une balade',

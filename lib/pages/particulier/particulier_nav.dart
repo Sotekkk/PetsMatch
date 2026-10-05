@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/particulier/particulier_home.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -92,7 +93,10 @@ class _ParticulierNavState extends State<ParticulierNav> {
         1 => MessagePage(),
         2 => const NotificationsPage(),
         3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0), isParticulier: true),
-        _ => const SocialFeedPage(),
+        // Accueil = tableau de bord du particulier (comme les autres
+        // profils) — il n'était relié à rien, l'onglet affichait Pets Social.
+        // Pets Social : tuile du tableau de bord + entrée du menu.
+        _ => const ParticulierHomePage(),
       };
 
   @override
@@ -265,6 +269,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   onTap: () {
                     Navigator.pop(context);
                     setState(() => _selectedIndex = 3);
+                  },
+                ),
+                _DrawerItem(
+                  icon: Icons.dynamic_feed_outlined,
+                  label: 'Pets Social',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialFeedPage()));
                   },
                 ),
                 _DrawerItem(
