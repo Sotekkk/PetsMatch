@@ -359,6 +359,9 @@ class User_Info {
   static String ville = "";
   static String codePostal = "";
   static String pays = "France";
+  // Position de l'adresse saisie à l'inscription (particulier) → users.lat / lng.
+  static double? lat;
+  static double? lng;
   static String departement = "";
   static String region = "";
   static String profilePictureUrl = '';

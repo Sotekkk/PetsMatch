@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_complete_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_discovery.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
@@ -98,7 +99,16 @@ class _OnboardingFlowPageState extends State<OnboardingFlowPage> {
 
   Future<void> _finish() async {
     await OnboardingService.markCompleted(widget.profileId);
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    // Vrai tableau de bord du profil (accueil) — avant : simple pop, qui
+    // ramenait à l'écran resté dessous (ex. Pets Social juste après
+    // l'inscription). Même bascule que le sélecteur de profil.
+    final p = User_Info.availableProfiles.where((x) => x['id']?.toString() == widget.profileId).firstOrNull;
+    if (p != null) User_Info.applyProfile(p);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => BottomNav()),
+      (_) => false,
+    );
   }
 
   @override
@@ -138,6 +148,7 @@ class _OnboardingFlowPageState extends State<OnboardingFlowPage> {
           achievements: _achievements,
           profileType: widget.profileType,
           onFinish: _afterCompleteScreen,
+          finishLabel: _discoveryItems.isEmpty ? 'Accéder à mon tableau de bord →' : 'Continuer →',
         );
 
       case _Phase.discovery:

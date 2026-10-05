@@ -1,6 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/securityregister.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
@@ -63,10 +64,21 @@ class _RegisterPhoneAdressInformationPageState
     });
   }
 
+  final _rueCtrl = TextEditingController(text: User_Info.rue);
+  final _cpCtrl = TextEditingController(text: User_Info.codePostal);
+  final _villeCtrl = TextEditingController(text: User_Info.ville);
+  final _paysCtrl = TextEditingController(text: User_Info.pays.isEmpty ? 'France' : User_Info.pays);
+  double? _lat = User_Info.lat;
+  double? _lng = User_Info.lng;
+
   @override
   void dispose() {
     _phoneController.dispose();
     _addressController.dispose();
+    _rueCtrl.dispose();
+    _cpCtrl.dispose();
+    _villeCtrl.dispose();
+    _paysCtrl.dispose();
     super.dispose();
   }
 
@@ -82,7 +94,16 @@ class _RegisterPhoneAdressInformationPageState
 
     User_Info.phone_number = _phoneController.text;
     User_Info.codeISO = _selectedCountryCode;
-    User_Info.adress = _addressController.text;
+    // Adresse détaillée (recherche Google) : reprise telle quelle dans le
+    // profil créé à l'inscription → plus redemandée ensuite.
+    User_Info.rue = _rueCtrl.text.trim();
+    User_Info.codePostal = _cpCtrl.text.trim();
+    User_Info.ville = _villeCtrl.text.trim();
+    User_Info.pays = _paysCtrl.text.trim().isEmpty ? 'France' : _paysCtrl.text.trim();
+    User_Info.adress = [User_Info.rue, '${User_Info.codePostal} ${User_Info.ville}'.trim(), User_Info.pays]
+        .where((x) => x.isNotEmpty).join(', ');
+    User_Info.lat = _lat;
+    User_Info.lng = _lng;
 
     Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterSecurity()));
   }
@@ -221,8 +242,24 @@ class _RegisterPhoneAdressInformationPageState
                     fontWeight: FontWeight.w600,
                     color: Colors.grey.shade700)),
             const SizedBox(height: 10),
-            PlacesSearchWidget(
-                controller: _addressController, isValid: _isAddressValid),
+            AdresseRechercheField(onSelection: (a) => setState(() {
+              _rueCtrl.text = a.rue;
+              _cpCtrl.text = a.codePostal;
+              _villeCtrl.text = a.ville;
+              if (a.pays.isNotEmpty) _paysCtrl.text = a.pays;
+              _lat = a.lat;
+              _lng = a.lng;
+            })),
+            const SizedBox(height: 10),
+            _champ(_rueCtrl, 'Rue'),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(flex: 2, child: _champ(_cpCtrl, 'Code postal', clavier: TextInputType.number)),
+              const SizedBox(width: 8),
+              Expanded(flex: 3, child: _champ(_villeCtrl, 'Ville')),
+            ]),
+            const SizedBox(height: 8),
+            _champ(_paysCtrl, 'Pays'),
           ]),
           const SizedBox(height: 32),
 
@@ -247,6 +284,18 @@ class _RegisterPhoneAdressInformationPageState
       ),
     );
   }
+
+  Widget _champ(TextEditingController c, String label, {TextInputType? clavier}) => TextField(
+        controller: c,
+        keyboardType: clavier,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
 
   Widget _card(List<Widget> children) => Container(
         padding: const EdgeInsets.all(16),

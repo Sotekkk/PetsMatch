@@ -82,6 +82,15 @@ Future<bool> registerUser(String email, String password) async {
         'phone_number':        User_Info.phone_number,
         'code_iso':            User_Info.codeISO,
         'adress':              User_Info.adress,
+        // Adresse détaillée + GPS : recopiées dans le profil particulier par
+        // le trigger create_main_profile_on_signup → pas redemandées.
+        if (User_Info.rue.isNotEmpty) 'rue': User_Info.rue,
+        if (User_Info.codePostal.isNotEmpty) 'code_postal': User_Info.codePostal,
+        if (User_Info.ville.isNotEmpty) 'ville': User_Info.ville,
+        if (User_Info.pays.isNotEmpty) 'pays': User_Info.pays,
+        if (User_Info.lat != null) 'lat': User_Info.lat,
+        if (User_Info.lng != null) 'lng': User_Info.lng,
+        if (User_Info.desc.isNotEmpty) 'bio': User_Info.desc,
         'profile_picture_url': User_Info.profilePictureUrl,
         'is_elevage':          false,
         'is_validate':         true,
@@ -95,6 +104,19 @@ Future<bool> registerUser(String email, String password) async {
       }, {'uid': uid});
     } catch (e) {
       debugPrint("Supabase sync error (particulier): $e");
+    }
+
+    // « Vos animaux & votre projet » → profil particulier créé par le trigger
+    // (présentation + projet d'adoption, partagés avec le site).
+    if (User_Info.desc.isNotEmpty || User_Info.adoptProject.isNotEmpty) {
+      try {
+        await Supabase.instance.client.from('user_profiles').update({
+          if (User_Info.desc.isNotEmpty) 'description': User_Info.desc,
+          if (User_Info.adoptProject.isNotEmpty) 'projet_adoption': User_Info.adoptProject,
+        }).eq('uid', uid).eq('profile_type', 'particulier');
+      } catch (e) {
+        debugPrint('Profil particulier (description / projet) : $e');
+      }
     }
 
     return true;

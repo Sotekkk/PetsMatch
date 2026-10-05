@@ -10,12 +10,16 @@ class OnboardingCompletePage extends StatelessWidget {
   final List<String> achievements;
   final String profileType;
   final VoidCallback onFinish;
+  /// Libellé du bouton — « Continuer → » quand l'écran « Découvrez aussi »
+  /// suit (sinon deux boutons « Accéder à mon tableau de bord » d'affilée).
+  final String finishLabel;
 
   const OnboardingCompletePage({
     super.key,
     required this.achievements,
     this.profileType = '',
     required this.onFinish,
+    this.finishLabel = 'Accéder à mon tableau de bord →',
   });
 
   @override
@@ -64,7 +68,7 @@ class OnboardingCompletePage extends StatelessWidget {
                 child: ElevatedButton(
                   style: OnboardingTheme.primaryButton(color: OnboardingTheme.green),
                   onPressed: onFinish,
-                  child: const Text('Accéder à mon tableau de bord →'),
+                  child: Text(finishLabel),
                 ),
               ),
             ],

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { onboardingDiscoveryRegistry, onboardingRegistry } from '@/lib/onboarding/registry';
 import * as OnboardingService from '@/lib/onboarding/service';
 import type { OnboardingStepDef } from '@/lib/onboarding/types';
@@ -31,6 +32,7 @@ export function OnboardingModal({
   resume: boolean;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const steps: OnboardingStepDef[] = onboardingRegistry[profileType] ?? [];
   const discoveryItems = onboardingDiscoveryRegistry[profileType] ?? [];
 
@@ -88,6 +90,9 @@ export function OnboardingModal({
   async function finish() {
     await OnboardingService.markCompleted(profileId);
     onClose();
+    // Vrai tableau de bord (miroir appli) — avant : la fenêtre se fermait
+    // sur la page en cours.
+    router.push('/');
   }
 
   function goBack() {
@@ -143,7 +148,8 @@ export function OnboardingModal({
 
         {phase === 'complete' && (
           <div className="flex-1 flex items-center justify-center">
-            <OnboardingComplete achievements={achievements} profileType={profileType} onFinish={afterComplete} />
+            <OnboardingComplete achievements={achievements} profileType={profileType} onFinish={afterComplete}
+              finishLabel={discoveryItems.length ? 'Continuer →' : 'Accéder à mon tableau de bord →'} />
           </div>
         )}
 

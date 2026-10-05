@@ -22,7 +22,10 @@ import 'package:PetsMatch/services/alertes_notifications.dart';
 
 class UserParticulierFeed extends StatefulWidget {
   final int initialTab;
-  const UserParticulierFeed({super.key, this.initialTab = 0});
+  /// Ouvrir directement en mode édition (onboarding « Complétez votre
+  /// profil » : champs déjà pré-remplis avec l'inscription).
+  final bool modeEdition;
+  const UserParticulierFeed({super.key, this.initialTab = 0, this.modeEdition = false});
 
   @override
   State<UserParticulierFeed> createState() => _UserParticulierFeedState();
@@ -80,6 +83,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTab.clamp(0, 2));
+    _editingProfil = widget.modeEdition && widget.initialTab == 0;
     _fetchProfile();
     _fetchAnimaux();
     _fetchAlertes();

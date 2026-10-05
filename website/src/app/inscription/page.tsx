@@ -29,7 +29,21 @@ function erreurAgeInscription(dateIso: string): string | null {
 const MAPS_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '';
 
 type Role = 'particulier' | 'eleveur' | 'pro';
-type Step = 'role' | 'info' | 'docs' | 'account';
+type Step = 'role' | 'info' | 'docs' | 'animaux' | 'account';
+
+// « Vos animaux & votre projet » (particulier) — miroir appli description_page.dart.
+const ESPECES_PROJET: [string, string][] = [
+  ['chien', '🐶 Chien'], ['chat', '🐱 Chat'], ['lapin', '🐰 Lapin'], ['cheval', '🐴 Cheval'],
+  ['oiseau', '🐦 Oiseau'], ['nac', '🐹 NAC'], ['reptile', '🦎 Reptile'], ['autre', '🐾 Autre'],
+];
+function texteProjetAdoption(aDejaAnimal: boolean, projet: boolean, especes: string[], precisions: string): string {
+  if (!projet) return '';
+  const labels = ESPECES_PROJET.filter(([k]) => especes.includes(k)).map(([, l]) => l.split(' ').pop()!.toLowerCase());
+  let t = aDejaAnimal ? 'Projet : adopter un autre animal' : 'Projet : adopter un premier animal';
+  if (labels.length) t += ` — ${labels.join(', ')}`;
+  if (precisions.trim()) t += `. ${precisions.trim()}`;
+  return t;
+}
 
 const ROLES: { value: Role; label: string; icon: string; desc: string }[] = [
   { value: 'particulier', label: 'Particulier', icon: '🏠', desc: 'Je cherche un compagnon ou je possède des animaux' },
@@ -63,7 +77,7 @@ const labelCls = 'block text-sm font-medium text-[#1F2A2E] mb-1';
 // ── Autocomplete adresse ───────────────────────────────────────────────────────
 function AddressInput({ value, onChange, placeholder }: {
   value: string;
-  onChange: (v: string, parts: { rue: string; ville: string; codePostal: string }) => void;
+  onChange: (v: string, parts: { rue: string; ville: string; codePostal: string; pays?: string; lat?: number; lng?: number }) => void;
   placeholder: string;
 }) {
   const [query, setQuery] = useState(value);
@@ -92,7 +106,7 @@ function AddressInput({ value, onChange, placeholder }: {
     if (!v.trim() || !autocompleteRef.current) { setPredictions([]); return; }
     debounceRef.current = setTimeout(() => {
       autocompleteRef.current!.getPlacePredictions(
-        { input: v, componentRestrictions: { country: 'fr' }, types: ['address'] },
+        { input: v, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu', 'mc'] }, types: ['address'] },
         (res) => setPredictions(res ?? []),
       );
     }, 300);
@@ -101,7 +115,7 @@ function AddressInput({ value, onChange, placeholder }: {
   function selectPrediction(p: google.maps.places.AutocompletePrediction) {
     setQuery(p.description);
     setPredictions([]);
-    placesRef.current?.getDetails({ placeId: p.place_id, fields: ['address_components'] }, (place) => {
+    placesRef.current?.getDetails({ placeId: p.place_id, fields: ['address_components', 'geometry'] }, (place) => {
       if (!place?.address_components) return;
       const parts = place.address_components;
       const num = parts.find(c => c.types.includes('street_number'))?.long_name ?? '';
@@ -110,7 +124,9 @@ function AddressInput({ value, onChange, placeholder }: {
       const ville = parts.find(c => c.types.includes('locality'))?.long_name
                  ?? parts.find(c => c.types.includes('postal_town'))?.long_name ?? '';
       const codePostal = parts.find(c => c.types.includes('postal_code'))?.long_name ?? '';
-      onChange(p.description, { rue, ville, codePostal });
+      const pays = parts.find(c => c.types.includes('country'))?.long_name ?? '';
+      const loc = place.geometry?.location;
+      onChange(p.description, { rue, ville, codePostal, pays, lat: loc?.lat(), lng: loc?.lng() });
     });
   }
 
@@ -188,6 +204,14 @@ export default function InscriptionPage() {
   const [lastname, setLastname] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [phone, setPhone] = useState('');
+  // Particulier : pays + position de l'adresse, animaux & projet d'adoption.
+  const [pays, setPays] = useState('France');
+  const [latLng, setLatLng] = useState<{ lat?: number; lng?: number }>({});
+  const [aDejaAnimal, setADejaAnimal] = useState<boolean | null>(null);
+  const [projetAdoption, setProjetAdoption] = useState<boolean | null>(null);
+  const [especesProjet, setEspecesProjet] = useState<string[]>([]);
+  const [precisionsProjet, setPrecisionsProjet] = useState('');
+  const [bio, setBio] = useState('');
 
   // Particulier
   const [rue, setRue] = useState('');
@@ -238,7 +262,7 @@ export default function InscriptionPage() {
     const erreurAge = erreurAgeInscription(dateOfBirth);
     if (erreurAge) { setError(erreurAge); return; }
     setError('');
-    setStep(isEleveurOrPro ? 'docs' : 'account');
+    setStep(isEleveurOrPro ? 'docs' : 'animaux');
   }
 
   async function continueFromDocs() {
@@ -385,6 +409,12 @@ export default function InscriptionPage() {
         rue: rue || null,
         ville: ville || null,
         code_postal: codePostal || null,
+        // Pays + GPS + adresse complète : recopiés dans le profil créé
+        // (create_main_profile_on_signup) → plus redemandés ensuite.
+        pays: pays || null,
+        adress: [rue, `${codePostal} ${ville}`.trim(), pays].filter(Boolean).join(', ') || null,
+        ...(latLng.lat != null ? { lat: latLng.lat, lng: latLng.lng } : {}),
+        ...(bio.trim() ? { bio: bio.trim() } : {}),
       });
     }
 
@@ -400,6 +430,17 @@ export default function InscriptionPage() {
       await supabase.from('user_profiles')
         .update({ numero_ordre: ordreVet.trim() })
         .eq('uid', uid).eq('is_main', true);
+    }
+
+    // Particulier : présentation + projet d'adoption sur le profil créé.
+    if (!isEleveurOrPro) {
+      const projet = texteProjetAdoption(!!aDejaAnimal, !!projetAdoption, especesProjet, precisionsProjet);
+      if (bio.trim() || projet) {
+        await supabase.from('user_profiles').update({
+          ...(bio.trim() ? { description: bio.trim() } : {}),
+          ...(projet ? { projet_adoption: projet } : {}),
+        }).eq('uid', uid).eq('profile_type', 'particulier');
+      }
     }
   }
 
@@ -468,8 +509,8 @@ export default function InscriptionPage() {
     }
   }
 
-  const stepCount = isEleveurOrPro ? 4 : 3;
-  const stepIndex = step === 'role' ? 1 : step === 'info' ? 2 : step === 'docs' ? 3 : stepCount;
+  const stepCount = 4;
+  const stepIndex = step === 'role' ? 1 : step === 'info' ? 2 : (step === 'docs' || step === 'animaux') ? 3 : stepCount;
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
@@ -570,7 +611,11 @@ export default function InscriptionPage() {
                     <div>
                       <label className={labelCls}>Adresse</label>
                       <AddressInput value={rue} placeholder="Rechercher une adresse…"
-                        onChange={(_, parts) => { setRue(parts.rue); setVille(parts.ville); setCodePostal(parts.codePostal); }} />
+                        onChange={(_, parts) => {
+                          setRue(parts.rue); setVille(parts.ville); setCodePostal(parts.codePostal);
+                          if (parts.pays) setPays(parts.pays);
+                          setLatLng({ lat: parts.lat, lng: parts.lng });
+                        }} />
                     </div>
                     <div className="flex gap-3">
                       <div className="w-28">
@@ -583,6 +628,11 @@ export default function InscriptionPage() {
                         <input type="text" value={ville} onChange={(e) => setVille(e.target.value)}
                           placeholder="Paris" className={inputCls} />
                       </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Pays</label>
+                      <input type="text" value={pays} onChange={(e) => setPays(e.target.value)}
+                        placeholder="France" className={inputCls} />
                     </div>
                   </>
                 )}
@@ -743,11 +793,80 @@ export default function InscriptionPage() {
             </>
           )}
 
+          {/* ── Étape 3 (particulier) : vos animaux & votre projet ── */}
+          {step === 'animaux' && (
+            <>
+              <div className="flex items-center gap-2 mb-5">
+                <button onClick={() => setStep('info')} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <h2 className="text-lg font-bold text-[#1F2A2E]">Vos animaux &amp; votre projet</h2>
+              </div>
+              <div className="space-y-5">
+                <div>
+                  <p className="text-sm font-semibold text-[#1F2A2E] mb-2">Avez-vous déjà un ou plusieurs animaux ?</p>
+                  <div className="flex gap-2">
+                    {[true, false].map(v => (
+                      <button key={String(v)} type="button" onClick={() => setADejaAnimal(v)}
+                        className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold ${aDejaAnimal === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'text-[#0C5C6C] border-gray-200'}`}>
+                        {v ? 'Oui' : 'Non'}
+                      </button>
+                    ))}
+                  </div>
+                  {aDejaAnimal && <p className="text-xs text-gray-500 mt-1">Vous pourrez créer leur fiche juste après l&apos;inscription.</p>}
+                </div>
+                {aDejaAnimal !== null && (
+                  <div>
+                    <p className="text-sm font-semibold text-[#1F2A2E] mb-2">
+                      {aDejaAnimal ? "Avez-vous un projet d'adoption pour un autre animal ?" : "Avez-vous un projet d'adoption pour un premier animal ?"}
+                    </p>
+                    <div className="flex gap-2">
+                      {[true, false].map(v => (
+                        <button key={String(v)} type="button" onClick={() => setProjetAdoption(v)}
+                          className={`flex-1 py-2.5 rounded-xl border text-sm font-semibold ${projetAdoption === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'text-[#0C5C6C] border-gray-200'}`}>
+                          {v ? 'Oui' : 'Non'}
+                        </button>
+                      ))}
+                    </div>
+                    {projetAdoption && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-semibold text-gray-600">Quelle(s) espèce(s) ?</p>
+                        <div className="flex flex-wrap gap-2">
+                          {ESPECES_PROJET.map(([k, l]) => (
+                            <button key={k} type="button"
+                              onClick={() => setEspecesProjet(e => e.includes(k) ? e.filter(x => x !== k) : [...e, k])}
+                              className={`px-3 py-1.5 rounded-full border text-xs ${especesProjet.includes(k) ? 'bg-[#6E9E57]/20 border-[#6E9E57] text-[#3D6B2E] font-semibold' : 'border-gray-200 text-gray-600'}`}>
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea value={precisionsProjet} onChange={e => setPrecisionsProjet(e.target.value)} rows={2}
+                          placeholder="Précisions (race, délai, mode de vie…) — optionnel" className={inputCls} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-semibold text-[#1F2A2E] mb-2">Quelques mots sur vous (optionnel)</p>
+                  <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3}
+                    placeholder="Votre mode de vie, votre expérience avec les animaux…" className={inputCls} />
+                </div>
+                <button type="button" disabled={aDejaAnimal === null || projetAdoption === null}
+                  onClick={() => { setError(''); setStep('account'); }}
+                  className="w-full bg-[#6E9E57] hover:bg-[#5d8a48] disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-colors">
+                  Continuer
+                </button>
+              </div>
+            </>
+          )}
+
           {/* ── Étape 4 : compte ── */}
           {step === 'account' && (
             <>
               <div className="flex items-center gap-2 mb-5">
-                <button onClick={() => setStep(isEleveurOrPro ? 'docs' : 'info')} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => setStep(isEleveurOrPro ? 'docs' : 'animaux')} className="text-gray-400 hover:text-gray-600">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>

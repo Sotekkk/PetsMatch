@@ -20,10 +20,11 @@ final List<OnboardingStepDef> _steps = [
       icon: Icons.person_outline,
       color: OnboardingTheme.teal,
       title: 'Complétez votre profil',
-      description: 'Prénom, nom, ville, téléphone et photo de profil — de quoi vous '
-          'identifier auprès des éleveurs et professionnels que vous contactez.',
+      description: "Vérifiez les informations saisies à l'inscription et ajoutez une photo "
+          'de profil — de quoi vous identifier auprès des éleveurs et professionnels.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const UserParticulierFeed(initialTab: 0),
+      // En mode édition, pré-rempli avec ce qui a été saisi à l'inscription.
+      pageBuilder: (_) => const UserParticulierFeed(initialTab: 0, modeEdition: true),
       onNext: onNext,
       onSkip: onSkip,
     ),
