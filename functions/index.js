@@ -95,6 +95,9 @@ exports.sendSterilisationReminders = cessionSterilisationFunctions.sendSterilisa
 // Cession — anniversaires des chiots cédés : rappel éleveur + message auto
 exports.sendCessionBirthdayReminders = cessionSterilisationFunctions.sendCessionBirthdayReminders;
 
+// Particulier — « Joyeux anniversaire <animal> ! » le jour de ses X ans
+exports.sendAnimalBirthdayParticulier = cessionSterilisationFunctions.sendAnimalBirthdayParticulier;
+
 // Stories Pets Social — purge 24h
 exports.cleanupExpiredStories = storiesCleanupFunctions.cleanupExpiredStories;
 

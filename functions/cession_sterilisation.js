@@ -476,3 +476,87 @@ exports.sendCessionBirthdayReminders = functions
         console.log(`sendCessionBirthdayReminders: ${sent} rappels envoyés.`);
         return null;
     });
+
+/**
+ * Schedulée chaque jour à 9h (Paris).
+ * « 🎂 Joyeux anniversaire <nom> ! » aux propriétaires PARTICULIERS d'un
+ * animal vivant dont c'est l'anniversaire (date de naissance connue — pas
+ * une date estimée). Propriétaires = animaux_proprietes actifs (principal et
+ * co-propriétaires), notif rattachée à leur profil particulier.
+ * Dédup via notifs_sent (clé annuelle par animal et par propriétaire).
+ */
+exports.sendAnimalBirthdayParticulier = functions
+    .region("europe-west1")
+    .pubsub.schedule("0 9 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        let sent = 0;
+        const today = parisNow();
+        const mm = String(today.getMonth() + 1).padStart(2, "0");
+        const dd = String(today.getDate()).padStart(2, "0");
+        const year = today.getFullYear();
+
+        // Propriétés actives rattachées à un profil particulier.
+        const proprietes = await supabaseSelect(
+            "animaux_proprietes",
+            "date_fin=is.null&statut=eq.actif&select=animal_id,uid_proprio,profile_id_proprio",
+        );
+        if (!proprietes.length) return null;
+        const profileIds = [...new Set(proprietes.map((p) => p.profile_id_proprio).filter(Boolean))];
+        const particuliers = new Set();
+        for (let i = 0; i < profileIds.length; i += 100) {
+            const rows = await supabaseSelect("user_profiles",
+                `id=in.(${profileIds.slice(i, i + 100).join(",")})&profile_type=eq.particulier&select=id`);
+            rows.forEach((r) => particuliers.add(r.id));
+        }
+        const props = proprietes.filter((p) => particuliers.has(p.profile_id_proprio));
+        if (!props.length) return null;
+
+        // Animaux concernés dont c'est l'anniversaire aujourd'hui.
+        const animalIds = [...new Set(props.map((p) => p.animal_id))];
+        const anniv = new Map();
+        for (let i = 0; i < animalIds.length; i += 100) {
+            const ids = animalIds.slice(i, i + 100).map((id) => `"${id}"`).join(",");
+            const rows = await supabaseSelect("animaux",
+                `id=in.(${encodeURIComponent(ids)})&date_naissance=not.is.null` +
+                "&select=id,nom,date_naissance,age_estime,statut");
+            for (const a of rows) {
+                if (a.age_estime === true || a.statut === "decede") continue;
+                const dn = new Date(`${a.date_naissance}T00:00:00`);
+                if (isNaN(dn.getTime())) continue;
+                if (String(dn.getMonth() + 1).padStart(2, "0") !== mm ||
+                    String(dn.getDate()).padStart(2, "0") !== dd) continue;
+                const age = year - dn.getFullYear();
+                if (age < 1) continue;
+                anniv.set(String(a.id), {nom: a.nom || "votre compagnon", age});
+            }
+        }
+
+        for (const p of props) {
+            const a = anniv.get(String(p.animal_id));
+            if (!a) continue;
+            const key = `anniv_animal_${p.animal_id}_${p.uid_proprio}_${year}`;
+            if (await alreadySent(key)) continue;
+            const title = `🎂 Joyeux anniversaire ${a.nom} !`;
+            const body = `${a.nom} fête ses ${a.age} an${a.age > 1 ? "s" : ""} aujourd'hui. 🐾`;
+            if (await sendPush(p.uid_proprio, title, body,
+                {type: "animal_anniversaire", animalId: String(p.animal_id)},
+                {profileId: p.profile_id_proprio})) sent++;
+            try {
+                await supabaseInsert("notifications", [{
+                    uid: p.uid_proprio,
+                    type: "animal_anniversaire",
+                    title, body,
+                    data: {animalId: String(p.animal_id)},
+                    read: false,
+                    profile_id: p.profile_id_proprio,
+                }]);
+            } catch (e) {
+                console.error(`notifications insert error (anniv particulier ${p.animal_id}):`, e.message);
+            }
+            await markSent(key);
+        }
+
+        console.log(`sendAnimalBirthdayParticulier: ${sent} vœux envoyés.`);
+        return null;
+    });

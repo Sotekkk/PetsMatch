@@ -8,8 +8,10 @@ self.addEventListener('message', (event) => {
   firebase.initializeApp(event.data.config);
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
-    const title = payload.notification?.title ?? 'PetsMatch';
-    const body  = payload.notification?.body  ?? '';
+    // Les rappels du serveur (sendPush) sont data-only : titre et corps sont
+    // dans `data` (avec le nom du profil) — avant : « PetsMatch » sans texte.
+    const title = payload.notification?.title ?? payload.data?.title ?? 'PetsMatch';
+    const body  = payload.notification?.body  ?? payload.data?.body  ?? '';
     self.registration.showNotification(title, {
       body,
       icon:  '/Logo_petsmatch_fond_blanc.png',
