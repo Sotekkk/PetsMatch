@@ -33,6 +33,7 @@ import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FactureDetailPage;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/pages/balades_ludiques/balade_ludique_detail_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
@@ -630,6 +631,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
           highlightToken: token ?? urlTok,
         ),
       ));
+      return;
+    }
+    // Balades ludiques : nouvel avis (créateur) ou parcours terminé (joueur)
+    // → fiche du parcours.
+    if (type == 'balade_ludique_avis' || type == 'balade_ludique_xp') {
+      final baladeId = data is Map ? data['balade_id']?.toString() : null;
+      if (baladeId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => BaladeLudiqueDetailPage(baladeId: baladeId),
+        ));
+      }
       return;
     }
     if (type == 'contrat_saillie_invite') {

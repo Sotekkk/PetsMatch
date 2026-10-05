@@ -8,7 +8,7 @@ import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import { typeDefiIcon } from '../../shared';
 
-interface Balade { id: string; titre: string; xp_recompense?: number; }
+interface Balade { id: string; titre: string; xp_recompense?: number; difficulte?: string; }
 interface Point {
   id: string; ordre: number; titre: string; description?: string; lat: number; lng: number;
   rayon_validation_m?: number; type_defi: string; question_texte?: string; question_reponse?: string;
@@ -69,7 +69,11 @@ export default function JouerPage() {
 
   async function onCompletion() {
     if (!user || !balade || !activeProfileId) return;
-    const xp = balade.xp_recompense ?? 0;
+    // Repli si la récompense n'est pas renseignée : 10 XP par étape + bonus
+    // de difficulté (même règle que la base, pm_balade_xp_defaut).
+    const xp = (balade.xp_recompense ?? 0) > 0
+      ? (balade.xp_recompense as number)
+      : 10 * points.length + (balade.difficulte === 'difficile' ? 50 : balade.difficulte === 'modere' ? 20 : 0);
 
     const { count } = await supabase.from('balades_ludiques_progressions').select('*', { count: 'exact', head: true }).eq('balade_id', id).eq('statut', 'termine');
     await supabase.from('balades_ludiques').update({ nb_completions: count ?? 0 }).eq('id', id);
@@ -98,6 +102,9 @@ export default function JouerPage() {
 
     await supabase.from('notifications').insert({
       uid: user.uid, type: 'balade_ludique_xp',
+      // title / body obligatoires (NOT NULL) — sans eux l'insert échouait.
+      title: `🎉 Parcours terminé — ${balade.titre}`,
+      body: `+${xp} XP${badgesDebloquees.length ? ` · ${badgesDebloquees.length} badge(s) débloqué(s)` : ''}`,
       ...(activeProfileId ? { profile_id: activeProfileId } : {}),
       data: { balade_id: id, xp, titre: balade.titre }, read: false,
     });

@@ -25,6 +25,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
   Map<String, dynamic>? _progression;
   List<String> _badgesDebloquees = [];
   int? _xpGagne;
+  int? _xpTotal;
   bool _showIndice = false;
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
@@ -120,7 +121,13 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
 
   Future<void> _onCompletion() async {
     final b = _balade!;
-    final xpGagne = (b['xp_recompense'] as int?) ?? 0;
+    // Récompense du parcours ; repli si non renseignée (anciens parcours) :
+    // 10 XP par étape + bonus de difficulté — même règle que la base
+    // (pm_balade_xp_defaut, migration_balades_ludiques_compteurs.sql).
+    final xpBase = (b['xp_recompense'] as int?) ?? 0;
+    final xpGagne = xpBase > 0
+        ? xpBase
+        : 10 * _points.length + switch (b['difficulte']) { 'difficile' => 50, 'modere' => 20, _ => 0 };
 
     // Compteur de complétions du parcours
     try {
@@ -142,7 +149,8 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
         'nb_parcours_completes': nouveauNbCompletes,
         'updated_at': DateTime.now().toIso8601String(),
       }, onConflict: 'profile_id').select().single();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('joueurs_xp upsert: $e');
       xpRow = {'xp_total': xpGagne, 'nb_parcours_completes': 1};
     }
 
@@ -177,13 +185,16 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
       await _supa.from('notifications').insert({
         'uid': _uid,
         'type': 'balade_ludique_xp',
+        // title / body obligatoires (NOT NULL) — sans eux l'insert échouait.
+        'title': '🎉 Parcours terminé — ${b['titre'] ?? ''}',
+        'body': '+$xpGagne XP${debloquees.isEmpty ? '' : ' · ${debloquees.length} badge(s) débloqué(s)'}',
         if (_pid.isNotEmpty) 'profile_id': _pid,
         'data': {'balade_id': widget.baladeId, 'xp': xpGagne, 'titre': b['titre']},
         'read': false,
       });
     } catch (_) {}
 
-    if (mounted) setState(() { _xpGagne = xpGagne; _badgesDebloquees = debloquees; });
+    if (mounted) setState(() { _xpGagne = xpGagne; _xpTotal = xpRow['xp_total'] as int?; _badgesDebloquees = debloquees; });
   }
 
   @override
@@ -212,6 +223,11 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
           const SizedBox(height: 8),
           if (_xpGagne != null)
             Text('+$_xpGagne XP', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: kBlOrange)),
+          if (_xpTotal != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Total : $_xpTotal XP', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+            ),
           if (_badgesDebloquees.isNotEmpty) ...[
             const SizedBox(height: 16),
             const Text('Badges débloqués :', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),

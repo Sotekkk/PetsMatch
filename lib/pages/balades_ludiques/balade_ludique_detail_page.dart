@@ -73,15 +73,20 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
     final uid = _uid;
     final pid = _pid;
     if (uid == null || pid == null) return;
-    setState(() => _isFavori = !_isFavori);
+    // Compteur mis à jour tout de suite à l'écran ; la base le recalcule
+    // (trigger trg_balade_compteurs_favoris) — avant, la mise à jour par un
+    // non-créateur était refusée (RLS) et le chiffre ne bougeait pas.
+    setState(() {
+      _isFavori = !_isFavori;
+      final n = (_balade?['nb_favoris'] as int?) ?? 0;
+      _balade?['nb_favoris'] = (_isFavori ? n + 1 : n - 1).clamp(0, 1 << 30);
+    });
     try {
       if (_isFavori) {
         await _supa.from('balades_ludiques_favoris').insert({'user_uid': uid, 'profile_id': pid, 'balade_id': widget.baladeId});
       } else {
         await _supa.from('balades_ludiques_favoris').delete().eq('profile_id', pid).eq('balade_id', widget.baladeId);
       }
-      final nbFavoris = await _supa.from('balades_ludiques_favoris').select().eq('balade_id', widget.baladeId).count(CountOption.exact);
-      await _supa.from('balades_ludiques').update({'nb_favoris': nbFavoris.count}).eq('id', widget.baladeId);
     } catch (_) {}
   }
 
@@ -129,14 +134,28 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
       ),
     );
     if (raison == null) return;
+    // Dialogue (et non SnackBar, masqué par le bouton fixe du bas) ; un
+    // second signalement du même parcours par la même personne est refusé.
+    String message;
     try {
-      await _supa.from('signalements').insert({
-        'reporter_uid': uid, 'target_type': 'balade_ludique', 'target_id': widget.baladeId, 'raison': raison,
-      });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signalement envoyé, merci.')));
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vous avez déjà signalé ce parcours.')));
+      final deja = await _supa.from('signalements').select('id')
+          .eq('reporter_uid', uid).eq('target_type', 'balade_ludique').eq('target_id', widget.baladeId).limit(1);
+      if ((deja as List).isNotEmpty) {
+        message = 'Vous avez déjà signalé ce parcours.';
+      } else {
+        await _supa.from('signalements').insert({
+          'reporter_uid': uid, 'target_type': 'balade_ludique', 'target_id': widget.baladeId, 'raison': raison,
+        });
+        message = "Signalement envoyé, merci. Notre équipe va l'examiner.";
+      }
+    } catch (e) {
+      message = "Le signalement n'a pas pu être envoyé : $e";
     }
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      content: Text(message, style: const TextStyle(fontFamily: 'Galey')),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+    ));
   }
 
   Future<void> _laisserAvis() async {
@@ -170,13 +189,16 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
       await _supa.from('balades_ludiques_avis').upsert({
         'balade_id': widget.baladeId, 'user_uid': uid, 'profile_id': pid, 'note': note, 'commentaire': ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
       }, onConflict: 'balade_id,profile_id');
+      // nb_avis / note_moyenne recalculés par la base (trigger) ; le
+      // créateur est notifié (trg_balade_avis_notif).
       final rows = await _supa.from('balades_ludiques_avis').select('note').eq('balade_id', widget.baladeId);
       final notes = List<Map<String, dynamic>>.from(rows as List).map((r) => (r['note'] as num).toDouble()).toList();
       final moyenne = notes.isEmpty ? null : notes.reduce((a, b) => a + b) / notes.length;
-      await _supa.from('balades_ludiques').update({
-        'note_moyenne': moyenne == null ? null : double.parse(moyenne.toStringAsFixed(1)),
-        'nb_avis': notes.length,
-      }).eq('id', widget.baladeId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            behavior: SnackBarBehavior.floating, margin: EdgeInsets.fromLTRB(16, 0, 16, 90),
+            content: Text('Merci pour votre avis !')));
+      }
 
       if (moyenne != null && moyenne >= 4.5) {
         try {
@@ -190,7 +212,13 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
       }
 
       _load();
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            behavior: SnackBarBehavior.floating, margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+            content: Text("L'avis n'a pas pu être enregistré : $e")));
+      }
+    }
   }
 
   Future<void> _changerStatut(String statut) async {

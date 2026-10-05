@@ -61,10 +61,11 @@ export default function BaladeDetailPage() {
     if (!user || !activeProfileId) return;
     const next = !isFavori;
     setIsFavori(next);
+    // Compteur à jour tout de suite ; la base le recalcule (trigger) — la
+    // mise à jour directe par un non-créateur était refusée (RLS).
+    setBalade(b => b ? { ...b, nb_favoris: Math.max(0, (b.nb_favoris ?? 0) + (next ? 1 : -1)) } : b);
     if (next) await supabase.from('balades_ludiques_favoris').insert({ user_uid: user.uid, profile_id: activeProfileId, balade_id: id });
     else await supabase.from('balades_ludiques_favoris').delete().eq('profile_id', activeProfileId).eq('balade_id', id);
-    const { count } = await supabase.from('balades_ludiques_favoris').select('*', { count: 'exact', head: true }).eq('balade_id', id);
-    await supabase.from('balades_ludiques').update({ nb_favoris: count ?? 0 }).eq('id', id);
   }
 
   async function commencer() {
@@ -91,7 +92,9 @@ export default function BaladeDetailPage() {
     const note = Number(prompt('Votre note (1 à 5) ?', '5'));
     if (!note || note < 1 || note > 5) return;
     const commentaire = prompt('Un commentaire (optionnel) ?') ?? undefined;
-    await supabase.from('balades_ludiques_avis').upsert({ balade_id: id, user_uid: user.uid, profile_id: activeProfileId, note, commentaire }, { onConflict: 'balade_id,profile_id' });
+    const { error: errAvis } = await supabase.from('balades_ludiques_avis').upsert({ balade_id: id, user_uid: user.uid, profile_id: activeProfileId, note, commentaire }, { onConflict: 'balade_id,profile_id' });
+    if (errAvis) { alert(`L'avis n'a pas pu être enregistré : ${errAvis.message}`); return; }
+    alert('Merci pour votre avis !');
     const { data: rows } = await supabase.from('balades_ludiques_avis').select('note').eq('balade_id', id);
     const notes = (rows ?? []).map((r: { note: number }) => r.note);
     const moyenne = notes.length ? Math.round((notes.reduce((a: number, b: number) => a + b, 0) / notes.length) * 10) / 10 : null;
