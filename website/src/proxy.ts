@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const WHITELISTED_PATHS = [
   '/beta-login',
-  '/api/beta-login',
+  // Routes API : appelées par l'APPLI (e-mails de certificat, contrat,
+  // cession, facture, RDV…) sans cookie bêta → redirigées vers /beta-login,
+  // aucun e-mail n'était envoyé. Chaque route vérifie elle-même l'appelant
+  // (jeton Firebase, secret interne, signature webhook).
+  '/api/',
   // Webhooks entrants (Stripe, YouSign) — jamais soumis à l'accès bêta.
   '/api/stripe/webhook',
   '/api/yousign/webhook',
