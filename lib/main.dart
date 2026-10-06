@@ -282,16 +282,20 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final body = message.data['body'] as String?;
     if (title != null || body != null) {
       try {
+        // notif_tag + id 0 = même clé que la notification système (FCM
+        // affiche avec tag/id 0) → remplacement au lieu d'un doublon.
+        final tag = message.data['notif_tag'] as String?;
         await flutterLocalNotificationsPlugin.show(
-          id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          id: tag != null ? 0 : (message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch.remainder(100000)),
           title: title,
           body: body,
-          notificationDetails: const NotificationDetails(
+          notificationDetails: NotificationDetails(
             android: AndroidNotificationDetails(
               'high_importance_channel',
               'High Importance Notifications',
               importance: Importance.max,
               priority: Priority.high,
+              tag: tag,
             ),
           ),
           payload: message.data['conversationId'],
@@ -828,16 +832,19 @@ Future<void> main() async {
     final title = message.data['title'] as String? ?? message.notification?.title;
     final body = message.data['body'] as String? ?? message.notification?.body;
     if (title != null || body != null) {
+      // Même étiquette que la notification système (cf. sendPush notif_tag).
+      final tag = message.data['notif_tag'] as String?;
       flutterLocalNotificationsPlugin.show(
-        id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        id: tag != null ? 0 : (message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch.remainder(100000)),
         title: title,
         body: body,
-        notificationDetails: const NotificationDetails(
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             'high_importance_channel',
             'High Importance Notifications',
             importance: Importance.max,
             priority: Priority.high,
+            tag: tag,
           ),
         ),
         payload: message.data['conversationId'],

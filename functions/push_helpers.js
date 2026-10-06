@@ -153,6 +153,12 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
             if (v !== null && v !== undefined) dataStr[k] = String(v);
         }
 
+        // Étiquette commune notification système / notification de l'appli :
+        // Android remplace au lieu d'empiler → jamais deux fois le même rappel
+        // sur le téléphone, quel que soit le chemin d'affichage.
+        const notifTag = [data.type || "generic", data.animalId || data.alerteId ||
+            data.cours_id || data.conversationId || ""].join("_").slice(0, 60);
+
         let sent = false;
         for (const token of tokens) {
             try {
@@ -163,6 +169,7 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
                         type: data.type || "generic",
                         title: finalTitle,
                         body,
+                        notif_tag: notifTag,
                         ...(opts.profileId ? {recipient_profile_id: opts.profileId} : {}),
                     },
                     // Bloc notification Android : affichée par le SYSTÈME même appli
@@ -173,7 +180,7 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
                     // porte ce bloc, pour éviter un doublon.
                     android: {
                         priority: "high",
-                        notification: {title: finalTitle, body, channelId: "high_importance_channel"},
+                        notification: {title: finalTitle, body, channelId: "high_importance_channel", tag: notifTag},
                     },
                     apns: {
                         headers: {"apns-priority": "10"},
