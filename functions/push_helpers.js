@@ -133,7 +133,11 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
         const doc = await admin.firestore().collection("users").doc(uid).get();
         if (!doc.exists) return false;
         const userData = doc.data();
-        const tokens = [userData.fcmToken, userData.webFcmToken].filter(Boolean);
+        // Une seule destination : l'appli si elle est installée, sinon le
+        // navigateur. Envoyer aux deux affichait chaque rappel EN DOUBLE
+        // (ex. « Chaleurs probables — Aiko » via le navigateur du téléphone
+        // + « Pomsky de la Luna · Chaleurs probables » via l'appli).
+        const tokens = [userData.fcmToken || userData.webFcmToken].filter(Boolean);
         if (!tokens.length) return false;
 
         let finalTitle = title;
