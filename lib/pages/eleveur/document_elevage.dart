@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/desc_entreprise.dart';
@@ -95,7 +96,10 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
     setState(() => _uploading = true);
     try {
       final file = File(result!.files.single.path!);
-      final url = await _uploadToFirebase(file, 'documentElevage/Siret/${file.path.split('/').last}');
+      // Inscription : compte pas encore créé → dépôt après création des CGU.
+      if (PhotosInscription.enAttenteDeCompte) PhotosInscription.kbis = file;
+      final url = PhotosInscription.enAttenteDeCompte
+          ? '' : await _uploadToFirebase(file, 'documentElevage/Siret/${file.path.split('/').last}');
       setState(() {
         _siretDocUrl = url;
         _siretDocName = result.files.single.name;
@@ -118,7 +122,9 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
     setState(() => _uploading = true);
     try {
       final file = File(result!.files.single.path!);
-      final url = await _uploadToFirebase(file, 'documentElevage/Acaced/${file.path.split('/').last}');
+      if (PhotosInscription.enAttenteDeCompte) PhotosInscription.acaced = file;
+      final url = PhotosInscription.enAttenteDeCompte
+          ? '' : await _uploadToFirebase(file, 'documentElevage/Acaced/${file.path.split('/').last}');
       setState(() {
         _acacedDocUrl = url;
         _acacedDocName = result.files.single.name;
@@ -220,7 +226,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
                 fileName: _siretDocName,
                 onTap: _pickSiret,
                 onRemove: () => setState(() {
-                  _siretUploaded = false; _siretDocName = null; _siretDocUrl = null;
+                  _siretUploaded = false; _siretDocName = null; _siretDocUrl = null; PhotosInscription.kbis = null;
                   User_Info.documentElevage.removeWhere((d) => d['category'] == 'Siret');
                   User_Info.kbisUrl = '';
                 }),
@@ -258,7 +264,7 @@ class _RegisterDocumentElevageState extends State<RegisterDocumentElevage> {
                   fileName: _acacedDocName,
                   onTap: _pickAcaced,
                   onRemove: () => setState(() {
-                    _acacedUploaded = false; _acacedDocName = null; _acacedDocUrl = null;
+                    _acacedUploaded = false; _acacedDocName = null; _acacedDocUrl = null; PhotosInscription.acaced = null;
                     User_Info.documentElevage.removeWhere((d) => d['category'] == 'Acaced_ou_autre');
                   }),
                 ),

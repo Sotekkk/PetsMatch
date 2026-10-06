@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/document_elevage.dart';
+import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -267,14 +268,21 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
 
     setState(() => _uploading = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
-      if (_imageFile != null) {
-        User_Info.profilePictureUrlElevage =
-            await uploadPhoto(_imageFile!, 'profiles/$uid/photo.jpg');
-      }
-      if (_bannerFile != null) {
-        User_Info.bannerUrl =
-            await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        // Inscription : le compte n'existe pas encore (créé aux CGU) —
+        // dépôt après création, sinon le stockage refuse (403).
+        if (_imageFile != null) PhotosInscription.photoElevage = _imageFile;
+        if (_bannerFile != null) PhotosInscription.banniere = _bannerFile;
+      } else {
+        if (_imageFile != null) {
+          User_Info.profilePictureUrlElevage =
+              await uploadPhoto(_imageFile!, 'profiles/$uid/photo.jpg');
+        }
+        if (_bannerFile != null) {
+          User_Info.bannerUrl =
+              await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
+        }
       }
 
       User_Info.nameElevage        = nom;
