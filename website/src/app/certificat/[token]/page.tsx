@@ -277,9 +277,13 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
       });
   }, [token]);
 
-  // Canvas de signature (chargé quand la signature est possible).
+  // Canvas de signature (chargé quand la signature est possible). Attendre
+  // la fin du chargement : `cert` est posé AVANT `loading=false` (requêtes
+  // cédant entre les deux) → le script se chargeait alors que le <canvas>
+  // n'était pas encore rendu, le pad ne s'attachait jamais et le cadre
+  // restait inerte (vu en navigation non connectée).
   useEffect(() => {
-    if (!cert || cert.statut === 'signe' || cert.statut === 'refuse' || delaiBloq) return;
+    if (loading || !cert || cert.statut === 'signe' || cert.statut === 'refuse' || delaiBloq) return;
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js';
     s.onload = () => {
@@ -297,7 +301,7 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
     };
     document.head.appendChild(s);
     return () => { try { document.head.removeChild(s); } catch { /* déjà retiré */ } };
-  }, [cert, delaiBloq]);
+  }, [cert, delaiBloq, loading]);
 
   async function handleSign(actionType: 'signe' | 'refuse') {
     let signature: string | undefined;

@@ -48,7 +48,9 @@ export default function SignerCessionPage({ params }: { params: Promise<{ token:
   }, [token]);
 
   useEffect(() => {
-    if (!cession || signed) return;
+    // Attendre la fin du chargement : le <canvas> doit exister quand le
+    // script arrive, sinon le pad ne s'attache jamais (cadre inerte).
+    if (loading || !cession || signed) return;
     // Charger signature_pad depuis CDN
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js';
@@ -60,8 +62,8 @@ export default function SignerCessionPage({ params }: { params: Promise<{ token:
       }
     };
     document.head.appendChild(s);
-    return () => { document.head.removeChild(s); };
-  }, [cession, signed]);
+    return () => { try { document.head.removeChild(s); } catch { /* déjà retiré */ } };
+  }, [cession, signed, loading]);
 
   function resizeCanvas() {
     const c = canvasRef.current;
