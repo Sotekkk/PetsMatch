@@ -527,7 +527,12 @@ function MesAnimauxPageInner() {
         .in('id', allAnimalIds)
         .order('nom', { ascending: true });
 
-      const merged = (data ?? []) as Animal[];
+      // Cédé puis repris par une asso / un élevage : la fiche porte le statut
+      // du nouveau détenteur — pour ce profil l'animal est sorti (onglet Cédés).
+      const merged = ((data ?? []) as Animal[]).map(a =>
+        !currentIds.has(a.id) && a.uid_eleveur !== resolvedOwnerUid
+          && !['decede', 'sorti', 'cession_en_cours', 'en_attente_cession'].includes(a.statut ?? '')
+          ? { ...a, statut: 'sorti' } : a);
       if (!cancelled) { setAnimaux(merged); setCessionEnAttente(currentIds); setFetching(false); }
 
       // Calcul flags chaleurs et gestante pour les femelles présentes
@@ -1311,7 +1316,9 @@ function MesAnimauxPageInner() {
         uid={ownerUid ?? user.uid}
         profileId={activeProfileId || null}
         eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
-        isReCession={cederAnimal.uid_eleveur !== (ownerUid ?? user.uid) && cederAnimal.uid_acquereur === (ownerUid ?? user.uid)}
+        // Particulier (animal acquis ou ajouté lui-même) : don / abandon,
+        // signature de l'acquéreur requise — miroir de la fiche appli.
+        isReCession={cederAnimal.uid_eleveur !== (ownerUid ?? user.uid)}
         onClose={() => setCederAnimal(null)}
         onCeded={() => {
           setCederAnimal(null);

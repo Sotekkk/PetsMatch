@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 
 class AnimauxAcquisPage extends StatefulWidget {
@@ -165,10 +165,8 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
                           cedantNom: _cedantNames[animal['uid_eleveur'] as String?],
                           onTap: () async {
                             await Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => AnimalFichePage(
+                              builder: (_) => AnimalFicheParticulierPage(
                                 animalId: animal['id'] as String,
-                                readOnly: false,
-                                eleveurUidOverride: animal['uid_eleveur'] as String?,
                               ),
                             ));
                             _load();

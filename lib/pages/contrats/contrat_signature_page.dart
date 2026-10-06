@@ -666,8 +666,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   // ── Certificat d'engagement ──────────────────────────────────────────────
 
-  String get _certProfileType =>
-      (_cert?['profil_source'] as String?) == 'association' ? 'association' : 'eleveur';
+  // Particulier qui re-cède / confie son animal : profil 'particulier'.
+  String get _certProfileType {
+    final src = _cert?['profil_source'] as String?;
+    return src == 'association' || src == 'particulier' ? src! : 'eleveur';
+  }
 
   DateTime? get _certDelaiLimite {
     final v = _cert?['date_limite_signature'];

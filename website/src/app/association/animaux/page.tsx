@@ -34,10 +34,12 @@ const ANCIEN_STATUTS = [
   { key: 'tous',      label: 'Tous',        color: 'bg-gray-100 text-gray-700' },
   { key: 'adopte',    label: 'Adopté',      color: 'bg-teal-100 text-teal-700' },
   { key: 'transfere', label: 'Transféré',   color: 'bg-blue-100 text-blue-700' },
+  { key: 'sorti',     label: 'Cédé',        color: 'bg-amber-100 text-amber-700' },
   { key: 'decede',    label: 'Décédé',      color: 'bg-red-100 text-red-700' },
 ];
 
-const ANCIENS_VALUES = new Set(['adopte', 'transfere', 'decede']);
+// 'sorti' = animal cédé via la fiche de cession (contrat / certificat).
+const ANCIENS_VALUES = new Set(['adopte', 'transfere', 'sorti', 'decede']);
 
 const STATUT_MAP = Object.fromEntries([...DETENUS_STATUTS, ...ANCIEN_STATUTS].map(s => [s.key, s]));
 
@@ -62,6 +64,9 @@ function AnimauxAssoPageInner() {
   );
   const [search, setSearch] = useState('');
   const [myUid, setMyUid] = useState<string | null>(null);
+  // Animaux que ce profil a cédés et qui ont été repris par une autre
+  // asso / un élevage : consultables en lecture seule (fiche générique).
+  const [anciensIds, setAnciensIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user) return;
@@ -80,14 +85,17 @@ function AnimauxAssoPageInner() {
       // par CE profil (animaux_proprietes.profile_id_proprio), sinon un animal
       // cédé au profil élevage apparaît aussi dans l'association.
       let receivedList: Animal[] = [];
+      let fermes = new Set<string>();
       if (activeProfileId) {
         const { data: check } = await supabase.from('animaux_proprietes')
           .select('animal_id').eq('uid_proprio', uid)
           .not('profile_id_proprio', 'is', null).limit(1);
         if ((check ?? []).length > 0) {
           const { data: byProfile } = await supabase.from('animaux_proprietes')
-            .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId);
+            .select('animal_id, date_fin').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId);
           const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))];
+          const ouverts = new Set((byProfile ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
+          fermes = new Set(ids.filter(i => !ouverts.has(i)));
           if (ids.length > 0) {
             const { data } = await supabase.from('animaux').select(cols)
               .in('id', ids).order('date_entree', { ascending: false });
@@ -105,6 +113,11 @@ function AnimauxAssoPageInner() {
       }
 
       receivedList = receivedList.filter(a => !ownedIds.has(a.id));
+      // Cédé puis repris par une autre structure : la fiche porte le statut
+      // du nouveau détenteur (« disponible »…) → affiché « Transféré » ici.
+      receivedList = receivedList.map(a => fermes.has(a.id) && !ANCIENS_VALUES.has(a.statut)
+        ? { ...a, statut: 'transfere' } : a);
+      setAnciensIds(fermes);
       setAnimaux([...ownedList, ...receivedList]);
       setLoading(false);
     }
@@ -215,7 +228,7 @@ function AnimauxAssoPageInner() {
             const isCession = !!myUid && a.uid_eleveur !== myUid;
             return (
               <div key={a.id} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 hover:border-teal-200 hover:shadow-md transition-all">
-                <Link href={`/association/animaux/${a.id}`}>
+                <Link href={anciensIds.has(a.id) || isCession ? `/mes-animaux/${a.id}` : `/association/animaux/${a.id}`}>
                   <div className="aspect-square bg-gray-100 relative overflow-hidden">
                     {a.photo_url ? (
                       // eslint-disable-next-line @next/next/no-img-element

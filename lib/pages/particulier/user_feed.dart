@@ -14,7 +14,6 @@ import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
-import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1117,22 +1116,14 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
                           data: animal,
                           cedantNom: cedantNom,
                           onTap: () async {
-                            if (isAcquis) {
-                              await Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => AnimalFichePage(
-                                  animalId: animal['id'] as String,
-                                  readOnly: false,
-                                  eleveurUidOverride: animal['uid_eleveur'] as String?,
-                                ),
-                              ));
-                            } else {
-                              await Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => AnimalFicheParticulierPage(
-                                  animalId: animal['id'],
-                                  initialData: animal,
-                                ),
-                              ));
-                            }
+                            // Animal acquis : c'est désormais le sien → même
+                            // fiche particulier (avant : vue éleveur « cédé »).
+                            await Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => AnimalFicheParticulierPage(
+                                animalId: animal['id'],
+                                initialData: animal,
+                              ),
+                            ));
                             _fetchAnimaux();
                           },
                           onDelete: () => _deleteAnimal(

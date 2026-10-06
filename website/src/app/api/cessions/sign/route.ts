@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     const { data: cession } = await supabase
       .from('cessions')
-      .select('id, animal_id, uid_eleveur, nom_acquereur, signature_acquereur')
+      .select('id, animal_id, uid_eleveur, pro_profile_id, nom_acquereur, signature_acquereur')
       .eq('token', token)
       .maybeSingle();
 
@@ -41,8 +41,12 @@ export async function POST(req: NextRequest) {
     try {
       const { data: animal } = await supabase.from('animaux').select('nom').eq('id', cession.animal_id).maybeSingle();
       if (cession.uid_eleveur) {
-        const { data: eleveurProfile } = await supabase.from('user_profiles')
-          .select('id').eq('uid', cession.uid_eleveur).eq('profile_type', 'eleveur').maybeSingle();
+        // Profil qui a lancé la cession (élevage, asso ou particulier qui
+        // re-cède) ; repli sur le profil élevage pour les anciennes cessions.
+        const { data: eleveurProfile } = cession.pro_profile_id
+          ? { data: { id: cession.pro_profile_id as string } }
+          : await supabase.from('user_profiles')
+            .select('id').eq('uid', cession.uid_eleveur).eq('profile_type', 'eleveur').maybeSingle();
         await supabase.from('notifications').insert({
           uid: cession.uid_eleveur,
           type: 'cession_signee_acquereur',

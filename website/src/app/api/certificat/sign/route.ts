@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     if (action === 'signe' && cert.cedant_uid) {
       try {
         // Profil émetteur (association / élevage), pas is_main — miroir appli.
-        const typeEmetteur = cert.profil_source === 'association' ? 'association' : 'eleveur';
+        const typeEmetteur = cert.profil_source === 'association' || cert.profil_source === 'particulier' ? cert.profil_source : 'eleveur';
         const { data: profType } = await supabase.from('user_profiles')
           .select('id').eq('uid', cert.cedant_uid).eq('profile_type', typeEmetteur).maybeSingle();
         const { data: profMain } = profType ? { data: null } : await supabase.from('user_profiles')

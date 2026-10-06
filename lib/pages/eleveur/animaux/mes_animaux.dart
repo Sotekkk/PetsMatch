@@ -332,6 +332,17 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         }
       } catch (_) {}
 
+      // Cédé puis repris par une asso / un élevage : la fiche porte désormais
+      // le statut du nouveau détenteur (« present », « disponible »…) — pour
+      // ce profil, l'animal est sorti (onglet Cédés, fiche en lecture seule).
+      for (final a in animaux) {
+        final id = a['id'] as String? ?? '';
+        final st = a['statut'] as String? ?? '';
+        if (id.isEmpty || currentIds.contains(id)) continue;
+        if (st == 'decede' || st == 'cession_en_cours' || st == 'en_attente_cession') continue;
+        if (a['uid_eleveur'] != ownerUid) a['statut'] = 'sorti';
+      }
+
       // Détecter les animaux 'sorti' avec un contrat de cession non signé
       final sortisIds = animaux
           .where((a) => (a['statut'] as String? ?? '') == 'sorti')
@@ -2109,8 +2120,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     // Lecture seule si cédant original sur animal sorti — comparé à
     // _ownerUid (l'élevage), pas _uid : un cogérant a un uid différent du
     // gérant qui a réellement cédé l'animal.
-    final isCededByMe = data != null && data['uid_eleveur'] == (_ownerUid ?? _uid)
-        && data['uid_acquereur'] != null && statut == 'sorti';
+    final isCededByMe = data != null && statut == 'sorti' && (
+        (data['uid_eleveur'] == (_ownerUid ?? _uid) && data['uid_acquereur'] != null)
+        // Repris par l'acquéreur (asso / élevage) : la fiche n'est plus à nous.
+        || (data['uid_eleveur'] != (_ownerUid ?? _uid) && !_currentOwnerIds.contains(animalId)));
     // Lecture seule si acquéreur en attente de confirmation
     final isAcquereurPending = data != null && data['uid_acquereur'] == (_ownerUid ?? _uid)
         && statut == 'cession_en_cours';

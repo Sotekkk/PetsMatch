@@ -1369,7 +1369,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       // FirebaseAuth.currentUser ici faisait échouer silencieusement la
       // clôture (0 ligne mise à jour) et mal-attribuait l'entrée du registre
       // au cogérant au lieu du véritable élevage cédant.
-      final cedantUid = _ownerUid ?? FirebaseAuth.instance.currentUser?.uid;
+      // Re-cession par un particulier acquéreur : le cédant est celui qui a
+      // lancé la cession (cessions.uid_eleveur), pas l'éleveur d'origine.
+      final cedantUid = (_cessionEnCours!['uid_eleveur'] as String?)
+          ?? _ownerUid ?? FirebaseAuth.instance.currentUser?.uid;
       // Transfert atomique côté base (migration_cession_transfert_propriete) :
       // l'index « un seul principal actif » faisait échouer en silence
       // l'insert de la ligne acquéreur → animal absent de ses « Mes animaux ».

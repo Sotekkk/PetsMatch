@@ -31,7 +31,8 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
   // "Ancien" = l'animal a un nouveau propriétaire (adopté/transféré) ou est décédé.
   // "Détenus" = tout le reste (en_soin, disponible — et en_fa n'est plus un statut,
   // c'est un état indépendant porté par fa_id, un animal en FA reste "détenu").
-  static const _anciensValues = {'adopte', 'transfere', 'decede'};
+  // 'sorti' = cédé via la fiche de cession (contrat / certificat).
+  static const _anciensValues = {'adopte', 'transfere', 'sorti', 'decede'};
 
   static const _detenusStatuts = [
     ('tous', 'Tous', Colors.grey),
@@ -44,6 +45,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
     ('tous', 'Tous', Colors.grey),
     ('adopte', 'Adopté', Color(0xFF0C5C6C)),
     ('transfere', 'Transféré', Colors.blue),
+    ('sorti', 'Cédé', Colors.amber),
     ('decede', 'Décédé', Colors.red),
   ];
 
@@ -82,6 +84,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
       // cédé au profil élevage apparaît aussi dans l'association.
       final activeProfileId = User_Info.activeProfileId;
       List<Map<String, dynamic>> received = [];
+      final fermes = <String>{};
       if (activeProfileId.isNotEmpty) {
         final migrated = await _supa.from('animaux_proprietes')
             .select('animal_id')
@@ -89,15 +92,18 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
             .not('profile_id_proprio', 'is', null)
             .limit(1);
         if ((migrated as List).isNotEmpty) {
-          final ownRows = await _supa.from('animaux_proprietes')
-              .select('animal_id')
+          final ownRows = List<Map<String, dynamic>>.from(await _supa.from('animaux_proprietes')
+              .select('animal_id, date_fin')
               .eq('uid_proprio', uid)
-              .eq('profile_id_proprio', activeProfileId);
-          final ids = List<Map<String, dynamic>>.from(ownRows as List)
+              .eq('profile_id_proprio', activeProfileId) as List);
+          final ids = ownRows
               .map((r) => r['animal_id']?.toString() ?? '')
               .where((id) => id.isNotEmpty)
               .toSet()
               .toList();
+          final ouverts = ownRows.where((r) => r['date_fin'] == null)
+              .map((r) => r['animal_id']?.toString() ?? '').toSet();
+          fermes.addAll(ids.where((id) => !ouverts.contains(id)));
           if (ids.isNotEmpty) {
             received = List<Map<String, dynamic>>.from(
               await _supa.from('animaux').select(cols)
@@ -120,6 +126,14 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
 
       final ownedIds = owned.map((a) => a['id']).toSet();
       received = received.where((a) => !ownedIds.contains(a['id'])).toList();
+      // Cédé puis repris par une autre structure : la fiche porte le statut
+      // du nouveau détenteur (« disponible »…) → affiché « Transféré » ici,
+      // en lecture seule.
+      for (final a in received) {
+        if (!fermes.contains(a['id']?.toString())) continue;
+        a['_ancien'] = true;
+        if (!_anciensValues.contains(a['statut'])) a['statut'] = 'transfere';
+      }
 
       if (mounted) {
         setState(() {
@@ -358,6 +372,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
                                   animalId: a['id'],
                                   initialData: a,
                                   isAssociation: true,
+                                  readOnly: a['_ancien'] == true,
                                   eleveurUidOverride: isCession ? a['uid_eleveur'] as String? : null,
                                 ),
                               ));
@@ -404,6 +419,7 @@ class _AnimalCard extends StatelessWidget {
     'en_fa':     Colors.purple,
     'adopte':    Color(0xFF0C5C6C),
     'transfere': Colors.blue,
+    'sorti':     Colors.amber,
     'decede':    Colors.red,
     'present':   Color(0xFF6E9E57),
   };
@@ -414,6 +430,7 @@ class _AnimalCard extends StatelessWidget {
     'en_fa':     'En FA',
     'adopte':    'Adopté',
     'transfere': 'Transféré',
+    'sorti':     'Cédé',
     'decede':    'Décédé',
     'present':   'Présent',
   };

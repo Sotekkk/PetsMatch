@@ -229,6 +229,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return m?.group(1);
   }
 
+  /// Animal reçu par cession : repris par une asso / un élevage (fiche à son
+  /// nom) → fiche pro modifiable ; reçu par un particulier → fiche particulier.
+  Future<void> _ouvrirAnimalRecu(String animalId) async {
+    Map<String, dynamic>? a;
+    try {
+      a = await Supabase.instance.client.from('animaux')
+          .select('uid_eleveur, is_association').eq('id', animalId).maybeSingle();
+    } catch (_) {}
+    if (!mounted) return;
+    final repris = a != null && a['uid_eleveur'] == FirebaseAuth.instance.currentUser?.uid;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => repris
+          ? AnimalFichePage(animalId: animalId, readOnly: false,
+              isAssociation: a?['is_association'] == true)
+          : AnimalFicheParticulierPage(animalId: animalId),
+    ));
+  }
+
   Future<void> _handleTap(Map<String, dynamic> notif) async {
     await _markRead(notif);
 
@@ -745,9 +763,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final animalId = data is Map ? data['animalId'] as String? : null;
       if (!mounted) return;
       if (animalId != null) {
-        await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true),
-        ));
+        await _ouvrirAnimalRecu(animalId);
       } else {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => const AnimauxAcquisPage(),
@@ -800,7 +816,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final animalId = data is Map ? data['animalId'] as String? : null;
       if (animalId != null) {
         await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: false),
+          builder: (_) => AnimalFicheParticulierPage(animalId: animalId),
         ));
       }
       return;

@@ -2334,6 +2334,9 @@ function AnimalFichePageInner() {
   // unique_constraint.sql), contrairement à animaux.uid_eleveur/uid_
   // proprietaire qui ne bougent pas forcément à chaque cession/transfert.
   const [currentProprioUid, setCurrentProprioUid] = useState<string | null>(null);
+  // Le viewer a possédé l'animal (ligne clôturée) et n'en est plus
+  // propriétaire : animal cédé puis repris par une asso / un élevage.
+  const [estAncienProprio, setEstAncienProprio] = useState(false);
   // Cogérance (elevage_cogerants) : un cogérant actif a exactement les mêmes
   // droits que le gérant principal sur les animaux de l'élevage — lire,
   // éditer, céder. Miroir de signer-contrat/[token]/page.tsx::isCogerantActif.
@@ -2442,6 +2445,12 @@ function AnimalFichePageInner() {
       supabase.from('animaux_proprietes').select('uid_proprio')
         .eq('animal_id', id).is('date_fin', null).maybeSingle()
         .then(({ data: prop }) => setCurrentProprioUid(prop?.uid_proprio ?? null));
+      supabase.from('animaux_proprietes').select('date_fin')
+        .eq('animal_id', id).eq('uid_proprio', user.uid).eq('statut', 'actif')
+        .then(({ data: mesLignes }) => {
+          const l = mesLignes ?? [];
+          setEstAncienProprio(l.length > 0 && l.every(r => r.date_fin != null));
+        });
       if (data.uid_eleveur && data.uid_eleveur !== user.uid) {
         // Cherche la relation employé en essayant d'abord par uid, puis par profile_id
         let empRow: { id: string; eleveur_profile_id: string | null } | null = null;
@@ -2583,7 +2592,9 @@ function AnimalFichePageInner() {
   async function confirmerCession() {
     if (!cessionEnCours || !user) return;
     setConfirmingCession(true);
-    const cedantUid = animal.uid_eleveur ?? ownerUid ?? user.uid;
+    // Re-cession par un particulier acquéreur : le cédant est celui qui a
+    // lancé la cession, pas l'éleveur d'origine.
+    const cedantUid = (cessionEnCours.uid_eleveur as string | null) ?? animal.uid_eleveur ?? ownerUid ?? user.uid;
     const now = new Date().toISOString();
     const dateCession = (cessionEnCours.date_cession as string) ?? now.split('T')[0];
     await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now }).eq('id', cessionEnCours.id);
@@ -3434,19 +3445,22 @@ function AnimalFichePageInner() {
   // de ligne animaux_proprietes (ex: anciennes fiches jamais migrées).
   const isOwner = !!user && (
     isCogerantActif
-    || (currentProprioUid != null
+    || (!estAncienProprio && (currentProprioUid != null
       ? user.uid === currentProprioUid
-      : (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur))
+      : (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur)))
   );
   // canWrite : propriétaire OU employé avec write_animaux
   const canWrite = isOwner || (isEmployeOfOwner && employePerms.includes('write_animaux'));
   // canWriteSante : propriétaire OU employé avec write_sante (ou write_animaux)
   const canWriteSante = isOwner || (isEmployeOfOwner && (employePerms.includes('write_sante') || employePerms.includes('write_animaux')));
   // isCede du point de vue de l'éleveur original (pas de l'acquéreur qui a les droits d'écriture)
-  const isCede = (animal.statut === 'sorti' || animal.statut === 'decede') && !isAcquereur;
+  // Ancien propriétaire d'un animal repris par une asso / un élevage : la
+  // fiche n'est plus au nom du cédant ni au statut « sorti ».
+  const isAncienProprio = estAncienProprio && !isCogerantActif && !isEmployeOfOwner && !isAcquereur;
+  const isCede = ((animal.statut === 'sorti' || animal.statut === 'decede') && !isAcquereur) || isAncienProprio;
   const isOriginalBreeder = isEleveur && !!user && (user.uid === animal.uid_eleveur || isCogerantActif);
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
-  const tabs = (isCede && isOriginalBreeder && !isAcquereur)
+  const tabs = ((isCede && isOriginalBreeder && !isAcquereur) || isAncienProprio)
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
     : (isEleveur || isEmployeOfOwner)
     ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }]
@@ -4923,7 +4937,10 @@ function AnimalFichePageInner() {
       {showCession && user && (
         <CessionModal
           animal={animal}
-          uid={animal.uid_eleveur ?? ownerUid ?? user.uid}
+          // Particulier (animal acquis ou ajouté lui-même) : c'est LUI le
+          // cédant (pas l'éleveur d'origine), cession en don / abandon.
+          uid={animal.uid_eleveur !== user.uid && !isCogerantActif ? user.uid : (animal.uid_eleveur ?? ownerUid ?? user.uid)}
+          isReCession={animal.uid_eleveur !== user.uid && !isCogerantActif}
           profileId={activeProfileId || null}
           eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
           reservation={animal.statut === 'reserve' ? reservation : null}

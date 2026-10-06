@@ -259,7 +259,7 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
         // is_main — miroir appli.
         const colsCed = 'nom,firstname,lastname,siret,phone_number,numero_elevage,rue_pro,ville_pro,code_postal_pro,rue,ville,code_postal,profile_type,cat_pro';
         const { data: cpType } = await supabase.from('user_profiles_complet').select(colsCed)
-          .eq('uid', data.cedant_uid).eq('profile_type', data.profil_source === 'association' ? 'association' : 'eleveur').maybeSingle();
+          .eq('uid', data.cedant_uid).eq('profile_type', data.profil_source === 'association' || data.profil_source === 'particulier' ? data.profil_source : 'eleveur').maybeSingle();
         const { data: cpMain } = cpType ? { data: null } : await supabase.from('user_profiles_complet').select(colsCed)
           .eq('uid', data.cedant_uid).eq('is_main', true).maybeSingle();
         const cp = cpType ?? cpMain;

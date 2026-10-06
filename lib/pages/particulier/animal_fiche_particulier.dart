@@ -37,6 +37,8 @@ import 'package:PetsMatch/widgets/document_viewer_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 
 class _ContactUrgenceP {
   final TextEditingController nom;
@@ -197,7 +199,92 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     } catch (_) {}
     _loadPensionAcces();
     _loadProprietaires();
+    _loadCessionCedant();
     _loadObjectTiers();
+  }
+
+  // ── Cession lancée par ce particulier (don, abandon à une asso, revente)
+  Map<String, dynamic>? _cessionCedant;
+
+  bool get _jeSuisPrincipal => _proprietaires.any((r) =>
+      r['uid_proprio'] == User_Info.uid && r['statut'] == 'actif' && r['role_proprio'] == 'principal');
+
+  Future<void> _loadCessionCedant() async {
+    if (_animalId == null) return;
+    try {
+      final rows = await _supa.from('cessions')
+          .select('id, statut, nom_acquereur')
+          .eq('animal_id', _animalId!)
+          .eq('uid_eleveur', User_Info.uid)
+          .not('statut', 'in', '(revoquee,confirme)')
+          .order('created_at', ascending: false)
+          .limit(1);
+      if (mounted) {
+        setState(() => _cessionCedant = (rows as List).isNotEmpty
+            ? Map<String, dynamic>.from(rows.first as Map) : null);
+      }
+    } catch (_) {}
+  }
+
+  void _ceder() {
+    final nom = '${User_Info.firstname} ${User_Info.lastname}'.replaceAll('none', '').trim();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CessionSheet(
+        animal: {
+          'id': _animalId,
+          'nom': _nomCtrl.text,
+          'espece': _espece,
+          'race': _raceCtrl.text,
+          'sexe': _sexe,
+          'identification': _identCtrl.text.trim().isEmpty ? null : _identCtrl.text.trim(),
+          'date_naissance': _dateNaissance?.toIso8601String().split('T').first,
+        },
+        uid: User_Info.uid,
+        nomElevage: nom,
+        isReCession: true,
+        onCeded: () { _loadCessionCedant(); _loadProprietaires(); },
+      ),
+    );
+  }
+
+  /// Suivi / confirmation : même écran que pour un éleveur (bandeau
+  /// « Confirmer / Révoquer » de la fiche de cession).
+  Future<void> _gererCession() async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AnimalFichePage(animalId: _animalId, readOnly: false),
+    ));
+    _loadCessionCedant();
+    _loadProprietaires();
+  }
+
+  Widget _cessionCedantBanner() {
+    final signe = _cessionCedant!['statut'] == 'signe_acquereur';
+    final acq = (_cessionCedant!['nom_acquereur'] as String?)?.trim() ?? '';
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFFFF4E0),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      child: Row(children: [
+        const Text('🤝', style: TextStyle(fontSize: 20)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(acq.isEmpty ? 'Cession en cours' : 'Cession en cours — $acq',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+          Text(signe
+                  ? "L'acquéreur a signé : confirmez le transfert."
+                  : "En attente de la signature de l'acquéreur.",
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black54)),
+        ])),
+        TextButton(
+          onPressed: _gererCession,
+          child: Text(signe ? 'Confirmer' : 'Gérer',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Color(0xFFB26A00))),
+        ),
+      ]),
+    );
   }
 
   /// Paliers d'objet évolutif pour l'espèce de l'animal (species_object_tiers).
@@ -799,6 +886,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               )),
             ),
           if (_animalId != null) ...[
+            if (_jeSuisPrincipal && _cessionCedant == null)
+              IconButton(
+                icon: const Icon(Icons.handshake_outlined, size: 20),
+                tooltip: 'Céder / confier cet animal',
+                onPressed: _ceder,
+              ),
             IconButton(
               icon: const Icon(Icons.people_alt_outlined, size: 20),
               tooltip: 'Propriétaires',
@@ -870,6 +963,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       body: Column(
         children: [
           if (_monInvitationProprio != null) _invitationCoproprioBanner(),
+          if (_cessionCedant != null) _cessionCedantBanner(),
           Expanded(
             child: TabBarView(
               controller: _tabs,

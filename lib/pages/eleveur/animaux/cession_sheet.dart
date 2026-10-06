@@ -296,7 +296,8 @@ class _CessionSheetState extends State<CessionSheet> {
       'acquereur_adresse':     _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
       'modalite_cession':      widget.animal['is_association'] == true ? 'adoption' : 'vente',
       'date_remise':           now.toIso8601String(),
-      'profil_source':         widget.animal['is_association'] == true ? 'association' : 'eleveur',
+      'profil_source':         widget.animal['is_association'] == true
+          ? 'association' : (widget.isReCession ? 'particulier' : 'eleveur'),
     };
   }
 
