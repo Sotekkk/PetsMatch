@@ -125,24 +125,17 @@ Future<void> finalizeContratSigne({
             }
           }
         } catch (_) {}
-        final cedantUid = ceded['uid_eleveur'] as String?;
         final acqUid = ceded['uid_acquereur'] as String?;
-        if (cedantUid != null) {
-          await supa.from('animaux_proprietes')
-              .update({'date_fin': dateCession})
-              .eq('animal_id', animalId)
-              .eq('uid_proprio', cedantUid)
-              .isFilter('date_fin', null);
-        }
         if (acqUid != null) {
           final acqProfileId = await _acquereurProfileId(supa, meta, acqUid);
-          await supa.from('animaux_proprietes').upsert({
-            'animal_id': animalId,
-            'uid_proprio': acqUid,
-            'date_debut': dateCession,
-            'date_fin': null,
-            'profile_id_proprio': acqProfileId,
-          }, onConflict: 'animal_id,uid_proprio');
+          // Clôture du cédant + ouverture de l'acquéreur en un seul appel
+          // (migration_cession_transfert_propriete.sql).
+          await supa.rpc('ceder_propriete_animal', params: {
+            'p_animal_id': animalId,
+            'p_uid_acquereur': acqUid,
+            'p_profile_acquereur': acqProfileId,
+            'p_date': dateCession,
+          });
           // Garder animaux.profile_id_acquereur cohérent
           if (acqProfileId != null) {
             try {

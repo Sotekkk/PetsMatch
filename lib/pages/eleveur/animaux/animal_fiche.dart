@@ -1370,21 +1370,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       // clôture (0 ligne mise à jour) et mal-attribuait l'entrée du registre
       // au cogérant au lieu du véritable élevage cédant.
       final cedantUid = _ownerUid ?? FirebaseAuth.instance.currentUser?.uid;
+      // Transfert atomique côté base (migration_cession_transfert_propriete) :
+      // l'index « un seul principal actif » faisait échouer en silence
+      // l'insert de la ligne acquéreur → animal absent de ses « Mes animaux ».
       if (uidAcq != null) {
-        try {
-          await _supa.from('animaux_proprietes').upsert({
-            'animal_id':   widget.animalId,
-            'uid_proprio': uidAcq,
-            'date_debut':  dateCession,
-            'date_fin':    null,
-            if (acqProfileId != null) 'profile_id_proprio': acqProfileId,
-          }, onConflict: 'animal_id,uid_proprio');
-          await _supa.from('animaux_proprietes')
-              .update({'date_fin': dateCession})
-              .eq('animal_id', widget.animalId!)
-              .eq('uid_proprio', cedantUid ?? '')
-              .isFilter('date_fin', null);
-        } catch (_) {}
+        await _supa.rpc('ceder_propriete_animal', params: {
+          'p_animal_id':         widget.animalId,
+          'p_uid_acquereur':     uidAcq,
+          'p_profile_acquereur': acqProfileId,
+          'p_date':              dateCession,
+        });
       }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
       if (uidAcq != null && cedantUid != null) {

@@ -1046,34 +1046,16 @@ class _CessionSheetState extends State<CessionSheet> {
         // Cession directe : transfert de propriété tout de suite.
         final acqUid = _foundUser!['uid'] as String;
         try {
-          // IMPORTANT — ordre des opérations : la policy RLS d'INSERT sur
-          // animaux_proprietes n'autorise le cédant à créer la ligne de
-          // l'acquéreur que via is_principal_owner_or_cogerant(), qui exige
-          // que le cédant ait ENCORE une ligne active (date_fin IS NULL) au
-          // moment de l'insert. Clôturer sa ligne avant d'insérer celle de
-          // l'acquéreur fait donc échouer l'insert silencieusement — ouvrir
-          // la ligne acquéreur D'ABORD, clôturer celle du cédant ENSUITE.
-          await _supa.from('animaux_proprietes').upsert({
-            'animal_id':   widget.animal['id'],
-            'uid_proprio': acqUid,
-            'date_debut':  dateCessionStr,
-            'date_fin':    null,
-            if (acqProfileId != null) 'profile_id_proprio': acqProfileId,
-          }, onConflict: 'animal_id,uid_proprio');
-          // Cession définitive : met fin à TOUTE la copropriété (principal +
-          // secondaires) et supprime les invitations en attente — sauf la
-          // ligne qu'on vient d'ouvrir pour l'acquéreur (même filtre
-          // statut='actif'+date_fin IS NULL, sinon elle se refermerait aussitôt).
-          await _supa.from('animaux_proprietes')
-              .update({'date_fin': dateCessionStr})
-              .eq('animal_id', widget.animal['id'])
-              .eq('statut', 'actif')
-              .isFilter('date_fin', null)
-              .neq('uid_proprio', acqUid);
-          await _supa.from('animaux_proprietes')
-              .delete()
-              .eq('animal_id', widget.animal['id'])
-              .eq('statut', 'invite');
+          // Cession définitive, en un appel côté base : clôt toute la
+          // copropriété (principal + secondaires), supprime les invitations
+          // en attente et ouvre l'acquéreur en principal. Les écritures
+          // directes échouaient en silence (index « un seul principal »).
+          await _supa.rpc('ceder_propriete_animal', params: {
+            'p_animal_id':         widget.animal['id'],
+            'p_uid_acquereur':     acqUid,
+            'p_profile_acquereur': acqProfileId,
+            'p_date':              dateCessionStr,
+          });
         } catch (_) {}
         // Registre légal — sortie pour le cédant (+ entrée pour l'acquéreur
         // s'il est éleveur/refuge), même logique que le site (CessionModal.tsx)
