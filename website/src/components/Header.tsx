@@ -617,6 +617,7 @@ const MENU_PARTICULIER = [
       { href: '/mes-animaux-acquis',  label: 'Mes Animaux Acquis', icon: '🤝' },
       { href: '/agenda',              label: 'Mon Agenda',         icon: '🗓️' },
       { href: '/mes-taches',          label: 'Mes tâches',         icon: '✅' },
+      { href: '/demande-influenceur', label: 'Badge Influenceur',  icon: '⭐' },
     ],
   },
   {
@@ -864,6 +865,10 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'morpho_bilan':
       return d.suiviId ? `/sante/suivis/${d.suiviId}` : null;
+    case 'influenceur_approuve':
+    case 'influenceur_refuse':
+    case 'influenceur_revoque':
+      return '/demande-influenceur';
     // Reçues par l'acquéreur → sa page « Mes contrats » (pas le lien de signature brut)
     case 'contrat_signe_eleveur':
     case 'contrat_signe_complet':

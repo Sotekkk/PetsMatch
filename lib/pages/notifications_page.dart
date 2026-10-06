@@ -28,6 +28,7 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
+import 'package:PetsMatch/pages/particulier/influencer_request_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
@@ -655,6 +656,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // Balades ludiques : nouvel avis (créateur) ou parcours terminé (joueur)
     // → fiche du parcours.
     // Animal en co-propriété déclaré perdu → Mes alertes.
+    // Badge influenceur accordé / refusé / retiré (admin du site) → page de
+    // la demande, qui affiche le statut.
+    if (type == 'influenceur_approuve' || type == 'influenceur_refuse' ||
+        type == 'influenceur_revoque') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const InfluencerRequestPage(),
+      ));
+      return;
+    }
     if (type == 'alerte_perdu_copro') {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
       return;

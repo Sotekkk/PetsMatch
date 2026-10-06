@@ -1,13 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
+import { useAuth } from '@/lib/auth-context';
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
 const labelCls = 'block text-sm font-semibold text-[#1F2A2E] mb-1';
 
 export default function DemandeInfluenceurPage() {
+  // La demande est rattachée au COMPTE (RLS : uid = jeton) — avant, un uid
+  // fictif « web_<email> » faisait échouer l'envoi et le badge validé n'aurait
+  // jamais atteint le vrai profil. Miroir appli (influencer_request_page).
+  const { user, loading: authLoading } = useAuth();
+  const [statutExistant, setStatutExistant] = useState<string | null>(null);
+  const [chargement, setChargement] = useState(true);
   const [instagram, setInstagram] = useState('');
   const [tiktok, setTiktok]       = useState('');
   const [autre, setAutre]         = useState('');
@@ -18,6 +26,15 @@ export default function DemandeInfluenceurPage() {
   const [loading, setLoading]     = useState(false);
   const [sent, setSent]           = useState(false);
   const [error, setError]         = useState('');
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) { setChargement(false); return; }
+    if (user.email) setEmail(prev => prev || user.email!);
+    supabase.from('influencer_requests').select('statut')
+      .eq('uid', user.uid).order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => { setStatutExistant((data?.statut as string | undefined) ?? null); setChargement(false); });
+  }, [user, authLoading]);
 
   function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? []).slice(0, 3 - files.length);
@@ -37,13 +54,14 @@ export default function DemandeInfluenceurPage() {
     if (!message.trim()) { setError('Le message de motivation est requis.'); return; }
     if (!email.trim())   { setError('Ton adresse email est requise.'); return; }
 
+    if (!user) { setError('Connecte-toi pour envoyer ta demande.'); return; }
     setLoading(true);
     setError('');
     try {
       // Upload screenshots to Supabase storage
       const preuveUrls: string[] = [];
       for (const file of files) {
-        const path = `web/${Date.now()}_${file.name}`;
+        const path = `${user.uid}/${Date.now()}_${file.name}`;
         const { error: upErr } = await supabase.storage.from('influencer-proofs').upload(path, file, { upsert: true });
         if (upErr) throw upErr;
         const { data: urlData } = supabase.storage.from('influencer-proofs').getPublicUrl(path);
@@ -52,7 +70,7 @@ export default function DemandeInfluenceurPage() {
 
       // Insert in influencer_requests
       const { error: dbErr } = await supabase.from('influencer_requests').insert({
-        uid: `web_${email.trim().toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+        uid: user.uid,
         pseudo: pseudo.trim() || email.trim(),
         lien_instagram: instagram.trim() || null,
         lien_tiktok:    tiktok.trim()    || null,
@@ -86,6 +104,44 @@ export default function DemandeInfluenceurPage() {
     }
   }
 
+  if (authLoading || chargement) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="bg-white rounded-3xl shadow-sm p-10 max-w-md w-full text-center">
+          <p className="text-3xl mb-4">⭐</p>
+          <p className="text-gray-600 text-sm mb-5">Connecte-toi à ton compte PetsMatch pour demander le badge Influenceur.</p>
+          <Link href="/connexion" className="inline-block bg-[#0C5C6C] text-white font-semibold px-6 py-2.5 rounded-xl text-sm">Se connecter</Link>
+        </div>
+      </main>
+    );
+  }
+
+  // Demande existante : statut (comme l'appli) — refus = nouvelle demande possible.
+  if (!sent && (statutExistant === 'pending' || statutExistant === 'approved')) {
+    const ok = statutExistant === 'approved';
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="bg-white rounded-3xl shadow-sm p-10 max-w-md w-full text-center">
+          <p className="text-4xl mb-4">{ok ? '⭐' : '⏳'}</p>
+          <h1 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {ok ? 'Badge Influenceur accordé' : 'Demande en cours d’examen'}
+          </h1>
+          <p className="text-gray-500 text-sm">
+            {ok ? 'Ton badge apparaît sur ton profil Pets Social.' : 'Tu recevras une notification dès qu’elle sera traitée.'}
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   if (sent) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -98,7 +154,7 @@ export default function DemandeInfluenceurPage() {
           </h1>
           <p className="text-gray-500 text-sm leading-relaxed">
             Nous avons bien reçu ta demande et nous la traiterons sous 48 h.<br />
-            Tu recevras une réponse à l&apos;adresse indiquée.
+            Tu recevras une notification dès qu&apos;elle sera traitée.
           </p>
         </div>
       </main>
