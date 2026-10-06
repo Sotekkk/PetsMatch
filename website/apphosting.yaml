@@ -68,3 +68,23 @@ env:
   - variable: STRIPE_PRICE_ELEVEUR_PRO_MENSUEL
     secret: STRIPE_PRICE_ELEVEUR_PRO_MENSUEL
     availability: [BUILD, RUNTIME]
+  # E-mails envoyés par le site (certificats, contrats, cessions, factures,
+  # RDV, vérifications) — absents à la migration Netlify → App Hosting :
+  # aucun e-mail ne partait.
+  - variable: GMAIL_USER
+    secret: GMAIL_USER
+    availability: [RUNTIME]
+  - variable: GMAIL_APP_PASSWORD
+    secret: GMAIL_APP_PASSWORD
+    availability: [RUNTIME]
+  # Appels internes entre routes / Cloud Functions et tâches planifiées.
+  - variable: INTERNAL_API_SECRET
+    secret: INTERNAL_API_SECRET
+    availability: [RUNTIME]
+  - variable: CRON_SECRET
+    secret: CRON_SECRET
+    availability: [RUNTIME]
+  # Notifications du navigateur (clé publique Web Push, embarquée au build).
+  - variable: NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    secret: NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    availability: [BUILD, RUNTIME]
