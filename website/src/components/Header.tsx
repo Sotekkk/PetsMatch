@@ -624,6 +624,8 @@ const MENU_PARTICULIER = [
     icon: '📄',
     items: [
       { href: '/mes-contrats', label: 'Mes Contrats', icon: '📄' },
+      { href: '/mes-factures', label: 'Mes Factures', icon: '🧾' },
+      { href: '/mes-achats',   label: 'Abonnements & achats', icon: '⭐' },
     ],
   },
   {
@@ -668,6 +670,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/elevage/registre-entree-sortie': ['mouvements', 'cheptel', 'entree sortie', 'registre elevage'],
   '/elevage/contrat': ['contrat de vente', 'contrat de reservation', 'cession', 'contrats'],
   '/mes-contrats': ['contrats recus', 'mes contrats'],
+  '/mes-factures': ['mes factures', 'factures recues', 'facture'],
   '/elevage/facturation': ['factures', 'devis', 'tva', 'comptabilite', 'facturation'],
   '/mes-annonces': ['mes annonces', 'portees', 'chiots a vendre'],
   '/annonces/objets': ['materiel', 'objets', 'cage', 'harnais', 'foin', 'fourrage', 'tracteur', 'remorque', 'location prairie', 'parcelle', 'petites annonces', 'accessoires'],

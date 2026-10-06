@@ -32,6 +32,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
+import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_factures_particulier_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
@@ -253,6 +254,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                           ));
                         },
                       ),
+                  ],
+                ),
+                // Administratif : contrats, factures, achats (comme les
+                // profils pro) — « Achats & crédits » était introuvable.
+                _DrawerSection(
+                  icon: Icons.folder_outlined,
+                  label: 'Administratif',
+                  children: [
                     _DrawerSubItem(
                       label: 'Mes Contrats',
                       icon: Icons.description_outlined,
@@ -270,6 +279,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const MesFacturesParticulierPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Abonnements & achats',
+                      icon: Icons.star_outline,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AbonnementsAchatsPage(),
                         ));
                       },
                     ),

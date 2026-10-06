@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api-fetch';
+
+interface CreditPack { id: string; nom: string; credits: number; prix_euros: number; tag: string | null }
 
 interface Achat {
   id: string;
@@ -30,10 +33,36 @@ export default function MesAchatsPage() {
   // Lien « Mon abonnement » du profil, transmis par le menu (?abo=…).
   // window.location plutôt que useSearchParams (évite le Suspense requis au build).
   const [aboHref, setAboHref] = useState<string | null>(null);
+  // Catalogue des packs de crédits + retour de paiement Stripe (?credits=ok).
+  const [catalogue, setCatalogue] = useState<CreditPack[]>([]);
+  const [achatPackId, setAchatPackId] = useState<string | null>(null);
+  const [retourPaiement, setRetourPaiement] = useState(false);
   useEffect(() => {
-    const abo = new URLSearchParams(window.location.search).get('abo');
+    const params = new URLSearchParams(window.location.search);
+    const abo = params.get('abo');
     setAboHref(abo && /^\/[a-z-]*\/?abonnement$/.test(abo) ? abo : null);
+    setRetourPaiement(params.get('credits') === 'ok');
+    supabase.from('credit_packs').select('id, nom, credits, prix_euros, tag')
+      .eq('actif', true).order('ordre', { ascending: true })
+      .then(({ data }) => setCatalogue((data ?? []) as CreditPack[]));
   }, []);
+
+  async function acheterPack(packId: string) {
+    setAchatPackId(packId);
+    try {
+      const res = await apiFetch('/api/stripe/credits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pack_id: packId, checkout: true }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) throw new Error(json.error ?? 'Paiement indisponible');
+      window.location.href = json.url;
+    } catch (e) {
+      alert(`Impossible de lancer le paiement : ${e instanceof Error ? e.message : e}`);
+      setAchatPackId(null);
+    }
+  }
   useEffect(() => {
     if (!user) return;
     Promise.all([
@@ -157,6 +186,32 @@ export default function MesAchatsPage() {
         <p className="flex-1 text-sm text-[#1F2A2E]">Solde actuel</p>
         <p className="font-bold text-[#6E9E57] text-sm">{solde} crédit{solde > 1 ? 's' : ''}</p>
       </div>
+      {retourPaiement && (
+        <div className="bg-[#6E9E57]/10 text-[#4f7a3c] rounded-2xl p-3 text-sm mb-3">
+          ✅ Paiement reçu — vos crédits arrivent dans quelques instants (rechargez la page si le solde n&apos;a pas bougé).
+        </div>
+      )}
+      {catalogue.length > 0 && (
+        <>
+          <p className="text-xs font-semibold text-gray-500 mb-2">Acheter des crédits</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+            {catalogue.map(p => (
+              <button key={p.id} onClick={() => acheterPack(p.id)} disabled={!!achatPackId}
+                className="relative bg-white rounded-2xl border border-gray-100 p-4 text-left hover:border-[#6E9E57] hover:shadow-sm transition-all disabled:opacity-60">
+                {p.tag && (
+                  <span className="absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#6E9E57] text-white">{p.tag}</span>
+                )}
+                <p className="font-semibold text-[#1F2A2E] text-sm">{p.nom}</p>
+                <p className="text-xs text-gray-500">🪙 {p.credits} crédits</p>
+                <p className="font-bold text-[#0C5C6C] text-sm mt-1">
+                  {achatPackId === p.id ? 'Redirection…' : `${Number(p.prix_euros).toFixed(2)} €`}
+                </p>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs font-semibold text-gray-500 mb-2">Historique</p>
+        </>
+      )}
       {packs.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 p-4 text-gray-400 text-sm">Aucun achat de crédits.</div>
       ) : (
