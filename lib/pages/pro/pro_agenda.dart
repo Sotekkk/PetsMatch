@@ -108,6 +108,26 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// Onglet Créneaux (clinique) : disponibilités de quel praticien
   /// ('' = titulaire). Un praticien employé gère les siennes.
   String _praticienCreneaux = '';
+  /// Salles de la clinique (id → nom, type) et salle attribuée aux créneaux
+  /// saisis ('' = aucune).
+  Map<String, ({String nom, String type})> _salles = {};
+  String _salleCreneaux = '';
+  String? get _salleCreneauxOuNull => _salleCreneaux.isEmpty ? null : _salleCreneaux;
+
+  Future<void> _loadSalles() async {
+    final pid = AgendaContexte.profileId;
+    if (!_estClinique || pid.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client.from('salles_clinique')
+          .select('id, nom, type_salle').eq('clinique_profile_id', pid).eq('actif', true).order('ordre');
+      if (mounted) {
+        setState(() => _salles = {
+          for (final r in rows as List)
+            r['id'] as String: (nom: (r['nom'] as String?) ?? 'Salle', type: (r['type_salle'] as String?) ?? 'consultation'),
+        });
+      }
+    } catch (_) {}
+  }
   String? get _praticienCreneauxOuNull => _praticienCreneaux.isEmpty ? null : _praticienCreneaux;
 
   List<Map<String, dynamic>> get _rdvsFiltres {
@@ -118,13 +138,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   /// Praticien assigné (clinique), pour l'affichage sur la carte.
   String? _nomPraticien(Map<String, dynamic> rdv) {
-    if (!_estClinique || _employes.isEmpty) return null;
+    if (!_estClinique) return null;
+    final parts = <String>[];
     final id = rdv['instructeur_profile_id']?.toString();
-    if (id == null || id.isEmpty) return null;
-    for (final e in _employes) {
-      if (e.profileId == id) return '🩺 ${e.nom}';
+    if (id != null && id.isNotEmpty) {
+      for (final e in _employes) {
+        if (e.profileId == id) parts.add('🩺 ${e.nom}');
+      }
     }
-    return null;
+    final salle = _salles[rdv['salle_id']?.toString()];
+    if (salle != null) parts.add('🚪 ${salle.nom}');
+    return parts.isEmpty ? null : parts.join('  ·  ');
   }
 
   // Durées par motif (pour pré-remplir le dialog de confirmation)
@@ -153,6 +177,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadDureesMotifs();
     _loadAujourdhui();
     _loadEmployes();
+    _loadSalles();
     _loadCoursCollectifs();
     User_Info.profileNotifier.addListener(_onProfileChange);
   }
@@ -2177,6 +2202,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     int delai = 15;
     final msgCtrl = TextEditingController();
     bool sending = false;
+    // Clinique : retard d'UN vétérinaire ('' = titulaire), ou de toute la
+    // clinique ('*'). Praticien employé : le sien par défaut.
+    String praticien = _estClinique ? (AgendaContexte.pourEmployeur ? '*' : '') : '*';
+    if (_estClinique && AgendaContexte.pourEmployeur) {
+      final moi = await AgendaContexte.monProfil();
+      if (moi != null && _employes.any((e) => e.profileId == moi)) praticien = moi;
+    }
+    if (!mounted) return;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -2200,6 +2233,20 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             const SizedBox(height: 4),
             const Text('Vos clients avec un RDV dans les 3 prochaines heures seront notifiés.',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            if (_estClinique && _employes.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: praticien,
+                decoration: const InputDecoration(labelText: 'Vétérinaire en retard', border: OutlineInputBorder(), isDense: true),
+                items: [
+                  DropdownMenuItem(value: '',
+                      child: Text(AgendaContexte.pourEmployeur ? 'Titulaire de la clinique' : 'Moi')),
+                  for (final e in _employes) DropdownMenuItem(value: e.profileId, child: Text(e.nom)),
+                  const DropdownMenuItem(value: '*', child: Text('Toute la clinique')),
+                ],
+                onChanged: (v) => setModal(() => praticien = v ?? '*'),
+              ),
+            ],
             const SizedBox(height: 20),
             const Text('Délai estimé',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
@@ -2247,7 +2294,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 onPressed: sending ? null : () async {
                   setModal(() => sending = true);
                   Navigator.pop(ctx);
-                  await _sendRetard(delai, msgCtrl.text.trim());
+                  await _sendRetard(delai, msgCtrl.text.trim(), praticien);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange, foregroundColor: Colors.white,
@@ -2268,11 +2315,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     );
   }
 
-  Future<void> _sendRetard(int delaiMinutes, String message) async {
+  Future<void> _sendRetard(int delaiMinutes, String message, [String praticien = '*']) async {
     try {
       final fn = FirebaseFunctions.instanceFor(region: 'europe-west1')
           .httpsCallable('sendRetardNotification');
-      final result = await fn.call({'delaiMinutes': delaiMinutes, 'message': message});
+      final pid = _resolveProProfileId();
+      final result = await fn.call({
+        'delaiMinutes': delaiMinutes, 'message': message,
+        // Profil concerné (multi-profil) + vétérinaire (clinique).
+        if (pid.isNotEmpty) 'proProfileId': pid,
+        'praticienProfileId': praticien,
+      });
       final notified = (result.data as Map?)?['notified'] as int? ?? 0;
       if (mounted) {
         setState(() => _retardDeclare = true);
@@ -3185,7 +3238,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         if (typeGarde != null) { _slotTypeGarde[key] = typeGarde; } else { _slotTypeGarde.remove(key); }
         if (capacite > 1) { _slotCapacite[key] = capacite; } else { _slotCapacite.remove(key); }
       });
-      slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'praticien_profile_id': _praticienCreneauxOuNull, 'date': date,
+      slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'praticien_profile_id': _praticienCreneauxOuNull,
+          if (_estClinique) 'salle_id': _salleCreneauxOuNull, 'date': date,
           'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
           'domicile_ok': domicileOk, 'prestation_id': prestationId, 'capacite': capacite,
           'type_garde': typeGarde});
@@ -3698,6 +3752,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'pro_uid':        uid,
             'pro_profile_id': pid,
             'praticien_profile_id': _praticienCreneauxOuNull,
+            if (_estClinique) 'salle_id': _salleCreneauxOuNull,
             'date':           dateStr,
             'heure_debut':    heureDebut,
             'heure_fin':      heureFin,
@@ -3830,6 +3885,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'pro_uid':        uid,
             'pro_profile_id': pid,
             'praticien_profile_id': _praticienCreneauxOuNull,
+            if (_estClinique) 'salle_id': _salleCreneauxOuNull,
             'date':           targetKey,
             'heure_debut':    heureDebut,
             'heure_fin':      heureFin,
@@ -3908,6 +3964,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               setState(() => _praticienCreneaux = v ?? '');
               _loadCreneaux();
             },
+          ),
+        ),
+      // Clinique : salle de consultation occupée sur les créneaux ajoutés.
+      if (_estClinique && _salles.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: DropdownButtonFormField<String>(
+            initialValue: _salleCreneaux,
+            decoration: const InputDecoration(
+                labelText: 'Salle attribuée (créneaux ajoutés)', border: OutlineInputBorder(), isDense: true),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Aucune (salle libre au moment du RDV)')),
+              for (final e in _salles.entries) DropdownMenuItem(value: e.key, child: Text(e.value.nom)),
+            ],
+            onChanged: (v) => setState(() => _salleCreneaux = v ?? ''),
           ),
         ),
       // Navigation semaine
