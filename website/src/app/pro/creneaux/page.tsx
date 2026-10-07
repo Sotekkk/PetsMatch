@@ -78,6 +78,9 @@ export default function ProCreneauxPage() {
   const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
   const [praticienSel, setPraticienSel] = useState('');
   const praticienOuNull = praticienSel || null;
+  // Clinique : salle attribuée aux créneaux ajoutés ('' = aucune).
+  const [salles, setSalles] = useState<{ id: string; nom: string }[]>([]);
+  const [salleSel, setSalleSel] = useState('');
   const [indispo, setIndispo] = useState<{ titre: string; date: string; debut: string; fin: string; journee: boolean; praticien: string } | null>(null);
 
   const [weekStart, setWeekStart]           = useState(() => getMonday(new Date()));
@@ -124,6 +127,8 @@ export default function ProCreneauxPage() {
 
   useEffect(() => {
     if (catPro !== 'veterinaire' || !activeProfileId) return;
+    supabase.from('salles_clinique').select('id, nom').eq('clinique_profile_id', activeProfileId).eq('actif', true).order('ordre')
+      .then(({ data }) => setSalles((data ?? []) as { id: string; nom: string }[]));
     supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: activeProfileId }).then(({ data }) => {
       setPraticiens(((data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
         .filter(p => p.praticien_profile_id)
@@ -247,7 +252,7 @@ export default function ProCreneauxPage() {
       if (prestationId) newPres[key] = prestationId;
       if (typeGarde) newTypeGarde[key] = typeGarde;
       if (capacite > 1) newCapacite[key] = capacite;
-      rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, date,
+      rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, ...(catPro === 'veterinaire' ? { salle_id: salleSel || null } : {}), date,
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile,
         prestation_id: prestationId, type_garde: typeGarde, capacite });
       cur += 15;
@@ -338,7 +343,7 @@ export default function ProCreneauxPage() {
           const fin = minsToTime(timeToMins(hhmm) + 15);
           // Reporter type de cours + option domicile + lien prestation, sinon
           // les copies redeviennent des créneaux individuels génériques.
-          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, date: toDateStr(tDay),
+          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, ...(catPro === 'veterinaire' ? { salle_id: salleSel || null } : {}), date: toDateStr(tDay),
             heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
             type_prestation: slotTypes[key] ?? null,
             domicile_ok: slotDomicile[key] ?? false,
@@ -380,7 +385,7 @@ export default function ProCreneauxPage() {
         for (const [key] of daySlots) {
           const hhmm = key.slice(sourceKey.length + 1);
           const fin = minsToTime(timeToMins(hhmm) + 15);
-          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, date: targetKey,
+          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, ...(catPro === 'veterinaire' ? { salle_id: salleSel || null } : {}), date: targetKey,
             heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
             type_prestation: slotTypes[key] ?? null,
             domicile_ok: slotDomicile[key] ?? false,
@@ -431,6 +436,16 @@ export default function ProCreneauxPage() {
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
             <option value="">Moi</option>
             {praticiens.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+        </div>
+      )}
+      {catPro === 'veterinaire' && salles.length > 0 && (
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-gray-500 block mb-1">Salle attribuée (créneaux ajoutés)</label>
+          <select value={salleSel} onChange={e => setSalleSel(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+            <option value="">Aucune (salle libre au moment du RDV)</option>
+            {salles.map(x => <option key={x.id} value={x.id}>{x.nom}</option>)}
           </select>
         </div>
       )}

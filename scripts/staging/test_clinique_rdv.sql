@@ -101,6 +101,17 @@ INSERT INTO creneaux_pro (pro_uid, pro_profile_id, date, heure_debut, heure_fin,
 ROLLBACK TO SAVEPOINT c;
 RESET ROLE;
 
+\echo '── Salle attribuée au praticien (Consult 2) : prioritaire même si Consult 1 est libre'
+INSERT INTO creneaux_pro (pro_uid, pro_profile_id, praticien_profile_id, date, heure_debut, heure_fin, statut, salle_id)
+  VALUES (:'veto', :'clinique', :'prat_profil', '2030-01-09', '10:00', '11:00', 'disponible', '00000000-0000-0000-0000-00000000c002');
+SET LOCAL ROLE anon;
+SELECT set_config('request.jwt.claims', json_build_object('sub', :'client')::text, true) \gset x_
+WITH i AS (INSERT INTO rdv (pro_uid, pro_profile_id, client_uid, client_profile_id, date_heure, duree_minutes, motif, statut, instructeur_profile_id)
+  VALUES (:'veto', :'clinique', :'client', :'client_profil', '2030-01-09 10:15:00 Europe/Paris', 30, 'Consultation', 'demande', :'prat_profil')
+  RETURNING salle_id)
+SELECT '   salle du praticien (c002)              → ' || coalesce(right(salle_id::text, 4), 'aucune') FROM i;
+RESET ROLE;
+
 \echo '── Autre métier (non vétérinaire) : aucun contrôle ajouté'
 UPDATE user_profiles SET profile_type = 'toilettage' WHERE id = :'clinique';
 SET LOCAL ROLE anon;
