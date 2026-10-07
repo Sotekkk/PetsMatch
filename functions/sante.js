@@ -699,15 +699,54 @@ exports.sendInventaireReminders = functions
     // défaut de 60 s coupait la fonction en plein milieu (timeout du
     // 29/09/2026 → rappels sautés pour une partie des animaux).
     .runWith({timeoutSeconds: 540, memory: "512MB"})
-    .pubsub.schedule("0 8 * * *")
+    // 8h10 : après les chaleurs (8h) et la santé (8h05) — pas de rafale de push.
+    .pubsub.schedule("10 8 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
         let sent = 0;
         const todayStr = dateStr(0);
         const empCache = new Map();
+        // Un seul push par destinataire (stock bas + péremptions).
+        const digest = new PushDigest({type: "inventaire_alerte", icone: "📦", libelle: "alertes d'inventaire"});
+
+        // ── Pharmacie : péremption à J-30, J-7 et le jour J ──
+        for (const [palier, jours] of [["j30", 30], ["j7", 7], ["j0", 0]]) {
+            const cible = dateStr(jours);
+            const proches = await supabaseGet(`inventaire_items?date_peremption=eq.${cible}`);
+            if (!Array.isArray(proches)) continue;
+            for (const item of proches) {
+                if (!item.uid_eleveur) continue;
+                const key = `inventaire_peremption_${palier}_${item.id}_${cible}`;
+                const deja = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(key)}`);
+                if (Array.isArray(deja) && deja.length > 0) continue;
+                const lot = item.lot ? ` (lot ${item.lot})` : "";
+                const title = jours === 0 ?
+                    `⛔ Périmé aujourd'hui : ${item.nom}` :
+                    `⏳ Péremption J-${jours} : ${item.nom}`;
+                const body = jours === 0 ?
+                    `${item.nom}${lot} est périmé : à retirer du stock.` :
+                    `${item.nom}${lot} expire dans ${jours} jours.`;
+                digest.add(item.uid_eleveur, title, body,
+                    {type: "inventaire_alerte", itemId: String(item.id), table: "inventaire_items"},
+                    {profileId: item.eleveur_profile_id || null});
+                try {
+                    await supabaseInsert("notifications", [{
+                        uid: item.uid_eleveur, type: "inventaire_alerte", title, body,
+                        data: {itemId: item.id}, read: false,
+                        ...(item.eleveur_profile_id ? {profile_id: item.eleveur_profile_id} : {}),
+                    }]);
+                    await supabaseInsert("notifs_sent", [{key, sent_at: new Date().toISOString()}]);
+                } catch (e) {
+                    console.error(`péremption insert error (${item.id}):`, e.message);
+                }
+            }
+        }
 
         const items = await supabaseGet("inventaire_items?alerte_active=eq.true");
-        if (!Array.isArray(items) || items.length === 0) return null;
+        if (!Array.isArray(items) || items.length === 0) {
+            await digest.flush();
+            return null;
+        }
 
         for (const item of items) {
             const seuil = item.quantite_alerte;
@@ -722,10 +761,9 @@ exports.sendInventaireReminders = functions
             const body = `Il ne reste que ${item.quantite} ${item.unite || ""} de ${item.nom}. ` +
                 "Pensez à commander.";
 
-            const pushed = await sendPush(item.uid_eleveur, title, body, {
+            digest.add(item.uid_eleveur, title, body, {
                 type: "inventaire_alerte", itemId: String(item.id), table: "inventaire_items",
             }, {profileId: item.eleveur_profile_id || null});
-            if (pushed) sent++;
 
             try {
                 await supabaseInsert("notifications", [{
@@ -755,6 +793,7 @@ exports.sendInventaireReminders = functions
                     eleveurUid: item.uid_eleveur,
                     ...(item.eleveur_profile_id ? {eleveurProfileId: item.eleveur_profile_id} : {}),
                 },
+                digest,
             });
 
             try {
@@ -764,7 +803,8 @@ exports.sendInventaireReminders = functions
             }
         }
 
-        console.log(`sendInventaireReminders: ${sent} notifications envoyées.`);
+        sent = await digest.flush();
+        console.log(`sendInventaireReminders: ${sent} destinataires notifiés.`);
         return null;
     });
 

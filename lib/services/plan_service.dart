@@ -178,6 +178,12 @@ class VetPlanConfig {
   final bool hasMultiPraticiens;
   final int maxPraticiens; // -1 = illimité
   final bool hasExportCsv;
+  /// Équipe : assistant(e)s vétérinaires (agenda, brouillons de CR).
+  final bool hasEquipeAsv;
+  /// Inventaire & pharmacie (lots, péremptions, registre des stupéfiants).
+  final bool hasInventaire;
+  /// Salles typées + prise de RDV en ligne par praticien.
+  final bool hasSallesRdv;
   final double prixMensuel;
   final double prixAnnuel;
 
@@ -190,6 +196,9 @@ class VetPlanConfig {
     required this.hasMultiPraticiens,
     required this.maxPraticiens,
     required this.hasExportCsv,
+    this.hasEquipeAsv = false,
+    this.hasInventaire = false,
+    this.hasSallesRdv = false,
     this.prixMensuel = 0,
     this.prixAnnuel = 0,
   });
@@ -647,11 +656,13 @@ class PlanService {
     'avance': VetPlanConfig(
       code: 'avance', label: 'Avancé', hasAccesPermanent: true, hasEcritureCarnetSante: true,
       hasRappelsPush: true, hasMultiPraticiens: false, maxPraticiens: 1, hasExportCsv: false,
+      hasEquipeAsv: true, hasInventaire: true,
       prixMensuel: 29, prixAnnuel: 290,
     ),
     'clinique': VetPlanConfig(
       code: 'clinique', label: 'Clinique', hasAccesPermanent: true, hasEcritureCarnetSante: true,
       hasRappelsPush: true, hasMultiPraticiens: true, maxPraticiens: 5, hasExportCsv: true,
+      hasEquipeAsv: true, hasInventaire: true, hasSallesRdv: true,
       prixMensuel: 49, prixAnnuel: 490,
     ),
   };
@@ -684,6 +695,9 @@ class PlanService {
           hasMultiPraticiens: f['hasMultiPraticiens'] as bool? ?? fallback.hasMultiPraticiens,
           maxPraticiens: (f['maxPraticiens'] as num?)?.toInt() ?? fallback.maxPraticiens,
           hasExportCsv: f['hasExportCsv'] as bool? ?? fallback.hasExportCsv,
+          hasEquipeAsv: f['hasEquipeAsv'] as bool? ?? fallback.hasEquipeAsv,
+          hasInventaire: f['hasInventaire'] as bool? ?? fallback.hasInventaire,
+          hasSallesRdv: f['hasSallesRdv'] as bool? ?? fallback.hasSallesRdv,
           prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
           prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
         );

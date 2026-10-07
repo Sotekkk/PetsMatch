@@ -22,13 +22,25 @@ const PLAN_COLORS: Record<string, string> = {
   clinique: 'border-[#D97706] bg-white ring-2 ring-[#D97706]/20',
 };
 
-function featureLabels(f: Record<string, boolean | number>): string[] {
+// Nouveautés (équipe, salles, inventaire) : repli sur la formule si la
+// grille en base ne porte pas encore la clé — miroir de PlanService (appli).
+const NOUVEAUTES: Record<string, Record<string, boolean>> = {
+  avance:   { hasEquipeAsv: true, hasInventaire: true },
+  clinique: { hasEquipeAsv: true, hasInventaire: true, hasSallesRdv: true },
+};
+
+function featureLabels(f0: Record<string, boolean | number>, code = ''): string[] {
+  const f = { ...(NOUVEAUTES[code] ?? {}), ...f0 };
   const out: string[] = [];
   out.push(f.hasAccesPermanent ? 'Accès lecture permanent' : 'Lecture via token 72h');
   if (f.hasEcritureCarnetSante) out.push('Écriture carnet santé');
   if (f.hasRappelsPush) out.push('Rappels push');
   if (f.hasMultiPraticiens) out.push(f.maxPraticiens === -1 ? 'Multi-praticiens illimité' : `Jusqu'à ${f.maxPraticiens} praticiens`);
   if (f.hasExportCsv) out.push('Export CSV logiciels vétérinaires');
+  if (f.hasEquipeAsv) out.push('Équipe : assistant(e)s vétérinaires (agenda, comptes rendus à valider)');
+  if (f.hasMultiPraticiens) out.push('Vétérinaires praticiens : patients partagés, agenda par praticien');
+  if (f.hasSallesRdv) out.push('Salles typées (consultation, bloc…) et prise de RDV en ligne par vétérinaire');
+  if (f.hasInventaire) out.push('Inventaire & pharmacie : lots, péremptions, registre des stupéfiants');
   return out;
 }
 
@@ -207,7 +219,7 @@ function VeterinaireAbonnementContent() {
                 )}
               </p>
               <ul className="flex-1 space-y-2 mb-6 mt-4">
-                {featureLabels(plan.features ?? {}).map((f, i) => (
+                {featureLabels(plan.features ?? {}, plan.plan_code).map((f, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                     <span className="text-[#6E9E57] mt-0.5 flex-shrink-0">✓</span>
                     {f}

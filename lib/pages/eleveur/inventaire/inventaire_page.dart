@@ -20,13 +20,36 @@ const _categories = [
   ('autre',        '📦', 'Autre',         Color(0xFF718096)),
 ];
 
+// Pharmacie vétérinaire (migration_inventaire_veto.sql).
+const _categoriesVeto = [
+  ('medicament',      '💊', 'Médicaments',          Color(0xFFE53E3E)),
+  ('vaccin',          '💉', 'Vaccins',              Color(0xFF2B6CB0)),
+  ('antiparasitaire', '🛡️', 'Antiparasitaires',     Color(0xFF805AD5)),
+  ('alimentation',    '🥣', 'Alimentation',         Color(0xFF6E9E57)),
+  ('consommable',     '🩹', 'Consommables médicaux', _teal),
+  ('hygiene',         '🧴', 'Hygiène & soins',      Color(0xFF8E24AA)),
+  ('autre',           '📦', 'Autre',                Color(0xFF718096)),
+];
+
 const _unites = ['kg', 'g', 'L', 'mL', 'sac', 'paquet', 'boite', 'unité'];
+const _unitesVeto = ['boite', 'flacon', 'dose', 'comprimé', 'pipette', 'seringue', 'ampoule', 'sac', 'kg', 'mL', 'unité'];
 
-String _catEmoji(String cat) =>
-    _categories.firstWhere((c) => c.$1 == cat, orElse: () => _categories.last).$2;
+(String, String, String, Color) _catDef(String cat) =>
+    _categories.where((c) => c.$1 == cat).firstOrNull
+    ?? _categoriesVeto.where((c) => c.$1 == cat).firstOrNull
+    ?? _categories.last;
 
-Color _catColor(String cat) =>
-    _categories.firstWhere((c) => c.$1 == cat, orElse: () => _categories.last).$4;
+String _catEmoji(String cat) => _catDef(cat).$2;
+
+Color _catColor(String cat) => _catDef(cat).$4;
+
+/// Péremption : null = sans date ; < 0 = périmé ; sinon jours restants.
+int? _joursAvantPeremption(Map<String, dynamic> item) {
+  final d = DateTime.tryParse(item['date_peremption']?.toString() ?? '');
+  if (d == null) return null;
+  final now = DateTime.now();
+  return DateTime(d.year, d.month, d.day).difference(DateTime(now.year, now.month, now.day)).inDays;
+}
 
 String _fmtQte(double q) =>
     q == q.truncateToDouble() ? q.toInt().toString() : q.toStringAsFixed(1);
@@ -49,12 +72,16 @@ class InventairePage extends StatefulWidget {
   /// Ouvre directement la fiche de cet article au chargement (ex. depuis une
   /// notification « Stock bas »).
   final String? focusItemId;
+  /// Pharmacie vétérinaire (lots, péremptions, froid, stupéfiants). Par
+  /// défaut : profil actif vétérinaire.
+  final bool? veto;
   const InventairePage({
     super.key,
     this.eleveurProfileIdOverride,
     this.eleveurUidOverride,
     this.readOnly = false,
     this.focusItemId,
+    this.veto,
   });
   @override
   State<InventairePage> createState() => _InventairePageState();
@@ -65,6 +92,7 @@ class _InventairePageState extends State<InventairePage> {
   final _uid  = FirebaseAuth.instance.currentUser!.uid;
   String? _profileId;
 
+  bool get _veto => widget.veto ?? User_Info.catPro == 'veterinaire';
   bool _loading = true;
   bool _focusHandled = false;
   List<Map<String, dynamic>> _items = [];
@@ -121,6 +149,16 @@ class _InventairePageState extends State<InventairePage> {
 
   // Mise à jour directe ±delta sans dialog
   Future<void> _quickDelta(Map<String, dynamic> item, double delta) async {
+    if (item['stupefiant'] == true) {
+      await showModalBottomSheet(
+        context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+        builder: (_) => _QuickMvtSheet(
+          item: item, type: delta > 0 ? 'restock' : 'consommation',
+          uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, onSaved: _load),
+      );
+      _load();
+      return;
+    }
     final currentQte = (item['quantite'] as num).toDouble();
     final newQte = (currentQte + delta).clamp(0.0, double.infinity);
     final type = delta > 0 ? 'restock' : 'consommation';
@@ -232,9 +270,16 @@ class _InventairePageState extends State<InventairePage> {
           icon: const Icon(Icons.arrow_back_ios_new, color: _dark, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('📦 Inventaire',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
+        title: Text(_veto ? '💊 Inventaire & pharmacie' : '📦 Inventaire',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
         actions: [
+          if (_veto)
+            IconButton(
+              icon: const Icon(Icons.menu_book_outlined, color: _teal),
+              tooltip: 'Registre des stupéfiants',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _RegistreStupefiantsPage(
+                items: _items.where((i) => i['stupefiant'] == true).toList()))),
+            ),
           if (!widget.readOnly)
             IconButton(
               icon: const Icon(Icons.add, color: _teal),
@@ -242,7 +287,7 @@ class _InventairePageState extends State<InventairePage> {
                 await showModalBottomSheet(
                   context: context, isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, onSaved: _load),
+                  builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, veto: _veto, onSaved: _load),
                 );
               },
             ),
@@ -260,9 +305,40 @@ class _InventairePageState extends State<InventairePage> {
   }
 
   Widget _buildContent() {
+    final perimes = _veto ? _items.where((i) => (_joursAvantPeremption(i) ?? 999) < 0).toList() : const [];
+    final bientot = _veto ? _items.where((i) {
+      final j = _joursAvantPeremption(i);
+      return j != null && j >= 0 && j <= 30;
+    }).toList() : const [];
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Péremptions (pharmacie vétérinaire)
+        if (perimes.isNotEmpty || bientot.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFCA5A5)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('⏳ Péremptions — ${perimes.length} périmé(s), ${bientot.length} sous 30 jours',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF991B1B))),
+              const SizedBox(height: 6),
+              for (final a in [...perimes, ...bientot])
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text('${_catEmoji(a['categorie'] as String? ?? 'autre')} ${a['nom']}'
+                      '${(a['lot'] as String?)?.isNotEmpty == true ? ' (lot ${a['lot']})' : ''} — '
+                      '${(_joursAvantPeremption(a) ?? 0) < 0 ? 'périmé' : 'expire dans ${_joursAvantPeremption(a)} j'}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B))),
+                ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+        ],
         // Alertes stock bas
         if (_alertes.isNotEmpty) ...[
           Container(
@@ -299,7 +375,7 @@ class _InventairePageState extends State<InventairePage> {
             children: [
               _CatChip(label: 'Tous (${_items.length})', active: _catFilter == 'tous',
                   color: _dark, onTap: () => setState(() => _catFilter = 'tous')),
-              ..._categories.map((c) {
+              ...(_veto ? _categoriesVeto : _categories).map((c) {
                 final count = _items.where((i) => i['categorie'] == c.$1).length;
                 if (count == 0) return const SizedBox.shrink();
                 return _CatChip(
@@ -341,7 +417,7 @@ class _InventairePageState extends State<InventairePage> {
             onEdit: widget.readOnly ? null : () => showModalBottomSheet(
               context: context, isScrollControlled: true,
               backgroundColor: Colors.transparent,
-              builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, item: item, onSaved: _load),
+              builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, item: item, veto: _veto, onSaved: _load),
             ),
             onDelta: widget.readOnly ? null : (delta) => _quickDelta(item, delta),
             onCreateTask: widget.readOnly ? null : _createCommandeTask,
@@ -456,6 +532,25 @@ class _ItemCard extends StatelessWidget {
                             style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
                       ),
                   ]),
+                  if (item['stupefiant'] == true || item['froid'] == true || item['date_peremption'] != null || item['lot'] != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Wrap(spacing: 6, children: [
+                        if (item['stupefiant'] == true)
+                          const Text('🔒 Stupéfiant', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF991B1B))),
+                        if (item['froid'] == true)
+                          const Text('❄️ +2/+8 °C', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF2B6CB0))),
+                        if ((item['lot'] as String?)?.isNotEmpty == true)
+                          Text('Lot ${item['lot']}', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                        if (_joursAvantPeremption(item) != null)
+                          Text(
+                            (_joursAvantPeremption(item)! < 0)
+                                ? '⛔ Périmé'
+                                : 'Exp. ${DateFormat('dd/MM/yyyy').format(DateTime.parse(item['date_peremption'].toString()))}',
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                                color: _joursAvantPeremption(item)! <= 30 ? const Color(0xFFC53030) : Colors.grey.shade600)),
+                      ]),
+                    ),
                   const SizedBox(height: 2),
                   Text(
                     '${_fmtQte(qte)} ${_plural(unite, qte)}'
@@ -599,6 +694,13 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
       setState(() => _error = 'Quantité invalide');
       return;
     }
+    // Registre des stupéfiants : origine / motif obligatoire.
+    if (widget.item['stupefiant'] == true && _noteCtrl.text.trim().isEmpty) {
+      setState(() => _error = widget.type == 'consommation'
+          ? 'Stupéfiant : indiquez le motif (animal, ordonnance…)'
+          : 'Stupéfiant : indiquez l\'origine (fournisseur, bon de livraison…)');
+      return;
+    }
     setState(() { _saving = true; _error = null; });
 
     try {
@@ -617,6 +719,12 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
         'type': widget.type,
         'quantite': qte,
         'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
+        // Registre des stupéfiants : stock après mouvement + auteur réel (pas
+        // le compte de la structure). Colonnes de migration_inventaire_veto.sql.
+        if (widget.item['stupefiant'] == true) ...{
+          'stock_apres': newQte,
+          'uid_auteur': FirebaseAuth.instance.currentUser?.uid ?? widget.uid,
+        },
       });
       await _supa.from('inventaire_items')
           .update({'quantite': newQte, 'updated_at': DateTime.now().toIso8601String()})
@@ -891,7 +999,8 @@ class _ItemFormSheet extends StatefulWidget {
   final String? profileId;
   final Map<String, dynamic>? item;
   final VoidCallback onSaved;
-  const _ItemFormSheet({required this.uid, this.profileId, this.item, required this.onSaved});
+  final bool veto;
+  const _ItemFormSheet({required this.uid, this.profileId, this.item, required this.onSaved, this.veto = false});
   @override
   State<_ItemFormSheet> createState() => _ItemFormSheetState();
 }
@@ -902,6 +1011,12 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
   final _qteCtrl   = TextEditingController(text: '0');
   final _seuilCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
+  // Pharmacie vétérinaire
+  final _lotCtrl   = TextEditingController();
+  final _prixCtrl  = TextEditingController();
+  DateTime? _peremption;
+  bool _froid = false;
+  bool _stupefiant = false;
 
   String _cat   = 'alimentation';
   String _unite = 'kg';
@@ -924,6 +1039,14 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
       if (item['quantite_alerte'] != null) {
         _seuilCtrl.text = _fmtQte((item['quantite_alerte'] as num).toDouble());
       }
+      _lotCtrl.text = item['lot'] as String? ?? '';
+      if (item['prix_vente'] != null) _prixCtrl.text = (item['prix_vente'] as num).toString();
+      _peremption = DateTime.tryParse(item['date_peremption']?.toString() ?? '');
+      _froid = item['froid'] as bool? ?? false;
+      _stupefiant = item['stupefiant'] as bool? ?? false;
+    } else if (widget.veto) {
+      _cat = 'medicament';
+      _unite = 'boite';
     }
   }
 
@@ -960,6 +1083,13 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
         'alerte_active': _alerte,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'updated_at': DateTime.now().toIso8601String(),
+        if (widget.veto) ...{
+          'lot': _lotCtrl.text.trim().isEmpty ? null : _lotCtrl.text.trim(),
+          'date_peremption': _peremption?.toIso8601String().substring(0, 10),
+          'prix_vente': double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
+          'froid': _froid,
+          'stupefiant': _stupefiant,
+        },
       };
       if (widget.item != null) {
         await _supa.from('inventaire_items').update(payload).eq('id', widget.item!['id']);
@@ -1038,10 +1168,13 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8, runSpacing: 8,
-                children: _categories.map((c) {
+                children: (widget.veto ? _categoriesVeto : _categories).map((c) {
                   final sel = _cat == c.$1;
                   return GestureDetector(
-                    onTap: () => setState(() => _cat = c.$1),
+                    onTap: () => setState(() {
+                      _cat = c.$1;
+                      if (widget.veto && c.$1 == 'vaccin') _froid = true;
+                    }),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                       decoration: BoxDecoration(
@@ -1072,7 +1205,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                   child: DropdownButtonFormField<String>(
                     value: _unite,
                     decoration: _dec('Unité'),
-                    items: _unites.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                    items: {...(widget.veto ? _unitesVeto : _unites), _unite}
+                        .map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
                     onChanged: (v) => setState(() => _unite = v!),
                   ),
                 ),
@@ -1118,6 +1252,45 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
               ),
               const SizedBox(height: 14),
 
+              if (widget.veto) ...[
+                Row(children: [
+                  Expanded(child: TextField(controller: _lotCtrl, decoration: _dec('N° de lot'))),
+                  const SizedBox(width: 10),
+                  Expanded(child: OutlinedButton.icon(
+                    icon: const Icon(Icons.event_outlined, size: 18),
+                    label: Text(_peremption == null
+                        ? 'Péremption'
+                        : DateFormat('dd/MM/yyyy').format(_peremption!)),
+                    onPressed: () async {
+                      final d = await showDatePicker(context: context,
+                          initialDate: _peremption ?? DateTime.now().add(const Duration(days: 365)),
+                          firstDate: DateTime(2020), lastDate: DateTime(2040));
+                      if (d != null) setState(() => _peremption = d);
+                    },
+                  )),
+                ]),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _prixCtrl,
+                  decoration: _dec('Prix de vente (€)', 'si vendu au comptoir'),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('❄️ À conserver au froid (+2 / +8 °C)', style: TextStyle(fontSize: 13)),
+                  value: _froid,
+                  onChanged: (v) => setState(() => _froid = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('🔒 Stupéfiant', style: TextStyle(fontSize: 13)),
+                  subtitle: const Text('Chaque entrée / sortie est inscrite au registre, avec son motif.',
+                      style: TextStyle(fontSize: 11)),
+                  value: _stupefiant,
+                  onChanged: (v) => setState(() => _stupefiant = v),
+                ),
+                const SizedBox(height: 10),
+              ],
               // Notes
               TextField(
                 controller: _notesCtrl,
@@ -1168,6 +1341,111 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
           ]),
         ),
       ]),
+    );
+  }
+}
+
+
+// ── Registre des stupéfiants (pharmacie vétérinaire) ──────────────────────────
+// Entrées / sorties de chaque produit classé stupéfiant, avec le motif, le
+// stock restant après le mouvement et l'auteur. À conserver 10 ans.
+class _RegistreStupefiantsPage extends StatefulWidget {
+  final List<Map<String, dynamic>> items;
+  const _RegistreStupefiantsPage({required this.items});
+  @override
+  State<_RegistreStupefiantsPage> createState() => _RegistreStupefiantsPageState();
+}
+
+class _RegistreStupefiantsPageState extends State<_RegistreStupefiantsPage> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _mvts = [];
+  Map<String, String> _auteurs = {};
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    final ids = widget.items.map((i) => i['id'].toString()).toList();
+    if (ids.isEmpty) { setState(() => _loading = false); return; }
+    try {
+      final rows = List<Map<String, dynamic>>.from(await _supa.from('inventaire_mouvements')
+          .select().inFilter('item_id', ids).order('created_at', ascending: false) as List);
+      final uids = rows.map((r) => r['uid_auteur']?.toString()).whereType<String>().toSet().toList();
+      final noms = <String, String>{};
+      if (uids.isNotEmpty) {
+        for (final u in await _supa.from('users_complet').select('uid, firstname, lastname').inFilter('uid', uids) as List) {
+          noms[u['uid'].toString()] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+        }
+      }
+      if (mounted) setState(() { _mvts = rows; _auteurs = noms; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nomItem = {for (final i in widget.items) i['id'].toString(): i};
+    return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: Colors.white, elevation: 0,
+        iconTheme: const IconThemeData(color: _dark),
+        title: const Text('Registre des stupéfiants',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: _dark)),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _teal))
+          : widget.items.isEmpty
+              ? const Center(child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('Aucun produit marqué « Stupéfiant » dans l\'inventaire.',
+                      textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                ))
+              : ListView(padding: const EdgeInsets.all(16), children: [
+                  Text('Entrées et sorties au fil de l\'eau, stock après mouvement et motif. '
+                      'Registre à conserver 10 ans ; balance mensuelle à faire sur le stock affiché.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  const SizedBox(height: 12),
+                  for (final it in widget.items)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text('🔒 ${it['nom']} — stock actuel : ${_fmtQte((it['quantite'] as num).toDouble())} '
+                          '${_plural(it['unite'] as String? ?? '', (it['quantite'] as num).toDouble())}',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                    ),
+                  const Divider(height: 24),
+                  if (_mvts.isEmpty)
+                    const Text('Aucun mouvement enregistré.', style: TextStyle(color: Colors.grey)),
+                  for (final m in _mvts)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Text(m['type'] == 'consommation' ? '⬇️ Sortie' : '⬆️ Entrée',
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13,
+                                  color: m['type'] == 'consommation' ? Colors.red.shade700 : _green)),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(nomItem[m['item_id'].toString()]?['nom']?.toString() ?? '',
+                              style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                          Text(DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(m['created_at'].toString()).toLocal()),
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                        ]),
+                        const SizedBox(height: 4),
+                        Text('Quantité : ${_fmtQte((m['quantite'] as num).toDouble())}'
+                            '${m['stock_apres'] != null ? '  ·  stock après : ${_fmtQte((m['stock_apres'] as num).toDouble())}' : ''}',
+                            style: const TextStyle(fontSize: 12)),
+                        if ((m['note'] as String?)?.isNotEmpty == true)
+                          Text('Motif : ${m['note']}', style: const TextStyle(fontSize: 12)),
+                        if (_auteurs[m['uid_auteur']?.toString()]?.isNotEmpty == true)
+                          Text('Par ${_auteurs[m['uid_auteur'].toString()]}',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                      ]),
+                    ),
+                ]),
     );
   }
 }

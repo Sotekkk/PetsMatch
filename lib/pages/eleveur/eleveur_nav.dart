@@ -105,6 +105,7 @@ class _EleveurNavState extends State<EleveurNav> {
   int _selectedIndex = 0;
   String _planCode   = 'free';
   String _pensionPlanCode = 'free';
+  String _vetPlanCode = 'free';
   String _educationPlanCode = 'free';
   String _gardePlanCode = 'free';
 
@@ -122,6 +123,11 @@ class _EleveurNavState extends State<EleveurNav> {
   Future<void> _loadPlan() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    if (User_Info.catPro == 'veterinaire') {
+      final code = await PlanService.getVetPlanCode(uid);
+      if (mounted) setState(() => _vetPlanCode = code);
+      return;
+    }
     if (User_Info.catPro == 'pension') {
       final code = await PlanService.getPensionPlanCode(uid);
       if (mounted) setState(() => _pensionPlanCode = code);
@@ -390,6 +396,20 @@ class _EleveurNavState extends State<EleveurNav> {
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const CrAValiderPage()));
+                        },
+                      ),
+                      // Pharmacie : formules Avancé et Clinique.
+                      _DrawerSubItem(
+                        label: 'Inventaire & pharmacie',
+                        icon: Icons.medication_outlined,
+                        locked: !PlanService.getVetConfig(_vetPlanCode).hasInventaire,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => PlanService.getVetConfig(_vetPlanCode).hasInventaire
+                                ? const InventairePage(veto: true)
+                                : const VetAbonnementPage(),
+                          ));
                         },
                       ),
                       _DrawerSubItem(

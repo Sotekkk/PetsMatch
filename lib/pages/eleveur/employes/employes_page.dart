@@ -4682,6 +4682,8 @@ class _EmployeurExpandedCard extends StatelessWidget {
           builder: (_) => InventairePage(
             eleveurProfileIdOverride: eleveurProfileId,
             readOnly: !perms.contains('write_inventaire'),
+            // Clinique : pharmacie (lots, péremptions, stupéfiants).
+            veto: onClinique != null,
           ),
         )) : null,
         child: Container(
