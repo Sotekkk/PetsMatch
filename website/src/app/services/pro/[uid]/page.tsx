@@ -192,6 +192,12 @@ function ProDetailContent() {
   const [sallesParMotif, setSallesParMotif] = useState<Record<string, string>>({});
   const [dureesMotifsPro, setDureesMotifsPro] = useState<Record<string, number>>({});
   const [choixPraticien, setChoixPraticien] = useState('*');
+  // Réglage de la clinique : le client peut choisir son vétérinaire.
+  const [choixPraticienPermis, setChoixPraticienPermis] = useState(true);
+  // RDV commencé sans compte (à la Doctolib) : nom de l'animal saisi, étape
+  // « créer un compte / se connecter / appeler », reprise après connexion.
+  const [animalNomInvite, setAnimalNomInvite] = useState('');
+  const [etapeCompte, setEtapeCompte] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -574,7 +580,9 @@ function ProDetailContent() {
   }
 
   async function openRdv() {
-    if (!user) { router.push('/connexion'); return; }
+    // Sans compte : on laisse choisir motif / vétérinaire / créneau ; le
+    // compte est proposé à la confirmation (etapeCompte).
+    setEtapeCompte(false);
     setShowRdv(true);
     setRdvSuccess(false);
     setMotifKey('');
@@ -605,15 +613,16 @@ function ProDetailContent() {
     // Scopé au profil actif du client réservant le RDV (pas tout le compte
     // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
     // voit les animaux de tous ses profils au lieu du seul profil courant.
+    const moiUid = user?.uid ?? '-';
     let animauxQ = supabase.from('animaux').select('id, nom, espece, race, photo_url')
-      .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
+      .or(`uid_eleveur.eq.${moiUid},uid_proprietaire.eq.${moiUid}`)
       .order('nom');
     if (activeProfileId) animauxQ = animauxQ.eq('profile_id', activeProfileId);
     // animaux_proprietes = source de vérité pour la propriété actuelle
     // (notamment après une cession — animaux.uid_proprietaire n'est pas
     // mis à jour lors d'une cession, seul animaux_proprietes l'est).
     let ownQ = supabase.from('animaux_proprietes').select('animal_id')
-      .eq('uid_proprio', user.uid).is('date_fin', null);
+      .eq('uid_proprio', moiUid).is('date_fin', null);
     if (activeProfileId) ownQ = ownQ.eq('profile_id_proprio', activeProfileId);
     // Créneaux : PostgREST plafonne à 1000 lignes/réponse → un pro très chargé
     // ne verrait jamais les dates lointaines. On pagine.
@@ -667,13 +676,14 @@ function ProDetailContent() {
         const [{ data: pr }, { data: sa }, { data: pf }] = await Promise.all([
           supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: profileId }),
           supabase.rpc('pm_salles_actives', { p_pro_profile_id: profileId }),
-          supabase.from('user_profiles_complet').select('salles_par_motif, durees_motifs').eq('id', profileId).maybeSingle(),
+          supabase.from('user_profiles_complet').select('salles_par_motif, durees_motifs, rdv_choix_praticien').eq('id', profileId).maybeSingle(),
         ]);
         setPraticiens(((pr ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
           .map(p => ({ id: p.praticien_profile_id, nom: p.nom?.trim() || 'Vétérinaire' })));
         setSalles(((sa ?? []) as { id: string; type_salle: string }[]).map(x => ({ id: x.id, type: x.type_salle })));
         setSallesParMotif((pf?.salles_par_motif ?? {}) as Record<string, string>);
         setDureesMotifsPro((pf?.durees_motifs ?? {}) as Record<string, number>);
+        setChoixPraticienPermis(pf?.rdv_choix_praticien !== false);
       }
     }
     const [slotsRes, animauxRes, ownRes, rdvsDuJour, clientAdresse] = await Promise.all([
@@ -681,7 +691,7 @@ function ProDetailContent() {
       animauxQ,
       ownQ,
       fetchRdvsDuJour(),
-      pro?.cat_pro === 'sante' ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
+      pro?.cat_pro === 'sante' && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
     ]);
     setRdvsDuJourByDate(rdvsDuJour);
     if (clientAdresse) {
@@ -695,7 +705,7 @@ function ProDetailContent() {
     // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
     // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
     // cette exigence dans son profil).
-    if (pro?.cat_pro === 'education') {
+    if (pro?.cat_pro === 'education' && user) {
       const { data: priorRdv } = await supabase.from('rdv').select('id')
         .eq('client_uid', user.uid).eq('pro_uid', uid).eq('pro_profile_id', profileId)
         .in('statut', ['confirme', 'termine']).limit(1);
@@ -763,7 +773,40 @@ function ProDetailContent() {
 
   const isTaxi = pro?.cat_pro === 'taxi_animalier';
 
+  // Sélection mémorisée pendant l'inscription / la connexion.
+  const CLE_RDV = 'pm_rdv_en_attente';
+  function memoriserRdv() {
+    try {
+      sessionStorage.setItem(CLE_RDV, JSON.stringify({
+        proUid: uid, motifKey, choixPraticien, slot: selectedSlot, notes, animalNom: animalNomInvite,
+        premiereVisite, savedAt: Date.now(),
+      }));
+    } catch { /* stockage indisponible : l'utilisateur reprendra sa sélection */ }
+  }
+
+  useEffect(() => {
+    if (!user || !pro || showRdv) return;
+    if (new URLSearchParams(window.location.search).get('rdv') !== 'reprise') return;
+    let p: { proUid: string; motifKey: string; choixPraticien: string; slot: Slot | null; notes: string; animalNom: string; premiereVisite: boolean | null; savedAt: number } | null = null;
+    try { p = JSON.parse(sessionStorage.getItem(CLE_RDV) ?? 'null'); } catch { p = null; }
+    if (!p || p.proUid !== uid || Date.now() - p.savedAt > 24 * 3600_000) return;
+    const pending = p;
+    sessionStorage.removeItem(CLE_RDV);
+    router.replace(window.location.pathname);
+    (async () => {
+      await openRdv();
+      setMotifKey(pending.motifKey);
+      setChoixPraticien(pending.choixPraticien || '*');
+      setNotes(pending.notes ?? '');
+      setAnimalNomInvite(pending.animalNom ?? '');
+      setPremiereVisite(pending.premiereVisite);
+      if (pending.slot) { setSelectedDate(pending.slot.date); setSelectedSlot(pending.slot); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, pro]);
+
   async function confirmRdv() {
+    if (!user && motifKey && pro) { memoriserRdv(); setEtapeCompte(true); return; }
     if (!motifKey || !user || !pro) return;
     if (!isGardeJournee && !selectedSlot) return;
     if (premiereRequise && premiereVisite === null) return;
@@ -821,6 +864,7 @@ function ProDetailContent() {
           ...(pro.cat_pro === 'veterinaire' && slot.praticien ? { instructeur_profile_id: slot.praticien } : {}),
           pro_uid: pro.uid, client_uid: user.uid,
           animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
+          ...(!selectedAnimalId && !isTaxi && animalNomInvite.trim() ? { animal_nom_manuel: animalNomInvite.trim() } : {}),
           date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
           statut: 'demande',
           motif: `${motifLabel}${premiereSuffix}`,
@@ -1702,7 +1746,7 @@ function ProDetailContent() {
                   </div>
 
                   {/* Clinique : choix du vétérinaire (miroir appli) */}
-                  {pro.cat_pro === 'veterinaire' && praticiens.length > 1 && (
+                  {pro.cat_pro === 'veterinaire' && praticiens.length > 1 && choixPraticienPermis && (
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
                         style={{ fontFamily: 'Galey, sans-serif' }}>Vétérinaire</p>
@@ -1808,7 +1852,12 @@ function ProDetailContent() {
                   <div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
                       style={{ fontFamily: 'Galey, sans-serif' }}>Pour quel animal ?</p>
-                    {animaux.length === 0 ? (
+                    {!user ? (
+                      <input value={animalNomInvite} onChange={e => setAnimalNomInvite(e.target.value)}
+                        placeholder="Nom de votre animal (ex. Rex, chien)"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none"
+                        style={{ fontFamily: 'Galey, sans-serif' }} />
+                    ) : animaux.length === 0 ? (
                       <div className="flex items-center gap-2 bg-gray-50 rounded-xl px-4 py-3">
                         <span className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
                           Aucun animal enregistré —{' '}
@@ -2000,13 +2049,36 @@ function ProDetailContent() {
                     </div>
                   )}
 
+                  {etapeCompte && !user ? (
+                    <div className="rounded-2xl border border-gray-200 p-4 space-y-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      <p className="font-bold text-[#1E2025]">Dernière étape : identifiez-vous</p>
+                      <p className="text-xs text-gray-500">Votre créneau est mémorisé. Créez votre compte PetsMatch gratuit (1 minute) ou connectez-vous pour confirmer le rendez-vous.</p>
+                      <Link href={`/inscription?suite=${encodeURIComponent(`/services/pro/${uid}?rdv=reprise`)}`}
+                        className="block w-full text-center py-3 rounded-xl text-white font-bold text-sm" style={{ backgroundColor: catColor }}>
+                        Créer mon compte
+                      </Link>
+                      <Link href={`/connexion?suite=${encodeURIComponent(`/services/pro/${uid}?rdv=reprise`)}`}
+                        className="block w-full text-center py-3 rounded-xl border font-semibold text-sm" style={{ borderColor: catColor, color: catColor }}>
+                        J&apos;ai déjà un compte
+                      </Link>
+                      {pro.phone && (
+                        <p className="text-xs text-gray-500 text-center pt-1">
+                          Vous préférez ne pas créer de compte ? Appelez directement{' '}
+                          <a href={`tel:${pro.phone.replace(/[^0-9+]/g, '')}`} className="font-semibold underline" style={{ color: catColor }}>
+                            le {pro.phone}
+                          </a>.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
                   <button
                     onClick={confirmRdv}
                     disabled={saving || !canConfirm}
                     className="w-full py-4 rounded-2xl text-white font-bold text-sm disabled:opacity-40 transition-opacity"
                     style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>
-                    {saving ? '…' : 'Confirmer la demande de RDV'}
+                    {saving ? '…' : user ? 'Confirmer la demande de RDV' : 'Continuer'}
                   </button>
+                  )}
 
                 </div>
               )}

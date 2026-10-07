@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,6 +19,19 @@ export default function ConnexionPage() {
   const [noAccount, setNoAccount] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Lien « Créer un compte » : garde le retour (?suite=) d'un RDV commencé sans compte.
+  const [inscriptionHref, setInscriptionHref] = useState('/inscription');
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get('suite');
+    if (s && s.startsWith('/') && !s.startsWith('//')) setInscriptionHref(`/inscription?suite=${encodeURIComponent(s)}`);
+  }, []);
+
+  // Retour après connexion (ex. RDV commencé sans compte) — chemin interne seulement.
+  function suite(): string {
+    const s = new URLSearchParams(window.location.search).get('suite');
+    return s && s.startsWith('/') && !s.startsWith('//') ? s : '/';
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -26,7 +39,7 @@ export default function ConnexionPage() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      router.push('/');
+      router.push(suite());
     } catch (err) {
       const code = (err as { code?: string })?.code ?? '';
       if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
@@ -45,7 +58,7 @@ export default function ConnexionPage() {
     setLoading(true);
     try {
       await signInWithPopup(auth, new GoogleAuthProvider());
-      router.push('/');
+      router.push(suite());
     } catch {
       setError('Connexion Google annulée ou échouée.');
     } finally {
@@ -118,7 +131,7 @@ export default function ConnexionPage() {
                 {noAccount && (
                   <>
                     {' '}
-                    <Link href="/inscription" className="text-[#0C5C6C] font-semibold hover:underline">
+                    <Link href={inscriptionHref} className="text-[#0C5C6C] font-semibold hover:underline">
                       Créer un compte
                     </Link>
                   </>
@@ -160,7 +173,7 @@ export default function ConnexionPage() {
 
           <p className="text-center text-sm text-gray-500 mt-6">
             Pas encore de compte ?{' '}
-            <Link href="/inscription" className="text-[#0C5C6C] font-semibold hover:underline">
+            <Link href={inscriptionHref} className="text-[#0C5C6C] font-semibold hover:underline">
               S'inscrire
             </Link>
           </p>

@@ -36,6 +36,8 @@ class _SallesCliniquePageState extends State<SallesCliniquePage> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _salles = [];
   Map<String, String> _parMotif = {};
+  /// Les clients peuvent choisir leur vétérinaire à la réservation.
+  bool _choixPraticien = true;
   bool _loading = true;
 
   String get _pid => AgendaContexte.profileId;
@@ -51,7 +53,8 @@ class _SallesCliniquePageState extends State<SallesCliniquePage> {
     try {
       final s = await _supa.from('salles_clinique').select()
           .eq('clinique_profile_id', _pid).order('ordre').order('created_at');
-      final p = await _supa.from('user_profiles_complet').select('salles_par_motif').eq('id', _pid).maybeSingle();
+      final p = await _supa.from('user_profiles_complet').select('salles_par_motif, rdv_choix_praticien').eq('id', _pid).maybeSingle();
+      _choixPraticien = p?['rdv_choix_praticien'] as bool? ?? true;
       final m = <String, String>{};
       if (p?['salles_par_motif'] is Map) {
         (p!['salles_par_motif'] as Map).forEach((k, v) => m[k.toString()] = v.toString());
@@ -157,7 +160,26 @@ class _SallesCliniquePageState extends State<SallesCliniquePage> {
               Text('Un RDV en ligne n\'est proposé que si un vétérinaire ET une salle du bon type sont libres. '
                   'Sans salle déclarée, seuls les vétérinaires comptent.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              Card(
+                margin: EdgeInsets.zero,
+                child: SwitchListTile(
+                  title: const Text('Les clients peuvent choisir leur vétérinaire',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                  subtitle: Text(_choixPraticien
+                      ? '« Peu importe » ou un vétérinaire précis, au choix du client.'
+                      : 'Le premier vétérinaire libre est attribué automatiquement.',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  value: _choixPraticien,
+                  onChanged: (v) async {
+                    setState(() => _choixPraticien = v);
+                    try {
+                      await _supa.from('user_profiles').update({'rdv_choix_praticien': v}).eq('id', _pid);
+                    } catch (e) { _err(e); }
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
               const Text('Salles', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 8),
               if (_salles.isEmpty)

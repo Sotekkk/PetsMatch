@@ -102,3 +102,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- ── Choix du vétérinaire par le client (réglage de la clinique) ─────────
+-- true (défaut) : à la réservation, le client choisit « peu importe » ou un
+-- vétérinaire ; false : premier vétérinaire libre, sans choix proposé.
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS rdv_choix_praticien boolean NOT NULL DEFAULT true;
+SELECT public.pm_recreer_vues_perso();
+SELECT public.pm_appliquer_droits_perso();

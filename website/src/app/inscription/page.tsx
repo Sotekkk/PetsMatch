@@ -198,6 +198,17 @@ export default function InscriptionPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>('role');
   const [role, setRole] = useState<Role>('particulier');
+  // RDV commencé sans compte : inscription particulier directe, puis retour
+  // sur la fiche du pro (?suite=) une fois l'e-mail vérifié.
+  const [suiteRdv, setSuiteRdv] = useState<string | null>(null);
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get('suite');
+    if (s && s.startsWith('/') && !s.startsWith('//')) {
+      setSuiteRdv(s);
+      setRole('particulier');
+      setStep('info');
+    }
+  }, []);
 
   // Step info — communs
   const [firstname, setFirstname] = useState('');
@@ -456,7 +467,7 @@ export default function InscriptionPage() {
       await createProfile(cred.user.uid, email);
       // Vérification de l'adresse e-mail (comme l'appli) avant d'accéder au site.
       try { await sendEmailVerification(cred.user); } catch { /* renvoi possible depuis /verifier-email */ }
-      router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : '/')}`);
+      router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/'))}`);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
       if (code === 'auth/email-already-in-use') {
@@ -465,7 +476,7 @@ export default function InscriptionPage() {
           const existing = await signInWithEmailAndPassword(auth, email, password);
           await updateProfile(existing.user, { displayName: `${firstname} ${lastname}`.trim() });
           await createProfile(existing.user.uid, email); // upsert idempotent
-          const suite = isEleveurOrPro ? '/en-attente-validation' : '/';
+          const suite = isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/');
           if (!existing.user.emailVerified) {
             try { await sendEmailVerification(existing.user); } catch { /* renvoi possible depuis /verifier-email */ }
             router.push(`/verifier-email?suite=${encodeURIComponent(suite)}`);
@@ -501,7 +512,7 @@ export default function InscriptionPage() {
         is_pro: false,
         cgu_accepted_at: new Date().toISOString(),
       }, { uid: cred.user.uid });
-      router.push('/');
+      router.push(suiteRdv ?? '/');
     } catch {
       setError('Connexion Google annulée ou échouée.');
     } finally {

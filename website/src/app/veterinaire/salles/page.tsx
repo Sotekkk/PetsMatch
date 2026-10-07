@@ -20,6 +20,8 @@ export default function SallesPage() {
   const { id: pid, loaded } = useActiveProfileState();
   const [salles, setSalles] = useState<Salle[]>([]);
   const [parMotif, setParMotif] = useState<Record<string, string>>({});
+  // Les clients peuvent choisir leur vétérinaire à la réservation.
+  const [choixPraticien, setChoixPraticien] = useState(true);
   const [fetching, setFetching] = useState(true);
   const [edit, setEdit] = useState<{ id?: string; nom: string; type_salle: string } | null>(null);
 
@@ -29,10 +31,11 @@ export default function SallesPage() {
     if (!user || !loaded || !pid) { setFetching(false); return; }
     const [{ data: s }, { data: p }] = await Promise.all([
       supabase.from('salles_clinique').select('id, nom, type_salle, actif, ordre').eq('clinique_profile_id', pid).order('ordre').order('created_at'),
-      supabase.from('user_profiles_complet').select('salles_par_motif').eq('id', pid).maybeSingle(),
+      supabase.from('user_profiles_complet').select('salles_par_motif, rdv_choix_praticien').eq('id', pid).maybeSingle(),
     ]);
     setSalles((s ?? []) as Salle[]);
     setParMotif(((p?.salles_par_motif ?? {}) as Record<string, string>));
+    setChoixPraticien(p?.rdv_choix_praticien !== false);
     setFetching(false);
   }, [user, loaded, pid]);
 
@@ -85,6 +88,22 @@ export default function SallesPage() {
         <button onClick={() => setEdit({ nom: '', type_salle: 'consultation' })}
           className="bg-[#0C5C6C] text-white text-sm font-semibold px-4 py-2 rounded-xl whitespace-nowrap">+ Salle</button>
       </div>
+
+      <label className="flex items-start gap-3 bg-white border border-gray-100 rounded-xl p-4 cursor-pointer">
+        <input type="checkbox" className="mt-1 w-4 h-4 accent-[#0C5C6C]" checked={choixPraticien}
+          onChange={async e => {
+            const v = e.target.checked;
+            setChoixPraticien(v);
+            const { error } = await supabase.from('user_profiles').update({ rdv_choix_praticien: v }).eq('id', pid);
+            if (error) alert(error.message);
+          }} />
+        <span>
+          <span className="block text-sm font-semibold text-[#1F2A2E]">Les clients peuvent choisir leur vétérinaire</span>
+          <span className="block text-xs text-gray-500">
+            {choixPraticien ? '« Peu importe » ou un vétérinaire précis, au choix du client.' : 'Le premier vétérinaire libre est attribué automatiquement.'}
+          </span>
+        </span>
+      </label>
 
       <section className="space-y-2">
         <h2 className="font-bold text-[#1F2A2E]">Salles</h2>

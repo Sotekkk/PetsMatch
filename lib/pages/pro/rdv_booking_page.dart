@@ -118,6 +118,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Map<String, String> _sallesParMotif = {};
   /// '*' = peu importe ; '' = titulaire ; sinon profil du praticien.
   String _choixPraticien = '*';
+  /// Réglage de la clinique : le client peut choisir son vétérinaire.
+  bool _choixPraticienPermis = true;
   bool get _modeClinique => widget.isVet && (_praticiens.length > 1 || _salles.isNotEmpty);
   int _selectedVetDuration = 30;
 
@@ -619,7 +621,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         final sa = await Supabase.instance.client.rpc('pm_salles_actives', params: {'p_pro_profile_id': profileId});
         _salles = [for (final x in sa as List) (id: x['id'] as String, type: (x['type_salle'] as String?) ?? 'consultation')];
         final prof = await Supabase.instance.client.from('user_profiles_complet')
-            .select('salles_par_motif').eq('id', profileId).maybeSingle();
+            .select('salles_par_motif, rdv_choix_praticien').eq('id', profileId).maybeSingle();
+        _choixPraticienPermis = prof?['rdv_choix_praticien'] as bool? ?? true;
         if (prof?['salles_par_motif'] is Map) {
           _sallesParMotif = Map<String, String>.from(
               (prof!['salles_par_motif'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())));
@@ -1777,7 +1780,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // ── Vet motif ─────────────────────────────────────────────────────────────────
 
   List<Widget> _buildChoixPraticien() => [
-    if (_praticiens.length > 1) ...[
+    if (_praticiens.length > 1 && _choixPraticienPermis) ...[
       const SizedBox(height: 18),
       _sectionTitle('Vétérinaire'),
       const SizedBox(height: 10),
