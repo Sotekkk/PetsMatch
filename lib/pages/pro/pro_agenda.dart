@@ -105,6 +105,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // du compte, sinon employe_profile_id du praticien).
   String? _filtrePraticien;
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
+  /// Onglet Créneaux (clinique) : disponibilités de quel praticien
+  /// ('' = titulaire). Un praticien employé gère les siennes.
+  String _praticienCreneaux = '';
+  String? get _praticienCreneauxOuNull => _praticienCreneaux.isEmpty ? null : _praticienCreneaux;
 
   List<Map<String, dynamic>> get _rdvsFiltres {
     final f = _filtrePraticien;
@@ -211,7 +215,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         setState(() {
           _employes = result; _employesLoaded = true;
           if (monFiltre != null && _filtrePraticien == null) _filtrePraticien = monFiltre;
+          if (monFiltre != null) _praticienCreneaux = monFiltre;
         });
+        if (monFiltre != null) _loadCreneaux();
       }
     } catch (_) {
       if (mounted) setState(() => _employesLoaded = true);
@@ -278,6 +284,123 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     User_Info.profileNotifier.removeListener(_onProfileChange);
     _tabCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _ajouterIndisponibilite() async {
+    final titreCtrl = TextEditingController(text: 'Indisponible');
+    DateTime jour = DateTime.now();
+    TimeOfDay debut = const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay fin = const TimeOfDay(hour: 12, minute: 0);
+    bool journee = false;
+    String praticien = _praticienCreneaux;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        String hm(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Indisponibilité', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+            const SizedBox(height: 4),
+            Text('Aucun RDV ne pourra être pris en ligne sur cette période.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 14),
+            TextField(controller: titreCtrl, decoration: const InputDecoration(
+                labelText: 'Motif (congé, réunion, formation…)', border: OutlineInputBorder())),
+            if (_estClinique && _employes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: praticien,
+                decoration: const InputDecoration(labelText: 'Vétérinaire concerné', border: OutlineInputBorder()),
+                items: [
+                  DropdownMenuItem(value: '',
+                      child: Text(AgendaContexte.pourEmployeur ? 'Titulaire de la clinique' : 'Moi')),
+                  for (final e in _employes) DropdownMenuItem(value: e.profileId, child: Text(e.nom)),
+                ],
+                onChanged: (v) => setM(() => praticien = v ?? ''),
+              ),
+            ],
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.calendar_today_outlined, size: 18),
+              label: Text('${jour.day.toString().padLeft(2, '0')}/${jour.month.toString().padLeft(2, '0')}/${jour.year}'),
+              onPressed: () async {
+                final d = await showDatePicker(context: ctx, initialDate: jour,
+                    firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                    lastDate: DateTime.now().add(const Duration(days: 365)));
+                if (d != null) setM(() => jour = d);
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Toute la journée', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              value: journee,
+              onChanged: (v) => setM(() => journee = v),
+            ),
+            if (!journee)
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: () async {
+                    final t = await showTimePicker(context: ctx, initialTime: debut);
+                    if (t != null) setM(() => debut = t);
+                  },
+                  child: Text('De ${hm(debut)}'),
+                )),
+                const SizedBox(width: 10),
+                Expanded(child: OutlinedButton(
+                  onPressed: () async {
+                    final t = await showTimePicker(context: ctx, initialTime: fin);
+                    if (t != null) setM(() => fin = t);
+                  },
+                  child: Text('à ${hm(fin)}'),
+                )),
+              ]),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        );
+      }),
+    );
+    if (ok != true) return;
+    final d0 = journee
+        ? DateTime(jour.year, jour.month, jour.day, 0, 0)
+        : DateTime(jour.year, jour.month, jour.day, debut.hour, debut.minute);
+    final d1 = journee
+        ? DateTime(jour.year, jour.month, jour.day, 23, 59)
+        : DateTime(jour.year, jour.month, jour.day, fin.hour, fin.minute);
+    if (!d1.isAfter(d0)) {
+      _showErr("L'heure de fin doit être après l'heure de début.");
+      return;
+    }
+    try {
+      final pid = _resolveProProfileId();
+      await Supabase.instance.client.from('agenda_events').insert({
+        'uid': AgendaContexte.uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
+        'titre': titreCtrl.text.trim().isEmpty ? 'Indisponible' : titreCtrl.text.trim(),
+        'type': 'indisponible',
+        'date_debut': d0.toUtc().toIso8601String(),
+        'date_fin': d1.toUtc().toIso8601String(),
+        'duree_minutes': d1.difference(d0).inMinutes,
+        if (praticien.isNotEmpty) 'praticien_profile_id': praticien,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Indisponibilité enregistrée.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      _showErr(e);
+    }
   }
 
   Future<void> _loadRdvs() async {
@@ -2695,6 +2818,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         title: Text(AgendaContexte.pourEmployeur ? 'Agenda de la clinique' : 'Mon agenda',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
+          // Congé, réunion, formation… : bloque la prise de RDV en ligne
+          // (pm_plages_occupees + contrôle en base pour les cliniques).
+          IconButton(
+            icon: const Icon(Icons.event_busy_outlined),
+            tooltip: 'Ajouter une indisponibilité',
+            onPressed: _ajouterIndisponibilite,
+          ),
           if (_estClinique && _employes.isNotEmpty)
             PopupMenuButton<String>(
               tooltip: 'Filtrer par praticien',
@@ -2918,6 +3048,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           .gte('date', _weekStart.toIso8601String().substring(0, 10))
           .lte('date', weekEnd.toIso8601String().substring(0, 10));
       if (pid.isNotEmpty) creneauxQ = creneauxQ.eq('pro_profile_id', pid);
+      // Clinique : créneaux du praticien choisi (titulaire = sans praticien).
+      creneauxQ = _praticienCreneauxOuNull == null
+          ? creneauxQ.isFilter('praticien_profile_id', null)
+          : creneauxQ.eq('praticien_profile_id', _praticienCreneaux);
       final rows = await creneauxQ;
 
       bool chevauchementOk = true;
@@ -3051,7 +3185,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         if (typeGarde != null) { _slotTypeGarde[key] = typeGarde; } else { _slotTypeGarde.remove(key); }
         if (capacite > 1) { _slotCapacite[key] = capacite; } else { _slotCapacite.remove(key); }
       });
-      slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
+      slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'praticien_profile_id': _praticienCreneauxOuNull, 'date': date,
           'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
           'domicile_ok': domicileOk, 'prestation_id': prestationId, 'capacite': capacite,
           'type_garde': typeGarde});
@@ -3059,7 +3193,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
     try {
       await Supabase.instance.client.from('creneaux_pro')
-          .upsert(slots, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
+          .upsert(slots, onConflict: 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut');
     } catch (e) {
       final keys = slots.map((s) {
         final hd = s['heure_debut'] as String;
@@ -3085,9 +3219,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
     if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); _slotPrestationIds.remove(k); _slotTypeGarde.remove(k); } });
     try {
-      await Supabase.instance.client.from('creneaux_pro').delete()
+      var del = Supabase.instance.client.from('creneaux_pro').delete()
           .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('date', date)
           .inFilter('heure_debut', hdList);
+      del = _praticienCreneauxOuNull == null
+          ? del.isFilter('praticien_profile_id', null)
+          : del.eq('praticien_profile_id', _praticienCreneaux);
+      await del;
     } catch (e) { if (mounted) _showErr(e); }
   }
 
@@ -3559,6 +3697,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           rows.add({
             'pro_uid':        uid,
             'pro_profile_id': pid,
+            'praticien_profile_id': _praticienCreneauxOuNull,
             'date':           dateStr,
             'heure_debut':    heureDebut,
             'heure_fin':      heureFin,
@@ -3588,7 +3727,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           seen.add('${r["date"]}_${r["heure_debut"]}')
       ).toList();
 
-      await supa.from('creneaux_pro').upsert(deduped, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
+      await supa.from('creneaux_pro').upsert(deduped, onConflict: 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut');
 
       if (mounted) {
         final nbSemaines = deduped.length ~/ weekSlots.length;
@@ -3690,6 +3829,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           rows.add({
             'pro_uid':        uid,
             'pro_profile_id': pid,
+            'praticien_profile_id': _praticienCreneauxOuNull,
             'date':           targetKey,
             'heure_debut':    heureDebut,
             'heure_fin':      heureFin,
@@ -3709,7 +3849,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final deduped = rows.where((r) => seen.add('${r["date"]}_${r["heure_debut"]}')).toList();
 
       await Supabase.instance.client.from('creneaux_pro')
-          .upsert(deduped, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
+          .upsert(deduped, onConflict: 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut');
 
       await _loadCreneaux();
 
@@ -3752,6 +3892,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
 
     return Column(children: [
+      // Clinique : de qui saisit-on les disponibilités ?
+      if (_estClinique && _employes.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: DropdownButtonFormField<String>(
+            initialValue: _praticienCreneaux,
+            decoration: const InputDecoration(labelText: 'Disponibilités de', border: OutlineInputBorder(), isDense: true),
+            items: [
+              DropdownMenuItem(value: '',
+                  child: Text(AgendaContexte.pourEmployeur ? 'Titulaire de la clinique' : 'Moi')),
+              for (final e in _employes) DropdownMenuItem(value: e.profileId, child: Text(e.nom)),
+            ],
+            onChanged: (v) {
+              setState(() => _praticienCreneaux = v ?? '');
+              _loadCreneaux();
+            },
+          ),
+        ),
       // Navigation semaine
       Padding(
         padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),

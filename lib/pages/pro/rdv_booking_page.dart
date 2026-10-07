@@ -110,6 +110,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   ];
 
   String? _selectedVetMotif;
+
+  // Clinique vétérinaire (migration_clinique_rdv.sql) : praticiens (titulaire
+  // = id null), salles actives (id, type), motif → type de salle.
+  List<({String? id, String nom})> _praticiens = [];
+  List<({String id, String type})> _salles = [];
+  Map<String, String> _sallesParMotif = {};
+  /// '*' = peu importe ; '' = titulaire ; sinon profil du praticien.
+  String _choixPraticien = '*';
+  bool get _modeClinique => widget.isVet && (_praticiens.length > 1 || _salles.isNotEmpty);
   int _selectedVetDuration = 30;
 
   // Durées et motifs dynamiques (chargés depuis le profil du pro)
@@ -571,7 +580,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       for (var page = 0; page < 6; page++) {
         final rows = await Supabase.instance.client
             .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde, domicile_ok, trajet_origine')
+            .select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde, domicile_ok, trajet_origine, praticien_profile_id')
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
             .eq('pro_profile_id', profileId)
@@ -588,16 +597,117 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       _availableSlots = all;
     } catch (_) {}
 
+    // Plages occupées de TOUS les clients (+ indisponibilités du pro), sans
+    // donnée personnelle : depuis la RLS, un client ne lit que SES rdv — la
+    // lecture directe ignorait les créneaux pris par les autres.
     try {
-      final rows = await Supabase.instance.client
-          .from('rdv')
-          .select('date_heure, duree_minutes, statut, employe_id, motif, lieu_lat, lieu_lng')
-          .eq('pro_uid', widget.proUid)
-          .eq('pro_profile_id', profileId)
-          .inFilter('statut', ['confirme', 'demande'])
-          .gte('date_heure', now.toUtc().toIso8601String());
+      final rows = await Supabase.instance.client.rpc('pm_plages_occupees', params: {
+        'p_pro_profile_id': profileId,
+        'p_debut': now.toUtc().toIso8601String(),
+        'p_fin': maxDt.add(const Duration(days: 1)).toUtc().toIso8601String(),
+      });
       _existingRdvs = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
+    if (widget.isVet && profileId.isNotEmpty) {
+      try {
+        final pr = await Supabase.instance.client.rpc('pm_praticiens_clinique', params: {'p_pro_profile_id': profileId});
+        _praticiens = [
+          for (final p in pr as List)
+            (id: p['praticien_profile_id'] as String?, nom: (p['nom'] as String?)?.trim().isNotEmpty == true
+                ? p['nom'] as String : 'Vétérinaire'),
+        ];
+        final sa = await Supabase.instance.client.rpc('pm_salles_actives', params: {'p_pro_profile_id': profileId});
+        _salles = [for (final x in sa as List) (id: x['id'] as String, type: (x['type_salle'] as String?) ?? 'consultation')];
+        final prof = await Supabase.instance.client.from('user_profiles_complet')
+            .select('salles_par_motif').eq('id', profileId).maybeSingle();
+        if (prof?['salles_par_motif'] is Map) {
+          _sallesParMotif = Map<String, String>.from(
+              (prof!['salles_par_motif'] as Map).map((k, v) => MapEntry(k.toString(), v.toString())));
+        }
+      } catch (_) {}
+    }
+  }
+
+  /// Clinique : créneaux libres par praticien ET salle du type du motif.
+  /// « Peu importe » : premier praticien libre à chaque horaire.
+  Map<String, List<Map<String, dynamic>>> _slotsClinique() {
+    final duration = _selectedDuration;
+    final now = DateTime.now();
+    final earliestBookable = _delaiMinReservationH > 0
+        ? now.add(Duration(hours: _delaiMinReservationH))
+        : now.add(const Duration(minutes: 30));
+    final domicileMode = _hasDomicileOption && _domicile;
+    final cle = _selectedVetMotif ?? 'consultation';
+    final typeSalle = _sallesParMotif[cle] ?? 'consultation';
+    final sallesDuType = domicileMode || _salles.isEmpty
+        ? <String>{}
+        : {for (final x in _salles) if (x.type == typeSalle) x.id};
+    // Clinique avec salles mais aucune de ce type → aucun créneau.
+    if (!domicileMode && _salles.isNotEmpty && sallesDuType.isEmpty) return {};
+
+    final candidats = _choixPraticien == '*'
+        ? _praticiens
+        : _praticiens.where((p) => (p.id ?? '') == _choixPraticien).toList();
+    final occupe = <({String date, int s, int e, String? praticien, String? salle})>[];
+    for (final r in _existingRdvs) {
+      final dh = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
+      if (dh == null) continue;
+      final d = '${dh.year}-${dh.month.toString().padLeft(2,'0')}-${dh.day.toString().padLeft(2,'0')}';
+      final st = dh.hour * 60 + dh.minute;
+      occupe.add((date: d, s: st, e: st + ((r['duree_minutes'] as num?)?.toInt() ?? 30),
+          praticien: r['praticien_profile_id'] as String?, salle: r['salle_id'] as String?));
+    }
+
+    final result = <String, Map<int, String?>>{}; // date → début → praticien
+    for (final p in candidats) {
+      // Fenêtres de ce praticien (créneaux sans praticien = titulaire).
+      final parDate = <String, List<({int s, int e})>>{};
+      for (final slot in _availableSlots) {
+        if ((slot['praticien_profile_id'] as String? ?? '') != (p.id ?? '')) continue;
+        if (domicileMode && slot['domicile_ok'] != true) continue;
+        final sp = (slot['heure_debut'] as String).split(':');
+        final ep = (slot['heure_fin'] as String).split(':');
+        parDate.putIfAbsent(slot['date'] as String, () => []).add((
+          s: int.parse(sp[0]) * 60 + int.parse(sp[1]),
+          e: int.parse(ep[0]) * 60 + int.parse(ep[1])));
+      }
+      for (final entry in parDate.entries) {
+        final date = entry.key;
+        final dp = date.split('-');
+        final jour = DateTime(int.parse(dp[0]), int.parse(dp[1]), int.parse(dp[2]));
+        final fen = entry.value..sort((a, b) => a.s.compareTo(b.s));
+        final fusion = <({int s, int e})>[];
+        for (final w in fen) {
+          if (fusion.isNotEmpty && w.s <= fusion.last.e) {
+            fusion[fusion.length - 1] = (s: fusion.last.s, e: w.e > fusion.last.e ? w.e : fusion.last.e);
+          } else {
+            fusion.add(w);
+          }
+        }
+        final duJour = occupe.where((o) => o.date == date).toList();
+        for (final w in fusion) {
+          for (int t = w.s; t + duration <= w.e; t += 15) {
+            if (jour.add(Duration(minutes: t)).isBefore(earliestBookable)) continue;
+            final chevauche = duJour.where((o) => t < o.e && t + duration > o.s);
+            if (chevauche.any((o) => (o.praticien ?? '') == (p.id ?? ''))) continue;
+            if (sallesDuType.isNotEmpty &&
+                chevauche.where((o) => o.salle != null && sallesDuType.contains(o.salle)).length >= sallesDuType.length) {
+              continue;
+            }
+            result.putIfAbsent(date, () => {}).putIfAbsent(t, () => p.id);
+          }
+        }
+      }
+    }
+    String hm(int m) => '${(m ~/ 60).toString().padLeft(2,'0')}:${(m % 60).toString().padLeft(2,'0')}:00';
+    return {
+      for (final e in result.entries)
+        e.key: [
+          for (final t in (e.value.keys.toList()..sort()))
+            {'date': e.key, 'heure_debut': hm(t), 'heure_fin': hm(t + duration),
+             'praticien_profile_id': e.value[t]},
+        ],
+    };
   }
 
   /// Un créneau accepte la garde-journée si `type_garde` est nul ou `'journee'`.
@@ -640,6 +750,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   // Créneaux intelligents : 15 min d'intervalle, en tenant compte des RDVs existants
   Map<String, List<Map<String, dynamic>>> get _smartSlotsByDate {
+    if (_modeClinique) return _slotsClinique();
     final duration = _selectedDuration;
     if (_availableSlots.isEmpty) return {};
 
@@ -1014,6 +1125,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             'notes_client': _notesCtrl.text.trim(),
           'duree_minutes': dureeToSend,
           'statut': 'demande',
+          if (_modeClinique && _selectedSlot?['praticien_profile_id'] != null)
+            'instructeur_profile_id': _selectedSlot!['praticien_profile_id'],
         };
       }).toList();
 
@@ -1069,7 +1182,18 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         Navigator.pop(context, true);
       }
     } catch (e) {
-      if (mounted) _snack('Erreur : $e', color: Colors.red);
+      // Contrôle en base (clinique) : créneau pris entre-temps → message clair
+      // et créneaux rechargés.
+      final msg = e is PostgrestException ? e.message : e.toString();
+      if (msg.contains("vient d'être pris") || msg.contains('Plus de salle')) {
+        await _loadAvailableSlots();
+        if (mounted) {
+          setState(() => _selectedSlot = null);
+          _snack(msg, color: Colors.orange);
+        }
+      } else if (mounted) {
+        _snack('Erreur : $e', color: Colors.red);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1261,7 +1385,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   List<Widget> _buildMotifSection() {
     if (widget.isPension) return _buildPensionMotif();
-    if (widget.isVet) return _buildVetMotif();
+    if (widget.isVet) return [..._buildVetMotif(), ..._buildChoixPraticien()];
     if (widget.isPhotographe || widget.isToilettage) return _buildPrestationSection();
     // Pour les autres pros : motifs dynamiques si configurés, sinon champ libre
     return _buildDynamicMotif();
@@ -1651,6 +1775,26 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   }
 
   // ── Vet motif ─────────────────────────────────────────────────────────────────
+
+  List<Widget> _buildChoixPraticien() => [
+    if (_praticiens.length > 1) ...[
+      const SizedBox(height: 18),
+      _sectionTitle('Vétérinaire'),
+      const SizedBox(height: 10),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final c in [(id: '*', nom: 'Peu importe'), for (final p in _praticiens) (id: p.id ?? '', nom: p.nom)])
+          ChoiceChip(
+            label: Text(c.nom, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _choixPraticien == c.id ? Colors.white : const Color(0xFF1E2025))),
+            selected: _choixPraticien == c.id,
+            selectedColor: widget.categoryColor,
+            backgroundColor: Colors.white,
+            onSelected: (_) => setState(() { _choixPraticien = c.id; _selectedSlot = null; }),
+          ),
+      ]),
+    ],
+  ];
 
   List<Widget> _buildVetMotif() => [
     _sectionTitle('Motif de la consultation *'),

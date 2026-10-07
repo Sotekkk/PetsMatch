@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/salles_clinique_page.dart';
 import 'package:PetsMatch/pages/pro/cr_a_valider_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
@@ -389,6 +390,14 @@ class _EleveurNavState extends State<EleveurNav> {
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const CrAValiderPage()));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Salles & motifs',
+                        icon: Icons.meeting_room_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const SallesCliniquePage()));
                         },
                       ),
                       // Équipe (ASV dès Avancé, praticiens en Clinique —

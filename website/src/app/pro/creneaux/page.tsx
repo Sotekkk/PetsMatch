@@ -255,7 +255,7 @@ export default function ProCreneauxPage() {
       return n;
     });
     try {
-      await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
+      await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut' });
       await syncHorairesSummary(merged);
     } catch {
       setSlots(s => { const n = { ...s }; Object.keys(newSlots).forEach(k => delete n[k]); return n; });
@@ -335,7 +335,7 @@ export default function ProCreneauxPage() {
         const k = `${r.date}_${r.heure_debut}`;
         return seen.has(k as string) ? false : (seen.add(k as string), true);
       });
-      if (deduped.length) await supabase.from('creneaux_pro').upsert(deduped, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
+      if (deduped.length) await supabase.from('creneaux_pro').upsert(deduped, { onConflict: 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut' });
     } catch { /* ignore */ }
     setReplicating(false);
   }
@@ -376,7 +376,7 @@ export default function ProCreneauxPage() {
         const k = `${r.date}_${r.heure_debut}`;
         return seen.has(k as string) ? false : (seen.add(k as string), true);
       });
-      if (deduped.length) await supabase.from('creneaux_pro').upsert(deduped, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
+      if (deduped.length) await supabase.from('creneaux_pro').upsert(deduped, { onConflict: 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut' });
       await loadSlots();
     } catch { /* ignore */ }
     setCopying(false);

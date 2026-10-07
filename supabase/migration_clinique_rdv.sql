@@ -71,6 +71,17 @@ ALTER TABLE agenda_events ADD COLUMN IF NOT EXISTS praticien_profile_id uuid REF
 ALTER TABLE rdv           ADD COLUMN IF NOT EXISTS salle_id uuid REFERENCES salles_clinique(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_rdv_profil_date ON public.rdv (pro_profile_id, date_heure);
 
+-- Unicité d'un créneau : par PRATICIEN (deux vétérinaires de la même
+-- clinique peuvent être disponibles à la même heure). NULLS NOT DISTINCT :
+-- les créneaux du titulaire (praticien vide) restent uniques.
+-- ⚠ Les upserts appli / site utilisent désormais
+--   onConflict 'pro_uid,pro_profile_id,praticien_profile_id,date,heure_debut'
+--   → déployer appli + site avec cette migration.
+ALTER TABLE creneaux_pro DROP CONSTRAINT IF EXISTS creneaux_pro_uid_profile_date_heure_key;
+ALTER TABLE creneaux_pro DROP CONSTRAINT IF EXISTS creneaux_pro_praticien_date_heure_key;
+ALTER TABLE creneaux_pro ADD CONSTRAINT creneaux_pro_praticien_date_heure_key
+  UNIQUE NULLS NOT DISTINCT (pro_uid, pro_profile_id, praticien_profile_id, date, heure_debut);
+
 -- Créneaux : en plus du titulaire / cogérant, l'équipe « agenda » de CE
 -- profil, et chaque praticien pour SES créneaux.
 DROP POLICY IF EXISTS creneaux_pro_write ON public.creneaux_pro;
