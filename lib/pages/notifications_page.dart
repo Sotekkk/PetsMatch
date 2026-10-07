@@ -28,6 +28,8 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart';
+import 'package:PetsMatch/pages/pro/cr_a_valider_page.dart';
 import 'package:PetsMatch/pages/particulier/influencer_request_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
@@ -656,6 +658,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // Balades ludiques : nouvel avis (créateur) ou parcours terminé (joueur)
     // → fiche du parcours.
     // Animal en co-propriété déclaré perdu → Mes alertes.
+    // Clinique : brouillon d'ASV à valider → liste des CR à valider.
+    if (type == 'cr_a_valider') {
+      // Praticien employé : ouvrir au nom de la clinique (pas son profil).
+      final cUid = data is Map ? data['cliniqueUid']?.toString() : null;
+      final cPid = data is Map ? data['cliniqueProfileId']?.toString() : null;
+      final pourClinique = cUid != null && cPid != null && cUid != FirebaseAuth.instance.currentUser?.uid;
+      if (pourClinique) AgendaContexte.ouvrir(uid: cUid, profileId: cPid, catPro: 'veterinaire');
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const CrAValiderPage()));
+      if (pourClinique) AgendaContexte.fermer();
+      return;
+    }
     // Badge influenceur accordé / refusé / retiré (admin du site) → page de
     // la demande, qui affiche le statut.
     if (type == 'influenceur_approuve' || type == 'influenceur_refuse' ||

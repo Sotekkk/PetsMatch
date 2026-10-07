@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/cr_a_valider_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
@@ -380,6 +381,26 @@ class _EleveurNavState extends State<EleveurNav> {
                         onTap: () {
                           Navigator.pop(context);
                           ChipScannerService.scanFromVet(context);
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Comptes rendus à valider',
+                        icon: Icons.task_alt_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const CrAValiderPage()));
+                        },
+                      ),
+                      // Équipe (ASV dès Avancé, praticiens en Clinique —
+                      // contrôlé à l'ajout, cf. controleFormuleVeto).
+                      _DrawerSubItem(
+                        label: 'Mon équipe',
+                        icon: Icons.groups_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EmployesPage(profileType: 'veterinaire'),
+                          ));
                         },
                       ),
                       _DrawerSubItem(

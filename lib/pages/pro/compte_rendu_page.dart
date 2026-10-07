@@ -1,12 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/contexte_pro.dart';
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
 /// Peut être ouvert avec un RDV précis (`rdv`) ou directement depuis la fiche
@@ -54,11 +53,34 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   bool _loadingDocs = true;
   String? _proProfileId;
 
+  // Équipe vétérinaire : un ASV rédige des brouillons, un vétérinaire valide
+  // (contrôlé aussi en base). Titulaire : tous les droits.
+  bool _peutValider = true;
+  bool _peutOrdonnances = true;
+
+  /// Profil du compte pro concerné : celui du RDV, sinon le contexte
+  /// (profil actif, ou clinique pour un employé) — jamais `is_main`
+  /// (multi-profil : un véto peut avoir un profil élevage principal).
+  String? get _profilPro {
+    final r = widget.rdv?['pro_profile_id']?.toString();
+    if (r != null && r.isNotEmpty) return r;
+    final c = AgendaContexte.profileId;
+    return c.isNotEmpty ? c : null;
+  }
+
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: widget.isPension ? 1 : 2, vsync: this);
+    _proProfileId = _profilPro;
+    _chargerDroits();
     _loadExisting();
+  }
+
+  Future<void> _chargerDroits() async {
+    final v = await AgendaContexte.peut('vet_cr_valider');
+    final o = await AgendaContexte.peut('vet_ordonnances');
+    if (mounted) setState(() { _peutValider = v; _peutOrdonnances = o; });
   }
 
   @override
@@ -119,12 +141,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     }
     try {
       List crs, ordos;
-      final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final vetUid = AgendaContexte.uid ?? '';
       final aid = animalId ?? '';
-      if (_proProfileId == null && vetUid.isNotEmpty) {
-        final row = await _supa.from('user_profiles_complet').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
-        _proProfileId = row?['id'] as String?;
-      }
       final proFilter  = _proProfileId != null ? 'pro_profile_id' : 'pro_uid';
       final proValue   = _proProfileId ?? vetUid;
       if (rdvId != null) {
@@ -151,7 +169,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   Future<void> _saveCompteRendu() async {
-    final proUid  = FirebaseAuth.instance.currentUser?.uid;
+    final proUid  = AgendaContexte.uid;
+    final moi     = AgendaContexte.moi;
     final contenu = _crContenuCtrl.text.trim();
     if (proUid == null || contenu.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -166,12 +185,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final animalId = widget.animalId ?? widget.rdv?['animal_id'];
     try {
       final owner = await _resolveOwner();
-      final proProfileId = User_Info.activeProfileId.isNotEmpty
-          ? User_Info.activeProfileId : _proProfileId;
+      final proProfileId = _profilPro;
+      final monProfil = await AgendaContexte.monProfil();
+      final statut = _peutValider ? 'valide' : 'brouillon';
       String? docUrl;
       if (_crFile != null) {
         final name = '${DateTime.now().millisecondsSinceEpoch}.${_crFile!.path.split('.').last}';
-        docUrl = await uploadDocument(_crFile!, 'comptes_rendus/$proUid/$name');
+        // Dossier de l'auteur (règles de stockage) ; la lecture passe par
+        // la référence du CR (lien-document), pas par le dossier.
+        docUrl = await uploadDocument(_crFile!, 'comptes_rendus/${moi ?? proUid}/$name');
       }
       await _insertRecord('comptes_rendus', {
         'pro_uid'   : proUid,
@@ -183,14 +205,25 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       }, {
         if (proProfileId != null && proProfileId.isNotEmpty) 'pro_profile_id': proProfileId,
         if (owner.profileId != null) 'owner_profile_id': owner.profileId,
+        'statut': statut,
+        if (moi != null) 'redige_par_uid': moi,
+        if (monProfil != null) 'redige_par_profile_id': monProfil,
+        if (statut == 'valide' && monProfil != null) 'valide_par_profile_id': monProfil,
       });
-      await _notifyOwner(isOrdo: false);
+      if (statut == 'valide') {
+        await _notifyOwner(isOrdo: false);
+      } else {
+        await _notifyValideurs();
+      }
       _crContenuCtrl.clear();
       setState(() => _crFile = null);
       await _loadExisting();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Compte rendu enregistré.', style: TextStyle(fontFamily: 'Galey')),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(statut == 'valide'
+              ? 'Compte rendu enregistré.'
+              : 'Brouillon enregistré — un vétérinaire doit le valider avant envoi au propriétaire.',
+              style: const TextStyle(fontFamily: 'Galey')),
           behavior: SnackBarBehavior.floating,
         ));
       }
@@ -269,6 +302,77 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     return _owner!;
   }
 
+  /// Valide un brouillon (vétérinaire) → visible et notifié au propriétaire.
+  Future<void> _validerCr(Map<String, dynamic> cr) async {
+    try {
+      final monProfil = await AgendaContexte.monProfil();
+      await _supa.from('comptes_rendus').update({
+        'statut': 'valide',
+        if (monProfil != null) 'valide_par_profile_id': monProfil,
+      }).eq('id', cr['id']);
+      await _notifyOwner(isOrdo: false);
+      await _loadExisting();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Compte rendu validé et envoyé au propriétaire.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  /// Brouillon d'ASV : prévient le titulaire de la clinique et les
+  /// vétérinaires qui peuvent valider (scopé au profil clinique).
+  Future<void> _notifyValideurs() async {
+    try {
+      final cliniqueUid = AgendaContexte.uid;
+      final cliniqueProfil = _profilPro;
+      var animalNom = (widget.rdv?['_animal_nom'] ?? widget.rdv?['animal_nom'] ?? '').toString();
+      final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+      if (animalNom.isEmpty && animalId != null) {
+        final a = await _supa.from('animaux').select('nom').eq('id', animalId).maybeSingle();
+        animalNom = (a?['nom'] as String?) ?? '';
+      }
+      final auteur = '${User_Info.firstname} ${User_Info.lastname}'.replaceAll('none', '').trim();
+      final destinataires = <({String uid, String? profileId})>[
+        if (cliniqueUid != null) (uid: cliniqueUid, profileId: cliniqueProfil),
+      ];
+      if (cliniqueProfil != null) {
+        final vetos = await _supa.from('employe_permissions').select('employe_profile_id')
+            .eq('eleveur_profile_id', cliniqueProfil).eq('permission', 'vet_cr_valider');
+        final ids = [for (final v in vetos as List) v['employe_profile_id'] as String];
+        if (ids.isNotEmpty) {
+          final emps = await _supa.from('employes').select('uid_employe, employe_profile_id')
+              .eq('eleveur_profile_id', cliniqueProfil).eq('actif', true).inFilter('employe_profile_id', ids);
+          for (final e in emps as List) {
+            final u = e['uid_employe'] as String?;
+            if (u != null && u != AgendaContexte.moi) {
+              destinataires.add((uid: u, profileId: e['employe_profile_id'] as String?));
+            }
+          }
+        }
+      }
+      for (final d in destinataires) {
+        await _supa.from('notifications').insert({
+          'uid': d.uid,
+          'type': 'cr_a_valider',
+          'title': '📝 Compte rendu à valider${animalNom.isEmpty ? '' : ' — $animalNom'}',
+          'body': '${auteur.isEmpty ? 'Un(e) assistant(e)' : auteur} a rédigé un compte rendu à relire et valider.',
+          if (d.profileId != null) 'profile_id': d.profileId,
+          'data': {'animalId': animalId, 'cliniqueProfileId': cliniqueProfil, 'cliniqueUid': cliniqueUid},
+          'read': false,
+        });
+      }
+    } catch (_) {}
+  }
+
   /// Prévient le propriétaire qu'un compte rendu / une ordonnance a été ajouté.
   Future<void> _notifyOwner({required bool isOrdo}) async {
     try {
@@ -304,7 +408,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   Future<void> _saveOrdonnance() async {
-    final proUid = FirebaseAuth.instance.currentUser?.uid;
+    final proUid = AgendaContexte.uid;
+    final moi = AgendaContexte.moi;
     if (proUid == null || _ordoFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Veuillez sélectionner un fichier PDF.',
@@ -318,10 +423,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final animalId = widget.animalId ?? widget.rdv?['animal_id'];
     try {
       final owner = await _resolveOwner();
-      final proProfileId = User_Info.activeProfileId.isNotEmpty
-          ? User_Info.activeProfileId : _proProfileId;
+      final proProfileId = _profilPro;
+      final monProfil = await AgendaContexte.monProfil();
       final name   = '${DateTime.now().millisecondsSinceEpoch}.${_ordoFile!.path.split('.').last}';
-      final docUrl = await uploadDocument(_ordoFile!, 'ordonnances/$proUid/$name');
+      final docUrl = await uploadDocument(_ordoFile!, 'ordonnances/${moi ?? proUid}/$name');
       final today  = DateTime.now();
       await _insertRecord('ordonnances', {
         'pro_uid'  : proUid,
@@ -334,6 +439,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       }, {
         if (proProfileId != null && proProfileId.isNotEmpty) 'pro_profile_id': proProfileId,
         if (owner.profileId != null) 'owner_profile_id': owner.profileId,
+        if (moi != null) 'praticien_uid': moi,
+        if (monProfil != null) 'praticien_profile_id': monProfil,
       });
       await _notifyOwner(isOrdo: true);
       setState(() => _ordoFile = null);
@@ -413,7 +520,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           if (_crs.isNotEmpty) ...[
             _sectionTitle('Comptes rendus existants'),
             const SizedBox(height: 8),
-            ..._crs.map((cr) => _CrCard(cr: cr, color: widget.categoryColor, onDelete: () => _deleteDoc('comptes_rendus', cr['id'].toString()))),
+            ..._crs.map((cr) => _CrCard(cr: cr, color: widget.categoryColor,
+                onDelete: (cr['statut'] != 'brouillon' && !_peutValider)
+                    ? null : () => _deleteDoc('comptes_rendus', cr['id'].toString()),
+                onValider: (cr['statut'] == 'brouillon' && _peutValider) ? () => _validerCr(cr) : null)),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
@@ -495,6 +605,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             const SizedBox(height: 8),
           ],
 
+          if (!_peutOrdonnances)
+            Text("La prescription est réservée aux vétérinaires de la clinique.",
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600))
+          else ...[
           _sectionTitle('Nouvelle ordonnance'),
           const SizedBox(height: 12),
 
@@ -547,6 +661,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               ),
             ),
           ),
+          ],
           const SizedBox(height: 40),
         ],
       ),
@@ -577,7 +692,8 @@ class _CrCard extends StatelessWidget {
   final Map<String, dynamic> cr;
   final Color color;
   final VoidCallback? onDelete;
-  const _CrCard({required this.cr, required this.color, this.onDelete});
+  final VoidCallback? onValider;
+  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider});
 
   @override
   Widget build(BuildContext context) {
@@ -598,6 +714,15 @@ class _CrCard extends StatelessWidget {
           if (date != null)
             Text('${date.day}/${date.month}/${date.year}',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          if (cr['statut'] == 'brouillon') ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(color: const Color(0xFFFFF4E0), borderRadius: BorderRadius.circular(8)),
+              child: const Text('Brouillon — à valider',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFB26A00))),
+            ),
+          ],
           const Spacer(),
           if (onDelete != null)
             GestureDetector(onTap: onDelete,
@@ -620,6 +745,18 @@ class _CrCard extends StatelessWidget {
                       color: color, fontWeight: FontWeight.w600,
                       decoration: TextDecoration.underline)),
             ]),
+          ),
+        ],
+        if (onValider != null) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
+              onPressed: onValider,
+              icon: const Icon(Icons.task_alt, size: 16),
+              label: const Text('Valider et envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+            ),
           ),
         ],
       ]),

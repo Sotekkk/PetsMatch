@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
@@ -49,7 +49,9 @@ class ProAgendaPage extends StatefulWidget {
   // 3=Créneaux) — permet d'ouvrir directement sur "Mes créneaux" depuis
   // le menu, sans dupliquer la logique déjà présente dans cette page.
   final int initialTabIndex;
-  const ProAgendaPage({super.key, this.initialTabIndex = 0});
+  /// Agenda d'une clinique ouvert par un de ses employés (null = le mien).
+  final ({String uid, String profileId, String catPro})? employeur;
+  const ProAgendaPage({super.key, this.initialTabIndex = 0, this.employeur});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -99,6 +101,27 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Équipe d'intervenants — employés assignables à un RDV (instructeur_profile_id)
   List<({String profileId, String nom})> _employes = [];
   bool _employesLoaded = false;
+  // Clinique vétérinaire : filtre par praticien (null = tous, '' = titulaire
+  // du compte, sinon employe_profile_id du praticien).
+  String? _filtrePraticien;
+  bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
+
+  List<Map<String, dynamic>> get _rdvsFiltres {
+    final f = _filtrePraticien;
+    if (f == null) return _rdvs;
+    return _rdvs.where((r) => (r['instructeur_profile_id']?.toString() ?? '') == f).toList();
+  }
+
+  /// Praticien assigné (clinique), pour l'affichage sur la carte.
+  String? _nomPraticien(Map<String, dynamic> rdv) {
+    if (!_estClinique || _employes.isEmpty) return null;
+    final id = rdv['instructeur_profile_id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    for (final e in _employes) {
+      if (e.profileId == id) return '🩺 ${e.nom}';
+    }
+    return null;
+  }
 
   // Durées par motif (pour pré-remplir le dialog de confirmation)
   Map<String, int> _dureesMotifs = {};
@@ -112,6 +135,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   @override
   void initState() {
     super.initState();
+    final emp = widget.employeur;
+    if (emp != null) {
+      AgendaContexte.ouvrir(uid: emp.uid, profileId: emp.profileId, catPro: emp.catPro);
+    } else {
+      AgendaContexte.fermer();
+    }
     _tabCtrl = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
     final now = DateTime.now();
     _weekStart = now.subtract(Duration(days: now.weekday - 1));
@@ -127,12 +156,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Équipe d'intervenants — employés assignables à un RDV/cours (ordre de
   // grandeur : quelques personnes, chargés une fois par ouverture de page).
   Future<void> _loadEmployes() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     try {
-      final pid = User_Info.activeProfileId;
+      final pid = AgendaContexte.profileId;
       var q = Supabase.instance.client.from('employes')
-          .select('uid_employe, employe_profile_id').eq('actif', true);
+          .select('uid_employe, employe_profile_id, role_pro').eq('actif', true);
       q = pid.isNotEmpty ? q.eq('eleveur_profile_id', pid) : q.eq('uid_eleveur', uid);
       final emps = await q;
       if (emps.isEmpty) { if (mounted) setState(() => _employesLoaded = true); return; }
@@ -166,6 +195,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       for (final e in emps) {
         final pfid = e['employe_profile_id'] as String?;
         if (pfid == null) continue;
+        // Clinique : un RDV s'attribue à un vétérinaire, pas à un(e) ASV.
+        if (_estClinique && e['role_pro'] != 'veterinaire') continue;
         final u = uidByProfileId[pfid];
         final nom = (u != null ? nameByUid[u] : null) ?? 'Employé';
         result.add((profileId: pfid, nom: nom.isNotEmpty ? nom : 'Employé'));
@@ -184,12 +215,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // Séances du jour (RDV + cours collectifs confondus, via agenda_events).
   Future<void> _loadAujourdhui() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     // Même résolution de profil que _loadRdvs() — si le profil actif n'est
     // pas encore renseigné, ne pas afficher sans filtre (fuite cross-profil),
     // mais retomber sur le premier profil pro disponible.
-    String pid = User_Info.activeProfileId;
+    String pid = AgendaContexte.profileId;
     if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
       final proProfile = User_Info.availableProfiles.firstWhere(
         (p) => p['profile_type'] != 'particulier',
@@ -215,7 +246,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _loadDureesMotifs() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     try {
       final row = await Supabase.instance.client
@@ -232,16 +263,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   @override
   void dispose() {
+    if (widget.employeur != null) AgendaContexte.fermer();
     User_Info.profileNotifier.removeListener(_onProfileChange);
     _tabCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _loadRdvs() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) { setState(() => _loading = false); return; }
     // Si le profil actif est vide, utiliser le premier profil pro disponible
-    String pid = User_Info.activeProfileId;
+    String pid = AgendaContexte.profileId;
     if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
       final proProfile = User_Info.availableProfiles.firstWhere(
         (p) => p['profile_type'] != 'particulier',
@@ -380,15 +412,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// validation par le pro (cf. remontée bêta : rien ne signalait la
   /// demande d'inscription à un cours collectif dans cet agenda).
   Future<void> _loadCoursCollectifs() async {
-    if (User_Info.catPro != 'education') return;
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (AgendaContexte.catPro != 'education') return;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     try {
       final nowIso = DateTime.now().toUtc().toIso8601String();
       var q = Supabase.instance.client.from('cours_collectifs')
           .select('id, titre, date_heure, duree_minutes, pro_profile_id, lieu, lieu_lat, lieu_lng')
           .eq('pro_uid', uid).neq('statut', 'annule').gte('date_heure', nowIso);
-      final pid = User_Info.activeProfileId;
+      final pid = AgendaContexte.profileId;
       if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
       final cours = await q.order('date_heure', ascending: true);
       final coursList = List<Map<String, dynamic>>.from(cours as List);
@@ -506,11 +538,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     ]);
   }
 
-  List<Map<String, dynamic>> get _demandes => _rdvs.where((r) =>
+  List<Map<String, dynamic>> get _demandes => _rdvsFiltres.where((r) =>
       r['statut'] == 'demande' || r['statut'] == 'contre_proposition').toList();
   List<Map<String, dynamic>> get _avenir {
     final now = DateTime.now();
-    return _rdvs.where((r) {
+    return _rdvsFiltres.where((r) {
       if (r['statut'] != 'confirme') return false;
       final dh = DateTime.tryParse(r['date_heure'] ?? '');
       return dh != null && dh.isAfter(now);
@@ -518,7 +550,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
   List<Map<String, dynamic>> get _historique {
     final now = DateTime.now();
-    return _rdvs.where((r) {
+    return _rdvsFiltres.where((r) {
       if (r['statut'] == 'demande') return false;
       if (r['statut'] == 'contre_proposition') return false;
       if (r['statut'] == 'confirme') {
@@ -962,7 +994,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
       final rdv = _rdvs.firstWhere((r) => r['id'].toString() == rdvId, orElse: () => {});
       final clientUid = rdv['client_uid'] as String?;
-      final proUid    = FirebaseAuth.instance.currentUser?.uid;
+      final proUid    = AgendaContexte.uid;
       final names = await _rdvEventNames(rdv);
       final proName = names.proName;
       final clientName = names.clientName;
@@ -1120,9 +1152,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               if (_employes.isNotEmpty) ...[
                 DropdownButtonFormField<String?>(
                   initialValue: instructeurProfileId,
-                  decoration: const InputDecoration(labelText: 'Intervenant assigné', border: OutlineInputBorder()),
+                  decoration: InputDecoration(
+                      labelText: _estClinique ? 'Praticien' : 'Intervenant assigné',
+                      border: const OutlineInputBorder()),
                   items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Moi')),
+                    DropdownMenuItem<String?>(value: null,
+                        child: Text(AgendaContexte.pourEmployeur ? 'Titulaire de la clinique' : 'Moi')),
                     for (final e in _employes)
                       DropdownMenuItem<String?>(value: e.profileId, child: Text(e.nom)),
                   ],
@@ -1180,7 +1215,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       }).eq('id', rdvId);
 
       final clientUid = rdv['client_uid'] as String?;
-      final proUid = FirebaseAuth.instance.currentUser?.uid;
+      final proUid = AgendaContexte.uid;
       final names = await _rdvEventNames(rdv);
       final proName = names.proName;
       final clientName = names.clientName;
@@ -1233,7 +1268,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // lien de signature, sur le modèle de _genererContratSignature (garde,
   // registre_visites_page.dart).
   Future<void> _genererContratPhoto(Map<String, dynamic> rdv) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final planCode = await PlanService.getPlanCode(uid, profilType: 'photographe');
     if (planCode != 'essentiel') {
@@ -1281,7 +1316,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
         final row = await supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
-          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+          if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
           'animal_id': rdv['animal_id'],
           'rdv_id': rdv['id'],
           'type': 'contrat_prestation_photo',
@@ -1336,7 +1371,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Toiletteur — génère (ou récupère) le contrat de prestation, même
   // principe que _genererContratPhoto.
   Future<void> _genererContratToilettage(Map<String, dynamic> rdv) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final planCode = await PlanService.getPlanCode(uid, profilType: 'toilettage');
     if (planCode == 'free') {
@@ -1384,7 +1419,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
         final row = await supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
-          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+          if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
           'animal_id': rdv['animal_id'],
           'rdv_id': rdv['id'],
           'type': 'contrat_prestation_toilettage',
@@ -1437,7 +1472,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Maréchal-ferrant — génère (ou récupère) le contrat de prestation, même
   // principe que _genererContratPhoto / _genererContratToilettage.
   Future<void> _genererContratMarechal(Map<String, dynamic> rdv) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final planCode = await PlanService.getPlanCode(uid, profilType: 'marechal_ferrant');
     if (planCode == 'free') {
@@ -1478,7 +1513,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (token == null) {
         final row = await supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
-          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+          if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
           'animal_id': rdv['animal_id'],
           'rdv_id': rdv['id'],
           'type': 'contrat_prestation_marechal',
@@ -1528,7 +1563,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // Photographe — facture (acompte ou complète) via le moteur commun.
   Future<void> _facturerPhoto(Map<String, dynamic> rdv) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final supa = Supabase.instance.client;
 
@@ -1619,9 +1654,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _facturerConsultation(Map<String, dynamic> rdv) async {
     final prix = (rdv['prix'] as num?)?.toDouble() ??
         (rdv['prix_calcule'] as num?)?.toDouble() ?? 0;
-    final libelle = User_Info.catPro == 'marechal_ferrant'
+    final libelle = AgendaContexte.catPro == 'marechal_ferrant'
         ? 'Intervention maréchalerie'
-        : User_Info.catPro == 'veterinaire'
+        : AgendaContexte.catPro == 'veterinaire'
             ? 'Consultation vétérinaire'
             : 'Séance ${User_Info.professionPro.isNotEmpty ? User_Info.professionPro.toLowerCase() : 'de soin'}';
     await Navigator.push(context, MaterialPageRoute(
@@ -1651,8 +1686,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     // confirme depuis son profil actif → c'est celui-là qu'il faut nommer,
     // pas User_Info.nameElevage (éleveur) qui donnerait « Pomsky de la Luna »
     // pour un RDV pet-sitter.
-    if ((ppid == null || ppid.isEmpty) && User_Info.activeProfileId.isNotEmpty) {
-      ppid = User_Info.activeProfileId;
+    if ((ppid == null || ppid.isEmpty) && AgendaContexte.profileId.isNotEmpty) {
+      ppid = AgendaContexte.profileId;
     }
     try {
       final ids = <String>{if (cpid?.isNotEmpty ?? false) cpid!, if (ppid?.isNotEmpty ?? false) ppid!};
@@ -1718,7 +1753,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final clientUid = rdv['client_uid'] as String?;
 
       if (statut == 'confirme' && clientUid != null) {
-        final proUid2   = FirebaseAuth.instance.currentUser?.uid;
+        final proUid2   = AgendaContexte.uid;
         final names = await _rdvEventNames(rdv);
         final proName = names.proName;
         final clientName2 = names.clientName;
@@ -1765,7 +1800,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         await _demanderAvis(rdv, clientUid);
       } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
         await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']); // client
-        final proUidDel = FirebaseAuth.instance.currentUser?.uid;
+        final proUidDel = AgendaContexte.uid;
         if (proUidDel != null) {
           try {
             await supa.from('agenda_events').delete()
@@ -1811,7 +1846,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _demanderAvis(Map<String, dynamic> rdv, String clientUid) async {
     try {
       final supa = Supabase.instance.client;
-      final proUid = FirebaseAuth.instance.currentUser?.uid;
+      final proUid = AgendaContexte.uid;
       if (proUid == null) return;
       final proProfileId = rdv['pro_profile_id']?.toString();
       final rdvId = rdv['id']?.toString();
@@ -2515,9 +2550,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? linkedUid,
     String? linkedProfileId,
   }) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return false;
-    String pid = User_Info.activeProfileId;
+    String pid = AgendaContexte.profileId;
     if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
       final proProfile = User_Info.availableProfiles.firstWhere(
         (p) => p['profile_type'] != 'particulier',
@@ -2602,7 +2637,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _autoGrantAccess(Map<String, dynamic> rdv) async {
     final animalId = rdv['animal_id']?.toString();
     final clientUid = rdv['client_uid']?.toString();
-    final proUid = FirebaseAuth.instance.currentUser?.uid;
+    final proUid = AgendaContexte.uid;
     if (animalId == null || animalId.isEmpty || clientUid == null || proUid == null) return;
     try {
       final supa = Supabase.instance.client;
@@ -2621,9 +2656,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final ownerProfileId = ownerData?['profile_id_proprio'] as String?;
       if (ownerProfileId == null) return;
 
-      final permissions = User_Info.catPro == 'veterinaire'
+      final permissions = AgendaContexte.catPro == 'veterinaire'
           ? ['read_basic', 'read_health', 'write_health']
-          : User_Info.catPro == 'pension'
+          : AgendaContexte.catPro == 'pension'
               ? ['read_basic', 'read_alimentation', 'write_notes']
               : ['read_basic', 'write_notes'];
 
@@ -2646,9 +2681,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Mon agenda',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(AgendaContexte.pourEmployeur ? 'Agenda de la clinique' : 'Mon agenda',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
+          if (_estClinique && _employes.isNotEmpty)
+            PopupMenuButton<String>(
+              tooltip: 'Filtrer par praticien',
+              icon: Icon(_filtrePraticien == null ? Icons.filter_alt_outlined : Icons.filter_alt),
+              onSelected: (v) => setState(() => _filtrePraticien = v == '*' ? null : v),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: '*', child: Text('Tous les praticiens')),
+                PopupMenuItem(value: '',
+                    child: Text(AgendaContexte.pourEmployeur ? 'Titulaire de la clinique' : 'Mes rendez-vous')),
+                for (final e in _employes) PopupMenuItem(value: e.profileId, child: Text(e.nom)),
+              ],
+            ),
           Stack(
             children: [
               IconButton(
@@ -2719,7 +2766,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // vol d'oiseau (heuristique 30 km/h, pas d'API Directions payante).
   List<String> _travelWarningsToday() {
     final today = DateTime.now();
-    final rdvsToday = _rdvs.where((r) {
+    final rdvsToday = _rdvsFiltres.where((r) {
       final s = r['statut'] as String? ?? '';
       if (s != 'confirme') return false;
       final dh = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
@@ -2827,7 +2874,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // ── AG08 — Créneaux ──────────────────────────────────────────────────────────
 
-  // User_Info.activeProfileId peut être vide (ex. juste après un switch de
+  // AgendaContexte.profileId peut être vide (ex. juste après un switch de
   // profil, ou compte employé) — repli sur le premier profil pro du compte,
   // comme _loadCreneaux le fait déjà. Utilisé aussi côté écriture
   // (_applyRange/_deleteRange/_replicateWeek) : sans ce repli, un créneau
@@ -2835,7 +2882,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // (filtrée sur le vrai profile_id) → « Ajouter une plage » semblait ne
   // rien faire alors que la ligne était bien écrite en base.
   String _resolveProProfileId() {
-    String pid = User_Info.activeProfileId;
+    String pid = AgendaContexte.profileId;
     if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
       final proProfile = User_Info.availableProfiles.firstWhere(
         (p) => p['profile_type'] != 'particulier',
@@ -2847,7 +2894,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _loadCreneaux() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final pid = _resolveProProfileId();
     final weekEnd = _weekStart.add(const Duration(days: 6));
@@ -2863,7 +2910,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final rows = await creneauxQ;
 
       bool chevauchementOk = true;
-      if (User_Info.catPro == 'garde') {
+      if (AgendaContexte.catPro == 'garde') {
         try {
           final prof = pid.isNotEmpty
               ? await Supabase.instance.client.from('user_profiles_complet')
@@ -2905,10 +2952,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _setGardeChevauchement(bool v) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     setState(() => _gardeChevauchementOk = v);
-    final pid = User_Info.activeProfileId;
+    final pid = AgendaContexte.profileId;
     try {
       if (pid.isNotEmpty) {
         await Supabase.instance.client.from('user_profiles')
@@ -2972,7 +3019,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId, int capacite = 1, String? typeGarde}) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final pid = _resolveProProfileId();
     int curMins = start.hour * 60 + start.minute;
@@ -3013,7 +3060,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _deleteRange(String date, TimeOfDay start, TimeOfDay end) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final pid = _resolveProProfileId();
     int curMins = start.hour * 60 + start.minute;
@@ -3062,12 +3109,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
 
     List<Map<String, dynamic>> coursCollectifs = [];
-    if (User_Info.catPro == 'education') {
+    if (AgendaContexte.catPro == 'education') {
       try {
         var q = Supabase.instance.client.from('prestations_education')
-            .select('id, nom').eq('pro_uid', FirebaseAuth.instance.currentUser?.uid ?? '')
+            .select('id, nom').eq('pro_uid', AgendaContexte.uid ?? '')
             .eq('type', 'collectif').eq('actif', true);
-        if (User_Info.activeProfileId.isNotEmpty) q = q.eq('pro_profile_id', User_Info.activeProfileId);
+        if (AgendaContexte.profileId.isNotEmpty) q = q.eq('pro_profile_id', AgendaContexte.profileId);
         coursCollectifs = List<Map<String, dynamic>>.from(await q);
       } catch (_) {}
     }
@@ -3173,18 +3220,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               // Options éducateur/comportementaliste (type de cours) et
               // santé/ostéo (domicile ou cabinet) — encadré teinté pour
               // qu'on pense à les régler.
-              if ((User_Info.catPro == 'education' || User_Info.catPro == 'sante') && isDisp) ...[
+              if ((AgendaContexte.catPro == 'education' || AgendaContexte.catPro == 'sante') && isDisp) ...[
                 const SizedBox(height: 16),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                   decoration: BoxDecoration(
-                    color: (User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7)).withValues(alpha: 0.06),
+                    color: (AgendaContexte.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7)).withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: (User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7)).withValues(alpha: 0.35), width: 1.5),
+                    border: Border.all(color: (AgendaContexte.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7)).withValues(alpha: 0.35), width: 1.5),
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    if (User_Info.catPro == 'education') ...[
+                    if (AgendaContexte.catPro == 'education') ...[
                       const Text('Type de cours', style: TextStyle(
                           fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
                           color: Color(0xFF7B5EA7))),
@@ -3233,7 +3280,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       ],
                       const Divider(height: 20),
                     ],
-                    if (User_Info.catPro == 'sante') ...[
+                    if (AgendaContexte.catPro == 'sante') ...[
                       const Text('Lieu du rendez-vous', style: TextStyle(
                           fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
                           color: Color(0xFF0C5C6C))),
@@ -3242,7 +3289,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     Row(children: [
                       Icon(Icons.home_outlined, size: 18,
                           color: domicileOk
-                              ? (User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7))
+                              ? (AgendaContexte.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7))
                               : Colors.grey.shade400),
                       const SizedBox(width: 8),
                       Expanded(child: Text('Proposer ce créneau à domicile', style: TextStyle(
@@ -3250,7 +3297,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                           color: Colors.grey.shade800))),
                       Switch(
                         value: domicileOk,
-                        activeThumbColor: User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7),
+                        activeThumbColor: AgendaContexte.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7),
                         onChanged: (v) => setS(() => domicileOk = v),
                       ),
                     ]),
@@ -3258,7 +3305,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ),
               ],
               // Garde : type de créneau + nombre de places.
-              if (User_Info.catPro == 'garde' && isDisp) ...[
+              if (AgendaContexte.catPro == 'garde' && isDisp) ...[
                 const SizedBox(height: 16),
                 const Align(alignment: Alignment.centerLeft, child: Text('Type de créneau',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 13,
@@ -3359,8 +3406,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           type: statut == 'disponible' ? type : null,
           domicileOk: statut == 'disponible' && domicileOk,
           prestationId: statut == 'disponible' && type == 'collectif' ? prestationId : null,
-          capacite: (User_Info.catPro == 'garde' && statut == 'disponible') ? capacite : 1,
-          typeGarde: (User_Info.catPro == 'garde' && statut == 'disponible') ? typeGarde : null);
+          capacite: (AgendaContexte.catPro == 'garde' && statut == 'disponible') ? capacite : 1,
+          typeGarde: (AgendaContexte.catPro == 'garde' && statut == 'disponible') ? typeGarde : null);
     }
   }
 
@@ -3388,7 +3435,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _replicateWeek() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
 
     final pid = _resolveProProfileId();
@@ -3562,7 +3609,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// (qui reporte toute la semaine sur les semaines suivantes). Ex. dupliquer
   /// un lundi type sur un mercredi.
   Future<void> _copyDay(DateTime sourceDay) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = AgendaContexte.uid;
     if (uid == null) return;
     final pid = _resolveProProfileId();
     final sourceKey = CreneauxWeekGrid.dateKey(sourceDay);
@@ -3685,7 +3732,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     for (final day in days) {
       final key = CreneauxWeekGrid.dateKey(day);
       rangesByDay[key] = _groupedRanges(key);
-      rdvsByDay[key] = _rdvs.where((r) {
+      rdvsByDay[key] = _rdvsFiltres.where((r) {
         final s = r['statut'] as String? ?? '';
         if (s != 'confirme' && s != 'demande') return false;
         final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
@@ -3728,7 +3775,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           ),
         ]),
       ),
-      if (User_Info.catPro == 'garde')
+      if (AgendaContexte.catPro == 'garde')
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 2, 8, 0),
           child: Row(children: [
@@ -3800,7 +3847,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// uniquement) — ici on garde une ligne par jour, cette vue reste générique
   /// à tous les métiers.
   String? _gardeBadge(Map<String, dynamic> rdv) {
-    if (User_Info.catPro != 'garde' || !estGardeJournee(rdv)) return null;
+    if (AgendaContexte.catPro != 'garde' || !estGardeJournee(rdv)) return null;
     final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     if (dh == null) return null;
     final date = '${dh.year.toString().padLeft(4, '0')}-${dh.month.toString().padLeft(2, '0')}-${dh.day.toString().padLeft(2, '0')}';
@@ -3811,7 +3858,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
 
     var occupees = 0;
-    for (final r in _rdvs) {
+    for (final r in _rdvsFiltres) {
       final s = r['statut']?.toString() ?? '';
       if (s != 'confirme' && s != 'demande') continue;
       if (!estGardeJournee(r)) continue;
@@ -3846,7 +3893,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final showProTools = !showActions; // confirme + historique uniquement
         return _RdvCard(
           rdv: rdv,
-          gardeBadge: _gardeBadge(rdv),
+          gardeBadge: _nomPraticien(rdv) ?? _gardeBadge(rdv),
           showActions: showActions,
           showCancel: showCancel,
           onAccept:  () => _showAcceptDialog(rdv),
@@ -3874,7 +3921,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             if (ok != true || !mounted) return;
             final supa = Supabase.instance.client;
             await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']);
-            final proUidDel = FirebaseAuth.instance.currentUser?.uid;
+            final proUidDel = AgendaContexte.uid;
             if (proUidDel != null) {
               try {
                 await supa.from('agenda_events').delete()
@@ -3888,7 +3935,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onNotes:   () => _showNotesDialog(rdv),
           // Fiche/carnet de santé en lecture — désormais sur tous les onglets
           // (y compris « Demandes »), pas seulement les RDV confirmés.
-          onCarnetSante: (hasAnimal && User_Info.catPro != 'education')
+          onCarnetSante: (hasAnimal && AgendaContexte.catPro != 'education')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => AnimalFichePage(
                     animalId: animalId,
@@ -3900,13 +3947,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // CR / Ordonnance est un flux médical (vétérinaire, pension, santé…) —
           // sans objet pour l'éducateur (rapport de séance dédié) ni pour le
           // pet-sitter (pas d'ordonnance → « Envoyer des nouvelles », ci-dessous).
-          onCompteRendu: (showProTools && User_Info.catPro != 'education' && User_Info.catPro != 'garde')
+          onCompteRendu: (showProTools && AgendaContexte.catPro != 'education' && AgendaContexte.catPro != 'garde')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                     categoryColor: _teal,
-                    isPension: User_Info.catPro == 'pension',
+                    isPension: AgendaContexte.catPro == 'pension',
                   )))
               : null,
           // Accès direct au compte-rendu morpho depuis le RDV (était
@@ -3914,7 +3961,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // suivis », peu visible juste après une séance). Si un suivi existe
           // déjà pour CE rdv, on rouvre celui-là (lecture/PDF/envoi) au lieu
           // d'en recréer un nouveau à chaque tap.
-          onSuiviMorpho: (showProTools && hasAnimal && User_Info.catPro == 'sante')
+          onSuiviMorpho: (showProTools && hasAnimal && AgendaContexte.catPro == 'sante')
               ? () async {
                   final rdvId = rdv['id']?.toString();
                   Map<String, dynamic>? existing;
@@ -3937,7 +3984,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                         builder: (_) => MorphoFormPage(
                               animalId: animalId,
                               espece: rdv['_animal_espece']?.toString() ?? '',
-                              proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+                              proProfileId: AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId : null,
                               rdvId: rdvId,
                               // Pas de proNom : User_Info.primaryLabel reflète le
                               // profil PRINCIPAL du compte (ex. l'élevage), pas
@@ -3950,23 +3997,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               : null,
           // Pet-sitter : nouvelles / photo au propriétaire (rapport de visite ou
           // journal de garde selon la prestation).
-          onNouvelles: (User_Info.catPro == 'garde' && hasAnimal)
+          onNouvelles: (AgendaContexte.catPro == 'garde' && hasAnimal)
               ? () => sendGardeNews(context, rdv)
               : null,
-          onContrat: (showProTools && User_Info.catPro == 'photographe')
+          onContrat: (showProTools && AgendaContexte.catPro == 'photographe')
               ? () => _genererContratPhoto(rdv)
-              : (showProTools && User_Info.catPro == 'toilettage')
+              : (showProTools && AgendaContexte.catPro == 'toilettage')
                   ? () => _genererContratToilettage(rdv)
-                  : (showProTools && User_Info.catPro == 'marechal_ferrant')
+                  : (showProTools && AgendaContexte.catPro == 'marechal_ferrant')
                       ? () => _genererContratMarechal(rdv)
                       : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
                   const {
                     'photographe', 'toilettage',
                     'sante', 'veterinaire', 'marechal_ferrant', 'garde',
-                  }.contains(User_Info.catPro))
+                  }.contains(AgendaContexte.catPro))
               ? () {
-                  switch (User_Info.catPro) {
+                  switch (AgendaContexte.catPro) {
                     case 'toilettage':
                       _facturerToilettage(rdv);
                     case 'photographe':
@@ -3978,14 +4025,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   }
                 }
               : null,
-          onAlbum: (showProTools && User_Info.catPro == 'photographe')
+          onAlbum: (showProTools && AgendaContexte.catPro == 'photographe')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => PhotographeAlbumPage(
                     rdvId: rdv['id'].toString(),
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                   )))
               : null,
-          onFiche: (showProTools && User_Info.catPro == 'toilettage' && hasAnimal)
+          onFiche: (showProTools && AgendaContexte.catPro == 'toilettage' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => ToilettageFicheClientPage(
                     animalId: animalId,
@@ -4291,7 +4338,7 @@ class _RdvCard extends StatelessWidget {
               ],
               // Éducateur : fiche animal en lecture seule sur tous les onglets
               // (les autres cat_pro passent par onCarnetSante ci-dessous).
-              if (User_Info.catPro == 'education' &&
+              if (AgendaContexte.catPro == 'education' &&
                   (rdv['animal_id']?.toString().isNotEmpty ?? false)) ...[
                 const SizedBox(width: 4),
                 Builder(builder: (ctx) => IconButton(

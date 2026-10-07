@@ -148,7 +148,9 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    final title = widget.isAssociation ? 'Employés & Bénévoles' : 'Employés';
+    final title = widget.isAssociation
+        ? 'Employés & Bénévoles'
+        : widget.profileType == 'veterinaire' ? 'Mon équipe' : 'Employés';
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -168,7 +170,7 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
           indicatorColor: _teal,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: [
-            Tab(text: widget.isAssociation ? 'Équipe' : 'Employés'),
+            Tab(text: widget.isAssociation || widget.profileType == 'veterinaire' ? 'Équipe' : 'Employés'),
             const Tab(text: 'Tâches'),
             const Tab(text: 'Congés'),
           ],
@@ -384,7 +386,12 @@ class _EmployesTabState extends State<_EmployesTab> {
   // Association : une seule équipe (employés + bénévoles) — le rôle se
   // choisit ici, puis recherche PetsMatch ou ajout manuel.
   void _showAddChoiceSheet() {
-    var type = 'employe';
+    // Clinique : ASV / praticien (employes.role_pro) ; association :
+    // employé / bénévole (employes.type).
+    final roles = _profileType == 'veterinaire'
+        ? kRolesVeto
+        : const [('employe', 'Employé', Icons.badge_outlined), ('benevole', 'Bénévole', Icons.volunteer_activism_outlined)];
+    var type = roles.first.$1;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -399,9 +406,9 @@ class _EmployesTabState extends State<_EmployesTab> {
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
             const SizedBox(height: 16),
             Row(children: [
-              for (final r in const [('employe', 'Employé', Icons.badge_outlined), ('benevole', 'Bénévole', Icons.volunteer_activism_outlined)])
+              for (final r in roles)
                 Expanded(child: Padding(
-                  padding: EdgeInsets.only(right: r.$1 == 'employe' ? 6 : 0, left: r.$1 == 'benevole' ? 6 : 0),
+                  padding: EdgeInsets.only(right: r == roles.first ? 6 : 0, left: r == roles.first ? 0 : 6),
                   child: GestureDetector(
                     onTap: () => setS(() => type = r.$1),
                     child: Container(
@@ -414,7 +421,8 @@ class _EmployesTabState extends State<_EmployesTab> {
                       child: Column(children: [
                         Icon(r.$3, color: type == r.$1 ? Colors.white : widget.teal),
                         const SizedBox(height: 4),
-                        Text(r.$2, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        Text(r.$2, textAlign: TextAlign.center,
+                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                             color: type == r.$1 ? Colors.white : widget.teal)),
                       ]),
                     ),
@@ -469,7 +477,7 @@ class _EmployesTabState extends State<_EmployesTab> {
         backgroundColor: widget.teal,
         icon: const Icon(Icons.person_add_outlined, color: Colors.white),
         label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-        onPressed: widget.isAssociation ? _showAddChoiceSheet : _openSearchSheet,
+        onPressed: widget.isAssociation || _profileType == 'veterinaire' ? _showAddChoiceSheet : _openSearchSheet,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -492,7 +500,9 @@ class _EmployesTabState extends State<_EmployesTab> {
                       nom: nom, photoUrl: photoUrl,
                       role: widget.isAssociation
                           ? (e['type'] == 'benevole' ? 'Bénévole' : 'Employé')
-                          : null,
+                          : _profileType == 'veterinaire'
+                              ? libelleRoleVeto(e['role_pro'] as String?)
+                              : null,
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
                       showChaleursButton: _suiviChaleursByEmploye[e['id'].toString()] ?? false,
@@ -833,6 +843,11 @@ const _kPerms = [
   ('write_notes',     Icons.notes_outlined,         'Notes',                   'Ajouter des notes internes'),
   ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
   ('suivi_chaleurs',  Icons.favorite_outlined,     'Suivi des chaleurs',      'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)'),
+  ('vet_agenda',      Icons.calendar_month_outlined, 'Agenda de la clinique',  'Voir, prendre, déplacer et accepter les rendez-vous'),
+  ('vet_patients',    Icons.pets_outlined,           'Patients',               'Fiches et carnets de santé partagés avec la clinique'),
+  ('vet_cr_rediger',  Icons.edit_note_outlined,      'Rédiger des comptes rendus', 'Brouillons, à valider par un vétérinaire'),
+  ('vet_cr_valider',  Icons.task_alt_outlined,       'Valider les comptes rendus', 'Envoyer au propriétaire (vétérinaire uniquement)'),
+  ('vet_ordonnances', Icons.receipt_long_outlined,   'Ordonnances',            'Prescrire (vétérinaire uniquement)'),
 ];
 
 // Catégories de notifications récurrentes que l'employé reçoit en plus de
@@ -847,12 +862,71 @@ const _kNotifPerms = [
   ('notif_inventaire',       Icons.inventory_2_outlined,      'Stock bas',         'Alertes quotidiennes des articles sous le seuil'),
 ];
 
+// Équipe vétérinaire (migration_clinique_equipe.sql) : rôle → droits par
+// défaut posés à l'ajout (modifiables ensuite dans « Accès »). Un compte
+// rendu d'ASV reste un brouillon tant qu'un vétérinaire ne l'a pas validé
+// (contrôlé en base). Rôle stocké dans employes.role_pro.
+const kRolesVeto = <(String, String, IconData)>[
+  ('asv', 'Assistant(e) vétérinaire', Icons.support_agent_outlined),
+  ('veterinaire', 'Vétérinaire praticien', Icons.medical_services_outlined),
+];
+const kDroitsParRoleVeto = <String, List<String>>{
+  'asv': ['vet_agenda', 'vet_patients', 'vet_cr_rediger'],
+  'veterinaire': ['vet_agenda', 'vet_patients', 'vet_cr_rediger', 'vet_cr_valider', 'vet_ordonnances'],
+};
+String libelleRoleVeto(String? role) =>
+    role == 'veterinaire' ? 'Vétérinaire' : role == 'asv' ? 'ASV' : 'Employé';
+
+/// Pose les droits par défaut du rôle (remplace les droits vet_* existants).
+Future<void> appliquerDroitsRoleVeto(SupabaseClient supa, String cliniqueProfileId,
+    String employeProfileId, String role) async {
+  await supa.from('employe_permissions').delete()
+      .eq('eleveur_profile_id', cliniqueProfileId)
+      .eq('employe_profile_id', employeProfileId)
+      .like('permission', 'vet_%');
+  final droits = kDroitsParRoleVeto[role] ?? const [];
+  if (droits.isEmpty) return;
+  await supa.from('employe_permissions').insert([
+    for (final d in droits)
+      {'eleveur_profile_id': cliniqueProfileId, 'employe_profile_id': employeProfileId, 'permission': d},
+  ]);
+}
+
+/// Contrôle de formule vétérinaire : ASV dès « Avancé », praticiens en
+/// « Clinique » (maxPraticiens inclut le gérant). null = autorisé, sinon
+/// message à afficher.
+Future<String?> controleFormuleVeto(SupabaseClient supa, String uidGerant,
+    String cliniqueProfileId, String role) async {
+  final code = await PlanService.getVetPlanCode(uidGerant);
+  final cfg = PlanService.getVetConfig(code);
+  if (code == 'free') {
+    return "La gestion d'équipe est disponible à partir de la formule Avancé.";
+  }
+  if (role == 'veterinaire') {
+    if (!cfg.hasMultiPraticiens) {
+      return 'Ajouter des vétérinaires praticiens nécessite la formule Clinique.';
+    }
+    if (cfg.maxPraticiens != -1) {
+      final vetos = await supa.from('employes').select('id')
+          .eq('eleveur_profile_id', cliniqueProfileId).eq('actif', true).eq('role_pro', 'veterinaire');
+      if ((vetos as List).length >= cfg.maxPraticiens - 1) {
+        return 'Limite de ${cfg.maxPraticiens} praticiens (vous compris) atteinte pour votre formule.';
+      }
+    }
+  }
+  return null;
+}
+
 // Permissions pertinentes selon le métier — éviter de proposer « Suivi
 // reproducteur » à un toiletteur ou « Carnet de santé » à un maréchal-ferrant.
 // catPro vide = éleveur (convention de l'appli). Liste posée sur un jugement
 // raisonnable par métier ; à corriger au cas par cas si un domaine précis
 // a besoin d'une permission qui en est exclue ici.
 bool _permApplies(String key, String catPro) {
+  // Droits d'équipe vétérinaire : clinique uniquement ; remplacent, pour le
+  // véto, les droits génériques animaux / planning.
+  if (key.startsWith('vet_')) return catPro == 'veterinaire';
+  if (catPro == 'veterinaire' && (key == 'write_animaux' || key == 'write_planning')) return false;
   switch (key) {
     case 'read_planning_pension':
       return catPro == 'pension';
@@ -1190,6 +1264,20 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     q = q.eq('eleveur_profile_id', eleveurProfileId);
     final existing = await q.maybeSingle();
 
+    // Clinique vétérinaire : rôle choisi (type = 'asv' | 'veterinaire'),
+    // contrôle de la formule (ASV : Avancé ; praticien : Clinique).
+    final roleVeto = _profileType == 'veterinaire' ? widget.type : null;
+    if (roleVeto != null && (existing == null || existing['actif'] != true)) {
+      final refus = await controleFormuleVeto(_supa, widget.uid, eleveurProfileId, roleVeto);
+      if (refus != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(refus), backgroundColor: Colors.orange));
+        }
+        return;
+      }
+    }
+
     // Limite d'employés par forfait — la page d'abonnement annonce ces
     // limites mais rien ne les appliquait jusqu'ici (education/pension), ou
     // pas du tout (garde/toilettage, pourtant déjà chiffrées dans
@@ -1243,7 +1331,8 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       }
       await _supa.from('employes').update({
         'actif': true,
-        'type': widget.type,
+        'type': roleVeto != null ? 'employe' : widget.type,
+        if (roleVeto != null) 'role_pro': roleVeto,
         'employe_profile_id': employeProfileId,
         'eleveur_profile_id': eleveurProfileId,
       }).eq('id', existing['id']);
@@ -1254,9 +1343,13 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
         'employe_profile_id': employeProfileId,
         'eleveur_profile_id': eleveurProfileId,
         'actif':              true,
-        'type':               widget.type,
+        'type':               roleVeto != null ? 'employe' : widget.type,
+        if (roleVeto != null) 'role_pro': roleVeto,
         'profil_source':      profilSource,
       });
+    }
+    if (roleVeto != null && employeProfileId != null && eleveurProfileId.isNotEmpty) {
+      await appliquerDroitsRoleVeto(_supa, eleveurProfileId, employeProfileId, roleVeto);
     }
 
     // Notification in-app (cloche)
@@ -1416,7 +1509,8 @@ class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
         'telephone': _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'actif': true,
-        'type': widget.type,
+        'type': widget.profilSource == 'veterinaire' ? 'employe' : widget.type,
+        if (widget.profilSource == 'veterinaire') 'role_pro': widget.type,
         'profil_source': widget.profilSource,
       });
       if (mounted) Navigator.pop(context, true);
