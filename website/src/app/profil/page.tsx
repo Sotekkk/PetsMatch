@@ -1414,8 +1414,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               rows={4} placeholder="Présentez votre activité…" className={`${inputCls} resize-none`} />
           </Field>
-          {/* Éducateur / vétérinaire : grille de tarifs structurée (doublon sinon). */}
-          {catPro !== 'education' && catPro !== 'veterinaire' && (
+          {/* Éducateur / vétérinaire / ostéo-kiné : grille de tarifs structurée (doublon sinon). */}
+          {!['education', 'veterinaire', 'sante'].includes(catPro) && (
             <Field label="Tarifs">
               <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
                 rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />
