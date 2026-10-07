@@ -52,8 +52,8 @@ android {
         applicationId "com.application.petsmatchapp"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion 36
-        versionCode 32
-        versionName "PetsMatch 1.4.0"
+        versionCode 34
+        versionName "1.9.99"
     }
 
     signingConfigs {
