@@ -1066,9 +1066,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _field(_phoneCtrl, 'Téléphone (visible sur votre fiche : appel + WhatsApp)',
                       Icons.call_outlined, inputType: TextInputType.phone),
-                  // L'éducateur a une grille de tarifs structurée (prestations
-                  // fixes + libres + forfaits) — le champ libre ferait doublon.
-                  if (_catPro != 'education') ...[
+                  // L'éducateur et le vétérinaire ont une grille de tarifs
+                  // structurée (prestations fixes + libres) — le champ libre
+                  // ferait doublon.
+                  if (_catPro != 'education' && _catPro != 'veterinaire') ...[
                     const SizedBox(height: 12),
                     _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
                   ],

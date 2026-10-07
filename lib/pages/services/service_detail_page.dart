@@ -1203,7 +1203,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           ],
 
           // Tarifs (texte libre — sauf éducateur, qui a une grille structurée)
-          if (_tarifs.isNotEmpty && _proData?['cat_pro'] != 'education') ...[
+          // Éducateur / vétérinaire : grille de tarifs structurée, pas le texte libre.
+          if (_tarifs.isNotEmpty && _proData?['cat_pro'] != 'education' && _proData?['cat_pro'] != 'veterinaire') ...[
             const SizedBox(height: 12),
             _card(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
