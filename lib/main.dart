@@ -980,6 +980,22 @@ class MyApp extends StatelessWidget {
               iconColor: Color(0xFF0C5C6C),
               textColor: Color(0xFF1F2A2E),
             ),
+            // Interrupteurs / cases à cocher bien visibles quand ils sont
+            // désactivés (gris), sinon le rail blanc sur fond blanc se
+            // confondait avec la page.
+            switchTheme: SwitchThemeData(
+              thumbColor: WidgetStateProperty.resolveWith((s) =>
+                  s.contains(WidgetState.selected) ? Colors.white : const Color(0xFF8A8F94)),
+              trackColor: WidgetStateProperty.resolveWith((s) =>
+                  s.contains(WidgetState.selected) ? const Color(0xFF0C5C6C) : const Color(0xFFDADDE0)),
+              trackOutlineColor: WidgetStateProperty.resolveWith((s) =>
+                  s.contains(WidgetState.selected) ? Colors.transparent : const Color(0xFF8A8F94)),
+            ),
+            checkboxTheme: CheckboxThemeData(
+              side: const BorderSide(color: Color(0xFF8A8F94), width: 1.6),
+              fillColor: WidgetStateProperty.resolveWith((s) =>
+                  s.contains(WidgetState.selected) ? const Color(0xFF0C5C6C) : Colors.transparent),
+            ),
             cardTheme: CardThemeData(
               color: Colors.white,
               elevation: 2,

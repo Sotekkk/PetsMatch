@@ -1426,7 +1426,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <p className="text-xs text-gray-400">Affiché sur votre fiche publique</p>
             </div>
             <button type="button" onClick={() => setAcceptNewClients(v => !v)}
-              className={`relative w-11 h-6 rounded-full transition-colors ${acceptNewClients ? 'bg-[#0C5C6C]' : 'bg-gray-200'}`}>
+              className={`relative w-11 h-6 rounded-full transition-colors ${acceptNewClients ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>
               <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${acceptNewClients ? 'left-5' : 'left-0.5'}`} />
             </button>
           </div>
@@ -1447,7 +1447,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 <p className="text-xs text-gray-400">Affiché comme vétérinaire de garde disponible en urgence</p>
               </div>
               <button type="button" onClick={() => setUrgences24h(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${urgences24h ? 'bg-[#E65100]' : 'bg-gray-200'}`}>
+                className={`relative w-11 h-6 rounded-full transition-colors ${urgences24h ? 'bg-[#E65100]' : 'bg-gray-400'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${urgences24h ? 'left-5' : 'left-0.5'}`} />
               </button>
             </div>
@@ -1500,7 +1500,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 </p>
               </div>
               <button type="button" onClick={() => setSeDeplace(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${seDeplace ? 'bg-[#0C5C6C]' : 'bg-gray-200'}`}>
+                className={`relative w-11 h-6 rounded-full transition-colors ${seDeplace ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${seDeplace ? 'left-5' : 'left-0.5'}`} />
               </button>
             </div>
@@ -1664,7 +1664,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
               <button type="button" onClick={() => setTarifsEducationVisibles(v => !v)}
                 className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                style={{ backgroundColor: tarifsEducationVisibles ? '#7B5EA7' : '#D1D5DB' }}>
+                style={{ backgroundColor: tarifsEducationVisibles ? '#7B5EA7' : '#9CA3AF' }}>
                 <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
                   style={{ transform: tarifsEducationVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
               </button>
@@ -1750,7 +1750,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
               <button type="button" onClick={() => setTarifsSanteVisibles(v => !v)}
                 className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                style={{ backgroundColor: tarifsSanteVisibles ? '#0C5C6C' : '#D1D5DB' }}>
+                style={{ backgroundColor: tarifsSanteVisibles ? '#0C5C6C' : '#9CA3AF' }}>
                 <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
                   style={{ transform: tarifsSanteVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
               </button>
@@ -1800,7 +1800,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
               <button type="button" onClick={() => setTarifsVetoVisibles(v => !v)}
                 className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                style={{ backgroundColor: tarifsVetoVisibles ? '#0C5C6C' : '#D1D5DB' }}>
+                style={{ backgroundColor: tarifsVetoVisibles ? '#0C5C6C' : '#9CA3AF' }}>
                 <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
                   style={{ transform: tarifsVetoVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
               </button>
@@ -1856,7 +1856,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               </p>
               <button type="button" onClick={() => setEducationBilanRequis(v => !v)}
                 className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                style={{ backgroundColor: educationBilanRequis ? '#7B5EA7' : '#D1D5DB' }}>
+                style={{ backgroundColor: educationBilanRequis ? '#7B5EA7' : '#9CA3AF' }}>
                 <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
                   style={{ transform: educationBilanRequis ? 'translateX(20px)' : 'translateX(0)' }} />
               </button>
