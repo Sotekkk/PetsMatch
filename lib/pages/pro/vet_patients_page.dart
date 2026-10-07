@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -58,10 +57,10 @@ class _VetPatientsPageState extends State<VetPatientsPage>
   }
 
   Future<void> _loadPatients() async {
-    final vetUid = FirebaseAuth.instance.currentUser?.uid;
+    final vetUid = AgendaContexte.uid;
     if (vetUid == null) { setState(() => _loading = false); return; }
     try {
-      final pid = User_Info.activeProfileId;
+      final pid = AgendaContexte.profileId;
       if (pid.isEmpty) { setState(() => _loading = false); return; }
       final grants = await Supabase.instance.client
           .from('animal_access')
@@ -155,14 +154,14 @@ class _VetPatientsPageState extends State<VetPatientsPage>
   }
 
   Future<void> _loadAgenda() async {
-    final vetUid = FirebaseAuth.instance.currentUser?.uid;
+    final vetUid = AgendaContexte.uid;
     if (vetUid == null) return;
     setState(() => _loadingAgenda = true);
     try {
       final dayStart = DateTime(_agendaDate.year, _agendaDate.month, _agendaDate.day).toUtc().toIso8601String();
       final dayEnd   = DateTime(_agendaDate.year, _agendaDate.month, _agendaDate.day, 23, 59, 59).toUtc().toIso8601String();
 
-      final pid = User_Info.activeProfileId;
+      final pid = AgendaContexte.profileId;
       var rq = Supabase.instance.client
           .from('rdv')
           .select('id, date_heure, motif, statut, animal_id, client_uid, duree_minutes')
@@ -203,7 +202,9 @@ class _VetPatientsPageState extends State<VetPatientsPage>
               .from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, profile_type')
               .inFilter('uid', clientUids)
-              .eq('is_main', true);
+              // Profil particulier du client — pas is_main (multi-profil :
+              // un client éleveur verrait son nom d'élevage).
+              .eq('profile_type', 'particulier');
           for (final c in clients as List) {
             clientsMap[c['uid']?.toString() ?? ''] = Map<String, dynamic>.from(c as Map);
           }

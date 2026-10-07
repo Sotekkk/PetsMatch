@@ -201,7 +201,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final nom = (u != null ? nameByUid[u] : null) ?? 'Employé';
         result.add((profileId: pfid, nom: nom.isNotEmpty ? nom : 'Employé'));
       }
-      if (mounted) setState(() { _employes = result; _employesLoaded = true; });
+      // Praticien employé de la clinique : ses propres RDV d'abord.
+      String? monFiltre;
+      if (AgendaContexte.pourEmployeur && _estClinique) {
+        final moi = await AgendaContexte.monProfil();
+        if (moi != null && result.any((e) => e.profileId == moi)) monFiltre = moi;
+      }
+      if (mounted) {
+        setState(() {
+          _employes = result; _employesLoaded = true;
+          if (monFiltre != null && _filtrePraticien == null) _filtrePraticien = monFiltre;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _employesLoaded = true);
     }

@@ -48,6 +48,10 @@ import 'package:PetsMatch/pages/eleveur/animaux/portee_edit_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/contexte_pro.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
+import 'package:PetsMatch/pages/pro/cr_a_valider_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
@@ -4373,6 +4377,23 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                             ).then((created) { if (created == true) _load(); });
                           },
                           onReload: _load,
+                          // Clinique vétérinaire : type du PROFIL qui emploie
+                          // (profile_type_relation), pas le métier du profil
+                          // principal du compte (multi-profil).
+                          onClinique: (u['profile_type_relation'] ?? catPro) == 'veterinaire' && eleveurProfileId.isNotEmpty
+                              ? (quoi) async {
+                                  AgendaContexte.ouvrir(uid: uid, profileId: eleveurProfileId, catPro: 'veterinaire');
+                                  try {
+                                    await Navigator.push(context, MaterialPageRoute(builder: (_) => switch (quoi) {
+                                      'patients' => const VetPatientsPage(),
+                                      'cr' => const CrAValiderPage(),
+                                      _ => ProAgendaPage(employeur: (uid: uid, profileId: eleveurProfileId, catPro: 'veterinaire')),
+                                    }));
+                                  } finally {
+                                    AgendaContexte.fermer();
+                                  }
+                                }
+                              : null,
                         );
                       },
                     ),
@@ -4400,6 +4421,8 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final VoidCallback onReload;
   final VoidCallback? onCongeTap;
   final VoidCallback? onPlanningEmployeTap;
+  /// Clinique : 'agenda' | 'patients' | 'cr' (null = pas une clinique).
+  final Future<void> Function(String quoi)? onClinique;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
@@ -4409,7 +4432,17 @@ class _EmployeurExpandedCard extends StatelessWidget {
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
     required this.onAnimalTap, required this.onPlanningTap, required this.onProtocolesTap,
     required this.onCreateTacheTap, required this.onReload, this.onCongeTap, this.onPlanningEmployeTap,
+    this.onClinique,
   });
+
+  Widget _puce(String label, VoidCallback onTap) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: teal.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
+          child: Text(label, style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -4437,6 +4470,13 @@ class _EmployeurExpandedCard extends StatelessWidget {
             ]),
             const SizedBox(height: 10),
             Wrap(spacing: 8, runSpacing: 8, children: [
+              // Espace clinique vétérinaire (selon les droits de l'employé).
+              if (onClinique != null && perms.contains('vet_agenda'))
+                _puce('📅 Agenda', () => onClinique!('agenda')),
+              if (onClinique != null && perms.contains('vet_patients'))
+                _puce('🩺 Patients', () => onClinique!('patients')),
+              if (onClinique != null && perms.contains('vet_cr_valider'))
+                _puce('📝 CR à valider', () => onClinique!('cr')),
               if (catPro == 'pension' && perms.contains('read_planning_pension'))
                 GestureDetector(
                   onTap: onPlanningTap,
