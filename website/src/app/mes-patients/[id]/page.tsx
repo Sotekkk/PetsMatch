@@ -58,6 +58,7 @@ interface TraitementEntry {
 }
 interface CompteRendu {
   id: string; created_at: string; contenu: string | null; pro_uid: string | null;
+  statut?: 'brouillon' | 'valide' | null;
 }
 interface Ordonnance {
   id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
@@ -528,7 +529,13 @@ function PatientDetailPageInner() {
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
           formNotes.trim() && formNotes.trim(),
         ].filter(Boolean).join('\n\n');
-        await supabase.from('comptes_rendus').insert({ animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null });
+        // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
+        // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
+        await supabase.from('comptes_rendus').insert({
+          animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null,
+          ...(activeProfileId ? { pro_profile_id: activeProfileId, redige_par_profile_id: activeProfileId, valide_par_profile_id: activeProfileId } : {}),
+          statut: 'valide', redige_par_uid: user.uid,
+        });
         const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
         setComptesRendus((data ?? []) as CompteRendu[]);
       } else if (addingType === 'mesure') {
@@ -2008,7 +2015,25 @@ function PatientDetailPageInner() {
                 <div className="space-y-3">
                   {comptesRendus.map(c => (
                     <div key={c.id} className="border border-gray-100 rounded-xl p-3">
-                      <p className="text-xs text-gray-400 mb-1">{fmtDateShort(c.created_at)}</p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-xs text-gray-400">{fmtDateShort(c.created_at)}</p>
+                        {c.statut === 'brouillon' && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Brouillon — à valider</span>
+                        )}
+                        {c.statut === 'brouillon' && (
+                          <button type="button"
+                            onClick={async () => {
+                              const { error } = await supabase.from('comptes_rendus').update({
+                                statut: 'valide', ...(activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
+                              }).eq('id', c.id);
+                              if (error) { alert(error.message); return; }
+                              setComptesRendus(prev => prev.map(x => x.id === c.id ? { ...x, statut: 'valide' } : x));
+                            }}
+                            className="ml-auto text-xs font-semibold text-white bg-[#0C5C6C] rounded-full px-3 py-1">
+                            Valider et envoyer
+                          </button>
+                        )}
+                      </div>
                       {c.contenu
                         ? <p className="text-sm text-[#1F2A2E] whitespace-pre-wrap">{c.contenu}</p>
                         : <p className="text-xs text-gray-400 italic">Compte rendu vide</p>

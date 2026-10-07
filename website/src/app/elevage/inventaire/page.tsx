@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
+import { planVeto } from '@/lib/clinique';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type Categorie = 'alimentation' | 'litiere' | 'medicament' | 'accessoire' | 'hygiene' | 'autre';
-type Unite     = 'kg' | 'g' | 'L' | 'mL' | 'sac' | 'paquet' | 'boite' | 'unité';
+type Categorie = 'alimentation' | 'litiere' | 'medicament' | 'accessoire' | 'hygiene' | 'autre'
+  | 'vaccin' | 'antiparasitaire' | 'consommable';
+type Unite     = string;
 type MvtType   = 'consommation' | 'restock' | 'correction';
 
 interface Item {
@@ -21,6 +23,12 @@ interface Item {
   quantite_alerte: number | null;
   alerte_active: boolean;
   notes: string | null;
+  // Pharmacie vétérinaire (migration_inventaire_veto.sql)
+  lot?: string | null;
+  date_peremption?: string | null;
+  prix_vente?: number | null;
+  froid?: boolean | null;
+  stupefiant?: boolean | null;
 }
 
 interface Mouvement {
@@ -32,6 +40,7 @@ interface Mouvement {
   note: string | null;
   created_at: string;
   auteur_nom?: string;
+  stock_apres?: number | null;
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -47,7 +56,27 @@ const CATEGORIES: { value: Categorie; label: string; emoji: string; color: strin
 
 const UNITES: Unite[] = ['kg', 'g', 'L', 'mL', 'sac', 'paquet', 'boite', 'unité'];
 
-const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.value, c]));
+// Pharmacie vétérinaire — miroir appli (inventaire_page.dart _categoriesVeto).
+const CATEGORIES_VETO: { value: Categorie; label: string; emoji: string; color: string }[] = [
+  { value: 'medicament',      label: 'Médicaments',           emoji: '💊', color: '#E53E3E' },
+  { value: 'vaccin',          label: 'Vaccins',               emoji: '💉', color: '#2B6CB0' },
+  { value: 'antiparasitaire', label: 'Antiparasitaires',      emoji: '🛡️', color: '#805AD5' },
+  { value: 'alimentation',    label: 'Alimentation',          emoji: '🥣', color: '#6E9E57' },
+  { value: 'consommable',     label: 'Consommables médicaux', emoji: '🩹', color: '#0C5C6C' },
+  { value: 'hygiene',         label: 'Hygiène & soins',       emoji: '🧴', color: '#8E24AA' },
+  { value: 'autre',           label: 'Autre',                 emoji: '📦', color: '#718096' },
+];
+const UNITES_VETO: Unite[] = ['boite', 'flacon', 'dose', 'comprimé', 'pipette', 'seringue', 'ampoule', 'sac', 'kg', 'mL', 'unité'];
+
+/** Péremption : null = sans date ; < 0 = périmé ; sinon jours restants. */
+function joursAvantPeremption(i: Item): number | null {
+  if (!i.date_peremption) return null;
+  const d = new Date(i.date_peremption + 'T00:00:00');
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - t.getTime()) / 86400000);
+}
+
+const CAT_MAP = Object.fromEntries([...CATEGORIES_VETO, ...CATEGORIES].map(c => [c.value, c]));
 
 function catInfo(c: string) { return CAT_MAP[c] ?? CAT_MAP['autre']; }
 
@@ -79,6 +108,41 @@ export default function InventairePage() {
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
   const [mvtLoading, setMvtLoading] = useState(false);
   const [taskToast,  setTaskToast]  = useState<string | null>(null);
+  // Pharmacie vétérinaire : profil actif vétérinaire (formules Avancé / Clinique).
+  const [veto, setVeto] = useState(false);
+  const [vetoBloque, setVetoBloque] = useState(false);
+  const [showRegistre, setShowRegistre] = useState(false);
+  const [registre, setRegistre] = useState<Mouvement[]>([]);
+
+  useEffect(() => {
+    if (!user || !profileLoaded || !profileId) return;
+    supabase.from('user_profiles_complet').select('profile_type').eq('id', profileId).maybeSingle()
+      .then(async ({ data }) => {
+        const v = data?.profile_type === 'veterinaire';
+        setVeto(v);
+        if (v) {
+          const code = await planVeto(user.uid);
+          setVetoBloque(code === 'free');
+        }
+      });
+  }, [user, profileId, profileLoaded]);
+
+  async function ouvrirRegistre() {
+    const ids = items.filter(i => i.stupefiant).map(i => i.id);
+    setShowRegistre(true);
+    if (!ids.length) { setRegistre([]); return; }
+    const { data } = await supabase.from('inventaire_mouvements').select('*')
+      .in('item_id', ids).order('created_at', { ascending: false });
+    const rows = (data ?? []) as Mouvement[];
+    const uids = [...new Set(rows.map(r => r.uid_auteur))];
+    if (uids.length) {
+      const { data: us } = await supabase.from('users_complet').select('uid, firstname, lastname').in('uid', uids);
+      const m: Record<string, string> = {};
+      (us ?? []).forEach(u => { m[u.uid as string] = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(); });
+      rows.forEach(r => { r.auteur_nom = m[r.uid_auteur] ?? ''; });
+    }
+    setRegistre(rows);
+  }
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
@@ -173,6 +237,8 @@ export default function InventairePage() {
       item_id: item.id, uid_eleveur: user.uid, uid_auteur: user.uid,
       ...(pid ? { eleveur_profile_id: pid, auteur_profile_id: pid } : {}),
       type, quantite: qte, note: note || null,
+      // Registre des stupéfiants : stock restant après le mouvement.
+      ...(item.stupefiant ? { stock_apres: newQte } : {}),
     });
     await supabase.from('inventaire_items')
       .update({ quantite: newQte, updated_at: new Date().toISOString() })
@@ -212,6 +278,21 @@ export default function InventairePage() {
     );
   }
 
+  if (veto && vetoBloque) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center">
+        <p className="text-4xl mb-3">💊</p>
+        <h1 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Inventaire & pharmacie</h1>
+        <p className="text-sm text-gray-500 mb-5">Lots, péremptions, chaîne du froid et registre des stupéfiants : disponible avec les formules Avancé et Clinique.</p>
+        <a href="/veterinaire/abonnement" className="inline-block bg-[#0C5C6C] text-white font-semibold px-6 py-2.5 rounded-xl text-sm">Voir les formules</a>
+      </div>
+    );
+  }
+
+  const cats = veto ? CATEGORIES_VETO : CATEGORIES;
+  const perimes = veto ? items.filter(i => (joursAvantPeremption(i) ?? 999) < 0) : [];
+  const bientot = veto ? items.filter(i => { const j = joursAvantPeremption(i); return j !== null && j >= 0 && j <= 30; }) : [];
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 pb-24">
 
@@ -233,16 +314,38 @@ export default function InventairePage() {
           </button>
           <div>
             <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-              📦 Inventaire
+              {veto ? '💊 Inventaire & pharmacie' : '📦 Inventaire'}
             </h1>
             <p className="text-xs text-gray-400">{items.length} article{items.length !== 1 ? 's' : ''} en stock</p>
           </div>
         </div>
-        <button onClick={() => { setEditItem(null); setShowForm(true); }}
-          className="bg-[#0C5C6C] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#094F5D] transition-colors">
-          + Ajouter
-        </button>
+        <div className="flex gap-2">
+          {veto && (
+            <button onClick={ouvrirRegistre}
+              className="border border-[#0C5C6C] text-[#0C5C6C] text-sm font-semibold px-3 py-2 rounded-xl hover:bg-[#0C5C6C]/5">
+              📖 Registre des stupéfiants
+            </button>
+          )}
+          <button onClick={() => { setEditItem(null); setShowForm(true); }}
+            className="bg-[#0C5C6C] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#094F5D] transition-colors">
+            + Ajouter
+          </button>
+        </div>
       </div>
+
+      {/* Péremptions (pharmacie vétérinaire) */}
+      {(perimes.length > 0 || bientot.length > 0) && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-5">
+          <p className="text-sm font-bold text-red-700 mb-2">⏳ Péremptions — {perimes.length} périmé(s), {bientot.length} sous 30 jours</p>
+          <div className="space-y-1">
+            {[...perimes, ...bientot].map(a => (
+              <p key={a.id} className="text-xs text-red-700">
+                <span className="font-semibold">{a.nom}</span>{a.lot ? ` (lot ${a.lot})` : ''} — {(joursAvantPeremption(a) ?? 0) < 0 ? 'périmé' : `expire dans ${joursAvantPeremption(a)} j`}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Alertes stock bas */}
       {alertes.length > 0 && (
@@ -266,7 +369,7 @@ export default function InventairePage() {
           }`}>
           Tous ({items.length})
         </button>
-        {CATEGORIES.map(c => {
+        {cats.map(c => {
           const count = items.filter(i => i.categorie === c.value).length;
           if (count === 0) return null;
           return (
@@ -313,6 +416,18 @@ export default function InventairePage() {
                       </p>
                       {isLow && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold flex-shrink-0">⚠️ bas</span>}
                     </div>
+                    {(item.stupefiant || item.froid || item.lot || item.date_peremption) && (
+                      <div className="flex flex-wrap gap-2 text-[10px] mt-0.5">
+                        {item.stupefiant && <span className="font-bold text-red-700">🔒 Stupéfiant</span>}
+                        {item.froid && <span className="font-bold text-blue-700">❄️ +2/+8 °C</span>}
+                        {item.lot && <span className="text-gray-500">Lot {item.lot}</span>}
+                        {joursAvantPeremption(item) !== null && (
+                          <span className={`font-bold ${(joursAvantPeremption(item) ?? 99) <= 30 ? 'text-red-600' : 'text-gray-500'}`}>
+                            {(joursAvantPeremption(item) ?? 0) < 0 ? '⛔ Périmé' : `Exp. ${new Date(item.date_peremption + 'T00:00:00').toLocaleDateString('fr-FR')}`}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <p className="text-sm font-semibold" style={{ color: isLow ? '#B45309' : cat.color }}>
                       {item.quantite} {pluralUnite(item.unite, item.quantite)}
                       {item.quantite_alerte !== null && (
@@ -392,9 +507,50 @@ export default function InventairePage() {
           item={editItem}
           uid={user!.uid}
           profileId={profileId || null}
+          veto={veto}
           onClose={() => { setShowForm(false); setEditItem(null); }}
           onSaved={loadItems}
         />
+      )}
+
+      {/* Registre des stupéfiants */}
+      {showRegistre && (
+        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-6"
+          onClick={e => { if (e.target === e.currentTarget) setShowRegistre(false); }}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <div>
+                <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>📖 Registre des stupéfiants</p>
+                <p className="text-xs text-gray-400">Entrées / sorties motivées, stock après mouvement — à conserver 10 ans</p>
+              </div>
+              <button onClick={() => setShowRegistre(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-2">
+              {items.filter(i => i.stupefiant).map(i => (
+                <p key={i.id} className="text-sm font-semibold text-[#1F2A2E]">🔒 {i.nom} — stock actuel : {i.quantite} {pluralUnite(i.unite, i.quantite)}</p>
+              ))}
+              {items.every(i => !i.stupefiant) && <p className="text-sm text-gray-400">Aucun produit marqué « Stupéfiant ».</p>}
+              <div className="border-t border-gray-100 pt-2" />
+              {registre.map(m => {
+                const it = items.find(i => i.id === m.item_id);
+                return (
+                  <div key={m.id} className="border border-gray-100 rounded-xl p-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold ${m.type === 'consommation' ? 'text-red-600' : 'text-green-700'}`}>
+                        {m.type === 'consommation' ? '⬇️ Sortie' : '⬆️ Entrée'}
+                      </span>
+                      <span className="flex-1 truncate">{it?.nom}</span>
+                      <span className="text-gray-400">{fmtDate(m.created_at)}</span>
+                    </div>
+                    <p>Quantité : {m.quantite}{m.stock_apres != null ? ` · stock après : ${m.stock_apres}` : ''}</p>
+                    {m.note && <p>Motif : {m.note}</p>}
+                    {m.auteur_nom && <p className="text-gray-400">Par {m.auteur_nom}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -415,6 +571,12 @@ function QuickMvt({ item, type, onLog }: {
   async function submit() {
     const q = parseFloat(qte);
     if (!q || q <= 0) return;
+    if (item.stupefiant && !note.trim()) {
+      alert(type === 'consommation'
+        ? 'Stupéfiant : indiquez le motif (animal, ordonnance…).'
+        : "Stupéfiant : indiquez l'origine (fournisseur, bon de livraison…).");
+      return;
+    }
     setSaving(true);
     await onLog(item, type, q, note);
     setSaving(false);
@@ -453,7 +615,9 @@ function QuickMvt({ item, type, onLog }: {
               </div>
             </div>
             <div className="mb-4">
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Note <span className="font-normal">(optionnel)</span></label>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                {item.stupefiant ? 'Motif / origine *' : <>Note <span className="font-normal">(optionnel)</span></>}
+              </label>
               <input type="text" value={note} onChange={e => setNote(e.target.value)}
                 placeholder={isConsomm ? 'ex : paquet de croquettes terminé' : 'ex : livraison reçue'}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
@@ -479,16 +643,22 @@ function QuickMvt({ item, type, onLog }: {
 
 // ── Formulaire article ────────────────────────────────────────────────────────
 
-function ItemFormModal({ item, uid, profileId, onClose, onSaved }: {
+function ItemFormModal({ item, uid, profileId, veto = false, onClose, onSaved }: {
   item: Item | null;
   uid: string;
   profileId: string | null;
+  veto?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [lot,        setLot]        = useState(item?.lot ?? '');
+  const [peremption, setPeremption] = useState(item?.date_peremption ?? '');
+  const [prixVente,  setPrixVente]  = useState(item?.prix_vente != null ? String(item.prix_vente) : '');
+  const [froid,      setFroid]      = useState(!!item?.froid);
+  const [stupefiant, setStupefiant] = useState(!!item?.stupefiant);
   const [nom,       setNom]       = useState(item?.nom        ?? '');
-  const [cat,       setCat]       = useState<Categorie>(item?.categorie  ?? 'alimentation');
-  const [unite,     setUnite]     = useState<Unite>(item?.unite      ?? 'kg');
+  const [cat,       setCat]       = useState<Categorie>(item?.categorie  ?? (veto ? 'medicament' : 'alimentation'));
+  const [unite,     setUnite]     = useState<Unite>(item?.unite      ?? (veto ? 'boite' : 'kg'));
   const [quantite,  setQuantite]  = useState(String(item?.quantite   ?? '0'));
   const [seuil,     setSeuil]     = useState(String(item?.quantite_alerte ?? ''));
   const [alerte,    setAlerte]    = useState(item?.alerte_active ?? true);
@@ -512,6 +682,12 @@ function ItemFormModal({ item, uid, profileId, onClose, onSaved }: {
       alerte_active: alerte,
       notes: notes.trim() || null,
       updated_at: new Date().toISOString(),
+      ...(veto ? {
+        lot: lot.trim() || null,
+        date_peremption: peremption || null,
+        prix_vente: prixVente ? parseFloat(prixVente.replace(',', '.')) : null,
+        froid, stupefiant,
+      } : {}),
     };
     if (item) {
       await supabase.from('inventaire_items').update(payload).eq('id', item.id);
@@ -556,8 +732,8 @@ function ItemFormModal({ item, uid, profileId, onClose, onSaved }: {
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-2 block">Catégorie</label>
             <div className="flex flex-wrap gap-2">
-              {CATEGORIES.map(c => (
-                <button key={c.value} type="button" onClick={() => setCat(c.value)}
+              {(veto ? CATEGORIES_VETO : CATEGORIES).map(c => (
+                <button key={c.value} type="button" onClick={() => { setCat(c.value); if (veto && c.value === 'vaccin') setFroid(true); }}
                   className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
                     cat === c.value ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
@@ -578,7 +754,7 @@ function ItemFormModal({ item, uid, profileId, onClose, onSaved }: {
             <div className="flex-1">
               <label className="text-xs font-semibold text-gray-500 mb-1 block">Unité</label>
               <select className={iCls} value={unite} onChange={e => setUnite(e.target.value as Unite)}>
-                {UNITES.map(u => <option key={u} value={u}>{u}</option>)}
+                {[...new Set([...(veto ? UNITES_VETO : UNITES), unite])].map(u => <option key={u} value={u}>{u}</option>)}
               </select>
             </div>
           </div>
@@ -602,6 +778,32 @@ function ItemFormModal({ item, uid, profileId, onClose, onSaved }: {
               </div>
             )}
           </div>
+
+          {veto && (
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">N° de lot</label>
+                  <input className={iCls} value={lot} onChange={e => setLot(e.target.value)} />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Péremption</label>
+                  <input type="date" className={iCls} value={peremption} onChange={e => setPeremption(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">Prix de vente (€) <span className="font-normal">si vendu au comptoir</span></label>
+                <input type="number" min="0" step="0.01" className={iCls} value={prixVente} onChange={e => setPrixVente(e.target.value)} />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={froid} onChange={e => setFroid(e.target.checked)} /> ❄️ À conserver au froid (+2 / +8 °C)
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={stupefiant} onChange={e => setStupefiant(e.target.checked)} />
+                <span>🔒 Stupéfiant <span className="block text-xs text-gray-400">Chaque entrée / sortie est inscrite au registre, avec son motif.</span></span>
+              </label>
+            </div>
+          )}
 
           {/* Notes */}
           <div>

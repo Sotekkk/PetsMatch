@@ -1148,6 +1148,17 @@ export default function Header() {
         ? { ...sec, items: [...sec.items, { href: '/sante/contrat', label: 'Mes Contrats', icon: '📄', premium: true }] }
         : sec)
     : withSanteSuivis;
+  // Vétérinaire (miroir appli) : équipe, CR à valider, salles, pharmacie.
+  const withVetoClinique = (effectiveSubCatPro === 'veterinaire')
+    ? withSanteContrats.map((sec, i) => i === 0
+        ? { ...sec, items: [...sec.items,
+            { href: '/veterinaire/comptes-rendus', label: 'Comptes rendus à valider', icon: '📝' },
+            { href: '/veterinaire/inventaire', label: 'Inventaire & pharmacie', icon: '💊' },
+            { href: '/veterinaire/salles', label: 'Salles & motifs', icon: '🚪' },
+            { href: '/elevage/employes', label: 'Mon équipe', icon: '👥' },
+          ] }
+        : sec)
+    : withSanteContrats;
   // Petites annonces « matériel & objets » liées aux animaux — accessible à
   // tous les profils (particulier, éleveur, association, pro). Section propre
   // pour éviter toute confusion avec les annonces d'animaux.
@@ -1161,7 +1172,7 @@ export default function Header() {
     : abonnementHref ?? (effectiveIsEleveur ? '/abonnement' : null);
   // « Guide de démarrage » dans la section Mon Profil de chaque menu
   // (miroir appli : menu particulier + Paramètres) — rouvre l'onboarding.
-  const withGuide = withSanteContrats.map(sec => sec.section === 'Mon Profil'
+  const withGuide = withVetoClinique.map(sec => sec.section === 'Mon Profil'
     ? { ...sec, items: [...sec.items, { href: '/guide', label: 'Guide de démarrage', icon: '🚩' }] }
     : sec);
   const withAchats = withGuide.map(sec => ({

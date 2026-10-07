@@ -73,6 +73,12 @@ export default function ProCreneauxPage() {
   const { user, loading } = useAuth();
   const router            = useRouter();
   const { id: activeProfileId, loaded: profileLoaded } = useActiveProfileState();
+  // Clinique vétérinaire : créneaux PAR praticien ('' = titulaire) — miroir
+  // appli (pro_agenda.dart _praticienCreneaux).
+  const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
+  const [praticienSel, setPraticienSel] = useState('');
+  const praticienOuNull = praticienSel || null;
+  const [indispo, setIndispo] = useState<{ titre: string; date: string; debut: string; fin: string; journee: boolean; praticien: string } | null>(null);
 
   const [weekStart, setWeekStart]           = useState(() => getMonday(new Date()));
   const [slots, setSlots]                   = useState<Record<string, SlotStatus>>({});
@@ -117,6 +123,15 @@ export default function ProCreneauxPage() {
   }, [activeProfileId]);
 
   useEffect(() => {
+    if (catPro !== 'veterinaire' || !activeProfileId) return;
+    supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: activeProfileId }).then(({ data }) => {
+      setPraticiens(((data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
+        .filter(p => p.praticien_profile_id)
+        .map(p => ({ id: p.praticien_profile_id as string, nom: p.nom?.trim() || 'Vétérinaire' })));
+    });
+  }, [catPro, activeProfileId]);
+
+  useEffect(() => {
     if (!user || catPro !== 'education') return;
     let q = supabase.from('prestations_education').select('id, nom')
       .eq('pro_uid', user.uid).eq('type', 'collectif').eq('actif', true);
@@ -137,7 +152,9 @@ export default function ProCreneauxPage() {
         .eq('pro_profile_id', activeProfileId)
         .in('statut', ['disponible', 'bloque'])
         .gte('date', toDateStr(weekStart))
-        .lte('date', toDateStr(end));
+        .lte('date', toDateStr(end))
+        // Clinique : créneaux du praticien choisi (titulaire = sans praticien).
+        [praticienOuNull ? 'eq' : 'is']('praticien_profile_id', praticienOuNull);
       const map: Record<string, SlotStatus> = {};
       const typeMap: Record<string, TypePrestation> = {};
       const domicileMap: Record<string, boolean> = {};
@@ -170,7 +187,7 @@ export default function ProCreneauxPage() {
       setRdvs((rdvRows ?? []) as typeof rdvs);
     } catch { /* ignore */ }
     setLoadingSlots(false);
-  }, [user, profileLoaded, activeProfileId, weekStart]);
+  }, [user, profileLoaded, activeProfileId, weekStart, praticienOuNull]);
 
   useEffect(() => { loadSlots(); }, [loadSlots]);
 
@@ -230,7 +247,7 @@ export default function ProCreneauxPage() {
       if (prestationId) newPres[key] = prestationId;
       if (typeGarde) newTypeGarde[key] = typeGarde;
       if (capacite > 1) newCapacite[key] = capacite;
-      rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date,
+      rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, date,
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile,
         prestation_id: prestationId, type_garde: typeGarde, capacite });
       cur += 15;
@@ -284,9 +301,10 @@ export default function ProCreneauxPage() {
     setSlotTypeGarde(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     setSlotCapacite(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     try {
-      await supabase.from('creneaux_pro').delete()
+      const del = supabase.from('creneaux_pro').delete()
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
         .eq('date', date).in('heure_debut', hdList);
+      await (praticienOuNull ? del.eq('praticien_profile_id', praticienOuNull) : del.is('praticien_profile_id', null));
       await syncHorairesSummary(merged);
     } catch { loadSlots(); }
   }
@@ -320,7 +338,7 @@ export default function ProCreneauxPage() {
           const fin = minsToTime(timeToMins(hhmm) + 15);
           // Reporter type de cours + option domicile + lien prestation, sinon
           // les copies redeviennent des créneaux individuels génériques.
-          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: toDateStr(tDay),
+          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, date: toDateStr(tDay),
             heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
             type_prestation: slotTypes[key] ?? null,
             domicile_ok: slotDomicile[key] ?? false,
@@ -362,7 +380,7 @@ export default function ProCreneauxPage() {
         for (const [key] of daySlots) {
           const hhmm = key.slice(sourceKey.length + 1);
           const fin = minsToTime(timeToMins(hhmm) + 15);
-          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: targetKey,
+          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, praticien_profile_id: praticienOuNull, date: targetKey,
             heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
             type_prestation: slotTypes[key] ?? null,
             domicile_ok: slotDomicile[key] ?? false,
@@ -396,10 +414,77 @@ export default function ProCreneauxPage() {
           className="p-2 rounded-lg hover:bg-gray-100 transition-colors" style={{ color: TEAL }}>
           ←
         </button>
-        <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif', color: TEAL }}>
+        <h1 className="text-xl font-bold flex-1" style={{ fontFamily: 'Galey, sans-serif', color: TEAL }}>
           Mes créneaux
         </h1>
+        {/* Congé, réunion, formation… : bloque la prise de RDV en ligne */}
+        <button onClick={() => setIndispo({ titre: 'Indisponible', date: toDateStr(new Date()), debut: '09:00', fin: '12:00', journee: false, praticien: praticienSel })}
+          className="text-sm font-semibold px-3 py-2 rounded-xl border" style={{ borderColor: TEAL, color: TEAL }}>
+          📅🚫 Indisponibilité
+        </button>
       </div>
+
+      {catPro === 'veterinaire' && praticiens.length > 0 && (
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-gray-500 block mb-1">Disponibilités de</label>
+          <select value={praticienSel} onChange={e => { setSlots({}); setPraticienSel(e.target.value); }}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+            <option value="">Moi</option>
+            {praticiens.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+        </div>
+      )}
+
+      {indispo && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget) setIndispo(null); }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-3">
+            <p className="font-bold text-[#1F2A2E]">Indisponibilité</p>
+            <p className="text-xs text-gray-500">Aucun RDV ne pourra être pris en ligne sur cette période.</p>
+            <input className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" value={indispo.titre}
+              onChange={e => setIndispo({ ...indispo, titre: e.target.value })} placeholder="Motif (congé, réunion, formation…)" />
+            {catPro === 'veterinaire' && praticiens.length > 0 && (
+              <select value={indispo.praticien} onChange={e => setIndispo({ ...indispo, praticien: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+                <option value="">Moi</option>
+                {praticiens.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+              </select>
+            )}
+            <input type="date" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" value={indispo.date}
+              onChange={e => setIndispo({ ...indispo, date: e.target.value })} />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={indispo.journee} onChange={e => setIndispo({ ...indispo, journee: e.target.checked })} /> Toute la journée
+            </label>
+            {!indispo.journee && (
+              <div className="flex gap-2">
+                <input type="time" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" value={indispo.debut}
+                  onChange={e => setIndispo({ ...indispo, debut: e.target.value })} />
+                <input type="time" className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" value={indispo.fin}
+                  onChange={e => setIndispo({ ...indispo, fin: e.target.value })} />
+              </div>
+            )}
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setIndispo(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600">Annuler</button>
+              <button onClick={async () => {
+                if (!user) return;
+                const d0 = new Date(`${indispo.date}T${indispo.journee ? '00:00' : indispo.debut}`);
+                const d1 = new Date(`${indispo.date}T${indispo.journee ? '23:59' : indispo.fin}`);
+                if (d1 <= d0) { alert("L'heure de fin doit être après l'heure de début."); return; }
+                const { error } = await supabase.from('agenda_events').insert({
+                  uid: user.uid, pro_profile_id: activeProfileId,
+                  titre: indispo.titre.trim() || 'Indisponible', type: 'indisponible',
+                  date_debut: d0.toISOString(), date_fin: d1.toISOString(),
+                  duree_minutes: Math.round((d1.getTime() - d0.getTime()) / 60000),
+                  ...(indispo.praticien ? { praticien_profile_id: indispo.praticien } : {}),
+                });
+                if (error) { alert(error.message); return; }
+                setIndispo(null);
+                alert('Indisponibilité enregistrée.');
+              }} className="flex-1 py-2.5 text-white rounded-xl text-sm font-semibold" style={{ backgroundColor: TEAL }}>Enregistrer</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation semaine */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">

@@ -1,5 +1,6 @@
 'use client';
 
+import { cleMotif } from '@/lib/salles-clinique';
 import { TARIFS_VETO_GROUPES, libelleTarifVeto } from '@/lib/tarifs-veto';
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
@@ -83,7 +84,9 @@ interface Prestation {
   id: string; nom: string; description?: string; duree_minutes?: number;
   prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
 }
-interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; }
+interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; praticien?: string | null; }
+// Plage occupée (pm_plages_occupees — RDV de tous les clients + indisponibilités).
+interface Occupe { debut: number; fin: number; praticien: string | null; salle: string | null }
 interface Animal { id: number; nom: string; espece: string; race?: string | null; photo_url?: string | null; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
@@ -182,6 +185,13 @@ function ProDetailContent() {
   const [showEducationReservation, setShowEducationReservation] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  // Plages occupées + clinique vétérinaire (praticiens, salles) — miroir appli.
+  const [occupes, setOccupes] = useState<Occupe[]>([]);
+  const [praticiens, setPraticiens] = useState<{ id: string | null; nom: string }[]>([]);
+  const [salles, setSalles] = useState<{ id: string; type: string }[]>([]);
+  const [sallesParMotif, setSallesParMotif] = useState<Record<string, string>>({});
+  const [dureesMotifsPro, setDureesMotifsPro] = useState<Record<string, number>>({});
+  const [choixPraticien, setChoixPraticien] = useState('*');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -608,9 +618,9 @@ function ProDetailContent() {
     // Créneaux : PostgREST plafonne à 1000 lignes/réponse → un pro très chargé
     // ne verrait jamais les dates lointaines. On pagine.
     async function fetchAllSlots() {
-      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null; domicile_ok?: boolean | null; trajet_origine?: string | null }[] = [];
+      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null; domicile_ok?: boolean | null; trajet_origine?: string | null; praticien_profile_id?: string | null }[] = [];
       for (let page = 0; page < 6; page++) {
-        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde, domicile_ok, trajet_origine')
+        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde, domicile_ok, trajet_origine, praticien_profile_id')
           .eq('pro_uid', uid).eq('statut', 'disponible').eq('pro_profile_id', profileId)
           .gte('date', toDateStr(new Date()))
           .order('date').order('heure_debut')
@@ -641,8 +651,33 @@ function ProDetailContent() {
       for (const key in byDate) byDate[key].sort((a, b) => a.startMin - b.startMin);
       return byDate;
     }
+    // Plages occupées de TOUS les clients (+ indisponibilités) sans donnée
+    // personnelle : depuis la RLS, un client ne lit que SES rdv.
+    async function fetchOccupes() {
+      const fin = new Date(); fin.setMonth(fin.getMonth() + 3);
+      const { data } = await supabase.rpc('pm_plages_occupees', {
+        p_pro_profile_id: profileId, p_debut: new Date().toISOString(), p_fin: fin.toISOString(),
+      });
+      setOccupes(((data ?? []) as { date_heure: string; duree_minutes: number; praticien_profile_id: string | null; salle_id: string | null }[])
+        .map(r => {
+          const d = new Date(r.date_heure).getTime();
+          return { debut: d, fin: d + (r.duree_minutes ?? 30) * 60000, praticien: r.praticien_profile_id, salle: r.salle_id };
+        }));
+      if (pro?.cat_pro === 'veterinaire' && profileId) {
+        const [{ data: pr }, { data: sa }, { data: pf }] = await Promise.all([
+          supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: profileId }),
+          supabase.rpc('pm_salles_actives', { p_pro_profile_id: profileId }),
+          supabase.from('user_profiles_complet').select('salles_par_motif, durees_motifs').eq('id', profileId).maybeSingle(),
+        ]);
+        setPraticiens(((pr ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
+          .map(p => ({ id: p.praticien_profile_id, nom: p.nom?.trim() || 'Vétérinaire' })));
+        setSalles(((sa ?? []) as { id: string; type_salle: string }[]).map(x => ({ id: x.id, type: x.type_salle })));
+        setSallesParMotif((pf?.salles_par_motif ?? {}) as Record<string, string>);
+        setDureesMotifsPro((pf?.durees_motifs ?? {}) as Record<string, number>);
+      }
+    }
     const [slotsRes, animauxRes, ownRes, rdvsDuJour, clientAdresse] = await Promise.all([
-      fetchAllSlots(),
+      fetchAllSlots().then(async r => { await fetchOccupes(); return r; }),
       animauxQ,
       ownQ,
       fetchRdvsDuJour(),
@@ -666,7 +701,7 @@ function ProDetailContent() {
         .in('statut', ['confirme', 'termine']).limit(1);
       setIsFirstTimeEducationClient((priorRdv ?? []).length === 0);
     }
-    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null; domicile_ok?: boolean | null; trajet_origine?: string | null }[];
+    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null; domicile_ok?: boolean | null; trajet_origine?: string | null; praticien_profile_id?: string | null }[];
     // Un créneau marqué "collectif" par l'éducateur est réservé à ses cours
     // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
     const individualSlots = pro?.cat_pro === 'education'
@@ -675,6 +710,7 @@ function ProDetailContent() {
     setSlots(individualSlots.map(s => ({
       date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin, capacite: s.capacite ?? 1, typeGarde: s.type_garde ?? null,
       domicileOk: s.domicile_ok === true, trajetOrigine: s.trajet_origine ?? null,
+      praticien: s.praticien_profile_id ?? null,
     })));
 
     // Garde : gardes-journée déjà demandées/confirmées (pour la capacité/jour).
@@ -781,7 +817,8 @@ function ProDetailContent() {
         const dateDebut = new Date(`${slot.date}T${slot.heureDebut}`);
         const dateFin   = new Date(`${slot.date}T${slot.heureFin}`);
         const dureeMinutes = Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
-        await supabase.from('rdv').insert({
+        const { error: rdvErr } = await supabase.from('rdv').insert({
+          ...(pro.cat_pro === 'veterinaire' && slot.praticien ? { instructeur_profile_id: slot.praticien } : {}),
           pro_uid: pro.uid, client_uid: user.uid,
           animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
           date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
@@ -804,6 +841,14 @@ function ProDetailContent() {
             ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
           } : {}),
         });
+        if (rdvErr) {
+          // Contrôle en base (clinique) : créneau pris entre-temps.
+          alert(rdvErr.message.includes("vient d'être pris") || rdvErr.message.includes('Plus de salle')
+            ? rdvErr.message : 'Erreur lors de la réservation. Veuillez réessayer.');
+          setSelectedSlot(null);
+          setSaving(false);
+          return;
+        }
         if (!skipReserve) {
           await supabase.from('creneaux_pro').update({ statut: 'reserve' })
             .eq('pro_uid', pro.uid)
@@ -885,8 +930,66 @@ function ProDetailContent() {
     return true;
   }
 
-  const slotsByDate = slots.reduce<Record<string, Slot[]>>((acc, s) => {
+  const chevauchementOk = pro?.cat_pro === 'garde' && pro?.garde_chevauchement_ok !== false;
+  const estOccupe = (s: Slot) => {
+    const d = new Date(`${s.date}T${s.heureDebut}`).getTime();
+    const f = new Date(`${s.date}T${s.heureFin}`).getTime();
+    return occupes.some(o => d < o.fin && f > o.debut);
+  };
+
+  // Vétérinaire : créneaux par praticien (durée du motif) + salle libre du
+  // type du motif ; « peu importe » = premier praticien libre. Miroir appli
+  // (rdv_booking_page.dart _slotsClinique), contrôle final en base.
+  function slotsVeto(): Record<string, Slot[]> {
+    const motifDuree = (MOTIFS_BY_CAT.veterinaire ?? []).find(m => m.key === motifKey)?.duree ?? 30;
+    const duree = Number(dureesMotifsPro[motifKey]) || motifDuree;
+    const typeSalle = sallesParMotif[cleMotif(motifKey)] ?? 'consultation';
+    const sallesType = new Set(salles.filter(x => x.type === typeSalle).map(x => x.id));
+    if (salles.length > 0 && sallesType.size === 0) return {};
+    const candidats = choixPraticien === '*' ? (praticiens.length ? praticiens : [{ id: null, nom: '' }])
+      : praticiens.filter(p => (p.id ?? '') === choixPraticien);
+    const res: Record<string, Map<number, string | null>> = {};
+    const toMin = (h: string) => { const [a, b] = h.split(':').map(Number); return a * 60 + b; };
+    for (const p of candidats) {
+      const parDate: Record<string, { s: number; e: number }[]> = {};
+      for (const sl of slots) {
+        if ((sl.praticien ?? '') !== (p.id ?? '')) continue;
+        (parDate[sl.date] ??= []).push({ s: toMin(sl.heureDebut), e: toMin(sl.heureFin) });
+      }
+      for (const [date, fen] of Object.entries(parDate)) {
+        fen.sort((a, b) => a.s - b.s);
+        const fusion: { s: number; e: number }[] = [];
+        for (const w of fen) {
+          const last = fusion[fusion.length - 1];
+          if (last && w.s <= last.e) last.e = Math.max(last.e, w.e); else fusion.push({ ...w });
+        }
+        const [y, mo, d] = date.split('-').map(Number);
+        for (const w of fusion) {
+          for (let t = w.s; t + duree <= w.e; t += 15) {
+            const debut = new Date(y, mo - 1, d, 0, t).getTime();
+            if (debut < earliestBookable.getTime()) continue;
+            const fin = debut + duree * 60000;
+            const chev = occupes.filter(o => debut < o.fin && fin > o.debut);
+            if (chev.some(o => (o.praticien ?? '') === (p.id ?? ''))) continue;
+            if (sallesType.size > 0 && chev.filter(o => o.salle && sallesType.has(o.salle)).length >= sallesType.size) continue;
+            const m = (res[date] ??= new Map());
+            if (!m.has(t)) m.set(t, p.id);
+          }
+        }
+      }
+    }
+    const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:00`;
+    const out: Record<string, Slot[]> = {};
+    for (const [date, m] of Object.entries(res)) {
+      out[date] = [...m.keys()].sort((a, b) => a - b)
+        .map(t => ({ date, heureDebut: hm(t), heureFin: hm(t + duree), praticien: m.get(t) ?? null }));
+    }
+    return out;
+  }
+
+  const slotsByDate = pro?.cat_pro === 'veterinaire' ? slotsVeto() : slots.reduce<Record<string, Slot[]>>((acc, s) => {
     if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
+    if (!chevauchementOk && estOccupe(s)) return acc;
     if (pro?.cat_pro === 'sante' && domicile && (!s.domicileOk || !trajetOk(s))) return acc;
     const [dy, dmo, dd] = s.date.split('-').map(Number);
     const [sh, sm] = s.heureDebut.split(':').map(Number);
@@ -1597,6 +1700,28 @@ function ProDetailContent() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Clinique : choix du vétérinaire (miroir appli) */}
+                  {pro.cat_pro === 'veterinaire' && praticiens.length > 1 && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>Vétérinaire</p>
+                      <div className="flex flex-wrap gap-2">
+                        {[{ id: '*', nom: 'Peu importe' }, ...praticiens.map(p => ({ id: p.id ?? '', nom: p.nom }))].map(c => (
+                          <button key={c.id} onClick={() => { setChoixPraticien(c.id); setSelectedSlot(null); }}
+                            className="px-3 py-2 rounded-xl border text-sm font-semibold transition-all"
+                            style={{
+                              fontFamily: 'Galey, sans-serif',
+                              borderColor: choixPraticien === c.id ? catColor : '#E5E7EB',
+                              backgroundColor: choixPraticien === c.id ? `${catColor}15` : 'white',
+                              color: choixPraticien === c.id ? catColor : '#6B7280',
+                            }}>
+                            {c.nom}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Lieu du rendez-vous (santé/ostéo uniquement) */}
                   {pro.cat_pro === 'sante' && (

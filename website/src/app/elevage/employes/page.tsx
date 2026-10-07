@@ -1,5 +1,6 @@
 'use client';
 
+import { ROLES_VETO, PERMS_VETO, libelleRoleVeto, controleFormuleVeto, appliquerDroitsRoleVeto, type RoleVeto } from '@/lib/clinique';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -48,6 +49,7 @@ interface Employe {
   photo?: string | null;
   employeProfileId?: string | null;
   eleveurProfileId?: string | null;
+  rolePro?: string | null;
 }
 
 interface Conge {
@@ -149,6 +151,8 @@ export default function EmployesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [tacheModal, setTacheModal] = useState<{ mode: 'create' } | { mode: 'edit'; tache: TacheManuelle } | null>(null);
   const [isPension, setIsPension] = useState(false);
+  // Clinique vétérinaire : rôles ASV / praticien, droits vet_*.
+  const [isClinique, setIsClinique] = useState(false);
   const [assignProtoGroup, setAssignProtoGroup] = useState<ProtoGroupe | null>(null);
   const [chaleursModal, setChaleursModal] = useState<Employe | null>(null);
   const [chaleursPermByEmploye, setChaleursPermByEmploye] = useState<Record<string, boolean>>({});
@@ -160,14 +164,19 @@ export default function EmployesPage() {
     if (!user || !profileLoaded) return;
     (async () => {
       const q = profileId
-        ? supabase.from('user_profiles_complet').select('cat_pro').eq('id', profileId).maybeSingle()
-        : supabase.from('user_profiles_complet').select('cat_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+        ? supabase.from('user_profiles_complet').select('cat_pro, profile_type').eq('id', profileId).maybeSingle()
+        : supabase.from('user_profiles_complet').select('cat_pro, profile_type').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const { data } = await q;
-      setIsPension((data as { cat_pro?: string } | null)?.cat_pro === 'pension');
+      const d = data as { cat_pro?: string; profile_type?: string } | null;
+      setIsPension(d?.cat_pro === 'pension');
+      setIsClinique(d?.profile_type === 'veterinaire' || d?.cat_pro === 'veterinaire');
     })();
   }, [user, profileId, profileLoaded]);
 
-  const permsList = PERMS_LIST.filter(p => p.key !== 'read_planning_pension' || isPension);
+  // Clinique : droits vet_* à la place des droits génériques animaux / planning.
+  const permsList = isClinique
+    ? [...PERMS_VETO, ...PERMS_LIST.filter(p => !['write_animaux', 'write_planning', 'write_repro', 'read_planning_pension'].includes(p.key))]
+    : PERMS_LIST.filter(p => p.key !== 'read_planning_pension' || isPension);
   const notifPermsList = NOTIF_PERMS_LIST.filter(p => !p.eleveurOnly || !isPension);
 
   const load = useCallback(async () => {
@@ -175,7 +184,7 @@ export default function EmployesPage() {
     setLoadingData(true);
     try {
       // Employés
-      let empQ = supabase.from('employes').select('id,uid_employe,employe_profile_id,eleveur_profile_id').eq('actif', true);
+      let empQ = supabase.from('employes').select('id,uid_employe,employe_profile_id,eleveur_profile_id,role_pro').eq('actif', true);
       if (profileId) {
         empQ = empQ.eq('eleveur_profile_id', profileId) as typeof empQ;
       } else {
@@ -185,9 +194,12 @@ export default function EmployesPage() {
       const empsData: Employe[] = [];
       const uidToNom: Record<string, string> = {};
       for (const e of empsRaw ?? []) {
-        const { data: u } = await supabase.from('user_profiles_complet')
-          .select('uid,firstname,lastname,nom,profile_type,avatar_url,profile_picture_url_pro')
-          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
+        // Profil avec lequel la personne a été ajoutée (multi-profil), repli
+        // sur son profil principal pour les anciennes lignes.
+        const sel = 'uid,firstname,lastname,nom,profile_type,avatar_url,profile_picture_url_pro';
+        const { data: u } = e.employe_profile_id
+          ? await supabase.from('user_profiles_complet').select(sel).eq('id', e.employe_profile_id).maybeSingle()
+          : await supabase.from('user_profiles_complet').select(sel).eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
         if (u) {
           const isElevage = u.profile_type === 'eleveur';
           const nom = isElevage ? (u.nom ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
@@ -199,6 +211,7 @@ export default function EmployesPage() {
             photo: isElevage ? u.profile_picture_url_pro : u.avatar_url,
             employeProfileId: e.employe_profile_id as string | null,
             eleveurProfileId: e.eleveur_profile_id as string | null,
+            rolePro: (e as { role_pro?: string | null }).role_pro ?? null,
           });
         }
       }
@@ -536,7 +549,14 @@ export default function EmployesPage() {
                   : <span className="text-teal-600 font-bold text-sm">{e.nom[0]?.toUpperCase()}</span>
                 }
               </div>
-              <span className="flex-1 font-semibold text-gray-800 text-sm">{e.nom}</span>
+              <span className="flex-1 font-semibold text-gray-800 text-sm">
+                {e.nom}
+                {isClinique && (
+                  <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] align-middle">
+                    {libelleRoleVeto(e.rolePro)}
+                  </span>
+                )}
+              </span>
               <span className="text-xs text-teal-600 font-semibold hidden sm:inline">📅 Voir l&apos;agenda</span>
               {chaleursPermByEmploye[e.id] && (
                 <button
@@ -1077,7 +1097,7 @@ export default function EmployesPage() {
       )}
 
       {showAdd && user && (
-        <AddEmployeModal uid={user.uid} profileId={profileId || null} onClose={() => { setShowAdd(false); load(); }} />
+        <AddEmployeModal uid={user.uid} profileId={profileId || null} estClinique={isClinique} onClose={() => { setShowAdd(false); load(); }} />
       )}
 
       {tacheModal && user && (
@@ -1327,7 +1347,8 @@ function candidateNom(u: CandidateUser): string {
   return `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || u.uid;
 }
 
-function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: string | null; onClose: () => void }) {
+function AddEmployeModal({ uid, profileId, estClinique = false, onClose }: { uid: string; profileId: string | null; estClinique?: boolean; onClose: () => void }) {
+  const [role, setRole] = useState<RoleVeto>('asv');
   const [query, setQuery] = useState('');
   const [allUsers, setAllUsers] = useState<CandidateUser[]>([]);
   const [results, setResults] = useState<CandidateUser[]>([]);
@@ -1381,6 +1402,15 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
       if (profileId) existingQ = existingQ.eq('eleveur_profile_id', profileId);
       const { data: existing } = await existingQ.maybeSingle();
 
+      // Clinique : formule (ASV dès Avancé, praticiens en Clinique).
+      if (estClinique && profileId && (!existing || !existing.actif)) {
+        const refus = await controleFormuleVeto(uid, profileId, role);
+        if (refus) { alert(refus); return; }
+      }
+      // Profil particulier de la personne : c'est lui qui porte l'emploi.
+      const { data: targetParticulier } = await supabase.from('user_profiles_complet')
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
+
       // Limite d'employés par forfait (éducateur/pension) — la page
       // d'abonnement annonce ces limites mais rien ne les appliquait jusqu'ici.
       if (!existing || !existing.actif) {
@@ -1415,17 +1445,24 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
 
       if (existing) {
         if (existing.actif) { alert('Cette personne est déjà dans votre équipe.'); return; }
-        await supabase.from('employes').update({ actif: true }).eq('id', existing.id);
+        await supabase.from('employes').update({
+          actif: true,
+          ...(estClinique ? { role_pro: role } : {}),
+          ...(targetParticulier?.id ? { employe_profile_id: targetParticulier.id } : {}),
+        }).eq('id', existing.id);
       } else {
         await supabase.from('employes').insert({
           uid_employe: u.uid,
           uid_eleveur: uid,
           ...(profileId ? { eleveur_profile_id: profileId } : {}),
+          ...(targetParticulier?.id ? { employe_profile_id: targetParticulier.id } : {}),
+          ...(estClinique ? { role_pro: role } : {}),
           actif: true,
         });
       }
-      const { data: targetParticulier } = await supabase.from('user_profiles_complet')
-        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
+      if (estClinique && profileId && targetParticulier?.id) {
+        await appliquerDroitsRoleVeto(profileId, targetParticulier.id as string, role);
+      }
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',
         title: 'Invitation à rejoindre une équipe',
@@ -1444,13 +1481,24 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
     <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-bold text-[#1F2A2E]">Ajouter un employé</h3>
+          <h3 className="font-bold text-[#1F2A2E]">{estClinique ? "Ajouter à l'équipe" : 'Ajouter un employé'}</h3>
           <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
             <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
+        {estClinique && (
+          <div className="px-4 pt-4 grid grid-cols-2 gap-2">
+            {ROLES_VETO.map(r => (
+              <button key={r.key} type="button" onClick={() => setRole(r.key)}
+                className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${role === r.key
+                  ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'bg-white border-[#0C5C6C] text-[#0C5C6C]'}`}>
+                {r.icon} {r.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="p-4">
           <input value={query} onChange={e => search(e.target.value)} autoFocus
             placeholder="Rechercher par prénom ou nom…"
