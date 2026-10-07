@@ -1,5 +1,6 @@
 'use client';
 
+import { TARIFS_VETO_GROUPES } from '@/lib/tarifs-veto';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -900,6 +901,11 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsSante, setTarifsSante] = useState<Record<string, number>>({});
   const [tarifsSanteVisibles, setTarifsSanteVisibles] = useState(false);
   const [tarifsSanteExtra, setTarifsSanteExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
+  // Vétérinaire : grille de tarifs (miroir appli) + déplacement à domicile.
+  const [tarifsVeto, setTarifsVeto] = useState<Record<string, number>>({});
+  const [tarifsVetoVisibles, setTarifsVetoVisibles] = useState(false);
+  const [tarifsVetoExtra, setTarifsVetoExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
+  const [seDeplace, setSeDeplace] = useState(true);
   const [tarifsTaxi, setTarifsTaxi] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [delaiMinReservationH, setDelaiMinReservationH] = useState(0);
@@ -1009,6 +1015,20 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           setTarifsSante(r.tarifs_sante as Record<string, number>);
         }
         setTarifsSanteVisibles((r.tarifs_sante_visibles as boolean) ?? false);
+        if (r.tarifs_veto && typeof r.tarifs_veto === 'object') {
+          setTarifsVeto(r.tarifs_veto as Record<string, number>);
+        }
+        setTarifsVetoVisibles((r.tarifs_veto_visibles as boolean) ?? false);
+        setSeDeplace(r.se_deplace !== false);
+        if (Array.isArray(r.tarifs_veto_extra)) {
+          setTarifsVetoExtra((r.tarifs_veto_extra as unknown[])
+            .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+            .map(e => ({
+              label: String(e.label ?? ''),
+              prix: Number(e.prix ?? 0),
+              description: String(e.description ?? ''),
+            })));
+        }
         if (Array.isArray(r.tarifs_sante_extra)) {
           setTarifsSanteExtra((r.tarifs_sante_extra as unknown[])
             .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
@@ -1175,6 +1195,20 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
       ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h } : {}),
+      ...(catPro === 'veterinaire'
+        ? {
+            tarifs_veto: tarifsVeto,
+            tarifs_veto_visibles: tarifsVetoVisibles,
+            se_deplace: seDeplace,
+            tarifs_veto_extra: tarifsVetoExtra
+              .filter(e => e.label.trim())
+              .map(e => ({
+                label: e.label.trim(),
+                prix: Number(e.prix) || 0,
+                ...(e.description.trim() ? { description: e.description.trim() } : {}),
+              })),
+          }
+        : {}),
       siret: siret.trim(),
       numero_tva: tvaIntra.trim(),
       forme_juridique_pro: formeJuridique.trim(),
@@ -1455,7 +1489,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           <Field label="Pays">
             <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
           </Field>
-          {['garde', 'toilettage', 'education', 'photographe', 'marechal_ferrant', 'taxi_animalier'].includes(catPro) && (
+          {/* Vétérinaire : tous ne se déplacent pas — sans visites à domicile,
+              pas de rayon (cabinet seul). Miroir appli. */}
+          {catPro === 'veterinaire' && (
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-[#1F2A2E]">🚗 Je me déplace à domicile</p>
+                <p className="text-xs text-gray-400">
+                  {seDeplace ? "Visites chez vos clients, dans votre zone d'intervention" : 'Consultations au cabinet uniquement'}
+                </p>
+              </div>
+              <button type="button" onClick={() => setSeDeplace(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${seDeplace ? 'bg-[#0C5C6C]' : 'bg-gray-200'}`}>
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${seDeplace ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+          )}
+          {(['garde', 'toilettage', 'education', 'photographe', 'marechal_ferrant', 'taxi_animalier'].includes(catPro)
+            || (catPro === 'veterinaire' && seDeplace)) && (
             <div>
               <label className="text-xs font-medium text-gray-500 block mb-1">
                 Rayon d&apos;intervention : {rayon} km
@@ -1737,6 +1788,61 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <button type="button"
                 onClick={() => setTarifsSanteExtra(prev => [...prev, { label: '', prix: 0, description: '' }])}
                 className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter une prestation</button>
+            </div>
+          </Card>
+        )}
+
+        {/* Tarifs vétérinaire (miroir appli) */}
+        {catPro === 'veterinaire' && (
+          <Card title="Mes tarifs (€)">
+            <p className="text-xs text-gray-400 mb-3">Laissez à 0 ce que vous ne proposez pas. Ajoutez vos autres actes en bas.</p>
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
+              <button type="button" onClick={() => setTarifsVetoVisibles(v => !v)}
+                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                style={{ backgroundColor: tarifsVetoVisibles ? '#0C5C6C' : '#D1D5DB' }}>
+                <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                  style={{ transform: tarifsVetoVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
+              </button>
+            </div>
+            {TARIFS_VETO_GROUPES.map(g => (
+              <div key={g.groupe} className="mb-4">
+                <p className="text-xs font-bold text-[#0C5C6C] mb-2">{g.groupe}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {g.items.filter(t => t.key !== 'visite_domicile' || seDeplace).map(t => (
+                    <div key={t.key}>
+                      <label className="text-xs font-medium text-gray-500 block mb-1">{t.label}</label>
+                      <input type="number" min={0} step={1}
+                        value={tarifsVeto[t.key] ?? 0}
+                        onChange={e => setTarifsVeto(v => ({ ...v, [t.key]: Number(e.target.value) }))}
+                        className={inputCls} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className="text-xs font-medium text-gray-600 mt-2 mb-2">Autres actes</p>
+            <div className="space-y-2">
+              {tarifsVetoExtra.map((e, i) => (
+                <div key={i} className="bg-gray-50 rounded-xl p-2 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input placeholder="Nom de l'acte" value={e.label}
+                      onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
+                      className={`${inputCls} flex-1`} />
+                    <input type="number" min={0} step={1} value={e.prix}
+                      onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
+                      className={`${inputCls} w-20`} />
+                    <button type="button" onClick={() => setTarifsVetoExtra(prev => prev.filter((_, j) => j !== i))}
+                      className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
+                  </div>
+                  <input placeholder="Description (facultatif)" value={e.description}
+                    onChange={ev => setTarifsVetoExtra(prev => prev.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))}
+                    className={`${inputCls} w-full text-xs`} />
+                </div>
+              ))}
+              <button type="button"
+                onClick={() => setTarifsVetoExtra(prev => [...prev, { label: '', prix: 0, description: '' }])}
+                className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter un acte</button>
             </div>
           </Card>
         )}

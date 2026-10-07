@@ -14,6 +14,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/pro_zone_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
+import 'package:PetsMatch/utils/tarifs_veto.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
@@ -143,6 +144,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   // Vitrine publique, comme l'éducateur.
   bool _tarifsSanteVisibles = false;
   List<Map<String, dynamic>> _tarifsSanteExtra = [];
+  // Vétérinaire : grille de tarifs (kTarifsVetoGroupes), vitrine opt-in,
+  // prestations libres ; et déplacement à domicile (sinon cabinet seul,
+  // pas de rayon d'intervention).
+  Map<String, int> _tarifsVeto = {};
+  bool _tarifsVetoVisibles = false;
+  List<Map<String, dynamic>> _tarifsVetoExtra = [];
+  bool _seDeplace = true;
 
   // Tous pros à RDV : délai minimum entre maintenant et un RDV réservable
   // (0 = aucun). Valeurs proposées : 0 / 12 / 24 / 48 / 72 h.
@@ -234,6 +242,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         'iban_pro':            _ibanCtrl.text.trim(),
         'bic_pro':             _bicCtrl.text.trim(),
         'regime_tva_pro':      _tvaFranchise ? 'franchise' : 'normal',
+      };
+
+  // Colonnes vétérinaire (user_profiles uniquement).
+  Map<String, dynamic> get _vetoFields => _catPro != 'veterinaire' ? const {} : {
+        'tarifs_veto':          _tarifsVeto,
+        'tarifs_veto_visibles': _tarifsVetoVisibles,
+        'tarifs_veto_extra':    _cleanTarifsExtra(_tarifsVetoExtra),
+        'se_deplace':           _seDeplace,
       };
 
   Future<void> _loadProProfile() async {
@@ -404,6 +420,24 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         if (row['tarifs_sante_extra'] is List) {
           _tarifsSanteExtra = [
             for (final e in (row['tarifs_sante_extra'] as List))
+              if (e is Map)
+                {
+                  'label': e['label']?.toString() ?? '',
+                  'prix': (e['prix'] as num?)?.toInt() ?? 0,
+                  'description': e['description']?.toString() ?? '',
+                },
+          ];
+        }
+        if (row['tarifs_veto'] is Map) {
+          _tarifsVeto = Map<String, int>.from(
+            (row['tarifs_veto'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
+        }
+        _tarifsVetoVisibles = row['tarifs_veto_visibles'] as bool? ?? false;
+        _seDeplace = row['se_deplace'] as bool? ?? true;
+        if (row['tarifs_veto_extra'] is List) {
+          _tarifsVetoExtra = [
+            for (final e in (row['tarifs_veto_extra'] as List))
               if (e is Map)
                 {
                   'label': e['label']?.toString() ?? '',
@@ -753,6 +787,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'certifications':     _certifications,
           'accept_new_clients': _acceptNewClients,
           ..._billingFields,
+          ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
           'cat_pro':            _catPro,
           'is_pro':             true,
@@ -864,6 +899,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'certifications':     _certifications,
           'accept_new_clients': _acceptNewClients,
           ..._billingFields,
+          ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
           'cat_pro':            _catPro,
           'is_pro':             true,
@@ -1101,7 +1137,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 24),
                   _sectionTitle('Disponibilité & intervention'),
                   const SizedBox(height: 12),
-                  if (_catPro != 'pension') ...[
+                  // Vétérinaire : tous ne se déplacent pas — sans visites à
+                  // domicile, pas de rayon d'intervention (cabinet seul).
+                  if (_catPro == 'veterinaire') ...[
+                    _seDeplaceToggle(),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_catPro != 'pension' && (_catPro != 'veterinaire' || _seDeplace)) ...[
                     _zoneTile(),
                     const SizedBox(height: 16),
                   ],
@@ -1482,6 +1524,43 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     _tarifsExtraEditor(
                       _tarifsSanteExtra,
                       (v) => setState(() => _tarifsSanteExtra = v),
+                      accent: const Color(0xFF0C5C6C),
+                    ),
+                  ],
+
+                  // ── Tarifs vétérinaire ────────────────────────────────────
+                  if (_catPro == 'veterinaire') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Mes tarifs (€)'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Laissez à 0 ce que vous ne proposez pas. Ajoutez vos autres actes en bas.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      const Expanded(child: Text('Afficher mes tarifs sur ma fiche publique',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                      Switch(
+                        value: _tarifsVetoVisibles,
+                        activeThumbColor: const Color(0xFF0C5C6C),
+                        onChanged: (v) => setState(() => _tarifsVetoVisibles = v),
+                      ),
+                    ]),
+                    for (final g in kTarifsVetoGroupes) ...[
+                      const SizedBox(height: 10),
+                      Text(g.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                      const SizedBox(height: 6),
+                      for (final t in g.$2)
+                        if (t.$1 != 'visite_domicile' || _seDeplace)
+                          _ligneTarifVeto(t.$1, t.$2),
+                    ],
+                    const SizedBox(height: 4),
+                    _tarifsExtraEditor(
+                      _tarifsVetoExtra,
+                      (v) => setState(() => _tarifsVetoExtra = v),
                       accent: const Color(0xFF0C5C6C),
                     ),
                   ],
@@ -2377,6 +2456,72 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           value: _acceptNewClients,
           onChanged: (v) => setState(() => _acceptNewClients = v),
           activeThumbColor: const Color(0xFF6E9E57),
+        ),
+      ]),
+    );
+  }
+
+  Widget _ligneTarifVeto(String key, String label) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(children: [
+          Expanded(child: Text(label,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                  fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 90,
+            child: TextFormField(
+              initialValue: (_tarifsVeto[key] ?? 0).toString(),
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                suffixText: '€',
+                suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                filled: true, fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+              ),
+              onChanged: (val) {
+                final v = int.tryParse(val.trim().isEmpty ? '0' : val.trim());
+                if (v != null && v >= 0) setState(() => _tarifsVeto = {..._tarifsVeto, key: v});
+              },
+            ),
+          ),
+        ]),
+      );
+
+  Widget _seDeplaceToggle() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        Icon(Icons.directions_car_outlined,
+            color: _seDeplace ? const Color(0xFF0C5C6C) : Colors.grey, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Je me déplace à domicile',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+            Text(_seDeplace
+                    ? "Visites chez vos clients, dans votre zone d'intervention"
+                    : 'Consultations au cabinet uniquement',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          ]),
+        ),
+        Switch(
+          value: _seDeplace,
+          onChanged: (v) => setState(() => _seDeplace = v),
+          activeThumbColor: const Color(0xFF0C5C6C),
         ),
       ]),
     );

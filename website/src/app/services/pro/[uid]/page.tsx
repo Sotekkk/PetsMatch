@@ -1,5 +1,6 @@
 'use client';
 
+import { TARIFS_VETO_GROUPES, libelleTarifVeto } from '@/lib/tarifs-veto';
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -65,6 +66,10 @@ interface ProData {
   tarifs_sante?: Record<string, number>;
   tarifs_sante_visibles?: boolean;
   tarifs_sante_extra?: { label: string; prix: number; description?: string }[];
+  tarifs_veto?: Record<string, number>;
+  tarifs_veto_visibles?: boolean;
+  tarifs_veto_extra?: { label: string; prix: number; description?: string }[];
+  se_deplace?: boolean;
   trajet_origine_defaut?: string;
   autre_domicile_lat?: number | null;
   autre_domicile_lng?: number | null;
@@ -332,6 +337,10 @@ function ProDetailContent() {
           tarifs_sante: (data.tarifs_sante as Record<string, number>) ?? {},
           tarifs_sante_visibles: (data.tarifs_sante_visibles as boolean) ?? false,
           tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
+          tarifs_veto: (data.tarifs_veto as Record<string, number>) ?? {},
+          tarifs_veto_visibles: (data.tarifs_veto_visibles as boolean) ?? false,
+          tarifs_veto_extra: Array.isArray(data.tarifs_veto_extra) ? data.tarifs_veto_extra : [],
+          se_deplace: data.se_deplace !== false,
           garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
           trajet_origine_defaut: (data.trajet_origine_defaut as string) || 'cabinet',
@@ -372,6 +381,10 @@ function ProDetailContent() {
           tarifs_sante: (data.tarifs_sante as Record<string, number>) ?? {},
           tarifs_sante_visibles: (data.tarifs_sante_visibles as boolean) ?? false,
           tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
+          tarifs_veto: (data.tarifs_veto as Record<string, number>) ?? {},
+          tarifs_veto_visibles: (data.tarifs_veto_visibles as boolean) ?? false,
+          tarifs_veto_extra: Array.isArray(data.tarifs_veto_extra) ? data.tarifs_veto_extra : [],
+          se_deplace: data.se_deplace !== false,
           garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
           trajet_origine_defaut: (data.trajet_origine_defaut as string) || 'cabinet',
@@ -971,6 +984,23 @@ function ProDetailContent() {
         ]
       : [];
 
+  // Vétérinaire : même carte « Tarifs » (miroir appli).
+  if (pro?.cat_pro === 'veterinaire' && pro.tarifs_veto_visibles) {
+    for (const g of TARIFS_VETO_GROUPES) {
+      for (const t of g.items) {
+        const v = pro.tarifs_veto?.[t.key] ?? 0;
+        if (v > 0) santeTarifs.push({ label: libelleTarifVeto(g.groupe, t.label), prix: `${v} €` });
+      }
+    }
+    for (const e of pro.tarifs_veto_extra ?? []) {
+      if (!e.label?.trim()) continue;
+      santeTarifs.push({
+        label: e.description?.trim() ? `${e.label.trim()} — ${e.description.trim()}` : e.label.trim(),
+        prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
+      });
+    }
+  }
+
   const motifs = requiresBilanFirst
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
@@ -1072,7 +1102,7 @@ function ProDetailContent() {
         {(fullAddress || pro.rayon > 0) && (
           <p className="text-sm text-gray-500 mt-1.5 flex items-center gap-1" style={{ fontFamily: 'Galey, sans-serif' }}>
             <span>📍</span>
-            <span>{fullAddress || pro.ville}{pro.rayon > 0 ? ` · Rayon ${pro.rayon} km` : ''}</span>
+            <span>{fullAddress || pro.ville}{pro.se_deplace === false ? ' · Au cabinet uniquement' : pro.rayon > 0 ? ` · Rayon ${pro.rayon} km` : ''}</span>
           </p>
         )}
 

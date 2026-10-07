@@ -321,7 +321,9 @@ class _ServiceListPageState extends State<ServiceListPage> {
             matchNearMe = false;
           } else {
             // rayon = 0 signifie non configuré → on utilise 50 km par défaut
-            final rawRayon = (p['rayon_intervention'] as num?)?.toDouble() ?? 0;
+            // Pro qui ne se déplace pas : son rayon ne s'applique pas.
+            final rawRayon = p['se_deplace'] == false
+                ? 0.0 : (p['rayon_intervention'] as num?)?.toDouble() ?? 0;
             final rayon = rawRayon > 0 ? rawRayon : 50.0;
             final distM = Geolocator.distanceBetween(_userLat!, _userLng!, pLat, pLng);
             matchNearMe = distM / 1000 <= rayon;

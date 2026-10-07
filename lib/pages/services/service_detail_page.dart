@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/utils/tarifs_veto.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -596,6 +597,42 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     return out;
   }
 
+  /// Vétérinaire : tarifs publics si `tarifs_veto_visibles` (grille
+  /// kTarifsVetoGroupes non nulle + prestations libres).
+  List<(String, String)> get _tarifsVetoPublics {
+    if (_proData?['cat_pro'] != 'veterinaire' || _proData?['tarifs_veto_visibles'] != true) {
+      return [];
+    }
+    final out = <(String, String)>[];
+    final fixes = _proData?['tarifs_veto'];
+    if (fixes is Map) {
+      for (final g in kTarifsVetoGroupes) {
+        for (final t in g.$2) {
+          final v = (fixes[t.$1] as num?)?.toDouble() ?? 0;
+          if (v > 0) out.add((libelleTarifVeto(g.$1, t.$2), '${v.toStringAsFixed(0)} €'));
+        }
+      }
+    }
+    final extra = _proData?['tarifs_veto_extra'];
+    if (extra is List) {
+      for (final e in extra) {
+        if (e is! Map) continue;
+        final label = e['label']?.toString().trim() ?? '';
+        if (label.isEmpty) continue;
+        final v = (e['prix'] as num?)?.toDouble() ?? 0;
+        final desc = e['description']?.toString().trim() ?? '';
+        out.add((desc.isEmpty ? label : '$label — $desc', v > 0 ? '${v.toStringAsFixed(0)} €' : '—'));
+      }
+    }
+    return out;
+  }
+
+  /// Tarifs publics santé + vétérinaire (une seule carte « Tarifs »).
+  List<(String, String)> get _tarifsPublics => [..._tarifsSantePublics, ..._tarifsVetoPublics];
+
+  /// false : le pro ne se déplace pas (cabinet uniquement).
+  bool get _seDeplace => _proData?['se_deplace'] != false;
+
   String get _siteWeb => _proData?['site_web'] ?? '';
   String get _instagram => _proData?['instagram'] ?? '';
   String get _facebook => _proData?['facebook'] ?? '';
@@ -826,7 +863,10 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             Icon(Icons.location_on_outlined, size: 15, color: Colors.grey.shade500),
             const SizedBox(width: 4),
             Text(_ville, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
-            if (_rayon > 0) ...[
+            if (!_seDeplace) ...[
+              Text(' · ', style: TextStyle(color: Colors.grey.shade400)),
+              Text('Au cabinet uniquement', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+            ] else if (_rayon > 0) ...[
               Text(' · ', style: TextStyle(color: Colors.grey.shade400)),
               Text('$_rayon km', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
             ],
@@ -1125,15 +1165,15 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             )),
           ],
 
-          // Tarifs santé (ostéo/kiné), si le pro les expose
-          if (_tarifsSantePublics.isNotEmpty) ...[
+          // Tarifs santé (ostéo/kiné) / vétérinaire, si le pro les expose
+          if (_tarifsPublics.isNotEmpty) ...[
             const SizedBox(height: 12),
             _card(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _sectionTitle('Tarifs'),
                 const SizedBox(height: 8),
-                ..._tarifsSantePublics.map((t) => Padding(
+                ..._tarifsPublics.map((t) => Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Expanded(child: Text(t.$1,

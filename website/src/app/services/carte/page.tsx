@@ -81,7 +81,7 @@ function ServicesCarteContent() {
       // Profils (user_profiles) — latitude/longitude OU lat/lng, inclus même sans lat/lng
       const { data: secondaryData } = await supabase
         .from('user_profiles_complet')
-        .select('id, uid, profile_type, nom, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
+        .select('id, uid, profile_type, nom, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention, se_deplace')
         .not('profile_type', 'is', null)
         .in('statut_pro', ['actif', 'validated']);
 
@@ -182,7 +182,8 @@ function ServicesCarteContent() {
       if (filterDept && !loc.includes(filterDept.toLowerCase())) return false;
     }
     if (nearMe && userPos) {
-      const rawRayon = (p as any).rayon_intervention ?? 0;
+      // Pro qui ne se déplace pas : son rayon ne s'applique pas (miroir appli).
+      const rawRayon = (p as any).se_deplace === false ? 0 : ((p as any).rayon_intervention ?? 0);
       const rayon = rawRayon > 0 ? rawRayon : 50;
       const dist = haversineKm(userPos.lat, userPos.lng, p.lat, p.lng);
       if (dist > rayon) return false;
