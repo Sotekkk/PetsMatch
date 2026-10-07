@@ -54,7 +54,7 @@ async function supabaseInsert(table, rows) {
 
 // ─── FCM helper (partagé — préfixe le profil concerné + bascule au tap) ──────
 
-const {sendPush, employesAbonnes, notifyEmployes} = require("./push_helpers");
+const {employesAbonnes, notifyEmployes, PushDigest} = require("./push_helpers");
 
 // ─── Domaine : chaleurs ───────────────────────────────────────────────────────
 
@@ -121,6 +121,8 @@ exports.sendChaleursNotifications = functions
         let sent = 0;
         let inApp = 0;
         const empCache = new Map();
+        // Un seul push par destinataire et par run (récap si plusieurs).
+        const digest = new PushDigest({type: "rappels_chaleurs", icone: "🌸", libelle: "rappels chaleurs"});
 
         // 1. Fetch all female animals (not departed/deceased, not stérilisées —
         // une femelle stérilisée n'a plus de cycle de chaleurs à suivre)
@@ -286,16 +288,11 @@ exports.sendChaleursNotifications = functions
 
             // Send FCM push — au propriétaire, et à l'employé assigné si la
             // tâche a été déléguée.
-            const pushed = await sendPush(
-                animal.uid_eleveur,
-                title,
-                body,
+            digest.add(animal.uid_eleveur, title, body,
                 {type: "chaleur", animalId: String(animal.id)},
-                {profileId: profileIdByAnimal[animal.id] || null},
-            );
-            if (pushed) sent++;
+                {profileId: profileIdByAnimal[animal.id] || null});
             if (assigneA) {
-                await sendPush(assigneA, title, body,
+                digest.add(assigneA, title, body,
                     {type: "chaleur", animalId: String(animal.id)},
                     {profileId: assigneProfileId});
             }
@@ -344,6 +341,7 @@ exports.sendChaleursNotifications = functions
                 pushData: {animalId: String(animal.id)},
                 notifData: {animalId: String(animal.id)},
                 exclude: assigneA ? [assigneA] : [],
+                digest,
             });
 
             // Tâche agenda à 8h quand chaleurs aujourd'hui ou en retard
@@ -378,6 +376,7 @@ exports.sendChaleursNotifications = functions
             }
         }
 
+        sent = await digest.flush();
         console.log(`sendChaleursNotifications: ${sent} push FCM + ${inApp} notifs in-app.`);
         return null;
     });

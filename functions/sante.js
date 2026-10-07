@@ -215,7 +215,7 @@ async function notifyAndMirrorPension({
 // Android le système affichait sinon un doublon en plus de l'affichage
 // manuel app — voir push_helpers.js)
 
-const {sendPush, employesAbonnes, notifyEmployes} = require("./push_helpers");
+const {sendPush, employesAbonnes, notifyEmployes, PushDigest} = require("./push_helpers");
 
 // Catégorie de notifications employé par table de rappel santé
 // (Élevage → Employés → Accès → « Notifications reçues »).
@@ -241,7 +241,8 @@ function dateStr(daysFromNow) {
 // ─── Fonction principale ──────────────────────────────────────────────────────
 
 /**
- * Schedulée chaque jour à 8h (heure de Paris).
+ * Schedulée chaque jour à 8h05 (heure de Paris) — décalée des chaleurs (8h)
+ * pour ne pas empiler les push sur le téléphone.
  * Envoie des rappels FCM J-7, J-1 et Jour J pour :
  *   - vaccinations   (date_rappel)
  *   - vermifuges     (date_rappel)
@@ -254,11 +255,13 @@ exports.sendSanteReminders = functions
     // défaut de 60 s coupait la fonction en plein milieu (timeout du
     // 29/09/2026 → rappels sautés pour une partie des animaux).
     .runWith({timeoutSeconds: 540, memory: "512MB"})
-    .pubsub.schedule("0 8 * * *")
+    .pubsub.schedule("5 8 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
-        let sent = 0;
         const empCache = new Map();
+        // Un seul push par destinataire pour tout le run (rappels + retards) :
+        // récap si plusieurs (cf. PushDigest).
+        const digest = new PushDigest({type: "rappels_sante", icone: "🩺", libelle: "rappels santé"});
 
         for (const {table, label, emoji, nomField} of TABLES) {
             for (const {key: palierKey, days, phrase} of PALIERS) {
@@ -299,12 +302,11 @@ exports.sendSanteReminders = functions
                     const title = `${emoji} ${label} — ${nomAnimal}`;
                     const body = `Rappel ${phrase} : ${produit} pour ${nomAnimal}.`;
 
-                    const pushed = await sendPush(uid, title, body, {
+                    digest.add(uid, title, body, {
                         type: "sante",
                         animalId: String(row.animal_id),
                         table,
                     }, {profileId});
-                    if (pushed) sent++;
 
                     // Notification en base
                     try {
@@ -332,6 +334,7 @@ exports.sendSanteReminders = functions
                             type: "sante", title, body,
                             pushData: {animalId: String(row.animal_id), table},
                             notifData: {animalId: String(row.animal_id), table, palier: palierKey},
+                            digest,
                         });
                     }
 
@@ -377,10 +380,9 @@ exports.sendSanteReminders = functions
             }
         }
 
-        console.log(`sendSanteReminders: ${sent} notifications envoyées.`);
-
-        const overdueSent = await sendOverdueSanteReminders();
-        console.log(`sendOverdueSanteReminders: ${overdueSent} notifications envoyées.`);
+        const overdueSent = await sendOverdueSanteReminders(digest);
+        const sent = await digest.flush();
+        console.log(`sendSanteReminders: ${overdueSent} retards, ${sent} destinataires notifiés (push).`);
         return null;
     });
 
@@ -396,7 +398,7 @@ exports.sendSanteReminders = functions
  *   - explicitement coupé le rappel depuis l'app/le site (notifs_sent avec
  *     la clé sante_<table>_muted_<id>).
  */
-async function sendOverdueSanteReminders() {
+async function sendOverdueSanteReminders(digest) {
     let sent = 0;
     const empCache = new Map();
     const todayStr = dateStr(0);
@@ -476,12 +478,12 @@ async function sendOverdueSanteReminders() {
                 }
             } catch (_) {/* pas bloquant */}
 
-            const pushed = await sendPush(uid, title, body, {
+            digest.add(uid, title, body, {
                 type: "sante", animalId: String(row.animal_id), table, overdue: true,
             }, {profileId});
-            if (pushed) sent++;
+            sent++;
             if (assigneA) {
-                await sendPush(assigneA, title, body,
+                digest.add(assigneA, title, body,
                     {type: "sante", animalId: String(row.animal_id), table, overdue: true},
                     {profileId: assigneProfileId});
             }
@@ -524,6 +526,7 @@ async function sendOverdueSanteReminders() {
                     pushData: {animalId: String(row.animal_id), table, overdue: "true"},
                     notifData: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
                     exclude: assigneA ? [assigneA] : [],
+                    digest,
                 });
             }
 

@@ -251,11 +251,12 @@ async function employesAbonnes({eleveurUid, eleveurProfileId, permission, cache}
  *   notifiés par ailleurs (ex. employé assigné à la tâche), pour éviter un doublon.
  * @return {Promise<number>} nombre d'employés notifiés.
  */
-async function notifyEmployes(employes, {type, title, body, pushData, notifData, exclude = []}) {
+async function notifyEmployes(employes, {type, title, body, pushData, notifData, exclude = [], digest = null}) {
     let n = 0;
     for (const e of employes) {
         if (exclude.includes(e.uid)) continue;
-        await sendPush(e.uid, title, body, {type, ...(pushData || {})}, {profileId: e.profileId});
+        if (digest) digest.add(e.uid, title, body, {type, ...(pushData || {})}, {profileId: e.profileId});
+        else await sendPush(e.uid, title, body, {type, ...(pushData || {})}, {profileId: e.profileId});
         try {
             await supabaseRequest("POST", "notifications", [{
                 uid: e.uid, type, title, body,
@@ -271,4 +272,59 @@ async function notifyEmployes(employes, {type, title, body, pushData, notifData,
     return n;
 }
 
-module.exports = {sendPush, profileLabel, resolveProfileId, employesAbonnes, notifyEmployes};
+// ─── Regroupement des push d'un même run ─────────────────────────────────────
+
+/**
+ * Regroupe les push d'un rappel planifié par destinataire (uid + profil) :
+ * 1 rappel → push normal ; plusieurs → UN push récapitulatif. Les notifs
+ * in-app restent individuelles. Sans ça, un éleveur recevait 6+ push en
+ * quelques secondes à 8h : Android (MIUI surtout) en regroupait / en
+ * laissait tomber (rappel « Chaleurs — Aiko » jamais affiché, 07/10/2026).
+ */
+class PushDigest {
+    /**
+     * @param {{type: string, icone: string, libelle: string}} p - type des
+     *   données du récap, emoji et libellé pluriel (« rappels santé »).
+     */
+    constructor({type, icone, libelle}) {
+        this.type = type;
+        this.icone = icone;
+        this.libelle = libelle;
+        this.groupes = new Map();
+    }
+
+    add(uid, title, body, data = {}, opts = {}) {
+        if (!uid) return;
+        const profileId = opts.profileId || null;
+        const k = `${uid}|${profileId || ""}`;
+        if (!this.groupes.has(k)) this.groupes.set(k, {uid, profileId, items: []});
+        const g = this.groupes.get(k);
+        // Même rappel deux fois pour la même personne (propriétaire ET
+        // employé assigné = même compte) : une seule ligne.
+        if (g.items.some((i) => i.title === title)) return;
+        g.items.push({title, body, data});
+    }
+
+    /** Envoie les push. @return {Promise<number>} destinataires atteints. */
+    async flush() {
+        let n = 0;
+        for (const g of this.groupes.values()) {
+            let ok;
+            if (g.items.length === 1) {
+                const i = g.items[0];
+                ok = await sendPush(g.uid, i.title, i.body, i.data, {profileId: g.profileId});
+            } else {
+                // « Antiparasitaire — Utha · Antiparasitaire — Vaïna · … »
+                let resume = g.items.map((i) => i.title.replace(/^\S+\s+/u, "")).join(" · ");
+                if (resume.length > 180) resume = `${resume.slice(0, 177)}…`;
+                ok = await sendPush(g.uid, `${this.icone} ${g.items.length} ${this.libelle}`, resume,
+                    {type: this.type}, {profileId: g.profileId});
+            }
+            if (ok) n++;
+        }
+        this.groupes.clear();
+        return n;
+    }
+}
+
+module.exports = {sendPush, profileLabel, resolveProfileId, employesAbonnes, notifyEmployes, PushDigest};
