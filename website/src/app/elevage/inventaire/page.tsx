@@ -102,6 +102,9 @@ export default function InventairePage() {
   const [items,      setItems]      = useState<Item[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [catFilter,  setCatFilter]  = useState<Categorie | 'tous'>('tous');
+  const [etatFilter, setEtatFilter] = useState<'tous' | 'normal' | 'alerte' | 'rupture'>('tous');
+  const [search,     setSearch]     = useState('');
+  const [ajustItem,  setAjustItem]  = useState<Item | null>(null);
   const [showForm,   setShowForm]   = useState(false);
   const [editItem,   setEditItem]   = useState<Item | null>(null);
   const [detailItem, setDetailItem] = useState<Item | null>(null);
@@ -262,13 +265,18 @@ export default function InventairePage() {
     if (detailItem?.id === item.id) loadMouvements(item.id);
   }
 
-  const displayed = catFilter === 'tous'
-    ? items
-    : items.filter(i => i.categorie === catFilter);
+  const etatDe = (i: Item): 'rupture' | 'alerte' | 'normal' =>
+    i.quantite <= 0 ? 'rupture'
+      : (i.alerte_active && i.quantite_alerte !== null && i.quantite <= i.quantite_alerte) ? 'alerte' : 'normal';
 
-  const alertes = items.filter(i =>
-    i.alerte_active && i.quantite_alerte !== null && i.quantite <= i.quantite_alerte
-  );
+  const q = search.trim().toLowerCase();
+  const displayed = items.filter(i =>
+    (catFilter === 'tous' || i.categorie === catFilter) &&
+    (etatFilter === 'tous' || etatDe(i) === etatFilter) &&
+    (!q || i.nom.toLowerCase().includes(q) || (i.notes ?? '').toLowerCase().includes(q) || (i.lot ?? '').toLowerCase().includes(q)));
+  const filtresActifs = catFilter !== 'tous' || etatFilter !== 'tous' || !!q;
+
+  const alertes = items.filter(i => etatDe(i) !== 'normal');
 
   if (authLoading || loading) {
     return (
@@ -281,7 +289,6 @@ export default function InventairePage() {
   if (veto && vetoBloque) {
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center">
-        <p className="text-4xl mb-3">💊</p>
         <h1 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Inventaire & pharmacie</h1>
         <p className="text-sm text-gray-500 mb-5">Lots, péremptions, chaîne du froid et registre des stupéfiants : disponible avec les formules Avancé et Clinique.</p>
         <a href="/veterinaire/abonnement" className="inline-block bg-[#0C5C6C] text-white font-semibold px-6 py-2.5 rounded-xl text-sm">Voir les formules</a>
@@ -290,168 +297,213 @@ export default function InventairePage() {
   }
 
   const cats = veto ? CATEGORIES_VETO : CATEGORIES;
+  // Catégories proposées : celles du profil + celles déjà utilisées par un article
+  const catsFiltre = [
+    ...cats,
+    ...[...new Set(items.map(i => i.categorie))].filter(c => !cats.some(x => x.value === c)).map(c => catInfo(c)),
+  ];
   const perimes = veto ? items.filter(i => (joursAvantPeremption(i) ?? 999) < 0) : [];
   const bientot = veto ? items.filter(i => { const j = joursAvantPeremption(i); return j !== null && j >= 0 && j <= 30; }) : [];
+  const qte = (n: number | null, unite: string) => n === null ? '—' : `${n} ${pluralUnite(unite, n)}`;
+  const champ = 'w-full h-10 border border-gray-200 rounded-xl px-3 text-sm bg-white text-gray-700 focus:outline-none focus:border-[#0C5C6C] focus:ring-2 focus:ring-[#0C5C6C]/10';
+
+  // Mentions pharmacie (texte sobre, sans pictogrammes)
+  const mentions = (item: Item) => {
+    const j = joursAvantPeremption(item);
+    const m = [
+      item.lot ? `Lot ${item.lot}` : '',
+      j !== null ? (j < 0 ? 'Périmé' : `Exp. ${new Date(item.date_peremption + 'T00:00:00').toLocaleDateString('fr-FR')}`) : '',
+      item.froid ? '+2 / +8 °C' : '',
+      item.stupefiant ? 'Stupéfiant' : '',
+    ].filter(Boolean);
+    return m.length ? <p className={`text-xs mt-0.5 ${j !== null && j <= 30 ? 'text-red-600' : 'text-gray-400'}`}>{m.join(' · ')}</p> : null;
+  };
+  const stockCls = (i: Item) => etatDe(i) === 'rupture' ? 'text-red-600 font-semibold'
+    : etatDe(i) === 'alerte' ? 'text-amber-700 font-semibold' : 'text-[#1F2A2E]';
+  const etatBadge = (i: Item) => etatDe(i) === 'rupture'
+    ? <span className="ml-2 text-[11px] font-semibold text-red-700 bg-red-50 border border-red-100 rounded-md px-1.5 py-0.5">Rupture</span>
+    : etatDe(i) === 'alerte'
+      ? <span className="ml-2 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-1.5 py-0.5">Seuil atteint</span>
+      : null;
+  const actions = (item: Item) => (
+    <div className="flex items-center gap-3 justify-end">
+      <button onClick={() => setAjustItem(item)}
+        className="h-9 px-3 border border-[#0C5C6C] text-[#0C5C6C] rounded-lg text-sm font-semibold hover:bg-[#0C5C6C]/5 whitespace-nowrap">
+        Ajuster le stock
+      </button>
+      <button onClick={() => { setEditItem(item); setShowForm(true); }}
+        className="text-sm font-semibold text-[#0C5C6C] underline underline-offset-2 hover:text-[#094F5D]">
+        Modifier
+      </button>
+    </div>
+  );
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 pb-24">
+    <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
 
       {/* Toast tâche créée */}
       {taskToast && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-[#0C5C6C] text-white text-sm font-semibold px-5 py-3 rounded-2xl shadow-lg animate-fade-in">
-          <span>📋 Tâche créée : commander {taskToast}</span>
+          <span>Tâche créée : commander {taskToast}</span>
           <a href="/elevage/planning" className="underline underline-offset-2 whitespace-nowrap">Voir</a>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.back()} className="p-2 rounded-xl hover:bg-gray-100 transition-colors">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {/* En-tête */}
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
+        <div className="flex items-start gap-2">
+          <button onClick={() => router.back()} aria-label="Retour" className="mt-1 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <div>
-            <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-              {veto ? '💊 Inventaire & pharmacie' : '📦 Inventaire'}
+            <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {veto ? 'Inventaire & pharmacie' : 'Inventaire'}
             </h1>
-            <p className="text-xs text-gray-400">{items.length} article{items.length !== 1 ? 's' : ''} en stock</p>
+            <p className="text-sm text-gray-500">{items.length} référence{items.length !== 1 ? 's' : ''} enregistrée{items.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {veto && (
             <button onClick={ouvrirRegistre}
-              className="border border-[#0C5C6C] text-[#0C5C6C] text-sm font-semibold px-3 py-2 rounded-xl hover:bg-[#0C5C6C]/5">
-              📖 Registre des stupéfiants
+              className="h-10 border border-gray-200 text-gray-700 text-sm font-semibold px-4 rounded-xl hover:border-[#0C5C6C] hover:text-[#0C5C6C]">
+              Registre des stupéfiants
             </button>
           )}
           <button onClick={() => { setEditItem(null); setShowForm(true); }}
-            className="bg-[#0C5C6C] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#094F5D] transition-colors">
-            + Ajouter
+            className="h-10 bg-[#0C5C6C] text-white text-sm font-semibold px-5 rounded-xl hover:bg-[#094F5D] transition-colors">
+            + Ajouter un article
           </button>
         </div>
       </div>
 
       {/* Péremptions (pharmacie vétérinaire) */}
       {(perimes.length > 0 || bientot.length > 0) && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-5">
-          <p className="text-sm font-bold text-red-700 mb-2">⏳ Péremptions — {perimes.length} périmé(s), {bientot.length} sous 30 jours</p>
-          <div className="space-y-1">
-            {[...perimes, ...bientot].map(a => (
-              <p key={a.id} className="text-xs text-red-700">
-                <span className="font-semibold">{a.nom}</span>{a.lot ? ` (lot ${a.lot})` : ''} — {(joursAvantPeremption(a) ?? 0) < 0 ? 'périmé' : `expire dans ${joursAvantPeremption(a)} j`}
-              </p>
-            ))}
-          </div>
+        <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4">
+          <p className="text-sm font-semibold text-red-700">Péremptions : {perimes.length} périmé{perimes.length > 1 ? 's' : ''}, {bientot.length} sous 30 jours</p>
+          <p className="text-xs text-red-700 mt-1">
+            {[...perimes, ...bientot].map(a => `${a.nom}${a.lot ? ` (lot ${a.lot})` : ''} — ${(joursAvantPeremption(a) ?? 0) < 0 ? 'périmé' : `expire dans ${joursAvantPeremption(a)} j`}`).join(' · ')}
+          </p>
         </div>
       )}
 
-      {/* Alertes stock bas */}
+      {/* Stocks à surveiller */}
       {alertes.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5">
-          <p className="text-sm font-bold text-amber-700 mb-2">⚠️ Stock bas ({alertes.length})</p>
-          <div className="space-y-1">
-            {alertes.map(a => (
-              <p key={a.id} className="text-xs text-amber-700">
-                <span className="font-semibold">{a.nom}</span> — {a.quantite} {pluralUnite(a.unite, a.quantite)} restant{a.quantite !== 1 ? 's' : ''}
-              </p>
-            ))}
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-4">
+          <p className="text-sm text-amber-800">
+            <span className="font-semibold">{alertes.length} article{alertes.length > 1 ? 's' : ''} à réapprovisionner</span>
+            {' '}— {alertes.map(a => a.nom).join(', ')}
+          </p>
+          <button onClick={() => setEtatFilter(etatFilter === 'alerte' ? 'tous' : 'alerte')}
+            className="text-xs font-semibold text-amber-800 underline underline-offset-2">
+            {etatFilter === 'alerte' ? 'Tout afficher' : 'Afficher'}
+          </button>
         </div>
       )}
 
-      {/* Filtres catégorie */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-5 -mx-1 px-1">
-        <button onClick={() => setCatFilter('tous')}
-          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-            catFilter === 'tous' ? 'bg-[#1F2A2E] border-[#1F2A2E] text-white' : 'border-gray-300 text-gray-600 hover:border-gray-400'
-          }`}>
-          Tous ({items.length})
-        </button>
-        {cats.map(c => {
-          const count = items.filter(i => i.categorie === c.value).length;
-          if (count === 0) return null;
-          return (
-            <button key={c.value} onClick={() => setCatFilter(c.value)}
-              className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                catFilter === c.value
-                  ? 'text-white border-transparent'
-                  : 'border-gray-300 text-gray-600 hover:border-gray-400'
-              }`}
-              style={catFilter === c.value ? { backgroundColor: c.color, borderColor: c.color } : {}}>
-              {c.emoji} {c.label} ({count})
-            </button>
-          );
-        })}
+      {/* Recherche + filtres */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)] gap-3 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm mb-2">
+        <label className="block sm:col-span-2 lg:col-span-1">
+          <span className="block text-xs font-semibold text-gray-500 mb-1">Rechercher un article</span>
+          <span className="relative block">
+            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
+            </svg>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un article…" className={`${champ} pl-9`} />
+          </span>
+        </label>
+        <label className="block">
+          <span className="block text-xs font-semibold text-gray-500 mb-1">Catégorie</span>
+          <select value={catFilter} onChange={e => setCatFilter(e.target.value as Categorie | 'tous')}
+            className={`${champ} ${catFilter !== 'tous' ? 'border-[#0C5C6C] text-[#0C5C6C] font-semibold' : ''}`}>
+            <option value="tous">Toutes les catégories</option>
+            {catsFiltre.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="block text-xs font-semibold text-gray-500 mb-1">État du stock</span>
+          <select value={etatFilter} onChange={e => setEtatFilter(e.target.value as typeof etatFilter)}
+            className={`${champ} ${etatFilter !== 'tous' ? 'border-[#0C5C6C] text-[#0C5C6C] font-semibold' : ''}`}>
+            <option value="tous">Tous les états</option>
+            <option value="normal">Stock normal</option>
+            <option value="alerte">Seuil d’alerte atteint</option>
+            <option value="rupture">Rupture</option>
+          </select>
+        </label>
+      </div>
+      <div className="flex items-center justify-between px-1 mb-4 text-xs min-h-[20px]">
+        <span className="text-gray-400">{displayed.length} article{displayed.length !== 1 ? 's' : ''} affiché{displayed.length !== 1 ? 's' : ''}</span>
+        {filtresActifs && (
+          <button onClick={() => { setSearch(''); setCatFilter('tous'); setEtatFilter('tous'); }}
+            className="font-semibold text-[#0C5C6C] hover:underline">Réinitialiser</button>
+        )}
       </div>
 
-      {/* Liste articles */}
-      {displayed.length === 0 ? (
-        <div className="text-center py-16">
-          <span className="text-5xl block mb-3">📦</span>
-          <p className="font-semibold text-gray-500 mb-1">Aucun article</p>
-          <p className="text-sm text-gray-400">Ajoutez vos premiers stocks avec le bouton +</p>
+      {/* Articles */}
+      {items.length === 0 ? (
+        <div className="text-center py-16 bg-white border border-gray-100 rounded-2xl">
+          <p className="font-semibold text-gray-600 mb-1">Aucun article</p>
+          <p className="text-sm text-gray-400">Ajoutez vos premiers stocks avec « Ajouter un article ».</p>
+        </div>
+      ) : displayed.length === 0 ? (
+        <div className="text-center py-12 bg-white border border-gray-100 rounded-2xl">
+          <p className="text-sm text-gray-500">Aucun article ne correspond à ces filtres.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {displayed.map(item => {
-            const cat = catInfo(item.categorie);
-            const isLow = item.alerte_active && item.quantite_alerte !== null && item.quantite <= item.quantite_alerte;
-            return (
-              <div key={item.id}
-                className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${isLow ? 'border-amber-300' : 'border-gray-100'}`}>
-                <div className="flex items-center gap-3 p-4">
-                  {/* Icône catégorie */}
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                    style={{ backgroundColor: `${cat.color}15` }}>
-                    {cat.emoji}
-                  </div>
-
-                  {/* Infos */}
-                  <div className="flex-1 min-w-0" onClick={() => openDetail(item)} style={{ cursor: 'pointer' }}>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+        <>
+          {/* Ordinateur : tableau */}
+          <div className="hidden md:block bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-500 border-b border-gray-100">
+                <tr>
+                  <th className="text-left font-semibold px-5 py-3">Article</th>
+                  <th className="text-left font-semibold px-4 py-3">Catégorie</th>
+                  <th className="text-left font-semibold px-4 py-3">Stock actuel</th>
+                  <th className="text-left font-semibold px-4 py-3">Seuil d&apos;alerte</th>
+                  <th className="text-right font-semibold px-5 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {displayed.map(item => (
+                  <tr key={item.id} className="hover:bg-gray-50/60">
+                    <td className="px-5 py-3.5">
+                      <button onClick={() => openDetail(item)} className="text-left font-semibold text-[#1F2A2E] hover:underline" title="Voir l'historique">
                         {item.nom}
-                      </p>
-                      {isLow && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold flex-shrink-0">⚠️ bas</span>}
-                    </div>
-                    {(item.stupefiant || item.froid || item.lot || item.date_peremption) && (
-                      <div className="flex flex-wrap gap-2 text-[10px] mt-0.5">
-                        {item.stupefiant && <span className="font-bold text-red-700">🔒 Stupéfiant</span>}
-                        {item.froid && <span className="font-bold text-blue-700">❄️ +2/+8 °C</span>}
-                        {item.lot && <span className="text-gray-500">Lot {item.lot}</span>}
-                        {joursAvantPeremption(item) !== null && (
-                          <span className={`font-bold ${(joursAvantPeremption(item) ?? 99) <= 30 ? 'text-red-600' : 'text-gray-500'}`}>
-                            {(joursAvantPeremption(item) ?? 0) < 0 ? '⛔ Périmé' : `Exp. ${new Date(item.date_peremption + 'T00:00:00').toLocaleDateString('fr-FR')}`}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <p className="text-sm font-semibold" style={{ color: isLow ? '#B45309' : cat.color }}>
-                      {item.quantite} {pluralUnite(item.unite, item.quantite)}
-                      {item.quantite_alerte !== null && (
-                        <span className="text-xs text-gray-400 font-normal ml-1">
-                          · seuil {item.quantite_alerte} {pluralUnite(item.unite, item.quantite_alerte)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
+                      </button>
+                      {mentions(item)}
+                    </td>
+                    <td className="px-4 py-3.5 text-gray-600">{catInfo(item.categorie).label}</td>
+                    <td className={`px-4 py-3.5 whitespace-nowrap ${stockCls(item)}`}>{qte(item.quantite, item.unite)}{etatBadge(item)}</td>
+                    <td className="px-4 py-3.5 text-gray-600 whitespace-nowrap">{item.alerte_active ? qte(item.quantite_alerte, item.unite) : '—'}</td>
+                    <td className="px-5 py-3.5">{actions(item)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-                  {/* Actions rapides */}
-                  <div className="flex gap-2 flex-shrink-0">
-                    <QuickMvt item={item} type="consommation" onLog={logMouvement} />
-                    <QuickMvt item={item} type="restock" onLog={logMouvement} />
-                    <button onClick={() => { setEditItem(item); setShowForm(true); }}
-                      className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors text-xs">
-                      ✏️
-                    </button>
+          {/* Mobile : cartes compactes */}
+          <div className="md:hidden space-y-2">
+            {displayed.map(item => (
+              <div key={item.id} className="bg-white border border-gray-100 rounded-xl p-3.5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <button onClick={() => openDetail(item)} className="text-left font-semibold text-[#1F2A2E]">{item.nom}</button>
+                    <p className="text-xs text-gray-500">{catInfo(item.categorie).label}</p>
+                    {mentions(item)}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-sm whitespace-nowrap ${stockCls(item)}`}>{qte(item.quantite, item.unite)}</p>
+                    <p className="text-[11px] text-gray-400 whitespace-nowrap">Seuil : {item.alerte_active ? qte(item.quantite_alerte, item.unite) : '—'}</p>
                   </div>
                 </div>
+                {etatDe(item) !== 'normal' && <div className="mt-1.5 -ml-2">{etatBadge(item)}</div>}
+                <div className="mt-3 pt-3 border-t border-gray-100">{actions(item)}</div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Modal détail / historique */}
@@ -462,7 +514,7 @@ export default function InventairePage() {
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <div>
                 <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                  {catInfo(detailItem.categorie).emoji} {detailItem.nom}
+                  {detailItem.nom}
                 </p>
                 <p className="text-xs text-gray-400">Historique des mouvements</p>
               </div>
@@ -499,6 +551,12 @@ export default function InventairePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Ajuster le stock */}
+      {ajustItem && (
+        <AjusterStockModal item={ajustItem} onClose={() => setAjustItem(null)}
+          onLog={async (type, q, note) => { await logMouvement(ajustItem, type, q, note); setAjustItem(null); }} />
       )}
 
       {/* Modal ajout / édition */}
@@ -556,88 +614,77 @@ export default function InventairePage() {
   );
 }
 
-// ── Bouton mouvement rapide ───────────────────────────────────────────────────
+// ── Ajuster le stock : ajouter ou retirer, unité de l'article, jamais négatif ─
 
-function QuickMvt({ item, type, onLog }: {
+function AjusterStockModal({ item, onClose, onLog }: {
   item: Item;
-  type: 'consommation' | 'restock';
-  onLog: (item: Item, type: MvtType, qte: number, note: string) => Promise<void>;
+  onClose: () => void;
+  onLog: (type: MvtType, qte: number, note: string) => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const [qte, setQte]   = useState('1');
+  const [sens, setSens] = useState<'ajout' | 'retrait'>('ajout');
+  const [qte, setQte]   = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const q = parseFloat(qte.replace(',', '.'));
+  const valide = !!q && q > 0;
+  const trop = sens === 'retrait' && valide && q > item.quantite;
+  const apres = valide ? (sens === 'ajout' ? item.quantite + q : item.quantite - q) : item.quantite;
+  const arrondi = (n: number) => Math.round(n * 1000) / 1000;
+  const noteRequise = item.stupefiant && !note.trim();
 
   async function submit() {
-    const q = parseFloat(qte);
-    if (!q || q <= 0) return;
-    if (item.stupefiant && !note.trim()) {
-      alert(type === 'consommation'
-        ? 'Stupéfiant : indiquez le motif (animal, ordonnance…).'
-        : "Stupéfiant : indiquez l'origine (fournisseur, bon de livraison…).");
-      return;
-    }
+    if (!valide || trop || noteRequise) return;
     setSaving(true);
-    await onLog(item, type, q, note);
+    await onLog(sens === 'ajout' ? 'restock' : 'consommation', q, note.trim());
     setSaving(false);
-    setOpen(false);
-    setQte('1');
-    setNote('');
   }
 
-  const isConsomm = type === 'consommation';
-
   return (
-    <>
-      <button onClick={() => setOpen(true)}
-        className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-colors ${
-          isConsomm
-            ? 'bg-red-50 text-red-500 hover:bg-red-100'
-            : 'bg-green-50 text-green-600 hover:bg-green-100'
-        }`}
-        title={isConsomm ? 'Consommation' : 'Réappro'}>
-        {isConsomm ? '−' : '+'}
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-6"
-          onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5">
-            <p className="font-bold text-[#1F2A2E] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
-              {isConsomm ? '📉 Consommation' : '📦 Réapprovisionnement'} — {item.nom}
-            </p>
-            <div className="flex gap-3 mb-3">
-              <div className="flex-1">
-                <label className="text-xs font-semibold text-gray-500 mb-1 block">Quantité ({item.unite})</label>
-                <input type="number" min="0.1" step="0.1" value={qte} onChange={e => setQte(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]"
-                  autoFocus />
-              </div>
-            </div>
-            <div className="mb-4">
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">
-                {item.stupefiant ? 'Motif / origine *' : <>Note <span className="font-normal">(optionnel)</span></>}
-              </label>
-              <input type="text" value={note} onChange={e => setNote(e.target.value)}
-                placeholder={isConsomm ? 'ex : paquet de croquettes terminé' : 'ex : livraison reçue'}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setOpen(false)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
-                Annuler
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-6 sm:pb-0"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl w-full max-w-sm">
+        <div className="px-5 pt-5 pb-3 border-b border-gray-100">
+          <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Ajuster le stock</p>
+          <p className="text-sm text-gray-500">{item.nom} — stock actuel : {arrondi(item.quantite)} {pluralUnite(item.unite, item.quantite)}</p>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-1 p-1 bg-gray-100 rounded-xl">
+            {(['ajout', 'retrait'] as const).map(v => (
+              <button key={v} type="button" onClick={() => setSens(v)}
+                className={`h-9 rounded-lg text-sm font-semibold ${sens === v ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500'}`}>
+                {v === 'ajout' ? 'Ajouter' : 'Retirer'}
               </button>
-              <button onClick={submit} disabled={saving}
-                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60 ${
-                  isConsomm ? 'bg-red-500 hover:bg-red-600' : 'bg-[#6E9E57] hover:bg-[#5A8A45]'
-                }`}>
-                {saving ? '…' : 'Enregistrer'}
-              </button>
+            ))}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Quantité</label>
+            <div className={`flex items-center h-10 border rounded-xl bg-white overflow-hidden focus-within:ring-2 focus-within:ring-[#0C5C6C]/10 ${trop ? 'border-red-300' : 'border-gray-200 focus-within:border-[#0C5C6C]'}`}>
+              <input type="number" min="0" step="any" inputMode="decimal" value={qte} onChange={e => setQte(e.target.value)} autoFocus
+                className="flex-1 min-w-0 h-full px-3 text-sm focus:outline-none" placeholder="0" />
+              <span className="px-3 text-sm text-gray-500 bg-gray-50 h-full flex items-center border-l border-gray-200">{pluralUnite(item.unite, valide ? q : 2)}</span>
             </div>
+            {trop
+              ? <p className="text-xs text-red-600 mt-1">Impossible de retirer plus que le stock actuel ({arrondi(item.quantite)} {pluralUnite(item.unite, item.quantite)}).</p>
+              : valide && <p className="text-xs text-gray-500 mt-1">Nouveau stock : <span className="font-semibold text-[#1F2A2E]">{arrondi(apres)} {pluralUnite(item.unite, apres)}</span></p>}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">
+              {item.stupefiant ? (sens === 'retrait' ? 'Motif (animal, ordonnance…) *' : 'Origine (fournisseur, bon de livraison…) *') : <>Note <span className="font-normal">(facultative)</span></>}
+            </label>
+            <input type="text" value={note} onChange={e => setNote(e.target.value)}
+              placeholder={sens === 'retrait' ? 'Ex : sac terminé' : 'Ex : livraison reçue'}
+              className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose} className="flex-1 h-10 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+            <button onClick={submit} disabled={saving || !valide || trop || noteRequise}
+              className="flex-1 h-10 bg-[#0C5C6C] hover:bg-[#094F5D] text-white rounded-xl text-sm font-semibold disabled:opacity-40">
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
           </div>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -730,18 +777,11 @@ function ItemFormModal({ item, uid, profileId, veto = false, onClose, onSaved }:
 
           {/* Catégorie */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-2 block">Catégorie</label>
-            <div className="flex flex-wrap gap-2">
-              {(veto ? CATEGORIES_VETO : CATEGORIES).map(c => (
-                <button key={c.value} type="button" onClick={() => { setCat(c.value); if (veto && c.value === 'vaccin') setFroid(true); }}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                    cat === c.value ? 'text-white border-transparent' : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
-                  style={cat === c.value ? { backgroundColor: c.color } : {}}>
-                  {c.emoji} {c.label}
-                </button>
-              ))}
-            </div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Catégorie</label>
+            <select className={iCls} value={cat} onChange={e => { const v = e.target.value as Categorie; setCat(v); if (veto && v === 'vaccin') setFroid(true); }}>
+              {[...(veto ? CATEGORIES_VETO : CATEGORIES), ...((veto ? CATEGORIES_VETO : CATEGORIES).some(c => c.value === cat) ? [] : [catInfo(cat)])]
+                .map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
           </div>
 
           {/* Quantité + Unité */}
