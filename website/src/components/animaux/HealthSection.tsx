@@ -1,10 +1,16 @@
 'use client';
 
-import { useState, ReactNode, CSSProperties } from 'react';
+// Rubrique du carnet de santé : une ligne sobre (pastille de couleur, nom,
+// nombre d'enregistrements, « + Ajouter » de la même couleur, chevron).
+// À placer dans un HealthPanel (panneau blanc unique, lignes séparées par
+// des traits fins). La couleur est fonctionnelle (cf. lib/sante-couleurs).
+
+import { useState, ReactNode } from 'react';
 
 interface Props {
   title: string;
-  icon: string;
+  /** Conservé pour compatibilité ; plus affiché (présentation sans emojis). */
+  icon?: string;
   color: string;
   count: number;
   children: ReactNode;
@@ -15,49 +21,52 @@ interface Props {
   defaultOpen?: boolean;
 }
 
-export default function HealthSection({ title, icon, color, count, children, onAdd, addForm, addFormOpen, id, defaultOpen }: Props) {
+/** Panneau blanc unique regroupant les rubriques. */
+export function HealthPanel({ children }: { children: ReactNode }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-200 overflow-hidden">
+      {children}
+    </div>
+  );
+}
+
+export default function HealthSection({ title, color, count, children, onAdd, addForm, addFormOpen, id, defaultOpen }: Props) {
   const [open, setOpen] = useState(!!defaultOpen);
 
   return (
-    <div id={id} className={`bg-white rounded-2xl overflow-hidden shadow-sm ${defaultOpen ? 'ring-2 ring-offset-2' : ''}`}
-      style={defaultOpen ? ({ '--tw-ring-color': color } as CSSProperties) : undefined}>
-      <div
-        role="button" tabIndex={0}
-        onClick={() => setOpen(!open)}
-        onKeyDown={e => e.key === 'Enter' && setOpen(!open)}
-        className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors cursor-pointer">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-          style={{ backgroundColor: color + '20' }}>
-          {icon}
-        </div>
-        <div className="flex-1 text-left">
-          <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>{title}</p>
-          <p className="text-xs" style={{ color }}>{count} enregistrement{count !== 1 ? 's' : ''}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {onAdd && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setOpen(true); onAdd(); }}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm transition-colors hover:opacity-80"
-              style={{ backgroundColor: color }}>
-              +
-            </button>
-          )}
-          <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
-            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <section id={id} className={defaultOpen ? 'bg-gray-50/60' : undefined}>
+      <div className="flex items-center gap-3 pl-4 pr-2 min-h-[64px]">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+          className="flex-1 min-w-0 flex items-center gap-3 py-3 text-left">
+          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} aria-hidden />
+          <span className="min-w-0">
+            <span className="block font-semibold text-[#1F2A2E] text-[15px] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{title}</span>
+            <span className="block text-xs text-gray-500">{count} enregistrement{count > 1 ? 's' : ''}</span>
+          </span>
+        </button>
+        {onAdd && (
+          <button type="button"
+            onClick={(e) => { e.stopPropagation(); onAdd(); }}
+            className="h-10 px-3 rounded-lg text-sm font-semibold whitespace-nowrap hover:bg-gray-50 transition-colors"
+            style={{ color }}>
+            + Ajouter
+          </button>
+        )}
+        <button type="button" onClick={() => setOpen(!open)} aria-label={open ? 'Replier' : 'Déplier'}
+          className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50">
+          <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
-        </div>
+        </button>
       </div>
 
-      {open && (
-        <div className="border-t border-gray-100">
-          {addFormOpen && addForm && (
-            <div className="p-4 bg-gray-50 border-b border-gray-100">{addForm}</div>
-          )}
-          <div className="divide-y divide-gray-50">{children}</div>
-        </div>
+      {/* « + Ajouter » affiche le formulaire sans déplier la liste */}
+      {addFormOpen && addForm && (
+        <div className="px-4 py-4 border-t border-gray-100 bg-gray-50">{addForm}</div>
       )}
-    </div>
+      {open && (
+        <div className="border-t border-gray-100 divide-y divide-gray-100">{children}</div>
+      )}
+    </section>
   );
 }

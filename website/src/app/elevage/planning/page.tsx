@@ -8,6 +8,7 @@ import {
   perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, type Perimetre,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
+import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
@@ -534,34 +535,32 @@ function PlanningPageInner() {
 
 // ── Couleurs par type d'acte ──────────────────────────────────────────────────
 
+// Actes santé : couleurs du carnet de santé (référence unique,
+// lib/sante-couleurs) ; visite = couleur « Visites vétérinaires » du carnet.
 const TYPE_DOT_COLORS: Record<string, string> = {
-  vaccination:     '#4CAF50',
-  visite:          '#2196F3',
-  traitement:      '#0C5C6C',
-  vermifuge:       '#FFC107',
-  antiparasitaire: '#FF9800',
+  ...SANTE_COULEUR_ACTE,
+  chirurgie:       SANTE_COULEURS.chirurgies,
+  visite:          '#26A69A',
   osteopathie:     '#9C27B0',
   ferrage:         '#795548',
   radiographie:    '#607D8B',
-  chirurgie:       '#F44336',
   alimentaire:     '#FF9800',
   toilettage:      '#E91E63',
   nettoyage:       '#00BCD4',
   promenade:       '#673AB7',
   socialisation:   '#673AB7',
-  commande:        '#6E9E57',
+  commande:        '#0C5C6C',
 };
 
 const DOT_LEGEND = [
-  { color: '#EF4444',  label: 'En retard' },
-  { color: '#0C5C6C',  label: 'Traitement' },
-  { color: '#4CAF50',  label: 'Vaccination' },
-  { color: '#2196F3',  label: 'Visite' },
-  { color: '#FFC107',  label: 'Vermifuge' },
-  { color: '#FF9800',  label: 'Antiparasitaire' },
-  { color: '#00BCD4',  label: 'Nettoyage' },
-  { color: '#673AB7',  label: 'Promenade' },
-  { color: '#FF5722',  label: 'Socialisation' },
+  { color: '#EF4444',                         label: 'En retard' },
+  { color: SANTE_COULEURS.vaccinations,       label: 'Vaccination' },
+  { color: SANTE_COULEURS.vermifuges,         label: 'Vermifuge' },
+  { color: SANTE_COULEURS.antiparasitaires,   label: 'Antiparasitaire' },
+  { color: SANTE_COULEURS.traitements,        label: 'Traitement' },
+  { color: '#26A69A',                         label: 'Visite' },
+  { color: '#00BCD4',                         label: 'Nettoyage' },
+  { color: '#673AB7',                         label: 'Promenade / socialisation' },
 ];
 
 const MONTH_NAMES_FR = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',

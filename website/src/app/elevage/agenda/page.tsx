@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
@@ -117,9 +118,11 @@ const ACTE_EMOJIS: Record<string, string> = {
   promenade: '🦮', socialisation: '🦮', autre: '📋',
 };
 
+// Actes santé : même couleur que la rubrique du carnet de santé (référence
+// unique, lib/sante-couleurs).
 const ACTE_COLOR: Record<string, string> = {
-  vaccination: '#2196F3', vermifuge: '#FF9800', antiparasitaire: '#4CAF50',
-  traitement: '#E91E63', visite: '#9C27B0', alimentaire: '#FF9800',
+  ...SANTE_COULEUR_ACTE,
+  visite: '#9C27B0', alimentaire: '#FF9800',
   toilettage: '#E91E63', nettoyage: '#00BCD4',
   promenade: '#8BC34A', socialisation: '#8BC34A', autre: '#9E9E9E',
 };

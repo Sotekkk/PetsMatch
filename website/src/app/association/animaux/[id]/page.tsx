@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import HealthSection from '@/components/animaux/HealthSection';
+import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
+import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
@@ -68,15 +69,15 @@ function fmtDateShort(d?: string | null): string {
 // ─── SantéTab ─────────────────────────────────────────────────────────────────
 
 const HEALTH_SECTIONS = [
-  { table: 'vaccinations',     label: 'Vaccinations',       icon: '💉', color: '#6E9E57',
+  { table: 'vaccinations',     label: 'Vaccinations',       icon: '💉', color: SANTE_COULEURS.vaccinations,
     fields: [{ key: 'vaccin', label: 'Vaccin', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'lot', label: 'N° lot' }, { key: 'notes', label: 'Notes' }] },
-  { table: 'vermifuges',       label: 'Vermifugations',     icon: '🪱', color: '#8B7355',
+  { table: 'vermifuges',       label: 'Vermifuges',         icon: '🪱', color: SANTE_COULEURS.vermifuges,
     fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'dose', label: 'Dose' }, { key: 'notes', label: 'Notes' }] },
-  { table: 'antiparasitaires', label: 'Antiparasitaires',   icon: '🦟', color: '#E06B3F',
+  { table: 'antiparasitaires', label: 'Antiparasitaires',   icon: '🦟', color: SANTE_COULEURS.antiparasitaires,
     fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
-  { table: 'traitements',      label: 'Traitements',        icon: '💊', color: '#0C5C6C',
+  { table: 'traitements',      label: 'Traitements',        icon: '💊', color: SANTE_COULEURS.traitements,
     fields: [{ key: 'nom', label: 'Traitement', required: true }, { key: 'type', label: 'Type' }, { key: 'date', label: 'Début', type: 'date' }, { key: 'date_fin', label: 'Fin', type: 'date' }, { key: 'notes', label: 'Notes' }] },
-  { table: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: '🏥', color: '#C2185B',
+  { table: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: '🏥', color: SANTE_COULEURS.chirurgies,
     fields: [
       { key: 'intitule', label: 'Intervention (ex : stérilisation)', required: true },
       { key: 'date', label: 'Date (prévue ou réalisée)', type: 'date', required: true },
@@ -86,10 +87,12 @@ const HEALTH_SECTIONS = [
       { key: 'protocole_postop', label: 'Protocole post-opératoire (analgésie, soins, contrôle…)', type: 'textarea' },
       { key: 'notes', label: 'Notes' },
     ] },
-  { table: 'visites',          label: 'Visites vétérinaires', icon: '🏥', color: '#5C7A9E',
-    fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
-  { table: 'poids',            label: 'Suivi du poids',     icon: '⚖️', color: '#9E6E57',
+  { table: 'allergies',        label: 'Allergies',          icon: '⚠️', color: SANTE_COULEURS.allergies,
+    fields: [{ key: 'description', label: 'Allergie', required: true }, { key: 'type', label: 'Type' }, { key: 'severite', label: 'Sévérité' }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
+  { table: 'poids',            label: 'Courbe de poids',    icon: '⚖️', color: SANTE_COULEURS.poids,
     fields: [{ key: 'valeur', label: 'Poids (kg)', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
+  { table: 'visites',          label: 'Visites vétérinaires', icon: '🏥', color: '#26A69A',
+    fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
 ];
 
 function AddForm({ fields, onSave, onCancel, saving }:
@@ -234,7 +237,7 @@ function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
   };
 
   return (
-    <div className="space-y-3">
+    <HealthPanel>
       {HEALTH_SECTIONS.map(s => {
         const records = health[s.table] ?? [];
         const isOpen = addOpen === s.table;
@@ -263,7 +266,7 @@ function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
           </HealthSection>
         );
       })}
-    </div>
+    </HealthPanel>
   );
 }
 
@@ -296,7 +299,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
   );
 
   return (
-    <div className="space-y-3">
+    <HealthPanel>
       {crs.length > 0 && (
         <HealthSection title="Comptes rendus" icon="📋" color="#0C5C6C" count={crs.length}>
           {crs.map(r => {
@@ -337,7 +340,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
           })}
         </HealthSection>
       )}
-    </div>
+    </HealthPanel>
   );
 }
 

@@ -8,7 +8,8 @@ import { useAuth } from '@/lib/auth-context';
 import { RichText } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
-import HealthSection from '@/components/animaux/HealthSection';
+import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
+import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import CessionModal, { type Reservation } from '@/components/animaux/CessionModal';
 import ReservationModal from '@/components/animaux/ReservationModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
@@ -443,8 +444,9 @@ function ConsultationsVetTab({ crs, ordonnances, vetNames }:
     </div>
   );
 
+  if (crs.length === 0 && ordonnances.length === 0) return null;
   return (
-    <div className="space-y-3">
+    <HealthPanel>
       {crs.length > 0 && (
         <HealthSection title="Comptes rendus" icon="📋" color="#0C5C6C" count={crs.length}>
           {crs.map(cr => <VetDocCard key={cr.id as string} record={cr} vetNames={vetNames} />)}
@@ -455,7 +457,7 @@ function ConsultationsVetTab({ crs, ordonnances, vetNames }:
           {ordonnances.map(o => <VetDocCard key={o.id as string} record={o} vetNames={vetNames} />)}
         </HealthSection>
       )}
-    </div>
+    </HealthPanel>
   );
 }
 
@@ -4537,10 +4539,11 @@ function AnimalFichePageInner() {
 
       {/* ── TAB CARNET DE SANTÉ ────────────────────────────────────────────── */}
       {tab === 'sante' && (
-        <div className="space-y-3">
+        <div className="space-y-6">
+          <HealthPanel>
           {/* Vaccinations */}
           <HealthSection id="health-vaccinations" defaultOpen={catParam==='vaccinations'}
-            title="Vaccinations" icon="💉" color="#2196F3" count={health.vaccinations.length}
+            title="Vaccinations" icon="💉" color={SANTE_COULEURS.vaccinations} count={health.vaccinations.length}
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vaccinations'?null:'vaccinations'); } : undefined}
             addFormOpen={addOpen==='vaccinations'}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
@@ -4565,7 +4568,7 @@ function AnimalFichePageInner() {
 
           {/* Vermifuges */}
           <HealthSection id="health-vermifuges" defaultOpen={catParam==='vermifuges'}
-            title="Vermifuges" icon="🧪" color="#6E9E57" count={health.vermifuges.length}
+            title="Vermifuges" icon="🧪" color={SANTE_COULEURS.vermifuges} count={health.vermifuges.length}
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vermifuges'?null:'vermifuges'); } : undefined}
             addFormOpen={addOpen==='vermifuges'}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
@@ -4586,7 +4589,7 @@ function AnimalFichePageInner() {
 
           {/* Antiparasitaires */}
           <HealthSection id="health-antiparasitaires" defaultOpen={catParam==='antiparasitaires'}
-            title="Antiparasitaires" icon="🛡️" color="#5B8648" count={health.antiparasitaires.length}
+            title="Antiparasitaires" icon="🛡️" color={SANTE_COULEURS.antiparasitaires} count={health.antiparasitaires.length}
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires'); } : undefined}
             addFormOpen={addOpen==='antiparasitaires'}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
@@ -4607,7 +4610,7 @@ function AnimalFichePageInner() {
 
           {/* Traitements */}
           <HealthSection id="health-traitements" defaultOpen={catParam==='traitements'}
-            title="Traitements" icon="💊" color="#8D6E63" count={health.traitements.length}
+            title="Traitements" icon="💊" color={SANTE_COULEURS.traitements} count={health.traitements.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='traitements'?null:'traitements') : undefined}
             addFormOpen={addOpen==='traitements'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
@@ -4627,7 +4630,7 @@ function AnimalFichePageInner() {
 
           {/* Chirurgie / Hospitalisation */}
           <HealthSection id="health-chirurgies" defaultOpen={catParam==='chirurgies'}
-            title="Chirurgie / Hospitalisation" icon="🏥" color="#C2185B" count={health.chirurgies.length}
+            title="Chirurgie / Hospitalisation" icon="🏥" color={SANTE_COULEURS.chirurgies} count={health.chirurgies.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='chirurgies'?null:'chirurgies') : undefined}
             addFormOpen={addOpen==='chirurgies'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
@@ -4658,7 +4661,7 @@ function AnimalFichePageInner() {
           </HealthSection>
 
           {/* Allergies */}
-          <HealthSection title="Allergies" icon="⚠️" color="#E25C5C" count={health.allergies.length}
+          <HealthSection title="Allergies" icon="⚠️" color={SANTE_COULEURS.allergies} count={health.allergies.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='allergies'?null:'allergies') : undefined}
             addFormOpen={addOpen==='allergies'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
@@ -4673,7 +4676,7 @@ function AnimalFichePageInner() {
           </HealthSection>
 
           {/* Poids */}
-          <HealthSection title="Courbe de poids" icon="⚖️" color="#5F9EAA" count={health.poids.length}
+          <HealthSection title="Courbe de poids" icon="⚖️" color={SANTE_COULEURS.poids} count={health.poids.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='poids'?null:'poids') : undefined}
             addFormOpen={addOpen==='poids'}
             addForm={<WeightForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
@@ -4723,6 +4726,7 @@ function AnimalFichePageInner() {
             })()}
             {health.poids.length===0 && <p className="p-4 text-sm text-gray-400">Aucune mesure</p>}
           </HealthSection>
+
 
           {/* Visites vétérinaires */}
           <HealthSection title="Visites vétérinaires" icon="🏥" color="#26A69A" count={health.visites.length}
@@ -4774,6 +4778,7 @@ function AnimalFichePageInner() {
             ))}
             {crs.length===0 && <p className="p-4 text-sm text-gray-400">Aucun compte rendu</p>}
           </HealthSection>
+          </HealthPanel>
         </div>
       )}
 
