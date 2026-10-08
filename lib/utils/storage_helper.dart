@@ -109,9 +109,11 @@ Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
 
 /// Transform a Supabase Storage URL for thumbnail display.
 /// Returns the original URL if it is not a Supabase Storage URL.
+// NB : l'add-on de transformation d'image Supabase (/storage/v1/render/image/)
+// n'est pas activé sur ce projet (403 FeatureNotEnabled) — réécrire l'URL vers
+// /render/image/ laissait les photos Supabase vides dans le fil et les favoris.
+// On renvoie l'URL d'origine (même choix que website/src/lib/upload-media.ts) ;
+// la taille d'affichage reste gérée par le widget (BoxFit).
 String thumbUrl(String url, {int width = 600, int? height, int quality = 75, String resize = 'cover'}) {
-  if (!url.contains('/storage/v1/object/public/')) return url;
-  final h = height != null ? '&height=$height' : '';
-  final sep = url.contains('?') ? '&' : '?'; // URL déjà versionnée (?v=…)
-  return '${url.replaceFirst('/storage/v1/object/', '/storage/v1/render/image/')}${sep}width=$width$h&quality=$quality&resize=$resize';
+  return url;
 }
