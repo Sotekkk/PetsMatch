@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/transmission_document.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -109,6 +110,7 @@ Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
   'conditionsEscompte': r['conditions_escompte'],
   'noteComplementaire': r['note_complementaire'],
   'statut':             r['statut'],
+  'datePaiement':       r['date_paiement'],
 };
 
 const _kEscompteDefaut = 'Escompte pour paiement anticipé : néant.';
@@ -504,17 +506,45 @@ class FactureDetailPage extends StatelessWidget {
             },
           ),
           if (!readOnly)
+            IconButton(
+              icon: const Icon(Icons.forward_to_inbox_outlined),
+              tooltip: 'Envoyer au client',
+              onPressed: () => transmettreDocument(context,
+                type: 'facture',
+                nomFichier: 'Facture-${_numAff(data)}.pdf',
+                expediteur: (data['nomEmetteur'] ?? '').toString(),
+                emailParDefaut: (data['emailClient'] ?? '').toString(),
+                destinataireNom: '${data['prenomClient'] ?? ''} ${data['nomClient'] ?? ''}'.trim(),
+                pdf: () => _buildPdf(data),
+              ),
+            ),
+          if (!readOnly)
             PopupMenuButton<String>(
               onSelected: (v) async {
-                await Supabase.instance.client
-                    .from('factures')
-                    .update({'statut': v})
-                    .eq('id', docId);
+                final maj = <String, dynamic>{'statut': v};
+                if (v == 'payee') {
+                  // Facture acquittée : mode + date de règlement (mention sur le PDF).
+                  final mode = await showModalBottomSheet<String>(
+                    context: context,
+                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                    builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const ListTile(title: Text('Réglée par', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+                      for (final m in const ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'])
+                        ListTile(title: Text(m, style: const TextStyle(fontFamily: 'Galey')), onTap: () => Navigator.pop(ctx, m)),
+                    ])),
+                  );
+                  if (mode == null) return;
+                  maj['mode_paiement'] = mode;
+                  maj['date_paiement'] = DateTime.now().toUtc().toIso8601String();
+                } else {
+                  maj['date_paiement'] = null;
+                }
+                await Supabase.instance.client.from('factures').update(maj).eq('id', docId);
                 if (context.mounted) Navigator.pop(context);
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'emise', child: Text('Marquer Émise')),
-                const PopupMenuItem(value: 'payee', child: Text('Marquer Payée')),
+                const PopupMenuItem(value: 'payee', child: Text('Marquer Payée (acquittée)')),
                 const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
               ],
             ),
@@ -1435,6 +1465,11 @@ class _LigneCardState extends State<_LigneCard> {
 // ─────────────────────────────────────────────────────────────
 // PDF GENERATION
 // ─────────────────────────────────────────────────────────────
+String _datePaiementTxt(dynamic iso) {
+  final d = DateTime.tryParse(iso?.toString() ?? '')?.toLocal();
+  return d == null ? '' : ' le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+}
+
 Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
   final pdf = pw.Document();
   final font = await PdfGoogleFonts.robotoRegular();
@@ -1577,6 +1612,17 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           ]),
         ),
       ),
+      if (d['statut'] == 'payee') ...[
+        pw.SizedBox(height: 10),
+        pw.Align(alignment: pw.Alignment.centerRight, child: pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColor.fromHex('#2E9E5B'), width: 1.5),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4))),
+          child: pw.Text(
+            'ACQUITTÉE${_datePaiementTxt(d['datePaiement'])}${(d['modePaiement'] ?? '').toString().isNotEmpty ? ' — ${d['modePaiement']}' : ''}',
+            style: pw.TextStyle(font: bold, fontSize: 11, color: PdfColor.fromHex('#2E9E5B'))),
+        )),
+      ],
       pw.SizedBox(height: 16),
       // Paiement
       pw.Container(

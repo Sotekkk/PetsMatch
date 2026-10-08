@@ -54,6 +54,8 @@ export interface FacturePdfData {
   delaiPaiement?: string | null;
   conditionsEscompte?: string | null;
   noteComplementaire?: string | null;
+  /** Facture réglée : mention « ACQUITTÉE le … — mode ». */
+  acquittee?: { date?: string | null; mode?: string | null } | null;
 }
 
 const eur = (v: number) => `${v.toFixed(2).replace('.', ',')} EUR`;
@@ -186,6 +188,17 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
     lineTotal('TOTAL TTC', eur(d.totalTTC), true);
   } else {
     lineTotal('TOTAL', eur(d.totalTTC), true);
+  }
+
+  if (d.acquittee) {
+    const txt = `ACQUITTÉE${d.acquittee.date ? ` le ${fmtD(d.acquittee.date)}` : ''}${clean(d.acquittee.mode) ? ` — ${clean(d.acquittee.mode)}` : ''}`;
+    y += 8;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(46, 158, 91);
+    const w = doc.getTextWidth(txt) + 16;
+    doc.setDrawColor(46, 158, 91); doc.setLineWidth(1.2);
+    doc.roundedRect(W - M - w, y - 12, w, 20, 3, 3);
+    doc.text(txt, W - M - 8, y + 2, { align: 'right' });
+    y += 14;
   }
 
   y += 16;

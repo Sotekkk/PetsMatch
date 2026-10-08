@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Document PDF invalide' }, { status: 400 });
   }
 
-  const quoi = document_type === 'ordonnance' ? 'une ordonnance' : 'un compte rendu';
-  const titre = document_type === 'ordonnance' ? 'Ordonnance' : 'Compte rendu';
+  const quoi = document_type === 'ordonnance' ? 'une ordonnance' : document_type === 'facture' ? 'une facture' : 'un compte rendu';
+  const titre = document_type === 'ordonnance' ? 'Ordonnance' : document_type === 'facture' ? 'Facture' : 'Compte rendu';
   const pro = expediteur_nom || 'Votre vétérinaire';
   const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>

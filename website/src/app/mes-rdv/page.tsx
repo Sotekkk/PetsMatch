@@ -8,6 +8,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 import { typeFromMotif } from '@/lib/agenda-type';
 import PlanningClinique from '@/components/rdv/PlanningClinique';
+import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { retardsEnCascade } from '@/lib/retards-rdv';
 import { LieuSalleSelect, LIEU_AUTO, LIEU_DOMICILE, champsLieu, lieuInitial, useSallesDispo } from '@/components/rdv/SallesClinique';
 import { trouverUtilisateurParEmail, type UtilisateurTrouve } from '@/lib/user-lookup';
@@ -844,7 +845,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique }: {
   rdv: Rdv;
   tab: 'demandes' | 'a_venir' | 'historique';
   myUid: string;
@@ -855,6 +856,8 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
   onTerminer?: () => void;
   onDelete?: () => void;
   onOpenAnimal?: (id: string) => void;
+  /** Vétérinaire : historique des consultations du patient. */
+  onHistorique?: () => void;
   onModifier?: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
@@ -946,6 +949,13 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
               className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
               style={{ borderColor: '#6E9E57', color: '#6E9E57', fontFamily: 'Galey, sans-serif' }}>
               🐾 Fiche de l&apos;animal
+            </button>
+          )}
+          {rdv.animal_id && onHistorique && (
+            <button onClick={onHistorique}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              🕘 Historique
             </button>
           )}
         </div>
@@ -1388,6 +1398,7 @@ export default function MesRdvPage() {
   const [modalRefuser, setModalRefuser]   = useState<Rdv | null>(null);
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
+  const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
   const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null } | null>(null);
 
   const [aujourdhui, setAujourdhui] = useState<{ id: string; titre: string; date_debut: string; type: string }[]>([]);
@@ -1716,6 +1727,7 @@ export default function MesRdvPage() {
                   onDelete={() => deleteRdv(rdv.id)}
                   onOpenAnimal={openAnimalFiche}
                   onModifier={() => setModalModifier(rdv)}
+                  onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
                 />
               ))}
             </div>
@@ -1723,6 +1735,10 @@ export default function MesRdvPage() {
         )}
       </div>
 
+      {historiqueRdv?.animal_id && activeProfileId && (
+        <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}
+          profileId={activeProfileId} onClose={() => setHistoriqueRdv(null)} />
+      )}
       {modalNouveau && user && activeProfileId && (
         <NouveauRdvModal proUid={user.uid} profileId={activeProfileId} proName={proName} catPro={catPro}
           initial={modalNouveau} onClose={() => setModalNouveau(null)}

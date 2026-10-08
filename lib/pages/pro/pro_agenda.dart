@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/planning_clinique_page.dart';
+import 'package:PetsMatch/pages/pro/historique_patient_page.dart';
 import 'package:PetsMatch/widgets/rdv/salles_clinique_widgets.dart';
 import 'package:PetsMatch/utils/retards_rdv.dart';
 import 'package:PetsMatch/main.dart';
@@ -4660,6 +4661,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                   )))
               : null,
+          onHistorique: (AgendaContexte.catPro == 'veterinaire' && hasAnimal)
+              ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
+                  animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Patient')))
+              : null,
           onFiche: (showProTools && AgendaContexte.catPro == 'toilettage' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => ToilettageFicheClientPage(
@@ -4722,6 +4727,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onFacturer;
   final VoidCallback? onAlbum;
   final VoidCallback? onFiche;
+  /// Vétérinaire : historique des consultations du patient.
+  final VoidCallback? onHistorique;
 
   const _RdvCard({
     required this.rdv,
@@ -4744,6 +4751,7 @@ class _RdvCard extends StatelessWidget {
     this.onFacturer,
     this.onAlbum,
     this.onFiche,
+    this.onHistorique,
   });
 
   Widget _badge(String texte, Color fg, Color bg) => Container(
@@ -5077,6 +5085,16 @@ class _RdvCard extends StatelessWidget {
                   onPressed: onAlbum,
                   icon: const Icon(Icons.photo_library_outlined, size: 20, color: Color(0xFF90A4AE)),
                   tooltip: 'Galerie de livraison',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onHistorique != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onHistorique,
+                  icon: const Icon(Icons.history, size: 20, color: Color(0xFF0C5C6C)),
+                  tooltip: 'Historique du patient',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),

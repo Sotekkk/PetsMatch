@@ -106,6 +106,23 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   String _messageClient = '';
   Map<String, dynamic>? _rdvSource;
 
+  /// Accès au carnet de l'animal pour la clinique (RDV pris avant le partage
+  /// à la réservation) — sinon vaccins / traitements du CR sont refusés.
+  Future<void> _assurerAcces(String? animalId, String? ownerProfileId) async {
+    final pro = _profilPro;
+    if (animalId == null || pro == null || ownerProfileId == null || ownerProfileId.isEmpty) return;
+    try {
+      final ex = await _supa.from('animal_access').select('statut')
+          .eq('animal_id', animalId).eq('pro_profile_id', pro).maybeSingle();
+      if (ex != null) return;
+      await _supa.from('animal_access').insert({
+        'animal_id': animalId, 'pro_profile_id': pro, 'granted_by_profile_id': ownerProfileId,
+        'permissions': ['read_basic', 'read_health', 'write_health'],
+        'statut': 'active', 'granted_at': DateTime.now().toUtc().toIso8601String(),
+      });
+    } catch (_) {}
+  }
+
   /// Motif + message du client : depuis le RDV ouvert, sinon le dernier RDV
   /// de cet animal avec la clinique (CR ouvert depuis la fiche patient).
   Future<void> _prefillDepuisRdv() async {
@@ -121,6 +138,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       } catch (_) {}
     }
     if (r == null || !mounted) return;
+    await _assurerAcces(animalId, r['client_profile_id']?.toString());
+    if (!mounted) return;
     setState(() {
       _rdvSource = r;
       if (_motifCtrl.text.trim().isEmpty) _motifCtrl.text = (r!['motif'] ?? '').toString();

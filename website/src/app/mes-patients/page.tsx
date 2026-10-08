@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
+import HistoriquePatient from '@/components/pro/HistoriquePatient';
 
 function clientsPageTitle(catPro: string): string {
   if (catPro === 'veterinaire' || catPro === 'sante') return 'Mes patients';
@@ -64,6 +65,7 @@ export default function MesPatientsPage() {
   const activeProfileId = useActiveProfile();
   const [grants, setGrants] = useState<Grant[]>([]);
   const [nouveauPatient, setNouveauPatient] = useState(false);
+  const [historique, setHistorique] = useState<{ id: string; nom: string } | null>(null);
   const [rechargement, setRechargement] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -166,6 +168,24 @@ export default function MesPatientsPage() {
   useEffect(() => {
     if (!user || !activeProfileId) return;
     async function load() {
+      // RDV confirmés / terminés sans accès au carnet (pris avant le partage à
+      // la réservation) : accès créé comme à la confirmation (miroir appli).
+      const { data: rdvAcc } = await supabase.from('rdv').select('animal_id, client_profile_id')
+        .eq('pro_profile_id', activeProfileId).in('statut', ['confirme', 'termine'])
+        .not('animal_id', 'is', null).not('client_profile_id', 'is', null);
+      const parAnimal = new Map(((rdvAcc ?? []) as { animal_id: string; client_profile_id: string }[]).map(r => [r.animal_id, r.client_profile_id]));
+      if (parAnimal.size) {
+        const { data: ex } = await supabase.from('animal_access').select('animal_id')
+          .eq('pro_profile_id', activeProfileId).in('animal_id', [...parAnimal.keys()]);
+        const deja = new Set((ex ?? []).map(e => String(e.animal_id)));
+        for (const [animalId, ownerProfile] of parAnimal) {
+          if (deja.has(animalId)) continue;
+          await supabase.from('animal_access').insert({
+            animal_id: animalId, pro_profile_id: activeProfileId, granted_by_profile_id: ownerProfile,
+            permissions: ['read_basic', 'read_health', 'write_health'], statut: 'active', granted_at: new Date().toISOString(),
+          });
+        }
+      }
       const { data: grantRows, error: grantErr } = await supabase
         .from('animal_access')
         .select('id, animal_id, statut, granted_at')
@@ -206,10 +226,17 @@ export default function MesPatientsPage() {
       }
 
       const animalIds = allGrants.map(g => g.animal_id).filter(Boolean);
-      const { data: animalRows, error: animalErr } = await supabase
+      // client_clinique_id n'existe qu'après migration_patients_clinique.sql :
+      // repli sans la colonne (sinon toute la liste restait vide).
+      const avecClient = await supabase
         .from('animaux')
         .select('id, nom, espece, race, date_naissance, photo_url, uid_proprietaire, client_clinique_id')
         .in('id', animalIds);
+      const res = avecClient.error
+        ? await supabase.from('animaux').select('id, nom, espece, race, date_naissance, photo_url, uid_proprietaire').in('id', animalIds)
+        : avecClient;
+      const animalRows = res.data as Animal[] | null;
+      const animalErr = res.error;
 
       if (animalErr) console.error('[mes-patients] animaux error:', animalErr);
       // Patients créés par la clinique : nom du client.
@@ -342,6 +369,13 @@ export default function MesPatientsPage() {
                     {!g.id.startsWith('rdv-') && <span className="w-7" />}
                     <span className="text-gray-300 text-lg">›</span>
                   </Link>
+                  {catPro === 'veterinaire' && (
+                    <button type="button" onClick={() => setHistorique({ id: String(a.id), nom: a.nom })} title="Historique"
+                      className="absolute top-1/2 -translate-y-1/2 right-9 text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"
+                      style={{ borderColor: '#0C5C6C', color: '#0C5C6C' }}>
+                      🕘 Historique
+                    </button>
+                  )}
                   {(catPro === 'education' || catPro === 'garde') && user && (
                     <div className="absolute top-1/2 -translate-y-1/2 right-9">
                       <OwnerContactButton
@@ -436,6 +470,9 @@ export default function MesPatientsPage() {
             <button onClick={closeChipModal} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
           </div>
         </div>
+      )}
+      {historique && activeProfileId && (
+        <HistoriquePatient animalId={historique.id} animalNom={historique.nom} profileId={activeProfileId} onClose={() => setHistorique(null)} />
       )}
       {nouveauPatient && activeProfileId && (
         <NouveauPatientModal cliniqueProfileId={activeProfileId} onClose={() => setNouveauPatient(false)}

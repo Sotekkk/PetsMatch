@@ -28,7 +28,7 @@ async function enBase64(blob: Blob): Promise<string> {
 
 /** Envoie le PDF par e-mail (demande l'adresse, pré-remplie). */
 export async function envoyerPdfParEmail(blob: Blob, opts: {
-  type: 'ordonnance' | 'compte_rendu'; emailParDefaut?: string | null; destinataireNom?: string;
+  type: 'ordonnance' | 'compte_rendu' | 'facture'; emailParDefaut?: string | null; destinataireNom?: string;
   expediteur?: string; animalNom?: string; nomFichier: string;
 }): Promise<boolean> {
   const email = window.prompt('E-mail du propriétaire', opts.emailParDefaut ?? '');

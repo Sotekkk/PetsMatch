@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart';
+import 'package:PetsMatch/pages/pro/historique_patient_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -66,6 +67,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       final pid = AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId
           : (User_Info.availableProfiles.firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '');
       if (pid.isEmpty) { setState(() => _loading = false); return; }
+      await _rattraperAccesRdv(pid);
       final grants = await Supabase.instance.client
           .from('animal_access')
           .select('id, animal_id, granted_at, statut')
@@ -83,10 +85,18 @@ class _VetPatientsPageState extends State<VetPatientsPage>
         return;
       }
 
-      final animals = await Supabase.instance.client
-          .from('animaux')
-          .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire, client_clinique_id')
-          .inFilter('id', animalIds);
+      // client_clinique_id n'existe qu'après migration_patients_clinique.sql :
+      // sans repli, toute la liste restait vide.
+      List animals;
+      try {
+        animals = await Supabase.instance.client.from('animaux')
+            .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire, client_clinique_id')
+            .inFilter('id', animalIds);
+      } catch (_) {
+        animals = await Supabase.instance.client.from('animaux')
+            .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire')
+            .inFilter('id', animalIds);
+      }
       // Patients créés par la clinique : nom du client (propriétaire hors appli).
       final clientIds = {for (final a in animals as List) if (a['client_clinique_id'] != null) a['client_clinique_id'].toString()};
       final nomsClients = <String, String>{};
@@ -125,6 +135,34 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Animaux d'un RDV confirmé / terminé sans accès au carnet (RDV pris
+  /// avant le partage à la réservation, ou accès automatique raté) : accès
+  /// créé comme à la confirmation (A60). Le propriétaire peut le révoquer.
+  Future<void> _rattraperAccesRdv(String pid) async {
+    try {
+      final supa = Supabase.instance.client;
+      final rdvs = await supa.from('rdv').select('animal_id, client_profile_id')
+          .eq('pro_profile_id', pid).inFilter('statut', ['confirme', 'termine'])
+          .not('animal_id', 'is', null).not('client_profile_id', 'is', null);
+      final parAnimal = <String, String>{
+        for (final r in rdvs as List) r['animal_id'].toString(): r['client_profile_id'].toString(),
+      };
+      if (parAnimal.isEmpty) return;
+      final existants = await supa.from('animal_access').select('animal_id')
+          .eq('pro_profile_id', pid).inFilter('animal_id', parAnimal.keys.toList());
+      final deja = {for (final e in existants as List) e['animal_id'].toString()};
+      for (final e in parAnimal.entries.where((e) => !deja.contains(e.key))) {
+        try {
+          await supa.from('animal_access').insert({
+            'animal_id': e.key, 'pro_profile_id': pid, 'granted_by_profile_id': e.value,
+            'permissions': ['read_basic', 'read_health', 'write_health'],
+            'statut': 'active', 'granted_at': DateTime.now().toUtc().toIso8601String(),
+          });
+        } catch (_) {}
+      }
+    } catch (_) {}
   }
 
   List<Map<String, dynamic>> get _filtered {
@@ -626,6 +664,8 @@ class _VetPatientsPageState extends State<VetPatientsPage>
                             teal: _teal,
                             onTap: () => _openPatient(_filtered[i]),
                             onLongPress: () => _revoquerPatient(_filtered[i]),
+                            onHistorique: () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
+                                animalId: _filtered[i]['id'].toString(), animalNom: _filtered[i]['nom']?.toString() ?? 'Patient'))),
                           ),
                           childCount: _filtered.length,
                         ),
@@ -776,8 +816,10 @@ class _PatientCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
+  /// Historique des consultations (vue vétérinaire).
+  final VoidCallback? onHistorique;
   const _PatientCard({required this.animal, required this.teal,
-      required this.onTap, required this.onLongPress});
+      required this.onTap, required this.onLongPress, this.onHistorique});
 
   @override
   Widget build(BuildContext context) {
@@ -863,6 +905,9 @@ class _PatientCard extends StatelessWidget {
                 ),
             ]),
           ),
+          if (onHistorique != null && !isPending)
+            IconButton(onPressed: onHistorique, tooltip: 'Historique',
+                icon: Icon(Icons.history, color: teal)),
           Icon(isPending ? Icons.schedule_rounded : Icons.chevron_right_rounded,
               color: isPending ? Colors.amber.shade400 : Colors.grey),
         ]),

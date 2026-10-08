@@ -265,7 +265,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
 
     try {
       if (User_Info.catPro == 'veterinaire') {
-        final patients = await _patientsIds(supa, uid, pid, accesSeulement: true);
+        final patients = await _patientsIds(supa, uid, pid);
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)

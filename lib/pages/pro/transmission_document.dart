@@ -17,7 +17,7 @@ Future<void> transmettreDocument(
   BuildContext context, {
   required Future<Uint8List> Function() pdf,
   required String nomFichier,
-  required String type, // 'ordonnance' | 'compte_rendu'
+  required String type, // 'ordonnance' | 'compte_rendu' | 'facture'
   String animalNom = '',
   String expediteur = '',
   String? emailParDefaut,
@@ -27,7 +27,7 @@ Future<void> transmettreDocument(
     context: context,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      ListTile(title: Text(type == 'ordonnance' ? 'Ordonnance' : 'Compte rendu',
+      ListTile(title: Text(type == 'ordonnance' ? 'Ordonnance' : type == 'facture' ? 'Facture' : 'Compte rendu',
           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
       ListTile(leading: const Icon(Icons.print_outlined, color: _teal),
           title: const Text('Imprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),

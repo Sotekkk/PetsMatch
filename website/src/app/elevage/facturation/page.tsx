@@ -10,6 +10,7 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { facturePdfBlob } from '@/lib/facture-pdf';
+import { imprimerPdf, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { apiFetch } from '@/lib/api-fetch';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 
@@ -190,9 +191,45 @@ export default function FacturationPage() {
   useEffect(() => { load(); }, [load]);
 
   async function handleStatutChange(id: string, statut: string) {
-    await supabase.from('factures').update({ statut }).eq('id', id);
-    setFactures((prev) => prev.map((f) => f.id === id ? { ...f, statut } : f));
-    setSelected((prev) => prev?.id === id ? { ...prev, statut } : prev);
+    // Payée = facture acquittée : mode et date de règlement (hors verrou d'inaltérabilité).
+    const maj: Record<string, unknown> = { statut, date_paiement: null };
+    if (statut === 'payee') {
+      const mode = window.prompt('Réglée par (Carte bancaire, Espèces, Chèque, Virement)', 'Carte bancaire');
+      if (mode === null) return;
+      maj.mode_paiement = mode.trim() || 'Carte bancaire';
+      maj.date_paiement = new Date().toISOString();
+    }
+    await supabase.from('factures').update(maj).eq('id', id);
+    setFactures((prev) => prev.map((f) => f.id === id ? { ...f, ...maj } as Facture : f));
+    setSelected((prev) => prev?.id === id ? { ...prev, ...maj } as Facture : prev);
+  }
+
+  /** PDF de la facture acquittée (mention « ACQUITTÉE »), à imprimer ou envoyer. */
+  async function pdfAcquitte(f: Facture): Promise<Blob> {
+    const r = f as unknown as Record<string, unknown>;
+    const t = (k: string) => (r[k] as string | null | undefined) ?? null;
+    const lignes = ((f.lignes ?? []) as unknown as Record<string, unknown>[]).map(l => ({
+      designation: String(l.designation ?? l.description ?? ''),
+      description: '',
+      quantite: Number(l.quantite ?? 1),
+      prixUnitaireHT: Number(l.prixUnitaireHT ?? l.prixHT ?? l.prixUnitaire ?? 0),
+      tauxTVA: Number(l.tauxTVA ?? l.tva ?? 0),
+    }));
+    return facturePdfBlob({
+      numero: f.numero_affichage ?? String(f.numero_facture ?? ''),
+      typeFacture: f.type_facture ?? null,
+      dateFacture: f.date_facture, datePrestation: f.date_prestation, dateEcheance: f.date_echeance,
+      nomEmetteur: t('nom_emetteur'), rueEmetteur: t('rue_emetteur'), cpEmetteur: t('cp_emetteur'), villeEmetteur: t('ville_emetteur'),
+      paysEmetteur: t('pays_emetteur'), telEmetteur: t('tel_emetteur'), emailEmetteur: t('email_emetteur'), siretEmetteur: t('siret_emetteur'),
+      tvaEmetteur: t('tva_emetteur'), formeJuridiqueEmetteur: t('forme_juridique_emetteur'), capitalEmetteur: t('capital_emetteur'),
+      rcsEmetteur: t('rcs_emetteur'), rmEmetteur: t('rm_emetteur'),
+      prenomClient: f.prenom_client, nomClient: f.nom_client, rueClient: f.rue_client, cpClient: f.cp_client,
+      villeClient: f.ville_client, paysClient: f.pays_client, emailClient: f.email_client,
+      lignes, totalHT: f.total_ht ?? 0, totalTVA: f.total_tva ?? 0, totalTTC: f.total_ttc ?? 0,
+      franchise: t('regime_tva') === 'franchise', modePaiement: t('mode_paiement'), delaiPaiement: t('delai_paiement'),
+      noteComplementaire: t('note_complementaire'),
+      acquittee: { date: t('date_paiement'), mode: t('mode_paiement') },
+    });
   }
 
   async function envoyerParEmail(f: Facture) {
@@ -412,6 +449,21 @@ export default function FacturationPage() {
               </div>
             )}
 
+            {selected.statut === 'payee' && (
+              <div className="flex gap-2 mb-3">
+                <button onClick={async () => imprimerPdf(await pdfAcquitte(selected))}
+                  className="flex-1 border border-[#6E9E57] text-[#4A7A32] font-semibold py-2 rounded-xl text-sm">
+                  🖨 Facture acquittée
+                </button>
+                <button onClick={async () => envoyerPdfParEmail(await pdfAcquitte(selected), {
+                    type: 'facture', emailParDefaut: selected.email_client, nomFichier: `Facture-${selected.numero_affichage ?? ''}-acquittee.pdf`,
+                    destinataireNom: `${selected.prenom_client ?? ''} ${selected.nom_client ?? ''}`.trim(),
+                    expediteur: ((selected as unknown as Record<string, unknown>).nom_emetteur as string) ?? '' })}
+                  className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold py-2 rounded-xl text-sm">
+                  ✉ Envoyer au client
+                </button>
+              </div>
+            )}
             {selected.statut === 'emise' && (
               <div className="flex gap-2 mb-3">
                 <button onClick={() => handleStatutChange(selected.id, 'payee')}
