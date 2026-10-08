@@ -3,14 +3,18 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/services/service_detail_page.dart';
-import 'package:PetsMatch/utils/french_geo.dart';
+import 'package:PetsMatch/utils/annuaire_filtres.dart';
+import 'package:PetsMatch/widgets/annuaire_filtres_widgets.dart';
 import 'package:PetsMatch/widgets/verification_badge.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Page annuaire — liste des professionnels d'une catégorie.
+/// Annuaire des professionnels — recherche par filtres combinables : mot-clé +
+/// métier + lieu / rayon + animaux pris en charge (plusieurs choix). La
+/// catégorie d'entrée (tuile de l'annuaire) ne fait que pré-sélectionner le
+/// métier. Logique partagée : lib/utils/annuaire_filtres.dart (miroir site :
+/// website/src/app/services/carte/page.tsx).
 class ServiceListPage extends StatefulWidget {
   final String categoryLabel;
   final Color categoryColor;
@@ -41,121 +45,106 @@ class _ServiceListPageState extends State<ServiceListPage> {
   List<Map<String, dynamic>> _filtered = [];
   bool _loading = true;
   bool _showMap = false;
-  bool _nearMe = false;
   bool _locating = false;
-  double? _userLat;
-  double? _userLng;
 
-  String _search = '';
-  String _filterEspece = '';
-  String _filterRegion = '';
-  String _filterDept = '';
+  // Formulaire (brouillon) et critères appliqués (« Rechercher »)
+  final _qCtrl = TextEditingController();
+  String _metierForm = '';
+  LieuRecherche? _lieuForm;
+  int _rayonForm = 50;
+  List<String> _especes = []; // appliqué directement (menu « Appliquer » / étiquettes)
+
+  String _q = '';
+  String _metier = '';
+  LieuRecherche? _lieu;
+  int _rayon = 50;
+
+  /// Profils garde proposant des créneaux promenade (repli « Promeneur »)
+  Set<String> _creneauOk = {};
+  LieuRecherche? _maPosition;
 
   GoogleMapController? _mapCtrl;
-
-  static const _especes = ['Toutes', 'Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
-
-  static const _regions = [
-    'Île-de-France', 'Auvergne-Rhône-Alpes', 'Bretagne', 'Normandie',
-    'Hauts-de-France', 'Grand Est', 'Pays de la Loire', 'Nouvelle-Aquitaine',
-    'Occitanie', "Provence-Alpes-Côte d'Azur", 'Bourgogne-Franche-Comté',
-    'Centre-Val de Loire', 'Corse',
-  ];
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    _metier = _metierForm = metierFromLegacy(widget.catProValues, widget.professionValues).key;
     if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
-      _search = widget.searchQuery!;
+      _q = widget.searchQuery!;
+      _qCtrl.text = _q;
     }
     _loadPros();
+    _loadMaPosition();
+  }
+
+  @override
+  void dispose() {
+    _qCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Position du profil connecté → option « Autour de moi » du lieu.
+  Future<void> _loadMaPosition() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final row = await _supa.from('user_profiles_complet')
+          .select('lat, lng, ville').eq('uid', uid).eq('is_main', true).maybeSingle();
+      final lat = (row?['lat'] as num?)?.toDouble();
+      final lng = (row?['lng'] as num?)?.toDouble();
+      if (lat != null && lng != null && mounted) {
+        final v = (row?['ville'] ?? '').toString();
+        setState(() => _maPosition = LieuRecherche('Autour de moi', lat, lng, ville: v.isEmpty ? null : v));
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadPros() async {
     try {
-      final hasFilter = widget.catProValues.isNotEmpty;
+      // Tous les pros (hors éleveurs / associations, qui ont leur espace) :
+      // le métier se change dans le formulaire, sans recharger.
+      final rows = await _supa
+          .from('user_profiles_complet')
+          .select()
+          .inFilter('statut_pro', ['actif', 'validated'])
+          .not('profile_type', 'in', '(eleveur,association)');
 
-      // Exclure éleveurs et associations (ont leur propre espace dédié)
-      const _excluded = '(eleveur,association)';
-
-      final List<dynamic> secondaryRows = hasFilter
-          ? await _supa
-              .from('user_profiles_complet')
-              .select()
-              .inFilter('profile_type', widget.catProValues)
-              .inFilter('statut_pro', ['actif', 'validated'])
-          : await _supa
-              .from('user_profiles_complet')
-              .select()
-              .inFilter('statut_pro', ['actif', 'validated'])
-              .not('profile_type', 'in', _excluded);
-
-      final profFilter = (widget.professionValues ?? [])
-          .map((e) => e.toLowerCase())
-          .toSet();
-
-      final seenUids = <String>{};
-      final merged = <Map<String, dynamic>>[];
-      // Repli matchCreneauTypeGarde : profils dont la profession affichée ne
-      // matche pas profFilter (ex. « Pet sitter ») mais dont le profil est
-      // du bon type_garde côté catProValues — à vérifier via creneaux_pro.
-      final pendingCreneauCheck = <Map<String, dynamic>>[];
-
-      for (final row in secondaryRows) {
-        final uid = row['uid']?.toString() ?? '';
-        if (seenUids.contains(uid)) continue;
-        final matchesProfession = profFilter.isEmpty ||
-            profFilter.contains(((row['profession_pro'] ?? '') as String).toLowerCase());
-        if (matchesProfession) {
-          seenUids.add(uid);
-          merged.add(_buildProEntry(row));
-        } else if (widget.matchCreneauTypeGarde != null) {
-          pendingCreneauCheck.add(row);
-        }
+      final seen = <String>{};
+      final pros = <Map<String, dynamic>>[];
+      for (final row in rows) {
+        final key = '${row['uid']}-${row['profile_type']}';
+        if (!seen.add(key)) continue;
+        pros.add(_buildProEntry(row));
       }
 
-      if (pendingCreneauCheck.isNotEmpty && widget.matchCreneauTypeGarde != null) {
+      // Promeneurs : pet-sitters dont un créneau disponible est de type
+      // promenade (type_garde nul = les deux usages → qualifiant).
+      var creneauOk = <String>{};
+      final gardeIds = pros.where((p) => p['cat_pro'] == 'garde')
+          .map((p) => p['_profile_table_id']?.toString() ?? '')
+          .where((s) => s.isNotEmpty).toList();
+      if (gardeIds.isNotEmpty) {
         try {
-          final ids = pendingCreneauCheck
-              .map((r) => r['id']?.toString() ?? '')
-              .where((s) => s.isNotEmpty)
-              .toList();
-          final creneauxRows = await _supa
-              .from('creneaux_pro')
+          final cr = await _supa.from('creneaux_pro')
               .select('pro_profile_id, type_garde')
-              .inFilter('pro_profile_id', ids)
+              .inFilter('pro_profile_id', gardeIds)
               .eq('statut', 'disponible');
-          final qualifyingProfileIds = <String>{};
-          for (final c in creneauxRows as List) {
-            final tg = c['type_garde']?.toString();
-            // type_garde nul = créneau proposé pour les deux usages (journée
-            // ET promenade) → compte comme qualifiant.
-            if (tg == null || tg.isEmpty || widget.matchCreneauTypeGarde!.contains(tg)) {
-              qualifyingProfileIds.add(c['pro_profile_id']?.toString() ?? '');
-            }
-          }
-          for (final row in pendingCreneauCheck) {
-            final pid = row['id']?.toString() ?? '';
-            final uid = row['uid']?.toString() ?? '';
-            if (qualifyingProfileIds.contains(pid) && seenUids.add(uid)) {
-              merged.add(_buildProEntry(row));
-            }
-          }
+          creneauOk = (cr as List)
+              .where((c) { final tg = c['type_garde']?.toString(); return tg == null || tg.isEmpty || tg == 'prestation'; })
+              .map((c) => c['pro_profile_id']?.toString() ?? '')
+              .toSet();
         } catch (_) {}
       }
 
       if (mounted) {
         setState(() {
-          _pros = merged;
-          _filtered = merged;
+          _pros = pros;
+          _creneauOk = creneauOk;
           _loading = false;
         });
-        // Si une recherche est pré-remplie (depuis la page annuaire), appliquer les filtres
-        if (_search.isNotEmpty && mounted) {
-          _applyFilters();
-        }
+        _applyFilters();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -186,6 +175,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
       'instagram': row['instagram'] ?? '',
       'facebook': row['facebook'] ?? '',
       'rayon_intervention': row['rayon_intervention'] ?? 20,
+      'se_deplace': row['se_deplace'],
       'region': row['region'] ?? '',
       'departement': row['departement'] ?? '',
       'region_elevage': row['region'] ?? '',
@@ -233,247 +223,184 @@ class _ServiceListPageState extends State<ServiceListPage> {
     );
   }
 
-  // ── "Proche de moi" — lat/lng du profil Supabase, fetchés au tap ────────
+  // ── « Proche de moi » (vue carte) = lieu « Autour de moi » ─────────────────
+
+  bool get _nearMe => _lieu != null && identical(_lieu, _maPosition);
 
   Future<void> _toggleNearMe() async {
     if (_nearMe) {
-      setState(() { _nearMe = false; _userLat = null; _userLng = null; });
+      setState(() { _lieu = _lieuForm = null; });
       _applyFilters();
       return;
     }
-    setState(() => _locating = true);
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Connectez-vous pour utiliser cette fonctionnalité.',
-              style: TextStyle(fontFamily: 'Galey')),
-        ));
-        return;
-      }
-      final row = await _supa
-          .from('user_profiles_complet')
-          .select('lat, lng')
-          .eq('uid', uid)
-          .eq('is_main', true)
-          .maybeSingle();
-      final lat = (row?['lat'] as num?)?.toDouble();
-      final lng = (row?['lng'] as num?)?.toDouble();
-      if (lat == null || lng == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Position introuvable dans votre profil. Renseignez votre adresse dans les paramètres.',
-              style: TextStyle(fontFamily: 'Galey')),
-        ));
-        return;
-      }
-      if (mounted) {
-        setState(() { _userLat = lat; _userLng = lng; _nearMe = true; });
-        _applyFilters();
-        if (_showMap && _mapCtrl != null) {
-          _mapCtrl!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), 10));
-        }
-      }
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Impossible de récupérer votre position.', style: TextStyle(fontFamily: 'Galey')),
-      ));
-    } finally {
+    if (_maPosition == null) {
+      setState(() => _locating = true);
+      await _loadMaPosition();
       if (mounted) setState(() => _locating = false);
+    }
+    if (!mounted) return;
+    if (_maPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(FirebaseAuth.instance.currentUser == null
+            ? 'Connectez-vous pour utiliser cette fonctionnalité.'
+            : 'Position introuvable dans votre profil. Renseignez votre adresse dans les paramètres.',
+            style: const TextStyle(fontFamily: 'Galey')),
+      ));
+      return;
+    }
+    setState(() { _lieu = _lieuForm = _maPosition; });
+    _applyFilters();
+    if (_showMap && _mapCtrl != null) {
+      _mapCtrl!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(_maPosition!.lat, _maPosition!.lng), 10));
     }
   }
 
   // ── Filtres ────────────────────────────────────────────────────────────────
 
   void _applyFilters() {
+    final metier = metierByKey(_metier);
+    final q = _q.toLowerCase();
     setState(() {
       _filtered = _pros.where((p) {
-        final nom      = ((p['name_elevage'] ?? p['firstname'] ?? '') as String).toLowerCase();
-        final ville    = ((p['ville_elevage'] ?? p['ville'] ?? '') as String).toLowerCase();
-        final profession = ((p['profession_pro'] ?? '') as String).toLowerCase();
-        final matchSearch = _search.isEmpty ||
-            nom.contains(_search.toLowerCase()) ||
-            ville.contains(_search.toLowerCase()) ||
-            profession.contains(_search.toLowerCase());
-
-        final especes = p['especes_acceptees'];
-        final matchEspece = _filterEspece.isEmpty ||
-            _filterEspece == 'Toutes' ||
-            (especes is List && especes.contains(_filterEspece));
-
-        // Filtre région/département — lit aussi les colonnes *_elevage
-        final loc = '$ville '
-            '${(p['region_elevage'] ?? p['region'] ?? '').toString().toLowerCase()} '
-            '${(p['departement_elevage'] ?? p['departement'] ?? '').toString().toLowerCase()}';
-        bool matchRegion = true;
-        if (_filterRegion.isNotEmpty) {
-          final depts = FrenchGeo.departmentsInRegion(_filterRegion);
-          matchRegion = loc.contains(_filterRegion.toLowerCase()) ||
-              depts.any((d) => loc.contains(d.toLowerCase()));
+        if (!proMatchesMetier(p, metier, creneauOk: _creneauOk)) return false;
+        if (!proMatchesEspeces(p['especes_acceptees'], _especes)) return false;
+        if (!proDansZone(p, _lieu, _rayon)) return false;
+        if (q.isNotEmpty) {
+          final hay = [p['name_elevage'], p['firstname'], p['ville'], p['profession_pro']]
+              .map((e) => (e ?? '').toString().toLowerCase());
+          if (!hay.any((h) => h.contains(q))) return false;
         }
-        final matchDept = _filterDept.isEmpty || loc.contains(_filterDept.toLowerCase());
-
-        // Filtre "proche de moi"
-        bool matchNearMe = true;
-        if (_nearMe && _userLat != null && _userLng != null) {
-          final pLat = (p['lat'] as num?)?.toDouble();
-          final pLng = (p['lng'] as num?)?.toDouble();
-          if (pLat == null || pLng == null) {
-            matchNearMe = false;
-          } else {
-            // rayon = 0 signifie non configuré → on utilise 50 km par défaut
-            // Pro qui ne se déplace pas : son rayon ne s'applique pas.
-            final rawRayon = p['se_deplace'] == false
-                ? 0.0 : (p['rayon_intervention'] as num?)?.toDouble() ?? 0;
-            final rayon = rawRayon > 0 ? rawRayon : 50.0;
-            final distM = Geolocator.distanceBetween(_userLat!, _userLng!, pLat, pLng);
-            matchNearMe = distM / 1000 <= rayon;
-          }
-        }
-
-        return matchSearch && matchEspece && matchRegion && matchDept && matchNearMe;
+        return true;
       }).toList();
     });
   }
 
-  bool get _hasActiveFilters =>
-      _nearMe || _filterEspece.isNotEmpty || _filterRegion.isNotEmpty || _filterDept.isNotEmpty || _search.isNotEmpty;
+  void _rechercher() {
+    FocusScope.of(context).unfocus();
+    _q = _qCtrl.text.trim();
+    _metier = _metierForm;
+    _lieu = _lieuForm;
+    _rayon = _rayonForm;
+    _applyFilters();
+  }
 
-  // ── Barre de filtres ───────────────────────────────────────────────────────
+  void _setEspeces(List<String> keys) {
+    _especes = keys;
+    _applyFilters();
+  }
+
+  void _reinitialiser() {
+    _qCtrl.clear();
+    _q = ''; _metier = _metierForm = ''; _lieu = _lieuForm = null; _rayon = _rayonForm = 50; _especes = [];
+    _applyFilters();
+  }
+
+  bool get _hasActiveFilters => _q.isNotEmpty || _metier.isNotEmpty || _lieu != null || _especes.isNotEmpty;
+
+  // ── Formulaire de recherche ────────────────────────────────────────────────
 
   Widget _buildFiltersBar() {
-    final depts = _filterRegion.isNotEmpty
-        ? FrenchGeo.departmentsInRegion(_filterRegion)
-        : <String>[];
-
+    const teal = Color(0xFF0C5C6C);
+    final lieuLabel = _lieuForm == null
+        ? 'Toute la France'
+        : identical(_lieuForm, _maPosition) && _maPosition?.ville != null
+            ? 'Autour de moi (${_maPosition!.ville})'
+            : _lieuForm!.label;
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Recherche texte
           TextField(
-            onChanged: (v) { _search = v; _applyFilters(); },
+            controller: _qCtrl,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => _rechercher(),
             style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Rechercher par nom, ville, profession...',
+              hintText: 'Nom ou mot-clé',
               hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
               prefixIcon: const Icon(Icons.search, size: 20, color: Colors.grey),
               filled: true,
-              fillColor: const Color(0xFFF0F0F0),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+              fillColor: const Color(0xFFF4F4F4),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
           ),
           const SizedBox(height: 10),
-
-          // Région + Département
-          Row(children: [
-            Expanded(
-              child: _GeoDropdown(
-                value: _filterRegion.isEmpty ? null : _filterRegion,
-                hint: 'Région',
-                items: _regions,
-                color: widget.categoryColor,
-                onChanged: (v) {
-                  setState(() { _filterRegion = v ?? ''; _filterDept = ''; });
-                  _applyFilters();
-                },
-              ),
-            ),
+          AnnuaireSelectField(
+            label: 'Métier',
+            value: metierByKey(_metierForm).label,
+            icon: Icons.work_outline_rounded,
+            placeholder: _metierForm.isEmpty,
+            onTap: () async {
+              final k = await showMetierSheet(context, _metierForm);
+              if (k != null) setState(() => _metierForm = k);
+            },
+          ),
+          const SizedBox(height: 10),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(flex: 3, child: AnnuaireSelectField(
+              label: 'Lieu',
+              value: lieuLabel,
+              icon: Icons.location_on_outlined,
+              placeholder: _lieuForm == null,
+              onTap: () async {
+                final c = await showLieuSheet(context, maPosition: _maPosition);
+                if (c != null) setState(() => _lieuForm = c.lieu);
+              },
+            )),
             const SizedBox(width: 8),
-            Expanded(
-              child: _GeoDropdown(
-                value: _filterDept.isEmpty ? null : _filterDept,
-                hint: 'Département',
-                items: depts,
-                color: widget.categoryColor,
-                onChanged: (v) {
-                  setState(() => _filterDept = v ?? '');
-                  _applyFilters();
-                },
-              ),
-            ),
+            Expanded(flex: 2, child: AnnuaireSelectField(
+              label: 'Rayon',
+              value: '$_rayonForm km',
+              enabled: _lieuForm != null,
+              onTap: () async {
+                final r = await showRayonSheet(context, _rayonForm);
+                if (r != null) setState(() => _rayonForm = r);
+              },
+            )),
           ]),
           const SizedBox(height: 10),
-
-          // Espèces
-          SizedBox(
-            height: 32,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _especes.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
-              itemBuilder: (_, i) {
-                final e = _especes[i];
-                final selected = (_filterEspece.isEmpty && e == 'Toutes') || (_filterEspece == e);
-                return GestureDetector(
-                  onTap: () { _filterEspece = e == 'Toutes' ? '' : e; _applyFilters(); },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: selected ? widget.categoryColor : const Color(0xFFF0F0F0),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(e, style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                      color: selected ? Colors.white : const Color(0xFF555555),
-                    )),
-                  ),
-                );
-              },
-            ),
+          AnnuaireSelectField(
+            label: 'Animaux pris en charge',
+            value: resumeAnimaux(_especes),
+            icon: Icons.pets_outlined,
+            placeholder: _especes.isEmpty,
+            onTap: () async {
+              final sel = await showAnimauxSheet(context, _especes);
+              if (sel != null) _setEspeces(sel);
+            },
           ),
-          const SizedBox(height: 8),
-
-          // Proche de moi + reset filtres
+          if (_especes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: _especes.map((k) => AnnuaireChipSupprimable(
+              label: kGroupesEspeces.firstWhere((g) => g.key == k).label,
+              onRemove: () => _setEspeces(_especes.where((x) => x != k).toList()),
+            )).toList()),
+          ],
+          const SizedBox(height: 12),
           Row(children: [
-            GestureDetector(
-              onTap: _locating ? null : _toggleNearMe,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: _nearMe ? widget.categoryColor : const Color(0xFFF0F0F0),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (_locating)
-                    SizedBox(width: 14, height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2,
-                        color: _nearMe ? Colors.white : widget.categoryColor))
-                  else
-                    Icon(Icons.near_me_rounded, size: 14,
-                      color: _nearMe ? Colors.white : const Color(0xFF555555)),
-                  const SizedBox(width: 6),
-                  Text('Proche de moi', style: TextStyle(
-                    fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                    color: _nearMe ? Colors.white : const Color(0xFF555555),
-                  )),
-                ]),
+            Expanded(child: ElevatedButton.icon(
+              onPressed: _rechercher,
+              icon: const Icon(Icons.search_rounded, size: 18),
+              label: const Text('Rechercher', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: teal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-            ),
+            )),
             if (_hasActiveFilters) ...[
               const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _nearMe = false; _userLat = null; _userLng = null;
-                    _search = ''; _filterEspece = ''; _filterRegion = ''; _filterDept = '';
-                  });
-                  _applyFilters();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F0F0),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text('Réinitialiser', style: TextStyle(
-                    fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                    color: Color(0xFF888888),
-                  )),
+              OutlinedButton(
+                onPressed: _reinitialiser,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey.shade700,
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
+                child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
               ),
             ],
           ]),
@@ -595,8 +522,8 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
   Widget _buildMapView() {
     final markers = _buildMarkers();
-    final initialTarget = _userLat != null ? LatLng(_userLat!, _userLng!) : const LatLng(46.5, 2.5);
-    final initialZoom = _userLat != null ? 10.0 : 6.0;
+    final initialTarget = _lieu != null ? LatLng(_lieu!.lat, _lieu!.lng) : const LatLng(46.5, 2.5);
+    final initialZoom = _lieu != null ? 10.0 : 6.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF1E2025),
@@ -697,8 +624,8 @@ class _ServiceListPageState extends State<ServiceListPage> {
       backgroundColor: const Color(0xFFF8F8F8),
       endDrawer: const AppNavDrawer(),
       appBar: AppBar(
-        title: Text(widget.categoryLabel,
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: const Text('Annuaire des professionnels',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
         backgroundColor: const Color(0xFF0C5C6C),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -726,9 +653,19 @@ class _ServiceListPageState extends State<ServiceListPage> {
           SliverToBoxAdapter(child: _buildFiltersBar()),
 
           // Bannière urgences vétérinaires
-          if (widget.catProValues.contains('veterinaire'))
+          if (metierByKey(_metier).cats.contains('veterinaire'))
             SliverToBoxAdapter(child: _buildUrgencesVetBanner()),
 
+          if (!_loading)
+            SliverToBoxAdapter(child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Row(children: [
+                const Text('Résultats', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15)),
+                const Spacer(),
+                Text('${_filtered.length} résultat${_filtered.length > 1 ? 's' : ''}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              ]),
+            )),
           if (_loading)
             const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57))))
           else if (_filtered.isEmpty)
@@ -740,14 +677,14 @@ class _ServiceListPageState extends State<ServiceListPage> {
                   Text('Aucun professionnel trouvé',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
                   const SizedBox(height: 6),
-                  Text('Essayez d\'élargir vos filtres.',
+                  Text(_lieu != null ? 'Essayez un rayon plus large ou « Toute la France ».' : 'Essayez d\'élargir vos filtres.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
                 ]),
               ),
             )
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (_, i) => Padding(
@@ -775,53 +712,6 @@ class _ServiceListPageState extends State<ServiceListPage> {
   }
 }
 
-// ── Dropdown géographique ─────────────────────────────────────────────────────
-
-class _GeoDropdown extends StatelessWidget {
-  final String? value;
-  final String hint;
-  final List<String> items;
-  final Color color;
-  final ValueChanged<String?> onChanged;
-
-  const _GeoDropdown({
-    required this.value,
-    required this.hint,
-    required this.items,
-    required this.color,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: value != null ? color.withValues(alpha: 0.1) : const Color(0xFFF0F0F0),
-        borderRadius: BorderRadius.circular(20),
-        border: value != null ? Border.all(color: color.withValues(alpha: 0.4)) : null,
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          hint: Text(hint, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-          isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down_rounded, size: 16,
-            color: value != null ? color : Colors.grey.shade500),
-          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: value != null ? color : Colors.grey.shade700,
-            fontWeight: value != null ? FontWeight.w700 : FontWeight.normal),
-          items: [
-            DropdownMenuItem<String>(value: null, child: Text('— $hint', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))),
-            ...items.map((s) => DropdownMenuItem<String>(value: s, child: Text(s))),
-          ],
-          onChanged: items.isEmpty ? null : onChanged,
-        ),
-      ),
-    );
-  }
-}
-
 // ── Bottom sheet carte ────────────────────────────────────────────────────────
 
 class _ProMapSheet extends StatelessWidget {
@@ -838,7 +728,7 @@ class _ProMapSheet extends StatelessWidget {
     final ville  = pro['ville_elevage'] ?? pro['ville'] ?? '';
     final photo  = pro['profile_picture_url_elevage'] ?? pro['profile_picture_url'] ?? '';
     final accept = pro['accept_new_clients'] ?? true;
-    final especes = (pro['especes_acceptees'] as List? ?? []).map((e) => e.toString()).toList();
+    final especes = groupesDesEspeces(pro['especes_acceptees']).map((g) => g.label).toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
@@ -929,8 +819,7 @@ class _ProCard extends StatelessWidget {
     final photo      = pro['profile_picture_url_elevage'] ?? pro['profile_picture_url'] ?? '';
     final banner     = pro['banner_url'] ?? '';
     final accept     = pro['accept_new_clients'] ?? true;
-    final especes    = pro['especes_acceptees'];
-    final especeList = especes is List ? List<String>.from(especes) : <String>[];
+    final especeList = groupesDesEspeces(pro['especes_acceptees']).map((g) => g.label).toList();
     final urgences24h = pro['urgences_24h'] == true;
 
     return GestureDetector(

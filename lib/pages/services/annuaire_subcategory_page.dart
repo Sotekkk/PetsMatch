@@ -33,7 +33,9 @@ class AnnuaireSubCategoryPage extends StatelessWidget {
       ),
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 30),
-        itemCount: items.length + 1,
+        // Une seule sous-catégorie (Transport) : « Voir tous » menait
+        // exactement à la même liste → doublon masqué (miroir site).
+        itemCount: items.length > 1 ? items.length + 1 : items.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (ctx, i) {
           if (i == items.length) {
