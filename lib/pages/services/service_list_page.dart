@@ -23,6 +23,8 @@ class ServiceListPage extends StatefulWidget {
   final List<String>? professionValues;
   final List<String>? matchCreneauTypeGarde;
   final String? searchQuery;
+  /// Ouvrir directement la vue carte (bouton carte de l'annuaire)
+  final bool initialShowMap;
 
   const ServiceListPage({
     super.key,
@@ -33,6 +35,7 @@ class ServiceListPage extends StatefulWidget {
     this.professionValues,
     this.matchCreneauTypeGarde,
     this.searchQuery,
+    this.initialShowMap = false,
   });
 
   @override
@@ -70,6 +73,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
   @override
   void initState() {
     super.initState();
+    _showMap = widget.initialShowMap;
     _metier = _metierForm = metierFromLegacy(widget.catProValues, widget.professionValues).key;
     if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
       _q = widget.searchQuery!;

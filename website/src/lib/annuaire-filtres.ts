@@ -149,3 +149,49 @@ export async function chercherCommunes(q: string): Promise<LieuRecherche[]> {
     return [];
   }
 }
+
+// ── Catégories de l'annuaire (cartes) et leurs types de service ─────────────
+// Une catégorie sans type sélectionné = tout le domaine (`metier`) ; un type
+// = un métier de METIERS. Miroir app : kCategoriesAnnuaire.
+
+export interface CategorieAnnuaire {
+  key: string;
+  label: string;
+  icon: string;
+  color: string;
+  /** Métier « tout le domaine » */
+  metier: string;
+  /** Types de service (clés de METIERS) — vide = pas de sous-type */
+  types: string[];
+}
+
+export const CATEGORIES_ANNUAIRE: CategorieAnnuaire[] = [
+  { key: 'sante',       label: 'Santé & bien-être',        icon: '🩺', color: '#2E7D5E', metier: 'sante',       types: ['veterinaire', 'osteopathe', 'kine', 'marechal'] },
+  { key: 'education',   label: 'Éducation & comportement', icon: '🎓', color: '#E65100', metier: 'education',   types: ['educateur', 'comportementaliste'] },
+  { key: 'garde',       label: 'Garde & hébergement',      icon: '🏠', color: '#F57C00', metier: 'garde',       types: ['petsitter', 'promeneur', 'pension'] },
+  { key: 'toilettage',  label: 'Toilettage & soins',       icon: '✂️', color: '#C62828', metier: 'toilettage',  types: [] },
+  { key: 'transport',   label: 'Transport',                icon: '🚐', color: '#00838F', metier: 'taxi',        types: ['taxi'] },
+  { key: 'photographe', label: 'Photographes',             icon: '📷', color: '#AD1457', metier: 'photographe', types: [] },
+  { key: 'boutiques',   label: 'Alimentation & boutiques', icon: '🛍️', color: '#6A1B9A', metier: 'boutiques',   types: [] },
+  { key: 'assurance',   label: 'Assurances & juridique',   icon: '🛡️', color: '#1E3A5F', metier: 'assurance',   types: [] },
+];
+
+export const categorieByKey = (key: string | null | undefined) =>
+  CATEGORIES_ANNUAIRE.find(c => c.key === key) ?? null;
+
+/** Catégorie + type sélectionnés → métier à filtrer. */
+export function metierSelectionne(categorie: string, type: string): Metier {
+  if (type) return metierByKey(type);
+  const c = categorieByKey(categorie);
+  return c ? metierByKey(c.metier) : METIERS[0];
+}
+
+/** Métier (anciens liens ?metier= / ?cat=&prof=) → catégorie + type. */
+export function selectionDepuisMetier(metierKey: string): { categorie: string; type: string } {
+  if (!metierKey) return { categorie: '', type: '' };
+  for (const c of CATEGORIES_ANNUAIRE) {
+    if (c.types.includes(metierKey)) return { categorie: c.key, type: c.types.length > 1 ? metierKey : '' };
+    if (c.metier === metierKey) return { categorie: c.key, type: '' };
+  }
+  return { categorie: '', type: '' };
+}

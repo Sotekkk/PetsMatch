@@ -40,12 +40,14 @@ export default function AnimauxMultiSelect({ value, onApply }: Props) {
       <button type="button" onClick={() => setOpen(o => !o)}
         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm bg-white transition-colors ${open ? 'border-[#0C5C6C]' : 'border-gray-200 hover:border-gray-300'}`}
         style={{ fontFamily: 'Galey, sans-serif' }}>
-        <span className={value.length ? 'text-[#1F2A2E]' : 'text-gray-500'}>🐾 {resume}</span>
-        <span className={`text-gray-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <span className="truncate text-gray-500">
+          🐾 Animaux concernés : <strong className={value.length ? 'text-[#0C5C6C]' : 'text-gray-600 font-semibold'}>{resume}</strong>
+        </span>
+        <span className={`text-gray-400 text-xs transition-transform flex-shrink-0 ml-2 ${open ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {open && (
-        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden">
+        <div className="absolute z-30 left-0 min-w-full w-72 mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden">
           <div className="px-4 pt-3 pb-1">
             <p className="text-sm font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Animaux pris en charge</p>
             <p className="text-[11px] text-gray-400">Plusieurs choix possibles</p>

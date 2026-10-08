@@ -183,3 +183,43 @@ Future<List<LieuRecherche>> chercherCommunes(String q) async {
     return [];
   }
 }
+
+// ── Catégories de l'annuaire (cartes) et leurs types de service ─────────────
+// Une catégorie sans type sélectionné = tout le domaine (`metier`) ; un type
+// = un métier de kMetiers. Miroir site : CATEGORIES_ANNUAIRE.
+
+class CategorieAnnuaire {
+  final String key;
+  final String label;
+  final int color;
+  /// Métier « tout le domaine »
+  final String metier;
+  /// Types de service (clés de kMetiers) — vide = pas de sous-type
+  final List<String> types;
+  const CategorieAnnuaire(this.key, this.label, this.color, this.metier, this.types);
+}
+
+const kCategoriesAnnuaire = <CategorieAnnuaire>[
+  CategorieAnnuaire('sante', 'Santé & bien-être', 0xFF2E7D5E, 'sante', ['veterinaire', 'osteopathe', 'kine', 'marechal']),
+  CategorieAnnuaire('education', 'Éducation & comportement', 0xFFE65100, 'education', ['educateur', 'comportementaliste']),
+  CategorieAnnuaire('garde', 'Garde & hébergement', 0xFFF57C00, 'garde', ['petsitter', 'promeneur', 'pension']),
+  CategorieAnnuaire('toilettage', 'Toilettage & soins', 0xFFC62828, 'toilettage', []),
+  CategorieAnnuaire('transport', 'Transport', 0xFF00838F, 'taxi', ['taxi']),
+  CategorieAnnuaire('photographe', 'Photographes', 0xFFAD1457, 'photographe', []),
+  CategorieAnnuaire('boutiques', 'Alimentation & boutiques', 0xFF6A1B9A, 'boutiques', []),
+  CategorieAnnuaire('assurance', 'Assurances & juridique', 0xFF1E3A5F, 'assurance', []),
+];
+
+CategorieAnnuaire? categorieByKey(String? key) {
+  for (final c in kCategoriesAnnuaire) {
+    if (c.key == key) return c;
+  }
+  return null;
+}
+
+/// Catégorie + type sélectionnés → métier à filtrer.
+Metier metierSelectionne(String categorie, String type) {
+  if (type.isNotEmpty) return metierByKey(type);
+  final c = categorieByKey(categorie);
+  return c != null ? metierByKey(c.metier) : kMetiers.first;
+}
