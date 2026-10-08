@@ -39,9 +39,19 @@ const _unitesVeto = ['boite', 'flacon', 'dose', 'comprimé', 'pipette', 'seringu
     ?? _categoriesVeto.where((c) => c.$1 == cat).firstOrNull
     ?? _categories.last;
 
-String _catEmoji(String cat) => _catDef(cat).$2;
+String _catLabel(String cat) => _catDef(cat).$3;
 
-Color _catColor(String cat) => _catDef(cat).$4;
+/// État du stock : 'rupture' (≤ 0), 'alerte' (seuil atteint) ou 'normal'.
+String _etatStock(Map<String, dynamic> i) {
+  final q = (i['quantite'] as num?)?.toDouble() ?? 0;
+  if (q <= 0) return 'rupture';
+  final s = (i['quantite_alerte'] as num?)?.toDouble();
+  if (i['alerte_active'] == true && s != null && q <= s) return 'alerte';
+  return 'normal';
+}
+
+const _ambre = Color(0xFFB45309);
+const _rouge = Color(0xFFC53030);
 
 /// Péremption : null = sans date ; < 0 = périmé ; sinon jours restants.
 int? _joursAvantPeremption(Map<String, dynamic> item) {
@@ -97,6 +107,12 @@ class _InventairePageState extends State<InventairePage> {
   bool _focusHandled = false;
   List<Map<String, dynamic>> _items = [];
   String _catFilter = 'tous';
+  String _etatFilter = 'tous'; // tous | normal | alerte | rupture
+  String _search = '';
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -147,67 +163,6 @@ class _InventairePageState extends State<InventairePage> {
     }
   }
 
-  // Mise à jour directe ±delta sans dialog
-  Future<void> _quickDelta(Map<String, dynamic> item, double delta) async {
-    if (item['stupefiant'] == true) {
-      await showModalBottomSheet(
-        context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-        builder: (_) => _QuickMvtSheet(
-          item: item, type: delta > 0 ? 'restock' : 'consommation',
-          uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, onSaved: _load),
-      );
-      _load();
-      return;
-    }
-    final currentQte = (item['quantite'] as num).toDouble();
-    final newQte = (currentQte + delta).clamp(0.0, double.infinity);
-    final type = delta > 0 ? 'restock' : 'consommation';
-
-    try {
-      await _supa.from('inventaire_mouvements').insert({
-        'item_id': item['id'],
-        'uid_eleveur': _uid,
-        'uid_auteur': _uid,
-        if (_profileId != null) 'eleveur_profile_id': _profileId,
-        if (_profileId != null) 'auteur_profile_id': _profileId,
-        'type': type,
-        'quantite': delta.abs(),
-        'note': null,
-      });
-      await _supa.from('inventaire_items')
-          .update({'quantite': newQte, 'updated_at': DateTime.now().toIso8601String()})
-          .eq('id', item['id']);
-
-      // Alerte stock bas
-      final seuil = item['quantite_alerte'] != null
-          ? (item['quantite_alerte'] as num).toDouble()
-          : null;
-      if (type == 'consommation' &&
-          item['alerte_active'] == true &&
-          seuil != null &&
-          newQte <= seuil) {
-        await _supa.from('notifications').insert({
-          'uid': _uid,
-          'type': 'inventaire_alerte',
-          'title': '⚠️ Stock bas : ${item['nom']}',
-          'body': 'Il ne reste que ${_fmtQte(newQte)} ${_plural(item['unite'] as String? ?? '', newQte)} de ${item['nom']}.',
-          if (_profileId != null) 'profile_id': _profileId,
-          'data': {'itemId': item['id']},
-          'read': false,
-        });
-        await _createCommandeTask(item);
-      }
-
-      await _load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
   Future<void> _createCommandeTask(Map<String, dynamic> item) async {
     final label = 'Commander : ${item['nom']}';
     final today = DateTime.now().toIso8601String().split('T').first;
@@ -236,7 +191,7 @@ class _InventairePageState extends State<InventairePage> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('📋 Tâche créée : commande à passer'),
+        content: const Text('Tâche créée : commande à passer'),
         backgroundColor: _teal,
         action: SnackBarAction(
           label: 'Voir',
@@ -248,17 +203,19 @@ class _InventairePageState extends State<InventairePage> {
     }
   }
 
-  List<Map<String, dynamic>> get _displayed => _catFilter == 'tous'
-      ? _items
-      : _items.where((i) => i['categorie'] == _catFilter).toList();
+  List<Map<String, dynamic>> get _displayed {
+    final q = _search.trim().toLowerCase();
+    return _items.where((i) =>
+        (_catFilter == 'tous' || i['categorie'] == _catFilter) &&
+        (_etatFilter == 'tous' || _etatStock(i) == _etatFilter) &&
+        (q.isEmpty || (i['nom'] ?? '').toString().toLowerCase().contains(q) ||
+            (i['notes'] ?? '').toString().toLowerCase().contains(q) ||
+            (i['lot'] ?? '').toString().toLowerCase().contains(q))).toList();
+  }
 
-  List<Map<String, dynamic>> get _alertes => _items.where((i) {
-    if (i['alerte_active'] != true) return false;
-    if (i['quantite_alerte'] == null) return false;
-    final q = (i['quantite'] as num?)?.toDouble() ?? 0;
-    final s = (i['quantite_alerte'] as num).toDouble();
-    return q <= s;
-  }).toList();
+  bool get _filtresActifs => _catFilter != 'tous' || _etatFilter != 'tous' || _search.trim().isNotEmpty;
+
+  List<Map<String, dynamic>> get _alertes => _items.where((i) => _etatStock(i) != 'normal').toList();
 
   @override
   Widget build(BuildContext context) {
@@ -270,7 +227,7 @@ class _InventairePageState extends State<InventairePage> {
           icon: const Icon(Icons.arrow_back_ios_new, color: _dark, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(_veto ? '💊 Inventaire & pharmacie' : '📦 Inventaire',
+        title: Text(_veto ? 'Inventaire & pharmacie' : 'Inventaire',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _dark)),
         actions: [
           if (_veto)
@@ -283,6 +240,7 @@ class _InventairePageState extends State<InventairePage> {
           if (!widget.readOnly)
             IconButton(
               icon: const Icon(Icons.add, color: _teal),
+              tooltip: 'Ajouter un article',
               onPressed: () async {
                 await showModalBottomSheet(
                   context: context, isScrollControlled: true,
@@ -324,13 +282,13 @@ class _InventairePageState extends State<InventairePage> {
               border: Border.all(color: const Color(0xFFFCA5A5)),
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('⏳ Péremptions — ${perimes.length} périmé(s), ${bientot.length} sous 30 jours',
+              Text('Péremptions : ${perimes.length} périmé(s), ${bientot.length} sous 30 jours',
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF991B1B))),
               const SizedBox(height: 6),
               for (final a in [...perimes, ...bientot])
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Text('${_catEmoji(a['categorie'] as String? ?? 'autre')} ${a['nom']}'
+                  child: Text('${a['nom']}'
                       '${(a['lot'] as String?)?.isNotEmpty == true ? ' (lot ${a['lot']})' : ''} — '
                       '${(_joursAvantPeremption(a) ?? 0) < 0 ? 'périmé' : 'expire dans ${_joursAvantPeremption(a)} j'}',
                       style: const TextStyle(fontSize: 12, color: Color(0xFF991B1B))),
@@ -339,69 +297,103 @@ class _InventairePageState extends State<InventairePage> {
           ),
           const SizedBox(height: 12),
         ],
-        // Alertes stock bas
+        // Stocks à réapprovisionner (sobre, sans pictogramme)
         if (_alertes.isNotEmpty) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFBEB),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFFCD34D)),
+          InkWell(
+            onTap: () => setState(() => _etatFilter = _etatFilter == 'alerte' ? 'tous' : 'alerte'),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Text(
+                '${_alertes.length} article${_alertes.length > 1 ? 's' : ''} à réapprovisionner — '
+                '${_alertes.map((a) => a['nom']).join(', ')}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF92400E)),
+              ),
             ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('⚠️ Stock bas (${_alertes.length})',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 13, color: Color(0xFF92400E))),
-              const SizedBox(height: 6),
-              ..._alertes.map((a) => Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text(
-                  '${_catEmoji(a['categorie'] as String? ?? 'autre')} ${a['nom']} — '
-                  '${_fmtQte((a['quantite'] as num).toDouble())} ${_plural(a['unite'] as String? ?? '', (a['quantite'] as num).toDouble())} restant${(a['quantite'] as num) > 1 ? 's' : ''}',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
-                ),
-              )),
-            ]),
           ),
           const SizedBox(height: 12),
         ],
 
-        // Filtres catégorie
-        SizedBox(
-          height: 36,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _CatChip(label: 'Tous (${_items.length})', active: _catFilter == 'tous',
-                  color: _dark, onTap: () => setState(() => _catFilter = 'tous')),
-              ...(_veto ? _categoriesVeto : _categories).map((c) {
-                final count = _items.where((i) => i['categorie'] == c.$1).length;
-                if (count == 0) return const SizedBox.shrink();
-                return _CatChip(
-                  label: '${c.$2} ${c.$3} ($count)',
-                  active: _catFilter == c.$1,
-                  color: c.$4,
-                  onTap: () => setState(() => _catFilter = c.$1),
-                );
-              }),
-            ],
+        // Recherche + filtres (menus déroulants, combinables)
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade200),
           ),
+          child: Column(children: [
+            TextField(
+              controller: _searchCtrl,
+              onChanged: (v) => setState(() => _search = v),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: _filtreDeco('Rechercher un article…', prefix: const Icon(Icons.search, size: 18, color: Colors.grey)),
+            ),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: DropdownButtonFormField<String>(
+                initialValue: _catFilter,
+                isExpanded: true,
+                decoration: _filtreDeco('Catégorie', label: true),
+                items: [
+                  const DropdownMenuItem(value: 'tous', child: Text('Toutes les catégories', overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+                  for (final c in [
+                    ...(_veto ? _categoriesVeto : _categories),
+                    ..._items.map((i) => (i['categorie'] ?? 'autre').toString()).toSet()
+                        .where((c) => !(_veto ? _categoriesVeto : _categories).any((x) => x.$1 == c))
+                        .map(_catDef),
+                  ])
+                    DropdownMenuItem(value: c.$1, child: Text(c.$3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+                ],
+                onChanged: (v) => setState(() => _catFilter = v ?? 'tous'),
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: DropdownButtonFormField<String>(
+                initialValue: _etatFilter,
+                isExpanded: true,
+                decoration: _filtreDeco('État du stock', label: true),
+                items: const [
+                  ('tous', 'Tous les états'), ('normal', 'Stock normal'),
+                  ('alerte', 'Seuil d’alerte atteint'), ('rupture', 'Rupture'),
+                ].map((e) => DropdownMenuItem(value: e.$1, child: Text(e.$2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)))).toList(),
+                onChanged: (v) => setState(() => _etatFilter = v ?? 'tous'),
+              )),
+            ]),
+          ]),
         ),
-        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 8),
+          child: Row(children: [
+            Text('${_displayed.length} article${_displayed.length > 1 ? 's' : ''} affiché${_displayed.length > 1 ? 's' : ''}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            const Spacer(),
+            if (_filtresActifs)
+              TextButton(
+                onPressed: () => setState(() { _searchCtrl.clear(); _search = ''; _catFilter = 'tous'; _etatFilter = 'tous'; }),
+                style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero, minimumSize: const Size(0, 28)),
+                child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700)),
+              ),
+          ]),
+        ),
 
         // Liste
         if (_displayed.isEmpty)
-          const Center(
+          Center(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 48),
+              padding: const EdgeInsets.symmetric(vertical: 40),
               child: Column(children: [
-                Text('📦', style: TextStyle(fontSize: 48)),
-                SizedBox(height: 12),
-                Text('Aucun article', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                    color: Colors.grey, fontSize: 15)),
-                Text('Appuyez sur + pour ajouter votre premier stock',
-                    style: TextStyle(color: Colors.grey, fontSize: 12), textAlign: TextAlign.center),
+                Text(_items.isEmpty ? 'Aucun article' : 'Aucun article ne correspond à ces filtres',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.grey, fontSize: 15)),
+                if (_items.isEmpty)
+                  const Text('Appuyez sur + pour ajouter votre premier stock',
+                      style: TextStyle(color: Colors.grey, fontSize: 12), textAlign: TextAlign.center),
               ]),
             ),
           )
@@ -419,228 +411,151 @@ class _InventairePageState extends State<InventairePage> {
               backgroundColor: Colors.transparent,
               builder: (_) => _ItemFormSheet(uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId, item: item, veto: _veto, onSaved: _load),
             ),
-            onDelta: widget.readOnly ? null : (delta) => _quickDelta(item, delta),
-            onCreateTask: widget.readOnly ? null : _createCommandeTask,
+            onAjuster: widget.readOnly ? null : () => showModalBottomSheet(
+              context: context, isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _QuickMvtSheet(
+                item: item, type: 'restock',
+                uid: widget.eleveurUidOverride ?? _uid, profileId: _profileId,
+                onSaved: _load,
+                onAlerte: () => _createCommandeTask(item),
+              ),
+            ),
           ))),
       ]),
     );
   }
 }
 
-// ── Chip catégorie ─────────────────────────────────────────────────────────────
+// ── Champs de filtre ───────────────────────────────────────────────────────────
 
-class _CatChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final Color color;
-  final VoidCallback onTap;
-  const _CatChip({required this.label, required this.active, required this.color, required this.onTap});
+InputDecoration _filtreDeco(String texte, {bool label = false, Widget? prefix}) => InputDecoration(
+      labelText: label ? texte : null,
+      hintText: label ? null : texte,
+      labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+      hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Colors.grey.shade400),
+      prefixIcon: prefix,
+      isDense: true,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _teal, width: 1.5)),
+    );
 
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? color : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: active ? color : Colors.grey.shade300),
-      ),
-      child: Text(label,
-          style: TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w600,
-            color: active ? Colors.white : Colors.grey.shade700,
-          )),
-    ),
-  );
-}
-
-// ── Carte article ──────────────────────────────────────────────────────────────
+// ── Carte article (ligne compacte) ─────────────────────────────────────────────
 
 class _ItemCard extends StatelessWidget {
   final Map<String, dynamic> item;
   final String? profileId;
   final VoidCallback onTap;
   final VoidCallback? onEdit;
-  final void Function(double delta)? onDelta;
-  final void Function(Map<String, dynamic>)? onCreateTask;
+  final VoidCallback? onAjuster;
 
   const _ItemCard({
     required this.item,
     this.profileId,
     required this.onTap,
     this.onEdit,
-    this.onDelta,
-    this.onCreateTask,
+    this.onAjuster,
   });
 
   @override
   Widget build(BuildContext context) {
     final cat   = item['categorie'] as String? ?? 'autre';
     final qte   = (item['quantite'] as num?)?.toDouble() ?? 0;
-    final seuil = item['quantite_alerte'] != null
-        ? (item['quantite_alerte'] as num).toDouble()
-        : null;
-    final isLow = item['alerte_active'] == true && seuil != null && qte <= seuil;
-    final color = _catColor(cat);
+    final seuil = item['quantite_alerte'] != null ? (item['quantite_alerte'] as num).toDouble() : null;
     final unite = item['unite'] as String? ?? '';
+    final etat  = _etatStock(item);
+    final couleurStock = etat == 'rupture' ? _rouge : etat == 'alerte' ? _ambre : _dark;
+    final j = _joursAvantPeremption(item);
+    final mentions = [
+      if ((item['lot'] as String?)?.isNotEmpty == true) 'Lot ${item['lot']}',
+      if (j != null) j < 0 ? 'Périmé' : 'Exp. ${DateFormat('dd/MM/yyyy').format(DateTime.parse(item['date_peremption'].toString()))}',
+      if (item['froid'] == true) '+2 / +8 °C',
+      if (item['stupefiant'] == true) 'Stupéfiant',
+    ];
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isLow ? const Color(0xFFFCD34D) : Colors.grey.shade100),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              // Icône
-              Container(
-                width: 38, height: 38,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Center(child: Text(_catEmoji(cat), style: const TextStyle(fontSize: 18))),
-              ),
-              const SizedBox(width: 10),
-              // Nom + quantité
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Expanded(
-                      child: Text(item['nom'] as String? ?? '',
-                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                              fontSize: 14, color: _dark),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
-                    ),
-                    if (isLow)
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF3C7),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text('⚠️ bas',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
-                      ),
-                  ]),
-                  if (item['stupefiant'] == true || item['froid'] == true || item['date_peremption'] != null || item['lot'] != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Wrap(spacing: 6, children: [
-                        if (item['stupefiant'] == true)
-                          const Text('🔒 Stupéfiant', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF991B1B))),
-                        if (item['froid'] == true)
-                          const Text('❄️ +2/+8 °C', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF2B6CB0))),
-                        if ((item['lot'] as String?)?.isNotEmpty == true)
-                          Text('Lot ${item['lot']}', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
-                        if (_joursAvantPeremption(item) != null)
-                          Text(
-                            (_joursAvantPeremption(item)! < 0)
-                                ? '⛔ Périmé'
-                                : 'Exp. ${DateFormat('dd/MM/yyyy').format(DateTime.parse(item['date_peremption'].toString()))}',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                                color: _joursAvantPeremption(item)! <= 30 ? const Color(0xFFC53030) : Colors.grey.shade600)),
-                      ]),
-                    ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${_fmtQte(qte)} ${_plural(unite, qte)}'
-                    '${seuil != null ? '  ·  seuil ${_fmtQte(seuil)} ${_plural(unite, seuil)}' : ''}',
-                    style: TextStyle(fontSize: 12,
-                        color: isLow ? const Color(0xFFB45309) : color,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ]),
-              ),
-              if (onEdit != null)
-                GestureDetector(
-                  onTap: onEdit,
-                  child: Container(
-                    width: 32, height: 32,
-                    decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)),
-                    child: const Center(child: Text('✏️', style: TextStyle(fontSize: 14))),
-                  ),
-                ),
-            ]),
-            const SizedBox(height: 10),
-            // Boutons ±1 et ±custom (masqués en lecture seule)
-            if (onDelta != null)
-              Row(children: [
-                _DeltaBtn(label: '−1', color: Colors.red.shade400, onTap: () => onDelta!(-1)),
-                const SizedBox(width: 6),
-                _DeltaBtn(label: '−', color: Colors.red.shade300, onTap: () => _showSheet(context, 'consommation')),
-                const Spacer(),
-                GestureDetector(
-                  onTap: onTap,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _teal.withOpacity(0.07),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('📋 Historique',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
-                  ),
-                ),
-                const Spacer(),
-                _DeltaBtn(label: '+', color: _green.withOpacity(0.7), onTap: () => _showSheet(context, 'restock')),
-                const SizedBox(width: 6),
-                _DeltaBtn(label: '+1', color: _green, onTap: () => onDelta!(1)),
-              ]),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  void _showSheet(BuildContext context, String type) {
-    showModalBottomSheet(
-      context: context, isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _QuickMvtSheet(
-        item: item, type: type,
-        uid: FirebaseAuth.instance.currentUser!.uid,
-        profileId: profileId,
-        onSaved: () {},
-        onAlerte: type == 'consommation' && onCreateTask != null ? () => onCreateTask!(item) : null,
-      ),
-    );
-  }
-}
-
-class _DeltaBtn extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _DeltaBtn({required this.label, required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      constraints: const BoxConstraints(minWidth: 36),
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Center(
-        child: Text(label,
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
-      ),
-    ),
-  );
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          onTap: onTap,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(item['nom'] as String? ?? '',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(_catLabel(cat), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                if (mentions.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(mentions.join(' · '),
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                            color: j != null && j <= 30 ? _rouge : Colors.grey.shade500)),
+                  ),
+              ])),
+              const SizedBox(width: 10),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text('${_fmtQte(qte)} ${_plural(unite, qte)}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: couleurStock)),
+                Text(item['alerte_active'] == true && seuil != null
+                        ? 'Seuil : ${_fmtQte(seuil)} ${_plural(unite, seuil)}' : 'Seuil : —',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                if (etat != 'normal')
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: etat == 'rupture' ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(etat == 'rupture' ? 'Rupture' : 'Seuil atteint',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, fontWeight: FontWeight.w700, color: couleurStock)),
+                  ),
+              ]),
+            ]),
+          ),
+        ),
+        if (onAjuster != null || onEdit != null)
+          Container(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade100))),
+            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              if (onAjuster != null)
+                OutlinedButton(
+                  onPressed: onAjuster,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _teal, side: const BorderSide(color: _teal),
+                    minimumSize: const Size(0, 34), padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('Ajuster le stock', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
+                ),
+              if (onEdit != null) ...[
+                const SizedBox(width: 6),
+                TextButton(
+                  onPressed: onEdit,
+                  style: TextButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(0, 34)),
+                  child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
+                      decoration: TextDecoration.underline)),
+                ),
+              ],
+            ]),
+          ),
+      ]),
+    );
+  }
 }
 
 // ── Bottom sheet mouvement avec quantité personnalisée ─────────────────────────
@@ -659,7 +574,9 @@ class _QuickMvtSheet extends StatefulWidget {
 
 class _QuickMvtSheetState extends State<_QuickMvtSheet> {
   final _supa     = Supabase.instance.client;
-  final _qteCtrl  = TextEditingController(text: '1');
+  /// Sens choisi dans « Ajuster le stock » : restock (ajouter) ou consommation (retirer)
+  late String _type = widget.type;
+  final _qteCtrl  = TextEditingController();
   final _noteCtrl = TextEditingController();
   bool _saving = false;
   String? _error;
@@ -676,9 +593,7 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
     final current = (widget.item['quantite'] as num).toDouble();
     setState(() {
       if (qte != null && qte > 0) {
-        _preview = widget.type == 'consommation'
-            ? (current - qte).clamp(0.0, double.infinity)
-            : current + qte;
+        _preview = _type == 'consommation' ? current - qte : current + qte;
       } else {
         _preview = null;
       }
@@ -694,9 +609,15 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
       setState(() => _error = 'Quantité invalide');
       return;
     }
+    final stock = (widget.item['quantite'] as num).toDouble();
+    if (_type == 'consommation' && qte > stock) {
+      setState(() => _error = 'Impossible de retirer plus que le stock actuel '
+          '(${_fmtQte(stock)} ${_plural(widget.item['unite'] as String? ?? '', stock)}).');
+      return;
+    }
     // Registre des stupéfiants : origine / motif obligatoire.
     if (widget.item['stupefiant'] == true && _noteCtrl.text.trim().isEmpty) {
-      setState(() => _error = widget.type == 'consommation'
+      setState(() => _error = _type == 'consommation'
           ? 'Stupéfiant : indiquez le motif (animal, ordonnance…)'
           : 'Stupéfiant : indiquez l\'origine (fournisseur, bon de livraison…)');
       return;
@@ -704,7 +625,7 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
     setState(() { _saving = true; _error = null; });
 
     try {
-      final isConsomm = widget.type == 'consommation';
+      final isConsomm = _type == 'consommation';
       final currentQte = (widget.item['quantite'] as num).toDouble();
       final newQte = isConsomm
           ? (currentQte - qte).clamp(0.0, double.infinity)
@@ -716,7 +637,7 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
         'uid_auteur': widget.uid,
         if (widget.profileId != null) 'eleveur_profile_id': widget.profileId,
         if (widget.profileId != null) 'auteur_profile_id': widget.profileId,
-        'type': widget.type,
+        'type': _type,
         'quantite': qte,
         'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
         // Registre des stupéfiants : stock après mouvement + auteur réel (pas
@@ -755,123 +676,124 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isConsomm = widget.type == 'consommation';
-    final color = isConsomm ? Colors.red : _green;
+    final isConsomm = _type == 'consommation';
+    final unite = widget.item['unite'] as String? ?? '';
+    final stock = (widget.item['quantite'] as num).toDouble();
+    final qte = double.tryParse(_qteCtrl.text.replaceAll(',', '.'));
+    final trop = isConsomm && qte != null && qte > stock;
+    final stupefiant = widget.item['stupefiant'] == true;
+    InputDecoration deco({String? hint, Widget? suffix}) => InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+          suffixIcon: suffix,
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: trop ? Colors.red.shade300 : Colors.grey.shade300)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: trop ? Colors.red.shade300 : _teal, width: 1.5)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        );
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Handle
           Center(child: Container(width: 40, height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 14),
-          Text(
-            '${isConsomm ? '📉 Consommation' : '📦 Réapprovisionnement'} — ${widget.item['nom']}',
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark),
+          const Text('Ajuster le stock',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16, color: _dark)),
+          const SizedBox(height: 2),
+          Text('${widget.item['nom']} — stock actuel : ${_fmtQte(stock)} ${_plural(unite, stock)}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              for (final s in const [('restock', 'Ajouter'), ('consommation', 'Retirer')])
+                Expanded(child: GestureDetector(
+                  onTap: () { setState(() { _type = s.$1; _error = null; }); _updatePreview(); },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _type == s.$1 ? Colors.white : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: _type == s.$1 ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4)] : null,
+                    ),
+                    child: Text(s.$2, textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        fontWeight: FontWeight.w700, color: _type == s.$1 ? _teal : Colors.grey.shade600)),
+                  ),
+                )),
+            ]),
           ),
-          const SizedBox(height: 16),
-          Text('Quantité (${widget.item['unite'] ?? 'unité'})',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 14),
+          Text('Quantité', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
           const SizedBox(height: 6),
           TextField(
             controller: _qteCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             autofocus: true,
-            decoration: InputDecoration(
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: color, width: 2),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
+            decoration: deco(hint: '0', suffix: Padding(
+              padding: const EdgeInsets.only(right: 12, top: 12),
+              child: Text(_plural(unite, qte ?? 2), style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600)),
+            )),
           ),
+          const SizedBox(height: 6),
+          if (trop)
+            Text('Impossible de retirer plus que le stock actuel (${_fmtQte(stock)} ${_plural(unite, stock)}).',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.red))
+          else if (_preview != null)
+            Text.rich(TextSpan(style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600), children: [
+              const TextSpan(text: 'Nouveau stock : '),
+              TextSpan(text: '${_fmtQte(_preview!)} ${_plural(unite, _preview!)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: _dark)),
+            ])),
           const SizedBox(height: 12),
-          if (_preview != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: color.withOpacity(0.2)),
-              ),
-              child: Row(children: [
-                Text(
-                  '${_fmtQte((widget.item['quantite'] as num).toDouble())} '
-                  '${_plural(widget.item['unite'] as String? ?? '', (widget.item['quantite'] as num).toDouble())}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontFamily: 'Galey'),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(isConsomm ? '−' : '+',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: color)),
-                ),
-                Text(
-                  '${_fmtQte(double.tryParse(_qteCtrl.text.replaceAll(',', '.')) ?? 0)} '
-                  '${_plural(widget.item['unite'] as String? ?? '', double.tryParse(_qteCtrl.text.replaceAll(',', '.')) ?? 0)}',
-                  style: TextStyle(fontSize: 13, color: color, fontFamily: 'Galey'),
-                ),
-                const Spacer(),
-                Text('= ', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
-                Text(
-                  '${_fmtQte(_preview!)} ${_plural(widget.item['unite'] as String? ?? '', _preview!)}',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 15,
-                      fontWeight: FontWeight.w700, color: _dark),
-                ),
-              ]),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Text('Note (optionnel)',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          Text(stupefiant ? (isConsomm ? 'Motif (animal, ordonnance…) *' : 'Origine (fournisseur, bon de livraison…) *') : 'Note (facultative)',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
           const SizedBox(height: 6),
           TextField(
             controller: _noteCtrl,
-            decoration: InputDecoration(
-              hintText: isConsomm ? 'ex : paquet de croquettes terminé' : 'ex : livraison reçue',
-              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: color, width: 2),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: deco(hint: isConsomm ? 'Ex : sac terminé' : 'Ex : livraison reçue'),
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
             Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
           ],
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           Row(children: [
             Expanded(
               child: OutlinedButton(
                 onPressed: () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: BorderSide(color: Colors.grey.shade300),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Annuler'),
+                child: Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade700)),
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton(
-                onPressed: _saving ? null : _save,
+                onPressed: (_saving || trop || qte == null || qte <= 0) ? null : _save,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
+                  backgroundColor: _teal,
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: Text(_saving ? '…' : 'Enregistrer',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                child: Text(_saving ? 'Enregistrement…' : 'Enregistrer',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               ),
             ),
           ]),
@@ -916,7 +838,6 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
-    final cat  = item['categorie'] as String? ?? 'autre';
 
     return DraggableScrollableSheet(
       initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.4,
@@ -931,7 +852,7 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Row(children: [
-              Text('${_catEmoji(cat)} ${item['nom'] ?? ''}',
+              Text('${item['nom'] ?? ''}',
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark)),
               const Spacer(),
               IconButton(
@@ -959,8 +880,8 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Row(children: [
-                              Text(type == 'consommation' ? '📉' : type == 'restock' ? '📦' : '🔧',
-                                  style: const TextStyle(fontSize: 20)),
+                              SizedBox(width: 72, child: Text(type == 'consommation' ? 'Retrait' : type == 'restock' ? 'Ajout' : 'Correction',
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade600))),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1164,30 +1085,18 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
               const SizedBox(height: 14),
 
               // Catégorie
-              const Text('Catégorie', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8, runSpacing: 8,
-                children: (widget.veto ? _categoriesVeto : _categories).map((c) {
-                  final sel = _cat == c.$1;
-                  return GestureDetector(
-                    onTap: () => setState(() {
-                      _cat = c.$1;
-                      if (widget.veto && c.$1 == 'vaccin') _froid = true;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel ? c.$4 : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: sel ? c.$4 : Colors.grey.shade300),
-                      ),
-                      child: Text('${c.$2} ${c.$3}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : Colors.grey.shade700)),
-                    ),
-                  );
-                }).toList(),
+              DropdownButtonFormField<String>(
+                initialValue: _cat,
+                isExpanded: true,
+                decoration: _dec('Catégorie'),
+                items: [
+                  ...(widget.veto ? _categoriesVeto : _categories),
+                  if (!(widget.veto ? _categoriesVeto : _categories).any((c) => c.$1 == _cat)) _catDef(_cat),
+                ].map((c) => DropdownMenuItem(value: c.$1, child: Text(c.$3, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
+                onChanged: (v) => setState(() {
+                  _cat = v ?? _cat;
+                  if (widget.veto && _cat == 'vaccin') _froid = true;
+                }),
               ),
               const SizedBox(height: 14),
 
