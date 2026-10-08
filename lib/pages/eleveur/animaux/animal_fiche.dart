@@ -45,6 +45,7 @@ import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/edit_cession_sheet.dart';
+import 'package:PetsMatch/utils/sante_couleurs.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -5148,30 +5149,37 @@ class _CarnetSanteTab extends StatelessWidget {
       this.canWrite = true, this.writeRequested = false, this.onRequestWrite});
 
   static const _cats = [
-    (key: 'vaccinations',     label: 'Vaccins',              icon: Icons.vaccines_outlined,             color: Color(0xFF0C5C6C)),
-    (key: 'vermifuges',       label: 'Vermifuges',            icon: Icons.bug_report_outlined,           color: Color(0xFF6E9E57)),
-    (key: 'antiparasitaires', label: 'Antiparasitaires',      icon: Icons.pest_control_outlined,         color: Color(0xFF5B8648)),
-    (key: 'traitements',      label: 'Traitements',           icon: Icons.medication_outlined,           color: Color(0xFF8D6E63)),
-    (key: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: Icons.local_hospital_outlined, color: Color(0xFFC2185B)),
-    (key: 'allergies',        label: 'Allergies',             icon: Icons.warning_amber_outlined,        color: Color(0xFFE25C5C)),
-    (key: 'poids',            label: 'Courbe de poids',       icon: Icons.monitor_weight_outlined,       color: Color(0xFF5F9EAA)),
-    (key: 'visites',          label: 'Visites vétérinaires',  icon: Icons.medical_services_outlined,     color: Color(0xFF26A69A)),
+    // Couleurs fonctionnelles (rubrique + « Ajouter » + rappels agenda) :
+    // référence unique, utils/sante_couleurs.dart.
+    (key: 'vaccinations',     label: 'Vaccinations',          icon: Icons.vaccines_outlined,             color: SanteCouleurs.vaccinations),
+    (key: 'vermifuges',       label: 'Vermifuges',            icon: Icons.bug_report_outlined,           color: SanteCouleurs.vermifuges),
+    (key: 'antiparasitaires', label: 'Antiparasitaires',      icon: Icons.pest_control_outlined,         color: SanteCouleurs.antiparasitaires),
+    (key: 'traitements',      label: 'Traitements',           icon: Icons.medication_outlined,           color: SanteCouleurs.traitements),
+    (key: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: Icons.local_hospital_outlined, color: SanteCouleurs.chirurgies),
+    (key: 'allergies',        label: 'Allergies',             icon: Icons.warning_amber_outlined,        color: SanteCouleurs.allergies),
+    (key: 'poids',            label: 'Courbe de poids',       icon: Icons.monitor_weight_outlined,       color: SanteCouleurs.poids),
+    (key: 'visites',          label: 'Visites vétérinaires',  icon: Icons.medical_services_outlined,     color: SanteCouleurs.visites),
     (key: 'radios',           label: 'Radios / Examens',       icon: Icons.image_search_outlined,          color: Color(0xFF0284C7)),
   ];
-
+  // Les 7 rubriques du carnet, puis le suivi vétérinaire.
   @override
   Widget build(BuildContext context) {
     if (animalId == null) return const _SaveFirstPrompt(message: 'Enregistrez d\'abord la fiche pour accéder au carnet de santé.');
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.05,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: _cats.length,
-      itemBuilder: (_, i) {
+    Widget panneau(List<Widget> lignes) => Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(children: [
+            for (var i = 0; i < lignes.length; i++) ...[
+              if (i > 0) Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+              lignes[i],
+            ],
+          ]),
+        );
+    Widget ligne(int i) {
         final cat = _cats[i];
         return _SanteTile(
           animalId: animalId!,
@@ -5185,7 +5193,12 @@ class _CarnetSanteTab extends StatelessWidget {
           writeRequested: writeRequested,
           onRequestWrite: onRequestWrite,
         );
-      },
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      children: [
+        panneau([for (var i = 0; i < _cats.length; i++) ligne(i)]),
+      ],
     );
   }
 }
@@ -5212,40 +5225,49 @@ class _SanteTile extends StatelessWidget {
           .from(collection).stream(primaryKey: ['id']).eq('animal_id', animalId),
       builder: (ctx, snap) {
         final count = snap.data?.length ?? 0;
-        return GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => SanteDetailPage(
-              animalId: animalId, collection: collection,
-              label: label, icon: icon, color: color, vetMode: vetMode, espece: espece,
-              canWrite: canWrite, writeRequested: writeRequested, onRequestWrite: onRequestWrite,
+        final page = SanteDetailPage(
+          animalId: animalId, collection: collection,
+          label: label, icon: icon, color: color, vetMode: vetMode, espece: espece,
+          canWrite: canWrite, writeRequested: writeRequested, onRequestWrite: onRequestWrite,
+        );
+        void ouvrir() => Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+        return InkWell(
+          onTap: ouvrir,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 4),
+              child: Row(children: [
+                Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                const SizedBox(width: 14),
+                Expanded(child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                    const SizedBox(height: 2),
+                    Text('$count enregistrement${count > 1 ? 's' : ''}',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+                  ]),
+                )),
+                // « + Ajouter » : ouvre le formulaire, sans ouvrir la liste
+                if (canWrite)
+                  TextButton(
+                    onPressed: () async {
+                      if (collection == 'poids') { ouvrir(); return; }
+                      await showDialog(context: context, builder: page._dialogFor);
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: color,
+                      minimumSize: const Size(48, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    child: const Text('+ Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+                  ),
+                SizedBox(width: 40, height: 44,
+                    child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400)),
+              ]),
             ),
-          )),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
-            ),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
-                child: Icon(icon, color: color, size: 28),
-              ),
-              const SizedBox(height: 10),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(label,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-                    textAlign: TextAlign.center, maxLines: 2),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                count == 0 ? 'Aucune entrée' : '$count entrée${count > 1 ? 's' : ''}',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                    color: count > 0 ? color : Colors.grey.shade400),
-              ),
-            ]),
           ),
         );
       },

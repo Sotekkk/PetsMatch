@@ -36,6 +36,7 @@ import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/widgets/document_viewer_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
+import 'package:PetsMatch/utils/sante_couleurs.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
@@ -2063,169 +2064,171 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         children: [
           _AiScanCard(onTap: _scanVetDocument, busy: _scanningDocument),
           const SizedBox(height: 16),
-          if (especeHasGenetics(_espece))
+          _PanneauSante(children: [
             _HealthSection(
-              title: 'Génétique & tests',
-              icon: Icons.biotech_outlined,
-              color: const Color(0xFF7C3AED),
-              records: _testsGenetiques,
-              onAdd: _showTestGenetiqueSheet,
+              title: 'Vaccinations',
+              icon: Icons.vaccines,
+              color: SanteCouleurs.vaccinations,
+              records: _vaccinations,
+              onAdd: _showVaccinationSheet,
               renderRecord: (r) => _RecordTile(
-                title: r['nom'] ?? 'Test',
-                subtitle: [r['laboratoire'], _fmtDate(r['date_test']?.toString())]
-                    .where((e) => e != null && '$e'.isNotEmpty).join(' · '),
-                trailing: kResultatsGenetiques[r['resultat']] ?? (r['genotype'] as String?),
-                onDelete: () => _deleteRecord('tests_genetiques', r['id'], _testsGenetiques),
-                onTap: () => _showRecordDetail('Test génétique', r, const [
-                  ('Test', 'nom'), ('Catégorie', 'categorie'), ('Résultat', 'resultat'),
-                  ('Génotype', 'genotype'), ('Laboratoire', 'laboratoire'),
-                  ('Date', 'date_test'), ('Résultat en ligne', 'lien_resultat'), ('Notes', 'notes'),
+                title: r['vaccin'] ?? 'Inconnu',
+                subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
+                trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
+                onDelete: () => _deleteRecord('vaccinations', r['id'], _vaccinations),
+                onTap: () => _showRecordDetail('Vaccination', r, [
+                  ('Vaccin', 'vaccin'), ('Date', 'date'), ('Rappel', 'date_rappel'),
+                  ('N° de lot', 'lot'), ('Vétérinaire', 'veterinaire'),
                 ]),
               ),
             ),
-          _HealthSection(
-            title: 'Vaccinations',
-            icon: Icons.vaccines,
-            color: const Color(0xFF2196F3),
-            records: _vaccinations,
-            onAdd: _showVaccinationSheet,
-            renderRecord: (r) => _RecordTile(
-              title: r['vaccin'] ?? 'Inconnu',
-              subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-              trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
-              onDelete: () => _deleteRecord('vaccinations', r['id'], _vaccinations),
-              onTap: () => _showRecordDetail('Vaccination', r, [
-                ('Vaccin', 'vaccin'), ('Date', 'date'), ('Rappel', 'date_rappel'),
-                ('N° de lot', 'lot'), ('Vétérinaire', 'veterinaire'),
-              ]),
-            ),
-          ),
-          _HealthSection(
-            title: 'Traitements',
-            icon: Icons.medication,
-            color: const Color(0xFF9C27B0),
-            records: _traitements,
-            onAdd: _showTraitementSheet,
-            renderRecord: (r) {
-              final traitementTrailing = [
-                if ((r['posologie'] as String?)?.isNotEmpty == true) r['posologie'] as String,
-                if (r['rappel_actif'] == true) 'Rappels actifs',
-              ].join(' · ');
-              return _RecordTile(
-                title: r['nom'] ?? r['type'] ?? 'Inconnu',
+            _HealthSection(
+              title: 'Vermifuges',
+              icon: Icons.pest_control,
+              color: SanteCouleurs.vermifuges,
+              records: _vermifuges,
+              onAdd: _showVermifugeSheet,
+              renderRecord: (r) => _RecordTile(
+                title: r['produit'] ?? 'Inconnu',
                 subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-                trailing: traitementTrailing.isEmpty ? null : traitementTrailing,
-                onDelete: () => _deleteRecord('traitements', r['id'], _traitements),
-                onTap: () => _showRecordDetail('Traitement', r, [
-                  ('Nom', 'nom'), ('Type', 'type'), ('Maladie', 'description_maladie'),
-                  ('Posologie', 'posologie'), ('Date début', 'date'), ('Date fin', 'date_fin'),
-                  ('Commentaires', 'notes'),
+                trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
+                onDelete: () => _deleteRecord('vermifuges', r['id'], _vermifuges),
+                onRappel: () => _showVermifugeSheet(prefill: r),
+                onTap: () => _showRecordDetail('Vermifuge', r, [
+                  ('Produit', 'produit'), ('Dosage', 'dosage'), ('Date', 'date'),
+                  ('Rappel', 'date_rappel'), ('Notes', 'notes'),
                 ]),
-              );
-            },
-          ),
-          _HealthSection(
-            title: 'Visites vétérinaires',
-            icon: Icons.local_hospital,
-            color: const Color(0xFFF44336),
-            records: _visites,
-            onAdd: _showVisiteSheet,
-            renderRecord: (r) => _RecordTile(
-              title: r['motif'] ?? 'Consultation',
-              subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-              trailing: r['veterinaire'],
-              onDelete: () => _deleteRecord('visites', r['id'], _visites),
-              onTap: () => _showRecordDetail('Visite vétérinaire', r, [
-                ('Motif', 'motif'), ('Date', 'date'), ('Vétérinaire', 'veterinaire'),
-                ('Diagnostic', 'diagnostic'), ('Notes', 'notes'),
-              ]),
+              ),
             ),
-          ),
-          _HealthSection(
-            title: 'Vermifuges',
-            icon: Icons.pest_control,
-            color: const Color(0xFF795548),
-            records: _vermifuges,
-            onAdd: _showVermifugeSheet,
-            renderRecord: (r) => _RecordTile(
-              title: r['produit'] ?? 'Inconnu',
-              subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-              trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
-              onDelete: () => _deleteRecord('vermifuges', r['id'], _vermifuges),
-              onRappel: () => _showVermifugeSheet(prefill: r),
-              onTap: () => _showRecordDetail('Vermifuge', r, [
-                ('Produit', 'produit'), ('Dosage', 'dosage'), ('Date', 'date'),
-                ('Rappel', 'date_rappel'), ('Notes', 'notes'),
-              ]),
-            ),
-          ),
-          _HealthSection(
-            title: 'Antiparasitaires',
-            icon: Icons.bug_report,
-            color: const Color(0xFF4CAF50),
-            records: _antiparasitaires,
-            onAdd: _showAntiparasitaireSheet,
-            renderRecord: (r) => _RecordTile(
-              title: r['produit'] ?? 'Inconnu',
-              subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-              trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
-              onDelete: () => _deleteRecord('antiparasitaires', r['id'], _antiparasitaires),
-              onRappel: () => _showAntiparasitaireSheet(prefill: r),
-              onTap: () => _showRecordDetail('Antiparasitaire', r, [
-                ('Produit', 'produit'), ('Type', 'type'), ('Fréquence', 'frequence'),
-                ('Date', 'date'), ('Rappel', 'date_rappel'), ('Notes', 'notes'),
-              ]),
-            ),
-          ),
-          _HealthSection(
-            title: 'Chirurgie / Hospitalisation',
-            icon: Icons.local_hospital_outlined,
-            color: const Color(0xFFC2185B),
-            records: _chirurgies,
-            onAdd: _showChirurgieSheet,
-            renderRecord: (r) {
-              final st = r['statut']?.toString();
-              final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
-              final t = r['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
-              return _RecordTile(
-                title: r['intitule'] ?? t,
-                subtitle: r['date'] != null ? '$label le ${_fmtDate(r['date'])}' : label,
-                trailing: r['clinique'] ?? r['veterinaire'],
-                onDelete: () => _deleteRecord('chirurgies', r['id'], _chirurgies),
-                onTap: () => _showRecordDetail('Chirurgie / Hospitalisation', r, [
-                  ('Intervention', 'intitule'), ('Type', 'type'), ('Date', 'date'),
-                  ('Statut', 'statut'), ('Clinique / vétérinaire', 'clinique'),
-                  ('Protocole pré-opératoire', 'protocole_preop'),
-                  ('Protocole post-opératoire', 'protocole_postop'),
-                  ('Notes', 'notes'),
+            _HealthSection(
+              title: 'Antiparasitaires',
+              icon: Icons.bug_report,
+              color: SanteCouleurs.antiparasitaires,
+              records: _antiparasitaires,
+              onAdd: _showAntiparasitaireSheet,
+              renderRecord: (r) => _RecordTile(
+                title: r['produit'] ?? 'Inconnu',
+                subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
+                trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
+                onDelete: () => _deleteRecord('antiparasitaires', r['id'], _antiparasitaires),
+                onRappel: () => _showAntiparasitaireSheet(prefill: r),
+                onTap: () => _showRecordDetail('Antiparasitaire', r, [
+                  ('Produit', 'produit'), ('Type', 'type'), ('Fréquence', 'frequence'),
+                  ('Date', 'date'), ('Rappel', 'date_rappel'), ('Notes', 'notes'),
                 ]),
-              );
-            },
-          ),
-          _HealthSection(
-            title: 'Allergies',
-            icon: Icons.warning_amber,
-            color: const Color(0xFFFF9800),
-            records: _allergies,
-            onAdd: _showAllergieSheet,
-            renderRecord: (r) => _RecordTile(
-              title: r['description'] ?? 'Allergie',
-              subtitle: r['type'],
-              trailing: r['severite'],
-              onDelete: () => _deleteRecord('allergies', r['id'], _allergies),
-              onTap: () => _showRecordDetail('Allergie', r, [
-                ('Description', 'description'), ('Type', 'type'), ('Sévérité', 'severite'),
-                ('Date', 'date'), ('Notes', 'notes'),
-              ]),
+              ),
             ),
-          ),
-          _PoidsSectionP(
-            records: _poids,
-            dateNaissance: _dateNaissance,
-            onAdd: _showPoidsSheet,
-            onDelete: (r) => _deleteRecord('poids', r['id'], _poids),
-            fmtDate: _fmtDate,
-          ),
+            _HealthSection(
+              title: 'Traitements',
+              icon: Icons.medication,
+              color: SanteCouleurs.traitements,
+              records: _traitements,
+              onAdd: _showTraitementSheet,
+              renderRecord: (r) {
+                final traitementTrailing = [
+                  if ((r['posologie'] as String?)?.isNotEmpty == true) r['posologie'] as String,
+                  if (r['rappel_actif'] == true) 'Rappels actifs',
+                ].join(' · ');
+                return _RecordTile(
+                  title: r['nom'] ?? r['type'] ?? 'Inconnu',
+                  subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
+                  trailing: traitementTrailing.isEmpty ? null : traitementTrailing,
+                  onDelete: () => _deleteRecord('traitements', r['id'], _traitements),
+                  onTap: () => _showRecordDetail('Traitement', r, [
+                    ('Nom', 'nom'), ('Type', 'type'), ('Maladie', 'description_maladie'),
+                    ('Posologie', 'posologie'), ('Date début', 'date'), ('Date fin', 'date_fin'),
+                    ('Commentaires', 'notes'),
+                  ]),
+                );
+              },
+            ),
+            _HealthSection(
+              title: 'Chirurgie / Hospitalisation',
+              icon: Icons.local_hospital_outlined,
+              color: SanteCouleurs.chirurgies,
+              records: _chirurgies,
+              onAdd: _showChirurgieSheet,
+              renderRecord: (r) {
+                final st = r['statut']?.toString();
+                final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
+                final t = r['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
+                return _RecordTile(
+                  title: r['intitule'] ?? t,
+                  subtitle: r['date'] != null ? '$label le ${_fmtDate(r['date'])}' : label,
+                  trailing: r['clinique'] ?? r['veterinaire'],
+                  onDelete: () => _deleteRecord('chirurgies', r['id'], _chirurgies),
+                  onTap: () => _showRecordDetail('Chirurgie / Hospitalisation', r, [
+                    ('Intervention', 'intitule'), ('Type', 'type'), ('Date', 'date'),
+                    ('Statut', 'statut'), ('Clinique / vétérinaire', 'clinique'),
+                    ('Protocole pré-opératoire', 'protocole_preop'),
+                    ('Protocole post-opératoire', 'protocole_postop'),
+                    ('Notes', 'notes'),
+                  ]),
+                );
+              },
+            ),
+            _HealthSection(
+              title: 'Allergies',
+              icon: Icons.warning_amber,
+              color: SanteCouleurs.allergies,
+              records: _allergies,
+              onAdd: _showAllergieSheet,
+              renderRecord: (r) => _RecordTile(
+                title: r['description'] ?? 'Allergie',
+                subtitle: r['type'],
+                trailing: r['severite'],
+                onDelete: () => _deleteRecord('allergies', r['id'], _allergies),
+                onTap: () => _showRecordDetail('Allergie', r, [
+                  ('Description', 'description'), ('Type', 'type'), ('Sévérité', 'severite'),
+                  ('Date', 'date'), ('Notes', 'notes'),
+                ]),
+              ),
+            ),
+            _PoidsSectionP(
+              records: _poids,
+              dateNaissance: _dateNaissance,
+              onAdd: _showPoidsSheet,
+              onDelete: (r) => _deleteRecord('poids', r['id'], _poids),
+              fmtDate: _fmtDate,
+            ),
+            _HealthSection(
+              title: 'Visites vétérinaires',
+              icon: Icons.local_hospital,
+              color: SanteCouleurs.visites,
+              records: _visites,
+              onAdd: _showVisiteSheet,
+              renderRecord: (r) => _RecordTile(
+                title: r['motif'] ?? 'Consultation',
+                subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
+                trailing: r['veterinaire'],
+                onDelete: () => _deleteRecord('visites', r['id'], _visites),
+                onTap: () => _showRecordDetail('Visite vétérinaire', r, [
+                  ('Motif', 'motif'), ('Date', 'date'), ('Vétérinaire', 'veterinaire'),
+                  ('Diagnostic', 'diagnostic'), ('Notes', 'notes'),
+                ]),
+              ),
+            ),
+            if (especeHasGenetics(_espece))
+              _HealthSection(
+                title: 'Génétique & tests',
+                icon: Icons.biotech_outlined,
+                color: const Color(0xFF7C3AED),
+                records: _testsGenetiques,
+                onAdd: _showTestGenetiqueSheet,
+                renderRecord: (r) => _RecordTile(
+                  title: r['nom'] ?? 'Test',
+                  subtitle: [r['laboratoire'], _fmtDate(r['date_test']?.toString())]
+                      .where((e) => e != null && '$e'.isNotEmpty).join(' · '),
+                  trailing: kResultatsGenetiques[r['resultat']] ?? (r['genotype'] as String?),
+                  onDelete: () => _deleteRecord('tests_genetiques', r['id'], _testsGenetiques),
+                  onTap: () => _showRecordDetail('Test génétique', r, const [
+                    ('Test', 'nom'), ('Catégorie', 'categorie'), ('Résultat', 'resultat'),
+                    ('Génotype', 'genotype'), ('Laboratoire', 'laboratoire'),
+                    ('Date', 'date_test'), ('Résultat en ligne', 'lien_resultat'), ('Notes', 'notes'),
+                  ]),
+                ),
+              ),
+          ]),
         ],
       ),
     );
@@ -3204,21 +3207,49 @@ class _AiScanCard extends StatelessWidget {
 
 // ── Health section widget ─────────────────────────────────────────────────────
 
+/// Panneau blanc unique du carnet : lignes séparées par des traits gris fins.
+class _PanneauSante extends StatelessWidget {
+  final List<Widget> children;
+  const _PanneauSante({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+          children[i],
+        ],
+      ]),
+    );
+  }
+}
+
 class _HealthSection extends StatefulWidget {
   final String title;
-  final IconData icon;
+  final IconData? icon;
   final Color color;
   final List<Map<String, dynamic>> records;
   final VoidCallback onAdd;
-  final Widget Function(Map<String, dynamic>) renderRecord;
+  final Widget Function(Map<String, dynamic>)? renderRecord;
+  final Widget? body;
+  final String vide;
 
   const _HealthSection({
     required this.title,
-    required this.icon,
+    this.icon,
     required this.color,
     required this.records,
     required this.onAdd,
-    required this.renderRecord,
+    this.renderRecord,
+    this.body,
+    this.vide = 'Aucun enregistrement',
   });
 
   @override
@@ -3226,83 +3257,71 @@ class _HealthSection extends StatefulWidget {
 }
 
 class _HealthSectionState extends State<_HealthSection> {
-  bool _expanded = true;
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Column(
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => setState(() => _expanded = !_expanded),
+    final n = widget.records.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               child: Row(
                 children: [
-                  Container(
-                    width: 32, height: 32,
-                    decoration: BoxDecoration(
-                      color: widget.color.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(widget.icon, color: widget.color, size: 18),
-                  ),
-                  const SizedBox(width: 12),
+                  Container(width: 12, height: 12,
+                      decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)),
+                  const SizedBox(width: 14),
                   Expanded(
-                    child: Text(widget.title,
-                        style: const TextStyle(
-                            fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      Text(widget.title,
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 15, color: Color(0xFF1F2A2E))),
+                      const SizedBox(height: 2),
+                      Text('$n enregistrement${n > 1 ? 's' : ''}',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+                    ]),
                   ),
-                  if (widget.records.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: widget.color.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Text('${widget.records.length}',
-                          style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: widget.color)),
-                    ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    icon: Icon(Icons.add_circle_outline, color: widget.color, size: 22),
-                    padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(),
+                  // Ajouter : ouvre le formulaire sans déplier la ligne
+                  TextButton(
                     onPressed: widget.onAdd,
+                    style: TextButton.styleFrom(
+                      foregroundColor: widget.color,
+                      minimumSize: const Size(48, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('+ Ajouter',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
                   ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.grey.shade400, size: 20,
+                  SizedBox(
+                    width: 40, height: 44,
+                    child: Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                        color: Colors.grey.shade500, size: 22),
                   ),
                 ],
               ),
             ),
           ),
-          if (_expanded && widget.records.isNotEmpty) ...[
-            const Divider(height: 1),
-            ...widget.records.map(widget.renderRecord),
-          ],
-          if (_expanded && widget.records.isEmpty)
+        ),
+        if (_expanded) ...[
+          Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
+          if (widget.body != null)
+            widget.body!
+          else if (widget.records.isEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-              child: Text('Aucun enregistrement',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
-            ),
+              padding: const EdgeInsets.fromLTRB(42, 12, 16, 14),
+              child: Text(widget.vide,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+            )
+          else
+            ...widget.records.map(widget.renderRecord!),
         ],
-      ),
+      ],
     );
   }
 }
@@ -6436,7 +6455,7 @@ class _PoidsSectionP extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const teal = Color(0xFF0C5C6C);
+    const teal = SanteCouleurs.poids;
     final sorted = [...records]..sort((a, b) {
       final da = DateTime.tryParse(a['date']?.toString() ?? '') ?? DateTime(2000);
       final db = DateTime.tryParse(b['date']?.toString() ?? '') ?? DateTime(2000);
@@ -6445,30 +6464,12 @@ class _PoidsSectionP extends StatelessWidget {
     final vals = sorted.map((d) => double.tryParse(d['valeur']?.toString() ?? '') ?? 0.0).toList();
     final maxVal = vals.isEmpty ? 1.0 : vals.reduce((a, b) => a > b ? a : b);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
-          child: Row(children: [
-            const Icon(Icons.monitor_weight, color: teal, size: 20),
-            const SizedBox(width: 10),
-            const Expanded(child: Text('Poids & Courbe de croissance',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                    fontSize: 14, color: Color(0xFF1F2A2E)))),
-            TextButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add, size: 16, color: teal),
-              label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: teal)),
-              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6)),
-            ),
-          ]),
-        ),
+    return _HealthSection(
+      title: 'Courbe de poids',
+      color: teal,
+      records: records,
+      onAdd: onAdd,
+      body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (sorted.length >= 2) ...[
           const SizedBox(height: 8),
           Padding(

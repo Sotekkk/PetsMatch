@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AddVermi
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionLogementTypeLabel;
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show alimSejourFromRaw, alimSejourFournisParLabel;
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/sante_couleurs.dart';
 
 class AnimalFichePensionPage extends StatefulWidget {
   final String animalId;
@@ -550,133 +551,112 @@ class _SanteTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.fromLTRB(16, 20, 16, 40), children: [
-      // Allergies en tête (important pour la pension)
-      _HealthSection(
-        title: 'Allergies',
-        color: const Color(0xFFFF9800),
-        icon: Icons.warning_amber_rounded,
-        items: allergies,
-        buildRow: (a) => _MedRow(
-          label: a['description']?.toString() ?? a['allergene']?.toString() ?? '',
-          sub: [a['type']?.toString(), a['severite']?.toString()]
-              .where((s) => s != null && s.isNotEmpty).join(' · '),
-          date: fmtDate(a['date'] as String?),
+      _PanneauSante(children: [
+        _HealthSection(
+          title: 'Vaccinations',
+          color: SanteCouleurs.vaccinations,
+          icon: Icons.vaccines_outlined,
+          items: vaccinations,
+          buildRow: (v) => _MedRow(
+            label: v['vaccin']?.toString() ?? v['nom_vaccin']?.toString() ?? '',
+            sub: v['veterinaire']?.toString(),
+            date: fmtDate(v['date'] as String?),
+            extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
+          ),
         ),
-      ),
-      const SizedBox(height: 16),
-
-      // Vaccinations
-      _HealthSection(
-        title: 'Vaccinations',
-        color: const Color(0xFF2196F3),
-        icon: Icons.vaccines_outlined,
-        items: vaccinations,
-        buildRow: (v) => _MedRow(
-          label: v['vaccin']?.toString() ?? v['nom_vaccin']?.toString() ?? '',
-          sub: v['veterinaire']?.toString(),
-          date: fmtDate(v['date'] as String?),
-          extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
+        _HealthSection(
+          title: 'Vermifuges',
+          color: SanteCouleurs.vermifuges,
+          icon: Icons.pest_control_outlined,
+          items: vermifuges,
+          onAdd: () => onAddVermifuge(),
+          buildRow: (v) => _MedRow(
+            label: v['produit']?.toString() ?? '',
+            sub: v['dosage']?.toString() ?? v['remarques']?.toString(),
+            date: fmtDate(v['date'] as String?),
+            extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
+            onRappel: () => onAddVermifuge(renouvellementDe: v),
+          ),
         ),
-      ),
-      const SizedBox(height: 16),
-
-      // Traitements (toujours visible)
-      _HealthSection(
-        title: 'Traitements',
-        color: const Color(0xFF9C27B0),
-        icon: Icons.medication_outlined,
-        items: traitements,
-        buildRow: (t) {
-          final traitementExtra = [
-            if (t['date_fin'] != null) 'Fin : ${fmtDate(t['date_fin'] as String?)}',
-            if ((t['notes'] as String?)?.isNotEmpty == true) t['notes'].toString(),
-          ].join(' · ');
-          return _MedRow(
-            label: t['nom']?.toString() ?? t['type']?.toString() ?? '',
-            sub: t['posologie']?.toString(),
-            date: fmtDate(t['date'] as String?),
-            extra: traitementExtra.isEmpty ? null : traitementExtra,
-          );
-        },
-      ),
-      const SizedBox(height: 16),
-
-      // Visites vétérinaires
-      _HealthSection(
-        title: 'Visites vétérinaires',
-        color: const Color(0xFFF44336),
-        icon: Icons.local_hospital_outlined,
-        items: visites,
-        buildRow: (v) => _MedRow(
-          label: v['motif']?.toString() ?? 'Consultation',
-          sub: v['veterinaire']?.toString(),
-          date: fmtDate(v['date'] as String?),
-          extra: (v['diagnostic'] ?? '').toString().isNotEmpty ? v['diagnostic'].toString() : null,
+        _HealthSection(
+          title: 'Antiparasitaires',
+          color: SanteCouleurs.antiparasitaires,
+          icon: Icons.bug_report_outlined,
+          items: antiparasitaires,
+          onAdd: () => onAddAntiparasitaire(),
+          buildRow: (a) => _MedRow(
+            label: a['produit']?.toString() ?? '',
+            sub: a['type']?.toString(),
+            date: fmtDate(a['date'] as String?),
+            extra: a['date_rappel'] != null ? 'Rappel : ${fmtDate(a['date_rappel'] as String?)}' : null,
+            onRappel: () => onAddAntiparasitaire(renouvellementDe: a),
+          ),
         ),
-      ),
-      const SizedBox(height: 16),
-
-      // Chirurgie / Hospitalisation — important pour la pension (interventions
-      // prévues pendant le séjour, consignes post-opératoires…)
-      _HealthSection(
-        title: 'Chirurgie / Hospitalisation',
-        color: const Color(0xFFC2185B),
-        icon: Icons.local_hospital_outlined,
-        items: chirurgies,
-        buildRow: (c) {
-          final st = c['statut']?.toString();
-          final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
-          final t = c['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
-          final proto = [
-            if ((c['protocole_preop'] ?? '').toString().isNotEmpty) 'Pré-op : ${c['protocole_preop']}',
-            if ((c['protocole_postop'] ?? '').toString().isNotEmpty) 'Post-op : ${c['protocole_postop']}',
-          ].join('\n');
-          return _MedRow(
-            label: c['intitule']?.toString() ?? t,
-            sub: '$t · $label${(c['clinique'] ?? '').toString().isNotEmpty ? ' — ${c['clinique']}' : ''}',
-            date: fmtDate(c['date'] as String?),
-            extra: proto.isNotEmpty ? proto : null,
-          );
-        },
-      ),
-      const SizedBox(height: 16),
-
-      // Vermifuges
-      _HealthSection(
-        title: 'Vermifugations',
-        color: const Color(0xFF795548),
-        icon: Icons.pest_control_outlined,
-        items: vermifuges,
-        onAdd: () => onAddVermifuge(),
-        buildRow: (v) => _MedRow(
-          label: v['produit']?.toString() ?? '',
-          sub: v['dosage']?.toString() ?? v['remarques']?.toString(),
-          date: fmtDate(v['date'] as String?),
-          extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
-          onRappel: () => onAddVermifuge(renouvellementDe: v),
+        _HealthSection(
+          title: 'Traitements',
+          color: SanteCouleurs.traitements,
+          icon: Icons.medication_outlined,
+          items: traitements,
+          buildRow: (t) {
+            final traitementExtra = [
+              if (t['date_fin'] != null) 'Fin : ${fmtDate(t['date_fin'] as String?)}',
+              if ((t['notes'] as String?)?.isNotEmpty == true) t['notes'].toString(),
+            ].join(' · ');
+            return _MedRow(
+              label: t['nom']?.toString() ?? t['type']?.toString() ?? '',
+              sub: t['posologie']?.toString(),
+              date: fmtDate(t['date'] as String?),
+              extra: traitementExtra.isEmpty ? null : traitementExtra,
+            );
+          },
         ),
-      ),
-      const SizedBox(height: 16),
-
-      // Antiparasitaires
-      _HealthSection(
-        title: 'Antiparasitaires',
-        color: const Color(0xFF4CAF50),
-        icon: Icons.bug_report_outlined,
-        items: antiparasitaires,
-        onAdd: () => onAddAntiparasitaire(),
-        buildRow: (a) => _MedRow(
-          label: a['produit']?.toString() ?? '',
-          sub: a['type']?.toString(),
-          date: fmtDate(a['date'] as String?),
-          extra: a['date_rappel'] != null ? 'Rappel : ${fmtDate(a['date_rappel'] as String?)}' : null,
-          onRappel: () => onAddAntiparasitaire(renouvellementDe: a),
+        _HealthSection(
+          title: 'Chirurgie / Hospitalisation',
+          color: SanteCouleurs.chirurgies,
+          icon: Icons.local_hospital_outlined,
+          items: chirurgies,
+          buildRow: (c) {
+            final st = c['statut']?.toString();
+            final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
+            final t = c['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
+            final proto = [
+              if ((c['protocole_preop'] ?? '').toString().isNotEmpty) 'Pré-op : ${c['protocole_preop']}',
+              if ((c['protocole_postop'] ?? '').toString().isNotEmpty) 'Post-op : ${c['protocole_postop']}',
+            ].join('\n');
+            return _MedRow(
+              label: c['intitule']?.toString() ?? t,
+              sub: '$t · $label${(c['clinique'] ?? '').toString().isNotEmpty ? ' — ${c['clinique']}' : ''}',
+              date: fmtDate(c['date'] as String?),
+              extra: proto.isNotEmpty ? proto : null,
+            );
+          },
         ),
-      ),
-      const SizedBox(height: 16),
-
-      // Poids récent (collapsible)
-      if (poids.isNotEmpty) _PoidsSection(poids: poids, fmtDate: fmtDate),
+        _HealthSection(
+          title: 'Allergies',
+          color: SanteCouleurs.allergies,
+          icon: Icons.warning_amber_rounded,
+          items: allergies,
+          buildRow: (a) => _MedRow(
+            label: a['description']?.toString() ?? a['allergene']?.toString() ?? '',
+            sub: [a['type']?.toString(), a['severite']?.toString()]
+                .where((s) => s != null && s.isNotEmpty).join(' · '),
+            date: fmtDate(a['date'] as String?),
+          ),
+        ),
+        _PoidsSection(poids: poids, fmtDate: fmtDate),
+        _HealthSection(
+          title: 'Visites vétérinaires',
+          color: SanteCouleurs.visites,
+          icon: Icons.local_hospital_outlined,
+          items: visites,
+          buildRow: (v) => _MedRow(
+            label: v['motif']?.toString() ?? 'Consultation',
+            sub: v['veterinaire']?.toString(),
+            date: fmtDate(v['date'] as String?),
+            extra: (v['diagnostic'] ?? '').toString().isNotEmpty ? v['diagnostic'].toString() : null,
+          ),
+        ),
+      ]),
     ]);
   }
 }
@@ -694,7 +674,6 @@ class _PoidsSection extends StatefulWidget {
 }
 
 class _PoidsSectionState extends State<_PoidsSection> {
-  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -704,62 +683,34 @@ class _PoidsSectionState extends State<_PoidsSection> {
       return db.compareTo(da); // plus récent en premier
     });
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-            child: Row(children: [
-              const Icon(Icons.monitor_weight_outlined, size: 18, color: Color(0xFF0C5C6C)),
-              const SizedBox(width: 8),
-              const Expanded(child: Text('Suivi du poids',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 13, color: Color(0xFF6B7280), letterSpacing: 0.3))),
-              // Dernière valeur connue
-              if (sorted.isNotEmpty) () {
-                final v = double.tryParse(sorted.first['valeur']?.toString() ?? '');
-                return v != null ? Text('${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1)} kg',
+    final dernier = sorted.isEmpty ? null : double.tryParse(sorted.first['valeur']?.toString() ?? '');
+    return _HealthSection(
+      title: 'Courbe de poids',
+      color: SanteCouleurs.poids,
+      items: widget.poids,
+      resume: dernier == null ? null
+          : '${widget.poids.length} pesée${widget.poids.length > 1 ? 's' : ''} · dernier : ${dernier.toStringAsFixed(dernier.truncateToDouble() == dernier ? 0 : 1)} kg',
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (final p in sorted.take(10)) () {
+          final v = double.tryParse(p['valeur']?.toString() ?? '');
+          if (v == null) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text(widget.fmtDate(p['date'] as String?),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: Color(0xFF6B7280))),
+                Text('${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1)} kg',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 14, color: Color(0xFF1F2A2E))) : const SizedBox.shrink();
-              }(),
-              const SizedBox(width: 6),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 20, color: Colors.grey.shade400),
-            ]),
-          ),
-        ),
-        if (_expanded) ...[
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
-          for (final p in sorted.take(10)) () {
-            final v = double.tryParse(p['valeur']?.toString() ?? '');
-            if (v == null) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text(widget.fmtDate(p['date'] as String?),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
-                          color: Color(0xFF6B7280))),
-                  Text('${v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1)} kg',
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                          fontSize: 14, color: Color(0xFF1F2A2E))),
-                ]),
-                const SizedBox(height: 8),
-                const Divider(height: 1, color: Color(0xFFF3F4F6)),
+                        fontSize: 14, color: Color(0xFF1F2A2E))),
               ]),
-            );
-          }(),
-          const SizedBox(height: 6),
-        ],
+              const SizedBox(height: 8),
+              const Divider(height: 1, color: Color(0xFFF3F4F6)),
+            ]),
+          );
+        }(),
+        const SizedBox(height: 6),
       ]),
     );
   }
@@ -1201,73 +1152,116 @@ class _Row extends StatelessWidget {
   }
 }
 
-class _HealthSection extends StatelessWidget {
-  final String title;
-  final Color color;
-  final IconData icon;
-  final List<Map<String, dynamic>> items;
-  final Widget Function(Map<String, dynamic>) buildRow;
-  final VoidCallback? onAdd;
-
-  const _HealthSection({
-    required this.title,
-    required this.color,
-    required this.icon,
-    required this.items,
-    required this.buildRow,
-    this.onAdd,
-  });
+/// Panneau blanc unique du carnet : lignes séparées par des traits gris fins.
+class _PanneauSante extends StatelessWidget {
+  final List<Widget> children;
+  const _PanneauSante({required this.children});
 
   @override
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: const Color(0xFFE5E7EB)),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 6, offset: const Offset(0, 2))],
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.grey.shade300),
     ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-        child: Row(children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Text(title, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-              fontSize: 14, color: color)),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text('${items.length}',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    fontWeight: FontWeight.w700, color: color)),
-          ),
-          if (onAdd != null)
-            IconButton(
-              icon: Icon(Icons.add_circle_outline, size: 20, color: color),
-              tooltip: 'Ajouter',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              onPressed: onAdd,
-            ),
-        ]),
-      ),
-      if (items.isEmpty)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-          child: Text('Aucun enregistrement',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
-        )
-      else ...[
-        const Divider(height: 1, color: Color(0xFFF3F4F6)),
-        for (final item in items) buildRow(item),
+    clipBehavior: Clip.antiAlias,
+    child: Column(children: [
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+        children[i],
       ],
     ]),
   );
+}
+
+class _HealthSection extends StatefulWidget {
+  final String title;
+  final Color color;
+  final IconData? icon;
+  final List<Map<String, dynamic>> items;
+  final Widget Function(Map<String, dynamic>)? buildRow;
+  final VoidCallback? onAdd;
+  final Widget? body;
+  final String? resume;
+
+  const _HealthSection({
+    required this.title,
+    required this.color,
+    this.icon,
+    required this.items,
+    this.buildRow,
+    this.onAdd,
+    this.body,
+    this.resume,
+  });
+
+  @override
+  State<_HealthSection> createState() => _HealthSectionState();
+}
+
+class _HealthSectionState extends State<_HealthSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.items.length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            child: Row(children: [
+              Container(width: 12, height: 12,
+                  decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(widget.title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 15, color: Color(0xFF1F2A2E))),
+                const SizedBox(height: 2),
+                Text(widget.resume ?? '$n enregistrement${n > 1 ? 's' : ''}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+              ])),
+              // Ajouter : ouvre le formulaire sans déplier la ligne
+              if (widget.onAdd != null)
+                TextButton(
+                  onPressed: widget.onAdd,
+                  style: TextButton.styleFrom(
+                    foregroundColor: widget.color,
+                    minimumSize: const Size(48, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: const Text('+ Ajouter',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
+                ),
+              SizedBox(
+                width: 40, height: 44,
+                child: Icon(_expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    color: Colors.grey.shade500, size: 22),
+              ),
+            ]),
+          ),
+        ),
+      ),
+      if (_expanded) ...[
+        Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
+        if (widget.body != null && n > 0)
+          widget.body!
+        else if (n == 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(42, 12, 16, 14),
+            child: Text('Aucun enregistrement',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          )
+        else ...[
+          for (final item in widget.items) widget.buildRow!(item),
+          const SizedBox(height: 10),
+        ],
+      ],
+    ]);
+  }
 }
 
 class _MedRow extends StatelessWidget {
