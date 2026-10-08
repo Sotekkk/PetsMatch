@@ -12,7 +12,7 @@ import 'package:PetsMatch/pages/pro/education_reservation_page.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, kPensionEspeceFermeLegacy;
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:intl/intl.dart';
@@ -475,7 +475,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     final especes = tp['especes'];
     if (especes is! List) return [];
     final out = <(String, String)>[];
-    for (final sp in kPensionEspeces) {
+    for (final sp in [...kPensionEspeces, kPensionEspeceFermeLegacy]) {
       Map? match;
       for (final e in especes) {
         if (e is Map && e['espece'] == sp['key']) { match = e; break; }

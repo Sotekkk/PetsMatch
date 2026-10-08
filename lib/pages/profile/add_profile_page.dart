@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/profile_service.dart';
+import 'package:PetsMatch/widgets/especes_pro_selector.dart';
 
 // ── Types de profil ────────────────────────────────────────────────────────────
 
@@ -208,7 +209,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   // Pro
   String? _subProfession;
   int _rayon = 20;
-  final Set<String> _especesAcceptees = {};
+  List<String> _especesAcceptees = [];
   final Set<String> _especesElevees   = {};
 
   @override
@@ -549,7 +550,10 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
             ],
             const SizedBox(height: 8),
             _section('Espèces acceptées'),
-            _especesChips(_especesAcceptees),
+            EspecesProSelector(
+              selection: _especesAcceptees,
+              onChanged: (v) => setState(() => _especesAcceptees = v),
+            ),
           ],
 
           const SizedBox(height: 16),

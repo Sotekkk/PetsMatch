@@ -9,40 +9,94 @@ export interface PensionEspece {
 }
 
 export const PENSION_ESPECES: PensionEspece[] = [
-  { key: 'chien',         label: 'Chien',                emoji: '🐕' },
-  { key: 'chat',          label: 'Chat',                 emoji: '🐈' },
-  { key: 'cheval',        label: 'Cheval',               emoji: '🐴' },
-  { key: 'animaux_ferme', label: 'Animaux de la ferme',  emoji: '🐐' },
-  { key: 'lapin',         label: 'Lapin',                emoji: '🐇' },
-  { key: 'ane',           label: 'Âne',                  emoji: '🫏' },
-  { key: 'nac',           label: 'NAC',                  emoji: '🐹' },
-  { key: 'oiseau',        label: 'Oiseaux',              emoji: '🦜' },
+  { key: 'chien',    label: 'Chien',     emoji: '🐕' },
+  { key: 'chat',     label: 'Chat',      emoji: '🐈' },
+  { key: 'cheval',   label: 'Cheval',    emoji: '🐴' },
+  { key: 'ane',      label: 'Âne',       emoji: '🫏' },
+  { key: 'bovin',    label: 'Bovins',    emoji: '🐄' },
+  { key: 'ovin',     label: 'Ovins',     emoji: '🐑' },
+  { key: 'caprin',   label: 'Caprins',   emoji: '🐐' },
+  { key: 'porcin',   label: 'Porcins',   emoji: '🐖' },
+  { key: 'volaille', label: 'Volailles', emoji: '🐓' },
+  { key: 'lapin',    label: 'Lapin',     emoji: '🐇' },
+  { key: 'nac',      label: 'NAC',       emoji: '🐹' },
+  { key: 'oiseau',   label: 'Oiseaux',   emoji: '🦜' },
+  { key: 'poisson',  label: 'Poissons',  emoji: '🐟' },
 ];
+
+/** Ancien tarif unique « Animaux de la ferme » (avant bovins / ovins / …
+ *  séparés) : encore lu tant que la pension n'a pas réenregistré ses tarifs. */
+export const PENSION_ESPECE_FERME_LEGACY: PensionEspece =
+  { key: 'animaux_ferme', label: 'Animaux de la ferme', emoji: '🐐' };
 
 /** entree.espece (minuscule) OU label d'espèce acceptée -> key canonique. */
 export function pensionTarifKeyForEspece(espece?: string | null): string | null {
   const s = (espece ?? '').toLowerCase().trim();
   switch (s) {
-    case 'chien':   return 'chien';
-    case 'chat':    return 'chat';
-    case 'cheval':  return 'cheval';
+    case 'chien':
+    case 'chiens':  return 'chien';
+    case 'chat':
+    case 'chats':   return 'chat';
+    case 'cheval':
+    case 'chevaux':
+    case 'équidés':
+    case 'equides': return 'cheval';
     case 'lapin':   return 'lapin';
     case 'ane':
     case 'âne':     return 'ane';
     case 'oiseau':
     case 'oiseaux': return 'oiseau';
     case 'nac':     return 'nac';
-    case 'animaux de la ferme': return 'animaux_ferme';
+    case 'poisson':
+    case 'poissons': return 'poisson';
+    case 'bovin':
+    case 'bovins':
+    case 'vache':
+    case 'taureau': return 'bovin';
     case 'ovin':
-    case 'caprin':
-    case 'porcin':
+    case 'ovins':
     case 'mouton':
+    case 'brebis':  return 'ovin';
+    case 'caprin':
+    case 'caprins':
     case 'chevre':
-    case 'chèvre':
-    case 'cochon':  return 'animaux_ferme';
+    case 'chèvre':  return 'caprin';
+    case 'porcin':
+    case 'porcins':
+    case 'porc':
+    case 'cochon':  return 'porcin';
+    case 'volaille':
+    case 'volailles':
+    case 'poule':   return 'volaille';
+    case 'animaux de la ferme': return 'animaux_ferme';
   }
   const byLabel = PENSION_ESPECES.find(p => p.label.toLowerCase() === s);
   return byLabel ? byLabel.key : null;
+}
+
+/** Rubrique large d'une key de tarif : depuis la liste commune des pros
+ *  (« NAC », « Équidés »), un lapin relève des NAC et un âne des équidés. */
+/** Les bovins, ovins… relèvent de l'ancien « Animaux de la ferme ». */
+export function pensionGroupe(k: string): string {
+  if (k === 'lapin') return 'nac';
+  if (k === 'ane') return 'cheval';
+  if (['bovin', 'ovin', 'caprin', 'porcin', 'volaille'].includes(k)) return 'animaux_ferme';
+  return k;
+}
+
+/** Prix d'une espèce dans tarifs_pension.especes ; repli sur la rubrique
+ *  large (ancien tarif « Animaux de la ferme ») si l'espèce n'a pas le sien. */
+export function pensionTarifPourKey<T extends { espece: string }>(especesTarifs: T[], key: string): T | undefined {
+  return especesTarifs.find(e => e.espece === key) ?? especesTarifs.find(e => e.espece === pensionGroupe(key));
+}
+
+/** La pension a-t-elle coché une espèce couvrant ce tarif ? */
+export function pensionTarifAccepte(key: string, acceptees: Iterable<string>): boolean {
+  for (const a of Array.from(acceptees)) {
+    const k = pensionTarifKeyForEspece(a);
+    if (k === key || (k != null && k === pensionGroupe(key))) return true;
+  }
+  return false;
 }
 
 /**
@@ -58,7 +112,7 @@ export function especeMatchesLogement(
   if (!animalKey) return true;
   return logementEspeces.some(e => {
     const k = pensionTarifKeyForEspece(e) ?? (e ?? '').toLowerCase().trim();
-    return k === animalKey;
+    return k === animalKey || k === pensionGroupe(animalKey);
   });
 }
 
@@ -68,7 +122,7 @@ export function especeMatchesLogement(
  */
 export function pensionAlimentationSejourApplicable(espece?: string | null): boolean {
   const k = pensionTarifKeyForEspece(espece) ?? (espece ?? '').toLowerCase().trim();
-  return k === 'cheval' || k === 'ane' || k === 'poney' || k === 'animaux_ferme';
+  return k === 'cheval' || k === 'ane' || k === 'poney' || pensionGroupe(k) === 'animaux_ferme';
 }
 
 export interface AlimentationSejour {

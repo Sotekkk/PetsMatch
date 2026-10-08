@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
-import { PENSION_ESPECES, type TarifsPension } from '@/lib/pension-especes';
+import { PENSION_ESPECES, pensionGroupe, pensionTarifAccepte, type TarifsPension } from '@/lib/pension-especes';
 
 interface EspeceRow {
   key: string;
@@ -79,15 +79,22 @@ export default function PensionTarifsPage() {
       const seul = first.prix_seul != null ? String(first.prix_seul) : '';
       const partage = first.prix_partage != null ? String(first.prix_partage) : '';
       for (const sp of PENSION_ESPECES) {
-        if (acceptees.has(sp.label)) prixByKey[sp.key] = { seul, partage };
+        if (pensionTarifAccepte(sp.key, acceptees)) prixByKey[sp.key] = { seul, partage };
       }
+    }
+
+    // Ancien tarif unique « Animaux de la ferme » → repris pour chaque espèce
+    // de la ferme qui n'a pas encore son prix.
+    for (const sp of PENSION_ESPECES) {
+      const legacy = prixByKey[pensionGroupe(sp.key)];
+      if (legacy && pensionGroupe(sp.key) === 'animaux_ferme' && !prixByKey[sp.key]) prixByKey[sp.key] = legacy;
     }
 
     const rows: EspeceRow[] = PENSION_ESPECES.map(sp => ({
       key: sp.key,
       label: sp.label,
       emoji: sp.emoji,
-      accepte: acceptees.has(sp.label),
+      accepte: pensionTarifAccepte(sp.key, acceptees),
       prixSeul: prixByKey[sp.key]?.seul ?? '',
       prixPartage: prixByKey[sp.key]?.partage ?? '',
     })).sort((a, b) => (a.accepte === b.accepte ? 0 : a.accepte ? -1 : 1));

@@ -9,6 +9,7 @@ import { notifyProfilePendingValidation } from '@/lib/notifications';
 
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { ecrireLigne } from '@/lib/ecriture-sure';
+import EspecesProSelect from '@/components/pro/EspecesProSelect';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 const PROFILE_TYPES = [
@@ -35,7 +36,6 @@ const SUB_PROFESSIONS: Record<string, string[]> = {
 };
 
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC'];
-const ESPECES_PENSION = ['Chien', 'Chat', 'Cheval', 'Animaux de la ferme', 'Lapin', 'Âne', 'NAC', 'Oiseaux'];
 
 const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
 const HAS_SIRET  = new Set(['veterinaire', 'sante', 'education', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
@@ -149,7 +149,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   const [siteWeb, setSiteWeb] = useState('');
   const [subProfession, setSubProfession] = useState('');
   const [rayon, setRayon] = useState(20);
-  const [especesSet, setEspecesSet] = useState<Set<string>>(new Set());
+  const [especesPro, setEspecesPro] = useState<string[]>([]);
   const [especesEleveesSet, setEspecesEleveesSet] = useState<Set<string>>(new Set());
 
   // Champs adresse
@@ -329,7 +329,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.profession_pro    = subProfession || typeInfo.label;
         data.siret             = siret.trim();
         data.rayon_intervention = rayon;
-        data.especes_acceptees = Array.from(especesSet);
+        data.especes_acceptees = especesPro;
         if (isVet) {
           // Numéro d'inscription à l'Ordre des vétérinaires — distinct du
           // SIRET. Colonne dédiée déjà en base (user_profiles.numero_ordre),
@@ -628,9 +628,8 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
                 </div>
               )}
               <div>
-                <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Espèces acceptées</p>
-                <EspecesChips selected={especesSet} onToggle={e => toggleEspece(e, especesSet, setEspecesSet)}
-                  options={typeInfo.type === 'pension' ? ESPECES_PENSION : undefined} />
+                <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Espèces prises en charge</p>
+                <EspecesProSelect value={especesPro} onChange={setEspecesPro} />
               </div>
             </>
           )}

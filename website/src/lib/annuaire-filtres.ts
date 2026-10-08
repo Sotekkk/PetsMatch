@@ -77,22 +77,71 @@ export interface GroupeEspece {
   valeurs: string[];
 }
 
+// Mêmes rubriques que Leboncoin (Chiens, Chats, NAC, Équidés, Animaux de la
+// ferme, Oiseaux, Poissons). Les anciennes valeurs (Lapin, Rongeur, Cheval…)
+// restent reconnues.
 export const GROUPES_ESPECES: GroupeEspece[] = [
-  { key: 'chien',  label: 'Chiens',            valeurs: ['chien', 'chiens'] },
-  { key: 'chat',   label: 'Chats',             valeurs: ['chat', 'chats'] },
-  { key: 'cheval', label: 'Chevaux & ânes',    valeurs: ['cheval', 'chevaux', 'ane', 'anes', 'equide', 'equides', 'poney', 'poneys'] },
-  { key: 'nac',    label: 'NAC',               detail: 'Lapins, rongeurs, reptiles…', valeurs: ['nac', 'lapin', 'lapins', 'rongeur', 'rongeurs', 'reptile', 'reptiles', 'furet', 'furets'] },
-  { key: 'oiseau', label: 'Oiseaux',           valeurs: ['oiseau', 'oiseaux'] },
-  { key: 'ferme',  label: 'Animaux de ferme',  detail: 'Moutons, chèvres, porcs…', valeurs: ['animaux de la ferme', 'animaux de ferme', 'ferme', 'ovin', 'ovins', 'caprin', 'caprins', 'porcin', 'porcins', 'bovin', 'bovins', 'volaille', 'volailles'] },
-  { key: 'autre',  label: 'Autres',            valeurs: ['autre', 'autres'] },
+  { key: 'chien',   label: 'Chiens',              valeurs: ['chien', 'chiens'] },
+  { key: 'chat',    label: 'Chats',               valeurs: ['chat', 'chats'] },
+  { key: 'nac',     label: 'NAC',                 detail: 'Nouveaux animaux de compagnie : lapins, rongeurs, furets, reptiles…', valeurs: ['nac', 'nouveaux animaux de compagnie', 'lapin', 'lapins', 'rongeur', 'rongeurs', 'reptile', 'reptiles', 'furet', 'furets'] },
+  { key: 'cheval',  label: 'Équidés',             detail: 'Chevaux, poneys, ânes', valeurs: ['equide', 'equides', 'cheval', 'chevaux', 'ane', 'anes', 'poney', 'poneys'] },
+  { key: 'ferme',   label: 'Animaux de la ferme', detail: 'Bovins, ovins, caprins, porcins, volailles', valeurs: ['animaux de la ferme', 'animaux de ferme', 'ferme', 'ovin', 'ovins', 'caprin', 'caprins', 'porcin', 'porcins', 'bovin', 'bovins', 'volaille', 'volailles'] },
+  { key: 'oiseau',  label: 'Oiseaux',             valeurs: ['oiseau', 'oiseaux'] },
+  { key: 'poisson', label: 'Poissons',            valeurs: ['poisson', 'poissons'] },
+  { key: 'autre',   label: 'Autres',              valeurs: ['autre', 'autres'] },
+];
+
+/** Espèces proposées dans l'édition du profil pro (`especes_acceptees`),
+ *  chacune rattachée à une rubrique de l'annuaire. Une espèce saisie à la
+ *  main tombe dans « Autres ». */
+export interface EspecePro { label: string; groupe: string; detail?: string }
+
+export const ESPECES_PRO: EspecePro[] = [
+  { label: 'Chiens',    groupe: 'chien' },
+  { label: 'Chats',     groupe: 'chat' },
+  { label: 'NAC',       groupe: 'nac', detail: 'Lapins, rongeurs, furets, reptiles…' },
+  { label: 'Équidés',   groupe: 'cheval', detail: 'Chevaux, poneys, ânes' },
+  { label: 'Bovins',    groupe: 'ferme' },
+  { label: 'Ovins',     groupe: 'ferme' },
+  { label: 'Caprins',   groupe: 'ferme' },
+  { label: 'Porcins',   groupe: 'ferme' },
+  { label: 'Volailles', groupe: 'ferme' },
+  { label: 'Oiseaux',   groupe: 'oiseau' },
+  { label: 'Poissons',  groupe: 'poisson' },
 ];
 
 const sansAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-/** Groupes couverts par une liste `especes_acceptees` (ordre de GROUPES_ESPECES). */
+/** Anciennes valeurs (« Chien », « Lapin », « Cheval »…) → libellés de
+ *  ESPECES_PRO ; les espèces saisies à la main sont gardées telles quelles. */
+export function normaliserEspecesPro(especes: string[] | null | undefined): string[] {
+  const out: string[] = [];
+  const add = (v: string) => { if (!out.includes(v)) out.push(v); };
+  for (const e of especes ?? []) {
+    const brut = String(e ?? '').trim();
+    if (!brut) continue;
+    const v = sansAccents(brut);
+    const connue = ESPECES_PRO.find(x => sansAccents(x.label) === v || sansAccents(x.label) === `${v}s`);
+    if (connue) { add(connue.label); continue; }
+    if (v === 'autre' || v === 'autres') continue;
+    if (v === 'animaux de la ferme' || v === 'animaux de ferme' || v === 'ferme') {
+      ESPECES_PRO.filter(x => x.groupe === 'ferme').forEach(x => add(x.label));
+      continue;
+    }
+    const g = GROUPES_ESPECES.find(g => g.key !== 'autre' && g.valeurs.includes(v));
+    const cible = g && ESPECES_PRO.find(x => x.groupe === g.key);
+    add(cible ? cible.label : brut);
+  }
+  return out;
+}
+
+/** Groupes couverts par une liste `especes_acceptees` (ordre de GROUPES_ESPECES).
+ *  Une espèce saisie à la main (non reconnue) compte comme « Autres ». */
 export function groupesDesEspeces(especes: string[] | null | undefined): GroupeEspece[] {
-  const vals = new Set((especes ?? []).map(sansAccents));
-  return GROUPES_ESPECES.filter(g => g.valeurs.some(v => vals.has(v)));
+  const vals = new Set((especes ?? []).map(e => sansAccents(String(e ?? ''))).filter(Boolean));
+  const connus = new Set(GROUPES_ESPECES.filter(g => g.key !== 'autre').flatMap(g => g.valeurs));
+  const autre = Array.from(vals).some(v => !connus.has(v));
+  return GROUPES_ESPECES.filter(g => g.key === 'autre' ? autre : g.valeurs.some(v => vals.has(v)));
 }
 
 /** Aucune sélection = toutes les espèces ; sinon au moins un groupe coché. */

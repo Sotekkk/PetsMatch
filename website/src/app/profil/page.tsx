@@ -21,6 +21,8 @@ import { geocodeAddress } from '@/lib/geocoding';
 
 import LienDocument from '@/components/LienDocument';
 import { ecrireLigne } from '@/lib/ecriture-sure';
+import EspecesProSelect from '@/components/pro/EspecesProSelect';
+import { normaliserEspecesPro } from '@/lib/annuaire-filtres';
 // ── Species config ────────────────────────────────────────────────────────────
 
 const ESPECES_CONFIG = [
@@ -768,8 +770,6 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
 
 // ── Secondary pro profile edit ─────────────────────────────────────────────────
 
-const ESPECES_PRO = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC', 'Autre'];
-const ESPECES_PENSION = ['Chien', 'Chat', 'Cheval', 'Animaux de la ferme', 'Lapin', 'Âne', 'NAC', 'Oiseaux'];
 
 
 const PRESTATIONS_EDUCATION = [
@@ -891,7 +891,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [ville, setVille] = useState('');
   const [cp, setCp] = useState('');
   const [pays, setPays] = useState('France');
-  const [especes, setEspeces] = useState<Set<string>>(new Set());
+  const [especes, setEspeces] = useState<string[]>([]);
   const [horaires, setHoraires] = useState<Record<string, string>>({});
   const [certifications, setCertifications] = useState<{ nom: string; numero: string }[]>([]);
   const [durees, setDurees] = useState<Record<string, number>>({});
@@ -984,7 +984,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           ).filter(p => p.url));
         }
         if (Array.isArray(r.especes_acceptees)) {
-          setEspeces(new Set(r.especes_acceptees as string[]));
+          setEspeces(normaliserEspecesPro(r.especes_acceptees as string[]));
         }
         if (r.horaires && typeof r.horaires === 'object') {
           const h: Record<string, string> = {};
@@ -1222,7 +1222,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       ville: ville.trim(),
       code_postal: cp.trim(),
       pays: pays.trim() || 'France',
-      especes_acceptees: Array.from(especes),
+      especes_acceptees: especes,
       certifications,
       durees_motifs: durees,
       ...((data?.profile_type ?? data?.cat_pro) === 'pension'
@@ -1520,19 +1520,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         </Card>
 
         {/* Espèces */}
-        <Card title="Espèces acceptées">
-          <div className="flex flex-wrap gap-2">
-            {(catPro === 'pension' ? ESPECES_PENSION : ESPECES_PRO).map(e => {
-              const active = especes.has(e);
-              return (
-                <button key={e} type="button"
-                  onClick={() => setEspeces(prev => { const n = new Set(prev); active ? n.delete(e) : n.add(e); return n; })}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${active ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'}`}>
-                  {e}
-                </button>
-              );
-            })}
-          </div>
+        <Card title="Espèces prises en charge">
+          <EspecesProSelect value={especes} onChange={setEspeces} />
         </Card>
 
         {/* Horaires */}

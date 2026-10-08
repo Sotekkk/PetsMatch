@@ -88,18 +88,78 @@ class GroupeEspece {
   const GroupeEspece(this.key, this.label, this.valeurs, {this.detail});
 }
 
+// Mêmes rubriques que Leboncoin (Chiens, Chats, NAC, Équidés, Animaux de la
+// ferme, Oiseaux, Poissons). Les anciennes valeurs (Lapin, Rongeur, Cheval…)
+// restent reconnues.
 const kGroupesEspeces = <GroupeEspece>[
   GroupeEspece('chien', 'Chiens', ['chien', 'chiens']),
   GroupeEspece('chat', 'Chats', ['chat', 'chats']),
-  GroupeEspece('cheval', 'Chevaux & ânes', ['cheval', 'chevaux', 'ane', 'anes', 'equide', 'equides', 'poney', 'poneys']),
-  GroupeEspece('nac', 'NAC', ['nac', 'lapin', 'lapins', 'rongeur', 'rongeurs', 'reptile', 'reptiles', 'furet', 'furets'],
-      detail: 'Lapins, rongeurs, reptiles…'),
-  GroupeEspece('oiseau', 'Oiseaux', ['oiseau', 'oiseaux']),
-  GroupeEspece('ferme', 'Animaux de ferme', ['animaux de la ferme', 'animaux de ferme', 'ferme', 'ovin', 'ovins',
+  GroupeEspece('nac', 'NAC', ['nac', 'nouveaux animaux de compagnie', 'lapin', 'lapins', 'rongeur', 'rongeurs',
+      'reptile', 'reptiles', 'furet', 'furets'],
+      detail: 'Nouveaux animaux de compagnie : lapins, rongeurs, furets, reptiles…'),
+  GroupeEspece('cheval', 'Équidés', ['equide', 'equides', 'cheval', 'chevaux', 'ane', 'anes', 'poney', 'poneys'],
+      detail: 'Chevaux, poneys, ânes'),
+  GroupeEspece('ferme', 'Animaux de la ferme', ['animaux de la ferme', 'animaux de ferme', 'ferme', 'ovin', 'ovins',
       'caprin', 'caprins', 'porcin', 'porcins', 'bovin', 'bovins', 'volaille', 'volailles'],
-      detail: 'Moutons, chèvres, porcs…'),
+      detail: 'Bovins, ovins, caprins, porcins, volailles'),
+  GroupeEspece('oiseau', 'Oiseaux', ['oiseau', 'oiseaux']),
+  GroupeEspece('poisson', 'Poissons', ['poisson', 'poissons']),
   GroupeEspece('autre', 'Autres', ['autre', 'autres']),
 ];
+
+/// Espèces proposées dans l'édition du profil pro (`especes_acceptees`),
+/// chacune rattachée à une rubrique de l'annuaire. Une espèce saisie à la main
+/// tombe dans « Autres ».
+class EspecePro {
+  final String label;
+  final String groupe;
+  final String? detail;
+  const EspecePro(this.label, this.groupe, {this.detail});
+}
+
+const kEspecesPro = <EspecePro>[
+  EspecePro('Chiens', 'chien'),
+  EspecePro('Chats', 'chat'),
+  EspecePro('NAC', 'nac', detail: 'Lapins, rongeurs, furets, reptiles…'),
+  EspecePro('Équidés', 'cheval', detail: 'Chevaux, poneys, ânes'),
+  EspecePro('Bovins', 'ferme'),
+  EspecePro('Ovins', 'ferme'),
+  EspecePro('Caprins', 'ferme'),
+  EspecePro('Porcins', 'ferme'),
+  EspecePro('Volailles', 'ferme'),
+  EspecePro('Oiseaux', 'oiseau'),
+  EspecePro('Poissons', 'poisson'),
+];
+
+/// Anciennes valeurs (« Chien », « Lapin », « Cheval »…) → libellés de
+/// kEspecesPro ; les espèces saisies à la main sont gardées telles quelles.
+List<String> normaliserEspecesPro(dynamic especes) {
+  final out = <String>[];
+  void add(String v) { if (!out.contains(v)) out.add(v); }
+  for (final e in (especes is List ? especes : const [])) {
+    final brut = e.toString().trim();
+    if (brut.isEmpty) continue;
+    final v = _sansAccents(brut);
+    final connue = kEspecesPro.where((x) => _sansAccents(x.label) == v || _sansAccents(x.label) == '${v}s');
+    if (connue.isNotEmpty) { add(connue.first.label); continue; }
+    switch (v) {
+      case 'autre': case 'autres': continue;
+      case 'animaux de la ferme': case 'animaux de ferme': case 'ferme':
+        for (final x in kEspecesPro.where((x) => x.groupe == 'ferme')) { add(x.label); }
+        continue;
+      case 'bovin': case 'ovin': case 'caprin': case 'porcin': case 'volaille':
+        add(kEspecesPro.firstWhere((x) => _sansAccents(x.label) == '${v}s').label);
+        continue;
+    }
+    final g = kGroupesEspeces.where((g) => g.key != 'autre' && g.valeurs.contains(v));
+    if (g.isNotEmpty) {
+      add(kEspecesPro.firstWhere((x) => x.groupe == g.first.key).label);
+    } else {
+      add(brut);
+    }
+  }
+  return out;
+}
 
 String _sansAccents(String s) {
   const a = 'àâäáãåçéèêëíìîïñóòôöõúùûüýÿ';
@@ -114,11 +174,17 @@ String _sansAccents(String s) {
 }
 
 /// Groupes couverts par une liste `especes_acceptees` (ordre de kGroupesEspeces).
+/// Une espèce saisie à la main (non reconnue) compte comme « Autres ».
 List<GroupeEspece> groupesDesEspeces(dynamic especes) {
   final vals = (especes is List ? especes : const [])
       .map((e) => _sansAccents(e.toString()))
+      .where((e) => e.isNotEmpty)
       .toSet();
-  return kGroupesEspeces.where((g) => g.valeurs.any(vals.contains)).toList();
+  final connus = kGroupesEspeces.where((g) => g.key != 'autre').expand((g) => g.valeurs).toSet();
+  final autre = vals.any((v) => !connus.contains(v));
+  return kGroupesEspeces
+      .where((g) => g.key == 'autre' ? autre : g.valeurs.any(vals.contains))
+      .toList();
 }
 
 /// Aucune sélection = toutes les espèces ; sinon au moins un groupe coché.

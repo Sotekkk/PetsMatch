@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
-import { pensionTarifKeyForEspece, type TarifsPension } from '@/lib/pension-especes';
+import { pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
 import { type PensionFactureEmetteur } from '@/lib/pension-facture-html';
 
 const TEAL = '#0C5C6C';
@@ -65,7 +65,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         // Nouveau modèle : prix fixe par espèce.
         const key = pensionTarifKeyForEspece(entree.espece);
         if (!key) return;
-        const match = config.especes.find(e => e.espece === key);
+        const match = pensionTarifPourKey(config.especes, key);
         if (!match) return;
         prixNuit = (seul ? match.prix_seul : (match.prix_partage ?? match.prix_seul)) ?? 0;
       } else if (Array.isArray(config.tranches_poids) && config.tranches_poids.length > 0) {

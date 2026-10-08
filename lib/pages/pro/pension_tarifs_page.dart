@@ -14,40 +14,100 @@ const List<Map<String, String>> kPensionEspeces = [
   {'key': 'chien',         'label': 'Chien',               'emoji': '🐕'},
   {'key': 'chat',          'label': 'Chat',                'emoji': '🐈'},
   {'key': 'cheval',        'label': 'Cheval',              'emoji': '🐴'},
-  {'key': 'animaux_ferme', 'label': 'Animaux de la ferme', 'emoji': '🐐'},
-  {'key': 'lapin',         'label': 'Lapin',               'emoji': '🐇'},
   {'key': 'ane',           'label': 'Âne',                 'emoji': '🫏'},
+  {'key': 'bovin',         'label': 'Bovins',              'emoji': '🐄'},
+  {'key': 'ovin',          'label': 'Ovins',               'emoji': '🐑'},
+  {'key': 'caprin',        'label': 'Caprins',             'emoji': '🐐'},
+  {'key': 'porcin',        'label': 'Porcins',             'emoji': '🐖'},
+  {'key': 'volaille',      'label': 'Volailles',           'emoji': '🐓'},
+  {'key': 'lapin',         'label': 'Lapin',               'emoji': '🐇'},
   {'key': 'nac',           'label': 'NAC',                 'emoji': '🐹'},
   {'key': 'oiseau',        'label': 'Oiseaux',             'emoji': '🦜'},
+  {'key': 'poisson',       'label': 'Poissons',            'emoji': '🐟'},
 ];
+
+/// Ancien tarif unique « Animaux de la ferme » (avant bovins / ovins / …
+/// séparés) : encore lu tant que la pension n'a pas réenregistré ses tarifs.
+const Map<String, String> kPensionEspeceFermeLegacy =
+    {'key': 'animaux_ferme', 'label': 'Animaux de la ferme', 'emoji': '🐐'};
 
 /// entree.espece (minuscule) OU label d'espèce acceptée -> key canonique.
 String? pensionTarifKeyForEspece(String? espece) {
   final s = (espece ?? '').toLowerCase().trim();
   switch (s) {
-    case 'chien':   return 'chien';
-    case 'chat':    return 'chat';
-    case 'cheval':  return 'cheval';
+    case 'chien':
+    case 'chiens':  return 'chien';
+    case 'chat':
+    case 'chats':   return 'chat';
+    case 'cheval':
+    case 'chevaux':
+    case 'équidés':
+    case 'equides': return 'cheval';
     case 'lapin':   return 'lapin';
     case 'ane':
     case 'âne':     return 'ane';
     case 'oiseau':
     case 'oiseaux': return 'oiseau';
     case 'nac':     return 'nac';
-    case 'animaux de la ferme': return 'animaux_ferme';
+    case 'poisson':
+    case 'poissons': return 'poisson';
+    case 'bovin':
+    case 'bovins':
+    case 'vache':
+    case 'taureau': return 'bovin';
     case 'ovin':
-    case 'caprin':
-    case 'porcin':
+    case 'ovins':
     case 'mouton':
+    case 'brebis':  return 'ovin';
+    case 'caprin':
+    case 'caprins':
     case 'chevre':
-    case 'chèvre':
-    case 'cochon':  return 'animaux_ferme';
+    case 'chèvre':  return 'caprin';
+    case 'porcin':
+    case 'porcins':
+    case 'porc':
+    case 'cochon':  return 'porcin';
+    case 'volaille':
+    case 'volailles':
+    case 'poule':   return 'volaille';
+    case 'animaux de la ferme': return 'animaux_ferme';
   }
   for (final e in kPensionEspeces) {
     if (e['label']!.toLowerCase() == s) return e['key'];
   }
   return null;
 }
+
+/// Rubrique large d'une key de tarif : depuis la liste commune des pros
+/// (« NAC », « Équidés »), un lapin relève des NAC et un âne des équidés.
+/// Les bovins, ovins… relèvent de l'ancien « Animaux de la ferme ».
+String pensionGroupe(String k) {
+  switch (k) {
+    case 'lapin': return 'nac';
+    case 'ane': return 'cheval';
+    case 'bovin': case 'ovin': case 'caprin': case 'porcin': case 'volaille':
+      return 'animaux_ferme';
+  }
+  return k;
+}
+
+/// Prix d'une espèce dans tarifs_pension.especes ; repli sur la rubrique
+/// large (ancien tarif « Animaux de la ferme ») si l'espèce n'a pas le sien.
+Map? pensionTarifPourKey(List especesTarifs, String key) {
+  Map? find(String k) {
+    for (final e in especesTarifs) {
+      if (e is Map && e['espece']?.toString() == k) return e;
+    }
+    return null;
+  }
+  return find(key) ?? find(pensionGroupe(key));
+}
+
+/// La pension a-t-elle coché une espèce couvrant ce tarif ?
+bool pensionTarifAccepte(String key, Iterable<String> acceptees) => acceptees.any((a) {
+  final k = pensionTarifKeyForEspece(a);
+  return k == key || (k != null && k == pensionGroupe(key));
+});
 
 /// Un logement (enclos_chenil.especes) accepte-t-il cette espèce d'animal ?
 /// Logement sans espèce configurée = accepte tout.
@@ -58,7 +118,7 @@ bool especeMatchesLogement(String? animalEspece, List? logementEspeces) {
   if (animalKey.isEmpty) return true;
   return logementEspeces.any((e) {
     final k = pensionTarifKeyForEspece(e?.toString()) ?? (e?.toString() ?? '').toLowerCase().trim();
-    return k == animalKey;
+    return k == animalKey || k == pensionGroupe(animalKey);
   });
 }
 
@@ -87,7 +147,7 @@ String pensionLogementTypeLabel(String? type) =>
 bool pensionAlimentationSejourApplicable(String? espece) {
   final k = pensionTarifKeyForEspece(espece)
       ?? (espece ?? '').toLowerCase().trim();
-  return k == 'cheval' || k == 'ane' || k == 'poney' || k == 'animaux_ferme';
+  return k == 'cheval' || k == 'ane' || k == 'poney' || pensionGroupe(k) == 'animaux_ferme';
 }
 
 class PensionTarifsPage extends StatefulWidget {
@@ -190,10 +250,19 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
         final seul = t['prix_seul']?.toString() ?? '';
         final partage = t['prix_partage']?.toString() ?? '';
         for (final sp in kPensionEspeces) {
-          if (acceptees.contains(sp['label'])) {
+          if (pensionTarifAccepte(sp['key']!, acceptees)) {
             prixParEspece[sp['key']!] = {'seul': seul, 'partage': partage};
           }
         }
+      }
+    }
+
+    // Ancien tarif unique « Animaux de la ferme » → repris pour chaque espèce
+    // de la ferme qui n'a pas encore son prix.
+    for (final sp in kPensionEspeces) {
+      final legacy = prixParEspece[pensionGroupe(sp['key']!)];
+      if (legacy != null && pensionGroupe(sp['key']!) == 'animaux_ferme') {
+        prixParEspece.putIfAbsent(sp['key']!, () => legacy);
       }
     }
 
@@ -204,7 +273,7 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
         key: k,
         label: sp['label']!,
         emoji: sp['emoji']!,
-        accepte: acceptees.contains(sp['label']),
+        accepte: pensionTarifAccepte(k, acceptees),
         prixSeul: saved?['seul'] ?? '',
         prixPartage: saved?['partage'] ?? '',
       ));

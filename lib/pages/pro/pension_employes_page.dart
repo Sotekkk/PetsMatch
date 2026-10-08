@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, kPensionEspeceFermeLegacy;
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/widgets/employe_conges_section.dart';
 
@@ -137,7 +137,7 @@ class _PensionEmployesPageState extends State<PensionEmployesPage> {
                                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                             subtitle: Text(competences.isEmpty
                                 ? 'Toutes espèces'
-                                : competences.map((c) => kPensionEspeces.firstWhere((e2) => e2['key'] == c, orElse: () => {'label': c})['label']).join(', '),
+                                : competences.map((c) => [...kPensionEspeces, kPensionEspeceFermeLegacy].firstWhere((e2) => e2['key'] == c, orElse: () => {'label': c})['label']).join(', '),
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                             trailing: const Icon(Icons.chevron_right, color: Colors.grey),
                           ),

@@ -21,7 +21,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
-    show pensionTarifKeyForEspece, especeMatchesLogement,
+    show pensionTarifKeyForEspece, pensionTarifPourKey, especeMatchesLogement,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
 import 'package:PetsMatch/utils/user_lookup.dart';
 
@@ -3442,10 +3442,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         // Nouveau modèle : prix fixe par espèce.
         final key = pensionTarifKeyForEspece(widget.entree['espece']?.toString());
         if (key == null) return;
-        Map? match;
-        for (final e in especesTarifs) {
-          if (e is Map && e['espece']?.toString() == key) { match = e; break; }
-        }
+        final match = pensionTarifPourKey(especesTarifs, key);
         if (match == null) return;
         prixNuit = seul
             ? (match['prix_seul'] as num?)?.toDouble() ?? 0

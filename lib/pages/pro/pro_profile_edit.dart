@@ -15,6 +15,8 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/pro_zone_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/utils/tarifs_veto.dart';
+import 'package:PetsMatch/utils/annuaire_filtres.dart' show normaliserEspecesPro;
+import 'package:PetsMatch/widgets/especes_pro_selector.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
@@ -82,10 +84,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   File?   _acacedDocFile;
   String? _acacedDocUrl;
 
-  static const _especesListDefaut = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
-  static const _especesListPension = ['Chien', 'Chat', 'Cheval', 'Animaux de la ferme', 'Lapin', 'Âne', 'NAC', 'Oiseaux'];
-  List<String> get _especesList =>
-      _catPro == 'pension' ? _especesListPension : _especesListDefaut;
   List<String> _especesAcceptees = [];
 
   // Galerie / portfolio public (photographe, pension) — distinct de albums_photo
@@ -336,7 +334,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         }
 
         if (row['especes_acceptees'] is List) {
-          _especesAcceptees = List<String>.from(row['especes_acceptees']);
+          _especesAcceptees = normaliserEspecesPro(row['especes_acceptees']);
         }
         if (row['photos_galerie'] is List) {
           _photosGalerie = [];
@@ -2293,37 +2291,33 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('referencement','Commerce / Animalerie',Icons.storefront_outlined),
   ];
 
+  // Liste déroulante (choix unique), comme le filtre métier de l'annuaire.
   Widget _catProSelector() {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: _kCatOptions.map((opt) {
+    final connu = _kCatOptions.any((o) => o.$1 == _catPro);
+    return DropdownButtonFormField<String>(
+      value: connu ? _catPro : null,
+      isExpanded: true,
+      hint: const Text('Choisir le type d\'activité', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+      icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+      ),
+      items: _kCatOptions.map((opt) {
         final (value, label, icon) = opt;
-        final selected = _catPro == value;
-        return FilterChip(
-          avatar: Icon(icon,
-            size: 16,
-            color: selected ? Colors.white : const Color(0xFF6F767B)),
-          label: Text(label,
-            style: TextStyle(
-              fontFamily: 'Galey',
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.normal,
-              color: selected ? Colors.white : const Color(0xFF3D4852),
-            )),
-          selected: selected,
-          onSelected: (_) => setState(() => _catPro = value),
-          selectedColor: const Color(0xFF0C5C6C),
-          backgroundColor: const Color(0xFFF4F4F4),
-          checkmarkColor: Colors.white,
-          showCheckmark: false,
-          side: BorderSide(
-            color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade300,
-          ),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        );
+        return DropdownMenuItem(value: value, child: Row(children: [
+          Icon(icon, size: 18, color: const Color(0xFF0C5C6C)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)))),
+        ]));
       }).toList(),
+      onChanged: (v) { if (v != null) setState(() => _catPro = v); },
     );
   }
 
@@ -2576,27 +2570,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     }
   }
 
-  Widget _especesSelector() {
-    return Wrap(
-      spacing: 8, runSpacing: 8,
-      children: _especesList.map((e) {
-        final selected = _especesAcceptees.contains(e);
-        return FilterChip(
-          label: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-            color: selected ? Colors.white : const Color(0xFF1E2025))),
-          selected: selected,
-          onSelected: (v) => setState(() {
-            if (v) { _especesAcceptees.add(e); } else { _especesAcceptees.remove(e); }
-          }),
-          selectedColor: const Color(0xFF6E9E57),
-          checkmarkColor: Colors.white,
-          backgroundColor: Colors.white,
-          side: const BorderSide(color: Color(0xFFDDDDDD)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        );
-      }).toList(),
-    );
-  }
+  Widget _especesSelector() => EspecesProSelector(
+        selection: _especesAcceptees,
+        onChanged: (v) => setState(() => _especesAcceptees = v),
+      );
 
   Widget _certificationsEditor() {
     return Column(children: [
