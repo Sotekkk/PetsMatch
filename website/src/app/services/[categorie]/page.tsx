@@ -189,7 +189,9 @@ export default function SousCategoriesPage() {
         )}
 
         {/* ── Voir tous ──────────────────────────────────────────────────── */}
-        <Link
+        {/* Une seule sous-catégorie (Transport, Alimentation, Boutiques) :
+            « Voir tous » menait exactement à la même liste → doublon masqué. */}
+        {cat.items.length > 1 && <Link
           href={`/services/carte?cat=${encodeURIComponent(cat.allCatValues)}&view=list`}
           className="rounded-2xl px-4 py-4 flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
           style={{
@@ -204,7 +206,7 @@ export default function SousCategoriesPage() {
           >
             Voir tous les professionnels
           </span>
-        </Link>
+        </Link>}
       </div>
     </div>
   );
