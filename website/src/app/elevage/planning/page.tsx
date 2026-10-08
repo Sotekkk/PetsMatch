@@ -107,10 +107,6 @@ const ESPECES = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin'
 
 const TYPES_LOCAUX_HISTO = ['nettoyage', 'materiel'];
 
-const LIEUX_NETTOYAGE = [
-  'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
-  'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Box', 'Jardin', 'Couloir',
-];
 
 const ACTE_EMOJIS: Record<string, string> = {
   vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️',
@@ -1422,9 +1418,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               {perimetre === 'locaux' ? (
                 <div>
                   <label className={libelleCls}>Zone / lieu</label>
-                  <input value={lieu} onChange={e => setLieu(e.target.value)} list="lieux-protocole" className={champCls}
-                    placeholder="Ex : Nurserie, chenil n°1…" />
-                  <datalist id="lieux-protocole">{LIEUX_NETTOYAGE.map(l => <option key={l} value={l} />)}</datalist>
+                  <input value={lieu} onChange={e => setLieu(e.target.value)} className={champCls}
+                    placeholder="Saisissez l’espace concerné" />
                 </div>
               ) : perimetre === 'categorie' ? (
                 <div>

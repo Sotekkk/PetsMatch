@@ -45,9 +45,6 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   bool   _saving          = false;
   List<Map<String, dynamic>> _selectedAnimaux = [];
 
-  static const _lieuxBase = ['Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Jardin', 'Couloir', 'Nurserie'];
-  List<String> _lieux = const ['Chatterie', 'Chenil', 'Box', ..._lieuxBase];
-
   final List<_EtapeCtrl> _etapes = [];
 
   static const _types = [
@@ -120,7 +117,6 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       }
     }
     if (_etapes.isEmpty) _etapes.add(_EtapeCtrl());
-    _loadBoxes();
   }
 
   Future<void> _loadDefaultAnimaux(List<String> ids) async {
@@ -139,23 +135,6 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       current: _selectedAnimaux, accentColor: _teal, showPortees: false,
     );
     if (result != null && mounted) setState(() => _selectedAnimaux = result);
-  }
-
-  Future<void> _loadBoxes() async {
-    final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    try {
-      final supa = Supabase.instance.client;
-      final profileData = await supa.from('user_profiles_complet').select('id')
-          .eq('uid', uid).eq('is_main', true).maybeSingle();
-      final profileId = profileData?['id'] as String?;
-      final qBase = supa.from('chenil_boxes').select('nom');
-      final rows = await (profileId != null
-          ? qBase.eq('profile_id', profileId).order('nom')
-          : qBase.eq('association_uid', uid).order('nom'));
-      final boxNames = (rows as List).map((r) => r['nom']?.toString() ?? '').where((n) => n.isNotEmpty).toList();
-      if (mounted && boxNames.isNotEmpty) setState(() => _lieux = [...boxNames, ..._lieuxBase]);
-    } catch (_) {}
   }
 
   @override
@@ -322,15 +301,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 (v) => setState(() { _perimetre = v; _ajusterRefEvent(); })),
             const SizedBox(height: 10),
             if (locaux)
-              Autocomplete<String>(
-                initialValue: TextEditingValue(text: _lieuCtrl.text),
-                optionsBuilder: (v) => _lieux.where((l) => l.toLowerCase().contains(v.text.toLowerCase())),
-                onSelected: (v) => _lieuCtrl.text = v,
-                fieldViewBuilder: (ctx, ctrl, focus, onSubmit) => TextFormField(
-                  controller: ctrl, focusNode: focus, style: const TextStyle(fontFamily: 'Galey'),
-                  onChanged: (v) => _lieuCtrl.text = v,
-                  decoration: _dec('Zone / lieu', hint: 'Ex : Nurserie, chenil n°1…'),
-                ),
+              TextFormField(
+                controller: _lieuCtrl, style: const TextStyle(fontFamily: 'Galey'),
+                textCapitalization: TextCapitalization.sentences,
+                decoration: _dec('Zone / lieu', hint: 'Saisissez l’espace concerné'),
               )
             else ...[
               if (_perimetre == 'categorie') ...[
