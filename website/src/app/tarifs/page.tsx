@@ -160,17 +160,16 @@ function TarifsInner() {
       <div className="bg-gradient-to-b from-[#0C5C6C] to-[#0A4A56] text-white px-4 py-14 text-center">
         <h1 className="font-['Galey'] font-bold text-3xl sm:text-4xl mb-3">Nos tarifs</h1>
         <p className="text-white/85 max-w-xl mx-auto">
-          100&nbsp;% gratuit pour les particuliers. Pour les professionnels, 30&nbsp;jours d&apos;essai
-          offerts, puis une formule adaptée à votre activité.
+          Pour les professionnels, 30&nbsp;jours d&apos;essai offerts, puis une formule adaptée à
+          votre activité.
         </p>
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-10">
-        {/* Particulier & association — toujours gratuits */}
+        {/* Particulier (sans mention de prix) & association (gratuit) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-14">
           <div className="rounded-2xl border-2 border-[#6E9E57] bg-white p-6">
-            <h2 className="font-['Galey'] font-bold text-xl text-[#1F2A2E] mb-1">Particulier</h2>
-            <p className="text-2xl font-bold text-[#6E9E57] mb-4">Gratuit à vie</p>
+            <h2 className="font-['Galey'] font-bold text-xl text-[#1F2A2E] mb-4">Particulier</h2>
             <ul className="space-y-2 text-sm text-gray-700">
               {[
                 'Carnet de santé de vos animaux',
@@ -187,7 +186,7 @@ function TarifsInner() {
           </div>
           <div className="rounded-2xl border-2 border-[#6E9E57] bg-white p-6">
             <h2 className="font-['Galey'] font-bold text-xl text-[#1F2A2E] mb-1">Association</h2>
-            <p className="text-2xl font-bold text-[#6E9E57] mb-4">Gratuit à vie</p>
+            <p className="text-2xl font-bold text-[#6E9E57] mb-4">Gratuit</p>
             <ul className="space-y-2 text-sm text-gray-700">
               {[
                 'Fiche association publique',
