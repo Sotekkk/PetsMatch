@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe;
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
@@ -202,10 +203,14 @@ class PlanningService {
     String? referenceLabel,
     // Pour cible individuel : liste d'animal_id sélectionnés
     List<String>? forcedAnimalIds,
+    /// Périmètre « portée » : portées choisies (chaque petit reçoit ses tâches)
+    List<String>? porteeIds,
     String? profilSourceOverride,
     String? eleveurProfileIdOverride,
   }) async {
-    final cibleType    = template['cible_type']  as String? ?? 'individuel';
+    final perimetre    = perimetreDe(template, profilSource: profilSourceOverride ?? _profilSource);
+    // Locaux (dont les anciens nettoyages en « cheptel ») : aucun animal.
+    final cibleType    = perimetre == 'locaux' ? 'locaux' : (template['cible_type'] as String? ?? 'individuel');
     final refEvent     = template['reference_event'] as String? ?? 'manuel';
     final etapes       = await _loadEtapes(template['id'] as String);
     final espece       = template['espece'] as String?;
@@ -222,22 +227,40 @@ class PlanningService {
     final autoAssignProfileId = autoAssignUid != null ? creatorProfileId : null;
 
     // Résoudre la liste des animaux cibles
-    final List<Map<String, dynamic>> cibles = await _resolveCibles(
-      uid: uid,
-      cibleType: cibleType,
-      refEvent: refEvent,
-      espece: espece,
-      forcedAnimalIds: forcedAnimalIds,
-      dateReference: dateReference,
-    );
+    final List<Map<String, dynamic>> cibles = cibleType == 'locaux'
+        ? [{ 'animal_id': null, 'animal_nom': null, 'date_ref': dateReference }]
+        : cibleType == 'portee'
+            ? await _resolvePortees(porteeIds ?? const [], refEvent, dateReference)
+            : await _resolveCibles(
+                uid: uid,
+                cibleType: cibleType,
+                refEvent: refEvent,
+                espece: espece,
+                forcedAnimalIds: forcedAnimalIds,
+                dateReference: dateReference,
+              );
 
     if (cibles.isEmpty) return 0;
 
     // Créer un plan actif par cible (ou un seul plan si cheptel)
     int tachesCount = 0;
-    final isBebes = cibleType == 'bebes';
+    // Étapes calculées à un âge : bébés, ou protocole « âge des animaux »
+    final isBebes = cibleType == 'bebes' || refEvent == 'age_semaines';
 
-    if (cibleType == 'cheptel' || cibleType == 'males' || cibleType == 'femelles') {
+    if (cibleType == 'locaux') {
+      final lieu = (template['lieu'] ?? '').toString();
+      final planId = await _createPlan(
+        uid: uid, template: template, dateReference: dateReference,
+        referenceId: null, referenceLabel: lieu.isNotEmpty ? lieu : 'Locaux / matériel',
+        profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+      );
+      tachesCount += await _generateTaches(
+        planId: planId, uid: uid, etapes: etapes, dateBase: dateReference, isBebes: false,
+        animalId: null, animalNom: null,
+        profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+        assignedTo: autoAssignUid, assignedProfileId: autoAssignProfileId,
+      );
+    } else if (cibleType == 'cheptel' || cibleType == 'males' || cibleType == 'femelles') {
       // Un seul plan pour le groupe
       final planId = await _createPlan(
         uid: uid, template: template, dateReference: dateReference,
@@ -278,6 +301,23 @@ class PlanningService {
       }
     }
     return tachesCount;
+  }
+
+  // ── Petits des portées choisies (date de base = naissance si le protocole
+  // se calcule depuis la naissance ou l'âge) ──────────────────────────────────
+  static Future<List<Map<String, dynamic>>> _resolvePortees(
+      List<String> porteeIds, String refEvent, DateTime dateReference) async {
+    if (porteeIds.isEmpty) return [];
+    final rows = await _supa.from('animaux').select('id, nom, date_naissance')
+        .inFilter('portee_id', porteeIds).not('statut', 'in', '(sorti,decede)').order('nom');
+    final depuisNaissance = refEvent == 'naissance' || refEvent == 'age_semaines';
+    return (rows as List).map((a) => {
+      'animal_id': a['id'] as String?,
+      'animal_nom': a['nom'] as String?,
+      'date_ref': depuisNaissance
+          ? (DateTime.tryParse(a['date_naissance'] as String? ?? '') ?? dateReference)
+          : dateReference,
+    }).toList();
   }
 
   // ── Résoudre les animaux cibles ──────────────────────────────────────────────

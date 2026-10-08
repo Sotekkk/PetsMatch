@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreLabel;
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_view_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
@@ -248,7 +249,8 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                         ),
                       )).then((_) => _load()),
                       onDelete: !canEditThis ? null : () => _delete(t['id'] as String, t['nom'] as String),
-                      onPrint: () => PlanningPdfService.printProtocole(t),
+                      onPrint: () => PlanningPdfService.printProtocole(t, profilSource: widget.profilSource),
+                      profilSource: widget.profilSource,
                       onManageAuth: _isEmployeeMode ? null : () => _manageAuthorizations(t),
                       onApply: !canApply ? null : () => showModalBottomSheet(
                         context: context,
@@ -298,6 +300,7 @@ class _TemplateCard extends StatelessWidget {
   final bool isOwnerProtocol;
   final bool isEmployeeMode;
   final bool canWrite;
+  final String? profilSource;
   final VoidCallback onView;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
@@ -308,7 +311,7 @@ class _TemplateCard extends StatelessWidget {
 
   const _TemplateCard({
     required this.template, this.creatorName, this.isOwnerProtocol = false, this.isEmployeeMode = false,
-    required this.canWrite, this.canApply = true, required this.onView,
+    required this.canWrite, this.canApply = true, required this.onView, this.profilSource,
     required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint,
     this.onManageAuth,
   });
@@ -317,164 +320,106 @@ class _TemplateCard extends StatelessWidget {
 
   String get _typeLabel => switch (template['type'] as String? ?? '') {
     'sanitaire'    => 'Sanitaire',
-    'nettoyage'    => 'Nettoyage',
+    'nettoyage'    => 'Désinfection',
     'promenade'    => 'Promenade',
     'socialisation'=> 'Socialisation',
+    'alimentaire'  => 'Alimentaire',
+    'toilettage'   => 'Toilettage',
+    'materiel'     => 'Matériel',
     _              => 'Autre',
-  };
-
-  Color get _typeColor => switch (template['type'] as String? ?? '') {
-    'sanitaire'    => const Color(0xFF0C5C6C),
-    'nettoyage'    => const Color(0xFF0C5C6C),
-    'promenade'    => const Color(0xFF9B59B6),
-    'socialisation'=> const Color(0xFFE67E22),
-    _              => Colors.grey,
-  };
-
-  String get _typeEmoji => switch (template['type'] as String? ?? '') {
-    'sanitaire'    => '💊',
-    'nettoyage'    => '🧹',
-    'promenade'    => '🦮',
-    'socialisation'=> '🐾',
-    _              => '📋',
   };
 
   int get _etapeCount {
     final etapes = template['plan_template_etapes'];
-    if (etapes is List) return etapes.length;
-    return 0;
+    return etapes is List ? etapes.length : 0;
   }
 
   @override
   Widget build(BuildContext context) {
-    final espece = template['espece']?.toString();
-    final desc   = template['description']?.toString();
-
+    final n = _etapeCount;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onView,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(_typeEmoji, style: const TextStyle(fontSize: 22)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        template['nom'] as String? ?? '',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E)),
-                      ),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          _Badge(label: _typeLabel, color: _typeColor),
-                          if (espece != null && espece.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            _Badge(label: espece, color: Colors.grey.shade400),
-                          ],
-                          const SizedBox(width: 6),
-                          _Badge(label: '$_etapeCount étape${_etapeCount > 1 ? 's' : ''}', color: Colors.grey.shade300),
-                          if (isEmployeeMode && isOwnerProtocol) ...[
-                            const SizedBox(width: 6),
-                            _Badge(label: '🏠 Élevage', color: Colors.grey.shade500),
-                          ],
-                          if (creatorName != null && creatorName!.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            _Badge(label: '👤 $creatorName', color: const Color(0xFFC2740B)),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (isEmployeeMode && !canWrite)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 2),
-                    child: Tooltip(
-                      message: 'Protocole de l\'élevage — non modifiable',
-                      child: Icon(Icons.lock_outline, size: 16, color: Color(0xFFBFC5C9)),
-                    ),
-                  ),
-                PopupMenuButton<String>(
-                  onSelected: (v) {
-                    if (v == 'edit' && onEdit != null)   onEdit!();
-                    if (v == 'delete' && onDelete != null) onDelete!();
-                    if (v == 'print')  onPrint();
-                    if (v == 'auth' && onManageAuth != null) onManageAuth!();
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'print', child: Row(children: [
-                      Icon(Icons.print_outlined, size: 16, color: Color(0xFF0C5C6C)),
-                      SizedBox(width: 8),
-                      Text('Imprimer', style: TextStyle(fontFamily: 'Galey')),
-                    ])),
-                    if (onManageAuth != null)
-                      const PopupMenuItem(value: 'auth', child: Row(children: [
-                        Icon(Icons.lock_open_outlined, size: 16, color: Color(0xFF0C5C6C)),
-                        SizedBox(width: 8),
-                        Text('Autorisations', style: TextStyle(fontFamily: 'Galey')),
-                      ])),
-                    if (canWrite) ...[
-                      const PopupMenuItem(value: 'edit',   child: Text('Modifier',  style: TextStyle(fontFamily: 'Galey'))),
-                      const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
-                    ],
-                  ],
-                  child: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF)),
-                ),
-              ],
+      padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: InkWell(
+            onTap: onView,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text(template['nom'] as String? ?? '',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF1F2A2E))),
+                  _Badge(label: _typeLabel, color: _green),
+                  if (isEmployeeMode && isOwnerProtocol) _Badge(label: '🏠 Élevage', color: Colors.grey.shade500),
+                  if (creatorName != null && creatorName!.isNotEmpty) _Badge(label: '👤 $creatorName', color: const Color(0xFFC2740B)),
+                ]),
+                const SizedBox(height: 4),
+                Text('${perimetreLabel(template, profilSource: profilSource)} · $n étape${n > 1 ? 's' : ''}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+              ]),
             ),
-            if (desc != null && desc.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(desc, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+          )),
+          PopupMenuButton<String>(
+            tooltip: 'Autres actions',
+            icon: Icon(Icons.more_horiz, color: Colors.grey.shade500),
+            onSelected: (v) {
+              if (v == 'view') onView();
+              if (v == 'edit' && onEdit != null) onEdit!();
+              if (v == 'delete' && onDelete != null) onDelete!();
+              if (v == 'auth' && onManageAuth != null) onManageAuth!();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'view', child: Text('Voir le détail', style: TextStyle(fontFamily: 'Galey'))),
+              if (onEdit != null)
+                const PopupMenuItem(value: 'edit', child: Text('Modifier', style: TextStyle(fontFamily: 'Galey'))),
+              if (onManageAuth != null)
+                const PopupMenuItem(value: 'auth', child: Text('Qui peut l’appliquer', style: TextStyle(fontFamily: 'Galey'))),
+              if (onDelete != null)
+                const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+              if (isEmployeeMode && !canWrite)
+                const PopupMenuItem(enabled: false, child: Text('Protocole de l’élevage — non modifiable',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
             ],
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: canApply
-                  ? ElevatedButton.icon(
-                      onPressed: onApply,
-                      icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white),
-                      label: const Text('Appliquer ce protocole', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _green,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                      ),
-                    )
-                  : Tooltip(
-                      message: 'Non autorisé par l\'élevage à appliquer ce protocole',
-                      child: ElevatedButton.icon(
-                        onPressed: null,
-                        icon: Icon(Icons.lock_outline, size: 18, color: Colors.grey.shade500),
-                        label: Text('Non autorisé', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey.shade200,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                      ),
-                    ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Row(children: [
+          if (canApply)
+            ElevatedButton(
+              onPressed: onApply,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _green, foregroundColor: Colors.white, elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                minimumSize: const Size(0, 36),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Appliquer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )
+          else
+            Tooltip(
+              message: 'Non autorisé par l’élevage à appliquer ce protocole',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(10)),
+                child: Text('🔒 Non autorisé', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              ),
             ),
-          ],
-        ),
-        ),
-        ),
-      ),
+          const SizedBox(width: 6),
+          TextButton.icon(
+            onPressed: onPrint,
+            icon: const Icon(Icons.print_outlined, size: 17),
+            label: const Text('Imprimer / PDF', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            style: TextButton.styleFrom(foregroundColor: _green),
+          ),
+        ]),
+      ]),
     );
   }
 }

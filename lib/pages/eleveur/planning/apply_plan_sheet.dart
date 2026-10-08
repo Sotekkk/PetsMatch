@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/utils/protocoles.dart';
+import 'package:PetsMatch/widgets/rattachement_picker.dart' show porteesDepuis, PorteeRattachement;
 
 class ApplyPlanSheet extends StatefulWidget {
   final Map<String, dynamic> template;
@@ -32,7 +34,12 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
 
   List<Map<String, dynamic>> _animaux = [];
 
-  String get _cibleType => widget.template['cible_type'] as String? ?? 'individuel';
+  String get _perimetre => perimetreDe(widget.template, profilSource: widget.profilSourceOverride);
+  // Locaux (dont les anciens nettoyages en « cheptel ») : aucun animal.
+  String get _cibleType => _perimetre == 'locaux' ? 'locaux' : (widget.template['cible_type'] as String? ?? 'individuel');
+  List<PorteeRattachement> _portees = [];
+  final Set<String> _porteeIds = {};
+  bool get _depuisNaissance => _refEvent == 'naissance' || _refEvent == 'age_semaines';
   String get _refEvent  => widget.template['reference_event'] as String? ?? 'manuel';
 
   @override
@@ -43,12 +50,39 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
       final defaultIds = widget.template['default_animal_ids'];
       if (defaultIds is List) _selectedIds.addAll(defaultIds.map((id) => id.toString()));
     }
+    if (_cibleType == 'portee') _loadPortees();
+  }
+
+  Future<void> _loadPortees() async {
+    setState(() => _loadingRefs = true);
+    try {
+      final espece = widget.template['espece'] as String?;
+      final pid = widget.eleveurProfileIdOverride ?? User_Info.activeProfileId;
+      var q = Supabase.instance.client.from('animaux')
+          .select('id, nom, espece, portee_id, nom_mere, date_naissance')
+          .eq('uid_eleveur', widget.uid).not('portee_id', 'is', null).not('statut', 'in', '(sorti,decede)');
+      if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
+      if (pid.isNotEmpty) q = q.eq('profile_id', pid);
+      final rows = await q;
+      if (mounted) {
+        setState(() {
+          _portees = porteesDepuis(List<Map<String, dynamic>>.from(rows));
+          _loadingRefs = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingRefs = false);
+    }
   }
 
   bool get _showDatePicker =>
-    _refEvent == 'manuel' || _refEvent == 'saillie' || _cibleType == 'individuel';
+    _cibleType == 'locaux' ||
+    (_cibleType == 'portee' ? !_depuisNaissance
+        : (_refEvent == 'manuel' || _refEvent == 'saillie' || _cibleType == 'individuel'));
 
   String get _cibleDescription => switch (_cibleType) {
+    'locaux'      => perimetreLabel(widget.template, profilSource: widget.profilSourceOverride),
+    'portee'      => 'Portée$_especeLabel${_depuisNaissance ? ' — dates calculées depuis la naissance de chaque petit' : ''}',
     'cheptel'     => 'Tout le cheptel$_especeLabel',
     'males'       => 'Tous les mâles$_especeLabel',
     'femelles'    => 'Toutes les femelles$_especeLabel',
@@ -67,7 +101,7 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
     'saillie'   => 'Date de saillie',
     'mise_bas'  => 'Date de référence (mise bas prévue)',
     'naissance' => 'Date de naissance',
-    _           => 'Date J0',
+    _           => 'Date de début',
   };
 
   List<Map<String, dynamic>> get _filteredAnimaux {
@@ -117,6 +151,11 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
           const SnackBar(content: Text('Sélectionnez au moins un animal')));
       return;
     }
+    if (_cibleType == 'portee' && _porteeIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sélectionnez au moins une portée')));
+      return;
+    }
     setState(() => _saving = true);
     try {
       final count = await PlanningService.applyTemplate(
@@ -124,6 +163,7 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
         template: widget.template,
         dateReference: _dateRef,
         forcedAnimalIds: _cibleType == 'individuel' ? _selectedIds.toList() : null,
+        porteeIds: _cibleType == 'portee' ? _porteeIds.toList() : null,
         profilSourceOverride: widget.profilSourceOverride,
         eleveurProfileIdOverride: widget.eleveurProfileIdOverride,
       );
@@ -284,6 +324,32 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text('${_selectedIds.length} animal${_selectedIds.length > 1 ? 'aux' : ''} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
+                  ),
+                const SizedBox(height: 14),
+              ],
+
+              // ── Portées (périmètre « portée ») ────────────────────────────────
+              if (_cibleType == 'portee') ...[
+                const _Label('Portées concernées'),
+                const SizedBox(height: 6),
+                if (_loadingRefs)
+                  const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(color: _green, strokeWidth: 2)))
+                else if (_portees.isEmpty)
+                  Text('Aucune portée en cours.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+                else
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(10)),
+                    child: ListView(shrinkWrap: true, children: _portees.map((p) => CheckboxListTile(
+                      value: _porteeIds.contains(p.id),
+                      onChanged: (v) => setState(() => v == true ? _porteeIds.add(p.id) : _porteeIds.remove(p.id)),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      activeColor: _green,
+                      dense: true,
+                      title: Text(p.label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _dark)),
+                      secondary: Text('${p.membres.length} petit${p.membres.length > 1 ? 's' : ''}',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500)),
+                    )).toList()),
                   ),
                 const SizedBox(height: 14),
               ],

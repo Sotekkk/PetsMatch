@@ -3,6 +3,11 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import {
+  PERIMETRES, CATEGORIES, REF_EVENTS, ACTES_SUGGERES, TRANCHES_LABELS,
+  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, type Perimetre,
+} from '@/lib/protocoles';
+import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
@@ -98,44 +103,9 @@ const TYPE_COLORS: Record<string, string> = {
   materiel:    'bg-blue-100 text-blue-700',
 };
 
-const CIBLE_OPTIONS = [
-  { value: 'individuel', emoji: '🐾', label: 'Animal individuel',  desc: "Sélection manuelle à l'application" },
-  { value: 'cheptel',   emoji: '🏡', label: 'Tout le cheptel',    desc: "Tous les animaux de l'espèce" },
-  { value: 'males',     emoji: '♂',  label: 'Mâles',             desc: 'Tous les mâles de l\'espèce' },
-  { value: 'femelles',  emoji: '♀',  label: 'Femelles',           desc: 'Toutes les femelles de l\'espèce' },
-  { value: 'gestantes', emoji: '🤰', label: 'Femelles gestantes', desc: 'Relativement à la date de mise bas' },
-  { value: 'bebes',     emoji: '🍼', label: 'Bébés / Jeunes',     desc: "Selon l'âge en semaines" },
-];
-
-const REF_EVENT_OPTIONS = [
-  { value: 'manuel',       emoji: '📅', label: 'Date choisie',    desc: 'Vous choisissez la date J0' },
-  { value: 'saillie',      emoji: '💑', label: 'Saillie',         desc: 'J0 = date de la saillie' },
-  { value: 'mise_bas',     emoji: '🍼', label: 'Mise bas',        desc: 'J0 = date de mise bas' },
-  { value: 'naissance',    emoji: '🐣', label: 'Naissance',       desc: 'J0 = date de naissance' },
-  { value: 'age_semaines', emoji: '📆', label: 'Âge en semaines', desc: 'Déclenche à un âge précis' },
-];
-
-const TYPES_ACTES = [
-  { value: 'vermifuge',       label: '💊 Vermifuge' },
-  { value: 'vaccination',     label: '💉 Vaccination' },
-  { value: 'antiparasitaire', label: '🛡️ Antiparasitaire' },
-  { value: 'traitement',      label: '🩺 Traitement' },
-  { value: 'visite',          label: '🏥 Visite vétérinaire' },
-  { value: 'alimentaire',     label: '🍽️ Alimentaire' },
-  { value: 'toilettage',      label: '✂️ Toilettage' },
-  { value: 'nettoyage',       label: '🧴 Désinfection' },
-  { value: 'promenade',       label: '🦮 Promenade / Socialisation' },
-  { value: 'autre',           label: '📋 Autre' },
-];
-
-const FREQUENCES = [
-  { value: 'ponctuel',     label: 'Ponctuel',     desc: '1 fois (ou N jours consécutifs)' },
-  { value: 'quotidien',    label: 'Quotidien',    desc: 'Chaque jour pendant N semaines' },
-  { value: 'hebdomadaire', label: '1-3x/semaine', desc: 'Répété N fois/sem. × N semaines' },
-  { value: 'mensuel',      label: 'Mensuel',      desc: 'Une fois par mois × N mois' },
-];
-
 const ESPECES = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'caprin', 'porcin'];
+
+const TYPES_LOCAUX_HISTO = ['nettoyage', 'materiel'];
 
 const LIEUX_NETTOYAGE = [
   'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
@@ -148,14 +118,6 @@ const ACTE_EMOJIS: Record<string, string> = {
   toilettage: '✂️', nettoyage: '🧴',
   promenade: '🦮', socialisation: '🦮', autre: '📋',
 };
-
-const TRANCHES = [
-  { value: null,        emoji: '—',  label: 'Non défini' },
-  { value: 'matin',    emoji: '🌅', label: 'Matin' },
-  { value: 'midi',     emoji: '☀️', label: 'Midi' },
-  { value: 'apres_midi', emoji: '🌤️', label: 'Après-midi' },
-  { value: 'soir',     emoji: '🌙', label: 'Soir' },
-];
 
 const TRANCHE_ORDER: Record<string, number> = { matin: 0, midi: 1, apres_midi: 2, soir: 3 };
 const TRANCHE_LABELS: Record<string, string> = {
@@ -192,17 +154,6 @@ function etapeTrancheLabel(e: Etape): string {
 function toISODate(d: Date) { return d.toISOString().split('T')[0]; }
 function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
-function cibleDescription(cibleType: string, espece?: string) {
-  const e = espece ? ` (${espece})` : '';
-  const map: Record<string, string> = {
-    individuel: 'Sélection manuelle', cheptel: `Tout le cheptel${e}`,
-    males: `Mâles${e}`, femelles: `Femelles${e}`,
-    gestantes: 'Femelles gestantes — calculé par rapport à la mise bas prévue',
-    bebes: "Bébés/jeunes — calculé selon l'âge de chaque animal",
-  };
-  return map[cibleType] ?? cibleType;
-}
-
 function baseLabelFromTaches(taches: Tache[]): string {
   const label = taches[0]?.label ?? '';
   return label.split(' — ')[0] ?? label;
@@ -234,63 +185,6 @@ function groupeTaches(taches: Tache[]): TacheGroupe[] {
     const tb = b.tranche ? (TRANCHE_ORDER[b.tranche] ?? 99) : 99;
     return ta !== tb ? ta - tb : a.label.localeCompare(b.label);
   });
-}
-
-// Impression : même visuel que la fiche de lecture (ProtocolViewModal) — en-tête
-// teal + badges, puis chaque étape en carte numérotée (plus de tableau).
-function printProtocole(template: Template) {
-  const etapes = template.plan_template_etapes ?? [];
-  const badges = [
-    acteLabel(template.type),
-    template.espece || null,
-    `${etapes.length} étape${etapes.length > 1 ? 's' : ''}`,
-  ].filter(Boolean).map(b => `<span class="badge">${b}</span>`).join('');
-  const cards = etapes.map((e, i) => {
-    const prodDos = [e.produit, e.dosage ? `(${e.dosage})` : ''].filter(Boolean).join(' ');
-    return `<div class="card">
-      <div class="num">${i + 1}</div>
-      <div class="body">
-        <div class="row"><span class="acte">${ACTE_EMOJIS[e.type_acte] ?? '📋'} ${acteLabel(e.type_acte)}</span><span class="when">${etapeTimingLabel(e)}</span></div>
-        ${prodDos ? `<p class="proddos">${prodDos}</p>` : ''}
-        <div class="chips"><span class="chip">${etapeFreqLabel(e)}</span><span class="chip">${etapeTrancheLabel(e)}</span></div>
-        ${e.description ? `<p class="notes">${e.description}</p>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>${template.nom}</title>
-<style>
-body{font-family:Arial,sans-serif;font-size:12px;margin:20px;color:#222}
-.header{background:#0C5C6C;color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:16px}
-.header h1{font-size:18px;margin:0 0 8px}
-.badge{display:inline-block;background:rgba(255,255,255,.16);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:bold;margin:0 6px 0 0}
-.header .desc{font-size:11px;color:rgba(255,255,255,.85);margin:8px 0 0}
-.card{display:flex;gap:10px;border:1px solid #eee;border-radius:8px;padding:10px 12px;margin-bottom:8px;page-break-inside:avoid}
-.num{width:22px;height:22px;border-radius:50%;background:rgba(12,92,108,.12);color:#0C5C6C;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.body{flex:1}
-.row{display:flex;justify-content:space-between;gap:8px}
-.acte{font-weight:bold;font-size:13px}
-.when{font-size:11px;color:#888;white-space:nowrap}
-.proddos{font-size:11.5px;color:#444;margin:3px 0 0}
-.chips{margin-top:5px}
-.chip{display:inline-block;background:#f2f2f2;color:#666;border-radius:5px;padding:2px 6px;font-size:10px;font-weight:bold;margin:0 5px 0 0}
-.notes{font-size:11px;color:#888;font-style:italic;margin:5px 0 0}
-.foot{margin-top:24px;font-size:10px;color:#999}
-@media print{body{margin:10px}}
-</style>
-</head><body>
-<div class="header">
-  <h1>📋 ${template.nom}</h1>
-  ${badges}
-  ${template.description ? `<p class="desc">${template.description}</p>` : ''}
-</div>
-${cards || '<p style="color:#888">Aucune étape définie.</p>'}
-<p class="foot">Imprimé le ${new Date().toLocaleDateString('fr-FR')} • PetsMatch</p>
-</body></html>`;
-  const win = window.open('', '_blank');
-  if (!win) { alert('Autorisez les popups pour imprimer'); return; }
-  win.document.write(html);
-  win.document.close();
-  setTimeout(() => win.print(), 300);
 }
 
 function printJour(groupes: TacheGroupe[], date: string) {
@@ -343,6 +237,13 @@ function PlanningPageInner() {
     ?? (pathname.startsWith('/association') ? 'association' : 'eleveur');
   const targetUid = employerUid || user?.uid || '';
   const targetProfileId = employerProfileId || profileId;
+  // Nom de la structure (en-tête / pied de la fiche PDF des protocoles)
+  const [nomStructure, setNomStructure] = useState('');
+  useEffect(() => {
+    if (!targetProfileId) return;
+    supabase.from('user_profiles_complet').select('nom, firstname, lastname').eq('id', targetProfileId).maybeSingle()
+      .then(({ data }) => setNomStructure((data?.nom as string) || `${data?.firstname ?? ''} ${data?.lastname ?? ''}`.trim()));
+  }, [targetProfileId]);
   const { config: planConfig, loading: planLoading } = usePlan();
   const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
   const { plan: gardePlan, loading: gardePlanLoading } = usePlanGarde();
@@ -588,7 +489,8 @@ function PlanningPageInner() {
           onNew={() => { setEditingTemplate(null); setShowTemplateForm(true); }}
           onEdit={(t) => { setEditingTemplate(t); setShowTemplateForm(true); }}
           onApply={setApplyingTemplate}
-          onPrint={printProtocole}
+          onPrint={t => ouvrirFicheProtocole(t, { structure: nomStructure, profilSource })}
+          profilSource={profilSource}
           onDelete={async (id) => {
             if (!confirm('Supprimer ce protocole ?')) return;
             // Ne retire que les occurrences FUTURES de l'agenda ; l'historique
@@ -946,15 +848,19 @@ function GroupedTacheCard({ groupe, onValider, onReporter, onDelete }: {
 
 // ── Vue Protocoles ────────────────────────────────────────────────────────────
 
-function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileId, isEmployeeMode = false, authorizedTemplateIds, onNew, onEdit, onApply, onPrint, onDelete }: {
+function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileId, isEmployeeMode = false, authorizedTemplateIds, profilSource, onNew, onEdit, onApply, onPrint, onDelete }: {
   templates: Template[]; canWrite?: boolean; ownerProfileId?: string | null;
   myProfileId?: string | null; isEmployeeMode?: boolean; authorizedTemplateIds?: Set<string>;
+  profilSource?: string;
   onNew: () => void; onEdit: (t: Template) => void;
   onApply: (t: Template) => void; onPrint: (t: Template) => void; onDelete: (id: string) => void;
 }) {
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
   const [authModalTemplate, setAuthModalTemplate] = useState<Template | null>(null);
   const [viewModal, setViewModal] = useState<{ template: Template; canEdit: boolean } | null>(null);
+  const [menuOuvert, setMenuOuvert] = useState<string | null>(null);
+  const [recherche, setRecherche] = useState('');
+  const [impression, setImpression] = useState<string | null>(null);
 
   useEffect(() => {
     const ids = [...new Set(templates
@@ -970,9 +876,26 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
     });
   }, [templates, ownerProfileId]);
 
+  // Fermer le menu « ⋯ » au clic ailleurs
+  useEffect(() => {
+    if (!menuOuvert) return;
+    const close = () => setMenuOuvert(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [menuOuvert]);
+
+  const visibles = recherche.trim()
+    ? templates.filter(t => t.nom.toLowerCase().includes(recherche.trim().toLowerCase()))
+    : templates;
+
+  const imprimer = async (t: Template) => {
+    setImpression(t.id);
+    try { await onPrint(t); } finally { setImpression(null); }
+  };
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h2 className="text-lg font-bold text-gray-800">Mes protocoles</h2>
         <div className="flex gap-2">
           {!isEmployeeMode && (
@@ -982,76 +905,101 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
             </a>
           )}
           {canWrite && (
-            <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouvelle</button>
+            <button onClick={onNew} className="px-4 py-2 bg-[#6E9E57] text-white rounded-xl text-sm font-semibold hover:bg-[#5d8a48]">+ Nouveau protocole</button>
           )}
         </div>
       </div>
+
+      {templates.length > 3 && (
+        <div className="flex items-center gap-2 px-3 py-2.5 mb-4 rounded-xl border border-gray-200 bg-white focus-within:border-[#0C5C6C]">
+          <span className="text-gray-400 text-sm">🔍</span>
+          <input value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Rechercher un protocole…"
+            className="flex-1 text-sm outline-none bg-transparent" />
+        </div>
+      )}
+
       {templates.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📋</div>
           <p className="text-gray-500 mb-4">Aucun protocole créé</p>
           {canWrite && (
-            <button onClick={onNew} className="px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">Créer mon premier protocole</button>
+            <button onClick={onNew} className="px-5 py-2 bg-[#6E9E57] text-white rounded-xl text-sm font-semibold hover:bg-[#5d8a48]">Créer mon premier protocole</button>
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          {templates.map(t => {
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {visibles.map(t => {
             const isOwnerProtocol = !t.created_by_profile_id || t.created_by_profile_id === ownerProfileId;
             const isMine = isEmployeeMode && !!myProfileId && t.created_by_profile_id === myProfileId;
             const creatorLabel = isOwnerProtocol ? null : (isMine ? 'Vous' : creatorNames[t.created_by_profile_id!]);
             const canEditThis = isEmployeeMode ? (canWrite && isMine) : canWrite;
             const canApplyThis = !isEmployeeMode || isMine || !!authorizedTemplateIds?.has(t.id);
+            const nbEtapes = t.plan_template_etapes?.length ?? 0;
             return (
-            <div key={t.id} onClick={() => setViewModal({ template: t, canEdit: canEditThis })}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 cursor-pointer hover:shadow-md transition-shadow">
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">{ACTE_EMOJIS[t.type] ?? '📋'}</div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-gray-800">{t.nom}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${TYPE_COLORS[t.type] ?? 'bg-gray-100 text-gray-600'}`}>{TYPE_LABELS[t.type] ?? t.type}</span>
-                    {t.espece && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{t.espece}</span>}
-                    <span className="text-xs text-gray-400">{CIBLE_OPTIONS.find(c => c.value === t.cible_type)?.label ?? t.cible_type}</span>
-                    <span className="text-xs text-gray-400">{t.plan_template_etapes?.length ?? 0} étape{(t.plan_template_etapes?.length ?? 0) > 1 ? 's' : ''}</span>
-                    {isEmployeeMode && isOwnerProtocol && (
-                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">🏠 Élevage</span>
-                    )}
-                    {creatorLabel && (
-                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">👤 {creatorLabel}</span>
+              <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col">
+                <div className="flex items-start gap-2">
+                  <button onClick={() => setViewModal({ template: t, canEdit: canEditThis })} className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-gray-800 truncate">{t.nom}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${TYPE_COLORS[t.type] ?? 'bg-gray-100 text-gray-600'}`}>{TYPE_LABELS[t.type] ?? t.type}</span>
+                      {isEmployeeMode && isOwnerProtocol && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">🏠 Élevage</span>
+                      )}
+                      {creatorLabel && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">👤 {creatorLabel}</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {perimetreLabel(t, profilSource)} · {nbEtapes} étape{nbEtapes > 1 ? 's' : ''}
+                    </p>
+                  </button>
+                  <div className="relative">
+                    <button aria-label="Autres actions" onClick={e => { e.stopPropagation(); setMenuOuvert(m => m === t.id ? null : t.id); }}
+                      className="w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 text-lg leading-none">⋯</button>
+                    {menuOuvert === t.id && (
+                      <div className="absolute right-0 top-9 z-20 w-56 bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-sm" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => { setMenuOuvert(null); setViewModal({ template: t, canEdit: canEditThis }); }}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-50">👁️ Voir le détail</button>
+                        {canEditThis && (
+                          <button onClick={() => { setMenuOuvert(null); onEdit(t); }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50">✏️ Modifier</button>
+                        )}
+                        {!isEmployeeMode && (
+                          <button onClick={() => { setMenuOuvert(null); setAuthModalTemplate(t); }}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50">🔓 Qui peut l&apos;appliquer</button>
+                        )}
+                        {canEditThis && (
+                          <button onClick={() => { setMenuOuvert(null); onDelete(t.id); }}
+                            className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600">🗑️ Supprimer</button>
+                        )}
+                        {!canEditThis && isEmployeeMode && (
+                          <p className="px-3 py-2 text-xs text-gray-400">🔒 Protocole de l&apos;élevage — non modifiable</p>
+                        )}
+                      </div>
                     )}
                   </div>
-                  {t.description && <p className="text-xs text-gray-400 mt-1">{t.description}</p>}
-                  <p className="text-xs text-gray-400 mt-1">{cibleDescription(t.cible_type, t.espece)}</p>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={(e) => { e.stopPropagation(); onPrint(t); }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Imprimer ce protocole">🖨️</button>
-                  {!isEmployeeMode && (
-                    <button onClick={(e) => { e.stopPropagation(); setAuthModalTemplate(t); }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Qui peut appliquer ce protocole">🔓</button>
+                <div className="flex items-center gap-3 mt-3">
+                  {canApplyThis ? (
+                    <button onClick={() => onApply(t)}
+                      className="px-4 py-2 bg-[#0C5C6C] hover:bg-[#0a4d5b] text-white rounded-xl text-sm font-semibold">
+                      Appliquer
+                    </button>
+                  ) : (
+                    <span title="Non autorisé par l'élevage à appliquer ce protocole"
+                      className="px-3 py-2 bg-gray-100 text-gray-400 rounded-xl text-sm font-semibold">🔒 Non autorisé</span>
                   )}
-                  {canEditThis ? (
-                    <>
-                      <button onClick={(e) => { e.stopPropagation(); onEdit(t); }} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">✏️</button>
-                      <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); }} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">🗑️</button>
-                    </>
-                  ) : isEmployeeMode && (
-                    <span className="p-1.5 text-gray-300" title="Protocole de l'élevage — non modifiable">🔒</span>
-                  )}
+                  <button onClick={() => imprimer(t)} disabled={impression === t.id}
+                    className="text-sm font-semibold text-[#0C5C6C] underline underline-offset-2 hover:text-[#0a4d5b] disabled:opacity-50">
+                    {impression === t.id ? 'Préparation…' : '🖨️ Imprimer / PDF'}
+                  </button>
                 </div>
               </div>
-              {canApplyThis ? (
-                <button onClick={(e) => { e.stopPropagation(); onApply(t); }} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
-                  ▶ Appliquer ce protocole
-                </button>
-              ) : (
-                <button disabled title="Non autorisé par l'élevage à appliquer ce protocole"
-                  className="mt-4 w-full py-2 bg-gray-100 text-gray-400 rounded-xl text-sm font-semibold cursor-not-allowed flex items-center justify-center gap-1.5">
-                  🔒 Non autorisé
-                </button>
-              )}
-            </div>
             );
           })}
+          {visibles.length === 0 && (
+            <p className="text-sm text-gray-400 py-6">Aucun protocole ne correspond à « {recherche} ».</p>
+          )}
         </div>
       )}
 
@@ -1070,6 +1018,7 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
           canEdit={viewModal.canEdit}
           onEdit={() => { setViewModal(null); onEdit(viewModal.template); }}
           onClose={() => setViewModal(null)}
+          onPrint={() => onPrint(viewModal.template)}
         />
       )}
     </div>
@@ -1078,8 +1027,9 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
 
 // ── Modale : fiche de synthèse en lecture (+ impression) ─────────────────────
 
-function ProtocolViewModal({ template, canEdit, onEdit, onClose }: {
+function ProtocolViewModal({ template, canEdit, onEdit, onClose, onPrint }: {
   template: Template; canEdit: boolean; onEdit: () => void; onClose: () => void;
+  onPrint: () => void;
 }) {
   const etapes = template.plan_template_etapes ?? [];
   return (
@@ -1088,7 +1038,7 @@ function ProtocolViewModal({ template, canEdit, onEdit, onClose }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="font-bold text-[#1F2A2E]">Fiche protocole</h3>
           <div className="flex items-center gap-1">
-            <button onClick={() => printProtocole(template)}
+            <button onClick={onPrint}
               className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors text-gray-500" title="Imprimer">
               🖨️
             </button>
@@ -1237,135 +1187,171 @@ function ProtocolAuthModal({ templateId, templateNom, eleveurProfileId, onClose 
 
 // ── Modale formulaire template ────────────────────────────────────────────────
 
-function newEtape(): Etape {
+function newEtape(ordre = 0): Etape {
   return {
-    type_acte: 'vermifuge', produit: '', dosage: '',
+    type_acte: '', produit: '', dosage: '',
     offset_direction: 'apres', jour_offset: 0, age_min_semaines: null,
     frequence: 'ponctuel', nb_fois_semaine: 1, duree_semaines: 1, duree_jours: 1,
-    is_recurrent: false, lieu: '', description: '', ordre: 0, tranche_horaire: null,
+    is_recurrent: false, lieu: '', description: '', ordre, tranche_horaire: null,
   };
+}
+
+const champCls = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C] focus:ring-2 focus:ring-[#0C5C6C]/10';
+const libelleCls = 'block text-xs font-semibold text-gray-500 mb-1';
+
+function BlocNumerote({ n, titre, children }: { n: number; titre: string; children: React.ReactNode }) {
+  return (
+    <section className="flex gap-3">
+      <span className="w-8 h-8 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] font-bold flex items-center justify-center flex-shrink-0">{n}</span>
+      <div className="flex-1 min-w-0 space-y-3">
+        <h3 className="font-bold text-[#1F2A2E] pt-1">{titre}</h3>
+        {children}
+      </div>
+    </section>
+  );
 }
 
 function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur', createdByUid, createdByProfileId, onClose, onSaved }: {
   existing: Template | null; uid: string; profileId: string | null; profilSource?: string;
   createdByUid?: string; createdByProfileId?: string | null; onClose: () => void; onSaved: () => void;
 }) {
+  const typeLabels = profilSource === 'garde' ? TYPE_LABELS_GARDE : TYPE_LABELS;
   const [nom, setNom] = useState(existing?.nom ?? '');
   const [type, setType] = useState(existing?.type ?? 'sanitaire');
   const [espece, setEspece] = useState(existing?.espece ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
-  const [lieuNett, setLieuNett] = useState(existing?.lieu ?? '');
-  const [cibleType, setCibleType] = useState(existing?.cible_type ?? 'individuel');
+  const [lieu, setLieu] = useState(existing?.lieu ?? '');
+  const [perimetre, setPerimetre] = useState<Perimetre>(existing ? perimetreDe(existing, profilSource) : 'animal');
+  const [categorie, setCategorie] = useState(
+    existing && CATEGORIES.some(c => c.value === existing.cible_type) ? existing.cible_type : 'femelles');
   const [refEvent, setRefEvent] = useState(existing?.reference_event ?? 'manuel');
   const [declencheurAuto, setDeclencheurAuto] = useState(existing?.declencheur_auto ?? '');
   const [animalIds, setAnimalIds] = useState<string[]>(existing?.default_animal_ids ?? []);
   const [showAnimalPicker, setShowAnimalPicker] = useState(false);
   const [animalSearch, setAnimalSearch] = useState('');
-  const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string; photo_url?: string | null }[]>([]);
-
-  useEffect(() => {
-    if (cibleType !== 'individuel') return;
-    let q = supabase.from('animaux').select('id, nom, espece, photo_url').eq('uid_eleveur', uid);
-    if (profileId) q = q.eq('profile_id', profileId) as typeof q;
-    (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
-      .order('nom')
-      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null }[]));
-  }, [uid, profileId, profilSource, cibleType]);
-
-  const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
-  const filteredAnimaux = animalSearch.trim()
-    ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
-    : animaux;
-
-  function toggleAnimal(id: string) {
-    setAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  }
+  const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string }[]>([]);
   const [etapes, setEtapes] = useState<Etape[]>(
-    existing?.plan_template_etapes?.map(e => ({
-      ...e,
-      is_recurrent: (e as Etape & { is_recurrent?: boolean }).is_recurrent ?? false,
-      tranche_horaire: e.tranche_horaire ?? null,
-    })) ?? [newEtape()]
+    existing?.plan_template_etapes?.length
+      ? [...existing.plan_template_etapes].sort((a, b) => a.ordre - b.ordre).map(e => ({
+          ...e,
+          produit: e.produit ?? '', dosage: e.dosage ?? '', lieu: e.lieu ?? '', description: e.description ?? '',
+          is_recurrent: (e as Etape & { is_recurrent?: boolean }).is_recurrent ?? false,
+          tranche_horaire: e.tranche_horaire ?? null,
+        }))
+      : [newEtape()]
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Animaux chargés seulement pour le périmètre « animal » (sélection par défaut)
+  useEffect(() => {
+    if (perimetre !== 'animal' || profilSource === 'garde') return;
+    let q = supabase.from('animaux').select('id, nom, espece').eq('uid_eleveur', uid);
+    if (profileId) q = q.eq('profile_id', profileId) as typeof q;
+    (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
+      .order('nom')
+      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string }[]));
+  }, [uid, profileId, profilSource, perimetre]);
+
+  const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
+  const filteredAnimaux = animaux.filter(a =>
+    (!espece || a.espece === espece) &&
+    (!animalSearch.trim() || a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase())));
+  const toggleAnimal = (id: string) => setAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  // Périmètres et événements de référence selon le profil (pas de
+  // reproduction pour une association ni une pension, pas de cheptel pour
+  // un pet-sitter).
+  const perimetresDispo = PERIMETRES.filter(p =>
+    profilSource === 'garde' ? (p.value === 'animal' || p.value === 'locaux')
+      : profilSource === 'pension' ? p.value !== 'portee' : true);
+  const categoriesDispo = CATEGORIES.filter(c =>
+    !((profilSource === 'association' || profilSource === 'pension') && c.value === 'gestantes') &&
+    !(profilSource === 'pension' && c.value === 'bebes'));
+  const cibleEffective = cibleTypePour(perimetre, categorie);
+  const refEventsDispo = REF_EVENTS.filter(r => {
+    if ((profilSource === 'association' || profilSource === 'pension' || profilSource === 'garde')
+      && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
+    if ((profilSource === 'pension' || profilSource === 'garde') && r.value === 'naissance') return false;
+    if (cibleEffective === 'gestantes') return ['mise_bas', 'saillie', 'manuel'].includes(r.value);
+    if (cibleEffective === 'bebes') return ['naissance', 'age_semaines'].includes(r.value);
+    if (perimetre === 'portee') return ['naissance', 'age_semaines', 'manuel'].includes(r.value);
+    return r.value !== 'age_semaines';
+  });
+  useEffect(() => {
+    if (perimetre === 'locaux') { setRefEvent('manuel'); return; }
+    if (!refEventsDispo.some(r => r.value === refEvent)) setRefEvent(refEventsDispo[0]?.value ?? 'manuel');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perimetre, categorie]);
+
   const updateEtape = (i: number, patch: Partial<Etape>) =>
     setEtapes(prev => prev.map((e, idx) => idx === i ? { ...e, ...patch } : e));
-
-  const handleCible = (c: string) => {
-    setCibleType(c);
-    if (c === 'gestantes') setRefEvent('mise_bas');
-    else if (c === 'bebes') setRefEvent('age_semaines');
-    else if (c === 'individuel') setRefEvent('manuel');
-  };
-
-  // Une association ne pratique pas d'élevage contrôlé (saillie, mise bas), et
-  // une pension n'héberge pas de reproduction (gestation, naissances) — ces
-  // cibles et événements de référence n'ont pas de sens hors contexte éleveur.
-  const cibleOptions = profilSource === 'association'
-    ? CIBLE_OPTIONS.filter(c => c.value !== 'gestantes')
-    : profilSource === 'pension'
-      ? CIBLE_OPTIONS.filter(c => c.value !== 'gestantes' && c.value !== 'bebes')
-      : CIBLE_OPTIONS;
-  const refEventsForCible = REF_EVENT_OPTIONS.filter(r => {
-    if ((profilSource === 'association' || profilSource === 'pension')
-      && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
-    if (profilSource === 'pension' && r.value === 'naissance') return false;
-    return cibleType === 'gestantes' ? ['mise_bas', 'saillie', 'manuel'].includes(r.value)
-      : cibleType === 'bebes'   ? ['naissance', 'age_semaines'].includes(r.value)
-      : r.value !== 'age_semaines';
+  const deplacerEtape = (i: number, d: -1 | 1) => setEtapes(prev => {
+    const j = i + d;
+    if (j < 0 || j >= prev.length) return prev;
+    const next = [...prev];
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
   });
 
   const save = async () => {
-    if (!nom.trim()) { setError('Le nom est requis'); return; }
-    setSaving(true);
+    if (!nom.trim()) { setError('Le nom du protocole est requis'); return; }
+    if (etapes.some(e => !e.type_acte.trim())) { setError('Indiquez l’action de chaque étape'); return; }
+    setSaving(true); setError('');
     try {
-      const isNett = type === 'nettoyage' || existing?.type === 'nettoyage';
+      const locaux = perimetre === 'locaux';
       const ep = etapes.map((e, i) => ({
         ...e, ordre: i,
+        type_acte: acteDepuisSaisie(e.type_acte),
         produit: e.produit || null, dosage: e.dosage || null,
         lieu: e.lieu || null, description: e.description || null,
-        age_min_semaines: e.age_min_semaines ?? null,
+        age_min_semaines: refEvent === 'age_semaines' || cibleEffective === 'bebes' ? (e.age_min_semaines ?? 0) : null,
         tranche_horaire: e.tranche_horaire ?? null,
         duree_semaines: e.is_recurrent ? 52 : e.duree_semaines,
       }));
       const templatePayload = {
-        nom, espece: espece || null, description: description || null,
-        lieu: isNett ? (lieuNett || null) : null,
-        // Un pet-sitter ne possède pas de cheptel (aucun animal sous son
-        // propre uid_eleveur) : forcer 'cheptel' viderait la résolution de
-        // cible à l'application et ne générerait aucune tâche.
-        cible_type: (isNett && profilSource !== 'garde') ? 'cheptel' : cibleType,
-        reference_event: isNett ? 'manuel' : refEvent,
-        declencheur_auto: (isNett || !declencheurAuto) ? null : declencheurAuto,
-        default_animal_ids: (!isNett && cibleType === 'individuel' && animalIds.length > 0) ? animalIds : null,
+        nom: nom.trim(), type, espece: locaux ? null : (espece || null), description: description.trim() || null,
+        lieu: locaux ? (lieu.trim() || null) : null,
+        cible_type: cibleEffective,
+        reference_event: locaux ? 'manuel' : refEvent,
+        declencheur_auto: (locaux || !declencheurAuto) ? null : declencheurAuto,
+        default_animal_ids: (perimetre === 'animal' && animalIds.length > 0) ? animalIds : null,
       };
-      if (existing) {
-        await supabase.from('plan_templates').update(templatePayload).eq('id', existing.id);
+      // Base pas encore migrée (portée / locaux absents de la contrainte
+      // cible_type) : « locaux » s'enregistre à l'ancienne (cheptel, relu
+      // comme locaux pour un nettoyage / matériel) ; « portée » est refusée.
+      const enregistrer = async (payload: typeof templatePayload) => existing
+        ? supabase.from('plan_templates').update(payload).eq('id', existing.id).select('id').single()
+        : supabase.from('plan_templates').insert({
+            uid_eleveur: uid, ...(profileId ? { eleveur_profile_id: profileId } : {}),
+            profil_source: profilSource,
+            ...(createdByUid ? { created_by_uid: createdByUid } : {}),
+            ...(createdByProfileId ? { created_by_profile_id: createdByProfileId } : {}),
+            ...payload,
+          }).select('id').single();
+      let res = await enregistrer(templatePayload);
+      if (res.error?.code === '23514' && (cibleEffective === 'locaux' || cibleEffective === 'portee')) {
+        if (cibleEffective === 'portee') throw new Error('Le périmètre « Portée » sera disponible après la mise à jour de la base (migration_plan_templates_perimetre.sql).');
+        if (!TYPES_LOCAUX_HISTO.includes(type)) throw new Error('Pour l’instant, « Locaux / matériel » n’est possible qu’avec un protocole de type Désinfection ou Matériel (mise à jour de la base en attente).');
+        res = await enregistrer({ ...templatePayload, cible_type: 'cheptel' });
+      }
+      if (res.error) throw new Error(res.error.message);
+      const templateId = (res.data as { id: string }).id;
 
-        // Ne jamais supprimer/réinsérer en bloc : une étape déjà appliquée
-        // à un animal a des plan_taches qui la référencent (etape_id), et
-        // la contrainte de clé étrangère bloque alors le DELETE ("update or
-        // delete... still referenced from table plan_taches"). On met à
-        // jour en place les étapes existantes (même id -> tâches déjà
-        // générées restent liées), on insère les nouvelles, et on ne
-        // supprime que les étapes retirées du formulaire qui n'ont jamais
-        // généré de tâche.
+      if (existing) {
+        // Jamais de suppression / réinsertion en bloc : une étape déjà
+        // appliquée est référencée par des plan_taches (clé étrangère). Mise
+        // à jour en place, insertion des nouvelles, suppression des seules
+        // étapes retirées qui n'ont jamais généré de tâche.
         const existingIds = new Set((existing.plan_template_etapes ?? []).map(e => e.id).filter(Boolean) as string[]);
         const keptIds = new Set(ep.filter(e => e.id).map(e => e.id as string));
         const removedIds = [...existingIds].filter(id => !keptIds.has(id));
-
         if (removedIds.length > 0) {
-          const { data: referenced } = await supabase.from('plan_taches')
-            .select('etape_id').in('etape_id', removedIds);
+          const { data: referenced } = await supabase.from('plan_taches').select('etape_id').in('etape_id', removedIds);
           const referencedIds = new Set((referenced ?? []).map(r => r.etape_id));
           const safeToDelete = removedIds.filter(id => !referencedIds.has(id));
-          if (safeToDelete.length > 0) {
-            await supabase.from('plan_template_etapes').delete().in('id', safeToDelete);
-          }
+          if (safeToDelete.length > 0) await supabase.from('plan_template_etapes').delete().in('id', safeToDelete);
         }
-
         for (const e of ep) {
           if (e.id && existingIds.has(e.id)) {
             const { id, ...patch } = e;
@@ -1373,396 +1359,334 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
           }
         }
         const toInsert = ep.filter(e => !e.id || !existingIds.has(e.id))
-          .map(({ id: _id, ...rest }) => ({ ...rest, template_id: existing.id }));
+          .map(({ id: _id, ...rest }) => ({ ...rest, template_id: templateId }));
         if (toInsert.length > 0) await supabase.from('plan_template_etapes').insert(toInsert);
-      } else {
-        const { data: row } = await supabase.from('plan_templates')
-          .insert({
-            uid_eleveur: uid, ...(profileId ? { eleveur_profile_id: profileId } : {}),
-            type, profil_source: profilSource,
-            ...(createdByUid ? { created_by_uid: createdByUid } : {}),
-            ...(createdByProfileId ? { created_by_profile_id: createdByProfileId } : {}),
-            ...templatePayload,
-          }).select('id').single();
-        if (row && ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: row.id })));
+      } else if (ep.length > 0) {
+        await supabase.from('plan_template_etapes').insert(ep.map(({ id: _id, ...e }) => ({ ...e, template_id: templateId })));
       }
       onSaved();
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'Erreur'); setSaving(false); }
   };
 
+  const declencheurs = [
+    { value: '', label: 'Manuel uniquement' },
+    ...(profilSource === 'pension' || profilSource === 'garde' ? [] : [{ value: 'naissance', label: 'À la naissance' }]),
+    ...(profilSource === 'association' || profilSource === 'pension' || profilSource === 'garde' ? [] : [
+      { value: 'chaleurs', label: 'Aux chaleurs' },
+      { value: 'gestation', label: 'Gestation confirmée' },
+    ]),
+    ...(profilSource === 'garde' ? [] : [{ value: 'entree', label: 'À l’entrée d’un animal' }]),
+  ];
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between z-10">
-          <h2 className="text-lg font-bold text-gray-800">{existing ? 'Modifier' : 'Nouveau protocole'}</h2>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-gray-500 text-sm">Annuler</button>
-            <button onClick={save} disabled={saving} className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
-              {saving ? '...' : 'Enregistrer'}
-            </button>
-          </div>
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl max-h-[94vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-gray-100">
+          <h2 className="text-lg font-bold text-[#1F2A2E]">{existing ? 'Modifier le protocole' : 'Créer un protocole'}</h2>
+          <button onClick={onClose} aria-label="Fermer" className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
-        <div className="p-6 space-y-6">
-          {error && <p className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</p>}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-7">
+          {error && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-xl">{error}</p>}
 
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Nom *</label>
-              <input value={nom} onChange={e => setNom(e.target.value)}
-                placeholder={profilSource === 'garde' ? 'ex: Nettoyage du parc après le départ' : 'ex: Vermifuge portée standard chien'}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Description</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 resize-none" />
-            </div>
-          </div>
-
-          {!existing && (
-            <div>
-              <label className="block text-sm font-semibold text-teal-700 mb-2">Type de protocole</label>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(profilSource === 'garde' ? TYPE_LABELS_GARDE : TYPE_LABELS).filter(([k]) => k !== 'socialisation').map(([k, v]) => (
-                  <button key={k} onClick={() => setType(k)}
-                    className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors ${type === k ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {type === 'nettoyage' && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <label className="block text-sm font-bold text-teal-700">Lieu à désinfecter</label>
-              <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Indiquez le lieu concerné par ce protocole de désinfection.</p>
-              <div className="flex flex-wrap gap-2">
-                {LIEUX_NETTOYAGE.map(l => (
-                  <button key={l} onClick={() => setLieuNett(l)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${lieuNett === l ? 'bg-green-600 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <input value={lieuNett} onChange={e => setLieuNett(e.target.value)}
-                placeholder="Ou écrivez le lieu (ex: Nurserie, Salle de traite…)"
-                className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 bg-white" />
-            </div>
-          )}
-
-          {type !== 'nettoyage' && profilSource !== 'garde' && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <label className="block text-sm font-bold text-teal-700">Qui est concerné ?</label>
-              <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.</p>
+          <BlocNumerote n={1} titre="Informations générales">
+            <div className="grid grid-cols-1 sm:grid-cols-[1.4fr_1fr] gap-3">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Espèce</label>
-                <select value={espece} onChange={e => setEspece(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-green-500">
-                  {ESPECES.map(s => <option key={s} value={s}>{s || 'Toutes espèces'}</option>)}
+                <label className={libelleCls}>Nom du protocole *</label>
+                <input value={nom} onChange={e => setNom(e.target.value)} className={champCls}
+                  placeholder={profilSource === 'garde' ? 'Ex : Nettoyage du parc après le départ' : 'Ex : Entretien des locaux'} />
+              </div>
+              <div>
+                <label className={libelleCls}>Type</label>
+                <select value={type} onChange={e => setType(e.target.value)} className={champCls}>
+                  {Object.entries(typeLabels).filter(([k]) => k !== 'socialisation').map(([k, v]) =>
+                    <option key={k} value={k}>{v}</option>)}
                 </select>
               </div>
-              <div className="space-y-2">
-                {cibleOptions.map(c => (
-                  <div key={c.value}>
-                    <button onClick={() => handleCible(c.value)}
-                      className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${cibleType === c.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
-                      <span className="text-lg">{c.emoji}</span>
-                      <div className="flex-1">
-                        <span className={`text-sm font-semibold ${cibleType === c.value ? 'text-green-800' : 'text-gray-700'}`}>{c.label}</span>
-                        <p className="text-xs text-gray-400">{c.desc}</p>
-                      </div>
-                      {cibleType === c.value && <span className="text-green-600 text-base">✓</span>}
-                    </button>
-                    {c.value === 'individuel' && cibleType === 'individuel' && (
-                      <div className="mt-2 pl-3 border-l-2 border-green-200">
-                        <label className="block text-xs font-semibold text-gray-600 mb-1">
-                          Chien(s){selectedAnimaux.length > 0 ? ` — ${selectedAnimaux.length} sélectionné(s)` : ' (optionnel)'}
-                        </label>
-                        <div className="relative">
-                          <button type="button" onClick={() => setShowAnimalPicker(v => !v)}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm hover:border-green-500 focus:outline-none focus:border-green-500 bg-white">
-                            {selectedAnimaux.length > 0 ? (
-                              <span className="font-medium text-gray-800 flex-1 text-left truncate">
-                                {selectedAnimaux.map(a => a.nom).join(', ')}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 flex-1 text-left">— Choisir un ou plusieurs chiens —</span>
-                            )}
-                            <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                          {selectedAnimaux.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                              {selectedAnimaux.map(a => (
-                                <button key={a.id} type="button" onClick={() => toggleAnimal(a.id)}
-                                  className="flex items-center gap-1 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-full pl-2.5 pr-1.5 py-1">
-                                  {a.nom}
-                                  <span className="text-green-100">×</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                          {showAnimalPicker && (
-                            <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                              <div className="p-2 border-b border-gray-100">
-                                <input
-                                  autoFocus
-                                  value={animalSearch}
-                                  onChange={e => setAnimalSearch(e.target.value)}
-                                  placeholder="Rechercher un animal…"
-                                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-green-500"
-                                />
-                              </div>
-                              <div className="max-h-48 overflow-y-auto">
-                                {filteredAnimaux.length === 0
-                                  ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
-                                  : filteredAnimaux.map(a => {
-                                    const checked = animalIds.includes(a.id);
-                                    return (
-                                      <button key={a.id} type="button"
-                                        onClick={() => toggleAnimal(a.id)}
-                                        className={`w-full flex items-center gap-3 px-3 py-2 text-left border-b border-gray-50 last:border-0 transition-colors ${
-                                          checked ? 'bg-green-100' : 'hover:bg-green-50'
-                                        }`}>
-                                        <input type="checkbox" checked={checked} readOnly
-                                          className="rounded text-green-600 focus:ring-green-400 flex-shrink-0" />
-                                        <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-                                          {a.photo_url
-                                            ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
-                                            : <span className="text-sm">🐾</span>}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
-                                          {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
-                                        </div>
-                                      </button>
-                                    );
-                                  })
-                                }
-                              </div>
-                              <button type="button" onClick={() => { setShowAnimalPicker(false); setAnimalSearch(''); }}
-                                className="w-full py-2 text-sm font-semibold text-green-700 bg-green-50 hover:bg-green-100 border-t border-gray-100">
-                                Terminé
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Laisser vide pour choisir le/les chien(s) plus tard, au moment d&apos;appliquer le protocole.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
             </div>
-          )}
+            <div>
+              <label className={libelleCls}>Description (facultative)</label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2}
+                placeholder="Ex : objectifs, contexte, précisions…" className={`${champCls} resize-none`} />
+            </div>
+          </BlocNumerote>
 
-          {type !== 'nettoyage' && cibleType !== 'bebes' && profilSource !== 'garde' && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <label className="block text-sm font-bold text-teal-700">Événement de référence (J0)</label>
-              <p className="text-xs text-gray-400">Tous les offsets de vos étapes sont calculés depuis cet événement.</p>
-              <div className="space-y-2">
-                {refEventsForCible.map(r => (
-                  <button key={r.value} onClick={() => setRefEvent(r.value)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${refEvent === r.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
-                    <span className="text-lg">{r.emoji}</span>
-                    <div className="flex-1">
-                      <span className={`text-sm font-semibold ${refEvent === r.value ? 'text-green-800' : 'text-gray-700'}`}>{r.label}</span>
-                      <p className="text-xs text-gray-400">{r.desc}</p>
+          <BlocNumerote n={2} titre="Périmètre concerné">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={libelleCls}>Concerne</label>
+                <select value={perimetre} onChange={e => setPerimetre(e.target.value as Perimetre)} className={champCls}>
+                  {perimetresDispo.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </div>
+              {perimetre === 'locaux' ? (
+                <div>
+                  <label className={libelleCls}>Zone / lieu</label>
+                  <input value={lieu} onChange={e => setLieu(e.target.value)} list="lieux-protocole" className={champCls}
+                    placeholder="Ex : Nurserie, chenil n°1…" />
+                  <datalist id="lieux-protocole">{LIEUX_NETTOYAGE.map(l => <option key={l} value={l} />)}</datalist>
+                </div>
+              ) : perimetre === 'categorie' ? (
+                <div>
+                  <label className={libelleCls}>Catégorie d&apos;animaux</label>
+                  <select value={categorie} onChange={e => setCategorie(e.target.value)} className={champCls}>
+                    {categoriesDispo.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+              ) : profilSource !== 'garde' ? (
+                <div>
+                  <label className={libelleCls}>Espèce</label>
+                  <select value={espece} onChange={e => setEspece(e.target.value)} className={champCls}>
+                    {ESPECES.map(s => <option key={s} value={s}>{s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Toutes espèces'}</option>)}
+                  </select>
+                </div>
+              ) : null}
+            </div>
+            {perimetre === 'categorie' && profilSource !== 'garde' && (
+              <div className="sm:w-1/2 sm:pr-1.5">
+                <label className={libelleCls}>Espèce</label>
+                <select value={espece} onChange={e => setEspece(e.target.value)} className={champCls}>
+                  {ESPECES.map(s => <option key={s} value={s}>{s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Toutes espèces'}</option>)}
+                </select>
+              </div>
+            )}
+            <p className="text-xs text-gray-400">ⓘ {PERIMETRES.find(p => p.value === perimetre)?.aide}</p>
+
+            {perimetre === 'animal' && profilSource !== 'garde' && (
+              <div className="relative">
+                <label className={libelleCls}>Animaux par défaut (facultatif)</label>
+                <button type="button" onClick={() => setShowAnimalPicker(v => !v)}
+                  className={`${champCls} flex items-center justify-between text-left`}>
+                  <span className={selectedAnimaux.length ? 'text-[#1F2A2E]' : 'text-gray-400'}>
+                    {selectedAnimaux.length ? `${selectedAnimaux.length} animal${selectedAnimaux.length > 1 ? 'x' : ''} sélectionné${selectedAnimaux.length > 1 ? 's' : ''}` : 'Choisir au moment d’appliquer'}
+                  </span>
+                  <span className="text-gray-400 text-xs">▼</span>
+                </button>
+                {showAnimalPicker && (
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    <div className="p-2 border-b border-gray-100">
+                      <input autoFocus value={animalSearch} onChange={e => setAnimalSearch(e.target.value)}
+                        placeholder="Rechercher un animal…" className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#0C5C6C]" />
                     </div>
-                    {refEvent === r.value && <span className="text-green-600">✓</span>}
-                  </button>
-                ))}
+                    <div className="max-h-48 overflow-y-auto overscroll-contain">
+                      {filteredAnimaux.length === 0
+                        ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
+                        : filteredAnimaux.map(a => (
+                          <label key={a.id} className={`flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer border-b border-gray-50 last:border-0 ${animalIds.includes(a.id) ? 'bg-[#0C5C6C]/5' : 'hover:bg-gray-50'}`}>
+                            <input type="checkbox" checked={animalIds.includes(a.id)} onChange={() => toggleAnimal(a.id)} className="w-4 h-4 accent-[#0C5C6C]" />
+                            <span className="flex-1 truncate">{a.nom}</span>
+                            {a.espece && <span className="text-xs text-gray-400">{a.espece}</span>}
+                          </label>
+                        ))}
+                    </div>
+                    <button type="button" onClick={() => { setShowAnimalPicker(false); setAnimalSearch(''); }}
+                      className="w-full py-2 text-sm font-semibold text-white bg-[#0C5C6C]">Valider</button>
+                  </div>
+                )}
+                {!showAnimalPicker && selectedAnimaux.length > 0 && selectedAnimaux.length <= 8 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {selectedAnimaux.map(a => (
+                      <span key={a.id} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] bg-[#0C5C6C]/10 rounded-full pl-2.5 pr-1 py-0.5">
+                        {a.nom}
+                        <button type="button" onClick={() => toggleAnimal(a.id)} className="w-4 h-4 rounded-full hover:bg-[#0C5C6C]/20 leading-none">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )}
 
-          {type !== 'nettoyage' && profilSource !== 'garde' && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <label className="block text-sm font-bold text-teal-700">Déclenchement automatique</label>
-              <p className="text-xs text-gray-400">Si activé, ce protocole sera appliqué automatiquement à l&apos;animal concerné dès que l&apos;événement est enregistré.</p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { value: '',          emoji: '—',   label: 'Manuel uniquement' },
-                  ...(profilSource === 'pension' ? [] : [
-                    { value: 'naissance', emoji: '🐣',  label: 'Naissance' },
-                  ]),
-                  ...(profilSource === 'association' || profilSource === 'pension' ? [] : [
-                    { value: 'chaleurs',  emoji: '🌡️', label: 'Chaleurs' },
-                    { value: 'gestation', emoji: '🤰',  label: 'Gestation confirmée' },
-                  ]),
-                  { value: 'entree',    emoji: '🏠',  label: 'Entrée animal' },
-                ].map(d => (
-                  <button key={d.value} onClick={() => setDeclencheurAuto(d.value)}
-                    className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors ${declencheurAuto === d.value ? 'bg-teal-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                    {d.emoji} {d.label}
-                  </button>
-                ))}
+            {perimetre !== 'locaux' && profilSource !== 'garde' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className={libelleCls}>Calcul des dates à partir de</label>
+                  <select value={refEvent} onChange={e => setRefEvent(e.target.value)} className={champCls}>
+                    {refEventsDispo.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                  <p className="text-[11px] text-gray-400 mt-1">{REF_EVENTS.find(r => r.value === refEvent)?.aide}</p>
+                </div>
+                <div>
+                  <label className={libelleCls}>Application automatique</label>
+                  <select value={declencheurAuto} onChange={e => setDeclencheurAuto(e.target.value)} className={champCls}>
+                    {declencheurs.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </BlocNumerote>
 
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-bold text-teal-700">Étapes du protocole</label>
-              <span className="text-xs text-gray-400">{etapes.length} étape{etapes.length > 1 ? 's' : ''}</span>
-            </div>
-            <div className="space-y-4">
+          <BlocNumerote n={3} titre="Étapes du protocole">
+            <datalist id="actes-protocole">{ACTES_SUGGERES.map(a => <option key={a.value} value={a.label} />)}</datalist>
+            <div className="space-y-3">
               {etapes.map((e, i) => (
-                <EtapeForm key={i} index={i} etape={e} cibleType={cibleType} refEvent={refEvent}
+                <EtapeForm key={e.id ?? `n${i}`} index={i} total={etapes.length} etape={e}
+                  refEvent={perimetre === 'locaux' ? 'manuel' : refEvent}
+                  usesAge={refEvent === 'age_semaines' || cibleEffective === 'bebes'}
                   onChange={patch => updateEtape(i, patch)}
+                  onMove={d => deplacerEtape(i, d)}
+                  onDuplicate={() => setEtapes(prev => [...prev.slice(0, i + 1), { ...e, id: undefined }, ...prev.slice(i + 1)])}
                   onRemove={etapes.length > 1 ? () => setEtapes(prev => prev.filter((_, idx) => idx !== i)) : undefined} />
               ))}
             </div>
-            <button onClick={() => setEtapes(prev => [...prev, newEtape()])}
-              className="mt-3 w-full py-2.5 border border-dashed border-green-400 text-green-700 rounded-xl text-sm font-semibold hover:bg-green-50">
-              + Ajouter une étape
-            </button>
-          </div>
+            <button onClick={() => setEtapes(prev => [...prev, newEtape(prev.length)])}
+              className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter une étape</button>
+          </BlocNumerote>
+        </div>
+
+        <div className="flex justify-end gap-3 px-6 py-3 border-t border-gray-100">
+          <button onClick={onClose} className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">Annuler</button>
+          <button onClick={save} disabled={saving}
+            className="px-6 py-2.5 bg-[#0C5C6C] hover:bg-[#0a4d5b] text-white rounded-xl text-sm font-semibold disabled:opacity-50">
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Formulaire d'étape ────────────────────────────────────────────────────────
+// ── Carte d'une étape ─────────────────────────────────────────────────────────
 
-function EtapeForm({ index, etape, cibleType, refEvent, onChange, onRemove }: {
-  index: number; etape: Etape; cibleType: string; refEvent: string;
-  onChange: (patch: Partial<Etape>) => void; onRemove?: () => void;
+function EtapeForm({ index, total, etape, refEvent, usesAge, onChange, onMove, onDuplicate, onRemove }: {
+  index: number; total: number; etape: Etape; refEvent: string; usesAge: boolean;
+  onChange: (patch: Partial<Etape>) => void; onMove: (d: -1 | 1) => void; onDuplicate: () => void; onRemove?: () => void;
 }) {
-  const usesAge = cibleType === 'bebes';
-  const refLabel = { saillie: 'la saillie', mise_bas: 'la mise bas', naissance: 'la naissance' }[refEvent] ?? 'la date J0';
-  const showLieu = etape.type_acte === 'promenade' || etape.type_acte === 'socialisation';
+  const [menu, setMenu] = useState(false);
+  const refLabel = { saillie: 'la saillie', mise_bas: 'la mise bas', naissance: 'la naissance' }[refEvent] ?? 'la date de début';
+  const sanitaire = ['vermifuge', 'vaccination', 'antiparasitaire', 'traitement'].includes(acteDepuisSaisie(etape.type_acte));
+  const [details, setDetails] = useState(!!(etape.produit || etape.dosage || etape.lieu));
+  const frequenceValeur = etape.is_recurrent ? `${etape.frequence}_an` : etape.frequence;
+  const unite = etape.frequence === 'mensuel' ? 'mois' : 'semaines';
+  const nbTaches = etape.frequence === 'quotidien' ? (etape.is_recurrent ? 364 : etape.duree_semaines * 7)
+    : etape.frequence === 'hebdomadaire' ? (etape.is_recurrent ? 52 : etape.duree_semaines) * (etape.nb_fois_semaine || 1)
+    : etape.frequence === 'mensuel' ? (etape.is_recurrent ? 12 : etape.duree_semaines) : etape.duree_jours;
 
   return (
-    <div className="bg-green-50 border border-green-100 rounded-xl p-4 space-y-3">
+    <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-white">
       <div className="flex items-center gap-2">
-        <span className="w-6 h-6 bg-green-600 text-white text-xs font-bold rounded-lg flex items-center justify-center">{index + 1}</span>
-        {onRemove && <button onClick={onRemove} className="ml-auto text-red-400 hover:text-red-600 text-xs">✕ Supprimer</button>}
-      </div>
-
-      <select value={etape.type_acte} onChange={e => onChange({ type_acte: e.target.value })}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-green-500">
-        {TYPES_ACTES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-      </select>
-
-      <div className="grid grid-cols-2 gap-2">
-        <input value={etape.produit} onChange={e => onChange({ produit: e.target.value })} placeholder="Produit (ex: Milbemax®)"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-green-500" />
-        <input value={etape.dosage} onChange={e => onChange({ dosage: e.target.value })} placeholder="Dosage (ex: 1 cp/5kg)"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-green-500" />
-      </div>
-
-      <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-2">
-        <p className="text-xs font-bold text-gray-500">Quand ?</p>
-        {usesAge ? (
-          <div className="flex items-center gap-2 text-sm">
-            <span>À partir de</span>
-            <input type="number" min={0} value={etape.age_min_semaines ?? 3}
-              onChange={e => onChange({ age_min_semaines: parseInt(e.target.value) || 0 })}
-              className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
-            <span>semaines d&apos;âge</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 flex-wrap text-sm">
-            <select value={etape.offset_direction} onChange={e => onChange({ offset_direction: e.target.value as 'avant' | 'apres' })}
-              className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-green-500">
-              <option value="apres">Après</option>
-              <option value="avant">Avant</option>
-            </select>
-            <input type="number" min={0} value={etape.jour_offset}
-              onChange={e => onChange({ jour_offset: parseInt(e.target.value) || 0 })}
-              className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
-            <span className="text-green-700 font-semibold text-xs">jours {refLabel}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-lg p-3 border border-gray-200 space-y-3">
-        <p className="text-xs font-bold text-gray-500">Fréquence</p>
-        <div className="flex flex-wrap gap-2">
-          {FREQUENCES.map(f => (
-            <button key={f.value} onClick={() => onChange({ frequence: f.value, is_recurrent: false })}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${etape.frequence === f.value ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {etape.frequence === 'ponctuel' && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-600">Durée :</span>
-            <input type="number" min={1} value={etape.duree_jours} onChange={e => onChange({ duree_jours: parseInt(e.target.value) || 1 })}
-              className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
-            <span className="text-xs text-gray-500">jours consécutifs</span>
-          </div>
-        )}
-        {etape.frequence === 'hebdomadaire' && (
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-gray-600">Nb fois / semaine :</p>
-            <div className="flex gap-2">
-              {[1, 2, 3].map(n => (
-                <button key={n} onClick={() => onChange({ nb_fois_semaine: n })}
-                  className={`w-10 h-9 rounded-lg text-sm font-bold transition-colors ${etape.nb_fois_semaine === n ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  {n}x
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {etape.frequence !== 'ponctuel' && (
-          <div className="space-y-2">
-            <button onClick={() => onChange({ is_recurrent: !etape.is_recurrent })}
-              className="flex items-center gap-2 text-xs font-semibold text-gray-700">
-              <div className={`w-9 h-5 rounded-full transition-colors relative ${etape.is_recurrent ? 'bg-green-600' : 'bg-gray-300'}`}>
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${etape.is_recurrent ? 'translate-x-4' : 'translate-x-0.5'}`} />
+        <span className="text-sm font-bold text-[#1F2A2E]">Étape {index + 1}</span>
+        <div className="ml-auto flex items-center gap-1">
+          <button type="button" onClick={() => onMove(-1)} disabled={index === 0} aria-label="Monter"
+            className="w-7 h-7 rounded-lg text-gray-400 hover:bg-gray-100 disabled:opacity-30">▲</button>
+          <button type="button" onClick={() => onMove(1)} disabled={index === total - 1} aria-label="Descendre"
+            className="w-7 h-7 rounded-lg text-gray-400 hover:bg-gray-100 disabled:opacity-30">▼</button>
+          <div className="relative">
+            <button type="button" onClick={() => setMenu(m => !m)} aria-label="Actions de l'étape"
+              className="w-7 h-7 rounded-lg text-gray-400 hover:bg-gray-100 text-lg leading-none">⋯</button>
+            {menu && (
+              <div className="absolute right-0 top-8 z-20 w-40 bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-sm" onMouseLeave={() => setMenu(false)}>
+                <button type="button" onClick={() => { setMenu(false); onDuplicate(); }} className="w-full text-left px-3 py-2 hover:bg-gray-50">Dupliquer</button>
+                {onRemove && <button type="button" onClick={() => { setMenu(false); onRemove(); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600">Supprimer</button>}
               </div>
-              Protocole récurrent (1 an)
-            </button>
-            {!etape.is_recurrent ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-600">Pendant :</span>
-                <input type="number" min={1} value={etape.duree_semaines} onChange={e => onChange({ duree_semaines: parseInt(e.target.value) || 1 })}
-                  className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
-                <span className="text-xs text-gray-500">{etape.frequence === 'mensuel' ? 'mois' : 'semaines'}</span>
-                {etape.duree_semaines >= 12 && (
-                  <span className="text-xs text-amber-600 font-semibold">
-                    ⚠️ {etape.frequence === 'quotidien' ? etape.duree_semaines * 7 : etape.frequence === 'mensuel' ? etape.duree_semaines : etape.duree_semaines * (etape.nb_fois_semaine || 1)} tâches générées
-                  </span>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                ⚠️ Génère {etape.frequence === 'quotidien' ? '364' : etape.frequence === 'mensuel' ? '12' : `${52 * (etape.nb_fois_semaine || 1)}`} tâches d&apos;un coup (1 an) — le protocole ne se renouvelle pas automatiquement après, il faudra le réappliquer.
-              </p>
             )}
           </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-lg p-3 border border-gray-200">
-        <p className="text-xs font-bold text-gray-500 mb-2">Tranche horaire</p>
-        <div className="flex flex-wrap gap-2">
-          {TRANCHES.map(t => (
-            <button key={String(t.value)} onClick={() => onChange({ tranche_horaire: t.value })}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${etape.tranche_horaire === t.value ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-              {t.emoji} {t.label}
-            </button>
-          ))}
         </div>
       </div>
 
-      {showLieu && (
-        <input value={etape.lieu} onChange={e => onChange({ lieu: e.target.value })} placeholder="Lieu (ex: parc, jardin, forêt…)"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-green-500" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="sm:col-span-2 lg:col-span-1">
+          <label className={libelleCls}>Action *</label>
+          <input value={acteLabel(etape.type_acte)} onChange={e => onChange({ type_acte: e.target.value })} list="actes-protocole"
+            placeholder="Ex : Nettoyer les surfaces" className={champCls} />
+        </div>
+        <div>
+          <label className={libelleCls}>Déclenchement</label>
+          {usesAge ? (
+            <div className="flex items-center gap-1.5">
+              <input type="number" min={0} value={etape.age_min_semaines ?? 0}
+                onChange={e => onChange({ age_min_semaines: parseInt(e.target.value) || 0 })}
+                className={`${champCls} w-16 text-center px-2`} />
+              <span className="text-xs text-gray-500">sem. d&apos;âge</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <input type="number" min={0} value={etape.jour_offset}
+                onChange={e => onChange({ jour_offset: parseInt(e.target.value) || 0 })}
+                className={`${champCls} w-14 text-center px-2`} title={`Jours par rapport à ${refLabel}`} />
+              <select value={etape.offset_direction} onChange={e => onChange({ offset_direction: e.target.value as 'avant' | 'apres' })}
+                className={`${champCls} px-2`} title={`Par rapport à ${refLabel}`}>
+                <option value="apres">j. après</option>
+                <option value="avant">j. avant</option>
+              </select>
+            </div>
+          )}
+        </div>
+        <div>
+          <label className={libelleCls}>Fréquence</label>
+          <select value={frequenceValeur} className={champCls}
+            onChange={e => {
+              const v = e.target.value;
+              const an = v.endsWith('_an');
+              onChange({ frequence: an ? v.slice(0, -3) : v, is_recurrent: an });
+            }}>
+            <option value="ponctuel">Une fois / jours de suite</option>
+            <option value="quotidien">Chaque jour</option>
+            <option value="hebdomadaire">Chaque semaine</option>
+            <option value="mensuel">Chaque mois</option>
+            <option value="quotidien_an">Chaque jour (1 an)</option>
+            <option value="hebdomadaire_an">Chaque semaine (1 an)</option>
+            <option value="mensuel_an">Chaque mois (1 an)</option>
+          </select>
+        </div>
+        <div>
+          <label className={libelleCls}>Créneau</label>
+          <select value={etape.tranche_horaire ?? ''} onChange={e => onChange({ tranche_horaire: e.target.value || null })} className={champCls}>
+            <option value="">Non défini</option>
+            {Object.entries(TRANCHES_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
+        {etape.frequence === 'ponctuel' && (
+          <label className="flex items-center gap-1.5">Durée
+            <input type="number" min={1} value={etape.duree_jours} onChange={e => onChange({ duree_jours: parseInt(e.target.value) || 1 })}
+              className="w-14 border border-gray-200 rounded-lg px-2 py-1 text-center" /> jour(s) de suite
+          </label>
+        )}
+        {etape.frequence === 'hebdomadaire' && (
+          <label className="flex items-center gap-1.5">
+            <select value={etape.nb_fois_semaine} onChange={e => onChange({ nb_fois_semaine: parseInt(e.target.value) })}
+              className="border border-gray-200 rounded-lg px-2 py-1">
+              {[1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}
+            </select> fois par semaine
+          </label>
+        )}
+        {etape.frequence !== 'ponctuel' && !etape.is_recurrent && (
+          <label className="flex items-center gap-1.5">pendant
+            <input type="number" min={1} value={etape.duree_semaines} onChange={e => onChange({ duree_semaines: parseInt(e.target.value) || 1 })}
+              className="w-14 border border-gray-200 rounded-lg px-2 py-1 text-center" /> {unite}
+          </label>
+        )}
+        {nbTaches >= 60 && <span className="text-xs text-amber-600 font-semibold">⚠️ {nbTaches} tâches générées par animal / application</span>}
+      </div>
+
+      {(details || sanitaire) ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className={libelleCls}>Produit</label>
+            <input value={etape.produit} onChange={e => onChange({ produit: e.target.value })} placeholder="Ex : Milbemax®" className={champCls} />
+          </div>
+          <div>
+            <label className={libelleCls}>Dosage</label>
+            <input value={etape.dosage} onChange={e => onChange({ dosage: e.target.value })} placeholder="Ex : 1 cp / 5 kg" className={champCls} />
+          </div>
+          <div>
+            <label className={libelleCls}>Lieu</label>
+            <input value={etape.lieu} onChange={e => onChange({ lieu: e.target.value })} placeholder="Ex : parc, salle de soins" className={champCls} />
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setDetails(true)} className="text-xs font-semibold text-[#0C5C6C] hover:underline">
+          + Produit, dosage, lieu
+        </button>
       )}
 
-      <input value={etape.description} onChange={e => onChange({ description: e.target.value })} placeholder="Notes / instructions"
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-green-500" />
+      <div>
+        <label className={libelleCls}>Consignes</label>
+        <textarea value={etape.description} onChange={e => onChange({ description: e.target.value })} rows={2}
+          placeholder="Ex : suivre les consignes du responsable, précautions…" className={`${champCls} resize-y`} />
+      </div>
     </div>
   );
 }
@@ -1780,9 +1704,34 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   const [saving, setSaving] = useState(false);
 
   const cibleType = template.cible_type;
+  const perimetre = perimetreDe(template, profilSource);
   const isBebes = cibleType === 'bebes';
-  const needsAnimal = cibleType === 'individuel';
-  const showDate = cibleType !== 'bebes' && cibleType !== 'gestantes';
+  // Étapes calculées à un âge (bébés, ou protocole « âge des animaux »)
+  const usesAge = isBebes || template.reference_event === 'age_semaines';
+  const needsAnimal = perimetre === 'animal';
+  const isPortee = perimetre === 'portee';
+  const datesDeNaissance = isPortee && (template.reference_event === 'naissance' || template.reference_event === 'age_semaines');
+  const showDate = cibleType !== 'bebes' && cibleType !== 'gestantes' && !datesDeNaissance;
+  const [portees, setPortees] = useState<{ id: string; label: string; membres: { id: string; nom: string; date_naissance: string | null }[] }[]>([]);
+  const [porteeIds, setPorteeIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isPortee) return;
+    let q = supabase.from('animaux').select('id, nom, date_naissance, portee_id, nom_mere, espece')
+      .eq('uid_eleveur', uid).not('portee_id', 'is', null).not('statut', 'in', '(sorti,decede)');
+    if (template.espece) q = q.eq('espece', template.espece);
+    if (profileId) q = q.eq('profile_id', profileId) as typeof q;
+    q.order('date_naissance', { ascending: false }).then(({ data }) => {
+      const map = new Map<string, { id: string; label: string; membres: { id: string; nom: string; date_naissance: string | null }[] }>();
+      for (const a of (data ?? []) as { id: string; nom: string; date_naissance: string | null; portee_id: string; nom_mere: string | null }[]) {
+        if (!map.has(a.portee_id)) {
+          const dn = a.date_naissance ? ` — née le ${new Date(a.date_naissance).toLocaleDateString('fr-FR')}` : '';
+          map.set(a.portee_id, { id: a.portee_id, label: `${a.nom_mere ? `Portée de ${a.nom_mere}` : 'Portée'}${dn}`, membres: [] });
+        }
+        map.get(a.portee_id)!.membres.push({ id: a.id, nom: a.nom, date_naissance: a.date_naissance });
+      }
+      setPortees([...map.values()]);
+    });
+  }, [isPortee, uid, profileId, template.espece]);
   const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
   const filteredAnimaux = animalSearch.trim()
     ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
@@ -1823,12 +1772,23 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
 
   const apply = async () => {
     if (needsAnimal && animalIds.length === 0) { alert('Sélectionnez au moins un animal'); return; }
+    if (isPortee && porteeIds.length === 0) { alert('Sélectionnez au moins une portée'); return; }
     setSaving(true);
     try {
       const etapes = template.plan_template_etapes ?? [];
       const targets: { animal_id?: string; date_base: string; animal_nom?: string }[] = [];
 
-      if (cibleType === 'individuel') {
+      if (perimetre === 'locaux') {
+        // Locaux / matériel : aucune tâche par animal, une seule série.
+        targets.push({ date_base: dateRef });
+      } else if (isPortee) {
+        for (const p of portees.filter(x => porteeIds.includes(x.id))) {
+          for (const m of p.membres) {
+            targets.push({ animal_id: m.id, animal_nom: m.nom,
+              date_base: datesDeNaissance ? (m.date_naissance ?? dateRef) : dateRef });
+          }
+        }
+      } else if (cibleType === 'individuel') {
         for (const id of animalIds) {
           const animal = animaux.find(a => a.id === id);
           targets.push({ animal_id: id, date_base: dateRef, animal_nom: animal?.nom });
@@ -1872,6 +1832,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           type_declencheur: template.reference_event ?? 'manuel',
           date_reference: target.date_base,
           reference_id: target.animal_id ?? null,
+          reference_label: perimetre === 'locaux' ? (template.lieu || 'Locaux / matériel') : (target.animal_nom ?? null),
           profil_source: profilSource,
         }).select('id').single();
         if (!planRow) continue;
@@ -1882,7 +1843,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           const ageSem = etape.age_min_semaines;
           const baseDate = new Date(target.date_base);
           // Fix: age_min_semaines appliqué uniquement pour les protocoles bébés
-          const startDate = (isBebes && ageSem != null)
+          const startDate = (usesAge && ageSem != null)
             ? addDays(baseDate, ageSem * 7)
             : addDays(baseDate, direction * etape.jour_offset);
           const labelBase = [etape.type_acte, etape.produit, etape.dosage ? `(${etape.dosage})` : ''].filter(Boolean).join(' ');
@@ -1951,8 +1912,29 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
           </div>
           <div className="bg-green-50 rounded-xl p-3">
-            <p className="text-sm text-green-800 font-semibold">{cibleDescription(template.cible_type, template.espece)}</p>
+            <p className="text-sm text-green-800 font-semibold">{perimetreLabel(template, profilSource)}</p>
+            {perimetre !== 'locaux' && <p className="text-xs text-green-700 mt-0.5">Dates calculées à partir de : {REF_EVENTS.find(r => r.value === template.reference_event)?.label ?? template.reference_event}</p>}
           </div>
+          {isPortee && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Portées{porteeIds.length > 0 ? ` — ${porteeIds.length} sélectionnée(s)` : ''}
+              </label>
+              <div className="border border-gray-200 rounded-xl max-h-56 overflow-y-auto overscroll-contain">
+                {portees.length === 0
+                  ? <p className="text-sm text-gray-400 text-center py-4">Aucune portée</p>
+                  : portees.map(p => (
+                    <label key={p.id} className={`flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer border-b border-gray-50 last:border-0 ${porteeIds.includes(p.id) ? 'bg-green-50' : 'hover:bg-gray-50'}`}>
+                      <input type="checkbox" checked={porteeIds.includes(p.id)} className="w-4 h-4 accent-[#0C5C6C]"
+                        onChange={() => setPorteeIds(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])} />
+                      <span className="flex-1">{p.label}</span>
+                      <span className="text-xs text-gray-400">{p.membres.length} petit{p.membres.length > 1 ? 's' : ''}</span>
+                    </label>
+                  ))}
+              </div>
+              {datesDeNaissance && <p className="text-xs text-gray-400 mt-1">Les dates sont calculées depuis la naissance de chaque petit.</p>}
+            </div>
+          )}
           {needsAnimal && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">

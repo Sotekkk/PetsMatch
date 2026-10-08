@@ -46,7 +46,7 @@ class PlanTemplateViewPage extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.print_outlined),
             tooltip: 'Imprimer',
-            onPressed: () => PlanningPdfService.printProtocole(template),
+            onPressed: () => PlanningPdfService.printProtocole(template, profilSource: profilSource),
           ),
         ],
       ),

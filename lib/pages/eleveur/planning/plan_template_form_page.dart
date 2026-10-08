@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/utils/protocoles.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ════════════════════════════════════════════════════════════════════════════════
-// PAGE FORMULAIRE TEMPLATE
+// PAGE FORMULAIRE PROTOCOLE — 3 blocs : informations générales, périmètre
+// concerné, étapes. Miroir site : TemplateFormModal (elevage/planning).
 // ════════════════════════════════════════════════════════════════════════════════
 
 class PlanTemplateFormPage extends StatefulWidget {
@@ -26,107 +28,90 @@ class PlanTemplateFormPage extends StatefulWidget {
   State<PlanTemplateFormPage> createState() => _PlanTemplateFormPageState();
 }
 
-class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
-  static const _green = Color(0xFF0C5C6C);
+const _teal = Color(0xFF0C5C6C);
+const _dark = Color(0xFF1F2A2E);
 
-  final _nomCtrl         = TextEditingController();
-  final _descCtrl        = TextEditingController();
-  final _lieuNettCtrl    = TextEditingController();
+class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
+  final _nomCtrl  = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _lieuCtrl = TextEditingController();
 
   String _type            = 'sanitaire';
   String _espece          = '';
-  String _cibleType       = 'individuel';
+  String _perimetre       = 'animal';
+  String _categorie       = 'femelles';
   String _refEvent        = 'manuel';
   String _declencheurAuto = '';
   bool   _saving          = false;
   List<Map<String, dynamic>> _selectedAnimaux = [];
 
-  static const _lieuxBase = [
-    'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Jardin', 'Couloir',
-  ];
-  List<String> _lieuxNettoyage = [
-    'Chatterie n°1', 'Chatterie n°2', 'Chenil', 'Chenil n°1', 'Chenil n°2',
-    'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Box', 'Jardin', 'Couloir',
-  ];
+  static const _lieuxBase = ['Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Jardin', 'Couloir', 'Nurserie'];
+  List<String> _lieux = const ['Chatterie', 'Chenil', 'Box', ..._lieuxBase];
 
   final List<_EtapeCtrl> _etapes = [];
 
   static const _types = [
-    ('sanitaire',   '💊', 'Sanitaire'),
-    ('alimentaire', '🍽️', 'Alimentaire'),
-    ('nettoyage',   '🧴', 'Désinfection'),
-    ('materiel',    '🎒', 'Matériel'),
-    ('promenade',   '🦮', 'Promenade / Socialisation'),
-    ('toilettage',  '✂️', 'Toilettage'),
+    ('sanitaire', 'Sanitaire'), ('alimentaire', 'Alimentaire'), ('nettoyage', 'Désinfection'),
+    ('materiel', 'Matériel'), ('promenade', 'Promenade / Socialisation'), ('toilettage', 'Toilettage'),
   ];
-
-  // Pet-sitter : pas d'alimentation (déjà son propre onglet sur la fiche
-  // animal) ni de toilettage (hors périmètre garde) — garde Sanitaire,
-  // Nettoyage, Matériel (nouveau, pour préparer un séjour) et Promenade.
+  // Pet-sitter : pas d'alimentation (onglet dédié) ni de toilettage.
   static const _typesGarde = [
-    ('sanitaire', '💊', 'Sanitaire'),
-    ('nettoyage', '🧴', 'Nettoyage'),
-    ('materiel',  '🎒', 'Matériel'),
-    ('promenade', '🦮', 'Promenade'),
+    ('sanitaire', 'Sanitaire'), ('nettoyage', 'Nettoyage'), ('materiel', 'Matériel'), ('promenade', 'Promenade'),
   ];
-
   static const _especes = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'caprin', 'porcin'];
 
-  // Cible : qui est concerné
-  static const _ciblesBase = [
-    ('individuel',  '🐾', 'Animal individuel',      'Sélection manuelle à l\'application'),
-    ('cheptel',     '🏡', 'Tout le cheptel',        'Tous les animaux de l\'espèce'),
-    ('males',       '♂',  'Mâles',                  'Tous les mâles de l\'espèce'),
-    ('femelles',    '♀',  'Femelles',               'Toutes les femelles de l\'espèce'),
-    ('gestantes',   '🤰', 'Femelles gestantes',     'Relativement à la date de mise bas'),
-    ('allaitantes', '🤱', 'Femelles allaitantes',   'Femelles en nurserie / avec bébés (< 8 sem.)'),
-    ('bebes',       '🍼', 'Bébés / Jeunes',         'Selon l\'âge en semaines'),
-  ];
-
   String get _profilSource => widget.profilSource ?? User_Info.activeType;
-
-  // Une association ou une pension ne pratique pas d'élevage contrôlé
-  // (saillie, mise bas) — ces cibles/événements n'ont pas de sens hors
-  // contexte éleveur.
+  // Association / pension : pas d'élevage contrôlé (saillie, mise bas).
   bool get _isAssociation => _profilSource != 'eleveur';
-
-  // Pet-sitter : pas de cheptel (aucun animal possédé), pas de reproduction —
-  // formulaire simplifié à l'essentiel (type de protocole + étapes),
-  // toujours ciblé sur l'animal individuel du séjour choisi à l'application.
+  // Pet-sitter : pas de cheptel ni de reproduction.
   bool get _isGarde => _profilSource == 'garde';
+  bool get _isPension => _profilSource == 'pension';
 
-  List<(String, String, String)> get _typesForForm => _isGarde ? _typesGarde : _types;
+  String get _cible => cibleTypePour(_perimetre, _categorie);
+  bool get _usesAge => _refEvent == 'age_semaines' || _cible == 'bebes';
 
-  List<(String, String, String, String)> get _cibles => _isAssociation
-      ? _ciblesBase.where((c) => c.$1 != 'gestantes').toList()
-      : _ciblesBase;
+  List<(String, String, String)> get _perimetresDispo => kPerimetres.where((p) =>
+      _isGarde ? (p.$1 == 'animal' || p.$1 == 'locaux') : _isPension ? p.$1 != 'portee' : true).toList();
 
-  // Événement de référence pour J0
-  static const _refEvents = [
-    ('manuel',        '📅', 'Date choisie',        'Vous choisissez la date J0 à l\'application'),
-    ('saillie',       '💑', 'Date de saillie',     'J0 = date de la saillie'),
-    ('mise_bas',      '🍼', 'Date de mise bas',    'J0 = date de mise bas (avant ou après)'),
-    ('naissance',     '🐣', 'Date de naissance',   'J0 = date de naissance de l\'animal'),
-    ('age_semaines',  '📆', 'Âge en semaines',     'Déclenche à un âge précis du bébé'),
-  ];
+  List<(String, String)> get _categoriesDispo => kCategoriesProtocole.where((c) =>
+      !(_isAssociation && c.$1 == 'gestantes') && !(_isPension && c.$1 == 'bebes')).toList();
+
+  List<(String, String, String)> get _refEventsDispo => kRefEvents.where((r) {
+    if ((_isAssociation || _isGarde) && (r.$1 == 'saillie' || r.$1 == 'mise_bas')) return false;
+    if ((_isPension || _isGarde) && r.$1 == 'naissance') return false;
+    if (_cible == 'gestantes') return ['mise_bas', 'saillie', 'manuel'].contains(r.$1);
+    if (_cible == 'bebes') return ['naissance', 'age_semaines'].contains(r.$1);
+    if (_perimetre == 'portee') return ['naissance', 'age_semaines', 'manuel'].contains(r.$1);
+    return r.$1 != 'age_semaines';
+  }).toList();
+
+  void _ajusterRefEvent() {
+    if (_perimetre == 'locaux') { _refEvent = 'manuel'; return; }
+    final dispo = _refEventsDispo;
+    if (!dispo.any((r) => r.$1 == _refEvent)) _refEvent = dispo.isNotEmpty ? dispo.first.$1 : 'manuel';
+  }
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _nomCtrl.text      = e['nom'] ?? '';
-      _descCtrl.text     = e['description'] ?? '';
-      _lieuNettCtrl.text = e['lieu'] ?? '';
-      _type            = e['type']              ?? 'sanitaire';
-      _espece          = e['espece']            ?? '';
-      _cibleType       = e['cible_type']        ?? 'individuel';
-      _refEvent        = e['reference_event']   ?? 'manuel';
-      _declencheurAuto = e['declencheur_auto']  ?? '';
+      _nomCtrl.text    = e['nom'] ?? '';
+      _descCtrl.text   = e['description'] ?? '';
+      _lieuCtrl.text   = e['lieu'] ?? '';
+      _type            = e['type'] ?? 'sanitaire';
+      _espece          = e['espece'] ?? '';
+      _perimetre       = perimetreDe(e, profilSource: _profilSource);
+      final c = (e['cible_type'] ?? '').toString();
+      if (kCategoriesProtocole.any((k) => k.$1 == c)) _categorie = c;
+      _refEvent        = e['reference_event'] ?? 'manuel';
+      _declencheurAuto = e['declencheur_auto'] ?? '';
       final etapesData = e['plan_template_etapes'];
       if (etapesData is List) {
-        for (final et in etapesData) {
-          _etapes.add(_EtapeCtrl.fromData(Map<String, dynamic>.from(et)));
+        final tri = etapesData.map((x) => Map<String, dynamic>.from(x as Map)).toList()
+          ..sort((a, b) => ((a['ordre'] as num?) ?? 0).compareTo((b['ordre'] as num?) ?? 0));
+        for (final et in tri) {
+          _etapes.add(_EtapeCtrl.fromData(et));
         }
       }
       final defaultIds = e['default_animal_ids'];
@@ -134,7 +119,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
         _loadDefaultAnimaux(defaultIds.map((id) => id.toString()).toList());
       }
     }
-    if (_etapes.isEmpty) _addEtape();
+    if (_etapes.isEmpty) _etapes.add(_EtapeCtrl());
     _loadBoxes();
   }
 
@@ -150,12 +135,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
     final pid = widget.employerProfileId ?? User_Info.activeProfileId;
     final result = await AnimalPickerSheet.pickMany(
-      context,
-      uid: uid,
-      profileId: pid.isNotEmpty ? pid : null,
-      current: _selectedAnimaux,
-      accentColor: _green,
-      showPortees: !_isAssociation,
+      context, uid: uid, profileId: pid.isNotEmpty ? pid : null,
+      current: _selectedAnimaux, accentColor: _teal, showPortees: false,
     );
     if (result != null && mounted) setState(() => _selectedAnimaux = result);
   }
@@ -165,24 +146,15 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     if (uid == null) return;
     try {
       final supa = Supabase.instance.client;
-      final profileData = await supa.from('user_profiles_complet')
-          .select('id')
-          .eq('uid', uid)
-          .eq('is_main', true)
-          .maybeSingle();
+      final profileData = await supa.from('user_profiles_complet').select('id')
+          .eq('uid', uid).eq('is_main', true).maybeSingle();
       final profileId = profileData?['id'] as String?;
-
       final qBase = supa.from('chenil_boxes').select('nom');
-      final q = profileId != null
+      final rows = await (profileId != null
           ? qBase.eq('profile_id', profileId).order('nom')
-          : qBase.eq('association_uid', uid).order('nom');
-      final rows = await q;
+          : qBase.eq('association_uid', uid).order('nom'));
       final boxNames = (rows as List).map((r) => r['nom']?.toString() ?? '').where((n) => n.isNotEmpty).toList();
-      if (mounted && boxNames.isNotEmpty) {
-        setState(() {
-          _lieuxNettoyage = [...boxNames, ..._lieuxBase];
-        });
-      }
+      if (mounted && boxNames.isNotEmpty) setState(() => _lieux = [...boxNames, ..._lieuxBase]);
     } catch (_) {}
   }
 
@@ -190,677 +162,464 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   void dispose() {
     _nomCtrl.dispose();
     _descCtrl.dispose();
-    _lieuNettCtrl.dispose();
+    _lieuCtrl.dispose();
     for (final e in _etapes) { e.dispose(); }
     super.dispose();
   }
 
-  void _addEtape() => setState(() => _etapes.add(_EtapeCtrl()));
-  void _removeEtape(int i) {
-    setState(() { _etapes[i].dispose(); _etapes.removeAt(i); });
+  void _deplacer(int i, int d) {
+    final j = i + d;
+    if (j < 0 || j >= _etapes.length) return;
+    setState(() { final x = _etapes[i]; _etapes[i] = _etapes[j]; _etapes[j] = x; });
   }
 
   Future<void> _save() async {
-    if (_nomCtrl.text.trim().isEmpty) {
-      _snack('Le nom est requis'); return;
-    }
+    if (_nomCtrl.text.trim().isEmpty) { _snack('Le nom du protocole est requis'); return; }
+    if (_etapes.any((e) => e.actionCtrl.text.trim().isEmpty)) { _snack('Indiquez l’action de chaque étape'); return; }
     setState(() => _saving = true);
-    try {
-      final currentUid = FirebaseAuth.instance.currentUser!.uid;
-      final uid = widget.employerUid ?? currentUid;
-      final etapesData = _etapes.map((e) => e.toMap(isBebes: _cibleType == 'bebes')).toList();
-      final lieuNett = _lieuNettCtrl.text.trim().isEmpty ? null : _lieuNettCtrl.text.trim();
-      final auto = _type == 'nettoyage' ? null : (_declencheurAuto.isEmpty ? null : _declencheurAuto);
-      final defaultAnimalIds = (_type != 'nettoyage' && _cibleType == 'individuel' && _selectedAnimaux.isNotEmpty)
-          ? _selectedAnimaux.map((a) => a['id'].toString()).toList()
-          : null;
+    final locaux = _perimetre == 'locaux';
+    final etapesData = [
+      for (var i = 0; i < _etapes.length; i++) _etapes[i].toMap(ordre: i, usesAge: _usesAge),
+    ];
+    final lieu = locaux && _lieuCtrl.text.trim().isNotEmpty ? _lieuCtrl.text.trim() : null;
+    final auto = (locaux || _declencheurAuto.isEmpty) ? null : _declencheurAuto;
+    final defaultIds = (_perimetre == 'animal' && _selectedAnimaux.isNotEmpty)
+        ? _selectedAnimaux.map((a) => a['id'].toString()).toList() : null;
+    final espece = (locaux || _espece.isEmpty) ? null : _espece;
+    final desc = _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim();
+    final refEvent = locaux ? 'manuel' : _refEvent;
+
+    Future<void> enregistrer(String cible) async {
       if (widget.existing != null) {
         await PlanningService.updateTemplate(
-          templateId:      widget.existing!['id'] as String,
-          nom:             _nomCtrl.text.trim(),
-          espece:          _espece.isEmpty ? null : _espece,
-          description:     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          lieu:            lieuNett,
-          // Un pet-sitter ne possède pas de cheptel (aucun animal sous son
-          // propre uid_eleveur) : forcer 'cheptel' viderait la résolution de
-          // cible à l'application (_resolveCibles) et ne générerait aucune
-          // tâche. On garde 'individuel' (sans animal forcé = tâche générale
-          // non rattachée, ou choix de l'animal à l'application).
-          cibleType:       (_type == 'nettoyage' && !_isGarde) ? 'cheptel' : _cibleType,
-          referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
-          declencheurAuto: auto,
-          defaultAnimalIds: defaultAnimalIds,
-          etapes:          etapesData,
+          templateId: widget.existing!['id'] as String, nom: _nomCtrl.text.trim(),
+          espece: espece, description: desc, lieu: lieu, cibleType: cible, referenceEvent: refEvent,
+          declencheurAuto: auto, defaultAnimalIds: defaultIds, etapes: etapesData,
         );
       } else {
+        final currentUid = FirebaseAuth.instance.currentUser!.uid;
         await PlanningService.createTemplate(
-          uid:             uid,
-          nom:             _nomCtrl.text.trim(),
-          type:            _type,
-          espece:          _espece.isEmpty ? null : _espece,
-          description:     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
-          lieu:            lieuNett,
-          // Un pet-sitter ne possède pas de cheptel (aucun animal sous son
-          // propre uid_eleveur) : forcer 'cheptel' viderait la résolution de
-          // cible à l'application (_resolveCibles) et ne générerait aucune
-          // tâche. On garde 'individuel' (sans animal forcé = tâche générale
-          // non rattachée, ou choix de l'animal à l'application).
-          cibleType:       (_type == 'nettoyage' && !_isGarde) ? 'cheptel' : _cibleType,
-          referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
-          declencheurAuto: auto,
-          defaultAnimalIds: defaultAnimalIds,
-          etapes:          etapesData,
+          uid: widget.employerUid ?? currentUid, nom: _nomCtrl.text.trim(), type: _type,
+          espece: espece, description: desc, lieu: lieu, cibleType: cible, referenceEvent: refEvent,
+          declencheurAuto: auto, defaultAnimalIds: defaultIds, etapes: etapesData,
           profilSourceOverride: widget.profilSource,
           eleveurProfileIdOverride: widget.employerProfileId,
           createdByUid: currentUid,
           createdByProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
         );
       }
+    }
+
+    try {
+      try {
+        await enregistrer(_cible);
+      } on PostgrestException catch (e) {
+        // Base pas encore migrée (portée / locaux absents de la contrainte
+        // cible_type, migration_plan_templates_perimetre.sql) : « locaux »
+        // s'enregistre à l'ancienne (cheptel, relu comme locaux pour un
+        // nettoyage / matériel) ; « portée » est refusée.
+        if (e.code != '23514' || (_cible != 'locaux' && _cible != 'portee')) rethrow;
+        if (_cible == 'portee') throw 'Le périmètre « Portée » sera disponible après la mise à jour de la base.';
+        if (_type != 'nettoyage' && _type != 'materiel') {
+          throw 'Pour l’instant, « Locaux / matériel » n’est possible qu’avec un protocole Désinfection ou Matériel.';
+        }
+        await enregistrer('cheptel');
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      setState(() => _saving = false);
-      _snack('Erreur : $e');
+      if (mounted) setState(() => _saving = false);
+      _snack(e is String ? e : 'Erreur : $e');
     }
   }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
+  // ── Champs ──────────────────────────────────────────────────────────────────
+
+  static InputDecoration _dec(String label, {String? hint}) => InputDecoration(
+        labelText: label.isEmpty ? null : label,
+        hintText: hint,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
+        isDense: true,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _teal, width: 1.6)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      );
+
+  Widget _select<T>(String label, T value, List<(T, String)> items, ValueChanged<T> onChanged) =>
+      DropdownButtonFormField<T>(
+        initialValue: items.any((i) => i.$1 == value) ? value : items.first.$1,
+        isExpanded: true,
+        decoration: _dec(label),
+        items: items.map((i) => DropdownMenuItem<T>(value: i.$1,
+            child: Text(i.$2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
+        onChanged: (v) { if (v != null) onChanged(v); },
+      );
+
+  Widget _bloc(int n, String titre, List<Widget> children) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 28, height: 28,
+              decoration: BoxDecoration(color: _teal.withValues(alpha: 0.1), shape: BoxShape.circle),
+              child: Center(child: Text('$n', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _teal))),
+            ),
+            const SizedBox(width: 10),
+            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w800, color: _dark)),
+          ]),
+          const SizedBox(height: 12),
+          ...children,
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.existing != null;
+    final locaux = _perimetre == 'locaux';
+    final aidePerimetre = kPerimetres.firstWhere((p) => p.$1 == _perimetre).$3;
+    final declencheurs = <(String, String)>[
+      ('', 'Manuel uniquement'),
+      if (!_isPension && !_isGarde) ('naissance', 'À la naissance'),
+      if (!_isAssociation) ('chaleurs', 'Aux chaleurs'),
+      if (!_isAssociation) ('gestation', 'Gestation confirmée'),
+      if (!_isGarde) ('entree', 'À l’entrée d’un animal'),
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
-        backgroundColor: _green,
+        backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text(
-          isEdit ? 'Modifier le protocole' : 'Nouveau protocole',
-          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          if (_saving)
-            const Padding(padding: EdgeInsets.all(16), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-          else
-            TextButton(
-              onPressed: _save,
-              child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-        ],
+        title: Text(isEdit ? 'Modifier le protocole' : 'Créer un protocole',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
         children: [
-          // ── Informations générales ──
-          _Card(children: [
-            _SectionTitle('Informations générales'),
-            _Field(controller: _nomCtrl, label: 'Nom du protocole *',
-                hint: _isGarde ? 'ex: Nettoyage du parc après le départ' : 'ex: Vermifuge portée standard chien'),
+          _bloc(1, 'Informations générales', [
+            TextFormField(controller: _nomCtrl, style: const TextStyle(fontFamily: 'Galey'),
+                decoration: _dec('Nom du protocole *', hint: _isGarde ? 'Ex : Nettoyage du parc après le départ' : 'Ex : Entretien des locaux')),
             const SizedBox(height: 10),
-            _Field(controller: _descCtrl, label: 'Description (optionnel)', hint: 'Notes sur ce protocole', maxLines: 2),
+            _select<String>('Type', _type, _isGarde ? _typesGarde : _types, (v) => setState(() => _type = v)),
+            const SizedBox(height: 10),
+            TextFormField(controller: _descCtrl, minLines: 2, maxLines: 4, style: const TextStyle(fontFamily: 'Galey'),
+                decoration: _dec('Description (facultative)', hint: 'Ex : objectifs, contexte, précisions…')),
           ]),
-          const SizedBox(height: 12),
 
-          // ── Type de protocole ── (seulement à la création)
-          if (!isEdit) ...[
-            _Card(children: [
-              _SectionTitle('Type de protocole'),
-              Wrap(spacing: 8, runSpacing: 6, children: _typesForForm.map((t) {
-                final active = _type == t.$1;
-                return _Chip(emoji: t.$2, label: t.$3, active: active, onTap: () => setState(() => _type = t.$1));
-              }).toList()),
-            ]),
-            const SizedBox(height: 12),
-          ],
-
-          // ── Nettoyage : lieu physique ──
-          if (_type == 'nettoyage') ...[
-            _Card(children: [
-              _SectionTitle('Lieu à nettoyer'),
-              const _InfoBox('Indiquez le lieu concerné par ce protocole de désinfection.'),
-              const SizedBox(height: 8),
-              // Chips raccourci
-              Wrap(spacing: 6, runSpacing: 6, children: _lieuxNettoyage.map((l) {
-                return GestureDetector(
-                  onTap: () => setState(() => _lieuNettCtrl.text = l),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: _lieuNettCtrl.text == l ? _green : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _lieuNettCtrl.text == l ? _green : Colors.grey.shade300),
-                    ),
-                    child: Text(l, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: _lieuNettCtrl.text == l ? Colors.white : Colors.grey.shade700)),
-                  ),
-                );
-              }).toList()),
+          _bloc(2, 'Périmètre concerné', [
+            _select<String>('Concerne', _perimetre, _perimetresDispo.map((p) => (p.$1, p.$2)).toList(),
+                (v) => setState(() { _perimetre = v; _ajusterRefEvent(); })),
+            const SizedBox(height: 10),
+            if (locaux)
+              Autocomplete<String>(
+                initialValue: TextEditingValue(text: _lieuCtrl.text),
+                optionsBuilder: (v) => _lieux.where((l) => l.toLowerCase().contains(v.text.toLowerCase())),
+                onSelected: (v) => _lieuCtrl.text = v,
+                fieldViewBuilder: (ctx, ctrl, focus, onSubmit) => TextFormField(
+                  controller: ctrl, focusNode: focus, style: const TextStyle(fontFamily: 'Galey'),
+                  onChanged: (v) => _lieuCtrl.text = v,
+                  decoration: _dec('Zone / lieu', hint: 'Ex : Nurserie, chenil n°1…'),
+                ),
+              )
+            else ...[
+              if (_perimetre == 'categorie') ...[
+                _select<String>('Catégorie d’animaux', _categorie, _categoriesDispo,
+                    (v) => setState(() { _categorie = v; _ajusterRefEvent(); })),
+                const SizedBox(height: 10),
+              ],
+              if (!_isGarde)
+                _select<String>('Espèce', _espece,
+                    _especes.map((e) => (e, e.isEmpty ? 'Toutes espèces' : '${e[0].toUpperCase()}${e.substring(1)}')).toList(),
+                    (v) => setState(() => _espece = v)),
+            ],
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(children: [
+                Icon(Icons.info_outline, size: 14, color: Colors.grey.shade500),
+                const SizedBox(width: 6),
+                Expanded(child: Text(aidePerimetre, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500))),
+              ]),
+            ),
+            if (_perimetre == 'animal' && !_isGarde) ...[
               const SizedBox(height: 10),
-              _Field(controller: _lieuNettCtrl, label: 'Ou écrivez le lieu', hint: 'ex: Nurserie, Salle de traite…'),
-            ]),
-            const SizedBox(height: 12),
-          ],
-
-          // ── Espèce + Qui est ciblé (hors nettoyage, hors garde : un
-          // pet-sitter ne possède pas de cheptel, la cible reste toujours
-          // l'animal individuel du séjour, choisi à l'application) ──
-          if (_type != 'nettoyage' && !_isGarde) ...[
-            _Card(children: [
-              _SectionTitle('Qui est concerné ?'),
-              const _InfoBox('Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.'),
-              const SizedBox(height: 10),
-              _DropField(
-                label: 'Espèce cible',
-                value: _espece,
-                items: _especes.map((e) => DropdownMenuItem(value: e, child: Text(e.isEmpty ? 'Toutes espèces' : e, style: const TextStyle(fontFamily: 'Galey')))).toList(),
-                onChanged: (v) => setState(() => _espece = v ?? ''),
+              AnimalPickerField(
+                selected: _selectedAnimaux,
+                onTap: _pickAnimaux,
+                label: 'Animaux par défaut (facultatif)…',
+                accentColor: _teal,
+              ),
+            ],
+            if (!locaux && !_isGarde) ...[
+              const SizedBox(height: 12),
+              _select<String>('Calcul des dates à partir de', _refEvent,
+                  _refEventsDispo.map((r) => (r.$1, r.$2)).toList(), (v) => setState(() => _refEvent = v)),
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Text(kRefEvents.firstWhere((r) => r.$1 == _refEvent, orElse: () => kRefEvents.first).$3,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ),
               const SizedBox(height: 10),
-              ...(_cibles.map((c) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _RadioTile(
-                  emoji: c.$1,
-                  title: c.$3,
-                  subtitle: c.$4,
-                  selected: _cibleType == c.$1,
-                  onTap: () => setState(() {
-                    _cibleType = c.$1;
-                    if (c.$1 == 'gestantes') { _refEvent = 'mise_bas'; }
-                    else if (c.$1 == 'bebes') { _refEvent = 'age_semaines'; }
-                    else if (c.$1 == 'individuel') { _refEvent = 'manuel'; }
-                  }),
-                ),
-                if (c.$1 == 'individuel' && _cibleType == 'individuel')
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 8),
-                    child: Container(
-                      padding: const EdgeInsets.only(left: 10),
-                      decoration: BoxDecoration(border: Border(left: BorderSide(color: _green.withValues(alpha: 0.25), width: 2))),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(
-                          _selectedAnimaux.isEmpty ? 'Chien(s) (optionnel)' : 'Chien(s) — ${_selectedAnimaux.length} sélectionné(s)',
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 4),
-                        AnimalPickerField(
-                          selected: _selectedAnimaux,
-                          onTap: _pickAnimaux,
-                          label: 'Choisir un ou plusieurs chiens…',
-                          accentColor: _green,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Laisser vide pour choisir le/les chien(s) plus tard, au moment d\'appliquer le protocole.',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade400),
-                        ),
-                      ]),
-                    ),
-                  ),
-              ]))),
-            ]),
-            const SizedBox(height: 12),
-          ],
+              _select<String>('Application automatique', _declencheurAuto, declencheurs,
+                  (v) => setState(() => _declencheurAuto = v)),
+            ],
+          ]),
 
-          // ── Référence temporelle (J0) — hors nettoyage, bébés et garde
-          // (toujours 'manuel' pour un pet-sitter : pas de saillie/mise bas/
-          // naissance à suivre) ──
-          if (_type != 'nettoyage' && _cibleType != 'bebes' && !_isGarde) ...[
-            _Card(children: [
-              _SectionTitle('Événement de référence (J0)'),
-              const _InfoBox('Tous les offsets de vos étapes seront calculés depuis cet événement.'),
-              const SizedBox(height: 8),
-              ...(_refEventsFor(_cibleType).map((r) => _RadioTile(
-                emoji: r.$2,
-                title: r.$3,
-                subtitle: r.$4,
-                selected: _refEvent == r.$1,
-                onTap: () => setState(() => _refEvent = r.$1),
-              ))),
-            ]),
-            const SizedBox(height: 12),
-          ],
-
-          // ── Déclenchement automatique (pas pour garde : manuel uniquement
-          // pour cette itération, cf. plan) ──
-          if (_type != 'nettoyage' && !_isGarde) ...[
-            _Card(children: [
-              _SectionTitle('Déclenchement automatique'),
-              const _InfoBox('Si activé, ce protocole sera appliqué automatiquement à l\'animal concerné dès que l\'événement est enregistré dans l\'élevage.'),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 6, children: [
-                for (final d in [
-                  ('',          '—',   'Manuel uniquement'),
-                  ('naissance', '🐣',  'Naissance'),
-                  if (!_isAssociation) ('chaleurs',  '🌡️', 'Chaleurs'),
-                  if (!_isAssociation) ('gestation', '🤰',  'Gestation confirmée'),
-                  ('entree',    '🏠',  'Entrée animal'),
-                ])
-                  _Chip(
-                    emoji:  d.$2,
-                    label:  d.$3,
-                    active: _declencheurAuto == d.$1,
-                    onTap:  () => setState(() => _declencheurAuto = d.$1),
-                  ),
-              ]),
-            ]),
-            const SizedBox(height: 12),
-          ],
-
-          // ── Étapes ──
-          _Card(children: [
-            Row(children: [
-              const Expanded(child: _SectionTitle('Étapes du protocole')),
-              Text('${_etapes.length} étape${_etapes.length > 1 ? 's' : ''}',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-            ]),
-            const SizedBox(height: 8),
-            ..._etapes.asMap().entries.map((entry) => _EtapeCard(
-              index: entry.key,
-              ctrl: entry.value,
-              cibleType: _cibleType,
-              refEvent: _refEvent,
-              onRemove: _etapes.length > 1 ? () => _removeEtape(entry.key) : null,
-              onChanged: () => setState(() {}),
-            )),
-            const SizedBox(height: 6),
-            OutlinedButton.icon(
-              onPressed: _addEtape,
-              icon: const Icon(Icons.add, size: 16, color: _green),
-              label: const Text('Ajouter une étape', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _green)),
-              style: OutlinedButton.styleFrom(side: const BorderSide(color: _green), padding: const EdgeInsets.symmetric(vertical: 8)),
+          _bloc(3, 'Étapes du protocole', [
+            for (var i = 0; i < _etapes.length; i++)
+              _EtapeCard(
+                key: ObjectKey(_etapes[i]),
+                index: i,
+                total: _etapes.length,
+                ctrl: _etapes[i],
+                refEvent: locaux ? 'manuel' : _refEvent,
+                usesAge: _usesAge,
+                onChanged: () => setState(() {}),
+                onMove: (d) => _deplacer(i, d),
+                onDuplicate: () => setState(() => _etapes.insert(i + 1, _EtapeCtrl.copie(_etapes[i]))),
+                onRemove: _etapes.length > 1 ? () => setState(() { _etapes[i].dispose(); _etapes.removeAt(i); }) : null,
+              ),
+            TextButton.icon(
+              onPressed: () => setState(() => _etapes.add(_EtapeCtrl())),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Ajouter une étape', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: TextButton.styleFrom(foregroundColor: _teal),
             ),
           ]),
-          const SizedBox(height: 80),
         ],
       ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey.shade200))),
+          child: Row(children: [
+            Expanded(child: OutlinedButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: BorderSide(color: Colors.grey.shade300),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade700)),
+            )),
+            const SizedBox(width: 12),
+            Expanded(flex: 2, child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: _saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+            )),
+          ]),
+        ),
+      ),
     );
-  }
-
-  // Filtrer les ref events selon la cible
-  List<(String, String, String, String)> _refEventsFor(String cible) {
-    final base = switch (cible) {
-      'gestantes' => _refEvents.where((r) => r.$1 == 'mise_bas' || r.$1 == 'saillie' || r.$1 == 'manuel').toList(),
-      'bebes'     => _refEvents.where((r) => r.$1 == 'naissance' || r.$1 == 'age_semaines').toList(),
-      _           => _refEvents.where((r) => r.$1 != 'age_semaines').toList(),
-    };
-    if (!_isAssociation) return base;
-    return base.where((r) => r.$1 != 'saillie' && r.$1 != 'mise_bas').toList();
   }
 }
 
 // ─── Carte d'étape ────────────────────────────────────────────────────────────
 
-class _EtapeCard extends StatelessWidget {
-  final int index;
+class _EtapeCard extends StatefulWidget {
+  final int index, total;
   final _EtapeCtrl ctrl;
-  final String cibleType;
   final String refEvent;
-  final VoidCallback? onRemove;
+  final bool usesAge;
   final VoidCallback onChanged;
+  final ValueChanged<int> onMove;
+  final VoidCallback onDuplicate;
+  final VoidCallback? onRemove;
 
   const _EtapeCard({
-    required this.index, required this.ctrl, required this.cibleType,
-    required this.refEvent, required this.onRemove, required this.onChanged,
+    super.key, required this.index, required this.total, required this.ctrl, required this.refEvent,
+    required this.usesAge, required this.onChanged, required this.onMove, required this.onDuplicate, this.onRemove,
   });
 
-  static const _green = Color(0xFF0C5C6C);
+  @override
+  State<_EtapeCard> createState() => _EtapeCardState();
+}
 
-  static const _typesActes = [
-    ('vermifuge',       '💊 Vermifuge'),
-    ('vaccination',     '💉 Vaccination'),
-    ('antiparasitaire', '🛡️ Antiparasitaire'),
-    ('traitement',      '🩺 Traitement'),
-    ('visite',          '🏥 Visite vétérinaire'),
-    ('alimentaire',     '🍽️ Alimentaire'),
-    ('toilettage',      '✂️ Toilettage'),
-    ('peignage',        '🪮 Peignage'),
-    ('nettoyage',       '🧴 Désinfection'),
-    ('promenade',       '🦮 Promenade / Socialisation'),
-    ('autre',           '📋 Autre'),
-  ];
+class _EtapeCardState extends State<_EtapeCard> {
+  late bool _details = widget.ctrl.produitCtrl.text.isNotEmpty || widget.ctrl.dosageCtrl.text.isNotEmpty || widget.ctrl.lieuCtrl.text.isNotEmpty;
 
-  static const _frequences = [
-    ('ponctuel',      'Ponctuel',           'Une seule fois (ou N jours consécutifs)'),
-    ('quotidien',     'Quotidien',          'Chaque jour pendant N semaines'),
-    ('hebdomadaire',  '1-3x par semaine',   'Répété N fois/semaine pendant N semaines'),
-    ('mensuel',       'Mensuel',            'Une fois par mois pendant N mois'),
-  ];
+  static const _ts = TextStyle(fontFamily: 'Galey', fontSize: 14);
+  InputDecoration _dec(String l, {String? hint}) => _PlanTemplateFormPageState._dec(l, hint: hint);
 
   @override
   Widget build(BuildContext context) {
-    final usesAge     = cibleType == 'bebes';
-    final refLabel    = _refLabel(refEvent);
-    final freq        = ctrl.frequence;
-    final isHebdo     = freq == 'hebdomadaire';
-    const fd = _fieldDeco;
+    final c = widget.ctrl;
+    final refLabel = switch (widget.refEvent) {
+      'saillie' => 'la saillie', 'mise_bas' => 'la mise bas', 'naissance' => 'la naissance', _ => 'la date de début',
+    };
+    final sanitaire = ['vermifuge', 'vaccination', 'antiparasitaire', 'traitement'].contains(acteDepuisSaisie(c.actionCtrl.text));
+    final freqValeur = c.isRecurrent ? '${c.frequence}_an' : c.frequence;
+    void maj(VoidCallback f) { setState(f); widget.onChanged(); }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFE0F2F1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _green.withValues(alpha: 0.25)),
+        border: Border.all(color: Colors.grey.shade300),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // En-tête
-          Row(
-            children: [
-              Container(
-                width: 24, height: 24,
-                decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(6)),
-                child: Center(child: Text('${index + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700))),
-              ),
-              const Spacer(),
-              if (onRemove != null)
-                GestureDetector(
-                  onTap: onRemove,
-                  child: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 18),
-                ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('Étape ${widget.index + 1}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, color: _dark)),
+          const Spacer(),
+          IconButton(visualDensity: VisualDensity.compact, tooltip: 'Monter',
+              onPressed: widget.index == 0 ? null : () => widget.onMove(-1), icon: const Icon(Icons.keyboard_arrow_up_rounded)),
+          IconButton(visualDensity: VisualDensity.compact, tooltip: 'Descendre',
+              onPressed: widget.index == widget.total - 1 ? null : () => widget.onMove(1), icon: const Icon(Icons.keyboard_arrow_down_rounded)),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: Colors.grey.shade500),
+            onSelected: (v) {
+              if (v == 'dup') widget.onDuplicate();
+              if (v == 'del') widget.onRemove?.call();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'dup', child: Text('Dupliquer', style: TextStyle(fontFamily: 'Galey'))),
+              if (widget.onRemove != null)
+                const PopupMenuItem(value: 'del', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
             ],
           ),
-          const SizedBox(height: 8),
-
-          // Type d'acte
-          DropdownButtonFormField<String>(
-            initialValue: ctrl.typeActe,
-            decoration: fd('Type d\'acte'),
-            items: _typesActes.map((t) => DropdownMenuItem(value: t.$1, child: Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)))).toList(),
-            onChanged: (v) { ctrl.typeActe = v ?? 'vermifuge'; onChanged(); },
-          ),
-          const SizedBox(height: 8),
-
-          // Produit + dosage
-          Row(children: [
-            Expanded(child: TextFormField(controller: ctrl.produitCtrl, decoration: fd('Produit', hint: 'ex: Milbemax®'), style: _ts, onChanged: (_) => onChanged())),
-            const SizedBox(width: 8),
-            Expanded(child: TextFormField(controller: ctrl.dosageCtrl, decoration: fd('Dosage', hint: 'ex: 1 cp/5kg'), style: _ts, onChanged: (_) => onChanged())),
-          ]),
-          const SizedBox(height: 8),
-
-          // ── Timing ──
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Quand ?', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
-                const SizedBox(height: 8),
-                if (usesAge) ...[
-                  // Pour bébés : âge en semaines
-                  Row(children: [
-                    const Text('À partir de ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                    SizedBox(
-                      width: 60,
-                      child: TextFormField(
-                        controller: ctrl.ageSemainesCtrl,
-                        keyboardType: TextInputType.number,
+        ]),
+        Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Autocomplete<String>(
+              initialValue: TextEditingValue(text: c.actionCtrl.text),
+              optionsBuilder: (v) => kActesSuggeres.map((a) => a.$2)
+                  .where((l) => v.text.isEmpty || l.toLowerCase().contains(v.text.toLowerCase())),
+              onSelected: (v) => maj(() => c.actionCtrl.text = v),
+              fieldViewBuilder: (ctx, ctrl, focus, _) => TextFormField(
+                controller: ctrl, focusNode: focus, style: _ts,
+                onChanged: (v) => maj(() => c.actionCtrl.text = v),
+                decoration: _dec('Action *', hint: 'Ex : Nettoyer les surfaces'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: widget.usesAge
+                  ? TextFormField(
+                      controller: c.ageSemainesCtrl, style: _ts, keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onChanged: (_) => widget.onChanged(),
+                      decoration: _dec('À (semaines d’âge)'))
+                  : Row(children: [
+                      SizedBox(width: 62, child: TextFormField(
+                        controller: c.offsetCtrl, style: _ts, textAlign: TextAlign.center, keyboardType: TextInputType.number,
                         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: fd('', hint: '3'),
-                        textAlign: TextAlign.center,
-                        style: _ts,
-                        onChanged: (_) => onChanged(),
-                      ),
-                    ),
-                    const Text(' semaines d\'âge', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                  ]),
-                ] else ...[
-                  // Pour les autres : direction + offset + référence
-                  Row(children: [
-                    SizedBox(
-                      width: 90,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: ctrl.direction,
-                        decoration: fd(''),
-                        items: const [
-                          DropdownMenuItem(value: 'apres', child: Text('Après', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                          DropdownMenuItem(value: 'avant', child: Text('Avant', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                        onChanged: (_) => widget.onChanged(),
+                        decoration: _dec('Jours'))),
+                      const SizedBox(width: 6),
+                      Expanded(child: DropdownButtonFormField<String>(
+                        initialValue: c.direction, isExpanded: true,
+                        decoration: _dec('Déclenchement'),
+                        items: [
+                          DropdownMenuItem(value: 'apres', child: Text('après $refLabel', overflow: TextOverflow.ellipsis, style: _ts)),
+                          DropdownMenuItem(value: 'avant', child: Text('avant $refLabel', overflow: TextOverflow.ellipsis, style: _ts)),
                         ],
-                        onChanged: (v) { ctrl.direction = v ?? 'apres'; onChanged(); },
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 60,
-                      child: TextFormField(
-                        controller: ctrl.offsetCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: fd('', hint: '0'),
-                        textAlign: TextAlign.center,
-                        style: _ts,
-                        onChanged: (_) => onChanged(),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(child: Text('jours $refLabel', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600))),
-                  ]),
+                        onChanged: (v) => maj(() => c.direction = v ?? 'apres'),
+                      )),
+                    ])),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(flex: 3, child: DropdownButtonFormField<String>(
+                initialValue: freqValeur, isExpanded: true,
+                decoration: _dec('Fréquence'),
+                items: const [
+                  ('ponctuel', 'Une fois / jours de suite'), ('quotidien', 'Chaque jour'),
+                  ('hebdomadaire', 'Chaque semaine'), ('mensuel', 'Chaque mois'),
+                  ('quotidien_an', 'Chaque jour (1 an)'), ('hebdomadaire_an', 'Chaque semaine (1 an)'),
+                  ('mensuel_an', 'Chaque mois (1 an)'),
+                ].map((f) => DropdownMenuItem(value: f.$1, child: Text(f.$2, overflow: TextOverflow.ellipsis, style: _ts))).toList(),
+                onChanged: (v) => maj(() {
+                  final x = v ?? 'ponctuel';
+                  c.isRecurrent = x.endsWith('_an');
+                  c.frequence = c.isRecurrent ? x.substring(0, x.length - 3) : x;
+                }),
+              )),
+              const SizedBox(width: 8),
+              Expanded(flex: 2, child: DropdownButtonFormField<String?>(
+                initialValue: c.trancheHoraire, isExpanded: true,
+                decoration: _dec('Créneau'),
+                items: [
+                  DropdownMenuItem<String?>(value: null, child: Text('Non défini', style: _ts)),
+                  ...kTranches.entries.map((t) => DropdownMenuItem<String?>(value: t.key, child: Text(t.value, style: _ts))),
                 ],
+                onChanged: (v) => maj(() => c.trancheHoraire = v),
+              )),
+            ]),
+            const SizedBox(height: 8),
+            Wrap(spacing: 10, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (c.frequence == 'ponctuel') ...[
+                const Text('Durée', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                SizedBox(width: 56, child: TextFormField(controller: c.dureeJoursCtrl, style: _ts, textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (_) => widget.onChanged(), decoration: _dec(''))),
+                const Text('jour(s) de suite', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
               ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // ── Fréquence ──
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Fréquence', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6, runSpacing: 4,
-                  children: _frequences.map((f) {
-                    final active = freq == f.$1;
-                    return GestureDetector(
-                      onTap: () { ctrl.frequence = f.$1; onChanged(); },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: active ? _green : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(f.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : Colors.grey.shade700)),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                // Nombre de fois / semaine (sur sa propre ligne)
-                if (isHebdo) ...[
-                  const SizedBox(height: 10),
-                  const Text('Nb fois / semaine :', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 6),
-                  Row(children: [1, 2, 3].map((n) {
-                    final sel = ctrl.nbFoisSemaine == n;
-                    return GestureDetector(
-                      onTap: () { ctrl.nbFoisSemaine = n; onChanged(); },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        width: 44, height: 36,
-                        margin: const EdgeInsets.only(right: 6),
-                        decoration: BoxDecoration(
-                          color: sel ? _green : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(child: Text(
-                          n == 1 ? '1x' : n == 2 ? '2x' : '3x',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: sel ? Colors.white : Colors.grey.shade700),
-                        )),
-                      ),
-                    );
-                  }).toList()),
-                ],
-                // Toggle récurrent (hors ponctuel)
-                if (freq != 'ponctuel') ...[
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () { ctrl.isRecurrent = !ctrl.isRecurrent; onChanged(); },
-                    child: Row(children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: 36, height: 20,
-                        decoration: BoxDecoration(
-                          color: ctrl.isRecurrent ? _green : Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: AnimatedAlign(
-                          duration: const Duration(milliseconds: 150),
-                          alignment: ctrl.isRecurrent ? Alignment.centerRight : Alignment.centerLeft,
-                          child: Container(
-                            width: 16, height: 16,
-                            margin: const EdgeInsets.symmetric(horizontal: 2),
-                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('Protocole récurrent (1 an)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                  const SizedBox(height: 6),
-                  // Durée — masquée si récurrent
-                  if (!ctrl.isRecurrent) ...[
-                    Row(children: [
-                      const Text('Pendant : ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                      SizedBox(
-                        width: 52,
-                        child: TextFormField(
-                          controller: ctrl.dureeSemainesCtrl,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                          decoration: fd('', hint: '4'),
-                          textAlign: TextAlign.center,
-                          style: _ts,
-                          onChanged: (_) => onChanged(),
-                        ),
-                      ),
-                      Text(freq == 'mensuel' ? ' mois' : ' sem.', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                    ]),
-                    Builder(builder: (_) {
-                      final dureeS = int.tryParse(ctrl.dureeSemainesCtrl.text) ?? 1;
-                      if (dureeS < 12) return const SizedBox.shrink();
-                      final total = freq == 'quotidien' ? dureeS * 7 : freq == 'mensuel' ? dureeS : dureeS * (ctrl.nbFoisSemaine);
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text('⚠️ $total tâches générées', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange)),
-                      );
-                    }),
-                  ] else
-                    Container(
-                      margin: const EdgeInsets.only(top: 2),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.shade200)),
-                      child: Text(
-                        '⚠️ Génère ${freq == 'quotidien' ? '364' : freq == 'mensuel' ? '12' : '${52 * ctrl.nbFoisSemaine}'} tâches d\'un coup (1 an) — le protocole ne se renouvelle pas automatiquement après, il faudra le réappliquer.',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.orange.shade900),
-                      ),
-                    ),
-                ],
-                // Durée en jours si ponctuel
-                if (freq == 'ponctuel') ...[
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    const Text('Durée : ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                    SizedBox(
-                      width: 52,
-                      child: TextFormField(
-                        controller: ctrl.dureeJoursCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: fd('', hint: '1'),
-                        textAlign: TextAlign.center,
-                        style: _ts,
-                        onChanged: (_) => onChanged(),
-                      ),
-                    ),
-                    const Text(' jours consécutifs', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  ]),
-                ],
+              if (c.frequence == 'hebdomadaire') ...[
+                SizedBox(width: 64, child: DropdownButtonFormField<int>(
+                  initialValue: c.nbFoisSemaine, decoration: _dec(''),
+                  items: [1, 2, 3].map((n) => DropdownMenuItem(value: n, child: Text('$n', style: _ts))).toList(),
+                  onChanged: (v) => maj(() => c.nbFoisSemaine = v ?? 1),
+                )),
+                const Text('fois / semaine', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
               ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // ── Moment de la journée ──
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Moment de la journée (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6, runSpacing: 4,
-                  children: [
-                    (null,         '—',   'Non défini'),
-                    ('matin',      '🌅',  'Matin'),
-                    ('midi',       '☀️',  'Midi'),
-                    ('apres_midi', '🌤️', 'Après-midi'),
-                    ('soir',       '🌙',  'Soir'),
-                  ].map((t) {
-                    final active = ctrl.trancheHoraire == t.$1;
-                    return GestureDetector(
-                      onTap: () { ctrl.trancheHoraire = t.$1; onChanged(); },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: active ? _green : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text('${t.$2} ${t.$3}', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : Colors.grey.shade700)),
-                      ),
-                    );
-                  }).toList(),
-                ),
+              if (c.frequence != 'ponctuel' && !c.isRecurrent) ...[
+                const Text('pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                SizedBox(width: 56, child: TextFormField(controller: c.dureeSemainesCtrl, style: _ts, textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (_) => widget.onChanged(), decoration: _dec(''))),
+                Text(c.frequence == 'mensuel' ? 'mois' : 'semaines', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
               ],
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Lieu (promenade / socialisation) + description
-          if (ctrl.typeActe == 'promenade' || ctrl.typeActe == 'socialisation') ...[
-            TextFormField(controller: ctrl.lieuCtrl, decoration: fd('Lieu', hint: 'ex: parc, jardin, forêt…'), style: _ts, onChanged: (_) => onChanged()),
-            const SizedBox(height: 6),
-          ],
-          TextFormField(controller: ctrl.descCtrl, decoration: fd('Notes / instructions'), style: _ts, maxLines: 2, onChanged: (_) => onChanged()),
-        ],
-      ),
+            ]),
+            const SizedBox(height: 10),
+            if (_details || sanitaire) ...[
+              Row(children: [
+                Expanded(child: TextFormField(controller: c.produitCtrl, style: _ts, onChanged: (_) => widget.onChanged(),
+                    decoration: _dec('Produit', hint: 'Ex : Milbemax®'))),
+                const SizedBox(width: 8),
+                Expanded(child: TextFormField(controller: c.dosageCtrl, style: _ts, onChanged: (_) => widget.onChanged(),
+                    decoration: _dec('Dosage', hint: 'Ex : 1 cp / 5 kg'))),
+              ]),
+              const SizedBox(height: 10),
+              TextFormField(controller: c.lieuCtrl, style: _ts, onChanged: (_) => widget.onChanged(),
+                  decoration: _dec('Lieu', hint: 'Ex : parc, salle de soins')),
+              const SizedBox(height: 10),
+            ] else
+              TextButton(
+                onPressed: () => setState(() => _details = true),
+                style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
+                child: const Text('+ Produit, dosage, lieu', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700)),
+              ),
+            TextFormField(controller: c.descCtrl, style: _ts, minLines: 2, maxLines: 5, onChanged: (_) => widget.onChanged(),
+                decoration: _dec('Consignes', hint: 'Ex : suivre les consignes du responsable, précautions…')),
+          ]),
+        ),
+      ]),
     );
   }
-
-  static String _refLabel(String refEvent) => switch (refEvent) {
-    'saillie'       => 'la saillie',
-    'mise_bas'      => 'la mise bas',
-    'naissance'     => 'la naissance',
-    'age_semaines'  => 'la naissance',
-    _               => 'la date J0',
-  };
-
-  static const TextStyle _ts = TextStyle(fontFamily: 'Galey', fontSize: 13);
-
-  static InputDecoration _fieldDeco(String label, {String? hint}) => InputDecoration(
-    labelText: label.isEmpty ? null : label,
-    hintText: hint,
-    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
-    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400),
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-    filled: true,
-    fillColor: Colors.white,
-  );
 }
 
 // ─── Contrôleur d'étape ───────────────────────────────────────────────────────
 
 class _EtapeCtrl {
-  String  typeActe       = 'vermifuge';
   String  direction      = 'apres';
   String  frequence      = 'ponctuel';
   int     nbFoisSemaine  = 1;
@@ -868,6 +627,8 @@ class _EtapeCtrl {
   String? trancheHoraire;
   String? existingId;
 
+  /// Action saisie librement (ou suggestion) — enregistrée dans type_acte
+  final TextEditingController actionCtrl;
   final TextEditingController produitCtrl;
   final TextEditingController dosageCtrl;
   final TextEditingController offsetCtrl;
@@ -878,7 +639,8 @@ class _EtapeCtrl {
   final TextEditingController descCtrl;
 
   _EtapeCtrl()
-      : produitCtrl      = TextEditingController(),
+      : actionCtrl       = TextEditingController(),
+        produitCtrl      = TextEditingController(),
         dosageCtrl       = TextEditingController(),
         offsetCtrl       = TextEditingController(text: '0'),
         ageSemainesCtrl  = TextEditingController(text: '3'),
@@ -888,13 +650,13 @@ class _EtapeCtrl {
         descCtrl         = TextEditingController();
 
   _EtapeCtrl.fromData(Map<String, dynamic> d)
-      : typeActe          = d['type_acte']   ?? 'vermifuge',
-        direction         = d['offset_direction'] ?? 'apres',
+      : direction         = d['offset_direction'] ?? 'apres',
         frequence         = d['frequence']   ?? 'ponctuel',
         nbFoisSemaine     = (d['nb_fois_semaine'] as num? ?? 1).toInt(),
         isRecurrent       = d['is_recurrent'] == true,
         trancheHoraire    = d['tranche_horaire'] as String?,
         existingId        = d['id'] as String?,
+        actionCtrl        = TextEditingController(text: acteLabel(d['type_acte'] as String?)),
         produitCtrl       = TextEditingController(text: d['produit'] ?? ''),
         dosageCtrl        = TextEditingController(text: d['dosage'] ?? ''),
         offsetCtrl        = TextEditingController(text: '${d['jour_offset'] ?? 0}'),
@@ -904,12 +666,19 @@ class _EtapeCtrl {
         lieuCtrl          = TextEditingController(text: d['lieu'] ?? ''),
         descCtrl          = TextEditingController(text: d['description'] ?? '');
 
-  Map<String, dynamic> toMap({bool isBebes = false}) => {
+  /// Copie d'une étape (nouvelle étape, sans id).
+  factory _EtapeCtrl.copie(_EtapeCtrl o) {
+    final c = _EtapeCtrl.fromData(o.toMap(ordre: 0, usesAge: true));
+    c.existingId = null;
+    return c;
+  }
+
+  Map<String, dynamic> toMap({required int ordre, bool usesAge = false}) => {
     if (existingId != null) 'id': existingId,
-    'type_acte':        typeActe,
+    'type_acte':        acteDepuisSaisie(actionCtrl.text),
     'offset_direction': direction,
     'jour_offset':      int.tryParse(offsetCtrl.text) ?? 0,
-    'age_min_semaines': isBebes ? int.tryParse(ageSemainesCtrl.text) : null,
+    'age_min_semaines': usesAge ? int.tryParse(ageSemainesCtrl.text) : null,
     'produit':          produitCtrl.text.trim().isEmpty  ? null : produitCtrl.text.trim(),
     'dosage':           dosageCtrl.text.trim().isEmpty   ? null : dosageCtrl.text.trim(),
     'frequence':        frequence,
@@ -920,144 +689,12 @@ class _EtapeCtrl {
     'lieu':             lieuCtrl.text.trim().isEmpty ? null : lieuCtrl.text.trim(),
     'description':      descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
     'tranche_horaire':  trancheHoraire,
+    'ordre':            ordre,
   };
 
   void dispose() {
-    produitCtrl.dispose(); dosageCtrl.dispose(); offsetCtrl.dispose();
+    actionCtrl.dispose(); produitCtrl.dispose(); dosageCtrl.dispose(); offsetCtrl.dispose();
     ageSemainesCtrl.dispose(); dureeJoursCtrl.dispose(); dureeSemainesCtrl.dispose();
     lieuCtrl.dispose(); descCtrl.dispose();
   }
-}
-
-// ─── Widgets réutilisables ────────────────────────────────────────────────────
-
-class _Card extends StatelessWidget {
-  final List<Widget> children;
-  const _Card({required this.children});
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
-  );
-}
-
-class _SectionTitle extends StatelessWidget {
-  final String text;
-  const _SectionTitle(this.text);
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
-  );
-}
-
-class _InfoBox extends StatelessWidget {
-  final String text;
-  const _InfoBox(this.text);
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(9),
-    margin: const EdgeInsets.only(bottom: 8),
-    decoration: BoxDecoration(color: const Color(0xFFE0F2F1), borderRadius: BorderRadius.circular(8)),
-    child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF0C5C6C))),
-  );
-}
-
-class _Chip extends StatelessWidget {
-  final String emoji, label;
-  final bool active;
-  final VoidCallback onTap;
-  const _Chip({required this.emoji, required this.label, required this.active, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 130),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFF0C5C6C) : Colors.white,
-        border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text('$emoji $label', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: active ? Colors.white : const Color(0xFF1F2A2E))),
-    ),
-  );
-}
-
-class _RadioTile extends StatelessWidget {
-  final String emoji, title, subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-  const _RadioTile({required this.emoji, required this.title, required this.subtitle, required this.selected, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 130),
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xFFE0F2F1) : const Color(0xFFF8F8F6),
-        border: Border.all(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade200, width: selected ? 1.5 : 1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 10),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: selected ? const Color(0xFF063D4A) : const Color(0xFF1F2A2E))),
-              Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-            ],
-          )),
-          if (selected) const Icon(Icons.check_circle, color: Color(0xFF0C5C6C), size: 18),
-        ],
-      ),
-    ),
-  );
-}
-
-class _Field extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final String? hint;
-  final int maxLines;
-  const _Field({required this.controller, required this.label, this.hint, this.maxLines = 1});
-  @override
-  Widget build(BuildContext context) => TextFormField(
-    controller: controller, maxLines: maxLines,
-    decoration: InputDecoration(
-      labelText: label, hintText: hint,
-      labelStyle: const TextStyle(fontFamily: 'Galey'),
-      hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
-      filled: true, fillColor: const Color(0xFFF8F8F6),
-    ),
-    style: const TextStyle(fontFamily: 'Galey'),
-  );
-}
-
-class _DropField extends StatelessWidget {
-  final String label, value;
-  final List<DropdownMenuItem<String>> items;
-  final ValueChanged<String?> onChanged;
-  const _DropField({required this.label, required this.value, required this.items, required this.onChanged});
-  @override
-  Widget build(BuildContext context) => DropdownButtonFormField<String>(
-    initialValue: value, items: items, onChanged: onChanged,
-    decoration: InputDecoration(
-      labelText: label, labelStyle: const TextStyle(fontFamily: 'Galey'),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C))),
-      filled: true, fillColor: const Color(0xFFF8F8F6),
-    ),
-  );
 }
