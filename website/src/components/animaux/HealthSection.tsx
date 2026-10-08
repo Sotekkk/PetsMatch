@@ -32,11 +32,22 @@ export function HealthPanel({ children }: { children: ReactNode }) {
 
 export default function HealthSection({ title, color, count, children, onAdd, addForm, addFormOpen, id, defaultOpen }: Props) {
   const [open, setOpen] = useState(!!defaultOpen);
+  // Ligne « dépliée » si la liste ou le formulaire d'ajout est affiché :
+  // le chevron (ou un clic sur le titre) referme alors les deux.
+  const deplie = open || !!addFormOpen;
+  const basculer = () => {
+    if (deplie) {
+      setOpen(false);
+      if (addFormOpen) onAdd?.();
+    } else {
+      setOpen(true);
+    }
+  };
 
   return (
     <section id={id} className={defaultOpen ? 'bg-gray-50/60' : undefined}>
       <div className="flex items-center gap-3 pl-4 pr-2 min-h-[64px]">
-        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+        <button type="button" onClick={basculer} aria-expanded={deplie}
           className="flex-1 min-w-0 flex items-center gap-3 py-3 text-left">
           <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} aria-hidden />
           <span className="min-w-0">
@@ -52,9 +63,9 @@ export default function HealthSection({ title, color, count, children, onAdd, ad
             + Ajouter
           </button>
         )}
-        <button type="button" onClick={() => setOpen(!open)} aria-label={open ? 'Replier' : 'Déplier'}
+        <button type="button" onClick={basculer} aria-label={deplie ? 'Replier' : 'Déplier'}
           className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50">
-          <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className={`w-4 h-4 transition-transform ${deplie ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>

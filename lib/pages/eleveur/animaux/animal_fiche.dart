@@ -6340,6 +6340,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
           if (widget.collection == 'vaccinations') ...[
             DropdownButtonFormField<String>(
               initialValue: _categorie,
+              isExpanded: true,
               decoration: InputDecoration(
                 labelText: 'Type de vaccin',
                 labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
@@ -6351,7 +6352,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
               ),
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
               items: typesVaccinPour(widget.espece).map((t) => t.$1)
-                  .toList().map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+                  .toList().map((l) => DropdownMenuItem(value: l, child: Text(l, overflow: TextOverflow.ellipsis))).toList(),
               onChanged: (v) => setState(() => _categorie = v),
             ),
             const SizedBox(height: 10),
@@ -9701,13 +9702,15 @@ class _BaseDialog extends StatelessWidget {
 
                 if (f is _DDrop) return Padding(padding: const EdgeInsets.only(bottom: 10),
                   child: DropdownButtonFormField<String>(value: f.value,
+                    isExpanded: true,
                     decoration: InputDecoration(labelText: f.label,
                       labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
-                    items: f.options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+                    items: f.options.map((o) => DropdownMenuItem(value: o,
+                        child: Text(o, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
                     onChanged: f.onChanged));
 
                 if (f is _DCustom) return Padding(padding: const EdgeInsets.only(bottom: 10), child: f.child);
@@ -10539,113 +10542,138 @@ class _AlimentationTabState extends State<_AlimentationTab> {
     ];
   }
 
-  // ── Summary / Dashboard View ──────────────────────────────────────────────
+  // ── Vue résumé (présentation sobre : panneaux blancs, séparateurs fins) ──
+
+  static const _alimTeal = Color(0xFF0C5C6C);
+  static const _alimDark = Color(0xFF1F2A2E);
+
+  Widget _alimTitre(String titre, {VoidCallback? onModifier}) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(children: [
+      Expanded(child: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 17,
+          fontWeight: FontWeight.w800, color: _alimDark))),
+      if (onModifier != null)
+        TextButton(
+          onPressed: onModifier,
+          style: TextButton.styleFrom(foregroundColor: _alimTeal, minimumSize: const Size(48, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 8)),
+          child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+        ),
+    ]),
+  );
+
+  Widget _alimPanneau(List<Widget> lignes) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.grey.shade300),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      for (var i = 0; i < lignes.length; i++) ...[
+        if (i > 0) Divider(height: 1, thickness: 1, indent: 16, endIndent: 16, color: Colors.grey.shade200),
+        lignes[i],
+      ],
+    ]),
+  );
+
+  Widget _alimSeparateur() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 20),
+    child: Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+  );
 
   Widget _buildSummaryView() {
     final rer  = _rer;
     final der  = _der;
     final kcal = _kcalApportes;
+    final etat = _etatReproEffectif == 'gestation_debut' ? 'Gestation (début)'
+        : _etatReproEffectif == 'gestation_fin' ? 'Gestation (fin)' : 'Lactation';
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
       // AbsorbPointer DANS le ScrollView (pas autour) : posé à l'extérieur,
-      // il bloquait aussi le geste de scroll lui-même (même bug que
-      // _IdentiteTab).
+      // il bloquait aussi le geste de scroll lui-même.
       child: AbsorbPointer(absorbing: widget.s.widget.readOnly,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Center(child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
 
         // ── PROFIL DE L'ANIMAL ──────────────────────────────────
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade100),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6)],
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const Text('🐾', style: TextStyle(fontSize: 18)),
-              const SizedBox(width: 8),
-              const Text("Profil de l'animal", style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
-              const Spacer(),
-              TextButton(
-                onPressed: () => setState(() => _modeCalculateur = true),
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C), minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              ),
-            ]),
-            const Divider(height: 14),
-            _sumRow('Poids', _poidsActuel != null ? '${_poidsActuel!.toStringAsFixed(1)} kg' : '—'),
-            _sumRow('Phase', _phase == 'junior' ? '🍼 Junior' : _phase == 'senior' ? '🌿 Senior' : 'Adulte'),
-            if (_phase == 'adulte') _sumRow("Activité", _actLabels[_activite] ?? _activite),
-            if (widget.s._sterilise) _sumRow('Stérilisé(e)', '✂️ Oui'),
-            if (_etatReproEffectif != 'normal') _sumRow('État', _etatReproEffectif == 'gestation_debut' ? '🤰 Gestation (début)' : _etatReproEffectif == 'gestation_fin' ? '🍼 Gestation (fin)' : '🤱 Lactation'),
-          ]),
-        ),
-        const SizedBox(height: 12),
+        _alimTitre("Profil de l'animal", onModifier: () => setState(() => _modeCalculateur = true)),
+        _alimPanneau([
+          _sumRow('Poids', _poidsActuel != null ? '${_poidsActuel!.toStringAsFixed(1).replaceAll('.', ',')} kg' : '—'),
+          _sumRow('Phase', _phase == 'junior' ? 'Junior' : _phase == 'senior' ? 'Senior' : 'Adulte'),
+          if (_phase == 'adulte') _sumRow('Activité', _actLabels[_activite] ?? _activite),
+          if (widget.s._sterilise) _sumRow('Stérilisé(e)', 'Oui'),
+          if (_etatReproEffectif != 'normal') _sumRow('État', etat),
+        ]),
+        const SizedBox(height: 16),
 
         // ── BESOINS CALORIQUES ──────────────────────────────────
-        if (rer != null) ...[
+        if (rer != null)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: const Color(0xFF0C5C6C).withOpacity(0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF0C5C6C).withOpacity(0.12)),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
             ),
-            child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Besoins caloriques', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(der != null ? '${der.round()} kcal/jour' : '${rer.round()} kcal (RER)',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF0C5C6C))),
-                if (der != null) Text('RER ${rer.round()} × facteurs (phase, activité, état)',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
-              ])),
-              const Text('⚡', style: TextStyle(fontSize: 28)),
-            ]),
+            clipBehavior: Clip.antiAlias,
+            child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Container(width: 4, color: _alimTeal),
+              Expanded(child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Besoins caloriques', style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade600)),
+                  const SizedBox(height: 4),
+                  Text(der != null ? '${der.round()} kcal/jour' : '${rer.round()} kcal/jour (RER)',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 28, fontWeight: FontWeight.w800, color: _alimTeal)),
+                  if (der != null) ...[
+                    const SizedBox(height: 4),
+                    Text('RER ${rer.round()} × facteurs (phase, activité, état)',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+                  ],
+                ]),
+              )),
+            ])),
           ),
-          const SizedBox(height: 12),
-        ],
+
+        _alimSeparateur(),
 
         // ── RATION ACTUELLE ──────────────────────────────────────
         _buildRationCard(der, kcal),
-        const SizedBox(height: 12),
 
-        // ── PLAN DE REPAS ────────────────────────────────────────
+        // ── RATIONS JOURNALIÈRES ─────────────────────────────────
         _buildRepasSection(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 24),
 
         // ── ACTIONS ──────────────────────────────────────────────
         Row(children: [
-          Expanded(child: OutlinedButton.icon(
+          Expanded(child: OutlinedButton(
             onPressed: () => setState(() => _modeCalculateur = true),
-            icon: const Icon(Icons.calculate_outlined, size: 16),
-            label: const Text('Recalculer la ration', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
             style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF0C5C6C),
-              side: const BorderSide(color: Color(0xFF0C5C6C)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              foregroundColor: _alimTeal,
+              side: const BorderSide(color: _alimTeal),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              minimumSize: const Size(0, 48),
             ),
+            child: const Text('Recalculer la ration', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
           )),
           if (_typeValide == 'menagere' || _typeValide == 'barf') ...[
             const SizedBox(width: 10),
-            Expanded(child: ElevatedButton.icon(
+            Expanded(child: OutlinedButton(
               onPressed: () => _showRecipeSheet(context),
-              icon: const Icon(Icons.menu_book_outlined, size: 16, color: Colors.white),
-              label: const Text('Voir la recette', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0C5C6C),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _alimTeal,
+                side: const BorderSide(color: _alimTeal),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                minimumSize: const Size(0, 48),
               ),
+              child: const Text('Voir la recette', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
             )),
           ],
         ]),
-        const SizedBox(height: 32),
       ]),
+      )),
       ),
     );
   }
@@ -10654,359 +10682,316 @@ class _AlimentationTabState extends State<_AlimentationTab> {
     final type  = _typeValide;
     final isDog = _isDogOrCat;
 
-    String typeLabel, typeEmoji;
-    switch (type) {
-      case 'croquettes': typeLabel = 'Croquettes';      typeEmoji = '🥜'; break;
-      case 'barf':       typeLabel = 'BARF';             typeEmoji = '🥩'; break;
-      case 'menagere':   typeLabel = 'Ration ménagère';  typeEmoji = '🍲'; break;
-      case 'mixte':      typeLabel = 'Mixte';            typeEmoji = '🥣'; break;
-      default:           typeLabel = type;               typeEmoji = '🍽️';
-    }
+    final String typeLabel = switch (type) {
+      'croquettes' => 'Croquettes',
+      'barf'       => 'BARF',
+      'menagere'   => 'Ration ménagère',
+      'mixte'      => 'Ration mixte',
+      _            => type,
+    };
 
-    Widget doseFld(TextEditingController ctrl, double? computed, String unit) => Row(children: [
-      Expanded(child: TextField(
-        controller: ctrl,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)),
-        onChanged: (_) => setState(() {}),
-        decoration: InputDecoration(
-          hintText: computed != null ? computed.round().toString() : 'Quantité',
-          hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontWeight: FontWeight.normal),
-          suffixText: unit,
-          suffixStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF0C5C6C)),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          filled: true,
-          fillColor: const Color(0xFF0C5C6C).withOpacity(0.04),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: const Color(0xFF0C5C6C).withOpacity(0.25))),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: const Color(0xFF0C5C6C).withOpacity(0.25))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+    Widget libelle(String t) => Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade600)),
+    );
+
+    // Champ numérique avec l'unité toujours visible (g/jour)
+    Widget doseFld(TextEditingController ctrl, double? computed, String unit) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Expanded(child: Center(child: TextField(
+              controller: ctrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w600, color: _alimDark),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: computed != null ? computed.round().toString() : 'Quantité',
+                hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontWeight: FontWeight.w600),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+            ))),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border(left: BorderSide(color: Colors.grey.shade300)),
+              ),
+              child: Text('$unit/jour', style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey.shade700)),
+            ),
+          ]),
         ),
-      )),
-      if (ctrl.text.isNotEmpty) GestureDetector(
-        onTap: () => setState(ctrl.clear),
-        child: Padding(padding: const EdgeInsets.only(left:6), child: Icon(Icons.refresh_rounded, size:18, color:Colors.grey.shade400)),
-      ),
-    ]);
+        if (ctrl.text.isNotEmpty && computed != null)
+          TextButton(
+            onPressed: () => setState(ctrl.clear),
+            style: TextButton.styleFrom(foregroundColor: _alimTeal, padding: const EdgeInsets.symmetric(horizontal: 2),
+                minimumSize: const Size(0, 36)),
+            child: Text('Revenir à la quantité calculée (${computed.round()} $unit)',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          ),
+      ],
+    );
 
     Widget densFld(TextEditingController ctrl, String hint) => Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 10),
       child: TextField(
         controller: ctrl,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
         onChanged: (_) => setState(() {}),
         decoration: InputDecoration(
           labelText: hint,
-          labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
-          suffixText: 'kcal/100g',
-          suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          filled: true, fillColor: Colors.grey.shade50,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
+          labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+          suffixText: 'kcal/100 g',
+          suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          filled: true, fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _alimTeal, width: 1.5)),
         ),
       ),
     );
 
+    // Apport calculé : correspondance calorique (couleurs fonctionnelles existantes)
     Widget? kcalBadge;
     if (kcalApportes != null && der != null) {
       final diff  = kcalApportes - der;
       final pct   = ((diff / der) * 100).round();
       final ok    = diff.abs() / der < 0.15;
       final over  = diff > 0;
-      final color = ok ? const Color(0xFF6E9E57) : over ? const Color(0xFFE65100) : const Color(0xFF0C5C6C);
+      final color = ok ? const Color(0xFF6E9E57) : over ? const Color(0xFFE65100) : _alimTeal;
+      final statut = ok ? 'Correspond aux besoins caloriques'
+          : over ? 'Supérieur aux besoins caloriques' : 'Inférieur aux besoins caloriques';
       kcalBadge = Container(
-        margin: const EdgeInsets.only(top: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withOpacity(0.2))),
-        child: Row(children: [
-          Text(ok ? '✅' : over ? '⚠️' : 'ℹ️', style: const TextStyle(fontSize: 14)),
-          const SizedBox(width: 8),
-          Expanded(child: Text(
-            '${kcalApportes.round()} kcal apportés  (${pct >= 0 ? '+' : ''}$pct% vs besoins)',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color),
-          )),
+        margin: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Apport calculé : ${kcalApportes.round()} kcal/jour',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: color)),
+          const SizedBox(height: 4),
+          Row(children: [
+            Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Écart aux besoins : ${pct > 0 ? '+' : ''}$pct %  ·  $statut',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700))),
+          ]),
         ]),
       );
     }
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade100),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text(typeEmoji, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 8),
-          Text(typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
-          const Spacer(),
-          TextButton(
-            onPressed: () => setState(() => _modeCalculateur = true),
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C), minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-            child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-          ),
-        ]),
-        const Divider(height: 14),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _alimTitre(typeLabel, onModifier: () => setState(() => _modeCalculateur = true)),
 
-        // ── Croquettes
-        if (type == 'croquettes' && isDog) ...[
-          if (_marqueNom.isNotEmpty) ...[
-            Text('$_marqueNom — $_gammeNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 8),
-          ],
-          Row(children: [
-            const Text('🥜  Quantité/jour ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(width: 6),
-            Expanded(child: doseFld(_doseManCtrl, _rationCroquettes, 'g')),
-          ]),
-          if (_densiteCtrl.text.isEmpty || double.tryParse(_densiteCtrl.text.replaceAll(',','.')) == null)
-            densFld(_densiteCtrl, 'Densité énergetique (sur l\'emballage)'),
+      // Croquettes
+      if (type == 'croquettes' && isDog) ...[
+        if (_marqueNom.isNotEmpty) ...[
+          Text(_gammeNom.isNotEmpty ? '$_marqueNom — $_gammeNom' : _marqueNom,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w600, color: _alimDark)),
+          const SizedBox(height: 14),
         ],
+        libelle('Quantité quotidienne'),
+        doseFld(_doseManCtrl, _rationCroquettes, 'g'),
+        if (_densiteCtrl.text.isEmpty || double.tryParse(_densiteCtrl.text.replaceAll(',','.')) == null)
+          densFld(_densiteCtrl, 'Densité énergétique (sur l\'emballage)'),
+      ],
 
-        // ── BARF
-        if (type == 'barf' && isDog) ...[
-          Row(children: [
-            const Text('Total BARF/jour ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(width: 6),
-            Expanded(child: doseFld(_doseManCtrl, _rationBarf, 'g')),
-          ]),
-          const SizedBox(height: 10),
-          Builder(builder:(_) {
-            final base = _doseEffBarf ?? _rationBarf ?? 0;
-            return Wrap(spacing: 6, runSpacing: 6, children: [
-              _miniChip('🥩', '${(base * _pctMuscles / 100).round()} g muscles'),
-              _miniChip('🫀', '${(base * _pctAbats   / 100).round()} g abats'),
-              _miniChip('🦴', '${(base * _pctOs       / 100).round()} g os'),
-              _miniChip('🥦', '${(base * _pctLegumes  / 100).round()} g légumes'),
-            ]);
-          }),
-        ],
-
-        // ── Ménagère
-        if (type == 'menagere' && isDog) ...[
-          Row(children: [
-            const Text('Total/jour ', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(width: 6),
-            Expanded(child: doseFld(_doseManCtrl, _rationMenagere, 'g')),
-          ]),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: () => _showRecipeSheet(context),
-            child: Text('📋 Voir la composition détaillée →', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: const Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
-          ),
-        ],
-
-        // ── Mixte chien/chat
-        if (type == 'mixte' && isDog) ...[
-          Row(children: [
-            const Text('🥜  Croquettes', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            Text('  (${_pctCroquMix.round()}%)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-            const SizedBox(width: 6),
-            Expanded(child: doseFld(_doseManCtrl, _rationMixteCroq, 'g')),
-          ]),
-          const SizedBox(height: 6),
-          Row(children: [
-            Text('${_typeMixte2=='barf'?'🥩':_typeMixte2=='menagere'?'🍲':'🥫'}  ${_typeMixte2=='barf'?'BARF':_typeMixte2=='menagere'?'Ménagère':'Pâtée'}',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            Text('  (${(100-_pctCroquMix).round()}%)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-            const SizedBox(width: 6),
-            Expanded(child: doseFld(_doseManCtrl2, _rationMixteSecond, 'g')),
-          ]),
-          if (_typeMixte2 == 'patee' && (_densitePateeCtrl.text.isEmpty || double.tryParse(_densitePateeCtrl.text.replaceAll(',','.')) == null))
-            densFld(_densitePateeCtrl, 'Densité pâtée (sur l\'emballage)'),
-          if (_densiteCtrl.text.isEmpty || double.tryParse(_densiteCtrl.text.replaceAll(',','.')) == null)
-            densFld(_densiteCtrl, 'Densité croquettes (sur l\'emballage)'),
-        ],
-
-        // ── Autres espèces
-        if (!isDog) Builder(builder: (_) {
-          final detail = _rationEspeceDetail;
-          if (detail == null) return Text('Renseignez le poids pour calculer.',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500));
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (detail.containsKey('total_kg'))  _sumRow('Total/jour', '${(detail['total_kg'] as double).toStringAsFixed(1)} kg'),
-            if (detail.containsKey('foin_kg'))   _sumRow('🌿 Foin', '${(detail['foin_kg'] as double).toStringAsFixed(1)} kg'),
-            if (detail.containsKey('granules_kg') && (detail['granules_kg'] as double) > 0) ...[
-              _sumRow('🌾 Granulés', '${(detail['granules_kg'] as double).toStringAsFixed(1)} kg'),
-              if (_densiteGranCtrl.text.isEmpty || double.tryParse(_densiteGranCtrl.text.replaceAll(',','.')) == null)
-                densFld(_densiteGranCtrl, 'Densité granulés (sur l\'emballage)'),
-            ],
-            if (detail.containsKey('complement_kg')) _sumRow('💊 Compléments', '${((detail['complement_kg'] as double)*1000).round()} g'),
-            if (detail.containsKey('granules_g'))    _sumRow('🌾 Granulés', '${(detail['granules_g'] as double).round()} g'),
-            if (detail.containsKey('legumes_g'))     _sumRow('🥬 Légumes', '${(detail['legumes_g'] as double).round()} g'),
-            if (detail.containsKey('graines_g'))     _sumRow('🌰 Graines', '${(detail['graines_g'] as double).round()} g'),
+      // BARF
+      if (type == 'barf' && isDog) ...[
+        libelle('Quantité quotidienne'),
+        doseFld(_doseManCtrl, _rationBarf, 'g'),
+        const SizedBox(height: 10),
+        Builder(builder: (_) {
+          final base = _doseEffBarf ?? _rationBarf ?? 0;
+          return _alimPanneau([
+            _sumRow('Muscles', '${(base * _pctMuscles / 100).round()} g'),
+            _sumRow('Abats',   '${(base * _pctAbats   / 100).round()} g'),
+            _sumRow('Os',      '${(base * _pctOs      / 100).round()} g'),
+            _sumRow('Légumes', '${(base * _pctLegumes / 100).round()} g'),
           ]);
         }),
+      ],
 
-        if (kcalBadge != null) kcalBadge,
+      // Ménagère
+      if (type == 'menagere' && isDog) ...[
+        libelle('Quantité quotidienne'),
+        doseFld(_doseManCtrl, _rationMenagere, 'g'),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => _showRecipeSheet(context),
+            style: TextButton.styleFrom(foregroundColor: _alimTeal, padding: const EdgeInsets.symmetric(horizontal: 2),
+                minimumSize: const Size(0, 40)),
+            child: const Text('Voir la composition détaillée', style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                fontWeight: FontWeight.w600, decoration: TextDecoration.underline)),
+          ),
+        ),
+      ],
 
-        // Save button
-        const SizedBox(height: 14),
-        SizedBox(width: double.infinity, child: ElevatedButton(
-          onPressed: _saving ? null : _save,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF0C5C6C), disabledBackgroundColor: Colors.grey.shade300,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            padding: const EdgeInsets.symmetric(vertical: 12)),
-          child: _saving
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-            : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 14)),
-        )),
-      ]),
-    );
+      // Mixte chien/chat
+      if (type == 'mixte' && isDog) ...[
+        if (_marqueNom.isNotEmpty) ...[
+          Text(_gammeNom.isNotEmpty ? '$_marqueNom — $_gammeNom' : _marqueNom,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w600, color: _alimDark)),
+          const SizedBox(height: 14),
+        ],
+        libelle('Croquettes (${_pctCroquMix.round()} %)'),
+        doseFld(_doseManCtrl, _rationMixteCroq, 'g'),
+        const SizedBox(height: 12),
+        libelle('${_typeMixte2 == 'barf' ? 'BARF' : _typeMixte2 == 'menagere' ? 'Ménagère' : 'Pâtée'} (${(100 - _pctCroquMix).round()} %)'),
+        doseFld(_doseManCtrl2, _rationMixteSecond, 'g'),
+        if (_typeMixte2 == 'patee' && (_densitePateeCtrl.text.isEmpty || double.tryParse(_densitePateeCtrl.text.replaceAll(',','.')) == null))
+          densFld(_densitePateeCtrl, 'Densité pâtée (sur l\'emballage)'),
+        if (_densiteCtrl.text.isEmpty || double.tryParse(_densiteCtrl.text.replaceAll(',','.')) == null)
+          densFld(_densiteCtrl, 'Densité croquettes (sur l\'emballage)'),
+      ],
+
+      // Autres espèces
+      if (!isDog) Builder(builder: (_) {
+        final detail = _rationEspeceDetail;
+        if (detail == null) return Text('Renseignez le poids pour calculer.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade600));
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _alimPanneau([
+            if (detail.containsKey('total_kg'))  _sumRow('Total / jour', '${(detail['total_kg'] as double).toStringAsFixed(1)} kg'),
+            if (detail.containsKey('foin_kg'))   _sumRow('Foin', '${(detail['foin_kg'] as double).toStringAsFixed(1)} kg'),
+            if (detail.containsKey('granules_kg') && (detail['granules_kg'] as double) > 0)
+              _sumRow('Granulés', '${(detail['granules_kg'] as double).toStringAsFixed(1)} kg'),
+            if (detail.containsKey('complement_kg')) _sumRow('Compléments', '${((detail['complement_kg'] as double)*1000).round()} g'),
+            if (detail.containsKey('granules_g'))    _sumRow('Granulés', '${(detail['granules_g'] as double).round()} g'),
+            if (detail.containsKey('legumes_g'))     _sumRow('Légumes', '${(detail['legumes_g'] as double).round()} g'),
+            if (detail.containsKey('graines_g'))     _sumRow('Graines', '${(detail['graines_g'] as double).round()} g'),
+          ]),
+          if (detail.containsKey('granules_kg') && (detail['granules_kg'] as double) > 0 &&
+              (_densiteGranCtrl.text.isEmpty || double.tryParse(_densiteGranCtrl.text.replaceAll(',','.')) == null))
+            densFld(_densiteGranCtrl, 'Densité granulés (sur l\'emballage)'),
+        ]);
+      }),
+
+      if (kcalBadge != null) kcalBadge,
+
+      // Enregistrer
+      const SizedBox(height: 16),
+      SizedBox(height: 50, child: ElevatedButton(
+        onPressed: _saving ? null : _save,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _alimTeal,
+          disabledBackgroundColor: Colors.grey.shade300,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: _saving
+          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+          : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 15)),
+      )),
+    ]);
   }
 
-  Widget _miniChip(String emoji, String label) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(20)),
-    child: Text('$emoji $label', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF1F2A2E))),
-  );
-
-  Widget _sumRow(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(children: [
-      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
-      const Spacer(),
-      Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
-    ]),
+  Widget _sumRow(String label, String value) => ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 48),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(children: [
+        Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey.shade600)),
+        const SizedBox(width: 12),
+        Expanded(child: Text(value, textAlign: TextAlign.right,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w600, color: _alimDark))),
+      ]),
+    ),
   );
 
   Widget _buildRepasSection() {
     final plan = _mealPlan;
     if (plan.isEmpty) return const SizedBox.shrink();
+    final ajustement = _etatReproEffectif == 'lactation' ? 'lactation (+50 %)'
+        : _etatReproEffectif == 'gestation_fin' ? 'fin de gestation (+30 %)'
+        : _etatReproEffectif == 'gestation_debut' ? 'début de gestation (+10 %)' : null;
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 24),
-      const _AlimSection('Rations journalières'),
-      const SizedBox(height: 10),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _alimSeparateur(),
+      _alimTitre('Rations journalières'),
 
-      // Sélecteur nombre de repas
+      // Sélecteur compact du nombre de repas
       Row(children: [
-        Text('Repas par jour :', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
-        const SizedBox(width: 10),
-        ...List.generate(4, (i) {
-          final n = i + 1;
-          final selected = _nbRepas == n;
-          return GestureDetector(
-            onTap: () { setState(() => _nbRepas = n); _save(silent: true); },
-            child: Container(
-              margin: const EdgeInsets.only(right: 6),
-              width: 34, height: 34,
-              decoration: BoxDecoration(
-                color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade200),
-              ),
-              alignment: Alignment.center,
-              child: Text('$n', style: TextStyle(
-                fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700,
-                color: selected ? Colors.white : Colors.grey.shade600)),
-            ),
-          );
-        }),
-        const Spacer(),
-        // Note état
-        if (_etatReproEffectif != 'normal')
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: const Color(0xFF0C5C6C).withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
-            child: Text(
-              _etatReproEffectif == 'lactation' ? '🤱 +50%' : _etatReproEffectif == 'gestation_fin' ? '🤰 +30%' : '🤰 +10%',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF0C5C6C), fontWeight: FontWeight.w700)),
+        Expanded(child: Text('Repas par jour', style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey.shade700))),
+        Container(
+          height: 44,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
           ),
-        if (widget.s._sterilise)
-          Container(
-            margin: const EdgeInsets.only(left: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: Colors.purple.shade50, borderRadius: BorderRadius.circular(8)),
-            child: Text('✂️ Stérilisé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.purple.shade600, fontWeight: FontWeight.w700)),
+          clipBehavior: Clip.antiAlias,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (var n = 1; n <= 4; n++)
+              InkWell(
+                onTap: () { setState(() => _nbRepas = n); _save(silent: true); },
+                child: Container(
+                  width: 52,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _nbRepas == n ? _alimTeal : Colors.white,
+                    border: n > 1 ? Border(left: BorderSide(color: Colors.grey.shade300)) : null,
+                  ),
+                  child: Text('$n', style: TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700,
+                      color: _nbRepas == n ? Colors.white : _alimDark)),
+                ),
+              ),
+          ]),
+        ),
+      ]),
+      if (ajustement != null) ...[
+        const SizedBox(height: 8),
+        Text('Ration ajustée : $ajustement', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+      ],
+      const SizedBox(height: 14),
+
+      // Repas : un panneau, une ligne par repas
+      _alimPanneau([
+        for (final meal in plan)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text(meal['label'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 15,
+                  fontWeight: FontWeight.w700, color: _alimDark)),
+              for (final item in (meal['items'] as List))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(children: [
+                    Expanded(child: Text((item as Map)['nom'] as String,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade700))),
+                    const SizedBox(width: 12),
+                    Text(item['qte'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 15,
+                        fontWeight: FontWeight.w700, color: _alimTeal)),
+                  ]),
+                ),
+            ]),
           ),
       ]),
-      const SizedBox(height: 12),
 
-      // Cartes repas
-      ...plan.asMap().entries.map((entry) {
-        final idx  = entry.key;
-        final meal = entry.value;
-        final label = meal['label'] as String;
-        final items = meal['items'] as List;
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade100),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // En-tête repas
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: [
-                  const Color(0xFF0C5C6C), const Color(0xFF6E9E57),
-                  const Color(0xFFB8860B), const Color(0xFF8D6E63),
-                ][idx % 4].withOpacity(0.08),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(children: [
-                Text(label, style: TextStyle(
-                  fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
-                  color: [
-                    const Color(0xFF0C5C6C), const Color(0xFF4A7A38),
-                    const Color(0xFF8B6914), const Color(0xFF5D4037),
-                  ][idx % 4])),
-              ]),
-            ),
-            // Items
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: items.map<Widget>((item) {
-                  final m = item as Map;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(children: [
-                      Text(m['emoji'] as String, style: const TextStyle(fontSize: 18)),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(m['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0C5C6C).withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(m['qte'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
-                      ),
-                    ]),
-                  );
-                }).toList(),
-              ),
-            ),
-          ]),
-        );
-      }),
-
-      // Note eau
+      // Eau
       Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 4),
-        child: Row(children: [
-          const Text('💧', style: TextStyle(fontSize: 14)),
-          const SizedBox(width: 6),
-          Text(
-            widget.s._espece == 'cheval' ? 'Eau fraîche : 30–60 L/j minimum'
-            : widget.s._espece == 'lapin' ? 'Eau fraîche : ${(_poidsRef * 100).round()} ml/j minimum'
-            : 'Eau fraîche disponible en permanence',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-        ]),
+        padding: const EdgeInsets.only(top: 10),
+        child: Text(
+          widget.s._espece == 'cheval' ? 'Eau fraîche : 30–60 L/j minimum'
+          : widget.s._espece == 'lapin' ? 'Eau fraîche : ${(_poidsRef * 100).round()} ml/j minimum'
+          : 'Eau fraîche disponible en permanence',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
       ),
     ]);
   }

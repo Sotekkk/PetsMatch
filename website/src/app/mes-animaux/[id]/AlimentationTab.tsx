@@ -161,7 +161,7 @@ function isGrandEspece(espece: string): boolean {
 // lib/pages/eleveur/animaux/animal_fiche.dart encode certains réglages
 // (sans colonne dédiée) dans `notes` :
 // foinMix|granMix|compMix|nbRepas|separeParRepas|doseMan|doseMan2|typeMixte2|densitePatee|densiteGran|pctCroquMix|densiteCtrl
-// Le site ne pilote que nbRepas/separeParRepas/typeMixte2/densitePatee : le
+// Le site pilote nbRepas/separeParRepas/typeMixte2/densitePatee/doseMan(2) : le
 // reste est préservé tel quel pour ne pas écraser des réglages faits côté app.
 function parseNotes(raw: string | null | undefined) {
   const parts = (raw ?? '').split('|');
@@ -176,11 +176,12 @@ function parseNotes(raw: string | null | undefined) {
 }
 
 function buildNotes(existingRaw: string, nbRepas: number, separeParRepas: boolean,
-    typeMixte2: string, densitePatee: number | undefined, pctCroquMix: number): string {
+    typeMixte2: string, densitePatee: number | undefined, pctCroquMix: number,
+    doseMan?: string, doseMan2?: string): string {
   const p = parseNotes(existingRaw);
   return [
     p.foinMix, p.granMix, p.compMix, String(nbRepas), separeParRepas ? '1' : '0',
-    p.doseMan, p.doseMan2, typeMixte2, densitePatee ? String(densitePatee) : '',
+    doseMan ?? p.doseMan, doseMan2 ?? p.doseMan2, typeMixte2, densitePatee ? String(densitePatee) : '',
     p.densiteGran, String(Math.round(pctCroquMix)), p.densiteCtrl,
   ].join('|');
 }
@@ -190,10 +191,12 @@ function buildNotes(existingRaw: string, nbRepas: number, separeParRepas: boolea
 interface RepasItem { emoji: string; label: string; qte: string; desc: string; color: string; }
 
 function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: number, poids: number, densiteKcal: number, barfPct: number, mixtePct: number,
-    typeMixte2: 'barf' | 'patee' | 'menagere' = 'barf', densitePatee = 0, separeParRepas = false): RepasItem[] {
+    typeMixte2: 'barf' | 'patee' | 'menagere' = 'barf', densitePatee = 0, separeParRepas = false,
+    saisies: { croq?: number; second?: number } = {}): RepasItem[] {
   const c = '#0C5C6C'; const g = '#6E9E57'; const o = '#E8A020'; const p = '#7B68EE';
-  const doseCroq = densiteKcal > 0 ? derKcal * 100 / densiteKcal : 0;
-  const doseBarf = poids * 1000 * 0.025;
+  // Quantité quotidienne saisie (comme l'app) prioritaire sur la quantité calculée
+  const doseCroq = (type !== 'mixte' ? saisies.croq : undefined) ?? (densiteKcal > 0 ? derKcal * 100 / densiteKcal : 0);
+  const doseBarf = (type === 'barf' ? saisies.croq : undefined) ?? poids * 1000 * 0.025;
 
   if (espece === 'chien' || espece === 'chat') {
     const perRepas = nbRepas > 0 ? 1 / nbRepas : 1;
@@ -213,10 +216,10 @@ function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: num
     }
     if (type === 'mixte') {
       const ratio = mixtePct / 100;
-      const croqG = doseCroq * ratio;
-      const secondG = typeMixte2 === 'menagere' ? (derKcal * (1 - ratio) / 120) * 100
+      const croqG = saisies.croq ?? doseCroq * ratio;
+      const secondG = saisies.second ?? (typeMixte2 === 'menagere' ? (derKcal * (1 - ratio) / 120) * 100
         : typeMixte2 === 'patee' && densitePatee > 0 ? (derKcal * (1 - ratio) / densitePatee) * 100
-        : doseBarf * (1 - ratio);
+        : doseBarf * (1 - ratio));
       const secondLabel = typeMixte2 === 'menagere' ? 'Ménagère' : typeMixte2 === 'patee' ? 'Pâtée' : 'BARF';
       const secondEmoji = typeMixte2 === 'menagere' ? '🍲' : typeMixte2 === 'patee' ? '🥫' : '🥩';
 
@@ -242,7 +245,7 @@ function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: num
       ];
     }
     if (type === 'menagere') {
-      const totalG = poids * 1000 * 0.025;
+      const totalG = saisies.croq ?? poids * 1000 * 0.025;
       return Array.from({ length: nbRepas }, (_, i) => ({
         emoji: '🍲', label: `Repas maison ${i + 1}`, color: o,
         qte: `${Math.round(totalG * perRepas)} g`,
@@ -472,7 +475,7 @@ function BrandPickerModal({ espece, phase, userId, onSelect, onClose }: {
 // ─── Composant AlimentationTab ────────────────────────────────────────────────
 
 export default function AlimentationTab({ animalId, espece, sexe, sterilise, dateNaissance, nom, userId, poidsFiche }: Props) {
-  const [alim, setAlim] = useState<AlimData>({
+  const [alimState, setAlim] = useState<AlimData>({
     type_ration: 'croquettes', phase: 'adulte', activite: 'normal',
     cat_energie: 'normale', poids_ref: 0, densite_kcal: 350,
     barf_muscle: 70, barf_os: 15, barf_abats: 10, barf_legumes: 5,
@@ -481,6 +484,7 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
   });
   // Notes brutes telles que chargées, pour préserver au réenregistrement les
   // champs qu'on ne pilote pas depuis le site (voir buildNotes plus haut).
+  const alim = alimState;
   const [notesRaw, setNotesRaw] = useState('');
   const [poidsActuel, setPoidsActuel] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -488,6 +492,9 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
   const [view, setView] = useState<'summary' | 'calc'>('summary');
   const [showBrand, setShowBrand] = useState(false);
   const [hasData, setHasData] = useState(false);
+  // Quantité quotidienne saisie (g/jour) — partagée avec l'app via `notes`
+  const [doseMan, setDoseMan] = useState('');
+  const [doseMan2, setDoseMan2] = useState('');
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
@@ -527,6 +534,8 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
           nb_repas: parseNotes(alimData.notes).nbRepas,
         }));
         setNotesRaw(alimData.notes ?? '');
+        setDoseMan(parseNotes(alimData.notes).doseMan);
+        setDoseMan2(parseNotes(alimData.notes).doseMan2);
         setHasData(true);
         setView('summary');
       } else {
@@ -571,12 +580,37 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
     : typeMixte2 === 'menagere' ? (derVal * pctSecond / 120) * 100
     : typeMixte2 === 'patee' ? (densitePatee > 0 ? (derVal * pctSecond / densitePatee) * 100 : null)
     : doseBarf != null ? doseBarf * pctSecond : null;
-  const mixteSecondLabel = typeMixte2 === 'menagere' ? '🍲 Ménagère' : typeMixte2 === 'patee' ? '🥫 Pâtée' : '🥩 BARF';
+  const mixteSecondLabel = typeMixte2 === 'menagere' ? 'Ménagère' : typeMixte2 === 'patee' ? 'Pâtée' : 'BARF';
+
+  // Doses effectives (saisie prioritaire) et apport calculé — mêmes règles que l'app
+  const num = (v: string) => { const n = parseFloat(v.replace(',', '.')); return isFinite(n) && n > 0 ? n : null; };
+  const doseMenagere = poids > 0 ? poids * 1000 * 0.025 : null;
+  const doseMixteCroq = doseCroquettes != null ? doseCroquettes * (alim.mixte_ratio_croq ?? 50) / 100 : null;
+  const doseCalculee = type === 'croquettes' ? doseCroquettes : type === 'barf' ? doseBarf
+    : type === 'menagere' ? doseMenagere : type === 'mixte' ? doseMixteCroq : null;
+  const doseEff = num(doseMan) ?? doseCalculee;
+  const doseEff2 = num(doseMan2) ?? doseMixteSecond;
+  const kcalApport: number | null = (() => {
+    if (doseEff == null) return null;
+    if (type === 'croquettes') return densiteKcal > 0 ? doseEff * densiteKcal / 100 : null;
+    if (type === 'barf') return doseEff * 1.25;
+    if (type === 'menagere') return doseEff * 1.2;
+    if (type === 'mixte') {
+      let t = densiteKcal > 0 ? doseEff * densiteKcal / 100 : 0;
+      if (doseEff2 != null) {
+        t += typeMixte2 === 'barf' ? doseEff2 * 1.25 : typeMixte2 === 'menagere' ? doseEff2 * 1.2
+          : densitePatee > 0 ? doseEff2 * densitePatee / 100 : 0;
+      }
+      return t > 0 ? t : null;
+    }
+    return null;
+  })();
 
   // ── Save ────────────────────────────────────────────────────────────────────
 
-  async function save() {
+  async function save(patch: Partial<AlimData> = {}) {
     if (!animalId) return;
+    const alim = { ...alimState, ...patch };
     setSaving(true);
     try {
       // N'écrit que des colonnes qui existent réellement sur `alimentations`
@@ -602,7 +636,7 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         pourcentage_legumes: alim.barf_legumes ?? null,
         mixte_ratio_croq: alim.mixte_ratio_croq ?? null,
         notes: buildNotes(notesRaw, alim.nb_repas ?? 2, alim.mixte_separe_repas ?? false,
-          alim.type_mixte2 ?? 'barf', alim.densite_patee, alim.mixte_ratio_croq ?? 50),
+          alim.type_mixte2 ?? 'barf', alim.densite_patee, alim.mixte_ratio_croq ?? 50, doseMan, doseMan2),
         updated_at: new Date().toISOString(),
       };
       if (alim.id) {
@@ -640,7 +674,8 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
 
   const mealPlan = derVal && poids > 0
     ? getMealPlan(espece, type, nbRepas, derVal, poids, densiteKcal, alim.barf_muscle ?? 70, alim.mixte_ratio_croq ?? 50,
-        typeMixte2, densitePatee, mixteSepareParRepas)
+        typeMixte2, densitePatee, mixteSepareParRepas,
+        { croq: num(doseMan) ?? undefined, second: num(doseMan2) ?? undefined })
     : [];
 
   const COLOR_MAP: Record<string, string> = {
@@ -657,137 +692,192 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
   // ── VUE RÉSUMÉ ──────────────────────────────────────────────────────────────
 
   if (view === 'summary' && hasData) {
-    const typeLabel: Record<string, string> = { croquettes: '🥣 Croquettes', barf: '🥩 BARF', mixte: '🔀 Mixte', menagere: '🍲 Ménagère' };
+    const typeLabel: Record<string, string> = { croquettes: 'Croquettes', barf: 'BARF', mixte: 'Ration mixte', menagere: 'Ration ménagère' };
     const phaseLabel: Record<string, string> = { chiot: 'Chiot', junior: 'Junior', adulte: 'Adulte', senior: 'Senior', geront: 'Gérontologie' };
+    const etatLabel: Record<string, string> = { gestation_debut: 'Gestation (début)', gestation_fin: 'Gestation (fin)', lactation: 'Lactation' };
+    const ajustement: Record<string, string> = { gestation_debut: 'début de gestation (+10 %)', gestation_fin: 'fin de gestation (+30 %)', lactation: 'lactation (+50 %)' };
+    const chienChat = espece === 'chien' || espece === 'chat';
+    const fmtKg = (v: number) => v.toFixed(1).replace('.', ',');
+
+    // Apport calculé : correspondance calorique (couleurs fonctionnelles existantes)
+    let apport: { color: string; pct: number; statut: string } | null = null;
+    if (kcalApport != null && derVal) {
+      const diff = kcalApport - derVal;
+      const ok = Math.abs(diff) / derVal < 0.15;
+      apport = {
+        color: ok ? '#6E9E57' : diff > 0 ? '#E65100' : '#0C5C6C',
+        pct: Math.round((diff / derVal) * 100),
+        statut: ok ? 'Correspond aux besoins caloriques' : diff > 0 ? 'Supérieur aux besoins caloriques' : 'Inférieur aux besoins caloriques',
+      };
+    }
+
+    const titre = (children: React.ReactNode, onModifier?: () => void) => (
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[17px] font-extrabold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{children}</h3>
+        {onModifier && (
+          <button type="button" onClick={onModifier}
+            className="h-10 px-2 text-sm font-semibold text-[#0C5C6C] hover:underline">
+            Modifier
+          </button>
+        )}
+      </div>
+    );
+    const ligne = (label: string, value: string) => (
+      <div key={label} className="flex items-center justify-between gap-3 px-4 min-h-[48px] py-3">
+        <span className="text-[15px] text-gray-600">{label}</span>
+        <span className="text-[15px] font-semibold text-[#1F2A2E] text-right">{value}</span>
+      </div>
+    );
+    const panneau = 'bg-white border border-gray-300 rounded-xl divide-y divide-gray-200 overflow-hidden';
+    const champDose = (label: string, value: string, onChange: (v: string) => void, calcule: number | null) => (
+      <div>
+        <label className="block text-sm text-gray-600 mb-1.5">{label}</label>
+        <div className="flex h-[52px] rounded-[10px] border border-gray-300 overflow-hidden bg-white focus-within:border-[#0C5C6C] focus-within:ring-1 focus-within:ring-[#0C5C6C]">
+          <input type="text" inputMode="decimal" value={value} onChange={e => onChange(e.target.value)}
+            placeholder={calcule != null ? String(Math.round(calcule)) : 'Quantité'}
+            className="flex-1 min-w-0 px-3.5 text-base font-semibold text-[#1F2A2E] placeholder:text-gray-500 outline-none" />
+          <span className="flex items-center px-3.5 bg-gray-100 border-l border-gray-300 text-[15px] text-gray-700">g/jour</span>
+        </div>
+        {value && calcule != null && (
+          <button type="button" onClick={() => onChange('')}
+            className="mt-1 h-9 text-[13px] text-[#0C5C6C] hover:underline">
+            Revenir à la quantité calculée ({Math.round(calcule)} g)
+          </button>
+        )}
+      </div>
+    );
 
     return (
-      <div className="space-y-4">
-        {/* En-tête résumé */}
-        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Profil alimentaire</p>
-            <button onClick={() => setView('calc')}
-              className="text-xs text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1 hover:bg-[#0C5C6C]/5">
-              Modifier
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="bg-gray-50 rounded-lg p-2">
-              <p className="text-gray-400">Type de ration</p>
-              <p className="font-semibold text-[#1F2A2E] mt-0.5">{typeLabel[type] ?? type}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-2">
-              <p className="text-gray-400">Phase de vie</p>
-              <p className="font-semibold text-[#1F2A2E] mt-0.5">{phaseLabel[phase] ?? phase}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-2">
-              <p className="text-gray-400">Poids de référence</p>
-              <p className="font-semibold text-[#1F2A2E] mt-0.5">{poids > 0 ? `${poids} kg` : '—'}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg p-2">
-              <p className="text-gray-400">Nb repas / jour</p>
-              <p className="font-semibold text-[#1F2A2E] mt-0.5">{nbRepas}</p>
-            </div>
-            {sterilise && (
-              <div className="bg-[#6E9E57]/10 rounded-lg p-2 col-span-2 flex items-center gap-2">
-                <span>✂️</span>
-                <p className="text-xs text-[#4A7C39] font-medium">Stérilisé(e) — facteur ×{espece === 'chat' ? '0.7' : '0.8'} appliqué</p>
-              </div>
-            )}
-            {etatRepro !== 'normal' && (
-              <div className="bg-[#0C5C6C]/8 rounded-lg p-2 col-span-2">
-                <p className="text-[#0C5C6C] text-xs font-medium">
-                  {etatRepro === 'gestation_debut' ? '🤰 Gestation début — +10%' : etatRepro === 'gestation_fin' ? '🍼 Gestation fin — +30%' : '🤱 Lactation — +50%'}
-                </p>
-              </div>
-            )}
-          </div>
+      <div className="max-w-2xl">
+        {/* Profil de l'animal */}
+        {titre("Profil de l'animal", () => setView('calc'))}
+        <div className={panneau}>
+          {ligne('Poids', poids > 0 ? `${fmtKg(poids)} kg` : '—')}
+          {ligne("Phase", phaseLabel[phase] ?? phase)}
+          {phase === 'adulte' && ligne('Activité', ACT_LABELS[activite] ?? activite)}
+          {sterilise && ligne('Stérilisé(e)', 'Oui')}
+          {etatRepro !== 'normal' && ligne('État', etatLabel[etatRepro] ?? etatRepro)}
         </div>
 
-        {/* Besoins énergétiques */}
-        {derVal && (
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <p className="font-bold text-[#1F2A2E] text-sm mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>⚡ Besoins énergétiques</p>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between"><span className="text-gray-500">RER (besoins repos)</span><span className="font-bold text-[#1F2A2E]">{rerVal?.toFixed(0)} kcal</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Facteurs appliqués</span><span className="text-gray-400 text-right">phase · activité{sterilise ? ' · stéril.' : ''}{etatRepro !== 'normal' ? ' · repro' : ''}</span></div>
-              <div className="flex justify-between border-t border-gray-100 pt-1.5 mt-1.5">
-                <span className="font-bold text-[#0C5C6C]">DER (besoins réels)</span>
-                <span className="font-bold text-[#0C5C6C] text-sm">{derVal.toFixed(0)} kcal/j</span>
+        {/* Besoins caloriques */}
+        {rerVal && (
+          <div className="mt-4 flex bg-white border border-gray-300 rounded-xl overflow-hidden">
+            <div className="w-1 bg-[#0C5C6C] flex-shrink-0" />
+            <div className="px-4 py-3.5">
+              <p className="text-sm text-gray-600">Besoins caloriques</p>
+              <p className="text-[28px] leading-tight font-extrabold text-[#0C5C6C] mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {derVal ? `${derVal.toFixed(0)} kcal/jour` : `${rerVal.toFixed(0)} kcal/jour (RER)`}
+              </p>
+              {derVal && <p className="text-[13px] text-gray-600 mt-1">RER {rerVal.toFixed(0)} × facteurs (phase, activité, état)</p>}
+            </div>
+          </div>
+        )}
+
+        <hr className="my-6 border-gray-200" />
+
+        {/* Ration : croquettes / BARF / ménagère / mixte */}
+        {titre(typeLabel[type] ?? type, () => setView('calc'))}
+        {chienChat ? (
+          <div className="space-y-3">
+            {(type === 'croquettes' || type === 'mixte') && alim.marque && (
+              <p className="text-base font-semibold text-[#1F2A2E]">{alim.marque}{alim.gamme ? ` — ${alim.gamme}` : ''}</p>
+            )}
+            {type === 'mixte' ? (
+              <>
+                {champDose(`Croquettes (${alim.mixte_ratio_croq ?? 50} %)`, doseMan, setDoseMan, doseMixteCroq)}
+                {champDose(`${mixteSecondLabel} (${100 - (alim.mixte_ratio_croq ?? 50)} %)`, doseMan2, setDoseMan2, doseMixteSecond)}
+                <p className="text-[13px] text-gray-600">{mixteSepareParRepas ? 'Un type par repas' : 'Mélangés à chaque repas'}</p>
+              </>
+            ) : (
+              champDose("Quantité quotidienne", doseMan, setDoseMan, doseCalculee)
+            )}
+            {type === 'barf' && doseEff != null && (
+              <div className={panneau}>
+                {ligne("Muscles", `${Math.round(doseEff * (alim.barf_muscle ?? 70) / 100)} g`)}
+                {ligne("Abats", `${Math.round(doseEff * (alim.barf_abats ?? 10) / 100)} g`)}
+                {ligne("Os", `${Math.round(doseEff * (alim.barf_os ?? 15) / 100)} g`)}
+                {ligne("Légumes", `${Math.round(doseEff * (alim.barf_legumes ?? 5) / 100)} g`)}
               </div>
-            </div>
+            )}
+          </div>
+        ) : (
+          <div className={panneau}>
+            {rationGrandEspece
+              ? ligne('Ration / jour', `${(rationGrandEspece * 1000).toFixed(0)} g (${rationGrandEspece.toFixed(2)} kg)`)
+              : ligne('Ration / jour', 'Renseignez le poids pour calculer')}
           </div>
         )}
 
-        {/* Ration du jour */}
-        {poids > 0 && (
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <p className="font-bold text-[#1F2A2E] text-sm mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>🥗 Ration du jour</p>
-            <div className="space-y-1.5 text-xs">
-              {(type === 'croquettes' || type === 'mixte') && alim.marque && (
-                <div className="flex justify-between"><span className="text-gray-500">Marque</span><span className="text-gray-600">{alim.marque}{alim.gamme ? ` — ${alim.gamme}` : ''}</span></div>
-              )}
-              {type === 'croquettes' && doseCroquettes && (
-                <>
-                  <div className="flex justify-between"><span className="text-gray-500">Croquettes / jour</span><span className="font-bold text-[#1F2A2E]">{doseCroquettes.toFixed(0)} g</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Densité</span><span className="text-gray-400">{densiteKcal} kcal/100g</span></div>
-                </>
-              )}
-              {type === 'barf' && doseBarf && (
-                <div className="flex justify-between"><span className="text-gray-500">Ration BARF / jour</span><span className="font-bold text-[#1F2A2E]">{doseBarf.toFixed(0)} g</span></div>
-              )}
-              {type === 'mixte' && doseCroquettes && (
-                <>
-                  <div className="flex justify-between"><span className="text-gray-500">Croquettes / jour</span><span className="font-bold text-[#1F2A2E]">{(doseCroquettes * (alim.mixte_ratio_croq ?? 50) / 100).toFixed(0)} g</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">{mixteSecondLabel} / jour</span><span className="font-bold text-[#1F2A2E]">{doseMixteSecond != null ? `${doseMixteSecond.toFixed(0)} g` : '— (densité manquante)'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Répartition</span><span className="text-gray-400">{mixteSepareParRepas ? 'Un type par repas' : 'Mélangés à chaque repas'}</span></div>
-                </>
-              )}
-              {isGrandEspece(espece) && rationGrandEspece && (
-                <div className="flex justify-between"><span className="text-gray-500">Ration / jour</span><span className="font-bold text-[#1F2A2E]">{(rationGrandEspece * 1000).toFixed(0)} g ({rationGrandEspece.toFixed(2)} kg)</span></div>
-              )}
-            </div>
+        {/* Apport calculé */}
+        {apport && kcalApport != null && (
+          <div className="mt-3.5 rounded-[10px] border px-3.5 py-3"
+            style={{ borderColor: `${apport.color}4D`, backgroundColor: `${apport.color}0F` }}>
+            <p className="text-[15px] font-bold" style={{ color: apport.color }}>Apport calculé : {Math.round(kcalApport)} kcal/jour</p>
+            <p className="mt-1 flex items-center gap-2 text-[13px] text-gray-700">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: apport.color }} />
+              Écart aux besoins : {apport.pct > 0 ? '+' : ''}{apport.pct} % · {apport.statut}
+            </p>
           </div>
         )}
 
-        {/* Plan de repas */}
+        <button type="button" onClick={() => save()} disabled={saving}
+          className="mt-4 w-full h-[50px] rounded-[10px] bg-[#0C5C6C] text-white text-[15px] font-bold hover:bg-[#0a4f5d] disabled:bg-gray-300 transition-colors">
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+
+        {/* Rations journalières */}
         {mealPlan.length > 0 && (
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <p className="font-bold text-[#1F2A2E] text-sm mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>📅 Plan de repas</p>
-            <div className="space-y-2">
+          <>
+            <hr className="my-6 border-gray-200" />
+            {titre('Rations journalières')}
+            {chienChat && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[15px] text-gray-700">Repas par jour</span>
+                <div className="flex h-11 rounded-[10px] border border-gray-300 overflow-hidden" role="group" aria-label="Repas par jour">
+                  {[1, 2, 3, 4].map(n => (
+                    <button key={n} type="button" aria-pressed={nbRepas === n}
+                      onClick={() => { setAlim(p => ({ ...p, nb_repas: n })); save({ nb_repas: n }); }}
+                      className={`w-12 sm:w-14 text-[15px] font-bold transition-colors ${n > 1 ? 'border-l border-gray-300' : ''} ${nbRepas === n ? 'bg-[#0C5C6C] text-white' : 'bg-white text-[#1F2A2E] hover:bg-gray-50'}`}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {etatRepro !== 'normal' && ajustement[etatRepro] && (
+              <p className="mt-2 text-[13px] text-gray-600">Ration ajustée : {ajustement[etatRepro]}</p>
+            )}
+            <div className={`${panneau} mt-3.5`}>
               {mealPlan.map((r, i) => (
-                <div key={i} className={`flex items-center justify-between rounded-xl p-3 border ${COLOR_MAP[r.color] ?? 'bg-gray-50 border-gray-100 text-gray-600'}`}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{r.emoji}</span>
-                    <div>
-                      <p className="text-xs font-bold">{r.label}</p>
-                      <p className="text-xs opacity-70">{r.desc}</p>
-                    </div>
+                <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-bold text-[#1F2A2E]">{r.label}</p>
+                    <p className="text-[13px] text-gray-600">{r.desc}</p>
                   </div>
-                  <span className="text-sm font-bold">{r.qte}</span>
+                  <span className="text-[15px] font-bold text-[#0C5C6C] whitespace-nowrap">{r.qte}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </>
         )}
 
         {/* Suppléments */}
         {(alim.supplements ?? []).length > 0 && (
-          <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <p className="font-bold text-[#1F2A2E] text-sm mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>💊 Suppléments</p>
-            <div className="flex flex-wrap gap-2">
-              {(alim.supplements ?? []).map(s => (
-                <span key={s} className="text-xs px-2.5 py-1 bg-[#0C5C6C]/10 text-[#0C5C6C] rounded-full font-medium">{s}</span>
-              ))}
+          <>
+            <hr className="my-6 border-gray-200" />
+            {titre('Suppléments')}
+            <div className={panneau}>
+              {(alim.supplements ?? []).map(s => ligne(s, ""))}
             </div>
-          </div>
+          </>
         )}
 
         {alim.notes_alim && (
-          <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
-            <p className="text-xs font-bold text-amber-700 mb-1">📝 Notes</p>
-            <p className="text-xs text-amber-800">{alim.notes_alim}</p>
-          </div>
+          <>
+            <hr className="my-6 border-gray-200" />
+            {titre('Notes')}
+            <p className="text-sm text-gray-700 whitespace-pre-line">{alim.notes_alim}</p>
+          </>
         )}
       </div>
     );
@@ -1168,7 +1258,7 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
       )}
 
       {/* Bouton enregistrer */}
-      <button onClick={save} disabled={saving}
+      <button onClick={() => save()} disabled={saving}
         className="w-full py-3.5 bg-[#0C5C6C] hover:bg-[#0a4f5e] text-white font-bold rounded-2xl text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         {saving ? 'Enregistrement…' : 'Enregistrer'}
       </button>
