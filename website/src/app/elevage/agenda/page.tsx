@@ -1017,6 +1017,9 @@ export default function AgendaElevagePage() {
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
   const [attributionTask, setAttributionTask] = useState<TacheManuelle | null>(null);
   const [confirmDelete, setConfirmDelete]     = useState<{ label: string; onConfirm: () => void } | null>(null);
+  // Mode sélection (suppression groupée) : clés 'g:<etapeId>' (protocole) et 't:<id>' (tâche manuelle)
+  const [selectMode, setSelectMode]           = useState(false);
+  const [selection, setSelection]             = useState<Set<string>>(new Set());
   const [editTache, setEditTache]               = useState<TacheManuelle | null>(null);
   const [editGroupe, setEditGroupe]             = useState<RoutineGroupe | null>(null);
   const [monthDates, setMonthDates]     = useState<Map<string, string[]>>(new Map());
@@ -1282,6 +1285,14 @@ export default function AgendaElevagePage() {
     load();
   }, [user, activeProfileId, load]);
 
+  const toggleSelection = (key: string) => setSelection(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const quitterSelection = () => { setSelectMode(false); setSelection(new Set()); };
+  useEffect(() => { setSelectMode(false); setSelection(new Set()); }, [selectedDate]);
+
   const deleteManuel = useCallback(async (t: TacheManuelle) => {
     setConfirmDelete({
       label: `Supprimer la tâche "${t.titre}" ?`,
@@ -1345,6 +1356,9 @@ export default function AgendaElevagePage() {
     const allDone   = done === total;
     const emoji     = ACTE_EMOJIS[g.typeActe] ?? '📋';
     const acteColor = ACTE_COLOR[g.typeActe] ?? '#0C5C6C';
+    const selKey    = `g:${g.etapeId}`;
+    const coche     = selection.has(selKey);
+    const onCarte   = () => selectMode ? toggleSelection(selKey) : (!effectuee && setValidateGroupe(g));
     return (
       <div
         className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4"
@@ -1355,14 +1369,18 @@ export default function AgendaElevagePage() {
         }}
       >
         <div className="flex items-center gap-3">
+          {selectMode && (
+            <input type="checkbox" checked={coche} onChange={() => toggleSelection(selKey)}
+              aria-label={`Sélectionner ${g.label}`} className="w-5 h-5 accent-[#0C5C6C] flex-shrink-0 cursor-pointer" />
+          )}
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 cursor-pointer hover:shadow-md transition-all"
             style={{ backgroundColor: effectuee || allDone ? '#F3F4F6' : `${acteColor}18` }}
-            onClick={() => !effectuee && setValidateGroupe(g)}
+            onClick={onCarte}
           >
             {emoji}
           </div>
-          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => !effectuee && setValidateGroupe(g)}>
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={onCarte}>
             <p className={`font-semibold text-sm ${effectuee || allDone ? 'text-gray-400' : 'text-gray-800'}`}>
               {g.label}
             </p>
@@ -1427,14 +1445,19 @@ export default function AgendaElevagePage() {
           backgroundColor: isDone ? '#F4FAF1' : 'white',
         }}
       >
-        <button onClick={() => toggleManuel(t)}
-          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-            isDone ? 'border-[#6E9E57] bg-[#6E9E57]' : 'border-gray-300 hover:border-teal-400'
-          }`}>
-          {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
-        </button>
-        <div className={`flex-1 min-w-0 ${animalId ? 'cursor-pointer' : ''}`}
-          onClick={animalId ? () => router.push(`/mes-animaux/${animalId}${estChaleurs ? '?tab=repro' : ''}`) : undefined}
+        {selectMode ? (
+          <input type="checkbox" checked={selection.has(`t:${t.id}`)} onChange={() => toggleSelection(`t:${t.id}`)}
+            aria-label={`Sélectionner ${t.titre}`} className="w-5 h-5 accent-[#0C5C6C] flex-shrink-0 cursor-pointer" />
+        ) : (
+          <button onClick={() => toggleManuel(t)} title={isDone ? 'Marquer à faire' : 'Marquer comme fait'}
+            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+              isDone ? 'border-[#6E9E57] bg-[#6E9E57]' : 'border-gray-300 hover:border-teal-400'
+            }`}>
+            {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
+          </button>
+        )}
+        <div className={`flex-1 min-w-0 ${animalId || selectMode ? 'cursor-pointer' : ''}`}
+          onClick={selectMode ? () => toggleSelection(`t:${t.id}`) : animalId ? () => router.push(`/mes-animaux/${animalId}${estChaleurs ? '?tab=repro' : ''}`) : undefined}
           title={animalId ? (estChaleurs ? 'Ouvrir le suivi des chaleurs' : 'Ouvrir la fiche') : undefined}>
           <span className={`text-sm font-medium text-gray-800 ${animalId ? 'hover:underline' : ''}`}>{t.titre}</span>
           {t.animal_nom && (
@@ -1590,8 +1613,48 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
-          {/* Bouton ajout tâche pour le jour sélectionné */}
-          <div className="flex justify-end mb-3">
+          {/* Sélection groupée + ajout tâche pour le jour sélectionné */}
+          <div className="flex justify-end items-center gap-2 mb-3 flex-wrap">
+            {totalItems > 0 && (selectMode ? (() => {
+              const toutes = [...groupes.map(g => `g:${g.etapeId}`), ...tachesM.map(t => `t:${t.id}`)];
+              const toutCoche = toutes.length > 0 && toutes.every(k => selection.has(k));
+              return (
+                <>
+                  <button onClick={() => setSelection(toutCoche ? new Set() : new Set(toutes))}
+                    className="text-sm font-semibold text-teal-700 rounded-xl px-3 py-2 hover:bg-teal-50">
+                    {toutCoche ? 'Tout désélectionner' : 'Tout sélectionner'}
+                  </button>
+                  <button disabled={selection.size === 0} onClick={() => setConfirmDelete({
+                    label: `Supprimer ${selection.size} élément${selection.size > 1 ? 's' : ''} sélectionné${selection.size > 1 ? 's' : ''} ?`,
+                    onConfirm: async () => {
+                      const etapes = new Set([...selection].filter(k => k.startsWith('g:')).map(k => k.slice(2)));
+                      const routineIds = groupes.filter(g => etapes.has(g.etapeId)).flatMap(g => g.routines.map(r => r.id));
+                      const tacheIds = [...selection].filter(k => k.startsWith('t:')).map(k => k.slice(2));
+                      const [r1, r2] = await Promise.all([
+                        routineIds.length ? supabase.from('plan_taches').delete().in('id', routineIds) : Promise.resolve({ error: null }),
+                        tacheIds.length ? supabase.from('taches_elevage').delete().in('id', tacheIds) : Promise.resolve({ error: null }),
+                      ]);
+                      const err = r1.error ?? r2.error;
+                      if (err) alert(`Suppression incomplète : ${err.message}`);
+                      quitterSelection();
+                      load();
+                    },
+                  })}
+                    className="text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-40 rounded-xl px-3 py-2">
+                    🗑 Supprimer ({selection.size})
+                  </button>
+                  <button onClick={quitterSelection}
+                    className="text-sm font-semibold text-gray-500 border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50">
+                    Annuler
+                  </button>
+                </>
+              );
+            })() : (
+              <button onClick={() => setSelectMode(true)}
+                className="text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl px-3 py-2 hover:bg-gray-50">
+                ☑ Sélectionner
+              </button>
+            ))}
             <button onClick={() => setShowAddTache(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
               <span className="text-base leading-none">+</span> Tâche

@@ -193,6 +193,10 @@ class _AgendaPageState extends State<AgendaPage> {
   late int _viewMode = widget.initialViewMode;
   DateTime _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTime? _selectedDay;
+  // Mode sélection (suppression groupée), lié à un jour (yyyy-MM-dd) : se
+  // désactive de lui-même en changeant de jour. Clés 'g:<etape>' / 't:<id>'.
+  String? _selectModeDay;
+  final Set<String> _selection = {};
 
   @override
   void initState() {
@@ -849,6 +853,9 @@ class _AgendaPageState extends State<AgendaPage> {
 
   Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks, {DateTime? day}) {
     final manuel = tasks.where((t) => t['_source'] != 'protocole').toList();
+    final jourCle = DateFormat('yyyy-MM-dd').format(day ?? _selectedDay ?? DateTime.now());
+    final selectMode = _selectModeDay == jourCle;
+    void basculer(String k) => setState(() => _selection.contains(k) ? _selection.remove(k) : _selection.add(k));
 
     final protoMap = <String, List<Map<String, dynamic>>>{};
     for (final t in tasks.where((t) => t['_source'] == 'protocole')) {
@@ -874,10 +881,13 @@ class _AgendaPageState extends State<AgendaPage> {
       final label   = (first['titre'] ?? first['label'] ?? '') as String;
       final emoji   = _protoEmoji(first['type_acte']?.toString());
       final allDone = done == total;
+      final selKey  = 'g:${first['etape_id'] ?? 'solo_${first['id']}'}';
 
       return GestureDetector(
         key: ValueKey('proto_${first['etape_id'] ?? first['id']}'),
-        onTap: effectuee
+        onTap: selectMode
+            ? () => basculer(selKey)
+            : effectuee
             ? null
             : () async {
                 await showModalBottomSheet(
@@ -897,7 +907,7 @@ class _AgendaPageState extends State<AgendaPage> {
                   ),
                 );
               },
-        onLongPress: () => _deleteProtoGroup(groupe),
+        onLongPress: selectMode ? null : () => _deleteProtoGroup(groupe),
         child: Container(
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -908,6 +918,16 @@ class _AgendaPageState extends State<AgendaPage> {
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
+              if (selectMode) ...[
+                SizedBox(width: 22, height: 22, child: Checkbox(
+                  value: _selection.contains(selKey),
+                  onChanged: (_) => basculer(selKey),
+                  activeColor: _kTeal,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                )),
+                const SizedBox(width: 6),
+              ],
               Text(emoji, style: const TextStyle(fontSize: 14)),
               const SizedBox(width: 8),
               Expanded(child: Text(label,
@@ -977,6 +997,15 @@ class _AgendaPageState extends State<AgendaPage> {
           Expanded(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Row(children: [
+          if (selectMode)
+            SizedBox(width: 22, height: 22, child: Checkbox(
+              value: _selection.contains('t:${t['id']}'),
+              onChanged: (_) => basculer('t:${t['id']}'),
+              activeColor: _kTeal,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ))
+          else
           GestureDetector(
             onTap: () async {
               final newStatut = isDone ? 'a_faire' : 'fait';
@@ -1006,7 +1035,7 @@ class _AgendaPageState extends State<AgendaPage> {
           const SizedBox(width: 8),
           Expanded(child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () => _ouvrirAnimalDeTache(t),
+            onTap: () => selectMode ? basculer('t:${t['id']}') : _ouvrirAnimalDeTache(t),
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -1099,6 +1128,25 @@ class _AgendaPageState extends State<AgendaPage> {
             Text('$doneItems/$totalItems',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
             const SizedBox(width: 8),
+            if (totalItems > 0 && !selectMode) ...[
+              GestureDetector(
+                onTap: () => setState(() { _selectModeDay = jourCle; _selection.clear(); }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.checklist_rounded, size: 12, color: Colors.grey.shade700),
+                    const SizedBox(width: 3),
+                    Text('Sélectionner', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
             GestureDetector(
               onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
               child: Container(
@@ -1117,6 +1165,44 @@ class _AgendaPageState extends State<AgendaPage> {
               ),
             ),
           ]),
+          if (selectMode) Builder(builder: (_) {
+            final toutes = [
+              ...protoGroups.map((g) => 'g:${g.first['etape_id'] ?? 'solo_${g.first['id']}'}'),
+              ...manuel.map((t) => 't:${t['id']}'),
+            ];
+            final toutCoche = toutes.isNotEmpty && toutes.every(_selection.contains);
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(children: [
+                TextButton(
+                  onPressed: () => setState(() { toutCoche ? _selection.clear() : _selection.addAll(toutes); }),
+                  style: TextButton.styleFrom(foregroundColor: _kTeal, padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(0, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  child: Text(toutCoche ? 'Tout désélectionner' : 'Tout sélectionner',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => setState(() { _selectModeDay = null; _selection.clear(); }),
+                  style: TextButton.styleFrom(foregroundColor: Colors.grey.shade600, padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: const Size(0, 30), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                ),
+                const SizedBox(width: 4),
+                ElevatedButton.icon(
+                  onPressed: _selection.isEmpty ? null : () => _supprimerSelection(protoGroups),
+                  icon: const Icon(Icons.delete_outline, size: 15),
+                  label: Text('Supprimer (${_selection.length})',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade500, foregroundColor: Colors.white, elevation: 0,
+                    minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ]),
+            );
+          }),
           const SizedBox(height: 8),
 
           // ── À faire : protocoles ──────────────────────────────────────
@@ -1144,6 +1230,44 @@ class _AgendaPageState extends State<AgendaPage> {
         ],
       ),
     );
+  }
+
+  /// Suppression groupée des éléments cochés (protocoles entiers + tâches).
+  Future<void> _supprimerSelection(List<List<Map<String, dynamic>>> protoGroups) async {
+    final n = _selection.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Supprimer $n élément${n > 1 ? 's' : ''} ?',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Les tâches sélectionnées seront définitivement supprimées.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final routineIds = [
+      for (final g in protoGroups)
+        if (_selection.contains('g:${g.first['etape_id'] ?? 'solo_${g.first['id']}'}'))
+          ...g.map((t) => t['id']),
+    ];
+    final tacheIds = _selection.where((k) => k.startsWith('t:')).map((k) => k.substring(2)).toList();
+    try {
+      if (routineIds.isNotEmpty) await _supa.from('plan_taches').delete().inFilter('id', routineIds);
+      if (tacheIds.isNotEmpty) await _supa.from('taches_elevage').delete().inFilter('id', tacheIds);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Suppression incomplète : $e'), backgroundColor: Colors.red));
+      }
+    }
+    if (!mounted) return;
+    setState(() { _selectModeDay = null; _selection.clear(); });
+    _loadTasks();
   }
 
   Future<void> _deleteManualTask(Map<String, dynamic> t) async {
