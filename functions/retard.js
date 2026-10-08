@@ -4,7 +4,8 @@ const {sendPush} = require("./push_helpers");
 const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
 
 function getSupabase() {
-    return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    // Push envoyé ici : pas de second push par le webhook notify_push.
+    return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {global: {headers: {"x-pm-push": "serveur"}}});
 }
 
 /**

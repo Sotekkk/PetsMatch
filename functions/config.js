@@ -24,6 +24,12 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 // l'en-tête Authorization — le même code fonctionne donc avec les deux,
 // ce qui permet la rotation sans coupure (et un retour arrière immédiat).
 const SUPABASE_AUTH_HEADERS = {
+    // Les Cloud Functions envoient elles-mêmes le push des notifications
+    // qu'elles enregistrent (préfixe du profil, regroupement) : le webhook
+    // « notify_push » de la table notifications ne doit pas en renvoyer un
+    // second (doublons « Chaleurs — Aiko », 08/10/2026) — migration
+    // migration_notify_push_sans_doublon.sql.
+    "x-pm-push": "serveur",
     "apikey": SUPABASE_SERVICE_KEY,
     ...(SUPABASE_SERVICE_KEY.startsWith("eyJ") ?
         {"Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`} : {}),
