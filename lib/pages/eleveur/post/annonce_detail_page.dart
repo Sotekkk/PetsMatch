@@ -702,6 +702,7 @@ class _HeaderCard extends StatelessWidget {
   String _typeVenteLabel(String s) => switch (s) {
     'vente'            => 'Vente',
     'adoption'         => 'Adoption',
+    'don'              => 'Don',
     'saillie'          => 'Saillie',
     'retraite'         => 'Retraité d\'élevage',
     'location'         => 'Location',
@@ -770,6 +771,7 @@ class _HeaderCard extends StatelessWidget {
             const {
               'vente': Color(0xFF6366F1),
               'adoption': _green,
+              'don': _green,
               'saillie': Color(0xFFEC4899),
             }[typeVente] ?? _teal,
           ),
@@ -836,7 +838,11 @@ class _HeaderCard extends StatelessWidget {
               ],
             ]),
         ] else if (typeVente == 'adoption')
-          const Text('Adoption / Don',
+          Text(prix != null ? 'Frais d\'adoption : ${prix.toStringAsFixed(0)} €' : 'Adoption',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                  fontSize: 22, color: _green))
+        else if (typeVente == 'don')
+          const Text('Don',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
                   fontSize: 22, color: _green))
         else if (typeVente == 'saillie')

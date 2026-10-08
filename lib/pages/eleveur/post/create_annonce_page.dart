@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
@@ -17,6 +18,7 @@ import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class CreateAnnoncePage extends StatefulWidget {
@@ -37,6 +39,23 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   // ── Type ──────────────────────────────────────────────────────────────────────
   String _type = 'portee';
   String _typeVente = 'vente';
+  // Vente / Adoption / Don (ou formule équine) retenu quand l'objet est une saillie / un retraité
+  String _cessionMemo = 'vente';
+
+  // ── Étapes : 1 Annonce et animal · 2 Santé et origines · 3 Publication
+  int _etape = 1;
+  static const _etapes = ['Annonce et animal', 'Santé et origines', 'Publication'];
+  int? _dureePlan;
+  // Père : mes animaux / réseau PetsMatch / saisie manuelle
+  String _pereSource = 'mien';
+  String? _pereEleveurReseau;
+  // Sauvegarde automatique (nouvelle annonce) sur cet appareil
+  Timer? _autoSaveTimer;
+  String? _dernierJson;
+  String? _autoSaveA;
+  Map<String, dynamic>? _brouillonLocal;
+  static const _dark = Color(0xFF1F2A2E);
+  bool get _estBrouillon => widget.initialData?['statut'] == 'brouillon';
 
   // ── Espèce & Race ─────────────────────────────────────────────────────────────
   String _espece = 'chien';
@@ -182,6 +201,111 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       final es = _breederSpecies;
       if (es.isNotEmpty && !es.contains(_espece)) _espece = es.first;
     }
+    if (!const {'saillie', 'retraite'}.contains(_typeVente)) _cessionMemo = _typeVente;
+    _chargerDureePlan();
+    if (widget.annonceId == null) {
+      _lireBrouillonLocal();
+      _autoSaveTimer = Timer.periodic(const Duration(seconds: 4), (_) => _sauvegardeAuto());
+    }
+  }
+
+  Future<void> _chargerDureePlan() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final cfg = await PlanService.getConfig(await PlanService.getPlanCode(uid));
+      if (mounted) setState(() => _dureePlan = cfg.dureeDays);
+    } catch (_) {}
+  }
+
+  String get _cleBrouillon => 'pm_annonce_brouillon_${FirebaseAuth.instance.currentUser?.uid ?? ''}';
+
+  /// Champs sérialisables (sauvegarde automatique sur l'appareil).
+  Map<String, dynamic> _versMap() => {
+    'type': _type, 'type_vente': _typeVente, 'espece': _espece, 'espece_autre': _especeAutreCtrl.text,
+    'race': _raceCtrl.text, 'titre': _titreCtrl.text, 'description': _descCtrl.text, 'prix': _prixCtrl.text,
+    'prix_negociable': _prixNegociable, 'prix_unite': _prixUnite,
+    'date_naissance': _dateNaissance?.toIso8601String(), 'nombre_bebes': _nombreBebes, 'animaux_portee': _animauxPortee,
+    'mere_animal_id': _mereAnimalId, 'mere_photo_url': _merePhotoUrl, 'mere_nom': _mereNomCtrl.text, 'mere_puce': _merePuceCtrl.text,
+    'mere_race': _mereRaceCtrl.text, 'mere_couleur': _mereCouleurCtrl.text, 'mere_couleur_yeux': _mereCouleurYeuxCtrl.text,
+    'mere_description': _mereDescCtrl.text, 'mere_registre': _mereRegistre,
+    'pere_animal_id': _pereAnimalId, 'pere_photo_url': _perePhotoUrl, 'pere_nom': _pereNomCtrl.text, 'pere_puce': _perePuceCtrl.text,
+    'pere_race': _pereRaceCtrl.text, 'pere_couleur': _pereCouleurCtrl.text, 'pere_couleur_yeux': _pereCouleurYeuxCtrl.text,
+    'pere_description': _pereDescCtrl.text, 'pere_registre': _pereRegistre, 'pere_source': _pereSource, 'pere_eleveur_reseau': _pereEleveurReseau,
+    'registre_type': _registreType, 'numero_registre': _numRegistreCtrl.text, 'club_pedigree': _clubPedigreeCtrl.text, 'studbook': _studbookCtrl.text,
+    'vaccines': _vaccines, 'vermifuge': _vermifuge, 'identification': _identification, 'bilan_sante': _bilanSante, 'semaines': _semaines,
+    'prix_min_portee': _prixMinPorteeCtrl.text, 'prix_max_portee': _prixMaxPorteeCtrl.text,
+    'etalon_animal_id': _etalonAnimalId, 'retraite_nom': _retraiteAnimalNom, 'sexe': _sexe, 'couleur': _couleurCtrl.text,
+    'couleur_yeux': _couleurYeuxCtrl.text, 'date_naissance_animal': _dateNaissanceAnimal?.toIso8601String(), 'sterilise': _sterilise,
+    'saillie_prix': _sailliePrixCtrl.text, 'saillie_conditions': _saillieCondCtrl.text, 'saillie_genetique': _saillieGenetiqueCtrl.text,
+    'num_identification': _numIdentCtrl.text, 'num_sire': _numSIRECtrl.text, 'num_passeport_equin': _numPasseportCtrl.text,
+    'niveau_recommande': _niveauEquide, 'palmares': _palmaresCtrl.text, 'indice_iso': _isoCtrl.text, 'indice_idr': _idrCtrl.text,
+    'indice_icc': _iccCtrl.text, 'video_monte_url': _videoMonteUrl, 'video_libre_url': _videoLibreUrl,
+    'photos': _photosUrls, 'photos_locales': _photosFiles.map((f) => f.path).toList(), 'etape': _etape,
+  };
+
+  void _depuisMap(Map<String, dynamic> d) {
+    String t(String k) => (d[k] ?? '').toString();
+    _type = t('type').isEmpty ? 'portee' : t('type');
+    _typeVente = t('type_vente').isEmpty ? 'vente' : t('type_vente');
+    if (!const {'saillie', 'retraite'}.contains(_typeVente)) _cessionMemo = _typeVente;
+    _espece = t('espece').isEmpty ? _espece : t('espece');
+    _especeAutreCtrl.text = t('espece_autre'); _raceCtrl.text = t('race'); _titreCtrl.text = t('titre');
+    _descCtrl.text = t('description'); _prixCtrl.text = t('prix');
+    _prixNegociable = d['prix_negociable'] == true; _prixUnite = t('prix_unite').isEmpty ? 'total' : t('prix_unite');
+    _dateNaissance = DateTime.tryParse(t('date_naissance'));
+    _nombreBebes = (d['nombre_bebes'] as num?)?.toInt() ?? 1;
+    _animauxPortee = List<Map<String, dynamic>>.from((d['animaux_portee'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)) ?? []);
+    _mereAnimalId = d['mere_animal_id'] as String?; _merePhotoUrl = d['mere_photo_url'] as String?;
+    _mereNomCtrl.text = t('mere_nom'); _merePuceCtrl.text = t('mere_puce'); _mereRaceCtrl.text = t('mere_race');
+    _mereCouleurCtrl.text = t('mere_couleur'); _mereCouleurYeuxCtrl.text = t('mere_couleur_yeux');
+    _mereDescCtrl.text = t('mere_description'); _mereRegistre = t('mere_registre');
+    _pereAnimalId = d['pere_animal_id'] as String?; _perePhotoUrl = d['pere_photo_url'] as String?;
+    _pereNomCtrl.text = t('pere_nom'); _perePuceCtrl.text = t('pere_puce'); _pereRaceCtrl.text = t('pere_race');
+    _pereCouleurCtrl.text = t('pere_couleur'); _pereCouleurYeuxCtrl.text = t('pere_couleur_yeux');
+    _pereDescCtrl.text = t('pere_description'); _pereRegistre = t('pere_registre');
+    _pereSource = t('pere_source').isEmpty ? 'mien' : t('pere_source'); _pereEleveurReseau = d['pere_eleveur_reseau'] as String?;
+    _registreType = t('registre_type'); _numRegistreCtrl.text = t('numero_registre'); _clubPedigreeCtrl.text = t('club_pedigree');
+    _studbookCtrl.text = t('studbook');
+    _vaccines = d['vaccines'] == true; _vermifuge = d['vermifuge'] == true; _identification = d['identification'] == true;
+    _bilanSante = d['bilan_sante'] == true; _semaines = (d['semaines'] as num?)?.toInt() ?? 8;
+    _prixMinPorteeCtrl.text = t('prix_min_portee'); _prixMaxPorteeCtrl.text = t('prix_max_portee');
+    _etalonAnimalId = d['etalon_animal_id'] as String?; _retraiteAnimalNom = d['retraite_nom'] as String?;
+    _sexe = t('sexe').isEmpty ? 'male' : t('sexe'); _couleurCtrl.text = t('couleur'); _couleurYeuxCtrl.text = t('couleur_yeux');
+    _dateNaissanceAnimal = DateTime.tryParse(t('date_naissance_animal')); _sterilise = d['sterilise'] == true;
+    _sailliePrixCtrl.text = t('saillie_prix'); _saillieCondCtrl.text = t('saillie_conditions'); _saillieGenetiqueCtrl.text = t('saillie_genetique');
+    _numIdentCtrl.text = t('num_identification'); _numSIRECtrl.text = t('num_sire'); _numPasseportCtrl.text = t('num_passeport_equin');
+    _niveauEquide = t('niveau_recommande'); _palmaresCtrl.text = t('palmares');
+    _isoCtrl.text = t('indice_iso'); _idrCtrl.text = t('indice_idr'); _iccCtrl.text = t('indice_icc');
+    _videoMonteUrl = d['video_monte_url'] as String?; _videoLibreUrl = d['video_libre_url'] as String?;
+    _photosUrls = List<String>.from((d['photos'] as List?) ?? []);
+    // Photos prises sur l'appareil : seulement celles encore présentes
+    _photosFiles = ((d['photos_locales'] as List?) ?? []).map((p) => File(p.toString())).where((f) => f.existsSync()).toList();
+    _etape = (d['etape'] as num?)?.toInt() ?? 1;
+  }
+
+  Future<void> _lireBrouillonLocal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cleBrouillon);
+      if (raw != null && mounted) setState(() => _brouillonLocal = Map<String, dynamic>.from(jsonDecode(raw) as Map));
+    } catch (_) {}
+  }
+
+  Future<void> _sauvegardeAuto() async {
+    if (!mounted || _brouillonLocal != null || _saving) return;
+    final json = jsonEncode(_versMap());
+    if (_dernierJson == null) { _dernierJson = json; return; } // état initial : rien à sauvegarder
+    if (json == _dernierJson) return;
+    _dernierJson = json;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cleBrouillon, jsonEncode({'savedAt': DateTime.now().toIso8601String(), 'data': jsonDecode(json)}));
+      if (mounted) setState(() => _autoSaveA = DateFormat('HH:mm').format(DateTime.now()));
+    } catch (_) {}
+  }
+
+  Future<void> _oublierBrouillonLocal() async {
+    try { (await SharedPreferences.getInstance()).remove(_cleBrouillon); } catch (_) {}
   }
 
   void _loadInitialData() {
@@ -256,10 +380,14 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _iccCtrl.text  = _toNum(d['indice_icc'])?.toInt().toString() ?? '';
     _videoMonteUrl = (d['video_monte_url'] as String?)?.isNotEmpty == true ? d['video_monte_url'] : null;
     _videoLibreUrl = (d['video_libre_url'] as String?)?.isNotEmpty == true ? d['video_libre_url'] : null;
+    // Brouillon repris : le statut de publication part de « Disponible »
+    if (_statut == 'brouillon') _statut = 'disponible';
   }
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
+    _scroll.dispose();
     _raceFocusNode.dispose();
     for (final c in [
       _especeAutreCtrl,
@@ -366,9 +494,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   }
 
   Future<void> _pickAnnoncePhoto() async {
-    if (_photosUrls.length + _photosFiles.length >= 4) {
+    if (_photosUrls.length + _photosFiles.length >= 5) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Maximum 4 photos', style: TextStyle(fontFamily: 'Galey'))));
+          const SnackBar(content: Text('Maximum 5 photos', style: TextStyle(fontFamily: 'Galey'))));
       return;
     }
     final source = await _showPhotoSourceSheet();
@@ -524,8 +652,47 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     );
   }
 
-  Future<void> _save() async {
-    if (_raceCtrl.text.trim().isEmpty && _titreCtrl.text.trim().isEmpty) {
+  /// Contrôles par étape (mêmes règles légales qu'à la publication).
+  String? _erreurEtape(int n) {
+    final chienChat = _espece == 'chien' || _espece == 'chat';
+    if (n == 1) {
+      if (_raceCtrl.text.trim().isEmpty && _titreCtrl.text.trim().isEmpty) return 'Veuillez saisir une race.';
+      if (chienChat && _type == 'portee' && _dateNaissance == null) return 'Obligatoire : date de naissance de la portée.';
+    }
+    if (n == 2) {
+      if (_espece == 'cheval' && _numSIRECtrl.text.trim().isEmpty) return 'Obligatoire : numéro SIRE pour tout équidé (Décret n°2013-879).';
+      if (chienChat && _type != 'portee' && _numIdentCtrl.text.trim().isEmpty) return 'Obligatoire : numéro d’identification de l’animal (puce ou tatouage) — art. L212-10.';
+      if (chienChat && _type == 'portee' && _merePuceCtrl.text.trim().isEmpty) return 'Obligatoire : identification (puce ICAD ou tatouage) de la mère — art. L214-8.';
+    }
+    return null;
+  }
+
+  void _allerA(int n) {
+    for (var k = _etape; k < n; k++) {
+      final err = _erreurEtape(k);
+      if (err != null) {
+        setState(() => _etape = k);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(err, style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red.shade700));
+        return;
+      }
+    }
+    setState(() => _etape = n);
+  }
+
+  Future<void> _save({bool brouillon = false}) async {
+    if (brouillon) return _enregistrer(brouillon: true);
+    return _enregistrer();
+  }
+
+  Future<void> _enregistrer({bool brouillon = false}) async {
+    if (brouillon) {
+      if (_raceCtrl.text.trim().isEmpty && _titreCtrl.text.trim().isEmpty && _descCtrl.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Renseignez au moins la race pour enregistrer un brouillon.', style: TextStyle(fontFamily: 'Galey'))));
+        return;
+      }
+    } else if (_raceCtrl.text.trim().isEmpty && _titreCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Veuillez saisir une race ou un titre',
               style: TextStyle(fontFamily: 'Galey'))));
@@ -533,39 +700,39 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     }
 
     // ── Champs légaux obligatoires (Code rural français) ──────────────────
-    if (_photosFiles.isEmpty && _photosUrls.isEmpty) {
+    if (!brouillon && _photosFiles.isEmpty && _photosUrls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('⚠ Au moins une photo est obligatoire',
+        content: Text('Au moins une photo est obligatoire',
             style: TextStyle(fontFamily: 'Galey'))));
       return;
     }
-    if ((_espece == 'chien' || _espece == 'chat') && _type == 'portee') {
+    if (!brouillon && (_espece == 'chien' || _espece == 'chat') && _type == 'portee') {
       if (_merePuceCtrl.text.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('⚠ Obligatoire : identification (puce ICAD ou tatouage) de la mère',
+          content: const Text('Obligatoire : identification (puce ICAD ou tatouage) de la mère',
               style: TextStyle(fontFamily: 'Galey')),
           backgroundColor: Colors.red.shade700));
         return;
       }
       if (_dateNaissance == null) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('⚠ Obligatoire : date de naissance de la portée',
+          content: const Text('Obligatoire : date de naissance de la portée',
               style: TextStyle(fontFamily: 'Galey')),
           backgroundColor: Colors.red.shade700));
         return;
       }
     }
-    if (_espece == 'cheval' && _numSIRECtrl.text.trim().isEmpty) {
+    if (!brouillon && _espece == 'cheval' && _numSIRECtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('⚠ Obligatoire : numéro SIRE pour tout équidé (Décret n°2013-879)',
+        content: const Text('Obligatoire : numéro SIRE pour tout équidé (Décret n°2013-879)',
             style: TextStyle(fontFamily: 'Galey')),
         backgroundColor: Colors.red.shade700));
       return;
     }
-    if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee' &&
+    if (!brouillon && (_espece == 'chien' || _espece == 'chat') && _type != 'portee' &&
         _numIdentCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('⚠ Obligatoire : numéro d\'identification de l\'animal (puce/tatouage) — art. L212-10',
+        content: const Text('Obligatoire : numéro d\'identification de l\'animal (puce/tatouage) — art. L212-10',
             style: TextStyle(fontFamily: 'Galey')),
         backgroundColor: Colors.red.shade700));
       return;
@@ -575,7 +742,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     // Requête directe (pas de champ statut_pro mis en cache dans User_Info)
     // pour avoir la donnée la plus fraîche au moment de la publication.
     final activeProfId = User_Info.activeProfileId;
-    if (activeProfId.isNotEmpty) {
+    if (!brouillon && activeProfId.isNotEmpty) {
       final prof = await Supabase.instance.client
           .from('user_profiles_complet')
           .select('statut_pro')
@@ -596,8 +763,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
     setState(() => _saving = true);
 
-    // ── Quota check (nouvelle annonce uniquement) ────────────────────────────
-    if (widget.annonceId == null) {
+    // ── Quota check (nouvelle annonce ou brouillon publié) ───────────────────
+    if (!brouillon && (widget.annonceId == null || _estBrouillon)) {
       try {
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final planCode = await PlanService.getPlanCode(uid);
@@ -712,7 +879,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'titre':                _titreCtrl.text.trim(),
         'description':          _descCtrl.text.trim(),
         'photos':               allPhotos,
-        'prix': const {'vente', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}
+        'prix': const {'vente', 'adoption', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}
                 .contains(_typeVente)
             ? double.tryParse(_prixCtrl.text)
             : null,
@@ -720,15 +887,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             ? _prixUnite
             : null,
         'prix_negociable':      _prixNegociable,
-        'statut':               _statut,
+        'statut':               brouillon ? 'brouillon' : _statut,
         'date_naissance': _type == 'portee' && _dateNaissance != null
             ? _dateNaissance!.toIso8601String().substring(0, 10) : null,
         'nombre_bebes':         _type == 'portee' ? _nombreBebes : null,
         'animaux_portee':       _type == 'portee' ? animauxSaved : null,
         'prix_min_portee':
-            _type == 'portee' ? double.tryParse(_prixMinPorteeCtrl.text) : null,
+            _type == 'portee' && _typeVente != 'don' ? double.tryParse(_prixMinPorteeCtrl.text) : null,
         'prix_max_portee':
-            _type == 'portee' ? double.tryParse(_prixMaxPorteeCtrl.text) : null,
+            _type == 'portee' && _typeVente != 'don' ? double.tryParse(_prixMaxPorteeCtrl.text) : null,
         'mere_animal_id':       _mereAnimalId,
         'mere_photo_url':       merePhotoUrl,
         'mere_nom':             _mereNomCtrl.text.trim(),
@@ -827,15 +994,25 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       supaData['suspect_reasons'] = _suspectReasons;
 
       if (widget.annonceId != null) {
+        // Brouillon publié : la durée de publication démarre maintenant
+        if (_estBrouillon && !brouillon) {
+          supaData['expires_at'] = DateTime.now().add(Duration(days: _dureePlan ?? _dureeAnnonce)).toIso8601String();
+        }
         await Supabase.instance.client
             .from('annonces').update(supaData).eq('id', widget.annonceId!);
       } else {
         supaData['created_at'] = now;
         supaData['expires_at'] =
-            DateTime.now().add(Duration(days: _dureeAnnonce)).toIso8601String();
+            DateTime.now().add(Duration(days: _dureePlan ?? _dureeAnnonce)).toIso8601String();
         supaData['vues']     = 0;
         supaData['contacts'] = 0;
         await Supabase.instance.client.from('annonces').insert(supaData);
+      }
+      await _oublierBrouillonLocal();
+      _autoSaveTimer?.cancel();
+      if (mounted && brouillon) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Brouillon enregistré dans Mes annonces.', style: TextStyle(fontFamily: 'Galey'))));
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -855,73 +1032,233 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   // permettrait de faire passer une annonce pour une AUTRE portée/animal sans
   // repayer/reconsommer le quota — seuls photos, texte et prix restent
   // éditables après publication.
-  bool get _isEditLocked => widget.annonceId != null;
+  bool get _isEditLocked => widget.annonceId != null && !_estBrouillon;
+
+  final _scroll = ScrollController();
+
+  void _suivant() {
+    final err = _erreurEtape(_etape);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(err, style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red.shade700));
+      return;
+    }
+    setState(() => _etape = (_etape + 1).clamp(1, 3));
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
 
   @override
   Widget build(BuildContext context) {
     final isSaillie  = _typeVente == 'saillie';
     final isRetraite = _typeVente == 'retraite';
+    final chienChat  = _espece == 'chien' || _espece == 'chat';
+    const gap = SizedBox(height: 12);
+    final etape1 = <Widget>[
+      _sectionType(), gap,
+      _sectionEspece(), gap,
+      if (_type == 'portee') ...[_sectionPortee(), gap],
+      if (_type == 'animal') ...[_sectionAnimal(), gap],
+      if (_type == 'portee') ...[_sectionAnimauxPortee(), gap],
+      _sectionDescription(),
+    ];
+    final etape2 = <Widget>[
+      if (_espece == 'cheval') ...[_sectionIdentificationEquin(), gap],
+      if (chienChat && _type != 'portee') ...[_sectionIdentificationAnimal(), gap],
+      _sectionSante(), gap,
+      if (!isSaillie && !isRetraite) ...[_lockable(_sectionMere()), gap],
+      if (!isSaillie && !isRetraite) ...[_lockable(_sectionPere()), gap],
+      _sectionPedigree(),
+    ];
+    final etape3 = <Widget>[
+      _sectionPhotos(), gap,
+      _sectionPublication(), gap,
+      if (isSaillie) ...[_sectionSaillie(), gap],
+      if (_espece == 'cheval' && !isSaillie) ...[_sectionEquide(), gap],
+      _recap(),
+    ];
+    final peutBrouillon = widget.annonceId == null || _estBrouillon;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text(widget.annonceId == null ? 'Nouvelle annonce' : 'Modifier l\'annonce',
+        title: Text(widget.annonceId == null ? 'Nouvelle annonce' : _estBrouillon ? 'Reprendre le brouillon' : 'Modifier l\'annonce',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
-        actions: [
-          _saving
-              ? const Padding(padding: EdgeInsets.all(14),
-                  child: SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-              : TextButton(onPressed: _save,
-                  child: const Text('Publier', style: TextStyle(color: Colors.white,
-                      fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _sectionType(),         const SizedBox(height: 12),
-            _sectionEspece(),       const SizedBox(height: 12),
-            _sectionPhotos(),       const SizedBox(height: 12),
-            _sectionInfos(),        const SizedBox(height: 12),
-            if (_type == 'portee') ...[_sectionPortee(), const SizedBox(height: 12)],
-            if (_type == 'animal') ...[_sectionAnimal(), const SizedBox(height: 12)],
-            if (isSaillie) ...[_sectionSaillie(), const SizedBox(height: 12)],
-            if (!isSaillie && !isRetraite) ...[_lockable(_sectionMere()), const SizedBox(height: 12)],
-            if (!isSaillie && !isRetraite) ...[_lockable(_sectionPere()), const SizedBox(height: 12)],
-            _sectionPedigree(),     const SizedBox(height: 12),
-            _sectionSante(),
-            if (_espece == 'cheval') ...[const SizedBox(height: 12), _sectionIdentificationEquin()],
-            if (_espece == 'cheval' && !isSaillie) ...[const SizedBox(height: 12), _sectionEquide()],
-            if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee')
-              ...[const SizedBox(height: 12), _sectionIdentificationAnimal()],
-            if (_type == 'portee') ...[const SizedBox(height: 12), _sectionAnimauxPortee()],
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _teal, foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
+      body: Column(children: [
+        // Étapes
+        Container(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade300))),
+          child: Row(children: [
+            for (var i = 0; i < 3; i++)
+              Expanded(child: InkWell(
+                onTap: () => _allerA(i + 1),
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(
+                      color: _etape == i + 1 ? _teal : Colors.transparent, width: 2))),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Container(
+                      width: 22, height: 22, alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _etape == i + 1 ? _teal : _etape > i + 1 ? _teal.withValues(alpha: 0.12) : Colors.white,
+                        border: Border.all(color: _etape >= i + 1 ? _teal : Colors.grey.shade400),
+                      ),
+                      child: Text('${i + 1}', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700,
+                          color: _etape == i + 1 ? Colors.white : _etape > i + 1 ? _teal : Colors.grey.shade600)),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(child: Text(_etapes[i], maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
+                            color: _etape == i + 1 ? _teal : Colors.grey.shade600))),
+                  ]),
                 ),
-                child: Text(
-                  widget.annonceId == null ? 'Publier l\'annonce' : 'Enregistrer les modifications',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
+              )),
+          ]),
         ),
-      ),
+        if (_brouillonLocal != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              const Expanded(child: Text('Une annonce non terminée a été retrouvée sur cet appareil.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _dark))),
+              TextButton(
+                onPressed: () { _oublierBrouillonLocal(); setState(() => _brouillonLocal = null); },
+                child: const Text('Ignorer', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+              ),
+              TextButton(
+                onPressed: () {
+                  final data = Map<String, dynamic>.from((_brouillonLocal!['data'] as Map?) ?? {});
+                  setState(() { _depuisMap(data); _brouillonLocal = null; });
+                },
+                child: const Text('Reprendre', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
+              ),
+            ]),
+          ),
+        Expanded(child: SingleChildScrollView(
+          controller: _scroll,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (_autoSaveA != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text('Enregistré automatiquement à $_autoSaveA',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+              ),
+            ...(_etape == 1 ? etape1 : _etape == 2 ? etape2 : etape3),
+          ]),
+        )),
+        // Actions
+        SafeArea(top: false, child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey.shade300))),
+          child: Row(children: [
+            OutlinedButton(
+              onPressed: _saving ? null : () {
+                if (_etape > 1) { setState(() => _etape--); if (_scroll.hasClients) _scroll.jumpTo(0); }
+                else { Navigator.pop(context); }
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _dark, side: BorderSide(color: Colors.grey.shade400),
+                minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: Text(_etape > 1 ? 'Précédent' : 'Annuler', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            ),
+            const Spacer(),
+            if (peutBrouillon) ...[
+              TextButton(
+                onPressed: _saving ? null : () => _save(brouillon: true),
+                style: TextButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(0, 44)),
+                child: const Text('Brouillon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 6),
+            ],
+            ElevatedButton(
+              onPressed: _saving ? null : (_etape < 3 ? _suivant : _save),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 18),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: _saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(_etape < 3 ? 'Suivant'
+                        : (widget.annonceId == null || _estBrouillon) ? 'Publier l\'annonce' : 'Enregistrer',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ]),
+        )),
+      ]),
     );
+  }
+
+  /// Récapitulatif avant publication.
+  Widget _recap() {
+    final prix = _typeVente == 'saillie'
+        ? (_sailliePrixCtrl.text.isNotEmpty ? '${_sailliePrixCtrl.text} €' : 'Gratuite')
+        : _typeVente == 'don' ? 'Don'
+        : _type == 'portee'
+            ? ([_prixMinPorteeCtrl.text, _prixMaxPorteeCtrl.text].where((v) => v.isNotEmpty).join(' – ') + (_prixMinPorteeCtrl.text.isNotEmpty || _prixMaxPorteeCtrl.text.isNotEmpty ? ' €' : '—'))
+            : (_prixCtrl.text.isNotEmpty ? '${_prixCtrl.text} €' : '—');
+    final lignes = <(String, String)>[
+      ('Annonce', '${_libelleCession()} · ${_libelleObjet()}'),
+      ('Animal', [_espece == 'autre' ? _especeAutreCtrl.text : _espece, _raceCtrl.text].where((v) => v.isNotEmpty).join(' · ')),
+      ('Identification', _espece == 'cheval' ? _numSIRECtrl.text : _type == 'portee' ? _merePuceCtrl.text : _numIdentCtrl.text),
+      ('Prix', prix),
+      ('Photos', '${_photosUrls.length + _photosFiles.length} / 5'),
+      ('Durée de publication', '${_dureePlan ?? _dureeAnnonce} jours (selon votre abonnement)'),
+      ('Mise en avant', 'Depuis Mes annonces, après publication'),
+    ];
+    return _card('Récapitulatif', Icons.fact_check_outlined, [
+      for (final l in lignes)
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Text(l.$1, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600))),
+            const SizedBox(width: 12),
+            Flexible(child: Text(l.$2.isEmpty ? '—' : l.$2, textAlign: TextAlign.right,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _dark))),
+          ]),
+        ),
+    ]);
+  }
+
+  String _libelleCession() => switch (_typeVente) {
+    'vente' => 'Vente', 'adoption' => 'Adoption', 'don' => 'Don', 'saillie' => 'Saillie', 'retraite' => 'Retraité',
+    'location' => 'Location', 'demi_pension' => 'Demi-pension', 'pension_complete' => 'Pension complète', 'valorisation' => 'Valorisation',
+    _ => _typeVente,
+  };
+  String _libelleObjet() => _typeVente == 'saillie' ? 'Saillie' : _typeVente == 'retraite' ? 'Retraité d\'élevage'
+      : _type == 'portee' ? 'Portée complète' : 'Animal individuel';
+
+  Future<void> _chercherReseau() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final choisi = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => _ReseauEtalonSheet(espece: _espece, uid: uid),
+    );
+    if (choisi == null || !mounted) return;
+    final photos = List<String>.from(choisi['photos'] ?? []);
+    setState(() {
+      _pereAnimalId = choisi['etalon_animal_id'] as String?;
+      _pereNomCtrl.text = ((choisi['pere_nom'] as String?)?.isNotEmpty == true ? choisi['pere_nom'] : choisi['titre'] ?? '').toString();
+      _perePuceCtrl.text = (choisi['pere_puce'] ?? '').toString();
+      _pereRaceCtrl.text = (choisi['pere_race'] ?? choisi['race'] ?? '').toString();
+      _pereCouleurCtrl.text = (choisi['pere_couleur'] ?? '').toString();
+      _pereCouleurYeuxCtrl.text = (choisi['pere_couleur_yeux'] ?? '').toString();
+      _pereRegistre = (choisi['pere_registre'] ?? '').toString();
+      _perePhotoFile = null;
+      _perePhotoUrl = (choisi['pere_photo_url'] as String?) ?? (photos.isNotEmpty ? photos.first : null);
+      _pereEleveurReseau = (choisi['nom_eleveur'] as String?) ?? 'Éleveur PetsMatch';
+    });
   }
 
   // ─── Helpers visuels ─────────────────────────────────────────────────────────
@@ -949,21 +1286,44 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     ]);
   }
 
+  // Bloc sobre : fond blanc, bordure fine, titre texte (l'icône n'est plus affichée).
   Widget _card(String title, IconData icon, List<Widget> children) => Container(
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6, offset: const Offset(0, 2))]),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300)),
     padding: const EdgeInsets.all(16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Icon(icon, color: _teal, size: 18), const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-            fontSize: 14, color: _teal)),
-      ]),
-      const SizedBox(height: 14),
+      Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+          fontSize: 15, color: _dark)),
+      const SizedBox(height: 12),
       ...children,
     ]),
   );
+
+  /// Sélecteur segmenté compact.
+  Widget _segmente(List<(String, String)> options, String valeur, ValueChanged<String> onTap, {Set<String> desactives = const {}}) =>
+    Container(
+      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (var i = 0; i < options.length; i++)
+          Expanded(child: InkWell(
+            onTap: desactives.contains(options[i].$1) ? null : () => onTap(options[i].$1),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 44),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              decoration: BoxDecoration(
+                color: valeur == options[i].$1 ? _teal : Colors.white,
+                border: i > 0 ? Border(left: BorderSide(color: Colors.grey.shade300)) : null,
+              ),
+              child: Text(options[i].$2, textAlign: TextAlign.center, maxLines: 2,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                      color: desactives.contains(options[i].$1) ? Colors.grey.shade400
+                          : valeur == options[i].$1 ? Colors.white : _dark)),
+            ),
+          )),
+      ])),
+    );
 
   Widget _label(String t) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
@@ -976,13 +1336,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     suffixIcon: suffix != null ? Icon(suffix, size: 18, color: const Color(0xFF6F767B)) : null,
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: _teal)),
-    filled: true, fillColor: const Color(0xFFF8F9FA),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFD1D5DB))),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _teal, width: 1.5)),
+    filled: true, fillColor: Colors.white,
   );
 
   Widget _textField(TextEditingController ctrl, String hint,
@@ -1027,7 +1387,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           decoration: BoxDecoration(
             color: selected == opt ? _teal : Colors.transparent,
             border: Border.all(color: selected == opt ? _teal : Colors.grey.shade300),
-            borderRadius: BorderRadius.circular(20)),
+            borderRadius: BorderRadius.circular(8)),
           child: Text(opt, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
               fontWeight: FontWeight.w600,
               color: selected == opt ? Colors.white : Colors.black87)))
@@ -1046,9 +1406,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(color: !enabled ? const Color(0xFFEFEFEF) : const Color(0xFFF8F9FA),
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(color: !enabled ? const Color(0xFFEFEFEF) : Colors.white,
+            border: Border.all(color: const Color(0xFFD1D5DB)),
+            borderRadius: BorderRadius.circular(8)),
         child: Row(children: [
           Icon(!enabled ? Icons.lock_outline : Icons.calendar_today_outlined,
               size: 16, color: const Color(0xFF6F767B)),
@@ -1151,87 +1511,86 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // ─── Sections ─────────────────────────────────────────────────────────────────
 
-  Widget _sectionType() => _card('Type d\'annonce', Icons.campaign_outlined, [
-    _label('Type de cession'),
-    Wrap(spacing: 8, runSpacing: 6, children: [
-      for (final v in [('vente', 'Vente €', Icons.sell_outlined),
-                       ('adoption', 'Adoption / Don', Icons.favorite_outline),
-                       if (_espece == 'cheval') ...[
-                         ('location', 'Location', Icons.event_repeat_outlined),
-                         ('demi_pension', 'Demi-pension', Icons.groups_2_outlined),
-                         ('pension_complete', 'Pension complète', Icons.night_shelter_outlined),
-                         ('valorisation', 'Valorisation', Icons.trending_up_outlined),
-                       ],
-                       ('saillie', 'Saillie', Icons.diversity_1_outlined),
-                       ('retraite', 'Retraité d\'élevage', Icons.elderly_outlined)])
-        GestureDetector(
-          onTap: () => setState(() {
-            _typeVente = v.$1;
-            const forceAnimal = {'saillie', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'};
-            if (forceAnimal.contains(v.$1)) _type = 'animal';
-            _prixUnite = switch (v.$1) {
-              'location' || 'demi_pension' || 'pension_complete' => 'mois',
-              'valorisation' => 'convenir',
-              _ => 'total',
-            };
-          }),
-          child: AnimatedContainer(duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: _typeVente == v.$1 ? _green : Colors.transparent,
-              border: Border.all(color: _typeVente == v.$1 ? _green : Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(20)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(v.$3, size: 14, color: _typeVente == v.$1 ? Colors.white : Colors.grey),
-              const SizedBox(width: 6),
-              Text(v.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: _typeVente == v.$1 ? Colors.white : Colors.grey)),
-            ]),
-          ),
+  void _choisirCession(String v) => setState(() {
+    _typeVente = v; _cessionMemo = v;
+    const forceAnimal = {'location', 'demi_pension', 'pension_complete', 'valorisation'};
+    if (forceAnimal.contains(v)) _type = 'animal';
+    _prixUnite = switch (v) {
+      'location' || 'demi_pension' || 'pension_complete' => 'mois',
+      'valorisation' => 'convenir',
+      _ => 'total',
+    };
+  });
+
+  String get _objet => _typeVente == 'saillie' ? 'saillie' : _typeVente == 'retraite' ? 'retraite'
+      : _type == 'portee' ? 'portee' : 'individuel';
+
+  void _choisirObjet(String o) => setState(() {
+    switch (o) {
+      case 'saillie':  _typeVente = 'saillie';  _type = 'animal'; _prixUnite = 'total';
+      case 'retraite': _typeVente = 'retraite'; _type = 'animal'; _prixUnite = 'total';
+      default:
+        if (const {'saillie', 'retraite'}.contains(_typeVente)) _typeVente = _cessionMemo;
+        _type = o == 'portee' ? 'portee' : 'animal';
+        if (o == 'portee' && !const {'vente', 'adoption', 'don'}.contains(_typeVente)) { _typeVente = 'vente'; _cessionMemo = 'vente'; }
+    }
+  });
+
+  Widget _optionCession(String v, String titre, String detail, IconData icone) {
+    final actif = _typeVente == v;
+    return InkWell(
+      onTap: () => _choisirCession(v),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: actif ? _teal.withValues(alpha: 0.06) : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: actif ? _teal : Colors.grey.shade300, width: actif ? 1.5 : 1),
         ),
-    ]),
-    const SizedBox(height: 14),
-    if (!const {'saillie', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente)) ...[
-      _label('Que souhaitez-vous publier ?'),
-      Row(children: [
-        for (final t in [('portee', 'Portée', Icons.group_outlined),
-                         ('animal', 'Animal individuel', Icons.cruelty_free_outlined)])
-          Expanded(child: Padding(
-            padding: EdgeInsets.only(right: t.$1 == 'portee' ? 6 : 0, left: t.$1 == 'animal' ? 6 : 0),
-            child: GestureDetector(onTap: () => setState(() => _type = t.$1),
-              child: AnimatedContainer(duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: _type == t.$1 ? _teal : Colors.transparent,
-                  border: Border.all(color: _type == t.$1 ? _teal : Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(12)),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(t.$3, size: 22, color: _type == t.$1 ? Colors.white : Colors.grey),
-                  const SizedBox(height: 5),
-                  Text(t.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: _type == t.$1 ? Colors.white : Colors.grey),
-                      textAlign: TextAlign.center),
-                ]),
-              ),
-            ),
-          )),
-      ]),
-    ] else ...[
-      Padding(
-        padding: const EdgeInsets.only(top: 0),
-        child: Row(children: [
-          const Icon(Icons.info_outline, size: 13, color: Color(0xFF6F767B)),
-          const SizedBox(width: 5),
-          Expanded(child: Text(
-            _typeVente == 'retraite'
-                ? 'Choisissez l\'animal — l\'espèce et la race seront pré-remplies'
-                : 'Sélectionnez l\'étalon — espèce, race et infos seront pré-remplis',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icone, size: 18, color: actif ? _teal : Colors.grey.shade600),
+          const SizedBox(height: 6),
+          Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700, color: _dark)),
+          const SizedBox(height: 2),
+          Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
         ]),
       ),
-      const SizedBox(height: 12),
+    );
+  }
+
+  Widget _sectionType() {
+    final objet = _objet;
+    final equin = const {'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente);
+    return _card('Type d\'annonce', Icons.campaign_outlined, [
+      if (objet != 'saillie' && objet != 'retraite') ...[
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: _optionCession('vente', 'Vente', 'Proposer à la vente', Icons.sell_outlined)),
+          const SizedBox(width: 8),
+          Expanded(child: _optionCession('adoption', 'Adoption', 'Frais d\'adoption', Icons.favorite_border)),
+          const SizedBox(width: 8),
+          Expanded(child: _optionCession('don', 'Don', 'Céder gratuitement', Icons.card_giftcard_outlined)),
+        ]),
+        if (_espece == 'cheval') ...[
+          const SizedBox(height: 10),
+          _label('Autres formules (cheval)'),
+          _chips(const ['Location', 'Demi-pension', 'Pension complète', 'Valorisation'],
+              const {'location': 'Location', 'demi_pension': 'Demi-pension', 'pension_complete': 'Pension complète', 'valorisation': 'Valorisation'}[_typeVente] ?? '',
+              (v) => _choisirCession(const {'Location': 'location', 'Demi-pension': 'demi_pension', 'Pension complète': 'pension_complete', 'Valorisation': 'valorisation'}[v]!)),
+        ],
+        const SizedBox(height: 14),
+      ],
+      _label('Objet de l\'annonce'),
+      _segmente(const [('individuel', 'Animal individuel'), ('portee', 'Portée complète'), ('saillie', 'Saillie'), ('retraite', 'Retraité d\'élevage')],
+          objet, _choisirObjet, desactives: equin ? const {'portee', 'saillie', 'retraite'} : const {}),
+      if (objet == 'saillie' || objet == 'retraite') ...[
+        const SizedBox(height: 8),
+        Text(objet == 'saillie'
+            ? 'Une saillie n\'est ni une vente, ni une adoption : son prix se règle à l\'étape Publication.'
+            : 'Choisissez l\'animal : l\'espèce et la race seront préremplies.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        const SizedBox(height: 10),
       // Saillie : picker étalon (avant espèce) pour auto-remplissage
       if (_typeVente == 'saillie') ...[
         OutlinedButton.icon(
@@ -1279,8 +1638,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           ),
         ),
       ],
-    ],
-  ]);
+      ],
+    ]);
+  }
 
   Widget _sectionEspece() {
     final breederSpecies = _breederSpecies;
@@ -1303,11 +1663,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           child: AnimatedContainer(duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: _espece == s.value ? s.color : Colors.transparent,
-              border: Border.all(color: _espece == s.value ? s.color : Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(20)),
+              color: _espece == s.value ? _teal : Colors.white,
+              border: Border.all(color: _espece == s.value ? _teal : Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              speciesIcon(s.value, 12, _espece == s.value ? Colors.white : s.color),
+              speciesIcon(s.value, 12, _espece == s.value ? Colors.white : Colors.grey.shade600),
               const SizedBox(width: 5),
               Text(s.label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -1331,10 +1691,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final total = _photosUrls.length + _photosFiles.length;
     return _card('Photos', Icons.photo_library_outlined, [
       Row(children: [
-        Text('$total / 4  •  Format carré',
+        Text('$total / 5  ·  format carré  ·  la première est la photo principale',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
         const Spacer(),
-        if (total < 4) TextButton.icon(onPressed: _pickAnnoncePhoto,
+        if (total < 5) TextButton.icon(onPressed: _pickAnnoncePhoto,
           icon: const Icon(Icons.add_photo_alternate_outlined, size: 16, color: _teal),
           label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
           style: TextButton.styleFrom(visualDensity: VisualDensity.compact)),
@@ -1346,7 +1706,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ..._photosFiles.asMap().entries.map((e) => _photoThumb(
             _photosUrls.isEmpty && e.key == 0,
             () => setState(() => _photosFiles.removeAt(e.key)), file: e.value)),
-        if (total < 4) GestureDetector(onTap: _pickAnnoncePhoto,
+        if (total < 5) GestureDetector(onTap: _pickAnnoncePhoto,
           child: Container(width: 100, height: 100, margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
                 border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
@@ -1378,15 +1738,20 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
               color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)))),
     ]);
 
-  Widget _sectionInfos() => _card('Informations', Icons.info_outline, [
+  Widget _sectionDescription() => _card('Description', Icons.notes_outlined, [
+    _textField(_descCtrl, 'Décrivez l\'animal ou la portée, la famille, les conditions...', maxLines: 5),
+  ]);
+
+  Widget _sectionPublication() => _card('Prix et conditions', Icons.sell_outlined, [
     _label('Titre de l\'annonce'),
     _textField(_titreCtrl, 'Ex: Chiots Berger Australien LOF disponibles'),
-    const SizedBox(height: 10),
-    _label('Description'),
-    _textField(_descCtrl, 'Décrivez l\'annonce, la famille, les conditions...', maxLines: 4),
-    if (const {'vente', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente)) ...[
+    if (_typeVente == 'don') ...[
       const SizedBox(height: 10),
-      _label(_typeVente == 'valorisation' ? 'Rémunération (€, optionnel)' : 'Prix (€)'),
+      Text('Don : aucun prix n\'est demandé.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+    ],
+    if (_type != 'portee' && const {'vente', 'adoption', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente)) ...[
+      const SizedBox(height: 10),
+      _label(_typeVente == 'valorisation' ? 'Rémunération (€, optionnel)' : _typeVente == 'adoption' ? 'Frais d\'adoption (€)' : 'Prix (€)'),
       Row(children: [
         Expanded(child: _textField(_prixCtrl, '0', keyboardType: TextInputType.number)),
         if (const {'location', 'demi_pension', 'pension_complete'}.contains(_typeVente)) ...[
@@ -1409,6 +1774,16 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           ])),
       ]),
     ],
+    if (_type == 'portee' && _typeVente != 'don') ...[
+      const SizedBox(height: 10),
+      _label(_typeVente == 'adoption' ? 'Frais d\'adoption par bébé (€)' : 'Fourchette de prix par bébé (€)'),
+      Row(children: [
+        Expanded(child: _textField(_prixMinPorteeCtrl, 'Min', keyboardType: TextInputType.number)),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text('—', style: TextStyle(fontFamily: 'Galey', fontSize: 18, color: Colors.grey.shade400))),
+        Expanded(child: _textField(_prixMaxPorteeCtrl, 'Max', keyboardType: TextInputType.number)),
+      ]),
+    ],
     const SizedBox(height: 10),
     _label('Statut'),
     Wrap(spacing: 8, runSpacing: 6, children: [
@@ -1419,28 +1794,17 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           child: AnimatedContainer(duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: _statut == s.$1 ? s.$3 : Colors.transparent,
+              color: _statut == s.$1 ? s.$3 : Colors.white,
               border: Border.all(color: _statut == s.$1 ? s.$3 : Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(8)),
             child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: _statut == s.$1 ? Colors.white : Colors.black87)))),
     ]),
-    const SizedBox(height: 16),
-    _label('Durée de l\'annonce'),
-    Wrap(spacing: 8, runSpacing: 6, children: [
-      for (final d in [30, 60, 90])
-        GestureDetector(onTap: () => setState(() => _dureeAnnonce = d),
-          child: AnimatedContainer(duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: _dureeAnnonce == d ? _teal : Colors.transparent,
-              border: Border.all(color: _dureeAnnonce == d ? _teal : Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(20)),
-            child: Text('$d jours', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: _dureeAnnonce == d ? Colors.white : Colors.black87)))),
-    ]),
+    const SizedBox(height: 14),
+    Text('Durée de publication : ${_dureePlan ?? _dureeAnnonce} jours, selon votre abonnement. '
+        'La mise en avant se propose depuis Mes annonces après publication.',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
   ]);
 
   Widget _sectionPortee() => _card('Portée', Icons.group_outlined, [
@@ -1473,17 +1837,6 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       IconButton(onPressed: () => setState(() { if (_nombreBebes < 20) _nombreBebes++; }),
           icon: const Icon(Icons.add_circle_outline, color: _teal, size: 28),
           padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-    ]),
-    const SizedBox(height: 12),
-    _label('Fourchette de prix par bébé (€)'),
-    Row(children: [
-      Expanded(child: _textField(_prixMinPorteeCtrl, 'Min',
-          keyboardType: TextInputType.number)),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Text('—', style: TextStyle(fontFamily: 'Galey', fontSize: 18,
-            color: Colors.grey.shade400))),
-      Expanded(child: _textField(_prixMaxPorteeCtrl, 'Max',
-          keyboardType: TextInputType.number)),
     ]),
   ]);
 
@@ -1532,15 +1885,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _label('Sexe'),
       Wrap(spacing: 8, children: [
         for (final s in (_espece == 'cheval'
-            ? const [('jument', '♀ Jument'), ('hongre', '♂ Hongre'), ('entier', '♂ Entier')]
-            : const [('male', '♂ Mâle'), ('femelle', '♀ Femelle')]))
+            ? const [('jument', 'Jument'), ('hongre', 'Hongre'), ('entier', 'Entier')]
+            : const [('male', 'Mâle'), ('femelle', 'Femelle')]))
           GestureDetector(onTap: () => setState(() => _sexe = s.$1),
             child: AnimatedContainer(duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               decoration: BoxDecoration(
-                color: _sexe == s.$1 ? _teal : Colors.transparent,
+                color: _sexe == s.$1 ? _teal : Colors.white,
                 border: Border.all(color: _sexe == s.$1 ? _teal : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(20)),
+                borderRadius: BorderRadius.circular(8)),
               child: Text(s.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: _sexe == s.$1 ? Colors.white : Colors.grey)))),
@@ -1625,7 +1978,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             decoration: BoxDecoration(
               color: _niveauEquide == n ? _teal : Colors.transparent,
               border: Border.all(color: _niveauEquide == n ? _teal : Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(18)),
+              borderRadius: BorderRadius.circular(8)),
             child: Text(n, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                 fontWeight: FontWeight.w600, color: _niveauEquide == n ? Colors.white : Colors.grey.shade700)),
           ),
@@ -1742,7 +2095,51 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _typeVente == 'saillie' ? 'Père (optionnel)' : 'Père',
     Icons.male,
     [
-      if (_pereAnimalId != null) ...[
+      _segmente(const [('mien', 'Mes animaux'), ('reseau', 'Réseau PetsMatch'), ('manuel', 'Saisie manuelle')],
+          _pereSource, (v) => setState(() {
+            _pereSource = v;
+            if (v == 'manuel') { _pereAnimalId = null; _pereEleveurReseau = null; }
+          })),
+      const SizedBox(height: 10),
+      if (_pereSource == 'reseau') ...[
+        if (_pereEleveurReseau != null && _pereNomCtrl.text.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
+            child: Row(children: [
+              ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 44, height: 44,
+                  child: _perePhotoUrl != null ? CachedNetworkImage(imageUrl: _perePhotoUrl!, fit: BoxFit.cover)
+                      : Container(color: Colors.grey.shade100))),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(_pereNomCtrl.text, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700, color: _dark)),
+                Text('Fiche liée — $_pereEleveurReseau', style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _teal)),
+              ])),
+              IconButton(
+                onPressed: () => setState(() { _pereAnimalId = null; _pereEleveurReseau = null; _perePhotoUrl = null; }),
+                icon: const Icon(Icons.close, size: 18, color: Color(0xFF6F767B)),
+              ),
+            ]),
+          ),
+        OutlinedButton.icon(
+          onPressed: _chercherReseau,
+          icon: const Icon(Icons.search, size: 16, color: _teal),
+          label: const Text('Rechercher sur le réseau PetsMatch', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
+          style: OutlinedButton.styleFrom(side: const BorderSide(color: _teal), minimumSize: const Size(double.infinity, 44),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+        ),
+        const SizedBox(height: 6),
+        Text('Seuls les reproducteurs proposés publiquement en saillie apparaissent. Aucun transfert de propriété.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+        const SizedBox(height: 10),
+      ],
+      if (_pereSource == 'manuel') ...[
+        Text('Reproducteur extérieur : il n\'est pas ajouté à votre cheptel.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        const SizedBox(height: 10),
+      ],
+      if (_pereSource == 'mien' && _pereAnimalId != null) ...[
         _parentChip(
           nom: _pereNomCtrl.text,
           photoUrl: _perePhotoUrl,
@@ -1754,12 +2151,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ),
         const SizedBox(height: 10),
       ],
-      Row(children: [
+      if (_pereSource != 'reseau') Row(children: [
         if (_pereAnimalId == null)
           _parentPhotoBox(_perePhotoUrl, _perePhotoFile, _pickPerePhoto,
               () => setState(() { _perePhotoUrl = null; _perePhotoFile = null; })),
         if (_pereAnimalId == null) const SizedBox(width: 10),
-        Expanded(
+        if (_pereSource == 'mien') Expanded(
           child: OutlinedButton.icon(
             onPressed: _pickAnimalForPere,
             icon: const Icon(Icons.search, size: 16, color: _teal),
@@ -1837,7 +2234,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             icon: const Icon(Icons.add_circle_outline, color: _teal),
             padding: EdgeInsets.zero, constraints: const BoxConstraints()),
         if (_semaines < 8)
-          const Text('  ⚠ min. légal : 8 sem.',
+          const Text('  minimum légal : 8 semaines',
               style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.redAccent)),
       ]),
     ],
@@ -1846,18 +2243,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Widget _sectionIdentificationEquin() => _card(
     'Identification équidé', Icons.badge_outlined,
     [
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF8E1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFFFCC80)),
-        ),
-        child: const Text(
-          '⚠ Obligatoire pour tout équidé mis en vente (Décret n°2013-879)',
-          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF7B5800)),
-        ),
-      ),
+      Text('Obligatoire pour tout équidé mis en vente (Décret n°2013-879).',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
       const SizedBox(height: 12),
       Row(children: [
         _label('Numéro SIRE'),
@@ -1870,32 +2257,16 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     ],
   );
 
-  Widget _sectionIdentificationAnimal() => Container(
-    decoration: BoxDecoration(
-      color: const Color(0xFFFFF8E1),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFFFCC80)),
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 6, offset: const Offset(0, 2))],
-    ),
-    padding: const EdgeInsets.all(16),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        const Icon(Icons.qr_code_2_outlined, color: Color(0xFF7B5800), size: 18),
-        const SizedBox(width: 8),
-        const Expanded(child: Text('Identification de l\'animal',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                fontSize: 14, color: Color(0xFF7B5800)))),
-        const Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-      ]),
-      const SizedBox(height: 6),
-      const Text('Obligatoire pour chien/chat (art. L212-10 Code rural)',
-          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF9B6800))),
-      const SizedBox(height: 12),
+  Widget _sectionIdentificationAnimal() => _card('Identification de l\'animal', Icons.qr_code_2_outlined, [
+    Text('Obligatoire pour chien et chat (art. L212-10 Code rural).',
+        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+    const SizedBox(height: 10),
+    Row(children: [
       _label('Numéro de puce électronique ou tatouage'),
-      _textField(_numIdentCtrl, 'Ex: 250269811234567 ou tatouage AA123'),
+      const Text(' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
     ]),
-  );
+    _textField(_numIdentCtrl, 'Ex: 250269811234567 ou tatouage AA123'),
+  ]);
 
   Widget _sectionAnimauxPortee() => _card('Animaux de la portée', Icons.pets_outlined, [
     if (_animauxPortee.isEmpty)
@@ -1944,7 +2315,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(animal['nom']?.isNotEmpty == true ? animal['nom'] : 'Sans nom',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
-          Text('${animal['sexe'] == 'male' ? '♂ Mâle' : '♀ Femelle'}'
+          Text('${animal['sexe'] == 'male' ? 'Mâle' : 'Femelle'}'
               '${(animal['couleur'] ?? '').isNotEmpty ? ' · ${animal['couleur']}' : ''}'
               '${animal['isLinked'] == true ? ' · lié' : ''}',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
@@ -2040,6 +2411,108 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   }
 }
 
+// ─── Réseau PetsMatch : reproducteurs proposés publiquement en saillie ───────
+// (annonces de saillie actives d'autres éleveurs — jamais une fiche privée).
+
+class _ReseauEtalonSheet extends StatefulWidget {
+  final String espece;
+  final String uid;
+  const _ReseauEtalonSheet({required this.espece, required this.uid});
+  @override
+  State<_ReseauEtalonSheet> createState() => _ReseauEtalonSheetState();
+}
+
+class _ReseauEtalonSheetState extends State<_ReseauEtalonSheet> {
+  List<Map<String, dynamic>> _tous = [];
+  String _q = '';
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _charger();
+  }
+
+  Future<void> _charger() async {
+    try {
+      final rows = await Supabase.instance.client.from('annonces')
+          .select('id, titre, race, nom_eleveur, pere_nom, pere_puce, pere_race, pere_couleur, pere_couleur_yeux, pere_registre, pere_photo_url, photos, etalon_animal_id')
+          .eq('type_vente', 'saillie').eq('statut', 'disponible').eq('espece', widget.espece)
+          .neq('uid_eleveur', widget.uid)
+          .order('created_at', ascending: false).limit(60);
+      if (mounted) setState(() { _tous = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = _q.trim().toLowerCase();
+    final liste = _tous.where((a) => t.isEmpty ||
+        ['pere_nom', 'titre', 'nom_eleveur', 'pere_puce', 'pere_race', 'race']
+            .any((k) => (a[k] ?? '').toString().toLowerCase().contains(t))).toList();
+    return SafeArea(child: Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Réseau PetsMatch', style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 10),
+              TextField(
+                autofocus: true,
+                onChanged: (v) => setState(() => _q = v),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Nom de l\'animal, n° d\'identification ou élevage',
+                  hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500),
+                  prefixIcon: Icon(Icons.search, size: 20, color: Colors.grey.shade500),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+                ),
+              ),
+            ]),
+          ),
+          Expanded(child: _loading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)))
+              : liste.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text('Aucun reproducteur trouvé. Seuls les reproducteurs proposés publiquement en saillie sur PetsMatch apparaissent.',
+                          textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)))
+                  : ListView.separated(
+                      itemCount: liste.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                      itemBuilder: (_, i) {
+                        final a = liste[i];
+                        final photos = List<String>.from(a['photos'] ?? []);
+                        final ph = (a['pere_photo_url'] as String?) ?? (photos.isNotEmpty ? photos.first : null);
+                        final nom = ((a['pere_nom'] as String?)?.isNotEmpty == true ? a['pere_nom'] : a['titre'] ?? '').toString();
+                        final sous = [a['pere_race'] ?? a['race'], a['pere_registre'], a['nom_eleveur']]
+                            .where((v) => v != null && v.toString().isNotEmpty).join(' · ');
+                        return ListTile(
+                          leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 44, height: 44,
+                              child: ph != null ? CachedNetworkImage(imageUrl: ph, fit: BoxFit.cover) : Container(color: Colors.grey.shade100))),
+                          title: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+                          subtitle: Text(sous, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                          trailing: const Text('Sélectionner', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                          onTap: () => Navigator.pop(context, a),
+                        );
+                      },
+                    )),
+        ]),
+      ),
+    ));
+  }
+}
+
 // ─── Sheet picker animaux (mère / père / étalon) ──────────────────────────────
 
 class _AnimalPickerSheet extends StatelessWidget {
@@ -2132,7 +2605,7 @@ class _AnimalPickerSheet extends StatelessWidget {
                           title: Text(d['nom'] ?? 'Sans nom', style: const TextStyle(
                               fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                           subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('${d['race'] ?? ''} · ${d['sexe'] == 'male' ? '♂' : '♀'}',
+                            Text('${d['race'] ?? ''} · ${d['sexe'] == 'male' ? 'Mâle' : 'Femelle'}',
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
                                     color: Color(0xFF6F767B))),
                             if (ageStr.isNotEmpty || (d['identification'] ?? '').isNotEmpty)
@@ -2315,7 +2788,7 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
           _label('Sexe'),
           const SizedBox(height: 8),
           Wrap(spacing: 8, children: [
-            for (final s in [('male', '♂ Mâle'), ('femelle', '♀ Femelle')])
+            for (final s in [('male', 'Mâle'), ('femelle', 'Femelle')])
               GestureDetector(onTap: () => setState(() => _sexe = s.$1),
                 child: AnimatedContainer(duration: const Duration(milliseconds: 150),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
@@ -2532,8 +3005,6 @@ class _QuotaGateSheet extends StatelessWidget {
           Container(width: 36, height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 20),
-          const Text('🚫', style: TextStyle(fontSize: 40)),
-          const SizedBox(height: 12),
           const Text('Quota atteint',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                   fontSize: 20, color: Color(0xFF1F2A2E))),
@@ -2567,7 +3038,7 @@ class _QuotaGateSheet extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: onUpgradePro,
-                icon: const Text('⚡', style: TextStyle(fontSize: 16)),
+                icon: const Icon(Icons.upgrade, size: 18),
                 label: Text('Passer au plan $nextPlanLabel',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                 style: ElevatedButton.styleFrom(

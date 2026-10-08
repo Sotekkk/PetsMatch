@@ -1393,6 +1393,9 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                       _FeedBadge(
                         label: '💜 Saillie',
                         color: const Color(0xFF7C3AED).withValues(alpha: 0.80)),
+                    if (item.typeVente == 'don')
+                      _FeedBadge(label: 'Don',
+                        color: const Color(0xFF6E9E57).withValues(alpha: 0.85)),
                     if (item.typeVente == 'retraite')
                       _FeedBadge(
                         label: '🏅 Retraité',

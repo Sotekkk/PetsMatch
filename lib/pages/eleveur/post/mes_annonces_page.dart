@@ -515,6 +515,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     'pause'      => const Color(0xFF9CA3AF),
     'vendu' || 'cede' => Colors.blueGrey,
     'quota_depasse' => Colors.redAccent,
+    'brouillon'  => const Color(0xFF9CA3AF),
     _            => Colors.redAccent,
   };
 
@@ -526,6 +527,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     'cede'       => 'Cédé',
     'expiree'    => 'Expirée',
     'quota_depasse' => 'Bloquée · quota dépassé',
+    'brouillon'  => 'Brouillon',
     _            => s,
   };
 
@@ -803,7 +805,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
                 // Modifier
                 _ActionBtn(
                   icon: Icons.edit_outlined,
-                  label: 'Modifier',
+                  label: _statut == 'brouillon' ? 'Reprendre' : 'Modifier',
                   color: _teal,
                   onTap: () {
                     if (widget.isAssociation) {
