@@ -42,33 +42,49 @@ interface AuditEntry {
 interface Animal { id: string; nom: string; espece: string; race: string; identification: string; date_naissance: string; sexe: string; couleur?: string; couleur_yeux?: string; pedigree_numero?: string; pedigree_lof?: string; nom_pere?: string; puce_pere?: string; nom_mere?: string; puce_mere?: string; }
 interface UserProfile { firstname: string; lastname: string; name_elevage: string; is_elevage: boolean; adress_elevage: string; adress: string; rue: string; ville: string; ville_elevage: string; code_postal: string; siret: string; email: string; numero_elevage: string; code_iso_elevage: string; phone_number: string; code_iso: string; }
 
-const TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
-  contrat_vente:       { label: 'Vente',        icon: '🤝', color: 'bg-green-50 text-green-700 border-green-200' },
-  contrat_reservation: { label: 'Réservation',  icon: '🐾', color: 'bg-teal-50 text-teal-700 border-teal-200' },
-  certificat_cession:  { label: 'Cession',      icon: '📋', color: 'bg-purple-50 text-purple-700 border-purple-200' },
-  contrat_saillie:     { label: 'Saillie',       icon: '💞', color: 'bg-pink-50 text-pink-700 border-pink-200' },
+const TYPE_META: Record<string, { label: string }> = {
+  contrat_reservation: { label: 'Contrat de réservation' },
+  contrat_vente:       { label: 'Contrat de vente' },
+  certificat_cession:  { label: 'Certificat de cession' },
+  contrat_saillie:     { label: 'Contrat de saillie' },
 };
 
+/** Icône document (trait 1.5, même bibliothèque que le reste de l'interface). */
+function IconeDocument({ className = 'w-7 h-7' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  );
+}
+
+const DOCUMENTS_CREABLES = [
+  { type: 'contrat_reservation', title: 'Contrat de réservation', desc: 'Préparer la réservation d’un animal.' },
+  { type: 'contrat_vente',       title: 'Contrat de vente',       desc: 'Formaliser la vente d’un animal.' },
+  { type: 'certificat_cession',  title: 'Certificat de cession',  desc: 'Établir le document de cession.' },
+  { type: 'contrat_saillie',     title: 'Contrat de saillie',     desc: 'Définir les conditions d’une saillie.' },
+] as const;
+
 const ACTION_LABEL: Record<string, string> = {
-  created:           '📝 Créé',
-  opened:            '👁️ Ouvert',
-  signed:            '✅ Signé',
-  partially_signed:  '✍️ Signature partielle',
-  cancelled:         '🚫 Annulé',
-  refused:           '❌ Refusé',
-  expired:           '⏰ Expiré',
-  sent:              '📤 Envoyé (YouSign)',
+  created:           'Créé',
+  opened:            'Ouvert',
+  signed:            'Signé',
+  partially_signed:  'Signature partielle',
+  cancelled:         'Annulé',
+  refused:           'Refusé',
+  expired:           'Expiré',
+  sent:              'Envoyé (YouSign)',
 };
 
 const STATUT_META: Record<string, { label: string; cls: string }> = {
   brouillon:          { label: 'Brouillon',             cls: 'bg-gray-100 text-gray-500' },
-  en_attente:         { label: '⏳ Attente acquéreur',  cls: 'bg-amber-100 text-amber-700' },
-  partiellement_signe:{ label: '✍️ Partiel',            cls: 'bg-blue-100 text-blue-700' },
-  signe:              { label: '✅ Signé',              cls: 'bg-green-100 text-green-700' },
+  en_attente:         { label: 'Attente acquéreur',  cls: 'bg-amber-100 text-amber-700' },
+  partiellement_signe:{ label: 'Signature partielle',            cls: 'bg-blue-100 text-blue-700' },
+  signe:              { label: 'Signé',              cls: 'bg-green-100 text-green-700' },
   archive:            { label: 'Archivé',               cls: 'bg-gray-100 text-gray-400' },
-  annule:             { label: '🚫 Annulé',             cls: 'bg-red-100 text-red-500' },
-  expire:             { label: '⏰ Expiré',             cls: 'bg-orange-100 text-orange-600' },
-  refuse:             { label: '❌ Refusé',             cls: 'bg-red-100 text-red-700' },
+  annule:             { label: 'Annulé',             cls: 'bg-red-100 text-red-500' },
+  expire:             { label: 'Expiré',             cls: 'bg-orange-100 text-orange-600' },
+  refuse:             { label: 'Refusé',             cls: 'bg-red-100 text-red-700' },
 };
 
 export default function ContratsPage() {
@@ -102,6 +118,8 @@ export default function ContratsPage() {
   const [cancelling, setCancelling]   = useState<string | null>(null);
   const [transmitting, setTransmitting] = useState<string | null>(null);
   const [highlightToken, setHighlightToken] = useState<string | null>(null);
+  const [recherche, setRecherche] = useState('');
+  const [filtreType, setFiltreType] = useState('tous');
   const [auditOpen, setAuditOpen] = useState<Record<string, boolean>>({});
   const [auditCache, setAuditCache] = useState<Record<string, AuditEntry[]>>({});
 
@@ -607,101 +625,130 @@ export default function ContratsPage() {
   );
 
   const iCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
+  const q = recherche.trim().toLowerCase();
+  const docsFiltres = docs.filter(d =>
+    (filtreType === 'tous' || d.type === filtreType) &&
+    (!q || [d.titre, (d.metadata?.acquereur_nom as string) ?? '', TYPE_META[d.type]?.label ?? '']
+      .some(v => v.toLowerCase().includes(q))));
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
 
-      {/* Header */}
+      {/* En-tête */}
       <div>
-        <h1 className="text-2xl font-bold text-[#1F2A2E] font-galey">📄 Mes Contrats</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Réservations, ventes — liés à vos animaux</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#1F2A2E] font-galey">Mes contrats</h1>
+        <p className="text-sm text-gray-600 mt-1">Créez et retrouvez les documents liés à vos animaux.</p>
       </div>
 
-      {/* Certificats d'engagement */}
-      <a href="/elevage/certificat-engagement"
-        className="flex items-center gap-4 bg-white border border-amber-200 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-amber-300 transition-all group">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-          style={{ backgroundColor: '#FFF7ED' }}>
-          ✍️
+      {/* Créer un document */}
+      <section>
+        <h2 className="text-lg font-bold text-[#1F2A2E] font-galey mb-3">Créer un document</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {DOCUMENTS_CREABLES.map(m => (
+            <div key={m.type} className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-5">
+              <span className="text-[#1F2A2E] flex-shrink-0"><IconeDocument /></span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[15px] font-semibold text-[#1F2A2E] font-galey">{m.title}</p>
+                <p className="text-sm text-gray-500 mt-0.5">{m.desc}</p>
+              </div>
+              <button type="button" onClick={() => { resetForm(); setFormType(m.type); setShowForm(true); }}
+                className="flex-shrink-0 h-10 px-5 rounded-lg border border-[#0C5C6C] text-sm font-semibold text-[#0C5C6C] hover:bg-[#0C5C6C] hover:text-white transition-colors">
+                Créer
+              </button>
+            </div>
+          ))}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-[#1F2A2E] font-galey">Certificats d&apos;engagement</p>
-          <p className="text-xs text-gray-500 mt-0.5">Engagements de cession signés par les acquéreurs</p>
-        </div>
-        <svg className="w-4 h-4 text-gray-400 group-hover:text-amber-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      </a>
+      </section>
 
-      {/* Types de contrats disponibles */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {([
-          { type: 'contrat_vente' as const,       title: 'Contrat de vente',        icon: '🤝', desc: 'Transfert de propriété, garanties légales, vices rédhibitoires.' },
-          { type: 'contrat_reservation' as const,  title: 'Contrat de réservation',  icon: '🐾', desc: 'Arrhes, conditions d\'annulation, engagement des deux parties.' },
-          { type: 'certificat_cession' as const,   title: 'Certificat de cession',   icon: '📋', desc: 'Attestation de transfert de propriété après la vente.' },
-          { type: 'contrat_saillie' as const,      title: 'Contrat de saillie',       icon: '💞', desc: 'Conditions de saillie, tarif, garanties portée, droits sur les chiots/chatons.' },
-        ] as const).map(m => (
-          <div key={m.type} className="bg-white border border-gray-100 rounded-xl p-4 space-y-1.5 shadow-sm">
-            <div className="text-2xl">{m.icon}</div>
-            <p className="text-sm font-semibold text-[#1F2A2E] font-galey">{m.title}</p>
-            <p className="text-xs text-gray-500 leading-relaxed">{m.desc}</p>
-            <button onClick={() => { resetForm(); setFormType(m.type); setShowForm(true); }}
-              className="text-xs font-semibold text-[#0C5C6C] hover:underline mt-1">
-              + Créer
-            </button>
+      {/* Certificats d'engagement */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4 bg-white border border-gray-200 rounded-xl p-5">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <span className="text-[#1F2A2E] flex-shrink-0"><IconeDocument /></span>
+          <div className="min-w-0">
+            <p className="text-[15px] font-semibold text-[#1F2A2E] font-galey">Certificats d&apos;engagement</p>
+            <p className="text-sm text-gray-500 mt-0.5">Retrouvez les documents signés par les acquéreurs.</p>
           </div>
-        ))}
+        </div>
+        <a href="/elevage/certificat-engagement"
+          className="flex-shrink-0 inline-flex items-center justify-center h-10 px-5 rounded-lg border border-[#0C5C6C] text-sm font-semibold text-[#0C5C6C] hover:bg-[#0C5C6C] hover:text-white transition-colors">
+          Consulter
+        </a>
       </div>
 
       {/* Liste des contrats */}
       <div>
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Contrats enregistrés ({docs.length})</h2>
+        <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
+          <h2 className="text-lg font-bold text-[#1F2A2E] font-galey md:flex-1">
+            Contrats enregistrés <span className="text-gray-400 font-semibold">({docs.length})</span>
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-2 md:w-auto">
+            <label className="relative flex-1 sm:w-64">
+              <span className="sr-only">Rechercher un contrat</span>
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+              <input type="search" value={recherche} onChange={e => setRecherche(e.target.value)}
+                placeholder="Rechercher un contrat"
+                className="w-full h-11 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-[#0C5C6C]" />
+            </label>
+            <select value={filtreType} onChange={e => setFiltreType(e.target.value)} aria-label="Type de document"
+              className="h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C] sm:w-52">
+              <option value="tous">Tous les types</option>
+              {DOCUMENTS_CREABLES.map(m => <option key={m.type} value={m.type}>{m.title}</option>)}
+            </select>
+          </div>
+        </div>
         {fetching ? (
           <div className="flex justify-center py-12"><div className="animate-spin w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full" /></div>
-        ) : docs.length === 0 ? (
-          <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl text-gray-400">
-            <div className="text-4xl mb-3">📂</div>
-            <p className="text-sm font-medium">Aucun contrat</p>
-            <p className="text-xs mt-1">Créez votre premier contrat en sélectionnant un type ci-dessus</p>
+        ) : docsFiltres.length === 0 ? (
+          <div className="text-center py-12 px-4 border border-dashed border-gray-300 rounded-xl bg-white">
+            <span className="inline-flex text-gray-400 mb-3"><IconeDocument className="w-10 h-10" /></span>
+            {docs.length === 0 ? (
+              <>
+                <p className="text-[15px] font-semibold text-[#1F2A2E]">Aucun contrat enregistré</p>
+                <p className="text-sm text-gray-500 mt-1">Vos documents apparaîtront ici après leur création.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[15px] font-semibold text-[#1F2A2E]">Aucun contrat ne correspond</p>
+                <button type="button" onClick={() => { setRecherche(''); setFiltreType('tous'); }}
+                  className="text-sm text-[#0C5C6C] font-semibold hover:underline mt-1">Réinitialiser</button>
+              </>
+            )}
           </div>
         ) : (
-          <div className="space-y-2">
-            {docs.map(d => {
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-200 overflow-hidden">
+            {docsFiltres.map(d => {
               const tm = TYPE_META[d.type] ?? TYPE_META.contrat_vente;
               const sm = STATUT_META[d.statut] ?? STATUT_META.brouillon;
               const date = new Date(d.created_at).toLocaleDateString('fr-FR');
               const acqNomMeta = (d.metadata?.acquereur_nom as string) ?? '';
               return (
                 <div key={d.id} id={`doc-${d.token ?? d.id}`}
-                  className={`border rounded-xl bg-white transition-colors overflow-hidden ${
-                    highlightToken && d.token === highlightToken
-                      ? 'border-amber-400 ring-2 ring-amber-200 bg-amber-50'
-                      : 'border-gray-100 hover:border-gray-200'}`}>
-                  <div className="flex items-center gap-3 p-3">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0 bg-gray-50 border border-gray-100">
-                    {tm.icon}
-                  </div>
+                  className={`transition-colors ${highlightToken && d.token === highlightToken ? 'bg-[#0C5C6C]/5' : ''}`}>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-4">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <span className="text-gray-500 flex-shrink-0"><IconeDocument className="w-6 h-6" /></span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#1F2A2E] truncate">{d.titre}</p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${tm.color}`}>{tm.label}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sm.cls}`}>{sm.label}</span>
-                      {acqNomMeta && <span className="text-xs text-gray-400">→ {acqNomMeta}</span>}
-                      <span className="text-xs text-gray-400">{date}</span>
-                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {[tm.label, acqNomMeta, date].filter(Boolean).join(' · ')}
+                      {' · '}<span className={`px-1.5 py-0.5 rounded font-medium ${sm.cls}`}>{sm.label}</span>
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap sm:flex-shrink-0">
                     {/* Transmettre — brouillon uniquement */}
                     {d.statut === 'brouillon' && d.token && (
                       <button onClick={() => transmettreDoc(d)} disabled={transmitting === d.id}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40"
                         style={{ backgroundColor: '#0C5C6C', color: '#fff' }}>
-                        {transmitting === d.id ? '…' : '📤 Transmettre'}
+                        {transmitting === d.id ? '…' : 'Transmettre'}
                       </button>
                     )}
                     {d.token && d.statut !== 'brouillon' && (
                       <a href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-[#0C5C6C] hover:underline font-medium">✏️ Ouvrir</a>
+                        className="text-xs text-[#0C5C6C] hover:underline font-medium">Ouvrir</a>
                     )}
                     {d.token && d.statut === 'brouillon' && (
                       <a href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
@@ -713,25 +760,25 @@ export default function ContratsPage() {
                         navigator.clipboard.writeText(link);
                         alert('Lien copié ! Envoyez-le à l\'acquéreur pour signature.');
                       }} className="text-xs text-[#6E9E57] hover:underline font-medium">
-                        🔗 Partager
+                        Partager
                       </button>
                     )}
                     {/* PREP07 — Télécharger PDF signé */}
                     {d.statut === 'signe' && d.pdf_signe_url && (
                       <LienDocument href={d.pdf_signe_url} download target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-green-600 hover:underline font-medium">📥 PDF</LienDocument>
+                        className="text-xs text-green-700 hover:underline font-medium">PDF signé</LienDocument>
                     )}
                     {/* PREP08 — Annuler */}
                     {!['signe','annule','expire','refuse'].includes(d.statut) && (
                       <button onClick={() => cancelDoc(d.id)} disabled={cancelling === d.id}
                         className="text-xs text-orange-400 hover:text-orange-600 font-medium disabled:opacity-40">
-                        {cancelling === d.id ? '…' : '🚫'}
+                        {cancelling === d.id ? '…' : 'Annuler'}
                       </button>
                     )}
                     {/* PREP09 — Historique */}
                     <button onClick={() => toggleAudit(d.id)}
                       className="text-xs text-gray-400 hover:text-gray-600 font-medium">
-                      {auditOpen[d.id] ? '▲' : '📋'}
+                      {auditOpen[d.id] ? 'Masquer l’historique' : 'Historique'}
                     </button>
                     {d.url && !d.token && (
                       <LienDocument href={d.url} target="_blank" rel="noopener noreferrer"
@@ -746,7 +793,7 @@ export default function ContratsPage() {
 
                 {/* PREP09 — Panneau audit */}
                 {auditOpen[d.id] && (
-                  <div className="px-3 pb-3 border-t border-gray-50">
+                  <div className="px-4 pb-3 border-t border-gray-100">
                     {!auditCache[d.id] ? (
                       <p className="text-xs text-gray-400 mt-2">Chargement…</p>
                     ) : auditCache[d.id].length === 0 ? (
@@ -783,7 +830,7 @@ export default function ContratsPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-[#1F2A2E] text-base font-galey">
-                {formType === 'contrat_vente' ? '🤝 Contrat de vente' : formType === 'contrat_reservation' ? '🐾 Contrat de réservation' : formType === 'contrat_saillie' ? '💞 Contrat de saillie' : '📋 Certificat de cession'}
+                {formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : formType === 'contrat_saillie' ? 'Contrat de saillie' : 'Certificat de cession'}
               </h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
@@ -949,7 +996,7 @@ export default function ContratsPage() {
               <button onClick={() => { setShowForm(false); openAndSign(); }}
                 disabled={!animalId || saving}
                 className="flex-1 bg-[#0C5C6C] hover:bg-[#0a4f5e] disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors">
-                ✍️ Générer & signer
+                Générer et signer
               </button>
             </div>
           </div>

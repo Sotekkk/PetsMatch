@@ -29,7 +29,6 @@ class ContratReservationPage extends StatefulWidget {
 
 class _ContratReservationPageState extends State<ContratReservationPage> {
   static const _teal  = Color(0xFF0C5C6C);
-  static const _bg    = Color(0xFFF5F5F0);
 
   final _supa = Supabase.instance.client;
 
@@ -38,6 +37,16 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
   Map<String, dynamic>?      _profil;
   bool _loading = true;
   bool _highlightOpened = false;
+  String _recherche = '';
+  String _filtreType = 'tous';
+
+  static const _documents = [
+    ('contrat_reservation', 'Contrat de réservation', 'Préparer la réservation d’un animal.'),
+    ('contrat_vente',       'Contrat de vente',       'Formaliser la vente d’un animal.'),
+    ('certificat_cession',  'Certificat de cession',  'Établir le document de cession.'),
+    ('contrat_saillie',     'Contrat de saillie',     'Définir les conditions d’une saillie.'),
+  ];
+  static const _dark = Color(0xFF1F2A2E);
 
   @override
   void initState() { super.initState(); _load(); }
@@ -131,71 +140,207 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
   String get _eleveurSiret  => _profil?['siret'] as String? ?? '';
   String get _eleveurEmail  => _profil?['email']  as String? ?? '';
 
+  List<Map<String, dynamic>> get _docsFiltres {
+    final q = _recherche.trim().toLowerCase();
+    return _docs.where((d) {
+      if (_filtreType != 'tous' && d['type'] != _filtreType) return false;
+      if (q.isEmpty) return true;
+      final meta = (d['metadata'] as Map<String, dynamic>?) ?? {};
+      final typeLib = _documents.firstWhere((t) => t.$1 == d['type'], orElse: () => ('', '', '')).$2;
+      return [d['titre'] ?? '', meta['acquereur_nom'] ?? '', typeLib]
+          .any((v) => v.toString().toLowerCase().contains(q));
+    }).toList();
+  }
+
+  void _creer(String type) {
+    if (_animaux.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Ajoutez d’abord un animal pour créer un document.'), behavior: SnackBarBehavior.floating));
+      return;
+    }
+    _showCreateSheet(context, type: type);
+  }
+
+  BoxDecoration get _bloc => BoxDecoration(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(color: Colors.grey.shade300),
+  );
+
+  Widget _boutonContour(String label, VoidCallback onPressed) => OutlinedButton(
+    onPressed: onPressed,
+    style: OutlinedButton.styleFrom(
+      foregroundColor: _teal,
+      side: const BorderSide(color: _teal),
+      minimumSize: const Size(88, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    ),
+    child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+  );
+
+  Widget _ligneDocument({required String titre, required String desc, required Widget action}) => Container(
+    padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+    decoration: _bloc,
+    child: Row(children: [
+      const Icon(Icons.description_outlined, size: 28, color: _dark),
+      const SizedBox(width: 14),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: _dark)),
+        const SizedBox(height: 3),
+        Text(desc, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+      ])),
+      const SizedBox(width: 10),
+      action,
+    ]),
+  );
+
+  InputDecoration _champDeco(String hint, {Widget? prefix}) => InputDecoration(
+    hintText: hint,
+    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500),
+    prefixIcon: prefix,
+    isDense: true,
+    filled: true, fillColor: Colors.white,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _teal, width: 1.5)),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: const Color(0xFFF6F8F9),
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Contrats', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        title: const Text('Mes contrats', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => const CertificatsEngagementPage(),
-            )),
-            icon: const Icon(Icons.edit_document, color: Colors.white, size: 18),
-            label: const Text('Certificats', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Nouveau', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-        onPressed: _animaux.isEmpty ? null : () => _showCreateSheet(context),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
           : RefreshIndicator(
               color: _teal,
               onRefresh: _load,
-              child: _docs.isEmpty ? _emptyState(context) : _list(),
+              child: LayoutBuilder(builder: (context, c) {
+                final deuxColonnes = c.maxWidth >= 720;
+                final filtres = _docsFiltres;
+                final cartes = [
+                  for (final t in _documents)
+                    _ligneDocument(titre: t.$2, desc: t.$3, action: _boutonContour('Créer', () => _creer(t.$1))),
+                ];
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+                  children: [
+                    const Text('Créez et retrouvez les documents liés à vos animaux.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF5F6B70))),
+                    const SizedBox(height: 20),
+                    const Text('Créer un document', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w800, color: _dark)),
+                    const SizedBox(height: 12),
+                    if (deuxColonnes)
+                      for (var i = 0; i < cartes.length; i += 2) ...[
+                        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          Expanded(child: cartes[i]),
+                          const SizedBox(width: 12),
+                          Expanded(child: i + 1 < cartes.length ? cartes[i + 1] : const SizedBox()),
+                        ])),
+                        const SizedBox(height: 12),
+                      ]
+                    else
+                      for (final carte in cartes) ...[carte, const SizedBox(height: 10)],
+                    const SizedBox(height: 8),
+                    // Certificats d'engagement : bandeau distinct
+                    _ligneDocument(
+                      titre: 'Certificats d’engagement',
+                      desc: 'Retrouvez les documents signés par les acquéreurs.',
+                      action: _boutonContour('Consulter', () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const CertificatsEngagementPage(),
+                      ))),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Contrats enregistrés
+                    Text.rich(TextSpan(children: [
+                      const TextSpan(text: 'Contrats enregistrés '),
+                      TextSpan(text: '(${_docs.length})', style: TextStyle(color: Colors.grey.shade500)),
+                    ]), style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w800, color: _dark)),
+                    const SizedBox(height: 12),
+                    Flex(
+                      direction: deuxColonnes ? Axis.horizontal : Axis.vertical,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Flexible(flex: deuxColonnes ? 3 : 0, fit: FlexFit.loose, child: TextField(
+                          onChanged: (v) => setState(() => _recherche = v),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                          decoration: _champDeco('Rechercher un contrat',
+                              prefix: Icon(Icons.search, size: 20, color: Colors.grey.shade500)),
+                        )),
+                        SizedBox(width: deuxColonnes ? 10 : 0, height: deuxColonnes ? 0 : 10),
+                        Flexible(flex: deuxColonnes ? 2 : 0, fit: FlexFit.loose, child: DropdownButtonFormField<String>(
+                          initialValue: _filtreType,
+                          isExpanded: true,
+                          decoration: _champDeco(''),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _dark),
+                          items: [
+                            const DropdownMenuItem(value: 'tous', child: Text('Tous les types')),
+                            for (final t in _documents) DropdownMenuItem(value: t.$1, child: Text(t.$2, overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) => setState(() => _filtreType = v ?? 'tous'),
+                        )),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    if (filtres.isEmpty)
+                      _etatVide()
+                    else
+                      Container(
+                        decoration: _bloc,
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(children: [
+                          for (var i = 0; i < filtres.length; i++) ...[
+                            if (i > 0) Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+                            _DocCard(
+                              doc: filtres[i],
+                              onDelete: _deleteDoc,
+                              highlight: (widget.highlightDocId != null && filtres[i]['id'] == widget.highlightDocId) ||
+                                         (widget.highlightToken != null && filtres[i]['token'] == widget.highlightToken),
+                            ),
+                          ],
+                        ]),
+                      ),
+                  ],
+                );
+              }),
             ),
     );
   }
 
-  Widget _emptyState(BuildContext context) => Center(
-    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      const Icon(Icons.description_outlined, size: 64, color: Color(0xFFCCCCCC)),
-      const SizedBox(height: 16),
-      const Text('Aucun contrat', style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF888888))),
-      const SizedBox(height: 6),
-      const Text('Créez votre premier contrat\nen sélectionnant un animal',
-          textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFAAAAAA))),
-      const SizedBox(height: 24),
-      if (_animaux.isNotEmpty)
-        ElevatedButton.icon(
-          onPressed: () => _showCreateSheet(context),
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Créer un contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-          style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-        ),
-    ]),
-  );
-
-  Widget _list() => ListView.separated(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-    itemCount: _docs.length,
-    separatorBuilder: (_, __) => const SizedBox(height: 10),
-    itemBuilder: (_, i) => _DocCard(
-      doc: _docs[i],
-      onDelete: _deleteDoc,
-      highlight: (widget.highlightDocId != null && _docs[i]['id'] == widget.highlightDocId) ||
-                 (widget.highlightToken != null && _docs[i]['token'] == widget.highlightToken),
+  Widget _etatVide() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.grey.shade300),
     ),
+    child: Column(children: [
+      Icon(Icons.description_outlined, size: 40, color: Colors.grey.shade400),
+      const SizedBox(height: 10),
+      if (_docs.isEmpty) ...[
+        const Text('Aucun contrat enregistré', textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: _dark)),
+        const SizedBox(height: 4),
+        Text('Vos documents apparaîtront ici après leur création.', textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+      ] else ...[
+        const Text('Aucun contrat ne correspond', textAlign: TextAlign.center,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: _dark)),
+        TextButton(
+          onPressed: () => setState(() { _recherche = ''; _filtreType = 'tous'; }),
+          style: TextButton.styleFrom(foregroundColor: _teal),
+          child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ]),
   );
 
   Future<void> _deleteDoc(String id) async {
@@ -215,12 +360,13 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     await _load();
   }
 
-  Future<void> _showCreateSheet(BuildContext context) async {
+  Future<void> _showCreateSheet(BuildContext context, {String type = 'contrat_vente'}) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _CreateContratSheet(
+        initialType: type,
         animaux: _animaux,
         eleveurNom: _eleveurNom,
         eleveurAdresse: _eleveurAdresse,
@@ -245,10 +391,10 @@ class _DocCard extends StatelessWidget {
   static const _teal = Color(0xFF0C5C6C);
 
   static const _typeLabel = {
-    'contrat_vente':       ('🤝', 'Vente'),
-    'contrat_reservation': ('🐾', 'Réservation'),
-    'certificat_cession':  ('📋', 'Cession'),
-    'contrat_saillie':     ('💞', 'Saillie'),
+    'contrat_vente':       'Contrat de vente',
+    'contrat_reservation': 'Contrat de réservation',
+    'certificat_cession':  'Certificat de cession',
+    'contrat_saillie':     'Contrat de saillie',
   };
   static const _statutColor = {
     'brouillon':          Color(0xFFEEEEEE),
@@ -262,20 +408,20 @@ class _DocCard extends StatelessWidget {
   };
   static const _statutLabel = {
     'brouillon':          'Brouillon',
-    'en_attente':         '⏳ En attente',
-    'partiellement_signe':'✍️ Partiel',
-    'signe':              '✅ Signé',
+    'en_attente':         'En attente',
+    'partiellement_signe':'Signature partielle',
+    'signe':              'Signé',
     'archive':            'Archivé',
-    'annule':             '🚫 Annulé',
-    'expire':             '⏰ Expiré',
-    'refuse':             '❌ Refusé',
+    'annule':             'Annulé',
+    'expire':             'Expiré',
+    'refuse':             'Refusé',
   };
 
   @override
   Widget build(BuildContext context) {
     final type        = doc['type'] as String? ?? 'contrat_vente';
     final statut      = doc['statut'] as String? ?? 'brouillon';
-    final meta        = _typeLabel[type] ?? ('📄', 'Contrat');
+    final typeLib     = _typeLabel[type] ?? 'Contrat';
     final metaMap     = (doc['metadata'] as Map<String, dynamic>?) ?? {};
     final acqNom      = (metaMap['acquereur_nom'] as String?) ?? '';
     final titre       = doc['titre'] as String? ?? 'Contrat';
@@ -287,41 +433,28 @@ class _DocCard extends StatelessWidget {
     final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
     final isFinal    = ['signe', 'annule', 'expire', 'refuse'].contains(statut);
 
+    final dateStr = date != null
+        ? '${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}' : null;
+
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: highlight ? const Color(0xFFFFFBEB) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: highlight ? Border.all(color: const Color(0xFFF59E0B), width: 1.5) : null,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
+      color: highlight ? _teal.withValues(alpha: 0.05) : Colors.white,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(
-            width: 42, height: 42,
-            decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(10)),
-            child: Center(child: Text(meta.$1, style: const TextStyle(fontSize: 20))),
-          ),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(Icons.description_outlined, size: 24, color: Colors.grey.shade600),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1F2A2E)), maxLines: 1, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 4),
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(color: _statutColor[statut] ?? const Color(0xFFEEEEEE), borderRadius: BorderRadius.circular(20)),
-                child: Text(_statutLabel[statut] ?? statut, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600)),
-              ),
-              if (acqNom.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                Flexible(child: Text('→ $acqNom', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888)), overflow: TextOverflow.ellipsis)),
-              ],
-              if (date != null) ...[
-                const SizedBox(width: 6),
-                Text('${date.day.toString().padLeft(2,'0')}/${date.month.toString().padLeft(2,'0')}/${date.year}',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFFAAAAAA))),
-              ],
-            ]),
+            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E)), maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 3),
+            Text([typeLib, if (acqNom.isNotEmpty) acqNom, if (dateStr != null) dateStr].join(' · '),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(color: _statutColor[statut] ?? const Color(0xFFEEEEEE), borderRadius: BorderRadius.circular(6)),
+              child: Text(_statutLabel[statut] ?? statut, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600)),
+            ),
           ])),
         ]),
 
@@ -403,8 +536,10 @@ class _CreateContratSheet extends StatefulWidget {
   final String eleveurNom, eleveurAdresse, eleveurSiret, eleveurEmail;
   final dynamic supa;
   final VoidCallback onSaved;
+  final String initialType;
 
   const _CreateContratSheet({
+    this.initialType = 'contrat_vente',
     required this.animaux, required this.eleveurNom, required this.eleveurAdresse,
     required this.eleveurSiret, required this.eleveurEmail,
     required this.supa, required this.onSaved,
@@ -417,7 +552,7 @@ class _CreateContratSheet extends StatefulWidget {
 class _CreateContratSheetState extends State<_CreateContratSheet> {
   static const _teal  = Color(0xFF0C5C6C);
 
-  String _type = 'contrat_vente';
+  late String _type = widget.initialType;
   Map<String, dynamic>? _selectedAnimal;
   bool _avecSteril = true;
   // Certificat d'engagement (loi 2021-1539, obligatoire légalement pour toute
@@ -670,23 +805,21 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             const Text('Type de contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 8),
             Row(children: [
-              for (final t in [('contrat_vente', '🤝', 'Vente'), ('contrat_reservation', '🐾', 'Réservation'), ('certificat_cession', '📋', 'Cession'), ('contrat_saillie', '💞', 'Saillie')])
+              for (final t in [('contrat_reservation', '', 'Réservation'), ('contrat_vente', '', 'Vente'), ('certificat_cession', '', 'Cession'), ('contrat_saillie', '', 'Saillie')])
                 Expanded(child: Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: GestureDetector(
                     onTap: () => setState(() => _type = t.$1),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      height: 44,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: _type == t.$1 ? _teal : const Color(0xFFF5F5F0),
-                        borderRadius: BorderRadius.circular(10),
+                        color: _type == t.$1 ? _teal : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: _type == t.$1 ? _teal : const Color(0xFFE0E0E0)),
                       ),
-                      child: Column(children: [
-                        Text(t.$2, style: const TextStyle(fontSize: 18)),
-                        const SizedBox(height: 2),
-                        Text(t.$3, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: _type == t.$1 ? Colors.white : const Color(0xFF555555))),
-                      ]),
+                      child: Text(t.$3, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _type == t.$1 ? Colors.white : const Color(0xFF555555))),
                     ),
                   ),
                 )),
