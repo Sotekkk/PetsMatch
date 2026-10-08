@@ -231,70 +231,33 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
             ]),
             const SizedBox(height: 16),
 
-            // ── Espèce ──────────────────────────────────────────────────────
-            const Text('Espèce', style: TextStyle(fontFamily: 'Galey',
-                fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6F767B))),
-            const SizedBox(height: 10),
-            Wrap(spacing: 8, runSpacing: 8,
-                children: kSpeciesData.where((sp) =>
-                    sp.value == 'tous' || availableEspeces.contains(sp.value))
-                    .map((sp) {
-                  final sel = sp.value == 'tous'
-                      ? tmpEspece == null
-                      : tmpEspece == sp.value;
-                  return GestureDetector(
-                    onTap: () {
-                      final v = sp.value == 'tous' ? null : sp.value;
-                      setSheet(() => tmpEspece = v);
-                      setState(() => _filterEspece = v);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel ? sp.color : Colors.transparent,
-                        border: Border.all(
-                            color: sel ? sp.color : Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        if (sp.value != 'tous') ...[
-                          speciesIcon(sp.value, 13,
-                              sel ? Colors.white : sp.color),
-                          const SizedBox(width: 5),
-                        ],
-                        Text(sp.label,
-                            style: TextStyle(
-                                fontFamily: 'Galey', fontSize: 12,
-                                color: sel ? Colors.white : Colors.black87,
-                                fontWeight: sel
-                                    ? FontWeight.w600
-                                    : FontWeight.normal)),
-                      ]),
-                    ),
-                  );
-                }).toList()),
-            const SizedBox(height: 18),
-
-            // ── Type d'acte ─────────────────────────────────────────────────
-            const Text('Type d\'acte', style: TextStyle(fontFamily: 'Galey',
-                fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6F767B))),
-            const SizedBox(height: 10),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              // Chip "Tous"
-              _typeChip(null, 'Tous', Icons.list, const Color(0xFFF0F0EE),
-                  tmpType == null, (v) {
+            // ── Filtres en menus déroulants (pas de rangées de pastilles) ───
+            _menuFiltre<String?>(
+              label: 'Espèce',
+              value: tmpEspece,
+              items: [
+                const (null, 'Toutes les espèces'),
+                for (final sp in kSpeciesData.where((sp) => sp.value != 'tous' && availableEspeces.contains(sp.value)))
+                  (sp.value, sp.label),
+              ],
+              onChanged: (v) {
+                setSheet(() => tmpEspece = v);
+                setState(() => _filterEspece = v);
+              },
+            ),
+            const SizedBox(height: 12),
+            _menuFiltre<String?>(
+              label: 'Type d\'acte',
+              value: tmpType,
+              items: [
+                const (null, 'Tous les actes'),
+                for (final t in _kActeTypes) (t.value, t.label),
+              ],
+              onChanged: (v) {
                 setSheet(() => tmpType = v);
                 setState(() => _filterType = v);
-              }),
-              ..._kActeTypes.map((t) => _typeChip(
-                  t.value, t.label, t.icon, t.color,
-                  tmpType == t.value, (v) {
-                setSheet(() => tmpType = v);
-                setState(() => _filterType = v);
-              })),
-            ]),
+              },
+            ),
             const SizedBox(height: 8),
           ]),
         ),
@@ -302,32 +265,34 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
     );
   }
 
-  static Widget _typeChip(
-    String? value, String label, IconData icon, Color bg,
-    bool sel, ValueChanged<String?> onTap,
-  ) {
-    return GestureDetector(
-      onTap: () => onTap(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: sel ? const Color(0xFF0C5C6C) : Colors.transparent,
-          border: Border.all(
-              color: sel ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 13,
-              color: sel ? Colors.white : const Color(0xFF6F767B)),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                  fontFamily: 'Galey', fontSize: 12,
-                  color: sel ? Colors.white : Colors.black87,
-                  fontWeight: sel ? FontWeight.w600 : FontWeight.normal)),
-        ]),
+  /// Menu déroulant de filtre : libellé, valeur visible dans le champ.
+  static Widget _menuFiltre<T>({
+    required String label,
+    required T value,
+    required List<(T, String)> items,
+    required ValueChanged<T> onChanged,
+  }) {
+    return DropdownButtonFormField<T>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+        isDense: true,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
       ),
+      items: items.map((i) => DropdownMenuItem<T>(value: i.$1,
+          child: Text(i.$2, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E))))).toList(),
+      onChanged: (v) => onChanged(v as T),
     );
   }
 

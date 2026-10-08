@@ -141,13 +141,13 @@ function RegistreSanitairePageInner() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10 print:py-4 print:px-0">
-      <div className="flex items-center justify-between mb-6 print:mb-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-6 print:mb-4">
         <div>
           <Link href="/mes-animaux" className="text-sm text-[#0C5C6C] hover:underline print:hidden">← Mes animaux</Link>
           <h1 className="text-2xl font-bold text-[#1F2A2E] mt-1">Registre sanitaire</h1>
           <p className="text-gray-500 text-sm">{actes.length} acte{actes.length !== 1 ? 's' : ''} enregistré{actes.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex gap-2 print:hidden">
+        <div className="flex flex-wrap gap-2 print:hidden">
           <button onClick={exportCSV}
             className="border border-gray-200 hover:border-[#0C5C6C] text-gray-600 hover:text-[#0C5C6C] font-medium px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-1.5">
             📊 Excel / CSV
@@ -163,43 +163,48 @@ function RegistreSanitairePageInner() {
         </div>
       </div>
 
-      {/* Filtres */}
-      <div className="mb-4 space-y-3 print:hidden">
-        <input value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher par animal, espèce, intervenant…"
-          className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white" />
-        {/* Filtre période */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-gray-500 font-medium">Période :</span>
-          <input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white" />
-          <span className="text-gray-400 text-sm">→</span>
-          <input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)}
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white" />
-          {(dateDebut || dateFin) && (
-            <button onClick={() => { setDateDebut(''); setDateFin(''); }}
-              className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2 py-1 rounded-lg hover:bg-red-50">
-              ✕ Effacer
-            </button>
-          )}
-          {(dateDebut || dateFin) && (
-            <span className="text-xs text-[#0C5C6C] font-medium bg-[#0C5C6C]/10 px-2 py-1 rounded-lg">
-              {filtered.length} résultat{filtered.length !== 1 ? 's' : ''}
-            </span>
-          )}
+      {/* Filtres : recherche + type d'acte + période, dans une barre compacte */}
+      <div className="mb-4 print:hidden">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2.5 bg-white border border-gray-100 rounded-2xl p-2.5 shadow-sm">
+          <label className="relative block sm:col-span-2 lg:col-span-1">
+            <span className="sr-only">Rechercher</span>
+            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
+            </svg>
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Animal, espèce, intervenant…"
+              className="w-full h-10 border border-gray-200 rounded-xl pl-9 pr-3 text-sm bg-white focus:outline-none focus:border-[#0C5C6C] focus:ring-2 focus:ring-[#0C5C6C]/10" />
+          </label>
+          <label className="block">
+            <span className="sr-only">Type d&apos;acte</span>
+            <select value={filtreType} onChange={(e) => setFiltreType(e.target.value)} aria-label="Type d'acte"
+              className={`w-full h-10 border rounded-xl px-3 text-sm bg-white focus:outline-none focus:border-[#0C5C6C] focus:ring-2 focus:ring-[#0C5C6C]/10 ${filtreType !== 'tous' ? 'border-[#0C5C6C] text-[#0C5C6C] font-semibold' : 'border-gray-200 text-gray-700'}`}>
+              <option value="tous">Type d&apos;acte : tous les actes</option>
+              {Object.entries(TYPE_LABELS).map(([val, label]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center h-10 border border-gray-200 rounded-xl bg-white focus-within:border-[#0C5C6C] focus-within:ring-2 focus-within:ring-[#0C5C6C]/10 overflow-hidden">
+            <span className="pl-3 pr-1 text-xs font-semibold text-gray-400">Du</span>
+            <input type="date" value={dateDebut} max={dateFin || undefined} onChange={(e) => setDateDebut(e.target.value)}
+              className="flex-1 min-w-0 h-full pr-2 text-sm text-gray-700 bg-transparent focus:outline-none" />
+          </label>
+          <label className="flex items-center h-10 border border-gray-200 rounded-xl bg-white focus-within:border-[#0C5C6C] focus-within:ring-2 focus-within:ring-[#0C5C6C]/10 overflow-hidden">
+            <span className="pl-3 pr-1 text-xs font-semibold text-gray-400">Au</span>
+            <input type="date" value={dateFin} min={dateDebut || undefined} onChange={(e) => setDateFin(e.target.value)}
+              className="flex-1 min-w-0 h-full pr-2 text-sm text-gray-700 bg-transparent focus:outline-none" />
+          </label>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setFiltreType('tous')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filtreType === 'tous' ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
-            Tous
-          </button>
-          {Object.entries(TYPE_LABELS).map(([val, label]) => (
-            <button key={val} onClick={() => setFiltreType(val)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${filtreType === val ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
-              {label}
+        {(search || filtreType !== 'tous' || dateDebut || dateFin) && (
+          <div className="flex items-center justify-between gap-3 mt-2 px-1 text-xs">
+            <span className="text-gray-500">{filtered.length} résultat{filtered.length !== 1 ? 's' : ''} sur {actes.length}</span>
+            <button onClick={() => { setSearch(''); setFiltreType('tous'); setDateDebut(''); setDateFin(''); }}
+              className="font-semibold text-[#0C5C6C] hover:underline">
+              Réinitialiser
             </button>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {fetching ? (
