@@ -158,11 +158,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _animalId = widget.animalId;
     _editing = widget.animalId == null; // nouveau animal → direct en édition
     _fillFromData(widget.initialData);
-    // Créé après _fillFromData : _showMorphoTab dépend de _espece, qui doit
-    // déjà être connue pour que la longueur initiale du contrôleur corresponde
-    // au nombre réel d'onglets (sinon crash immédiat à l'ouverture pour les
-    // espèces qui affichent l'onglet Morphologie dès le départ, ex. chien/chat).
-    final initialLength = 4 + (_showMorphoTab ? 1 : 0);
+    // La morphologie n'est plus un onglet : carnet de santé › Comptes rendus.
+    const initialLength = 4;
     _tabs = TabController(length: initialLength, vsync: this,
         initialIndex: widget.initialTab.clamp(0, initialLength - 1));
     _loadBreeds();
@@ -514,7 +511,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   bool get _showMorphoTab => morphoSpeciesSupported(_espece);
 
   void _syncTabs() {
-    final n = 4 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0) + (_showMorphoTab ? 1 : 0);
+    final n = 4 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0);
     if (_tabs.length == n) return;
     final prev = _tabs.index;
     _tabs.dispose();
@@ -954,10 +951,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             const Tab(text: 'Identité'),
             const Tab(text: 'Carnet de santé'),
             const Tab(text: 'Alimentation'),
-            const Tab(text: 'Documents'),
+            const Tab(text: 'Administratif'),
             if (_showEducationTab) const Tab(text: 'Éducation'),
             if (_showPensionTab) const Tab(text: 'Pension & Garde'),
-            if (_showMorphoTab) const Tab(text: 'Morphologie'),
           ],
         ),
       ),
@@ -975,7 +971,6 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 _buildDocumentsTab(),
                 if (_showEducationTab) _buildEducationTab(),
                 if (_showPensionTab) _buildPensionTab(),
-                if (_showMorphoTab) _buildMorphoTab(),
               ],
             ),
           ),
@@ -1462,14 +1457,6 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   Widget _buildPensionTab() => _PensionTabP(
         animalId: _animalId,
         animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
-      );
-
-  // Vue "compte rendu" — la saisie est réservée aux pros santé/véto (voir
-  // animal_fiche.dart) ; le propriétaire consulte ici en lecture seule.
-  Widget _buildMorphoTab() => MorphoTimelineTab(
-        animalId: _animalId ?? '',
-        espece: _espece,
-        canWrite: false,
       );
 
   Widget _sterilisationBanner() {
@@ -2228,6 +2215,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                   ]),
                 ),
               ),
+            // Comptes rendus morphologiques (ex-onglet Morphologie), lecture seule
+            if (_showMorphoTab && _animalId != null)
+              _ComptesRendusMorphoTile(animalId: _animalId!, espece: _espece),
           ]),
         ],
       ),
@@ -3206,6 +3196,57 @@ class _AiScanCard extends StatelessWidget {
 }
 
 // ── Health section widget ─────────────────────────────────────────────────────
+
+/// Comptes rendus morphologiques (saisis par les pros santé/véto) : ligne du carnet.
+class _ComptesRendusMorphoTile extends StatelessWidget {
+  final String animalId;
+  final String espece;
+  const _ComptesRendusMorphoTile({required this.animalId, required this.espece});
+
+  static const _couleur = Color(0xFF5F9EAA);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client
+          .from('suivis_morpho').stream(primaryKey: ['id']).eq('animal_id', animalId),
+      builder: (context, snap) {
+        final n = snap.data?.length ?? 0;
+        return InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+            backgroundColor: const Color(0xFFF7F7F5),
+            appBar: AppBar(
+              backgroundColor: const Color(0xFF0C5C6C),
+              foregroundColor: Colors.white,
+              title: const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+            body: MorphoTimelineTab(animalId: animalId, espece: espece, canWrite: false),
+          ))),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+              child: Row(children: [
+                Container(width: 12, height: 12,
+                    decoration: const BoxDecoration(color: _couleur, shape: BoxShape.circle)),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 15, color: Color(0xFF1F2A2E))),
+                  const SizedBox(height: 2),
+                  Text('Morphologie · $n enregistrement${n > 1 ? 's' : ''}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+                ])),
+                SizedBox(width: 40, height: 44,
+                    child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500, size: 22)),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
 /// Panneau blanc unique du carnet : lignes séparées par des traits gris fins.
 class _PanneauSante extends StatelessWidget {

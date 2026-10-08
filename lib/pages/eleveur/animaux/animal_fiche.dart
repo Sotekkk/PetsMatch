@@ -310,10 +310,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       if (User_Info.catPro == 'garde') return 5; // + Alimentation (essentiel pour un pet-sitter)
       return 4; // toilettage / photographe / taxi animalier… : pas de Consultations
     }
-    if (widget.isAssociation) return 6; // + Documents (contrats, certificats)
+    if (widget.isAssociation) return 5; // + Administratif (contrats, certificats)
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
-    return 7; // éleveur / employé élevage : tous les onglets + Morphologie
+    return 6; // éleveur / employé élevage (morphologie : carnet de santé › Comptes rendus)
   }
 
   /// Reconstitue le TabController si le nombre d'onglets a changé (statut /
@@ -2301,12 +2301,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Morphologie'), Tab(text: 'Documents')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Suivi vétérinaire'), Tab(text: 'Administratif')]
                       : (_statut == 'sorti' && !_isNewOwner
-                          ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
+                          ? const [Tab(text: 'Identité'), Tab(text: 'Administratif')]
                           : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
-                              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
-                              : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')])),
+                              ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Suivi vétérinaire'), Tab(text: 'Administratif')]
+                              // Repro reste à l'index 2 (liens directs : agenda chaleurs, notifications)
+                              : const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Suivi repro'), Tab(text: 'Alimentation'), Tab(text: 'Suivi vétérinaire'), Tab(text: 'Administratif')])),
             ),
           ]),
         ),
@@ -2362,9 +2363,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
-                    MorphoTimelineTab(animalId: widget.animalId ?? '', espece: _espece, canWrite: false),
                     // Contrats (réservation, adoption, cession) + certificats
-                    // d'engagement — en dernier pour ne pas décaler les index.
+                    // d'engagement.
                     _DocumentsTab(animalId: widget.animalId ?? ''),
                   ]
                 : (_statut == 'sorti' && !_isNewOwner
@@ -2382,15 +2382,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                           ]
                         : [
                             _IdentiteTab(this),
-                            _DocumentsTab(animalId: widget.animalId ?? ''),
-                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
+                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
-                            // Vue "compte rendu" — la saisie est réservée aux pros
-                            // santé/véto (voir plus haut, branche vetMode) ;
-                            // l'éleveur consulte ici en lecture seule.
-                            MorphoTimelineTab(animalId: widget.animalId ?? '', espece: _espece, canWrite: false),
+                            _DocumentsTab(animalId: widget.animalId ?? ''),
                           ])),
       ),
     );
@@ -5197,8 +5193,63 @@ class _CarnetSanteTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        panneau([for (var i = 0; i < _cats.length; i++) ligne(i)]),
+        panneau([
+          for (var i = 0; i < _cats.length; i++) ligne(i),
+          // Comptes rendus morphologiques (saisis par les pros santé/véto,
+          // ex-onglet Morphologie) — consultation en lecture seule.
+          if (!vetMode) _ComptesRendusMorphoTile(animalId: animalId!, espece: espece),
+        ]),
       ],
+    );
+  }
+}
+
+class _ComptesRendusMorphoTile extends StatelessWidget {
+  final String animalId;
+  final String espece;
+  const _ComptesRendusMorphoTile({required this.animalId, required this.espece});
+
+  static const _couleur = Color(0xFF5F9EAA);
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: Supabase.instance.client
+          .from('suivis_morpho').stream(primaryKey: ['id']).eq('animal_id', animalId),
+      builder: (context, snap) {
+        final n = snap.data?.length ?? 0;
+        return InkWell(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+            backgroundColor: const Color(0xFFF7F7F5),
+            appBar: AppBar(
+              backgroundColor: const Color(0xFF0C5C6C),
+              foregroundColor: Colors.white,
+              title: const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+            body: MorphoTimelineTab(animalId: animalId, espece: espece, canWrite: false),
+          ))),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 64),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+              child: Row(children: [
+                Container(width: 12, height: 12,
+                    decoration: const BoxDecoration(color: _couleur, shape: BoxShape.circle)),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 15, color: Color(0xFF1F2A2E))),
+                  const SizedBox(height: 2),
+                  Text('Morphologie · $n enregistrement${n > 1 ? 's' : ''}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+                ])),
+                SizedBox(width: 40, height: 44,
+                    child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500, size: 22)),
+              ]),
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -37,9 +37,9 @@ const STATUTS: Record<string, { label: string; color: string }> = {
 
 const TABS = [
   { key: 'identite',      label: 'Identité',      icon: '🐾' },
-  { key: 'sante',         label: 'Santé',          icon: '💊' },
+  { key: 'sante',         label: 'Carnet de santé', icon: '💊' },
   { key: 'alimentation',  label: 'Alimentation',   icon: '🥩' },
-  { key: 'consultations', label: 'Consultations',  icon: '🩺' },
+  { key: 'consultations', label: 'Suivi vétérinaire', icon: '🩺' },
 ] as const;
 type Tab = typeof TABS[number]['key'];
 

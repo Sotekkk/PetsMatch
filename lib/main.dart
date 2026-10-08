@@ -203,7 +203,7 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
         animalId: animalId,
         readOnly: true,
         showReproTab: true,
-        initialTabIndex: 2, // 0=Identité, 1=Documents, 2=Repro (mode éleveur/showReproTab)
+        initialTabIndex: 2, // 0=Identité, 1=Santé, 2=Repro (mode éleveur/showReproTab)
         eleveurUidOverride: eleveurUidOverride,
       ),
     ));

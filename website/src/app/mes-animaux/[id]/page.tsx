@@ -3463,15 +3463,15 @@ function AnimalFichePageInner() {
   const isOriginalBreeder = isEleveur && !!user && (user.uid === animal.uid_eleveur || isCogerantActif);
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
   const tabs = ((isCede && isOriginalBreeder && !isAcquereur) || isAncienProprio)
-    ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
+    ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Administratif' }]
     : (isEleveur || isEmployeOfOwner)
-    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }]
+    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'repro', label:'Suivi repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Suivi vétérinaire' }, { key:'documents', label:'Administratif' }]
     : [
         { key:'identite', label:'Identité' },
         { key:'sante', label:'Carnet de santé' },
         { key:'alimentation', label:'Alimentation' },
-        { key:'consultations', label:'Consultations vét.' },
-        { key:'documents', label:'Documents' },
+        { key:'consultations', label:'Suivi vétérinaire' },
+        { key:'documents', label:'Administratif' },
         ...(hasEducationRapports ? [{ key:'education', label:'Éducation' }] : []),
         ...(hasPensionUpdates ? [{ key:'pension', label:'Pension & Garde' }] : []),
       ];
