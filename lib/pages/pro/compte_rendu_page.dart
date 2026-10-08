@@ -7,6 +7,7 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
 import 'package:http/http.dart' as http;
 
@@ -98,6 +99,33 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _chargerDroits();
     _loadExisting();
     _chargerPharmacie();
+    _prefillDepuisRdv();
+  }
+
+  /// Message laissé par le client dans sa demande de RDV (symptômes…).
+  String _messageClient = '';
+  Map<String, dynamic>? _rdvSource;
+
+  /// Motif + message du client : depuis le RDV ouvert, sinon le dernier RDV
+  /// de cet animal avec la clinique (CR ouvert depuis la fiche patient).
+  Future<void> _prefillDepuisRdv() async {
+    Map<String, dynamic>? r = widget.rdv;
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    if (r == null && animalId != null && _profilPro != null) {
+      try {
+        r = await _supa.from('rdv').select('id, motif, notes_client, client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
+            .eq('animal_id', animalId).eq('pro_profile_id', _profilPro!)
+            .inFilter('statut', ['confirme', 'termine'])
+            .lte('date_heure', DateTime.now().add(const Duration(hours: 12)).toUtc().toIso8601String())
+            .order('date_heure', ascending: false).limit(1).maybeSingle();
+      } catch (_) {}
+    }
+    if (r == null || !mounted) return;
+    setState(() {
+      _rdvSource = r;
+      if (_motifCtrl.text.trim().isEmpty) _motifCtrl.text = (r!['motif'] ?? '').toString();
+      _messageClient = (r!['notes_client'] ?? '').toString().trim();
+    });
   }
 
   Future<void> _chargerDroits() async {
@@ -195,6 +223,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final proUid  = AgendaContexte.uid;
     final moi     = AgendaContexte.moi;
     final actes = _saisieActes && (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty);
+    // Instantané pour la facture proposée après l'enregistrement.
+    final factVaccins = List<_VaccinCr>.of(_vaccinsCr);
+    final factTraitements = List<_TraitementCr>.of(_traitementsCr);
+    final factActes = _actesRealises.toList();
     final motif = _saisieActes ? _motifCtrl.text.trim() : '';
     final poids = _saisieActes ? _poidsSaisi : null;
     final actesRealises = _saisieActes ? _actesRealises.toList() : const <String>[];
@@ -268,10 +300,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         await _notifyValideurs();
       }
       if (actes && animalId != null) await _ecrireActes(animalId.toString(), rdvId?.toString(), owner);
+      final poidsFacture = _poidsSaisi;
+      final motifFacture = _motifCtrl.text.trim();
       _crContenuCtrl.clear();
       _poidsCtrl.clear();
       setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); });
       await _loadExisting();
+      // Le vétérinaire choisit de préparer (ou non) la facture de la consultation.
+      if (mounted && _saisieActes && statut == 'valide' && animalId != null) {
+        await _proposerFacture(animalId: animalId.toString(), rdvId: rdvId?.toString(), owner: owner,
+            motif: motifFacture, poids: poidsFacture, actesRealises: factActes,
+            vaccins: factVaccins, traitements: factTraitements);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(statut == 'valide'
@@ -430,7 +470,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     if (pro == null || widget.isPension) return;
     try {
       final rows = await _supa.from('inventaire_items')
-          .select('id, nom, categorie, lot, unite, quantite').eq('eleveur_profile_id', pro).order('nom');
+          .select('id, nom, categorie, lot, unite, quantite, prix_vente').eq('eleveur_profile_id', pro).order('nom');
       if (mounted) setState(() => _pharmacie = List<Map<String, dynamic>>.from(rows as List));
     } catch (_) {}
   }
@@ -724,32 +764,224 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: _inputDeco('kg').copyWith(labelText: 'Poids (kg)'))),
       ]),
-      const SizedBox(height: 12),
-      _inputLabel('Actes réalisés'),
-      const SizedBox(height: 6),
-      Wrap(spacing: 6, runSpacing: 6, children: [
-        for (final a in {..._actesCourants, ..._actesRealises}) FilterChip(
-          label: Text(a, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-          selected: _actesRealises.contains(a),
-          selectedColor: widget.categoryColor.withValues(alpha: 0.18),
-          onSelected: (v) => setState(() => v ? _actesRealises.add(a) : _actesRealises.remove(a)),
+      if (_messageClient.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: const Color(0xFFF6F8F7), borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE4E7E2))),
+          child: Text('💬 Message du client : $_messageClient',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
         ),
-      ]),
-      const SizedBox(height: 8),
-      Row(children: [
-        Expanded(child: TextField(controller: _autreActeCtrl, textCapitalization: TextCapitalization.sentences,
-            decoration: _inputDeco('Autre acte (ex. biopsie, ECG…)'),
-            onSubmitted: (_) => _ajouterAutreActe())),
-        IconButton(onPressed: _ajouterAutreActe, icon: Icon(Icons.add_circle_outline, color: widget.categoryColor)),
-      ]),
+      ],
+      const SizedBox(height: 12),
+      // Actes réalisés : liste déroulante à cocher (recherche + autre acte).
+      InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _choisirActes,
+        child: InputDecorator(
+          decoration: _inputDeco('').copyWith(labelText: 'Actes réalisés',
+              suffixIcon: const Icon(Icons.arrow_drop_down)),
+          child: Text(_actesRealises.isEmpty ? 'Choisir les actes…' : _actesRealises.join(', '),
+              maxLines: 3, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                  color: _actesRealises.isEmpty ? Colors.grey : const Color(0xFF1E2025))),
+        ),
+      ),
       const SizedBox(height: 16),
     ]);
   }
 
-  void _ajouterAutreActe() {
-    final v = _autreActeCtrl.text.trim();
-    if (v.isEmpty) return;
-    setState(() { _actesRealises.add(v); _autreActeCtrl.clear(); });
+  Future<void> _choisirActes() async {
+    final choix = {..._actesRealises};
+    final autres = [for (final a in _actesRealises) if (!_actesCourants.contains(a)) a];
+    final autreCtrl = TextEditingController();
+    var q = '';
+    final res = await showModalBottomSheet<Set<String>>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        final liste = [..._actesCourants, ...autres].where((a) => q.isEmpty || a.toLowerCase().contains(q.toLowerCase())).toList();
+        void ajouter() {
+          final v = autreCtrl.text.trim();
+          if (v.isEmpty) return;
+          setM(() { if (!autres.contains(v) && !_actesCourants.contains(v)) autres.add(v); choix.add(v); autreCtrl.clear(); });
+        }
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: SizedBox(
+            height: MediaQuery.of(ctx).size.height * 0.75,
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: TextField(onChanged: (v) => setM(() => q = v),
+                    decoration: _inputDeco('Rechercher un acte').copyWith(prefixIcon: const Icon(Icons.search, size: 18))),
+              ),
+              Expanded(child: ListView(children: [
+                for (final a in liste) CheckboxListTile(
+                  dense: true, value: choix.contains(a), activeColor: widget.categoryColor,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(a, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                  onChanged: (v) => setM(() => v == true ? choix.add(a) : choix.remove(a)),
+                ),
+              ])),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+                child: Row(children: [
+                  Expanded(child: TextField(controller: autreCtrl, textCapitalization: TextCapitalization.sentences,
+                      onSubmitted: (_) => ajouter(), decoration: _inputDeco('Autre acte (biopsie, ECG…)'))),
+                  IconButton(onPressed: ajouter, icon: Icon(Icons.add_circle_outline, color: widget.categoryColor)),
+                ]),
+              ),
+              SafeArea(top: false, child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: SizedBox(width: double.infinity, child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  onPressed: () => Navigator.pop(ctx, choix),
+                  child: Text('Valider (${choix.length})', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                )),
+              )),
+            ]),
+          ),
+        );
+      }),
+    );
+    if (res != null) setState(() { _actesRealises..clear()..addAll(res); });
+  }
+
+  // ── Facture de la consultation (au choix du vétérinaire) ──────────────────
+
+  /// Prix TTC → HT (TVA 20 % des actes vétérinaires).
+  double _ht(double ttc) => (ttc / 1.2 * 100).round() / 100;
+
+  Future<void> _proposerFacture({
+    required String animalId, String? rdvId, required ({String? uid, String? profileId}) owner,
+    required String motif, double? poids, required List<String> actesRealises,
+    required List<_VaccinCr> vaccins, required List<_TraitementCr> traitements,
+  }) async {
+    // Tarifs du vétérinaire + infos animal pour choisir la bonne ligne.
+    Map<String, dynamic> tarifs = {};
+    Map<String, dynamic>? an;
+    try {
+      if (_profilPro != null) {
+        final t = await _supa.from('user_profiles_complet').select('tarifs_veto').eq('id', _profilPro!).maybeSingle();
+        if (t?['tarifs_veto'] is Map) tarifs = Map<String, dynamic>.from(t!['tarifs_veto'] as Map);
+      }
+      an = await _supa.from('animaux').select('nom, espece, sexe, poids, client_clinique_id').eq('id', animalId).maybeSingle();
+    } catch (_) {}
+    double? tarif(String cle) => double.tryParse('${tarifs[cle] ?? ''}'.replaceAll(',', '.'));
+    double? prixPharmacie(String nom) {
+      for (final o in _pharmacie) {
+        if ((o['nom'] ?? '').toString().toLowerCase() == nom.toLowerCase()) {
+          return double.tryParse('${o['prix_vente'] ?? ''}'.replaceAll(',', '.'));
+        }
+      }
+      return null;
+    }
+    final espece = (an?['espece'] ?? '').toString().toLowerCase();
+    final femelle = (an?['sexe'] ?? '').toString().toLowerCase().startsWith('f');
+    final kg = poids ?? double.tryParse('${an?['poids'] ?? ''}'.replaceAll(',', '.'));
+    String tranche() => kg == null ? '25' : kg < 10 ? '10' : kg < 25 ? '25' : kg < 45 ? '45' : '45p';
+
+    final lignes = <FacturePrefillLigne>[];
+    void ligne(String designation, double? ttc) =>
+        lignes.add(FacturePrefillLigne(designation: designation, prixHT: ttc == null ? 0 : _ht(ttc), quantite: 1, tauxTVA: 20));
+
+    // 1. Le RDV (consultation / urgence / visite à domicile)
+    final m = motif.toLowerCase();
+    final cleRdv = m.contains('urgen') ? 'consultation_urgence' : m.contains('domicile') ? 'visite_domicile' : 'consultation';
+    ligne(motif.isEmpty ? 'Consultation' : motif, tarif(cleRdv));
+    // 2. Actes réalisés (tarif connu si dans la grille, sinon à compléter)
+    for (final a in actesRealises) {
+      if (a == 'Examen clinique') continue; // compris dans la consultation
+      if (a == 'Vaccination' && vaccins.isNotEmpty) continue; // facturé avec le vaccin
+      double? prix;
+      if (a == 'Vaccination') prix = tarif(espece == 'chat' ? 'vaccin_chat' : 'vaccin_chien');
+      if (a == 'Pose de puce') prix = tarif('identification');
+      if (a == 'Castration / stérilisation') {
+        prix = espece == 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
+            : tarif('${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche()}');
+      }
+      ligne(a, prix);
+    }
+    // 3. Produits : vaccins et traitements (prix de vente de la pharmacie)
+    for (final v in vaccins) {
+      ligne('Vaccin ${v.nom}${v.lot.isNotEmpty ? ' (lot ${v.lot})' : ''}',
+          prixPharmacie(v.nom) ?? tarif(espece == 'chat' ? 'vaccin_chat' : 'vaccin_chien'));
+    }
+    for (final t in traitements) {
+      ligne(t.nom, prixPharmacie(t.nom));
+    }
+
+    final total = lignes.fold<double>(0, (s, l) => s + l.prixHT * 1.2);
+    final aCompleter = lignes.where((l) => l.prixHT == 0).length;
+    if (!mounted) return;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Facturer cette consultation ?', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          for (final l in lignes) Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(children: [
+              Expanded(child: Text(l.designation, style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+              Text(l.prixHT == 0 ? 'à compléter' : '${(l.prixHT * 1.2).toStringAsFixed(2)} €',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                      color: l.prixHT == 0 ? Colors.orange.shade800 : const Color(0xFF1E2025))),
+            ]),
+          ),
+          const Divider(),
+          Text('Total estimé : ${total.toStringAsFixed(2)} € TTC'
+              '${aCompleter > 0 ? ' — $aCompleter prix à compléter' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text('Tarifs : votre grille (profil) et les prix de vente de la pharmacie. Tout reste modifiable avant l\'émission.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Pas maintenant', style: TextStyle(fontFamily: 'Galey')))),
+            const SizedBox(width: 10),
+            Expanded(child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Préparer la facture', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        ]),
+      )),
+    );
+    if (ok != true || !mounted) return;
+
+    // Client : fichier de la clinique, sinon RDV.
+    String? nom, email, tel;
+    if (an?['client_clinique_id'] != null) {
+      try {
+        final c = await _supa.from('clients_clinique').select('nom, prenom, email, telephone').eq('id', an!['client_clinique_id']).maybeSingle();
+        nom = '${c?['prenom'] ?? ''} ${c?['nom'] ?? ''}'.trim();
+        email = c?['email'] as String?;
+        tel = c?['telephone'] as String?;
+      } catch (_) {}
+    }
+    final r = widget.rdv ?? _rdvSource;
+    nom ??= widget.clientName.isNotEmpty ? widget.clientName : r?['client_nom_manuel']?.toString();
+    email ??= r?['client_email_manuel']?.toString();
+    tel ??= r?['client_telephone_manuel']?.toString();
+    if (!mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
+      clientNom: nom, clientEmail: email, clientTel: tel,
+      lignesPrefill: lignes,
+      noteInitiale: 'Consultation de ${an?['nom'] ?? 'votre animal'}',
+      sourceRdvId: rdvId ?? r?['id']?.toString(),
+      sourceAnimalId: animalId,
+      clientUid: owner.uid,
+      clientProfileId: owner.profileId,
+    )));
   }
 
   Widget _blocActes() {

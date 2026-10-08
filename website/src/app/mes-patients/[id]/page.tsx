@@ -247,6 +247,49 @@ const VACCINS_COURANTS = ['CHPPiL', 'Rage', 'Leptospirose', 'Toux du chenil', 'L
 /** Prises de la journée → libellé + heure du rappel au propriétaire. */
 const PRISES: Record<string, [string, string]> = { matin: ['Matin', '08:00'], midi: ['Midi', '12:00'], soir: ['Soir', '19:00'] };
 
+/** Actes réalisés : liste déroulante à cocher, recherche + autre acte. */
+function ActesSelect({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [q, setQ] = useState('');
+  const [autre, setAutre] = useState('');
+  const tous = [...new Set([...ACTES_COURANTS, ...value])];
+  const liste = tous.filter(a => !q || a.toLowerCase().includes(q.toLowerCase()));
+  const basculer = (a: string) => onChange(value.includes(a) ? value.filter(x => x !== a) : [...value, a]);
+  const ajouter = () => { const v = autre.trim(); if (v && !value.includes(v)) onChange([...value, v]); setAutre(''); };
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOuvert(o => !o)}
+        className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white text-left">
+        <span className={value.length ? 'text-[#1F2A2E]' : 'text-gray-400'}>{value.length ? value.join(', ') : 'Choisir les actes…'}</span>
+        <span className={`text-gray-400 text-xs ml-2 transition-transform ${ouvert ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+      {ouvert && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 Rechercher un acte"
+              className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+          </div>
+          <div className="max-h-56 overflow-y-auto p-1">
+            {liste.map(a => (
+              <label key={a} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer text-sm">
+                <input type="checkbox" checked={value.includes(a)} onChange={() => basculer(a)} className="w-4 h-4 accent-[#0C5C6C]" />
+                {a}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 p-2 border-t border-gray-100">
+            <input value={autre} onChange={e => setAutre(e.target.value)} placeholder="Autre acte (biopsie, ECG…)"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ajouter(); } }}
+              className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+            <button type="button" onClick={ajouter} className="px-2.5 rounded-lg text-sm font-semibold text-[#0C5C6C] border border-gray-200">＋</button>
+            <button type="button" onClick={() => setOuvert(false)} className="px-3 rounded-lg text-sm font-semibold text-white bg-[#0C5C6C]">OK</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function plus(dateIso: string, jours = 0, mois = 0, ans = 0): string {
   const d = new Date(dateIso + 'T12:00:00');
   d.setFullYear(d.getFullYear() + ans, d.getMonth() + mois, d.getDate() + jours);
@@ -564,6 +607,8 @@ function PatientDetailPageInner() {
   // Compte rendu vétérinaire : actes saisis (carnet + ordonnance PDF).
   const [vaccinsCr, setVaccinsCr] = useState<VaccinCr[]>([]);
   const [actesRealises, setActesRealises] = useState<string[]>([]);
+  // Dernière demande de RDV de cet animal : motif + message du client.
+  const [dernierRdv, setDernierRdv] = useState<{ id: string; motif: string | null; notes_client: string | null; client_nom_manuel: string | null; client_email_manuel: string | null; client_telephone_manuel: string | null; client_uid: string | null; client_profile_id: string | null } | null>(null);
   const [autreActe, setAutreActe] = useState('');
   const [traitementsCr, setTraitementsCr] = useState<TraitementCr[]>([]);
   const [requestingWrite, setRequestingWrite] = useState(false);
@@ -850,6 +895,76 @@ function PatientDetailPageInner() {
     } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
   }
 
+  useEffect(() => {
+    if (addingType !== 'cr' || !animalId || !activeProfileId) return;
+    supabase.from('rdv').select('id, motif, notes_client, client_nom_manuel, client_email_manuel, client_telephone_manuel, client_uid, client_profile_id')
+      .eq('animal_id', animalId).eq('pro_profile_id', activeProfileId).in('statut', ['confirme', 'termine'])
+      .lte('date_heure', new Date(Date.now() + 12 * 3600000).toISOString())
+      .order('date_heure', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => {
+        setDernierRdv(data as typeof dernierRdv);
+        if (data?.motif) setFormMotif(m => m || (data.motif as string));
+      });
+  }, [addingType, animalId, activeProfileId]);
+
+  /** Facture de la consultation, au choix du vétérinaire : RDV (grille de
+   *  tarifs du profil), actes, produits (prix de vente de la pharmacie). */
+  async function proposerFacture(motif: string, actes: string[], vaccins: VaccinCr[], traitements: TraitementCr[], poids: number | null) {
+    if (!activeProfileId || !animal) return;
+    const [{ data: t }, { data: ph }] = await Promise.all([
+      supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
+    ]);
+    const tarifs = (t?.tarifs_veto ?? {}) as Record<string, unknown>;
+    const tarif = (k: string) => { const v = parseFloat(String(tarifs[k] ?? '').replace(',', '.')); return isNaN(v) ? null : v; };
+    const prixPharma = (nom: string) => {
+      const o = ((ph ?? []) as { nom: string; prix_vente: number | null }[]).find(x => x.nom.toLowerCase() === nom.toLowerCase());
+      return o?.prix_vente ?? null;
+    };
+    const espece = (animal.espece ?? '').toLowerCase();
+    const femelle = (animal.sexe ?? '').toLowerCase().startsWith('f');
+    const kg = poids ?? (animal.poids != null ? Number(animal.poids) : null);
+    const tranche = kg == null ? '25' : kg < 10 ? '10' : kg < 25 ? '25' : kg < 45 ? '45' : '45p';
+    const lignes: { description: string; quantite: number; prixUnitaire: number; tva: number }[] = [];
+    const ligne = (d: string, ttc: number | null) => lignes.push({ description: d, quantite: 1, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
+    const m = motif.toLowerCase();
+    ligne(motif || 'Consultation', tarif(m.includes('urgen') ? 'consultation_urgence' : m.includes('domicile') ? 'visite_domicile' : 'consultation'));
+    for (const a of actes) {
+      if (a === 'Examen clinique' || (a === 'Vaccination' && vaccins.length)) continue;
+      let prix: number | null = null;
+      if (a === 'Vaccination') prix = tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien');
+      if (a === 'Pose de puce') prix = tarif('identification');
+      if (a === 'Castration / stérilisation') prix = espece === 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
+        : tarif(`${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche}`);
+      ligne(a, prix);
+    }
+    for (const v of vaccins) ligne(`Vaccin ${v.nom}${v.lot ? ` (lot ${v.lot})` : ''}`, prixPharma(v.nom) ?? tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien'));
+    for (const tr of traitements) ligne(tr.nom, prixPharma(tr.nom));
+    const total = lignes.reduce((s, l) => s + l.prixUnitaire * 1.2, 0);
+    const aCompleter = lignes.filter(l => l.prixUnitaire === 0).length;
+    const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
+    if (!confirm(`Facturer cette consultation ?\n\n${recap}\n\nTotal estimé : ${total.toFixed(2)} € TTC${aCompleter ? ` (${aCompleter} prix à compléter)` : ''}\nTout reste modifiable avant l'émission.`)) return;
+
+    let nom = '', email = '', tel = '';
+    if (clientClinique) {
+      nom = `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim(); email = clientClinique.email ?? ''; tel = clientClinique.telephone ?? '';
+    } else if (owner) {
+      nom = `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim();
+    } else if (dernierRdv) {
+      nom = dernierRdv.client_nom_manuel ?? ''; email = dernierRdv.client_email_manuel ?? ''; tel = dernierRdv.client_telephone_manuel ?? '';
+    }
+    try {
+      sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
+        nomClient: nom, emailClient: email, telClient: tel, lignes,
+        notes: `Consultation de ${animal.nom}`,
+        sourceRdvId: dernierRdv?.id, sourceAnimalId: animalId,
+        clientUid: dernierRdv?.client_uid ?? animal.uid_proprietaire ?? undefined,
+        clientProfileId: dernierRdv?.client_profile_id ?? undefined,
+      }));
+    } catch { /* ignore */ }
+    router.push('/elevage/facturation');
+  }
+
   async function saveForm() {
     if (!user?.uid || !animalId) return;
     setSavingForm(true);
@@ -948,6 +1063,10 @@ function PatientDetailPageInner() {
         setComptesRendus((data ?? []) as CompteRendu[]);
         if (catPro === 'veterinaire' && (vaccinsCr.length || traitementsCr.length)) {
           await ecrireActesCr(vetName, ownerUid);
+        }
+        if (catPro === 'veterinaire') {
+          await proposerFacture(formMotif.trim(), actesRealises, vaccinsCr, traitementsCr,
+            poidsCr != null && !isNaN(poidsCr) ? poidsCr : null);
         }
       } else if (addingType === 'mesure') {
         const updates: Record<string, number> = {};
@@ -2835,13 +2954,16 @@ function PatientDetailPageInner() {
               )}
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Motif de consultation</label>
-                <select value={formMotif} onChange={e => setFormMotif(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
-                  <option value="">— Sélectionner —</option>
-                  {['Consultation', 'Rappel de vaccin', 'Urgence', 'Suivi post-opératoire', 'Contrôle', 'Chirurgie', 'Autre'].map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                {/* Pré-rempli avec le motif de la demande de RDV ; suggestions usuelles. */}
+                <input value={formMotif} onChange={e => setFormMotif(e.target.value)} list="motifs-cr"
+                  placeholder="Consultation, vaccination, boiterie…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white" />
+                <datalist id="motifs-cr">
+                  {['Consultation', 'Vaccination', 'Bilan annuel', 'Urgence', 'Suivi post-opératoire', 'Contrôle', 'Chirurgie'].map(m => <option key={m} value={m} />)}
+                </datalist>
+                {dernierRdv?.notes_client && (
+                  <p className="mt-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">💬 Message du client : {dernierRdv.notes_client}</p>
+                )}
               </div>
               <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
                 <p className="text-xs font-medium text-gray-500">Poids du jour (kg) — alimente la courbe de poids</p>
@@ -2850,22 +2972,7 @@ function PatientDetailPageInner() {
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Actes réalisés</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {[...new Set([...ACTES_COURANTS, ...actesRealises])].map(x => (
-                    <button key={x} type="button"
-                      onClick={() => setActesRealises(l => l.includes(x) ? l.filter(y => y !== x) : [...l, x])}
-                      className={`px-2.5 py-1 rounded-lg text-xs border ${actesRealises.includes(x) ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'}`}>
-                      {x}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <input value={autreActe} onChange={e => setAutreActe(e.target.value)} placeholder="Autre acte (ex. biopsie, ECG…)"
-                    onKeyDown={e => { if (e.key === 'Enter' && autreActe.trim()) { e.preventDefault(); setActesRealises(l => [...l, autreActe.trim()]); setAutreActe(''); } }}
-                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-                  <button type="button" onClick={() => { if (autreActe.trim()) { setActesRealises(l => [...l, autreActe.trim()]); setAutreActe(''); } }}
-                    className="px-3 rounded-xl text-sm font-semibold text-[#0C5C6C] border border-gray-200">＋</button>
-                </div>
+                <ActesSelect value={actesRealises} onChange={setActesRealises} />
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Examen clinique / Diagnostic</label>
