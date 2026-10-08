@@ -14,6 +14,8 @@ interface AnnuaireCategory {
   icon: string;
   color: string;
   catValues?: string;
+  /** Clé de métier de la recherche (src/lib/annuaire-filtres.ts) */
+  metier?: string;
   hasSubcats: boolean;
 }
 
@@ -33,12 +35,13 @@ const CATEGORIES: AnnuaireCategory[] = [
   { slug: 'sante',        label: 'Santé\n& bien-être',         icon: '🏥', color: '#2E7D5E', hasSubcats: true },
   { slug: 'education',    label: 'Éducation\n& comportement',  icon: '🎓', color: '#E65100', hasSubcats: true },
   { slug: 'garde',        label: 'Garde\n& hébergement',       icon: '🏠', color: '#F57C00', hasSubcats: true },
-  { slug: 'toilettage',   label: 'Toilettage\n& soins',        icon: '✂️', color: '#C62828', catValues: 'toilettage', hasSubcats: false },
-  { slug: 'alimentation', label: 'Alimentation',               icon: '🥩', color: '#1565C0', hasSubcats: true },
+  { slug: 'toilettage',   label: 'Toilettage\n& soins',        icon: '✂️', color: '#C62828', catValues: 'toilettage', metier: 'toilettage', hasSubcats: false },
   { slug: 'transport',    label: 'Transport',                  icon: '🚗', color: '#00838F', hasSubcats: true },
-  { slug: 'photographes', label: 'Photographes',               icon: '📷', color: '#AD1457', catValues: 'photographe', hasSubcats: false },
-  { slug: 'boutiques',    label: 'Boutiques\n& Créateurs',     icon: '🛍️', color: '#6A1B9A', hasSubcats: true },
-  { slug: 'assurances',   label: 'Assurances\n& juridique',    icon: '🛡️', color: '#1E3A5F', catValues: 'assurance', hasSubcats: false },
+  { slug: 'photographes', label: 'Photographes',               icon: '📷', color: '#AD1457', catValues: 'photographe', metier: 'photographe', hasSubcats: false },
+  // Une seule tuile : « Alimentation » et « Boutiques & Créateurs » affichaient
+  // la même liste (catégorie pro `referencement`).
+  { slug: 'boutiques',    label: 'Alimentation\n& Boutiques',  icon: '🛍️', color: '#6A1B9A', hasSubcats: true },
+  { slug: 'assurances',   label: 'Assurances\n& juridique',    icon: '🛡️', color: '#1E3A5F', catValues: 'assurance', metier: 'assurance', hasSubcats: false },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -215,7 +218,7 @@ export default function ServicesPage() {
     if (cat.hasSubcats) {
       router.push(`/services/${cat.slug}`);
     } else {
-      router.push(`/services/carte?cat=${cat.catValues}&view=list`);
+      router.push(cat.metier ? `/services/carte?metier=${cat.metier}` : `/services/carte?cat=${cat.catValues}`);
     }
   }
 

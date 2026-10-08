@@ -6,6 +6,8 @@ import Link from 'next/link';
 // ── Sous-catégories par slug ───────────────────────────────────────────────────
 
 interface SubItem {
+  /** Clé de métier de la recherche (src/lib/annuaire-filtres.ts) */
+  metier: string;
   label: string;
   subtitle: string;
   icon: string;
@@ -14,6 +16,8 @@ interface SubItem {
 }
 
 interface CategoryDef {
+  /** Métier « tout le domaine » pour « Voir tous » */
+  metier?: string;
   title: string;
   icon: string;
   color: string;
@@ -23,45 +27,39 @@ interface CategoryDef {
 
 const CATEGORIES: Record<string, CategoryDef> = {
   sante: {
+    metier: 'sante',
     title: 'Santé & bien-être',
     icon: '🏥',
     color: '#2E7D5E',
     allCatValues: 'sante,veterinaire,marechal_ferrant',
     items: [
-      { label: 'Vétérinaires',      subtitle: 'Consultations, urgences, chirurgie',              icon: '🩺', catValues: 'veterinaire' },
-      { label: 'Ostéopathes',       subtitle: 'Manipulations ostéopathiques pour animaux',       icon: '🖐️', catValues: 'sante', profValues: 'Ostéopathe' },
-      { label: 'Kinésithérapeutes', subtitle: 'Rééducation fonctionnelle animale',               icon: '💪', catValues: 'sante', profValues: 'Kinésithérapeute' },
-      { label: 'Maréchal-ferrant',  subtitle: 'Soins des sabots et ferrure',                    icon: '🔨', catValues: 'marechal_ferrant,sante', profValues: 'Maréchal-ferrant,Maréchal-ferrant traditionnel,Parage naturel' },
+      { metier: 'veterinaire', label: 'Vétérinaires',      subtitle: 'Consultations, urgences, chirurgie',              icon: '🩺', catValues: 'veterinaire' },
+      { metier: 'osteopathe', label: 'Ostéopathes',       subtitle: 'Manipulations ostéopathiques pour animaux',       icon: '🖐️', catValues: 'sante', profValues: 'Ostéopathe' },
+      { metier: 'kine', label: 'Kinésithérapeutes', subtitle: 'Rééducation fonctionnelle animale',               icon: '💪', catValues: 'sante', profValues: 'Kinésithérapeute' },
+      { metier: 'marechal', label: 'Maréchal-ferrant',  subtitle: 'Soins des sabots et ferrure',                    icon: '🔨', catValues: 'marechal_ferrant,sante', profValues: 'Maréchal-ferrant,Maréchal-ferrant traditionnel,Parage naturel' },
     ],
   },
   education: {
+    metier: 'education',
     title: 'Éducation & comportement',
     icon: '🎓',
     color: '#E65100',
     allCatValues: 'education',
     items: [
-      { label: 'Éducateurs',           subtitle: 'Apprentissage, obéissance et socialisation',         icon: '🎓', catValues: 'education', profValues: 'Éducateur canin,Dresseur' },
-      { label: 'Comportementalistes',  subtitle: 'Troubles du comportement, anxiété, agressivité',     icon: '🧠', catValues: 'education', profValues: 'Comportementaliste' },
+      { metier: 'educateur', label: 'Éducateurs',           subtitle: 'Apprentissage, obéissance et socialisation',         icon: '🎓', catValues: 'education', profValues: 'Éducateur canin,Dresseur' },
+      { metier: 'comportementaliste', label: 'Comportementalistes',  subtitle: 'Troubles du comportement, anxiété, agressivité',     icon: '🧠', catValues: 'education', profValues: 'Comportementaliste' },
     ],
   },
   garde: {
+    metier: 'garde',
     title: 'Garde & hébergement',
     icon: '🏠',
     color: '#F57C00',
     allCatValues: 'garde,pension',
     items: [
-      { label: 'Pet-sitters',  subtitle: 'Garde à domicile chez vous ou chez eux',   icon: '🏠', catValues: 'garde', profValues: 'Pet sitter' },
-      { label: 'Promeneurs',   subtitle: 'Sorties quotidiennes et balades',           icon: '🦮', catValues: 'garde', profValues: 'Promeneur de chiens' },
-      { label: 'Pensions',     subtitle: 'Hébergement gardé en établissement',       icon: '🏡', catValues: 'pension' },
-    ],
-  },
-  alimentation: {
-    title: 'Alimentation',
-    icon: '🥩',
-    color: '#1565C0',
-    allCatValues: 'referencement',
-    items: [
-      { label: 'Animaleries & boutiques',  subtitle: 'Magasins spécialisés alimentation & accessoires', icon: '🏪', catValues: 'referencement' },
+      { metier: 'petsitter', label: 'Pet-sitters',  subtitle: 'Garde à domicile chez vous ou chez eux',   icon: '🏠', catValues: 'garde', profValues: 'Pet sitter' },
+      { metier: 'promeneur', label: 'Promeneurs',   subtitle: 'Sorties quotidiennes et balades',           icon: '🦮', catValues: 'garde', profValues: 'Promeneur de chiens' },
+      { metier: 'pension', label: 'Pensions',     subtitle: 'Hébergement gardé en établissement',       icon: '🏡', catValues: 'pension' },
     ],
   },
   transport: {
@@ -70,16 +68,17 @@ const CATEGORIES: Record<string, CategoryDef> = {
     color: '#00838F',
     allCatValues: 'taxi_animalier',
     items: [
-      { label: 'Taxi animalier', subtitle: 'Transport spécialisé pour vos animaux', icon: '🚕', catValues: 'taxi_animalier' },
+      { metier: 'taxi', label: 'Taxi animalier', subtitle: 'Transport spécialisé pour vos animaux', icon: '🚕', catValues: 'taxi_animalier' },
     ],
   },
+  // Alimentation + Boutiques & Créateurs fusionnées (même liste `referencement`)
   boutiques: {
-    title: 'Boutiques & Créateurs',
+    title: 'Alimentation & Boutiques',
     icon: '🛍️',
     color: '#6A1B9A',
     allCatValues: 'referencement',
     items: [
-      { label: 'Boutiques & créateurs', subtitle: 'Petites boutiques professionnelles vérifiées', icon: '🛍️', catValues: 'referencement' },
+      { metier: 'boutiques', label: 'Animaleries, boutiques & créateurs', subtitle: 'Alimentation, accessoires et créations — boutiques vérifiées', icon: '🏪', catValues: 'referencement' },
     ],
   },
 };
@@ -89,7 +88,8 @@ const CATEGORIES: Record<string, CategoryDef> = {
 export default function SousCategoriesPage() {
   const { categorie } = useParams<{ categorie: string }>();
   const router = useRouter();
-  const cat = CATEGORIES[categorie];
+  // Anciens liens /services/alimentation → tuile fusionnée
+  const cat = CATEGORIES[categorie === 'alimentation' ? 'boutiques' : categorie];
 
   if (!cat) {
     router.replace('/services');
@@ -122,7 +122,7 @@ export default function SousCategoriesPage() {
         {cat.items.map((item) => (
           <Link
             key={item.label}
-            href={`/services/carte?cat=${encodeURIComponent(item.catValues)}${item.profValues ? `&prof=${encodeURIComponent(item.profValues)}` : ''}&view=list`}
+            href={`/services/carte?metier=${item.metier}`}
             className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-4 flex items-center gap-4 hover:shadow-md hover:border-gray-200 transition-all"
           >
             {/* Icône */}
@@ -192,7 +192,7 @@ export default function SousCategoriesPage() {
         {/* Une seule sous-catégorie (Transport, Alimentation, Boutiques) :
             « Voir tous » menait exactement à la même liste → doublon masqué. */}
         {cat.items.length > 1 && <Link
-          href={`/services/carte?cat=${encodeURIComponent(cat.allCatValues)}&view=list`}
+          href={cat.metier ? `/services/carte?metier=${cat.metier}` : `/services/carte?cat=${encodeURIComponent(cat.allCatValues)}`}
           className="rounded-2xl px-4 py-4 flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
           style={{
             backgroundColor: cat.color + '12',

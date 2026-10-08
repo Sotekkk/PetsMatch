@@ -164,12 +164,6 @@ class _ServicesPageState extends State<ServicesPage> {
       catProValues: const ['toilettage'],
     ),
     _AnnuaireCategory(
-      icon: Icons.set_meal_outlined,
-      label: 'Alimentation',
-      color: const Color(0xFF1565C0),
-      catProValues: const ['referencement'],
-    ),
-    _AnnuaireCategory(
       icon: Icons.directions_car_outlined,
       label: 'Transport',
       color: const Color(0xFF00838F),
@@ -182,9 +176,11 @@ class _ServicesPageState extends State<ServicesPage> {
       color: const Color(0xFFAD1457),
       catProValues: const ['photographe'],
     ),
+    // Une seule tuile : « Alimentation » et « Boutiques & Créateurs »
+    // affichaient la même liste (catégorie pro `referencement`).
     _AnnuaireCategory(
       icon: Icons.shopping_bag_outlined,
-      label: 'Boutiques\n& Créateurs',
+      label: 'Alimentation\n& Boutiques',
       color: const Color(0xFF6A1B9A),
       catProValues: const ['referencement'],
     ),
