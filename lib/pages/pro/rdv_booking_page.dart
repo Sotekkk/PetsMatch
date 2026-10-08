@@ -120,6 +120,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   };
 
   String? _selectedVetMotif;
+  /// Vétérinaire / santé : le propriétaire partage le carnet de santé de
+  /// l'animal avec le cabinet dès la réservation (accès animal_access).
+  bool _partagerCarnet = true;
+  bool get _proposePartageCarnet => (widget.isVet || _catPro == 'sante') && (widget.proProfileId ?? '').isNotEmpty;
 
   // Clinique vétérinaire (migration_clinique_rdv.sql) : praticiens (titulaire
   // = id null), salles actives (id, type), motif → type de salle.
@@ -1104,6 +1108,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'client_uid': uid,
           if (_resolveClientProfileId() != null) 'client_profile_id': _resolveClientProfileId(),
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
+          // Nom figé : le pro le voit même sans accès à la fiche de l'animal.
+          if (!widget.isTaxi && _selectedAnimal?['nom'] != null) 'animal_nom_manuel': _selectedAnimal!['nom'].toString(),
           'date_heure': dh.toIso8601String(),
           'motif':      motif,
           if (widget.isTaxi) ...{
@@ -1148,6 +1154,23 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }).toList();
 
       await Supabase.instance.client.from('rdv').insert(rows);
+
+      // Partage du carnet de santé avec le cabinet (consentement du
+      // propriétaire, donné ici) — le pro retrouve l'animal dans « Mes patients ».
+      if (_proposePartageCarnet && _partagerCarnet && animalId != null && animalId.isNotEmpty) {
+        try {
+          await Supabase.instance.client.from('animal_access').upsert({
+            'animal_id': animalId,
+            'pro_profile_id': widget.proProfileId,
+            if (_resolveClientProfileId() != null) 'granted_by_profile_id': _resolveClientProfileId(),
+            'permissions': widget.isVet
+                ? ['read_basic', 'read_health', 'write_health']
+                : ['read_basic', 'write_notes'],
+            'statut': 'active',
+            'granted_at': DateTime.now().toUtc().toIso8601String(),
+          }, onConflict: 'animal_id,pro_profile_id');
+        } catch (_) {}
+      }
 
       // Notification in-app (cloche) pour le pro
       try {
@@ -1521,6 +1544,29 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     },
                   ),
           ),
+          if (_proposePartageCarnet && _selectedAnimal != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+              decoration: BoxDecoration(
+                color: c.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: c.withValues(alpha: 0.18)),
+              ),
+              child: Row(children: [
+                Icon(Icons.health_and_safety_outlined, size: 20, color: c),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Partager le carnet de santé de ${_selectedAnimal!['nom'] ?? 'mon animal'}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
+                  const Text('Vaccins, traitements, antécédents — révocable à tout moment depuis sa fiche.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B))),
+                ])),
+                Switch(value: _partagerCarnet, activeThumbColor: c,
+                    onChanged: (v) => setState(() => _partagerCarnet = v)),
+              ]),
+            ),
+          ],
 
           const SizedBox(height: 26),
           RdvSection(

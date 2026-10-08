@@ -2280,9 +2280,15 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
 
 function AnimalFichePageInner() {
   const { id } = useParams<{ id: string }>();
-  const { user, userData } = useAuth();
+  const { user, userData, availableProfiles } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
+  // Profil actif particulier : pas de vente ni de réservation, seulement
+  // confier l'animal à une association (abandon).
+  const profilActif = activeProfileId
+    ? availableProfiles.find(p => p.id === activeProfileId)
+    : availableProfiles.find(p => p.is_main);
+  const estParticulier = profilActif?.profile_type === 'particulier';
   // uid Firebase réel du propriétaire du profil actif (élevage) — jamais
   // forcément user.uid : un cogérant (elevage_cogerants) a un uid différent
   // du gérant. Pour un animal déjà chargé, `animal.uid_eleveur` (lu
@@ -3510,7 +3516,7 @@ function AnimalFichePageInner() {
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm transition-colors">
               📊
             </button>
-            {isOwner && !isCede && animal.statut === 'present' && (
+            {isOwner && !estParticulier && !isCede && animal.statut === 'present' && (
               <button onClick={() => setShowReservation(true)}
                 className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
                 🔖 Réserver
@@ -3524,8 +3530,9 @@ function AnimalFichePageInner() {
             )}
             {isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setShowCession(true)}
+                title={estParticulier ? 'Confier cet animal à une association (abandon)' : undefined}
                 className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
-                🤝 Céder
+                {estParticulier ? '🏠 Confier à une association' : '🤝 Céder'}
               </button>
             )}
             {isEleveur && isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
@@ -4958,6 +4965,7 @@ function AnimalFichePageInner() {
           // cédant (pas l'éleveur d'origine), cession en don / abandon.
           uid={animal.uid_eleveur !== user.uid && !isCogerantActif ? user.uid : (animal.uid_eleveur ?? ownerUid ?? user.uid)}
           isReCession={animal.uid_eleveur !== user.uid && !isCogerantActif}
+          associationSeulement={estParticulier}
           profileId={activeProfileId || null}
           eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
           reservation={animal.statut === 'reserve' ? reservation : null}

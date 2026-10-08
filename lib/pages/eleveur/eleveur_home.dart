@@ -227,7 +227,9 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   /// Patients du profil pro actif — MÊME calcul que « Mes patients »
   /// (pro_clients_page.dart) : accès actifs / écriture demandée / écriture
   /// accordée + animaux des RDV confirmés ou terminés, sans doublon.
-  Future<List<String>> _patientsIds(SupabaseClient supa, String uid, String pid) async {
+  /// Vétérinaire : « Mes patients » (vet_patients_page.dart) ne liste que les
+  /// accès au carnet → [accesSeulement].
+  Future<List<String>> _patientsIds(SupabaseClient supa, String uid, String pid, {bool accesSeulement = false}) async {
     final ids = <String>{};
     final grants = await supa.from('animal_access').select('animal_id')
         .eq('pro_profile_id', pid)
@@ -236,6 +238,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       final id = g['animal_id']?.toString();
       if (id != null) ids.add(id);
     }
+    if (accesSeulement) return ids.toList();
     final rdvs = await supa.from('rdv').select('animal_id')
         .eq('pro_uid', uid).eq('pro_profile_id', pid)
         .inFilter('statut', ['confirme', 'termine'])
@@ -262,7 +265,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
 
     try {
       if (User_Info.catPro == 'veterinaire') {
-        final patients = await _patientsIds(supa, uid, pid);
+        final patients = await _patientsIds(supa, uid, pid, accesSeulement: true);
         final rdvToday = await pf(supa.from('rdv').select('id')
             .eq('pro_uid', uid)
             .gte('date_heure', todayStart)

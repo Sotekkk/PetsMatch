@@ -16,6 +16,8 @@ import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 import LienDocument from '@/components/LienDocument';
 import { ouvrirDocument } from '@/lib/document-prive';
+import { ordonnancePdfBlob, compteRenduPdfBlob } from '@/lib/ordonnance-pdf';
+import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -59,6 +61,8 @@ interface TraitementEntry {
 interface CompteRendu {
   id: string; created_at: string; contenu: string | null; pro_uid: string | null;
   statut?: 'brouillon' | 'valide' | null;
+  // CR structuré (migration_cr_structure.sql) — historique du patient.
+  motif?: string | null; poids?: number | null; actes?: string[] | null; prescription?: string | null;
 }
 interface Ordonnance {
   id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
@@ -224,6 +228,245 @@ function ForfaitSousForm({ proUid, onSave, onCancel }: {
   );
 }
 
+interface VaccinCr { nom: string; lot: string; date: string; rappel: string | null }
+/** Phase d'un traitement (dégressif : plusieurs phases enchaînées). */
+interface PhaseCr { dose: string; prises: string[]; frequenceJours: number; dureeJours: number | null }
+interface TraitementCr { nom: string; type: string; phases: PhaseCr[]; rappels: boolean; notes: string }
+interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: string | null; quantite: number | null; unite: string | null }
+
+const ANTIPARASITAIRES_COURANTS = ['Bravecto', 'NexGard', 'NexGard Spectra', 'Simparica', 'Simparica Trio', 'Credelio',
+  'Advocate', 'Stronghold', 'Frontline', 'Broadline', 'Milbemax', 'Drontal', 'Milpro', 'Profender', 'Seresto (collier)', 'Scalibor (collier)'];
+const MEDICAMENTS_COURANTS = ['Metacam (méloxicam)', 'Previcox', 'Onsior', 'Rimadyl', 'Synulox', 'Clavaseptin', 'Kesium', 'Marbocyl',
+  'Convenia', 'Prednisolone', 'Cortavance', 'Apoquel', 'Cytopoint', 'Vetmedin', 'Fortekor', 'Cerenia', 'Gabapentine', 'Tramadol',
+  'Forthyron', 'Cardalis'];
+const ACTES_COURANTS = ['Examen clinique', 'Vaccination', 'Prise de sang', 'Analyse sanguine', 'Radiographie', 'Échographie',
+  "Analyse d'urine", 'Coproscopie', 'Injection', 'Soins de plaie', 'Détartrage', 'Pose de puce', 'Castration / stérilisation',
+  'Chirurgie', 'Hospitalisation', 'Euthanasie'];
+const VACCINS_COURANTS = ['CHPPiL', 'Rage', 'Leptospirose', 'Toux du chenil', 'Leishmaniose', 'Typhus / coryza (RC P)',
+  'Leucose (FeLV)', 'Myxomatose', 'VHD (lapin)', 'Grippe équine', 'Rhinopneumonie', 'Tétanos'];
+/** Prises de la journée → libellé + heure du rappel au propriétaire. */
+const PRISES: Record<string, [string, string]> = { matin: ['Matin', '08:00'], midi: ['Midi', '12:00'], soir: ['Soir', '19:00'] };
+
+function plus(dateIso: string, jours = 0, mois = 0, ans = 0): string {
+  const d = new Date(dateIso + 'T12:00:00');
+  d.setFullYear(d.getFullYear() + ans, d.getMonth() + mois, d.getDate() + jours);
+  return d.toISOString().slice(0, 10);
+}
+
+/** « 1 cp matin et soir, tous les 2 jours, pendant 3 jours ». */
+function libellePhase(p: PhaseCr): string {
+  const noms = Object.keys(PRISES).filter(k => p.prises.includes(k)).map(k => PRISES[k][0].toLowerCase());
+  const quand = noms.length > 1 ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms.join('');
+  return [
+    [p.dose.trim(), quand].filter(Boolean).join(' '),
+    p.frequenceJours > 1 ? `tous les ${p.frequenceJours} jours` : '',
+    p.dureeJours ? `pendant ${p.dureeJours} jour${p.dureeJours > 1 ? 's' : ''}` : 'au long cours',
+  ].filter(Boolean).join(', ');
+}
+const posologieComplete = (t: TraitementCr) => t.phases.map(libellePhase).join(', puis ');
+
+/** Champ texte + suggestions de la pharmacie dès la 1re lettre (saisie libre possible). */
+function ChampPharmacie({ value, onChange, onChoix, articles, placeholder, courants = [] }: {
+  value: string; onChange: (v: string) => void; onChoix: (a: ArticlePharmacie) => void;
+  articles: ArticlePharmacie[]; placeholder: string;
+  /** Liste courante proposée après la pharmacie (ex. vaccins usuels). */
+  courants?: string[];
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  // Liste déroulante avec recherche : tout au focus, filtré à la frappe.
+  const q = value.trim().toLowerCase();
+  const ok = (n: string) => !q || n.toLowerCase().includes(q);
+  const stock = articles.filter(a => ok(a.nom));
+  const noms = new Set(stock.map(a => a.nom.toLowerCase()));
+  const sugg: ArticlePharmacie[] = [
+    ...stock,
+    ...courants.filter(c => ok(c) && !noms.has(c.toLowerCase()))
+      .map(c => ({ id: `c:${c}`, nom: c, categorie: '_courant', lot: null, quantite: null, unite: null })),
+  ].slice(0, 40);
+  return (
+    <div className="relative">
+      <input value={value} placeholder={placeholder}
+        onChange={e => { onChange(e.target.value); setOuvert(true); }} onFocus={() => setOuvert(true)}
+        onBlur={() => setTimeout(() => setOuvert(false), 150)}
+        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+      {ouvert && (sugg.length > 0 || articles.length === 0) && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-y-auto max-h-64">
+          {articles.length === 0 && (
+            <p className="px-3 py-2 text-[11px] text-gray-400">Pharmacie vide — ajoutez vos produits dans Inventaire pour les retrouver ici (lot, stock).</p>
+          )}
+          {sugg.map(a => (
+            <button key={a.id} type="button" onMouseDown={() => { onChoix(a); setOuvert(false); }}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+              <span className="block text-sm text-[#1E2025]">{a.categorie === 'vaccin' ? '💉' : '💊'} {a.nom}</span>
+              {a.categorie !== '_courant' && (
+                <span className="block text-[11px] text-gray-400">
+                  {['Pharmacie', a.lot && `Lot ${a.lot}`, a.quantite != null && `Stock ${a.quantite} ${a.unite ?? ''}`.trim()].filter(Boolean).join(' · ')}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Compte rendu vétérinaire : vaccins réalisés / traitements prescrits ──────
+// → carnet de santé (rappels au propriétaire par les Cloud Functions sante.js)
+// + ordonnance PDF. Miroir app : compte_rendu_page.dart (_blocActes).
+function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId }: {
+  vaccins: VaccinCr[]; setVaccins: (v: VaccinCr[]) => void;
+  traitements: TraitementCr[]; setTraitements: (t: TraitementCr[]) => void;
+  profileId: string | null;
+}) {
+  const auj = new Date().toISOString().slice(0, 10);
+  const [vac, setVac] = useState<(VaccinCr & { index: number }) | null>(null);
+  const [trt, setTrt] = useState<(TraitementCr & { index: number }) | null>(null);
+  const [pharmacie, setPharmacie] = useState<ArticlePharmacie[]>([]);
+  useEffect(() => {
+    if (!profileId) return;
+    supabase.from('inventaire_items').select('id, nom, categorie, lot, quantite, unite').eq('eleveur_profile_id', profileId).order('nom')
+      .then(({ data }) => setPharmacie((data ?? []) as ArticlePharmacie[]));
+  }, [profileId]);
+
+  const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]';
+  const chip = (sel: boolean) => `px-2.5 py-1 rounded-lg text-xs border ${sel ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'}`;
+  const ligne = (icone: string, titre: string, sous: string, onEdit: () => void, onDelete: () => void, key: string) => (
+    <div key={key} className="flex items-center gap-2.5 bg-white border border-[#0C5C6C]/25 rounded-xl px-3 py-2">
+      <button type="button" onClick={onEdit} className="flex-1 min-w-0 flex items-center gap-2.5 text-left" title="Modifier">
+        <span>{icone}</span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-[#1E2025] truncate">{titre}</span>
+          {sous && <span className="block text-xs text-gray-500">{sous}</span>}
+        </span>
+      </button>
+      <button type="button" onClick={onEdit} className="text-gray-400 hover:text-[#0C5C6C] px-1" title="Modifier">✎</button>
+      <button type="button" onClick={onDelete} className="text-gray-400 hover:text-gray-600 px-1" title="Retirer">✕</button>
+    </div>
+  );
+  const majPhase = (i: number, p: Partial<PhaseCr>) => trt && setTrt({ ...trt, phases: trt.phases.map((x, j) => j === i ? { ...x, ...p } : x) });
+  const remplacer = <T,>(liste: T[], i: number, v: T) => i >= 0 ? liste.map((x, j) => j === i ? v : x) : [...liste, v];
+
+  return (
+    <div className="space-y-3 rounded-2xl bg-[#0C5C6C]/5 p-3">
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-gray-600">💉 Vaccins réalisés</p>
+        {vaccins.map((v, i) => ligne('💉', v.nom, [v.lot && `Lot ${v.lot}`, v.rappel && `Rappel le ${new Date(v.rappel + 'T12:00:00').toLocaleDateString('fr-FR')}`].filter(Boolean).join(' · '),
+          () => setVac({ ...v, index: i }), () => setVaccins(vaccins.filter((_, j) => j !== i)), `v${i}`))}
+        {vac ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+            <ChampPharmacie value={vac.nom} onChange={nom => setVac({ ...vac, nom })} placeholder="Vaccin (nom / marque) *"
+              articles={pharmacie.filter(a => a.categorie === 'vaccin')}
+              onChoix={a => setVac({ ...vac, nom: a.nom, lot: a.lot ?? vac.lot })} courants={VACCINS_COURANTS} />
+            <input value={vac.lot} onChange={e => setVac({ ...vac, lot: e.target.value })} placeholder="N° de lot" className={champ} />
+            <p className="text-xs text-gray-500">Prochain rappel (le propriétaire sera prévenu)</p>
+            <div className="flex flex-wrap gap-1.5">
+              {([['3 semaines', plus(vac.date, 21)], ['1 mois', plus(vac.date, 0, 1)], ['6 mois', plus(vac.date, 0, 6)],
+                 ['1 an', plus(vac.date, 0, 0, 1)], ['3 ans', plus(vac.date, 0, 0, 3)], ['Aucun', null]] as const).map(([l, d]) => (
+                <button key={l} type="button" onClick={() => setVac({ ...vac, rappel: d })} className={chip(vac.rappel === d)}>{l}</button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setVac(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
+              <button type="button" disabled={!vac.nom.trim()} onClick={() => {
+                const { index, ...v } = vac;
+                setVaccins(remplacer(vaccins, index, { ...v, nom: v.nom.trim(), lot: v.lot.trim() })); setVac(null);
+              }} className="flex-1 py-2 rounded-xl text-sm text-white font-semibold bg-[#0C5C6C] disabled:opacity-40">
+                {vac.index >= 0 ? 'Enregistrer' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setVac({ nom: '', lot: '', date: auj, rappel: plus(auj, 0, 0, 1), index: -1 })}
+            className="text-sm font-semibold text-[#0C5C6C]">＋ Ajouter un vaccin</button>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-gray-600">💊 Traitements prescrits</p>
+        {traitements.map((t, i) => ligne('💊', t.nom, [posologieComplete(t), t.rappels ? 'rappels au propriétaire' : ''].filter(Boolean).join(' · '),
+          () => setTrt({ ...t, index: i }), () => setTraitements(traitements.filter((_, j) => j !== i)), `t${i}`))}
+        {trt ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+            <ChampPharmacie value={trt.nom} onChange={nom => setTrt({ ...trt, nom })} placeholder="Médicament *"
+              articles={pharmacie.filter(a => trt.type === 'antiparasitaire' ? a.categorie === 'antiparasitaire' : (a.categorie !== 'vaccin' && a.categorie !== 'alimentation'))}
+              courants={trt.type === 'antiparasitaire' ? ANTIPARASITAIRES_COURANTS : MEDICAMENTS_COURANTS}
+              onChoix={a => setTrt({ ...trt, nom: a.nom, type: a.categorie === 'antiparasitaire' ? 'antiparasitaire' : trt.type })} />
+            <div className="flex flex-wrap gap-1.5">
+              {[['medicament', 'Médicament'], ['antiparasitaire', 'Antiparasitaire'], ['autre', 'Autre']].map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setTrt({ ...trt, type: k })} className={chip(trt.type === k)}>{l}</button>
+              ))}
+            </div>
+            {trt.phases.map((p, i) => (
+              <div key={i} className="rounded-xl border border-gray-200 bg-[#F6F8F7] p-2.5 space-y-2">
+                <div className="flex items-center">
+                  <span className="flex-1 text-xs font-bold text-[#1E2025]">{trt.phases.length > 1 ? `Phase ${i + 1}` : 'Posologie'}</span>
+                  {trt.phases.length > 1 && (
+                    <button type="button" onClick={() => setTrt({ ...trt, phases: trt.phases.filter((_, j) => j !== i) })} className="text-gray-400 px-1">✕</button>
+                  )}
+                </div>
+                <input value={p.dose} onChange={e => majPhase(i, { dose: e.target.value })} placeholder="Dose par prise — ex. 1 cp, ½ cp, 2 mL, 1 pipette" className={champ} />
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(PRISES).map(([k, [l]]) => (
+                    <button key={k} type="button" className={chip(p.prises.includes(k))}
+                      onClick={() => majPhase(i, { prises: p.prises.includes(k) ? p.prises.filter(x => x !== k) : [...p.prises, k] })}>{l}</button>
+                  ))}
+                </div>
+                {/* Intervalle libre : une prise tous les N jours. */}
+                <div className="flex items-center gap-2 text-sm text-[#1E2025]">
+                  Tous les
+                  <input type="number" min={1} inputMode="numeric" value={p.frequenceJours}
+                    onChange={e => majPhase(i, { frequenceJours: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                    className="w-16 text-center border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  {p.frequenceJours > 1 ? 'jours' : 'jour (tous les jours)'}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <input type="number" min={1} inputMode="numeric" value={p.dureeJours ?? ''} placeholder="jours"
+                    onChange={e => majPhase(i, { dureeJours: e.target.value ? parseInt(e.target.value, 10) : null })}
+                    className="w-24 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  <span className="text-xs text-gray-500 mr-1">jours</span>
+                  {[3, 5, 7, 10, 14].map(n => <button key={n} type="button" onClick={() => majPhase(i, { dureeJours: n })} className={chip(p.dureeJours === n)}>{n} j</button>)}
+                  {i === trt.phases.length - 1 && (
+                    <button type="button" onClick={() => majPhase(i, { dureeJours: null })} className={chip(p.dureeJours === null)}>Au long cours</button>
+                  )}
+                </div>
+              </div>
+            ))}
+            <button type="button" className="text-sm font-semibold text-[#0C5C6C]"
+              onClick={() => {
+                const der = trt.phases[trt.phases.length - 1];
+                setTrt({ ...trt, phases: [...trt.phases.map((x, j) => j === trt.phases.length - 1 && !x.dureeJours ? { ...x, dureeJours: 3 } : x),
+                  { dose: '', prises: [...der.prises], frequenceJours: der.frequenceJours, dureeJours: der.dureeJours ?? 3 }] });
+              }}>📉 Ajouter une phase (dose dégressive)</button>
+            <label className="flex items-center gap-2 text-sm text-[#1E2025]">
+              <input type="checkbox" checked={trt.rappels} onChange={e => setTrt({ ...trt, rappels: e.target.checked })} className="w-4 h-4 accent-[#0C5C6C]" />
+              Rappeler chaque prise au propriétaire (matin 8 h · midi 12 h · soir 19 h)
+            </label>
+            <input value={trt.notes} onChange={e => setTrt({ ...trt, notes: e.target.value })} placeholder="Remarque (facultatif) — précautions, à jeun…" className={champ} />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setTrt(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
+              <button type="button" disabled={!trt.nom.trim() || trt.phases.some(p => p.prises.length === 0)} onClick={() => {
+                const { index, ...t } = trt;
+                setTraitements(remplacer(traitements, index, { ...t, nom: t.nom.trim(), notes: t.notes.trim() })); setTrt(null);
+              }} className="flex-1 py-2 rounded-xl text-sm text-white font-semibold bg-[#0C5C6C] disabled:opacity-40">
+                {trt.index >= 0 ? 'Enregistrer' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setTrt({ nom: '', type: 'medicament', rappels: true, notes: '', index: -1,
+            phases: [{ dose: '1 cp', prises: ['matin', 'soir'], frequenceJours: 1, dureeJours: 7 }] })}
+            className="text-sm font-semibold text-[#0C5C6C]">＋ Ajouter un traitement</button>
+        )}
+        {traitements.length > 0 && (
+          <p className="text-[11px] text-gray-500">📄 L&apos;ordonnance sera générée en PDF et ajoutée aux documents de l&apos;animal.</p>
+        )}
+      </div>
+      <p className="text-[11px] text-gray-500">Cliquez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.</p>
+    </div>
+  );
+}
+
 function PatientDetailPageInner() {
   const { user, userData } = useAuth();
   const router = useRouter();
@@ -315,6 +558,14 @@ function PatientDetailPageInner() {
   const [formPoids, setFormPoids] = useState('');
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
+  // Patient créé par la clinique : client du fichier (propriétaire hors appli).
+  const [clientClinique, setClientClinique] = useState<{ nom: string; prenom: string | null; telephone: string | null;
+    email: string | null; adresse: string | null; code_postal: string | null; ville: string | null; notes: string | null; uid_lie: string | null } | null>(null);
+  // Compte rendu vétérinaire : actes saisis (carnet + ordonnance PDF).
+  const [vaccinsCr, setVaccinsCr] = useState<VaccinCr[]>([]);
+  const [actesRealises, setActesRealises] = useState<string[]>([]);
+  const [autreActe, setAutreActe] = useState('');
+  const [traitementsCr, setTraitementsCr] = useState<TraitementCr[]>([]);
   const [requestingWrite, setRequestingWrite] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
 
@@ -375,6 +626,11 @@ function PatientDetailPageInner() {
       setAnimal(a);
       setGrant(grantRes.data as Grant | null);
       if (!a) { setLoading(false); return; }
+      const clientId = (a as unknown as { client_clinique_id?: string | null }).client_clinique_id;
+      if (clientId) {
+        const { data: cc } = await supabase.from('clients_clinique').select('*').eq('id', clientId).maybeSingle();
+        setClientClinique(cc as typeof clientClinique);
+      }
 
       const ownerUid = a.uid_proprietaire ?? a.uid_eleveur;
       const isFemelle = a.sexe?.toLowerCase() === 'femelle';
@@ -458,6 +714,142 @@ function PatientDetailPageInner() {
     } catch { /* best-effort */ }
   }
 
+  /** Vaccins / traitements du CR → carnet ; traitements → ordonnance PDF. */
+  async function ecrireActesCr(vetName: string, ownerUid: string | null) {
+    if (!user?.uid || !animalId) return;
+    const erreurs: string[] = [];
+    const auj = new Date();
+    const ymd = (d: Date) => d.toISOString().slice(0, 10);
+    for (const v of vaccinsCr) {
+      const { error } = await supabase.from('vaccinations').insert({
+        id: `${Date.now()}${Math.floor(Math.random() * 1000)}`, animal_id: animalId, vaccin: v.nom, lot: v.lot || null,
+        veterinaire: vetName || null, date: v.date, date_validite_debut: v.date, date_rappel: v.rappel,
+        source: 'veterinaire', vet_id: user.uid,
+      });
+      if (error) erreurs.push(`vaccin ${v.nom}`);
+    }
+    for (const t of traitementsCr) {
+      let debut = new Date(auj);
+      for (let i = 0; i < t.phases.length; i++) {
+        const ph = t.phases[i];
+        const fin = ph.dureeJours ? new Date(debut.getTime() + ph.dureeJours * 86400000) : null;
+        const heures = Object.keys(PRISES).filter(k => ph.prises.includes(k)).map(k => PRISES[k][1]);
+        const rappel = t.rappels && heures.length > 0;
+        const notesPhase = [t.phases.length > 1 ? `Phase ${i + 1}/${t.phases.length}` : '', t.notes].filter(Boolean).join(' — ');
+        const { error } = await supabase.from('traitements').insert({
+          id: `${Date.now()}${i}${Math.floor(Math.random() * 1000)}`, animal_id: animalId, type: t.type, nom: t.nom,
+          posologie: libellePhase(ph), date: debut.toISOString(), date_fin: fin?.toISOString() ?? null,
+          notes: notesPhase || null, source: 'veterinaire', vet_id: user.uid,
+          rappel_actif: rappel,
+          ...(rappel ? {
+            rappel_frequence_jours: ph.frequenceJours, rappel_duree_jours: ph.dureeJours ?? 30,
+            rappel_fin: (fin ?? new Date(debut.getTime() + 30 * 86400000)).toISOString(), rappel_heures: heures,
+          } : {}),
+        });
+        if (error) erreurs.push(`traitement ${t.nom}`);
+        if (!fin) break;
+        debut = fin;
+      }
+    }
+    if (vaccinsCr.length) await notifyOwner('vaccin', vetName);
+    if (traitementsCr.length) await notifyOwner('traitement', vetName);
+
+    if (traitementsCr.length) {
+      try {
+        const pid = activeProfileId || null;
+        const { data: cl } = pid
+          ? await supabase.from('user_profiles_complet').select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pid).maybeSingle()
+          : { data: null };
+        const certs = (cl?.certifications ?? []) as { nom?: string; numero?: string }[];
+        const ordre = certs.find(c => (c.nom ?? '').toLowerCase().includes('ordre'))?.numero ?? '';
+        const prescripteur = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Vétérinaire';
+        const proprio = owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+        const blob = await ordonnancePdfBlob({
+          cliniqueNom: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
+          cliniqueAdresse: [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()].filter(x => (x ?? '').toString().trim()).join(', '),
+          cliniqueTel: (cl?.phone_number as string | undefined) ?? '',
+          numeroOrdre: ordre,
+          prescripteur,
+          animalNom: animal?.nom ?? 'Animal',
+          animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+          animalIdentification: animal?.identification ?? '',
+          animalPoids: formPoids.trim() ? `${formPoids.trim().replace('.', ',')} kg` : animal?.poids != null ? `${animal.poids} kg` : '',
+          proprietaire: proprio,
+          lignes: traitementsCr.map(t => ({ medicament: t.nom, posologie: posologieComplete(t), notes: t.notes })),
+        });
+        const path = `ordonnances/${user.uid}/${Date.now()}.pdf`;
+        const { error: upErr } = await supabase.storage.from('documents').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+        if (upErr) throw upErr;
+        const docUrl = supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+        let ownerProfileId: string | null = null;
+        if (ownerUid) {
+          const { data: op } = await supabase.from('user_profiles_complet').select('id')
+            .eq('uid', ownerUid).eq('profile_type', 'particulier').limit(1).maybeSingle();
+          ownerProfileId = (op?.id as string | undefined) ?? null;
+        }
+        const { error: ordErr } = await supabase.from('ordonnances').insert({
+          animal_id: animalId, pro_uid: user.uid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: pid } : {}),
+          owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
+          praticien_uid: user.uid, doc_url: docUrl, date_emit: ymd(auj),
+          notes: traitementsCr.map(t => t.nom).join(', '),
+        });
+        if (ordErr) throw ordErr;
+        const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
+        setOrdonnances((data ?? []) as Ordonnance[]);
+        await notifyOwner('ordonnance', vetName);
+      } catch { erreurs.push('ordonnance'); }
+    }
+    const [v, t] = await Promise.all([
+      supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+      supabase.from('traitements').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+    ]);
+    setVaccins((v.data ?? []) as VaccinEntry[]);
+    setTraitements((t.data ?? []) as TraitementEntry[]);
+    if (erreurs.length) alert(`Non enregistré : ${erreurs.join(', ')} — vérifiez l'accès au carnet de l'animal.`);
+  }
+
+  /** En-tête / patient / propriétaire des PDF (CR, ordonnance). */
+  async function infosDocument() {
+    const { data: cl } = activeProfileId
+      ? await supabase.from('user_profiles_complet').select('nom, rue_pro, code_postal_pro, ville_pro, phone_number').eq('id', activeProfileId).maybeSingle()
+      : { data: null };
+    const proprio = clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
+      : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
+    return {
+      clinique: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
+      adresse: [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()].filter(x => (x ?? '').toString().trim()).join(', '),
+      tel: (cl?.phone_number as string | undefined) ?? '',
+      proprio, email: clientClinique?.email ?? null,
+    };
+  }
+
+  async function transmettreCr(c: CompteRendu, action: 'imprimer' | 'email') {
+    try {
+      const i = await infosDocument();
+      const blob = await compteRenduPdfBlob({
+        cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel,
+        praticien: `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Vétérinaire',
+        animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+        animalIdentification: animal?.identification ?? '', proprietaire: i.proprio,
+        contenu: c.contenu ?? '', date: new Date(c.created_at),
+      });
+      if (action === 'imprimer') imprimerPdf(blob);
+      else await envoyerPdfParEmail(blob, { type: 'compte_rendu', emailParDefaut: i.email, destinataireNom: i.proprio,
+        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Compte-rendu-${animal?.nom ?? 'animal'}.pdf` });
+    } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
+  }
+
+  async function transmettreOrdo(o: Ordonnance, action: 'imprimer' | 'email') {
+    if (!o.doc_url) return;
+    try {
+      const blob = await pdfDepuisUrl(o.doc_url);
+      if (action === 'imprimer') { imprimerPdf(blob); return; }
+      const i = await infosDocument();
+      await envoyerPdfParEmail(blob, { type: 'ordonnance', emailParDefaut: i.email, destinataireNom: i.proprio,
+        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Ordonnance-${animal?.nom ?? 'animal'}.pdf` });
+    } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
+  }
+
   async function saveForm() {
     if (!user?.uid || !animalId) return;
     setSavingForm(true);
@@ -524,10 +916,16 @@ function PatientDetailPageInner() {
         setRadios((data ?? []) as RadioEntry[]);
       } else if (addingType === 'cr') {
         const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+        const poidsCr = formPoids.trim() ? parseFloat(formPoids.replace(',', '.')) : null;
+        const prescription = traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`).join(' ; ');
         const contenu = [
           formMotif.trim() && `Motif : ${formMotif.trim()}`,
+          poidsCr != null && !isNaN(poidsCr) && `Poids : ${poidsCr} kg`,
+          actesRealises.length > 0 && `Actes réalisés : ${actesRealises.join(', ')}.`,
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
           formNotes.trim() && formNotes.trim(),
+          vaccinsCr.length > 0 && `Vaccins : ${vaccinsCr.map(v => v.nom + (v.lot ? ` (lot ${v.lot})` : '')).join(', ')}.`,
+          traitementsCr.length > 0 && `Traitement : ${traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`).join(' ; ')}.`,
         ].filter(Boolean).join('\n\n');
         // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
@@ -535,9 +933,22 @@ function PatientDetailPageInner() {
           animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null,
           ...(activeProfileId ? { pro_profile_id: activeProfileId, redige_par_profile_id: activeProfileId, valide_par_profile_id: activeProfileId } : {}),
           statut: 'valide', redige_par_uid: user.uid,
+          ...(formMotif.trim() ? { motif: formMotif.trim() } : {}),
+          ...(poidsCr != null && !isNaN(poidsCr) ? { poids: poidsCr } : {}),
+          ...(actesRealises.length ? { actes: actesRealises } : {}),
+          ...(prescription ? { prescription } : {}),
         });
+        // Pesée du jour → courbe de poids + poids de la fiche.
+        if (poidsCr != null && !isNaN(poidsCr)) {
+          await supabase.from('poids').insert({ id: `${Date.now()}`, animal_id: animalId, valeur: poidsCr, date: new Date().toISOString(), notes: 'Consultation' });
+          await supabase.from('animaux').update({ poids: String(poidsCr) }).eq('id', animalId);
+          setAnimal(a => a ? { ...a, poids: poidsCr } : a);
+        }
         const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
         setComptesRendus((data ?? []) as CompteRendu[]);
+        if (catPro === 'veterinaire' && (vaccinsCr.length || traitementsCr.length)) {
+          await ecrireActesCr(vetName, ownerUid);
+        }
       } else if (addingType === 'mesure') {
         const updates: Record<string, number> = {};
         if (formPoids.trim()) updates.poids = parseFloat(formPoids);
@@ -548,6 +959,7 @@ function PatientDetailPageInner() {
         }
       }
     } finally {
+      setVaccinsCr([]); setTraitementsCr([]); setActesRealises([]); setAutreActe('');
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
       setFormPoids(''); setFormTaille('');
@@ -1764,7 +2176,21 @@ function PatientDetailPageInner() {
         )}
 
         {/* ── Propriétaire ── */}
-        {tab === 'Propriétaire' && (
+        {tab === 'Propriétaire' && clientClinique && (
+          <Card title="👤 Propriétaire — client de la clinique">
+            <div className="space-y-1.5 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+              <p className="font-bold text-[#1F2A2E] text-base">{`${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()}</p>
+              <p className="text-xs text-gray-500">{clientClinique.uid_lie ? 'Compte PetsMatch rattaché' : 'Pas encore sur PetsMatch'}</p>
+              {clientClinique.telephone && <p>📞 <a href={`tel:${clientClinique.telephone.replace(/\s/g, '')}`} className="underline text-[#0C5C6C]">{clientClinique.telephone}</a></p>}
+              {clientClinique.email && <p>✉ <a href={`mailto:${clientClinique.email}`} className="underline text-[#0C5C6C]">{clientClinique.email}</a></p>}
+              {(clientClinique.adresse || clientClinique.ville) && (
+                <p>🏠 {[clientClinique.adresse, `${clientClinique.code_postal ?? ''} ${clientClinique.ville ?? ''}`.trim()].filter(Boolean).join(', ')}</p>
+              )}
+              {clientClinique.notes && <p className="text-gray-500">📝 {clientClinique.notes}</p>}
+            </div>
+          </Card>
+        )}
+        {tab === 'Propriétaire' && !clientClinique && (
           <Card title="👤 Propriétaire">
             {!owner ? (
               <EmptyState text="Informations du propriétaire non disponibles" />
@@ -2010,6 +2436,24 @@ function PatientDetailPageInner() {
             </Card>
 
             {/* Comptes rendus */}
+            {isVet && comptesRendus.length > 0 && (
+              <Card title="🕘 Historique des consultations">
+                <div className="divide-y divide-gray-100">
+                  {comptesRendus.map(c => (
+                    <div key={c.id} className="py-2 first:pt-0 last:pb-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-[#0C5C6C]">{fmtDateShort(c.created_at)}</span>
+                        <span className="flex-1 text-sm font-semibold text-[#1F2A2E] truncate">{c.motif || 'Consultation'}</span>
+                        {c.poids != null && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C]">⚖ {c.poids} kg</span>}
+                      </div>
+                      {c.actes && c.actes.length > 0 && <p className="text-xs text-gray-600 mt-0.5">Actes : {c.actes.join(', ')}</p>}
+                      {c.prescription && <p className="text-xs text-gray-600">💊 {c.prescription}</p>}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
             <Card title={`📋 Comptes rendus (${comptesRendus.length})`}>
               {comptesRendus.length === 0 ? <EmptyState text="Aucun compte rendu enregistré" /> : (
                 <div className="space-y-3">
@@ -2038,6 +2482,14 @@ function PatientDetailPageInner() {
                         ? <p className="text-sm text-[#1F2A2E] whitespace-pre-wrap">{c.contenu}</p>
                         : <p className="text-xs text-gray-400 italic">Compte rendu vide</p>
                       }
+                      {c.statut !== 'brouillon' && isVet && (
+                        <div className="flex gap-2 mt-2">
+                          <button type="button" onClick={() => transmettreCr(c, 'imprimer')}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>🖨 Imprimer</button>
+                          <button type="button" onClick={() => transmettreCr(c, 'email')}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>✉ Envoyer au propriétaire</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2055,6 +2507,14 @@ function PatientDetailPageInner() {
                         <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(o.date_emit)}</p>
                         {o.notes && <p className="text-xs text-gray-400">{o.notes}</p>}
                       </div>
+                      {o.doc_url && isVet && (
+                        <>
+                          <button type="button" onClick={() => transmettreOrdo(o, 'imprimer')} title="Imprimer"
+                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border flex-shrink-0" style={{ borderColor: TEAL, color: TEAL }}>🖨</button>
+                          <button type="button" onClick={() => transmettreOrdo(o, 'email')} title="Envoyer au propriétaire"
+                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border flex-shrink-0" style={{ borderColor: TEAL, color: TEAL }}>✉</button>
+                        </>
+                      )}
                       {o.doc_url && (
                         <LienDocument href={o.doc_url} target="_blank" rel="noopener noreferrer"
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex-shrink-0"
@@ -2369,6 +2829,10 @@ function PatientDetailPageInner() {
 
             {/* Compte rendu */}
             {addingType === 'cr' && (<>
+              {catPro === 'veterinaire' && (
+                <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}
+                  profileId={activeProfileId || null} />
+              )}
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Motif de consultation</label>
                 <select value={formMotif} onChange={e => setFormMotif(e.target.value)}
@@ -2378,6 +2842,30 @@ function PatientDetailPageInner() {
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+              </div>
+              <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
+                <p className="text-xs font-medium text-gray-500">Poids du jour (kg) — alimente la courbe de poids</p>
+                <input value={formPoids} onChange={e => setFormPoids(e.target.value)} inputMode="decimal" placeholder="kg"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Actes réalisés</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[...new Set([...ACTES_COURANTS, ...actesRealises])].map(x => (
+                    <button key={x} type="button"
+                      onClick={() => setActesRealises(l => l.includes(x) ? l.filter(y => y !== x) : [...l, x])}
+                      className={`px-2.5 py-1 rounded-lg text-xs border ${actesRealises.includes(x) ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'}`}>
+                      {x}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input value={autreActe} onChange={e => setAutreActe(e.target.value)} placeholder="Autre acte (ex. biopsie, ECG…)"
+                    onKeyDown={e => { if (e.key === 'Enter' && autreActe.trim()) { e.preventDefault(); setActesRealises(l => [...l, autreActe.trim()]); setAutreActe(''); } }}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  <button type="button" onClick={() => { if (autreActe.trim()) { setActesRealises(l => [...l, autreActe.trim()]); setAutreActe(''); } }}
+                    className="px-3 rounded-xl text-sm font-semibold text-[#0C5C6C] border border-gray-200">＋</button>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Examen clinique / Diagnostic</label>

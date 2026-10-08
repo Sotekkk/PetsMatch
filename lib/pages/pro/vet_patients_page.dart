@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
+import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -60,7 +62,9 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     final vetUid = AgendaContexte.uid;
     if (vetUid == null) { setState(() => _loading = false); return; }
     try {
-      final pid = AgendaContexte.profileId;
+      // Profil principal actif : AgendaContexte.profileId est vide.
+      final pid = AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId
+          : (User_Info.availableProfiles.firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '');
       if (pid.isEmpty) { setState(() => _loading = false); return; }
       final grants = await Supabase.instance.client
           .from('animal_access')
@@ -81,8 +85,20 @@ class _VetPatientsPageState extends State<VetPatientsPage>
 
       final animals = await Supabase.instance.client
           .from('animaux')
-          .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire')
+          .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire, client_clinique_id')
           .inFilter('id', animalIds);
+      // Patients créés par la clinique : nom du client (propriétaire hors appli).
+      final clientIds = {for (final a in animals as List) if (a['client_clinique_id'] != null) a['client_clinique_id'].toString()};
+      final nomsClients = <String, String>{};
+      if (clientIds.isNotEmpty) {
+        try {
+          final cs = await Supabase.instance.client.from('clients_clinique')
+              .select('id, nom, prenom').inFilter('id', clientIds.toList());
+          for (final c in cs as List) {
+            nomsClients[c['id'].toString()] = '${c['prenom'] ?? ''} ${c['nom'] ?? ''}'.trim();
+          }
+        } catch (_) {}
+      }
 
       final grantsMap = <String, Map<String, String>>{
         for (final g in (grants as List))
@@ -99,6 +115,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
         m['granted_at'] = info['granted_at'] ?? '';
         m['grant_status'] = info['status'] ?? 'pending';
         m['grant_id'] = info['grant_id'] ?? '';
+        if (m['client_clinique_id'] != null) m['_client_nom'] = nomsClients[m['client_clinique_id'].toString()] ?? '';
         return m;
       }).toList();
 
@@ -436,6 +453,24 @@ class _VetPatientsPageState extends State<VetPatientsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
+      // Patient dont le propriétaire n'a pas PetsMatch (fiche de la clinique).
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _teal,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Nouveau patient', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+        onPressed: () async {
+          final pid = AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId
+              : (User_Info.availableProfiles.firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '');
+          if (pid.isEmpty) return;
+          final cree = await Navigator.push<String?>(context,
+              MaterialPageRoute(builder: (_) => NouveauPatientCliniquePage(cliniqueProfileId: pid)));
+          if (cree != null && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Patient créé.', style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
+            _loadPatients();
+          }
+        },
+      ),
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
@@ -808,6 +843,12 @@ class _PatientCard extends StatelessWidget {
                 Text(
                   [if (age.isNotEmpty) age, if (puce.isNotEmpty) '🔖 $puce'].join('  '),
                   style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              if (animal['client_clinique_id'] != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text('🏥 Fiche clinique${(animal['_client_nom'] ?? '').toString().isNotEmpty ? ' · ${animal['_client_nom']}' : ''}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: teal)),
+                ),
               if (isPending)
                 Container(
                   margin: const EdgeInsets.only(top: 4),

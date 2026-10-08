@@ -65,6 +65,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   bool _acceptNewClients = true;
   bool _urgences24h = false;
+  bool _retardAlerteAuto = false;
   String _catPro = '';
   String _siret = '';
   String _ordreVeterinaire = '';
@@ -299,6 +300,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _rayonKm               = (row['rayon_intervention'] as num?)?.toInt() ?? 20;
         _acceptNewClients      = row['accept_new_clients'] ?? true;
         _urgences24h           = row['urgences_24h'] ?? false;
+        _retardAlerteAuto      = row['retard_alerte_auto'] == true;
 
         _acacedCtrl.text = row['acaced_numero'] ?? row['acaced'] ?? '';
         _acacedDocUrl    = row['acaced_doc_url'] as String?;
@@ -787,6 +789,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           ..._billingFields,
           ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
+          if (_catPro == 'veterinaire') 'retard_alerte_auto': _retardAlerteAuto,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -899,6 +902,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           ..._billingFields,
           ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
+          if (_catPro == 'veterinaire') 'retard_alerte_auto': _retardAlerteAuto,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -1151,6 +1155,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   if (_catPro == 'veterinaire') ...[
                     const SizedBox(height: 12),
                     _urgences24hToggle(),
+                    const SizedBox(height: 12),
+                    _retardAutoToggle(),
                   ],
 
                   // ── Espèces ───────────────────────────────────────────────
@@ -2521,6 +2527,28 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       ]),
     );
   }
+
+  /// Retards en cascade : clients prévenus automatiquement dès 30 min de
+  /// retard estimé (Cloud Function sendRetardsAutomatiques).
+  Widget _retardAutoToggle() => Container(
+    padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _retardAlerteAuto ? const Color(0xFF0C5C6C).withValues(alpha: 0.35) : const Color(0xFFE4E7E2)),
+    ),
+    child: Row(children: [
+      Icon(Icons.timer_outlined, color: _retardAlerteAuto ? const Color(0xFF0C5C6C) : Colors.grey, size: 20),
+      const SizedBox(width: 10),
+      const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Alerte retard automatique', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+        Text('Prévenir les clients dès 30 min de retard dans l\'enchaînement des RDV (calculé quand vous marquez un RDV terminé).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B))),
+      ])),
+      Switch(value: _retardAlerteAuto, activeThumbColor: const Color(0xFF0C5C6C),
+          onChanged: (v) => setState(() => _retardAlerteAuto = v)),
+    ]),
+  );
 
   Widget _urgences24hToggle() {
     return Container(

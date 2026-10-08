@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 
 /// Types de salle et motifs de RDV vétérinaire — partagés avec la prise de
@@ -39,8 +40,21 @@ class _SallesCliniquePageState extends State<SallesCliniquePage> {
   /// Les clients peuvent choisir leur vétérinaire à la réservation.
   bool _choixPraticien = true;
   bool _loading = true;
+  /// Salle par défaut de chaque praticien (id '' = titulaire) — reprise sur
+  /// tous ses RDV, sauf salle choisie sur un créneau ou sur le RDV.
+  List<({String id, String nom})> _praticiens = [];
+  Map<String, String> _salleDefaut = {};
 
-  String get _pid => AgendaContexte.profileId;
+  /// Profil clinique — AgendaContexte.profileId est vide quand le profil
+  /// principal est actif : on retombe alors sur le profil principal.
+  String get _pid {
+    final p = AgendaContexte.profileId;
+    if (p.isNotEmpty) return p;
+    for (final x in User_Info.availableProfiles) {
+      if (x['is_main'] == true) return x['id']?.toString() ?? '';
+    }
+    return '';
+  }
 
   @override
   void initState() {
@@ -60,9 +74,48 @@ class _SallesCliniquePageState extends State<SallesCliniquePage> {
         (p!['salles_par_motif'] as Map).forEach((k, v) => m[k.toString()] = v.toString());
       }
       if (mounted) setState(() { _salles = List<Map<String, dynamic>>.from(s as List); _parMotif = m; _loading = false; });
+      await _chargerDefauts();
     } catch (e) {
       if (mounted) { setState(() => _loading = false); _err(e); }
     }
+  }
+
+  Future<void> _chargerDefauts() async {
+    try {
+      final pr = await _supa.rpc('pm_praticiens_clinique', params: {'p_pro_profile_id': _pid});
+      final d = <String, String>{};
+      final t = await _supa.from('user_profiles_complet').select('salle_defaut_id').eq('id', _pid).maybeSingle();
+      if (t?['salle_defaut_id'] != null) d[''] = t!['salle_defaut_id'].toString();
+      final emps = await _supa.from('employes').select('employe_profile_id, salle_defaut_id')
+          .eq('eleveur_profile_id', _pid).eq('actif', true);
+      for (final e in emps as List) {
+        if (e['salle_defaut_id'] != null && e['employe_profile_id'] != null) {
+          d[e['employe_profile_id'].toString()] = e['salle_defaut_id'].toString();
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _praticiens = [
+            for (final p in pr as List)
+              (id: p['praticien_profile_id']?.toString() ?? '',
+               nom: (p['nom'] as String?)?.trim().isNotEmpty == true ? p['nom'] as String : 'Vétérinaire'),
+          ];
+          _salleDefaut = d;
+        });
+      }
+    } catch (_) {/* colonnes pas encore migrées (migration_salle_defaut_praticien.sql) */}
+  }
+
+  Future<void> _majSalleDefaut(String praticien, String? salle) async {
+    setState(() { if (salle == null) { _salleDefaut.remove(praticien); } else { _salleDefaut[praticien] = salle; } });
+    try {
+      if (praticien.isEmpty) {
+        await _supa.from('user_profiles').update({'salle_defaut_id': salle}).eq('id', _pid);
+      } else {
+        await _supa.from('employes').update({'salle_defaut_id': salle})
+            .eq('eleveur_profile_id', _pid).eq('employe_profile_id', praticien);
+      }
+    } catch (e) { _err(e); }
   }
 
   void _err(Object e) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -204,6 +257,36 @@ class _SallesCliniquePageState extends State<SallesCliniquePage> {
                     ),
                   ),
                 ),
+              if (_salles.isNotEmpty && _praticiens.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                const Text('Salle par défaut de chaque praticien', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 4),
+                Text('Reprise sur tous ses RDV. Ponctuellement, une autre salle peut être choisie sur un créneau '
+                    '(onglet Créneaux) ou sur le RDV lui-même (champ Lieu).',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                for (final p in _praticiens)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      Expanded(child: Text(p.nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600))),
+                      SizedBox(
+                        width: 200,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _salles.any((x) => x['id'] == _salleDefaut[p.id]) ? _salleDefaut[p.id] : '',
+                          isDense: true, isExpanded: true,
+                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                          items: [
+                            const DropdownMenuItem(value: '', child: Text('Aucune')),
+                            for (final x in _salles.where((x) => x['actif'] != false))
+                              DropdownMenuItem(value: x['id'] as String, child: Text(x['nom'] as String? ?? 'Salle', overflow: TextOverflow.ellipsis)),
+                          ],
+                          onChanged: (v) => _majSalleDefaut(p.id, (v == null || v.isEmpty) ? null : v),
+                        ),
+                      ),
+                    ]),
+                  ),
+              ],
               const SizedBox(height: 20),
               const Text('Salle occupée par motif', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 4),

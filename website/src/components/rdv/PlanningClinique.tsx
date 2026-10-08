@@ -2,11 +2,14 @@
 
 // Planning de la clinique vétérinaire : journée en colonnes, par praticien ou
 // par salle — RDV confirmés, demandes (dont « vétérinaire au choix »),
-// indisponibilités et disponibilités. Les actions passent par les modales de
+// indisponibilités, disponibilités et salles réservées (radio, opération…) —
+// plus « En direct » : état de chaque salle maintenant, libérer / réserver,
+// mis à jour en temps réel (Supabase Realtime). Les actions passent par les modales de
 // Mes RDV (onOuvrirRdv). Miroir app : lib/pages/pro/planning_clinique_page.dart.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { ReserverSalleModal, libelleTypeSalle } from '@/components/rdv/SallesClinique';
 
 const TEAL = '#0C5C6C';
 const INK = '#1E2025';
@@ -20,17 +23,24 @@ const COULEURS = ['#0C5C6C', '#6E9E57', '#E08A3C', '#8E5BB5', '#C2185B', '#1E88E
 interface RdvPlanning {
   id: string; date_heure: string; duree_minutes?: number | null; statut: string; motif?: string | null;
   instructeur_profile_id?: string | null; salle_id?: string | null; praticien_indifferent?: boolean | null;
+  salle_liberee_at?: string | null;
   animal_id?: string | null; animal_nom_manuel?: string | null;
   client_profile_id?: string | null; client_nom_manuel?: string | null;
 }
 interface Colonne { id: string; titre: string; sousTitre?: string; couleur: string }
+interface Occupation {
+  id: string; salle_id: string; debut: string; fin: string; motif?: string | null;
+  praticien_profile_id?: string | null; liberee_at?: string | null;
+}
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const minutes = (hhmm: string) => { const [h, m] = hhmm.split(':'); return Number(h) * 60 + Number(m); };
 const TYPES: Record<string, string> = { consultation: 'Consultation', chirurgie: 'Chirurgie', imagerie: 'Imagerie', hospitalisation: 'Hospitalisation' };
 
-export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCreer }: {
+export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCreer, uid }: {
   profileId: string;
+  /** Utilisateur connecté (auteur d'une réservation de salle). */
+  uid?: string;
   /** Case vide touchée → nouveau RDV (praticien '' = titulaire, null = non précisé). */
   onCreer?: (date: Date, praticien: string | null, salle: string | null) => void;
   /** Change quand Mes RDV a rechargé ses RDV (après une action) → rechargement. */
@@ -38,7 +48,12 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
   onOuvrirRdv: (rdvId: string) => void;
 }) {
   const [jour, setJour] = useState(() => new Date());
-  const [parSalle, setParSalle] = useState(false);
+  /** 'praticiens' | 'salles' | 'direct' (salles en direct, aujourd'hui). */
+  const [mode, setMode] = useState<'praticiens' | 'salles' | 'direct'>('praticiens');
+  const parSalle = mode === 'salles';
+  const [occupations, setOccupations] = useState<Occupation[]>([]);
+  const [reservation, setReservation] = useState<{ salleId?: string | null; debut?: Date | null } | null>(null);
+  const [maintenant, setMaintenant] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
   const [salles, setSalles] = useState<{ id: string; nom: string; type: string }[]>([]);
@@ -52,17 +67,20 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
     const debut = new Date(jour.getFullYear(), jour.getMonth(), jour.getDate());
     const fin = new Date(debut.getTime() + 86400000);
     const veille = new Date(debut.getTime() - 86400000);
-    const [pr, sa, rd, ind, cr] = await Promise.all([
+    const [pr, sa, rd, ind, cr, oc] = await Promise.all([
       supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: profileId }),
       supabase.from('salles_clinique').select('id, nom, type_salle').eq('clinique_profile_id', profileId).eq('actif', true).order('ordre'),
-      supabase.from('rdv').select('id, date_heure, duree_minutes, statut, motif, instructeur_profile_id, salle_id, praticien_indifferent, animal_id, animal_nom_manuel, client_profile_id, client_nom_manuel')
+      supabase.from('rdv').select('id, date_heure, duree_minutes, statut, motif, instructeur_profile_id, salle_id, salle_liberee_at, praticien_indifferent, animal_id, animal_nom_manuel, client_profile_id, client_nom_manuel')
         .eq('pro_profile_id', profileId).in('statut', ['demande', 'confirme', 'termine'])
         .gte('date_heure', debut.toISOString()).lt('date_heure', fin.toISOString()),
       supabase.from('agenda_events').select('id, titre, date_debut, date_fin, duree_minutes, praticien_profile_id')
         .eq('type', 'indisponible').eq('pro_profile_id', profileId)
         .lt('date_debut', fin.toISOString()).gte('date_debut', veille.toISOString()),
       supabase.from('creneaux_pro').select('praticien_profile_id, salle_id, heure_debut, heure_fin').eq('pro_profile_id', profileId).eq('date', ymd(jour)),
+      supabase.from('occupations_salle').select('id, salle_id, debut, fin, motif, praticien_profile_id, liberee_at')
+        .eq('clinique_profile_id', profileId).lt('debut', fin.toISOString()).gt('fin', debut.toISOString()),
     ]);
+    setOccupations((oc.data ?? []) as Occupation[]);
     const liste = (rd.data ?? []) as RdvPlanning[];
     setPraticiens(((pr.data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
       .map(p => ({ id: p.praticien_profile_id ?? '', nom: p.nom?.trim() || 'Vétérinaire' })));
@@ -89,6 +107,59 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
   }, [profileId, jour]);
 
   useEffect(() => { charger(); }, [charger, version]);
+
+  // Temps réel : tout changement de RDV / de réservation de salle recharge.
+  useEffect(() => {
+    if (!profileId) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const recharger = () => { if (t) clearTimeout(t); t = setTimeout(() => { charger(); }, 400); };
+    const canal = supabase.channel(`planning-clinique-${profileId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rdv', filter: `pro_profile_id=eq.${profileId}` }, recharger)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'occupations_salle', filter: `clinique_profile_id=eq.${profileId}` }, recharger)
+      .subscribe();
+    const horloge = setInterval(() => setMaintenant(Date.now()), 30000);
+    return () => { if (t) clearTimeout(t); clearInterval(horloge); supabase.removeChannel(canal); };
+  }, [profileId, charger]);
+
+  // ── Salles : occupant actuel / prochain ─────────────────────────────────
+  type Occupant = { debut: Date; fin: Date; titre: string; qui: string; rdvId?: string; occ?: Occupation };
+  const occupants = (salleId: string): Occupant[] => {
+    const out: Occupant[] = [];
+    for (const r of rdvs) {
+      if (r.salle_id !== salleId || !['confirme', 'demande'].includes(r.statut)) continue;
+      const d0 = new Date(r.date_heure);
+      let d1 = new Date(d0.getTime() + (r.duree_minutes ?? 30) * 60000);
+      if (r.salle_liberee_at && new Date(r.salle_liberee_at) < d1) d1 = new Date(r.salle_liberee_at);
+      if (d1 <= d0) continue;
+      const animal = (r.animal_id && noms.animaux[String(r.animal_id)]) || r.animal_nom_manuel || '';
+      out.push({ debut: d0, fin: d1, titre: `${r.motif || 'RDV'}${animal ? ` · ${animal}` : ''}`, qui: nomPraticien(r.instructeur_profile_id), rdvId: r.id });
+    }
+    for (const o of occupations) {
+      if (o.salle_id !== salleId) continue;
+      const d0 = new Date(o.debut);
+      let d1 = new Date(o.fin);
+      if (o.liberee_at && new Date(o.liberee_at) < d1) d1 = new Date(o.liberee_at);
+      if (d1 <= d0) continue;
+      out.push({ debut: d0, fin: d1, titre: `🔒 ${o.motif || 'Réservée'}`, qui: nomPraticien(o.praticien_profile_id), occ: o });
+    }
+    return out.sort((a, b) => a.debut.getTime() - b.debut.getTime());
+  };
+
+  async function liberer(o: Occupant) {
+    const now = new Date().toISOString();
+    const { error } = o.rdvId
+      ? await supabase.from('rdv').update({ salle_liberee_at: now }).eq('id', o.rdvId)
+      : await supabase.from('occupations_salle').update({ liberee_at: now }).eq('id', o.occ!.id);
+    if (error) alert(`Action impossible : ${error.message}`);
+    charger();
+  }
+
+  async function supprimerOccupation(o: Occupation) {
+    if (!confirm('Supprimer cette réservation de salle ?')) return;
+    const { error } = await supabase.from('occupations_salle').delete().eq('id', o.id);
+    if (error) alert(`Action impossible : ${error.message}`);
+    charger();
+  }
 
   const couleurPraticien = useCallback((id: string | null | undefined) => {
     const i = praticiens.findIndex(p => p.id === (id ?? ''));
@@ -139,11 +210,11 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
           )}
         </div>
         <div className="flex p-[3px] rounded-xl" style={{ backgroundColor: '#F2F3F1' }}>
-          {[{ v: false, l: 'Praticiens' }, { v: true, l: 'Salles' }].map(o => (
-            <button key={o.l} onClick={() => setParSalle(o.v)}
+          {([{ v: 'praticiens', l: 'Praticiens' }, { v: 'salles', l: 'Salles' }, { v: 'direct', l: '● En direct' }] as const).map(o => (
+            <button key={o.v} onClick={() => { setMode(o.v); if (o.v === 'direct' && ymd(jour) !== ymd(new Date())) setJour(new Date()); }}
               className="px-3 py-1.5 rounded-[10px] text-[13px] font-semibold transition-all"
-              style={{ backgroundColor: parSalle === o.v ? 'white' : 'transparent', color: parSalle === o.v ? TEAL : MUTED,
-                boxShadow: parSalle === o.v ? '0 1px 4px rgba(0,0,0,.06)' : 'none' }}>
+              style={{ backgroundColor: mode === o.v ? 'white' : 'transparent', color: mode === o.v ? (o.v === 'direct' ? '#2E9E5B' : TEAL) : MUTED,
+                boxShadow: mode === o.v ? '0 1px 4px rgba(0,0,0,.06)' : 'none' }}>
               {o.l}
             </button>
           ))}
@@ -154,6 +225,62 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
         <div className="flex justify-center py-16">
           <div className="w-7 h-7 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
+      ) : mode === 'direct' ? (
+        salles.length === 0 ? (
+          <p className="text-center text-sm py-12" style={{ color: MUTED }}>Aucune salle déclarée pour la clinique.</p>
+        ) : (() => {
+          const now = new Date(maintenant);
+          const libres = salles.filter(s => !occupants(s.id).some(o => o.debut <= now && o.fin > now)).length;
+          return (
+            <div className="p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#2E9E5B]" />
+                <span className="flex-1 text-[13px] font-semibold" style={{ color: INK }}>
+                  {libres} salle{libres > 1 ? 's' : ''} libre{libres > 1 ? 's' : ''} sur {salles.length} · {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <button onClick={() => setReservation({})} className="text-sm font-bold" style={{ color: TEAL }}>＋ Réserver</button>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {salles.map(s => {
+                  const liste = occupants(s.id);
+                  const occ = liste.find(o => o.debut <= now && o.fin > now);
+                  const suivant = liste.find(o => o.debut > now);
+                  const libre = !occ;
+                  const hh = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <div key={s.id} className="rounded-2xl p-3.5 bg-white" style={{ border: `1px solid ${libre ? '#2E9E5B59' : '#D9534F59'}` }}>
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[15px] font-bold truncate" style={{ color: INK }}>{s.nom}</p>
+                          <p className="text-[11.5px]" style={{ color: MUTED }}>{libelleTypeSalle(s.type)}</p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold"
+                          style={{ background: libre ? '#2E9E5B1A' : '#D9534F1A', color: libre ? '#2E9E5B' : '#D9534F' }}>
+                          {libre ? 'Libre' : 'Occupée'}
+                        </span>
+                      </div>
+                      <p className="text-[13px] mt-2 leading-snug" style={{ color: INK }}>
+                        {occ ? <>{occ.titre} — {occ.qui}<br />jusqu&apos;à {hh(occ.fin)}</>
+                          : suivant ? `Libre jusqu'à ${hh(suivant.debut)}` : 'Libre pour le reste de la journée'}
+                      </p>
+                      {occ && suivant && (
+                        <p className="text-[11.5px] mt-1" style={{ color: MUTED }}>Ensuite : {hh(suivant.debut)} · {suivant.titre} — {suivant.qui}</p>
+                      )}
+                      <div className="flex gap-2 mt-3">
+                        {occ && (
+                          <button onClick={() => liberer(occ)} className="flex-1 py-2 rounded-xl text-sm font-bold border"
+                            style={{ borderColor: TEAL, color: TEAL }}>🔓 Libérer la salle</button>
+                        )}
+                        <button onClick={() => setReservation({ salleId: s.id })} className="flex-1 py-2 rounded-xl text-sm font-bold text-white"
+                          style={{ background: TEAL }}>{libre ? 'Occuper' : 'Réserver plus tard'}</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()
       ) : colonnes.length === 0 ? (
         <p className="text-center text-sm py-12" style={{ color: MUTED }}>
           {parSalle ? 'Aucune salle déclarée pour la clinique.' : 'Aucun praticien.'}
@@ -214,6 +341,21 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
                         </div>
                       );
                     })}
+                    {parSalle && occupations.filter(o => o.salle_id === c.id).map(o => {
+                      const d0 = new Date(o.debut);
+                      let d1 = new Date(o.fin);
+                      if (o.liberee_at && new Date(o.liberee_at) < d1) d1 = new Date(o.liberee_at);
+                      const a = (d0.getTime() - debJour.getTime()) / 60000, b = (d1.getTime() - debJour.getTime()) / 60000;
+                      if (b <= a) return null;
+                      return (
+                        <button key={o.id} onClick={e => { e.stopPropagation(); supprimerOccupation(o); }}
+                          title="Supprimer la réservation"
+                          className="absolute left-[3px] right-[3px] rounded-[7px] px-1.5 py-0.5 text-left overflow-hidden text-[10.5px] font-semibold"
+                          style={{ top: y(a), height: Math.max(22, (b - a) / 60 * H_PX), background: '#FFF1DD', border: '1px solid #E08A3C', color: '#8A4B12' }}>
+                          🔒 {o.motif || 'Réservée'} · {nomPraticien(o.praticien_profile_id)}
+                        </button>
+                      );
+                    })}
                     {rdvs.filter(r => dansColonne(r, c)).map(r => {
                       const d = new Date(r.date_heure);
                       const m = d.getHours() * 60 + d.getMinutes();
@@ -246,19 +388,26 @@ export default function PlanningClinique({ profileId, version, onOuvrirRdv, onCr
         </div>
       )}
 
+      {reservation && (
+        <ReserverSalleModal profileId={profileId} salles={salles} praticiens={praticiens} uid={uid}
+          salleId={reservation.salleId} debut={reservation.debut}
+          onClose={() => setReservation(null)} onDone={() => { setReservation(null); charger(); }} />
+      )}
+
       {/* Légende */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-3 py-2.5 border-t text-[11px]" style={{ borderColor: LINE, color: MUTED }}>
+      {mode !== 'direct' && <div className="flex flex-wrap gap-x-4 gap-y-1.5 px-3 py-2.5 border-t text-[11px]" style={{ borderColor: LINE, color: MUTED }}>
         {[
           { f: `${TEAL}E0`, b: TEAL, l: 'Confirmé' },
           { f: 'white', b: TEAL, l: 'Demande' },
           { f: '#EFF6F1', b: '#CFE3D6', l: 'Disponible' },
           { f: '#E9EAE8', b: '#D0D3CF', l: 'Indisponible' },
+          ...(parSalle ? [{ f: '#FFF1DD', b: '#E08A3C', l: 'Salle réservée' }] : []),
         ].map(x => (
           <span key={x.l} className="flex items-center gap-1.5">
             <span className="w-3.5 h-3.5 rounded" style={{ background: x.f, border: `1px solid ${x.b}` }} />{x.l}
           </span>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

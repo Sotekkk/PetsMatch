@@ -62,6 +62,9 @@ interface Props {
   onCeded: () => void;
   /** true = l'utilisateur est acquéreur qui re-cède (don / abandon, pas de contrat) */
   isReCession?: boolean;
+  /** Particulier : il ne vend pas, il ne peut que confier son animal à une
+   *  association (abandon) — seule qualité proposée. */
+  associationSeulement?: boolean;
   /** Réservation active à préremplir — l'étape "Acquéreur" est alors sautée */
   reservation?: Reservation | null;
 }
@@ -82,7 +85,7 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString('fr-FR');
 }
 
-export default function CessionModal({ animal, uid, profileId, eleveurInfo, onClose, onCeded, isReCession = false, reservation = null }: Props) {
+export default function CessionModal({ animal, uid, profileId, eleveurInfo, onClose, onCeded, isReCession = false, associationSeulement = false, reservation = null }: Props) {
   const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>(reservation ? 'details' : 'acquéreur');
 
   // Acquéreur — préremplis depuis la réservation active s'il y en a une
@@ -102,7 +105,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   const adressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Détails
-  const [qualite, setQualite]       = useState(reservation?.qualite || 'particulier');
+  const [qualite, setQualite]       = useState(associationSeulement ? 'refuge' : (reservation?.qualite || 'particulier'));
   const [prenom, setPrenom]         = useState(reservation?.prenom ?? '');
   const [nom, setNom]               = useState(reservation?.nom ?? '');
   const [email, setEmail]           = useState(reservation?.email ?? '');
@@ -829,7 +832,7 @@ Céder quand même ?`)) return;
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Qualité de l'acquéreur</label>
                 <div className="flex flex-wrap gap-2">
-                  {(isReCession ? QUALITES_RECESSION : QUALITES_FULL).map(q => (
+                  {(associationSeulement ? QUALITES_RECESSION.filter(q => q.value === 'refuge') : isReCession ? QUALITES_RECESSION : QUALITES_FULL).map(q => (
                     <button key={q.value} onClick={() => onQualiteChange(q.value)}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${qualite === q.value ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
                       {q.label}

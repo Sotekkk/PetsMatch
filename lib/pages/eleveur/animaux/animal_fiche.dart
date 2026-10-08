@@ -6500,6 +6500,8 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
   static const _teal = Color(0xFF26A69A);
   bool _loading = true;
   Map<String, dynamic>? _owner;
+  /// Patient créé par la clinique : client du fichier (propriétaire hors appli).
+  Map<String, dynamic>? _clientClinique;
   bool _openingChat = false;
 
   @override
@@ -6516,6 +6518,21 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
 
   Future<void> _load() async {
     String? uid = widget.ownerUid;
+
+    // Patient créé par la clinique : le propriétaire est un client de son
+    // fichier (le compte technique de l'animal est celui de la clinique).
+    if (widget.animalId != null) {
+      try {
+        final a = await Supabase.instance.client.from('animaux')
+            .select('client_clinique_id').eq('id', widget.animalId!).maybeSingle();
+        if (a?['client_clinique_id'] != null) {
+          final c = await Supabase.instance.client.from('clients_clinique')
+              .select().eq('id', a!['client_clinique_id']).maybeSingle();
+          if (mounted) setState(() { _clientClinique = c; _loading = false; });
+          if (c != null) return;
+        }
+      } catch (_) {}
+    }
 
     // Fallback : si ownerUid absent, le charger depuis l'animal
     if ((uid == null || uid.isEmpty) && widget.animalId != null) {
@@ -6571,9 +6588,47 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
     }
   }
 
+  Widget _ligneClient(IconData ic, String texte, {VoidCallback? onTap}) => ListTile(
+    dense: true, contentPadding: EdgeInsets.zero,
+    leading: Icon(ic, size: 20, color: _teal),
+    title: Text(texte, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+        color: onTap != null ? _teal : const Color(0xFF1E2025),
+        decoration: onTap != null ? TextDecoration.underline : null)),
+    onTap: onTap,
+  );
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+    final c = _clientClinique;
+    if (c != null) {
+      final tel = (c['telephone'] ?? '').toString();
+      final email = (c['email'] ?? '').toString();
+      final adresse = [c['adresse'], '${c['code_postal'] ?? ''} ${c['ville'] ?? ''}'.trim()]
+          .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', ');
+      return ListView(padding: const EdgeInsets.all(16), children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _teal.withValues(alpha: 0.25))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${c['prenom'] ?? ''} ${c['nom'] ?? ''}'.trim(),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(c['uid_lie'] != null ? 'Client de la clinique — compte PetsMatch rattaché'
+                    : 'Client de la clinique — pas encore sur PetsMatch',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 8),
+            if (tel.isNotEmpty) _ligneClient(Icons.phone_outlined, tel,
+                onTap: () => launchUrl(Uri.parse('tel:${tel.replaceAll(' ', '')}'))),
+            if (email.isNotEmpty) _ligneClient(Icons.mail_outline, email,
+                onTap: () => launchUrl(Uri.parse('mailto:$email'))),
+            if (adresse.isNotEmpty) _ligneClient(Icons.home_outlined, adresse),
+            if ((c['notes'] ?? '').toString().isNotEmpty) _ligneClient(Icons.notes_outlined, c['notes'].toString()),
+          ]),
+        ),
+      ]);
+    }
     if (_owner == null) {
       return Center(child: Padding(
         padding: const EdgeInsets.all(32),
@@ -12497,6 +12552,9 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   Future<void> _load() async {
     if (widget.animalId == null) { setState(() => _loading = false); return; }
     final vetUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    // Profil pro ACTIF (cabinet souvent en profil secondaire) — is_main en
+    // dernier recours seulement (sinon CR / ordonnances introuvables).
+    if (_vetProfileId == null && User_Info.activeProfileId.isNotEmpty) _vetProfileId = User_Info.activeProfileId;
     if (_vetProfileId == null && vetUid.isNotEmpty) {
       final row = await _supa.from('user_profiles_complet').select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
       _vetProfileId = row?['id'] as String?;
@@ -12734,6 +12792,14 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // ── Historique des consultations (CR structurés) ─────────────
+            if (_crs.isNotEmpty) ...[
+              _VetConsultSectionHeader(label: 'Historique', count: _crs.length,
+                  icon: Icons.history, color: _teal),
+              const SizedBox(height: 8),
+              _HistoriqueConsultations(crs: _crs, fmtDate: _fmtDate),
+              const SizedBox(height: 20),
+            ],
             // ── Carnet de santé ──────────────────────────────────────────
             _VetConsultSectionHeader(label: 'Carnet de santé', count: _santeEntries.length,
                 icon: Icons.health_and_safety_outlined, color: _green),
@@ -13227,6 +13293,59 @@ class _VetConsultEmptyCard extends StatelessWidget {
     child: Text(message, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
         color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
   );
+}
+
+/// Historique du patient en lignes : date · motif · poids, actes réalisés,
+/// prescription (comptes_rendus structurés — migration_cr_structure.sql).
+class _HistoriqueConsultations extends StatelessWidget {
+  final List<Map<String, dynamic>> crs;
+  final String Function(String?) fmtDate;
+  const _HistoriqueConsultations({required this.crs, required this.fmtDate});
+
+  @override
+  Widget build(BuildContext context) {
+    const teal = Color(0xFF0C5C6C);
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE4E7E2))),
+      child: Column(children: [
+        for (var i = 0; i < crs.length; i++) Container(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(border: i == 0 ? null : const Border(top: BorderSide(color: Color(0xFFEFF1EE)))),
+          child: Builder(builder: (_) {
+            final cr = crs[i];
+            final actes = (cr['actes'] as List?)?.map((e) => e.toString()).where((e) => e.isNotEmpty).toList() ?? const [];
+            final poids = cr['poids'];
+            final motif = (cr['motif'] ?? '').toString();
+            final presc = (cr['prescription'] ?? '').toString();
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text(fmtDate(cr['created_at']?.toString()),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: teal)),
+                const SizedBox(width: 8),
+                Expanded(child: Text(motif.isEmpty ? 'Consultation' : motif, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600))),
+                if (poids != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: teal.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)),
+                    child: Text('⚖ $poids kg', style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: teal)),
+                  ),
+              ]),
+              if (actes.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Actes : ${actes.join(', ')}', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+              ],
+              if (presc.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text('💊 $presc', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+              ],
+            ]);
+          }),
+        ),
+      ]),
+    );
+  }
 }
 
 class _VetConsultCrCard extends StatelessWidget {

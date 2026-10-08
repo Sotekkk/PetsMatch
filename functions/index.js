@@ -13,6 +13,7 @@ const annonceFunctions = require("./annonces");
 const matchFunctions = require("./match");
 const marketplaceBillingFunctions = require("./marketplace_billing");
 const retardFunctions = require("./retard");
+const retardsAutoFunctions = require("./retards_auto");
 const pensionFunctions = require("./pension");
 const cessionSterilisationFunctions = require("./cession_sterilisation");
 const abonnementFunctions = require("./abonnements");
@@ -84,6 +85,8 @@ exports.marketplaceBillingManual = marketplaceBillingFunctions.marketplaceBillin
 
 // Agenda — alertes retard pro (VET07)
 exports.sendRetardNotification = retardFunctions.sendRetardNotification;
+// Clinique : retards en cascade → clients prévenus dès 30 min (réglage du profil)
+exports.sendRetardsAutomatiques = retardsAutoFunctions.sendRetardsAutomatiques;
 
 // Pension — rappels quotidiens de sortie en retard tant que non loggée
 exports.sendPensionSortieReminders = pensionFunctions.sendPensionSortieReminders;

@@ -217,6 +217,8 @@ function ProDetailContent() {
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [motifKey, setMotifKey] = useState('');
   const [premiereVisite, setPremiereVisite] = useState<boolean | null>(null);
+  // Vétérinaire / santé : le propriétaire partage le carnet de santé dès la réservation.
+  const [partagerCarnet, setPartagerCarnet] = useState(true);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
@@ -881,6 +883,8 @@ function ProDetailContent() {
           pro_uid: pro.uid, client_uid: user.uid,
           animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
           ...(!selectedAnimalId && !isTaxi && animalNomInvite.trim() ? { animal_nom_manuel: animalNomInvite.trim() } : {}),
+          // Nom figé : le pro le voit même sans accès à la fiche de l'animal.
+          ...(selectedAnimalId && !isTaxi ? { animal_nom_manuel: animaux.find(a => a.id === selectedAnimalId)?.nom ?? null } : {}),
           date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
           statut: 'demande',
           motif: `${motifLabel}${premiereSuffix}`,
@@ -915,6 +919,16 @@ function ProDetailContent() {
             .eq('date', slot.date)
             .eq('heure_debut', slot.heureDebut);
         }
+      }
+
+      // Partage du carnet de santé avec le cabinet (consentement du propriétaire).
+      if (['veterinaire', 'sante'].includes(pro.cat_pro) && partagerCarnet && selectedAnimalId && pro.profileTableId) {
+        await supabase.from('animal_access').upsert({
+          animal_id: selectedAnimalId, pro_profile_id: pro.profileTableId,
+          ...(activeProfileId ? { granted_by_profile_id: activeProfileId } : {}),
+          permissions: pro.cat_pro === 'veterinaire' ? ['read_basic', 'read_health', 'write_health'] : ['read_basic', 'write_notes'],
+          statut: 'active', granted_at: new Date().toISOString(),
+        }, { onConflict: 'animal_id,pro_profile_id' });
       }
 
       const isSerie = targetSlots.length > 1;
@@ -1726,6 +1740,18 @@ function ProDetailContent() {
                     ) : (
                       <AnimalPickerField animaux={animaux} selectedId={selectedAnimalId}
                         onSelect={(id) => setSelectedAnimalId(id as number | null)} accentColor={catColor} />
+                    )}
+                    {user && animalSel && pro.profileTableId && (
+                      <label className="mt-2.5 flex items-center gap-3 rounded-xl px-3 py-2.5 cursor-pointer"
+                        style={{ fontFamily: 'Galey, sans-serif', background: `${catColor}0D`, border: `1px solid ${catColor}2E` }}>
+                        <span className="text-lg">🩺</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[13px] font-bold text-[#1E2025]">Partager le carnet de santé de {animalSel.nom}</span>
+                          <span className="block text-[11.5px] text-[#6F767B]">Vaccins, traitements, antécédents — révocable à tout moment depuis sa fiche.</span>
+                        </span>
+                        <input type="checkbox" checked={partagerCarnet} onChange={e => setPartagerCarnet(e.target.checked)}
+                          className="w-5 h-5 flex-shrink-0" style={{ accentColor: catColor }} />
+                      </label>
                     )}
                   </RdvSection>
 

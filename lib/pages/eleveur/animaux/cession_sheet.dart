@@ -40,6 +40,9 @@ class CessionSheet extends StatefulWidget {
   final VoidCallback onCeded;
   /// true = l'utilisateur est l'acquéreur qui re-cède (pas l'éleveur d'origine)
   final bool isReCession;
+  /// Particulier : il ne vend pas, il ne peut que confier son animal à une
+  /// association (abandon) — seule qualité proposée.
+  final bool associationSeulement;
   /// Réservation active à préremplir — l'étape "Acquéreur" est alors sautée
   final Map<String, dynamic>? reservation;
 
@@ -50,6 +53,7 @@ class CessionSheet extends StatefulWidget {
     required this.nomElevage,
     required this.onCeded,
     this.isReCession = false,
+    this.associationSeulement = false,
     this.reservation,
   });
 
@@ -142,6 +146,7 @@ class _CessionSheetState extends State<CessionSheet> {
   void initState() {
     super.initState();
     _dateCession = DateTime.now();
+    if (widget.associationSeulement) _qualite = 'refuge';
     _loadExistingDocs();
     final r = widget.reservation;
     if (r != null) {
@@ -1406,7 +1411,8 @@ class _CessionSheetState extends State<CessionSheet> {
               Expanded(child: _FieldBlock('Qualité', child: DropdownButtonFormField<String>(
                 value: _qualite,
                 items: [
-                  const DropdownMenuItem(value: 'particulier', child: Text('Particulier / Famille')),
+                  if (!widget.associationSeulement)
+                    const DropdownMenuItem(value: 'particulier', child: Text('Particulier / Famille')),
                   const DropdownMenuItem(value: 'refuge',      child: Text('Association / Refuge')),
                   // Options réservées aux éleveurs d'origine
                   if (!widget.isReCession) ...[

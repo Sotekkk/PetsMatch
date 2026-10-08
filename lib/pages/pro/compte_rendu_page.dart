@@ -6,8 +6,15 @@ import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
+import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
+import 'package:PetsMatch/pages/pro/transmission_document.dart';
+import 'package:http/http.dart' as http;
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
+/// Vétérinaire : le CR saisit aussi les vaccins réalisés et les traitements
+/// prescrits → inscrits au carnet de santé (vaccinations / traitements, rappels
+/// au propriétaire par les Cloud Functions sante.js) + ordonnance PDF générée
+/// et rangée dans les documents de l'animal (ordonnances).
 /// Peut être ouvert avec un RDV précis (`rdv`) ou directement depuis la fiche
 /// animal (`animalId` + `ownerUid`).
 class CompteRenduPage extends StatefulWidget {
@@ -42,6 +49,21 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   File? _crFile;
   bool _crSaving = false;
 
+  // Vétérinaire : actes saisis dans le CR (carnet de santé + ordonnance).
+  final List<_VaccinCr> _vaccinsCr = [];
+  // Consultation structurée : motif, poids du jour, actes réalisés
+  // (historique du patient : date · motif · poids · actes · prescription).
+  late final _motifCtrl = TextEditingController(text: widget.rdv?['motif']?.toString() ?? '');
+  final _poidsCtrl = TextEditingController();
+  final Set<String> _actesRealises = {};
+  final _autreActeCtrl = TextEditingController();
+  static const _actesCourants = ['Examen clinique', 'Vaccination', 'Prise de sang', 'Analyse sanguine', 'Radiographie',
+      'Échographie', "Analyse d'urine", 'Coproscopie', 'Injection', 'Soins de plaie', 'Détartrage', 'Pose de puce',
+      'Castration / stérilisation', 'Chirurgie', 'Hospitalisation', 'Euthanasie'];
+  double? get _poidsSaisi => double.tryParse(_poidsCtrl.text.trim().replaceAll(',', '.'));
+  final List<_TraitementCr> _traitementsCr = [];
+  bool get _saisieActes => !widget.isPension && _peutValider;
+
   // Ordonnance
   final _ordoNotesCtrl = TextEditingController();
   File? _ordoFile;
@@ -75,6 +97,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _proProfileId = _profilPro;
     _chargerDroits();
     _loadExisting();
+    _chargerPharmacie();
   }
 
   Future<void> _chargerDroits() async {
@@ -171,7 +194,21 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   Future<void> _saveCompteRendu() async {
     final proUid  = AgendaContexte.uid;
     final moi     = AgendaContexte.moi;
-    final contenu = _crContenuCtrl.text.trim();
+    final actes = _saisieActes && (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty);
+    final motif = _saisieActes ? _motifCtrl.text.trim() : '';
+    final poids = _saisieActes ? _poidsSaisi : null;
+    final actesRealises = _saisieActes ? _actesRealises.toList() : const <String>[];
+    final prescription = _saisieActes ? _traitementsCr.map((t) => '${t.nom} — ${t.posologieComplete}').join(' ; ') : '';
+    final contenu = [
+      if (motif.isNotEmpty) 'Motif : $motif',
+      if (poids != null) 'Poids : ${_fmtPoids(poids)} kg',
+      if (actesRealises.isNotEmpty) 'Actes réalisés : ${actesRealises.join(', ')}.',
+      _crContenuCtrl.text.trim(),
+      if (actes && _vaccinsCr.isNotEmpty)
+        'Vaccins : ${_vaccinsCr.map((v) => v.nom + (v.lot.isNotEmpty ? ' (lot ${v.lot})' : '')).join(', ')}.',
+      if (actes && _traitementsCr.isNotEmpty)
+        'Traitement : ${_traitementsCr.map((t) => '${t.nom} — ${t.posologieComplete}').join(' ; ')}.',
+    ].where((l) => l.isNotEmpty).join('\n\n');
     if (proUid == null || contenu.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Le contenu du compte rendu est obligatoire.',
@@ -209,14 +246,31 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         if (moi != null) 'redige_par_uid': moi,
         if (monProfil != null) 'redige_par_profile_id': monProfil,
         if (statut == 'valide' && monProfil != null) 'valide_par_profile_id': monProfil,
+        if (motif.isNotEmpty) 'motif': motif,
+        if (poids != null) 'poids': poids,
+        if (actesRealises.isNotEmpty) 'actes': actesRealises,
+        if (prescription.isNotEmpty) 'prescription': prescription,
       });
+      // Pesée du jour → courbe de poids + poids de la fiche.
+      if (poids != null && animalId != null) {
+        try {
+          await _supa.from('poids').insert({
+            'id': DateTime.now().microsecondsSinceEpoch.toString(),
+            'animal_id': animalId, 'valeur': poids,
+            'date': DateTime.now().toIso8601String(), 'notes': 'Consultation',
+          });
+          await _supa.from('animaux').update({'poids': _fmtPoids(poids)}).eq('id', animalId);
+        } catch (_) {}
+      }
       if (statut == 'valide') {
         await _notifyOwner(isOrdo: false);
       } else {
         await _notifyValideurs();
       }
+      if (actes && animalId != null) await _ecrireActes(animalId.toString(), rdvId?.toString(), owner);
       _crContenuCtrl.clear();
-      setState(() => _crFile = null);
+      _poidsCtrl.clear();
+      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); });
       await _loadExisting();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -238,6 +292,602 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     } finally {
       if (mounted) setState(() => _crSaving = false);
     }
+  }
+
+  /// Vaccins / traitements du CR → carnet de santé ; traitements →
+  /// ordonnance PDF (si droit de prescrire) dans les documents de l'animal.
+  Future<void> _ecrireActes(String animalId, String? rdvId, ({String? uid, String? profileId}) owner) async {
+    final erreurs = <String>[];
+    final vetId = AgendaContexte.moi ?? AgendaContexte.uid;
+    final today = DateTime.now();
+    String ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final praticien = '${User_Info.firstname} ${User_Info.lastname}'.replaceAll('none', '').trim();
+
+    for (final v in _vaccinsCr) {
+      try {
+        await _supa.from('vaccinations').insert({
+          'id': DateTime.now().microsecondsSinceEpoch.toString(),
+          'animal_id': animalId,
+          'vaccin': v.nom, 'lot': v.lot,
+          'veterinaire': praticien,
+          'date': ymd(v.date),
+          'date_validite_debut': ymd(v.date),
+          if (v.rappel != null) 'date_rappel': ymd(v.rappel!),
+          'source': 'veterinaire',
+          if (vetId != null) 'vet_id': vetId,
+        });
+      } catch (e) { erreurs.add('vaccin ${v.nom}'); }
+    }
+    for (final t in _traitementsCr) {
+      var debut = DateTime(today.year, today.month, today.day, today.hour, today.minute);
+      for (var i = 0; i < t.phases.length; i++) {
+        final ph = t.phases[i];
+        final fin = ph.dureeJours != null ? debut.add(Duration(days: ph.dureeJours!)) : null;
+        final heures = [for (final k in ph.prises) _kPrises[k]!.$2]..sort();
+        final rappel = t.rappels && heures.isNotEmpty;
+        try {
+          await _supa.from('traitements').insert({
+            'id': '${DateTime.now().microsecondsSinceEpoch}$i',
+            'animal_id': animalId,
+            'type': t.type, 'nom': t.nom, 'posologie': ph.libelle,
+            'date': debut.toIso8601String(),
+            if (fin != null) 'date_fin': fin.toIso8601String(),
+            if (t.notes.isNotEmpty || t.phases.length > 1)
+              'notes': [if (t.phases.length > 1) 'Phase ${i + 1}/${t.phases.length}', if (t.notes.isNotEmpty) t.notes].join(' — '),
+            'source': 'veterinaire',
+            if (vetId != null) 'vet_id': vetId,
+            'rappel_actif': rappel,
+            if (rappel) ...{
+              'rappel_frequence_jours': ph.frequenceJours,
+              'rappel_duree_jours': ph.dureeJours ?? 30,
+              'rappel_fin': (fin ?? debut.add(const Duration(days: 30))).toIso8601String(),
+              'rappel_heures': heures,
+            },
+          });
+        } catch (e) { erreurs.add('traitement ${t.nom}'); }
+        if (fin == null) break;
+        debut = fin;
+      }
+    }
+
+    if (_traitementsCr.isNotEmpty && _peutOrdonnances) {
+      try {
+        final pro = _profilPro;
+        final clinique = pro == null ? null : await _supa.from('user_profiles_complet')
+            .select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pro).maybeSingle();
+        final animal = await _supa.from('animaux')
+            .select('nom, espece, race, identification, poids').eq('id', animalId).maybeSingle();
+        String proprio = widget.clientName;
+        if (owner.profileId != null) {
+          final o = await _supa.from('user_profiles_complet')
+              .select('firstname, lastname, nom').eq('id', owner.profileId!).maybeSingle();
+          final n = '${o?['firstname'] ?? ''} ${o?['lastname'] ?? ''}'.trim();
+          if (n.isNotEmpty) proprio = n;
+        }
+        var ordre = '';
+        if (clinique?['certifications'] is List) {
+          for (final c in clinique!['certifications'] as List) {
+            if (c is Map && (c['nom'] ?? '').toString().toLowerCase().contains('ordre')) { ordre = (c['numero'] ?? '').toString(); break; }
+          }
+        }
+        final adresse = [clinique?['rue_pro'], '${clinique?['code_postal_pro'] ?? ''} ${clinique?['ville_pro'] ?? ''}'.trim()]
+            .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', ');
+        final bytes = await ordonnancePdfBytes(
+          cliniqueNom: (clinique?['nom'] as String?)?.trim().isNotEmpty == true ? clinique!['nom'] as String : 'Cabinet vétérinaire',
+          cliniqueAdresse: adresse,
+          cliniqueTel: (clinique?['phone_number'] ?? '').toString(),
+          numeroOrdre: ordre,
+          prescripteur: praticien.isEmpty ? 'Vétérinaire' : praticien,
+          animalNom: (animal?['nom'] ?? widget.rdv?['_animal_nom'] ?? 'Animal').toString(),
+          animalEspeceRace: [animal?['espece'], animal?['race']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
+          animalIdentification: (animal?['identification'] ?? '').toString(),
+          animalPoids: _poidsSaisi != null ? '${_fmtPoids(_poidsSaisi!)} kg'
+              : animal?['poids'] != null ? '${animal!['poids']} kg' : '',
+          proprietaire: proprio,
+          lignes: [for (final t in _traitementsCr)
+            LigneOrdonnance(medicament: t.nom, posologie: t.posologieComplete, notes: t.notes)],
+        );
+        final moi = AgendaContexte.moi ?? AgendaContexte.uid;
+        final docUrl = await uploadDocumentBytes(bytes, 'ordonnances/$moi/${DateTime.now().millisecondsSinceEpoch}.pdf');
+        final monProfil = await AgendaContexte.monProfil();
+        await _insertRecord('ordonnances', {
+          'pro_uid': AgendaContexte.uid,
+          'animal_id': animalId,
+          if (owner.uid != null) 'owner_uid': owner.uid,
+          if (rdvId != null) 'rdv_id': rdvId,
+          'doc_url': docUrl,
+          'date_emit': ymd(today),
+          'notes': _traitementsCr.map((t) => t.nom).join(', '),
+        }, {
+          if (pro != null && pro.isNotEmpty) 'pro_profile_id': pro,
+          if (owner.profileId != null) 'owner_profile_id': owner.profileId,
+          if (AgendaContexte.moi != null) 'praticien_uid': AgendaContexte.moi,
+          if (monProfil != null) 'praticien_profile_id': monProfil,
+        });
+        await _notifyOwner(isOrdo: true);
+      } catch (e) { erreurs.add('ordonnance'); }
+    }
+    if (erreurs.isNotEmpty && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text("Non enregistré : ${erreurs.join(', ')} — vérifiez l'accès au carnet de l'animal.",
+            style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  // ── Saisie des actes (feuilles) ───────────────────────────────────────────
+
+  static const _vaccinsCourants = ['CHPPiL', 'Rage', 'Leptospirose', 'Toux du chenil', 'Leishmaniose',
+      'Typhus / coryza (RC P)', 'Leucose (FeLV)', 'Myxomatose', 'VHD (lapin)', 'Grippe équine', 'Rhinopneumonie', 'Tétanos'];
+
+  /// Pharmacie de la clinique (inventaire_items) — autocomplétion des
+  /// vaccins / médicaments, n° de lot repris de l'article.
+  List<Map<String, dynamic>> _pharmacie = [];
+
+  Future<void> _chargerPharmacie() async {
+    final pro = _profilPro;
+    if (pro == null || widget.isPension) return;
+    try {
+      final rows = await _supa.from('inventaire_items')
+          .select('id, nom, categorie, lot, unite, quantite').eq('eleveur_profile_id', pro).order('nom');
+      if (mounted) setState(() => _pharmacie = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
+  }
+
+  /// Champ avec suggestions de la pharmacie dès la 1re lettre ; saisie libre
+  /// possible. [onChoix] reçoit l'article choisi (nom, lot…).
+  Widget _champPharmacie({
+    required TextEditingController ctrl,
+    required FocusNode focus,
+    required String label,
+    required bool Function(Map<String, dynamic>) filtre,
+    required void Function(Map<String, dynamic>) onChoix,
+    VoidCallback? onChange,
+    List<String> courants = const [],
+  }) {
+    return RawAutocomplete<Map<String, dynamic>>(
+      textEditingController: ctrl,
+      focusNode: focus,
+      displayStringForOption: (o) => o['nom']?.toString() ?? '',
+      // Liste déroulante avec recherche : pharmacie d'abord, puis la liste
+      // courante (vaccins) — tout s'affiche au focus, filtré à la frappe.
+      optionsBuilder: (v) {
+        final q = v.text.trim().toLowerCase();
+        bool ok(String n) => q.isEmpty || n.toLowerCase().contains(q);
+        final stock = _pharmacie.where((o) => filtre(o) && ok(o['nom']?.toString() ?? '')).toList();
+        final noms = {for (final o in stock) (o['nom']?.toString() ?? '').toLowerCase()};
+        return [
+          ...stock,
+          for (final c in courants) if (ok(c) && !noms.contains(c.toLowerCase())) {'nom': c, 'categorie': '_courant'},
+        ].take(40);
+      },
+      onSelected: onChoix,
+      fieldViewBuilder: (ctx, c, focus, onSubmit) => TextField(
+        controller: c, focusNode: focus, onChanged: (_) => onChange?.call(),
+        textCapitalization: TextCapitalization.sentences,
+        decoration: _inputDeco(label).copyWith(labelText: label,
+            suffixIcon: _pharmacie.isEmpty ? null : const Icon(Icons.inventory_2_outlined, size: 18)),
+      ),
+      optionsViewBuilder: (ctx, onSelect, options) => Align(
+        alignment: Alignment.topLeft,
+        child: Material(
+          elevation: 4, borderRadius: BorderRadius.circular(12),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+            child: ListView(padding: EdgeInsets.zero, shrinkWrap: true, children: [
+              if (_pharmacie.where(filtre).isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(14, 10, 14, 6),
+                  child: Text('Pharmacie vide — ajoutez vos produits dans Inventaire pour les retrouver ici (lot, stock).',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey)),
+                ),
+              for (final o in options) ListTile(
+                dense: true,
+                leading: Icon(o['categorie'] == 'vaccin' ? Icons.vaccines_outlined : Icons.medication_outlined,
+                    size: 18, color: widget.categoryColor),
+                title: Text(o['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+                subtitle: o['categorie'] == '_courant' ? null : Text([
+                  'Pharmacie',
+                  if ((o['lot'] ?? '').toString().isNotEmpty) 'Lot ${o['lot']}',
+                  if (o['quantite'] != null) 'Stock ${o['quantite']} ${o['unite'] ?? ''}'.trim(),
+                ].join(' · '), style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+                onTap: () => onSelect(o),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Ajout (ou modification si [existant]) d'un vaccin réalisé.
+  Future<void> _ajouterVaccin([_VaccinCr? existant]) async {
+    final nomCtrl = TextEditingController(text: existant?.nom ?? '');
+    final lotCtrl = TextEditingController(text: existant?.lot ?? '');
+    final nomFocus = FocusNode();
+    final date = existant?.date ?? DateTime.now();
+    DateTime? rappel = existant == null ? DateTime(date.year + 1, date.month, date.day) : existant.rappel;
+    final res = await showModalBottomSheet<_VaccinCr>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        Widget chipRappel(String l, DateTime? d) => ChoiceChip(
+          label: Text(l, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          selected: d == null ? rappel == null : (rappel != null && rappel!.difference(d).inDays.abs() < 1),
+          selectedColor: widget.categoryColor.withValues(alpha: 0.18), onSelected: (_) => setM(() => rappel = d));
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(existant == null ? '💉 Vaccin réalisé' : '💉 Modifier le vaccin',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            _champPharmacie(
+              ctrl: nomCtrl, focus: nomFocus, label: 'Vaccin (nom / marque) *',
+              filtre: (o) => o['categorie'] == 'vaccin',
+              onChoix: (o) => setM(() { nomCtrl.text = o['nom']?.toString() ?? ''; if ((o['lot'] ?? '').toString().isNotEmpty) lotCtrl.text = o['lot'].toString(); }),
+              onChange: () => setM(() {}),
+              courants: _vaccinsCourants,
+            ),
+            const SizedBox(height: 10),
+            TextField(controller: lotCtrl, decoration: _inputDeco('N° de lot').copyWith(labelText: 'N° de lot')),
+            const SizedBox(height: 12),
+            const Text('Prochain rappel (le propriétaire sera prévenu)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              chipRappel('3 semaines', date.add(const Duration(days: 21))),
+              chipRappel('1 mois', DateTime(date.year, date.month + 1, date.day)),
+              chipRappel('6 mois', DateTime(date.year, date.month + 6, date.day)),
+              chipRappel('1 an', DateTime(date.year + 1, date.month, date.day)),
+              chipRappel('3 ans', DateTime(date.year + 3, date.month, date.day)),
+              chipRappel('Aucun', null),
+            ]),
+            const SizedBox(height: 18),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: nomCtrl.text.trim().isEmpty ? null
+                  : () => Navigator.pop(ctx, _VaccinCr(nomCtrl.text.trim(), lotCtrl.text.trim(), date, rappel)),
+              child: Text(existant == null ? 'Ajouter' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ])),
+        );
+      }),
+    );
+    if (res == null) return;
+    setState(() {
+      final i = existant == null ? -1 : _vaccinsCr.indexOf(existant);
+      if (i >= 0) { _vaccinsCr[i] = res; } else { _vaccinsCr.add(res); }
+    });
+  }
+
+  /// Ajout (ou modification si [existant]) d'un traitement : une ou plusieurs
+  /// phases (traitement dégressif), prises matin / midi / soir, rythme.
+  Future<void> _ajouterTraitement([_TraitementCr? existant]) async {
+    final nomCtrl = TextEditingController(text: existant?.nom ?? '');
+    final notesCtrl = TextEditingController(text: existant?.notes ?? '');
+    final nomFocus = FocusNode();
+    var type = existant?.type ?? 'medicament';
+    var rappels = existant?.rappels ?? true;
+    final phases = <_PhaseEdit>[
+      for (final p in existant?.phases ?? [const _PhaseCr(dose: '1 cp', prises: {'matin', 'soir'}, frequenceJours: 1, dureeJours: 7)])
+        _PhaseEdit.de(p),
+    ];
+    final res = await showModalBottomSheet<_TraitementCr>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        ChoiceChip chip(String l, bool sel, VoidCallback onTap) => ChoiceChip(
+          label: Text(l, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)), selected: sel,
+          selectedColor: widget.categoryColor.withValues(alpha: 0.18), onSelected: (_) => onTap());
+        Widget phase(int i) {
+          final p = phases[i];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            decoration: BoxDecoration(color: const Color(0xFFF6F8F7), borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE4E7E2))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(phases.length > 1 ? 'Phase ${i + 1}' : 'Posologie',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700))),
+                if (phases.length > 1) IconButton(
+                  visualDensity: VisualDensity.compact, icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setM(() => phases.removeAt(i))),
+              ]),
+              TextField(controller: p.dose, decoration: _inputDeco('ex. 1 cp, ½ cp, 2 mL, 1 pipette').copyWith(labelText: 'Dose par prise')),
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final pr in _kPrises.entries) FilterChip(
+                  label: Text(pr.value.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  selected: p.prises.contains(pr.key), selectedColor: widget.categoryColor.withValues(alpha: 0.18),
+                  onSelected: (v) => setM(() => v ? p.prises.add(pr.key) : p.prises.remove(pr.key))),
+              ]),
+              const SizedBox(height: 8),
+              // Intervalle libre : une prise tous les N jours.
+              Row(children: [
+                const Text('Tous les', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                const SizedBox(width: 8),
+                SizedBox(width: 70, child: TextField(
+                  controller: p.frequenceCtrl, keyboardType: TextInputType.number, textAlign: TextAlign.center,
+                  decoration: _inputDeco('1').copyWith(contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8)),
+                  onChanged: (_) => setM(() {}),
+                )),
+                const SizedBox(width: 8),
+                Text((int.tryParse(p.frequenceCtrl.text) ?? 1) > 1 ? 'jours' : 'jour (tous les jours)',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              ]),
+              const SizedBox(height: 8),
+              Row(children: [
+                SizedBox(width: 120, child: TextField(
+                  controller: p.duree, keyboardType: TextInputType.number,
+                  decoration: _inputDeco('jours').copyWith(labelText: 'Durée (jours)'),
+                  onChanged: (_) => setM(() {}),
+                )),
+                const SizedBox(width: 8),
+                Expanded(child: Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final d in [3, 5, 7, 10, 14]) chip('$d j', p.duree.text == '$d', () => setM(() => p.duree.text = '$d')),
+                ])),
+              ]),
+              if (i == phases.length - 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: TextButton(
+                    onPressed: () => setM(() => p.duree.text = ''),
+                    child: Text(p.duree.text.isEmpty ? '✓ Au long cours' : 'Au long cours (sans fin)',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor)),
+                  ),
+                ),
+            ]),
+          );
+        }
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(existant == null ? '💊 Traitement prescrit' : '💊 Modifier le traitement',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            _champPharmacie(
+              ctrl: nomCtrl, focus: nomFocus, label: 'Médicament *',
+              filtre: (o) => type == 'antiparasitaire' ? o['categorie'] == 'antiparasitaire'
+                  : (o['categorie'] != 'vaccin' && o['categorie'] != 'alimentation'),
+              courants: type == 'antiparasitaire' ? _antiparasitairesCourants : _medicamentsCourants,
+              onChoix: (o) => setM(() {
+                nomCtrl.text = o['nom']?.toString() ?? '';
+                if (o['categorie'] == 'antiparasitaire') type = 'antiparasitaire';
+              }),
+              onChange: () => setM(() {}),
+            ),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, children: [
+              chip('Médicament', type == 'medicament', () => setM(() => type = 'medicament')),
+              chip('Antiparasitaire', type == 'antiparasitaire', () => setM(() => type = 'antiparasitaire')),
+              chip('Autre', type == 'autre', () => setM(() => type = 'autre')),
+            ]),
+            const SizedBox(height: 12),
+            for (var i = 0; i < phases.length; i++) phase(i),
+            OutlinedButton.icon(
+              onPressed: () => setM(() {
+                final der = phases.last;
+                phases.add(_PhaseEdit.de(_PhaseCr(dose: '', prises: {...der.prises}, frequenceJours: der.frequence,
+                    dureeJours: int.tryParse(der.duree.text))));
+                if (der.duree.text.isEmpty) der.duree.text = '3';
+              }),
+              icon: const Icon(Icons.trending_down, size: 18),
+              label: const Text('Ajouter une phase (dose dégressive)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+              style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero, value: rappels, activeThumbColor: widget.categoryColor,
+              onChanged: (v) => setM(() => rappels = v),
+              title: const Text('Rappeler chaque prise au propriétaire', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: const Text('Matin 8 h · midi 12 h · soir 19 h, jusqu\'à la fin du traitement.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+            ),
+            TextField(controller: notesCtrl, decoration: _inputDeco('Précautions, à jeun, pendant le repas…').copyWith(labelText: 'Remarque (facultatif)')),
+            const SizedBox(height: 18),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: nomCtrl.text.trim().isEmpty || phases.any((p) => p.prises.isEmpty) ? null : () => Navigator.pop(ctx, _TraitementCr(
+                nom: nomCtrl.text.trim(), type: type, rappels: rappels, notes: notesCtrl.text.trim(),
+                phases: [for (final p in phases) p.vers()])),
+              child: Text(existant == null ? 'Ajouter' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ])),
+        );
+      }),
+    );
+    if (res == null) return;
+    setState(() {
+      final i = existant == null ? -1 : _traitementsCr.indexOf(existant);
+      if (i >= 0) { _traitementsCr[i] = res; } else { _traitementsCr.add(res); }
+    });
+  }
+
+  static const _antiparasitairesCourants = ['Bravecto', 'NexGard', 'NexGard Spectra', 'Simparica', 'Simparica Trio',
+      'Credelio', 'Advocate', 'Stronghold', 'Frontline', 'Broadline', 'Milbemax', 'Drontal', 'Milpro', 'Profender',
+      'Seresto (collier)', 'Scalibor (collier)'];
+  static const _medicamentsCourants = ['Metacam (méloxicam)', 'Previcox', 'Onsior', 'Rimadyl', 'Synulox', 'Clavaseptin',
+      'Kesium', 'Marbocyl', 'Convenia', 'Prednisolone', 'Cortavance', 'Apoquel', 'Cytopoint', 'Vetmedin', 'Fortekor',
+      'Cerenia', 'Gabapentine', 'Tramadol', 'Forthyron', 'Cardalis'];
+
+  String _fmtPoids(double p) => p == p.roundToDouble() ? p.toStringAsFixed(0) : p.toStringAsFixed(1).replaceAll('.', ',');
+
+  Widget _blocConsultation() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: TextField(controller: _motifCtrl, textCapitalization: TextCapitalization.sentences,
+            decoration: _inputDeco('Consultation, vaccination, boiterie…').copyWith(labelText: 'Motif'))),
+        const SizedBox(width: 10),
+        SizedBox(width: 120, child: TextField(controller: _poidsCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: _inputDeco('kg').copyWith(labelText: 'Poids (kg)'))),
+      ]),
+      const SizedBox(height: 12),
+      _inputLabel('Actes réalisés'),
+      const SizedBox(height: 6),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        for (final a in {..._actesCourants, ..._actesRealises}) FilterChip(
+          label: Text(a, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          selected: _actesRealises.contains(a),
+          selectedColor: widget.categoryColor.withValues(alpha: 0.18),
+          onSelected: (v) => setState(() => v ? _actesRealises.add(a) : _actesRealises.remove(a)),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: TextField(controller: _autreActeCtrl, textCapitalization: TextCapitalization.sentences,
+            decoration: _inputDeco('Autre acte (ex. biopsie, ECG…)'),
+            onSubmitted: (_) => _ajouterAutreActe())),
+        IconButton(onPressed: _ajouterAutreActe, icon: Icon(Icons.add_circle_outline, color: widget.categoryColor)),
+      ]),
+      const SizedBox(height: 16),
+    ]);
+  }
+
+  void _ajouterAutreActe() {
+    final v = _autreActeCtrl.text.trim();
+    if (v.isEmpty) return;
+    setState(() { _actesRealises.add(v); _autreActeCtrl.clear(); });
+  }
+
+  Widget _blocActes() {
+    String date(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    Widget ligne(IconData ic, String titre, String sous, VoidCallback onEdit, VoidCallback onDelete) => Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: widget.categoryColor.withValues(alpha: 0.25))),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onEdit,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(children: [
+            Icon(ic, size: 18, color: widget.categoryColor),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700)),
+              if (sous.isNotEmpty) Text(sous, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            ])),
+            Icon(Icons.edit_outlined, size: 16, color: Colors.grey.shade500),
+            IconButton(icon: const Icon(Icons.close, size: 18), onPressed: onDelete, color: Colors.grey),
+          ]),
+        ),
+      ),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _inputLabel('Vaccins réalisés'),
+      const SizedBox(height: 6),
+      for (final v in List.of(_vaccinsCr)) ligne(Icons.vaccines_outlined, v.nom,
+          [if (v.lot.isNotEmpty) 'Lot ${v.lot}', if (v.rappel != null) 'Rappel le ${date(v.rappel!)}'].join(' · '),
+          () => _ajouterVaccin(v), () => setState(() => _vaccinsCr.remove(v))),
+      OutlinedButton.icon(
+        onPressed: () => _ajouterVaccin(), icon: const Icon(Icons.add, size: 18),
+        label: const Text('Ajouter un vaccin', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor, side: BorderSide(color: widget.categoryColor.withValues(alpha: 0.5)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      ),
+      const SizedBox(height: 14),
+      _inputLabel('Traitements prescrits'),
+      const SizedBox(height: 6),
+      for (final t in List.of(_traitementsCr)) ligne(Icons.medication_outlined, t.nom,
+          [t.posologieComplete, if (t.rappels) 'rappels au propriétaire'].join(' · '),
+          () => _ajouterTraitement(t), () => setState(() => _traitementsCr.remove(t))),
+      OutlinedButton.icon(
+        onPressed: () => _ajouterTraitement(), icon: const Icon(Icons.add, size: 18),
+        label: const Text('Ajouter un traitement', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor, side: BorderSide(color: widget.categoryColor.withValues(alpha: 0.5)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      ),
+      if (_traitementsCr.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Text(_peutOrdonnances
+                ? "📄 L'ordonnance sera générée en PDF et ajoutée aux documents de l'animal."
+                : 'Ordonnance : réservée aux vétérinaires — le traitement sera inscrit au carnet.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      ],
+      const SizedBox(height: 4),
+      Text('Touchez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      const SizedBox(height: 16),
+    ]);
+  }
+
+  // ── Imprimer / partager / envoyer (CR et ordonnances) ─────────────────────
+
+  /// En-tête clinique, patient, propriétaire (client de la clinique s'il n'a
+  /// pas PetsMatch — e-mail pré-rempli).
+  Future<({String clinique, String adresse, String tel, String animal, String especeRace,
+      String identification, String proprio, String? email})> _infosDocument() async {
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    final pro = _profilPro;
+    Map<String, dynamic>? cl, an, client;
+    try {
+      if (pro != null) {
+        cl = await _supa.from('user_profiles_complet')
+            .select('nom, rue_pro, code_postal_pro, ville_pro, phone_number').eq('id', pro).maybeSingle();
+      }
+      if (animalId != null) {
+        an = await _supa.from('animaux').select('nom, espece, race, identification, client_clinique_id')
+            .eq('id', animalId).maybeSingle();
+      }
+      if (an?['client_clinique_id'] != null) {
+        client = await _supa.from('clients_clinique').select('nom, prenom, email')
+            .eq('id', an!['client_clinique_id']).maybeSingle();
+      }
+    } catch (_) {}
+    var proprio = widget.clientName;
+    if (client != null) proprio = '${client['prenom'] ?? ''} ${client['nom'] ?? ''}'.trim();
+    return (
+      clinique: (cl?['nom'] as String?)?.trim().isNotEmpty == true ? cl!['nom'] as String : 'Cabinet vétérinaire',
+      adresse: [cl?['rue_pro'], '${cl?['code_postal_pro'] ?? ''} ${cl?['ville_pro'] ?? ''}'.trim()]
+          .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', '),
+      tel: (cl?['phone_number'] ?? '').toString(),
+      animal: (an?['nom'] ?? widget.rdv?['_animal_nom'] ?? 'Animal').toString(),
+      especeRace: [an?['espece'], an?['race']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
+      identification: (an?['identification'] ?? '').toString(),
+      proprio: proprio,
+      email: client?['email'] as String?,
+    );
+  }
+
+  Future<void> _transmettreCr(Map<String, dynamic> cr) async {
+    final i = await _infosDocument();
+    if (!mounted) return;
+    final praticien = '${User_Info.firstname} ${User_Info.lastname}'.replaceAll('none', '').trim();
+    await transmettreDocument(context,
+      type: 'compte_rendu',
+      nomFichier: 'Compte-rendu-${i.animal}.pdf',
+      animalNom: i.animal, expediteur: i.clinique,
+      emailParDefaut: i.email, destinataireNom: i.proprio,
+      pdf: () => compteRenduPdfBytes(
+        cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel,
+        praticien: praticien.isEmpty ? 'Vétérinaire' : praticien,
+        animalNom: i.animal, animalEspeceRace: i.especeRace, animalIdentification: i.identification,
+        proprietaire: i.proprio, contenu: cr['contenu']?.toString() ?? '',
+        date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
+      ),
+    );
+  }
+
+  Future<void> _transmettreOrdo(Map<String, dynamic> o) async {
+    final url = o['doc_url']?.toString() ?? '';
+    if (url.isEmpty) return;
+    final i = await _infosDocument();
+    if (!mounted) return;
+    await transmettreDocument(context,
+      type: 'ordonnance',
+      nomFichier: 'Ordonnance-${i.animal}.pdf',
+      animalNom: i.animal, expediteur: i.clinique,
+      emailParDefaut: i.email, destinataireNom: i.proprio,
+      pdf: () async {
+        final lien = await lienDocument(url);
+        final res = await http.get(Uri.parse(lien));
+        if (res.statusCode != 200) throw Exception('document inaccessible');
+        return res.bodyBytes;
+      },
+    );
   }
 
   ({String? uid, String? profileId})? _owner;
@@ -521,6 +1171,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             _sectionTitle('Comptes rendus existants'),
             const SizedBox(height: 8),
             ..._crs.map((cr) => _CrCard(cr: cr, color: widget.categoryColor,
+                onTransmettre: widget.isPension ? null : () => _transmettreCr(cr),
                 onDelete: (cr['statut'] != 'brouillon' && !_peutValider)
                     ? null : () => _deleteDoc('comptes_rendus', cr['id'].toString()),
                 onValider: (cr['statut'] == 'brouillon' && _peutValider) ? () => _validerCr(cr) : null)),
@@ -532,8 +1183,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           _sectionTitle('Nouveau compte rendu'),
           const SizedBox(height: 12),
 
+          if (_saisieActes) _blocConsultation(),
+          if (_saisieActes) _blocActes(),
+
           // Contenu
-          _inputLabel('Contenu *'),
+          _inputLabel(_saisieActes ? 'Observations' : 'Contenu *'),
           const SizedBox(height: 6),
           TextFormField(
             controller: _crContenuCtrl,
@@ -599,7 +1253,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           if (_ordos.isNotEmpty) ...[
             _sectionTitle('Ordonnances existantes'),
             const SizedBox(height: 8),
-            ..._ordos.map((o) => _OrdoCard(ordo: o, color: widget.categoryColor, onDelete: () => _deleteDoc('ordonnances', o['id'].toString()))),
+            ..._ordos.map((o) => _OrdoCard(ordo: o, color: widget.categoryColor,
+                onTransmettre: () => _transmettreOrdo(o),
+                onDelete: () => _deleteDoc('ordonnances', o['id'].toString()))),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
@@ -686,6 +1342,62 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   );
 }
 
+class _VaccinCr {
+  final String nom, lot;
+  final DateTime date;
+  final DateTime? rappel;
+  _VaccinCr(this.nom, this.lot, this.date, this.rappel);
+}
+
+/// Prises de la journée → libellé + heure du rappel au propriétaire.
+const _kPrises = <String, (String, String)>{
+  'matin': ('Matin', '08:00'),
+  'midi': ('Midi', '12:00'),
+  'soir': ('Soir', '19:00'),
+};
+
+/// Phase d'un traitement (dégressif : plusieurs phases enchaînées).
+class _PhaseCr {
+  final String dose;
+  final Set<String> prises;
+  final int frequenceJours;
+  final int? dureeJours;
+  const _PhaseCr({required this.dose, required this.prises, this.frequenceJours = 1, this.dureeJours});
+
+  /// « 1 cp matin et soir, tous les 2 jours, pendant 3 jours ».
+  String get libelle {
+    final noms = [for (final k in _kPrises.keys) if (prises.contains(k)) _kPrises[k]!.$1.toLowerCase()];
+    final quand = noms.length > 1 ? '${noms.sublist(0, noms.length - 1).join(', ')} et ${noms.last}' : noms.join();
+    return [
+      [if (dose.trim().isNotEmpty) dose.trim(), quand].where((x) => x.isNotEmpty).join(' '),
+      if (frequenceJours > 1) 'tous les $frequenceJours jours',
+      dureeJours != null ? 'pendant $dureeJours jour${dureeJours! > 1 ? 's' : ''}' : 'au long cours',
+    ].join(', ');
+  }
+}
+
+class _PhaseEdit {
+  final TextEditingController dose, duree, frequenceCtrl;
+  final Set<String> prises;
+  _PhaseEdit(this.dose, this.duree, this.frequenceCtrl, this.prises);
+  int get frequence => (int.tryParse(frequenceCtrl.text.trim()) ?? 1).clamp(1, 365);
+  factory _PhaseEdit.de(_PhaseCr p) => _PhaseEdit(TextEditingController(text: p.dose),
+      TextEditingController(text: p.dureeJours?.toString() ?? ''),
+      TextEditingController(text: '${p.frequenceJours}'), {...p.prises});
+  _PhaseCr vers() => _PhaseCr(dose: dose.text.trim(), prises: {...prises}, frequenceJours: frequence,
+      dureeJours: int.tryParse(duree.text.trim()));
+}
+
+class _TraitementCr {
+  final String nom, type, notes;
+  final List<_PhaseCr> phases;
+  final bool rappels;
+  _TraitementCr({required this.nom, required this.type, required this.phases, required this.rappels, this.notes = ''});
+
+  /// Posologie de toutes les phases : « …, puis … ».
+  String get posologieComplete => phases.map((p) => p.libelle).join(', puis ');
+}
+
 // ── Cards existants ──────────────────────────────────────────────────────────
 
 class _CrCard extends StatelessWidget {
@@ -693,7 +1405,9 @@ class _CrCard extends StatelessWidget {
   final Color color;
   final VoidCallback? onDelete;
   final VoidCallback? onValider;
-  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider});
+  /// Imprimer / partager / envoyer au propriétaire (CR validé).
+  final VoidCallback? onTransmettre;
+  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onTransmettre});
 
   @override
   Widget build(BuildContext context) {
@@ -724,6 +1438,9 @@ class _CrCard extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          if (onTransmettre != null && cr['statut'] != 'brouillon')
+            IconButton(visualDensity: VisualDensity.compact, tooltip: 'Imprimer / envoyer',
+                onPressed: onTransmettre, icon: Icon(Icons.ios_share, size: 18, color: color)),
           if (onDelete != null)
             GestureDetector(onTap: onDelete,
               child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFCCCCCC))),
@@ -768,7 +1485,8 @@ class _OrdoCard extends StatelessWidget {
   final Map<String, dynamic> ordo;
   final Color color;
   final VoidCallback? onDelete;
-  const _OrdoCard({required this.ordo, required this.color, this.onDelete});
+  final VoidCallback? onTransmettre;
+  const _OrdoCard({required this.ordo, required this.color, this.onDelete, this.onTransmettre});
 
   @override
   Widget build(BuildContext context) {
@@ -790,6 +1508,9 @@ class _OrdoCard extends StatelessWidget {
           const SizedBox(width: 6),
           Expanded(child: Text('Ordonnance du $dateEmit',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color))),
+          if (onTransmettre != null && docUrl.isNotEmpty)
+            IconButton(visualDensity: VisualDensity.compact, tooltip: 'Imprimer / envoyer',
+                onPressed: onTransmettre, icon: Icon(Icons.ios_share, size: 18, color: color)),
           if (onDelete != null)
             GestureDetector(onTap: onDelete,
               child: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFCCCCCC))),

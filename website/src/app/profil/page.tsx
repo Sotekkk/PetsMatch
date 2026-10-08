@@ -877,6 +877,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [rayon, setRayon] = useState(20);
   const [acceptNewClients, setAcceptNewClients] = useState(true);
   const [urgences24h, setUrgences24h] = useState(false);
+  const [retardAlerteAuto, setRetardAlerteAuto] = useState(false);
   const [siret, setSiret] = useState('');
   // Identité de facturation
   const [tvaIntra, setTvaIntra] = useState('');
@@ -960,6 +961,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setRayon(((r.rayon_intervention as number) ?? 20));
         setAcceptNewClients((r.accept_new_clients as boolean) ?? true);
         setUrgences24h((r.urgences_24h as boolean) ?? false);
+        setRetardAlerteAuto(r.retard_alerte_auto === true);
         setSiret((r.siret as string) ?? '');
         setTvaIntra((r.numero_tva as string) ?? '');
         setFormeJuridique((r.forme_juridique_pro as string) ?? '');
@@ -1194,7 +1196,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       phone: phone.trim(),
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
-      ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h } : {}),
+      ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h, retard_alerte_auto: retardAlerteAuto } : {}),
       ...(catPro === 'veterinaire'
         ? {
             tarifs_veto: tarifsVeto,
@@ -1450,6 +1452,21 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <button type="button" onClick={() => setUrgences24h(v => !v)}
                 className={`relative w-11 h-6 rounded-full transition-colors ${urgences24h ? 'bg-[#E65100]' : 'bg-gray-400'}`}>
                 <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${urgences24h ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+          )}
+
+          {/* Alerte retard automatique — vétérinaires (Cloud Function sendRetardsAutomatiques) */}
+          {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire') && (
+            <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl"
+              style={{ backgroundColor: retardAlerteAuto ? 'rgba(12,92,108,0.06)' : 'transparent', border: retardAlerteAuto ? '1px solid rgba(12,92,108,0.25)' : '1px solid transparent' }}>
+              <div>
+                <p className="text-sm font-medium" style={{ color: retardAlerteAuto ? '#0C5C6C' : '#1F2A2E' }}>⏱ Alerte retard automatique</p>
+                <p className="text-xs text-gray-400">Prévenir les clients dès 30 min de retard dans l&apos;enchaînement des RDV (calculé quand vous marquez un RDV terminé).</p>
+              </div>
+              <button type="button" onClick={() => setRetardAlerteAuto(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${retardAlerteAuto ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${retardAlerteAuto ? 'left-5' : 'left-0.5'}`} />
               </button>
             </div>
           )}

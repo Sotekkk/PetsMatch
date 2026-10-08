@@ -24,6 +24,10 @@ export default function SallesPage() {
   const [choixPraticien, setChoixPraticien] = useState(true);
   const [fetching, setFetching] = useState(true);
   const [edit, setEdit] = useState<{ id?: string; nom: string; type_salle: string } | null>(null);
+  // Salle par défaut de chaque praticien ('' = titulaire) — reprise sur tous
+  // ses RDV, sauf salle choisie sur un créneau ou sur le RDV.
+  const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
+  const [salleDefaut, setSalleDefaut] = useState<Record<string, string>>({});
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
@@ -37,7 +41,29 @@ export default function SallesPage() {
     setParMotif(((p?.salles_par_motif ?? {}) as Record<string, string>));
     setChoixPraticien(p?.rdv_choix_praticien !== false);
     setFetching(false);
+    const [{ data: pr }, { data: t }, { data: emps }] = await Promise.all([
+      supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: pid }),
+      supabase.from('user_profiles_complet').select('salle_defaut_id').eq('id', pid).maybeSingle(),
+      supabase.from('employes').select('employe_profile_id, salle_defaut_id').eq('eleveur_profile_id', pid).eq('actif', true),
+    ]);
+    setPraticiens(((pr ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
+      .map(x => ({ id: x.praticien_profile_id ?? '', nom: x.nom?.trim() || 'Vétérinaire' })));
+    const d: Record<string, string> = {};
+    if (t?.salle_defaut_id) d[''] = t.salle_defaut_id as string;
+    for (const e of (emps ?? []) as { employe_profile_id: string | null; salle_defaut_id: string | null }[]) {
+      if (e.employe_profile_id && e.salle_defaut_id) d[e.employe_profile_id] = e.salle_defaut_id;
+    }
+    setSalleDefaut(d);
   }, [user, loaded, pid]);
+
+  async function majSalleDefaut(praticien: string, salle: string) {
+    if (!pid) return;
+    setSalleDefaut(d => { const n = { ...d }; if (salle) n[praticien] = salle; else delete n[praticien]; return n; });
+    const { error } = praticien
+      ? await supabase.from('employes').update({ salle_defaut_id: salle || null }).eq('eleveur_profile_id', pid).eq('employe_profile_id', praticien)
+      : await supabase.from('user_profiles').update({ salle_defaut_id: salle || null }).eq('id', pid);
+    if (error) alert(error.message);
+  }
 
   useEffect(() => { load(); }, [load]);
 
@@ -120,6 +146,22 @@ export default function SallesPage() {
           </div>
         ))}
       </section>
+
+      {salles.length > 0 && praticiens.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-bold text-[#1F2A2E]">Salle par défaut de chaque praticien</h2>
+          <p className="text-xs text-gray-500">Reprise sur tous ses RDV. Ponctuellement, une autre salle peut être choisie sur un créneau (page Créneaux) ou sur le RDV lui-même (champ Lieu).</p>
+          {praticiens.map(pr => (
+            <div key={pr.id || '_'} className="flex items-center gap-3">
+              <span className="flex-1 text-sm font-semibold text-[#1F2A2E]">{pr.nom}</span>
+              <select value={salleDefaut[pr.id] ?? ''} onChange={e => majSalleDefaut(pr.id, e.target.value)} className={`${iCls} max-w-[220px]`}>
+                <option value="">Aucune</option>
+                {salles.filter(x => x.actif).map(x => <option key={x.id} value={x.id}>{x.nom}</option>)}
+              </select>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="space-y-2">
         <h2 className="font-bold text-[#1F2A2E]">Salle occupée par motif</h2>

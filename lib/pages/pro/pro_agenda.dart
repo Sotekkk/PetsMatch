@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/planning_clinique_page.dart';
+import 'package:PetsMatch/widgets/rdv/salles_clinique_widgets.dart';
+import 'package:PetsMatch/utils/retards_rdv.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
@@ -49,10 +51,12 @@ class ProAgendaPage extends StatefulWidget {
   // Index de l'onglet initial (0=Demandes, 1=À venir, 2=Historique,
   // 3=Créneaux) — permet d'ouvrir directement sur "Mes créneaux" depuis
   // le menu, sans dupliquer la logique déjà présente dans cette page.
-  final int initialTabIndex;
+  /// Onglet d'ouverture ; par défaut « À venir » pour un vétérinaire,
+  /// « Demandes » pour les autres métiers.
+  final int? initialTabIndex;
   /// Agenda d'une clinique ouvert par un de ses employés (null = le mien).
   final ({String uid, String profileId, String catPro})? employeur;
-  const ProAgendaPage({super.key, this.initialTabIndex = 0, this.employeur});
+  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -141,6 +145,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   /// rdv id → vétérinaire choisi dans « Attribuer à » ('' = titulaire).
   final Map<String, String> _attributionChoisie = {};
+  /// rdv id → lieu choisi à la validation (kLieuAuto / kLieuDomicile / salle).
+  final Map<String, String> _lieuChoisi = {};
   List<({String id, String nom})>? _praticiensClinique;
 
   /// Praticiens de la clinique (titulaire = id '') — pm_praticiens_clinique.
@@ -164,7 +170,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<bool> _choisirVeterinaire(Map<String, dynamic> rdv) async {
     if (!_estClinique || rdv['statut'] != 'demande') return true;
     final praticiens = await _chargerPraticiens();
-    if (praticiens.length < 2 || !mounted) return true;
+    final debutRdv = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now();
+    final dureeRdv = (rdv['duree_minutes'] as num?)?.toInt() ?? 30;
+    final salles = await chargerSallesDispo(_profilClinique(rdv), debutRdv, dureeRdv,
+        exclureRdv: rdv['id']?.toString());
+    if ((praticiens.length < 2 && salles.isEmpty) || !mounted) return true;
+    // Plusieurs praticiens : « automatique » = salle du praticien choisi.
+    var lieu = praticiens.length > 1 && _lieuInitial(rdv) != kLieuDomicile ? kLieuAuto : _lieuInitial(rdv);
     final actuel = rdv['instructeur_profile_id']?.toString() ?? '';
     var choix = actuel;
     if (rdv['praticien_indifferent'] == true) {
@@ -179,7 +191,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Attribuer à', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          Text(praticiens.length > 1 ? 'Attribuer à' : 'Lieu du rendez-vous',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          if (praticiens.length > 1) ...[
           const SizedBox(height: 4),
           Text(rdv['praticien_indifferent'] == true
                   ? 'Le client a choisi « peu importe ». Quel vétérinaire prend ce rendez-vous ?'
@@ -198,7 +212,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ? const Text('Libre sur ce créneau', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5))
                 : null,
           ),
-          const SizedBox(height: 8),
+          ],
+          if (salles.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            LieuSalleField(
+              profileId: _profilClinique(rdv), debut: debutRdv, dureeMinutes: dureeRdv,
+              exclureRdv: rdv['id']?.toString(), value: lieu,
+              onChanged: (v) => setM(() => lieu = v),
+            ),
+          ],
+          const SizedBox(height: 12),
           SizedBox(width: double.infinity, child: ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: teal, foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -210,7 +233,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ))),
     );
     if (res == null) return false;
-    _attributionChoisie[rdv['id'].toString()] = res;
+    if (praticiens.length > 1) _attributionChoisie[rdv['id'].toString()] = res;
+    _lieuChoisi[rdv['id'].toString()] = lieu;
     return true;
   }
 
@@ -219,12 +243,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// posé provisoirement. Champs à ajouter à l'update de confirmation.
   Future<Map<String, dynamic>> _attributionPraticien(Map<String, dynamic> rdv) async {
     if (!_estClinique) return const {};
+    final lieu = _champsLieu(_lieuChoisi.remove(rdv['id']?.toString()), rdv);
     // Vétérinaire choisi à la validation (« Attribuer à ») — '' = titulaire.
     final choisi = _attributionChoisie.remove(rdv['id']?.toString());
     if (choisi != null) {
-      return {'praticien_indifferent': false, 'instructeur_profile_id': choisi.isEmpty ? null : choisi};
+      return {...lieu, 'praticien_indifferent': false, 'instructeur_profile_id': choisi.isEmpty ? null : choisi};
     }
-    if (rdv['praticien_indifferent'] != true) return const {};
+    if (rdv['praticien_indifferent'] != true) return lieu;
     final out = <String, dynamic>{'praticien_indifferent': false};
     if (!AgendaContexte.pourEmployeur) {
       out['instructeur_profile_id'] = null;
@@ -232,7 +257,32 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final moi = await AgendaContexte.monProfil();
       if (moi != null && _employes.any((e) => e.profileId == moi)) out['instructeur_profile_id'] = moi;
     }
-    return out;
+    return {...lieu, ...out};
+  }
+
+  /// Champ « Lieu » (salles_clinique_widgets.dart) → colonnes du RDV.
+  /// [adresse] : adresse saisie pour un RDV à domicile.
+  Map<String, dynamic> _champsLieu(String? choix, Map<String, dynamic> rdv, {String adresse = ''}) {
+    if (choix == null || choix == kLieuAuto) return const {};
+    if (choix == kLieuDomicile) {
+      final actuel = rdv['lieu']?.toString() ?? '';
+      return {'salle_id': null, 'lieu': adresse.isNotEmpty ? adresse : (actuel.isNotEmpty ? actuel : 'À domicile')};
+    }
+    return {'salle_id': choix, 'lieu': null, 'lieu_lat': null, 'lieu_lng': null};
+  }
+
+  /// Profil de la clinique d'un RDV : celui du RDV, sinon le contexte
+  /// (AgendaContexte.profileId est vide quand le profil principal est actif).
+  String _profilClinique(Map<String, dynamic> rdv) {
+    final p = rdv['pro_profile_id']?.toString() ?? '';
+    return p.isNotEmpty ? p : _resolveProProfileId();
+  }
+
+  /// Valeur initiale du champ « Lieu » pour un RDV.
+  String _lieuInitial(Map<String, dynamic> rdv) {
+    final lieu = (rdv['lieu']?.toString() ?? '').toLowerCase();
+    if (lieu.contains('domicile') || rdv['lieu_lat'] != null) return kLieuDomicile;
+    return rdv['salle_id']?.toString() ?? kLieuAuto;
   }
 
   /// Update de confirmation avec attribution ; si le praticien qui valide
@@ -289,7 +339,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     } else {
       AgendaContexte.fermer();
     }
-    _tabCtrl = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
+    _tabCtrl = TabController(length: 4, vsync: this,
+        initialIndex: widget.initialTabIndex ?? (AgendaContexte.catPro == 'veterinaire' ? 1 : 0));
     final now = DateTime.now();
     _weekStart = now.subtract(Duration(days: now.weekday - 1));
     _loadRdvs();
@@ -671,8 +722,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   : cUid != null
                       ? (clientNames[cUid] ?? 'Client')
                       : (clientNomManuel?.isNotEmpty == true ? clientNomManuel! : 'Client'),
-              '_animal_nom': aId != null
-                  ? (animalNames[aId] ?? '')
+              // Nom figé à la réservation si la fiche n'est pas lisible.
+              '_animal_nom': (aId != null ? animalNames[aId] : null)?.isNotEmpty == true
+                  ? animalNames[aId]!
                   : ((r['animal_nom_manuel'] as String?) ?? ''),
               '_visit_count': cUid != null ? (visitCounts[cUid] ?? 0) : 0,
             };
@@ -819,8 +871,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   List<Map<String, dynamic>> get _demandes => _rdvsFiltres.where((r) =>
       r['statut'] == 'demande' || r['statut'] == 'contre_proposition').toList();
+  // Vétérinaire : un RDV reste « À venir » tant qu'il n'est pas marqué
+  // terminé (même si l'heure est passée — « À clôturer »), et porte son
+  // retard estimé en cascade (lib/utils/retards_rdv.dart).
   List<Map<String, dynamic>> get _avenir {
     final now = DateTime.now();
+    if (_estClinique) {
+      final retards = retardsEnCascade(_rdvs);
+      return [
+        for (final r in _rdvsFiltres)
+          if (r['statut'] == 'confirme')
+            {...r, if (retards[r['id'].toString()] != null) '_retard_min': retards[r['id'].toString()]},
+      ];
+    }
     return _rdvsFiltres.where((r) {
       if (r['statut'] != 'confirme') return false;
       final dh = DateTime.tryParse(r['date_heure'] ?? '');
@@ -833,6 +896,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (r['statut'] == 'demande') return false;
       if (r['statut'] == 'contre_proposition') return false;
       if (r['statut'] == 'confirme') {
+        if (_estClinique) return false;
         final dh = DateTime.tryParse(r['date_heure'] ?? '');
         return dh != null && dh.isBefore(now);
       }
@@ -1404,6 +1468,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final notesCtrl = TextEditingController(text: rdv['notes_pro']?.toString() ?? '');
     String? instructeurProfileId = rdv['instructeur_profile_id']?.toString();
     if (instructeurProfileId != null && instructeurProfileId.isEmpty) instructeurProfileId = null;
+    // Clinique avec salles : « Lieu » = à domicile ou une salle.
+    final avecSalles = _estClinique &&
+        (await chargerSallesDispo(_profilClinique(rdv), currentDh, duree, exclureRdv: rdv['id']?.toString())).isNotEmpty;
+    var lieuChoix = _lieuInitial(rdv);
+    if (lieuChoix != kLieuDomicile) lieuCtrl.clear();
+    if (!mounted) return;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -1474,8 +1544,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               const SizedBox(height: 14),
               TextField(controller: motifCtrl, decoration: const InputDecoration(labelText: 'Motif', border: OutlineInputBorder())),
               const SizedBox(height: 12),
-              TextField(controller: lieuCtrl, decoration: const InputDecoration(
-                  labelText: 'Lieu', hintText: 'Au cabinet, au domicile du client…', border: OutlineInputBorder())),
+              if (avecSalles) ...[
+                LieuSalleField(
+                  profileId: _profilClinique(rdv),
+                  debut: DateTime(date.year, date.month, date.day, hour, minute),
+                  dureeMinutes: duree, exclureRdv: rdv['id']?.toString(),
+                  value: lieuChoix, onChanged: (v) => setModal(() => lieuChoix = v),
+                ),
+                if (lieuChoix == kLieuDomicile) ...[
+                  const SizedBox(height: 10),
+                  TextField(controller: lieuCtrl, decoration: const InputDecoration(
+                      labelText: 'Adresse du domicile (facultatif)', border: OutlineInputBorder())),
+                ],
+              ] else
+                TextField(controller: lieuCtrl, decoration: const InputDecoration(
+                    labelText: 'Lieu', hintText: 'Au cabinet, au domicile du client…', border: OutlineInputBorder())),
               const SizedBox(height: 12),
               if (_employes.isNotEmpty) ...[
                 DropdownButtonFormField<String?>(
@@ -1509,11 +1592,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (result != true) return;
     final newDh = DateTime(date.year, date.month, date.day, hour, minute);
     await _modifierRdv(rdv, newDh, duree, motifCtrl.text.trim(), lieuCtrl.text.trim(),
-        notesCtrl.text.trim(), instructeurProfileId);
+        notesCtrl.text.trim(), instructeurProfileId, lieuChoix: avecSalles ? lieuChoix : null);
   }
 
   Future<void> _modifierRdv(Map<String, dynamic> rdv, DateTime newDh, int duree, String motif,
-      String lieu, String notes, String? instructeurProfileId) async {
+      String lieu, String notes, String? instructeurProfileId, {String? lieuChoix}) async {
     try {
       final supa = Supabase.instance.client;
       final rdvId = rdv['id'].toString();
@@ -1538,6 +1621,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'lieu_lng': lieuLng,
         'notes_pro': notes.isNotEmpty ? notes : null,
         'instructeur_profile_id': instructeurProfileId,
+        // Clinique : salle choisie (ou à domicile) ; « automatique » → la base choisit.
+        if (lieuChoix != null) ...{
+          'salle_id': null,
+          ..._champsLieu(lieuChoix, rdv, adresse: lieu),
+          if (lieuChoix == kLieuDomicile && lieu.isEmpty) 'lieu': 'À domicile',
+        },
         'reminder_48h_sent': false, 'reminder_24h_sent': false,
         'reminder_1h_sent': false, 'reminder_15min_sent': false,
       }).eq('id', rdvId);
@@ -1585,7 +1674,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          content: Text(e is PostgrestException && e.code == 'P0001' ? e.message : 'Erreur : $e',
+              style: const TextStyle(fontFamily: 'Galey')),
           backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
         ));
       }
@@ -2069,7 +2159,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       {int? dureeMinutes, String? motifAnnulation}) async {
     try {
       final supa = Supabase.instance.client;
-      final update = <String, dynamic>{'statut': statut};
+      final update = <String, dynamic>{
+        'statut': statut,
+        // Heure réelle de fin : base des retards en cascade.
+        if (statut == 'termine') 'termine_at': DateTime.now().toUtc().toIso8601String(),
+      };
       if (dureeMinutes != null) update['duree_minutes'] = dureeMinutes;
       if (motifAnnulation != null) update['notes_annulation'] = motifAnnulation;
       if (statut == 'confirme') {
@@ -2546,6 +2640,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     Map<String, dynamic>? foundUser;   // {uid, prenom, nom, email, profile_id}
     bool searched = false;             // au moins une recherche effectuée
     String? linkedUid, linkedProfileId, linkedNom;
+    // Clinique : patient de la clinique (propriétaire hors appli) — remplit
+    // client + animal et rattache le RDV à sa fiche (animal_id).
+    String? patientAnimalId;
 
     Future<void> rechercherClient(void Function(void Function()) setModal) async {
       final email = clientEmailCtrl.text.trim();
@@ -2606,6 +2703,27 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 18),
 
+              if (_estClinique && linkedUid == null) ...[
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final p = await _choisirPatientClinique();
+                    if (p == null) return;
+                    setModal(() {
+                      patientAnimalId = p['animal_id'] as String?;
+                      animalNomCtrl.text = p['animal_nom'] as String? ?? '';
+                      clientNomCtrl.text = p['client_nom'] as String? ?? '';
+                      clientTelCtrl.text = p['telephone'] as String? ?? '';
+                      clientEmailCtrl.text = p['email'] as String? ?? '';
+                    });
+                  },
+                  icon: const Icon(Icons.local_hospital_outlined, size: 18),
+                  label: Text(patientAnimalId == null ? 'Choisir un patient de la clinique' : 'Patient : ${animalNomCtrl.text} — changer',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  style: OutlinedButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(double.infinity, 44),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                ),
+                const SizedBox(height: 12),
+              ],
               if (linkedUid != null) ...[
                 // RDV rattaché à un compte existant
                 Container(
@@ -2875,6 +2993,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       dureeMinutes: duree,
                       linkedUid: linkedUid,
                       linkedProfileId: linkedProfileId,
+                      patientAnimalId: patientAnimalId,
                       praticienInit: praticienInit,
                       salleInit: salleInit,
                     );
@@ -2901,6 +3020,70 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     );
   }
 
+  /// Patients créés par la clinique (fiche + client) — recherche par nom de
+  /// l'animal ou du client. Renvoie animal_id, animal_nom, client_nom, telephone, email.
+  Future<Map<String, dynamic>?> _choisirPatientClinique() async {
+    final pid = _resolveProProfileId();
+    List<Map<String, dynamic>> patients = [];
+    try {
+      final grants = await Supabase.instance.client.from('animal_access').select('animal_id')
+          .eq('pro_profile_id', pid).eq('statut', 'active');
+      final ids = [for (final g in grants as List) g['animal_id'].toString()];
+      if (ids.isNotEmpty) {
+        final an = await Supabase.instance.client.from('animaux')
+            .select('id, nom, espece, client_clinique_id').inFilter('id', ids).not('client_clinique_id', 'is', null);
+        final cIds = {for (final a in an as List) a['client_clinique_id'].toString()};
+        final cl = cIds.isEmpty ? const [] : await Supabase.instance.client.from('clients_clinique')
+            .select('id, nom, prenom, telephone, email').inFilter('id', cIds.toList());
+        final parId = {for (final c in cl as List) c['id'].toString(): c};
+        patients = [
+          for (final a in an)
+            {
+              'animal_id': a['id'].toString(), 'animal_nom': a['nom'] ?? '', 'espece': a['espece'] ?? '',
+              'client_nom': '${parId[a['client_clinique_id'].toString()]?['prenom'] ?? ''} ${parId[a['client_clinique_id'].toString()]?['nom'] ?? ''}'.trim(),
+              'telephone': parId[a['client_clinique_id'].toString()]?['telephone'] ?? '',
+              'email': parId[a['client_clinique_id'].toString()]?['email'] ?? '',
+            },
+        ]..sort((x, y) => x['animal_nom'].toString().compareTo(y['animal_nom'].toString()));
+      }
+    } catch (_) {}
+    if (!mounted) return null;
+    if (patients.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aucun patient créé par la clinique (Mes patients → Nouveau patient).', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating));
+      return null;
+    }
+    var q = '';
+    return showModalBottomSheet<Map<String, dynamic>>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        final liste = patients.where((p) => q.isEmpty ||
+            '${p['animal_nom']} ${p['client_nom']}'.toLowerCase().contains(q.toLowerCase())).toList();
+        return SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.75,
+          child: Column(children: [
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 8 + MediaQuery.of(ctx).viewInsets.bottom * 0),
+              child: TextField(autofocus: true, onChanged: (v) => setM(() => q = v),
+                  decoration: const InputDecoration(hintText: 'Rechercher (animal, client)', prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(), isDense: true)),
+            ),
+            Expanded(child: ListView(children: [
+              for (final p in liste) ListTile(
+                leading: const Icon(Icons.pets_outlined, color: _teal),
+                title: Text(p['animal_nom'].toString(), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                subtitle: Text([p['espece'], p['client_nom']].where((x) => x.toString().isNotEmpty).join(' · ')),
+                onTap: () => Navigator.pop(ctx, p),
+              ),
+            ])),
+          ]),
+        );
+      }),
+    );
+  }
+
   Future<bool> _creerRdvManuel({
     required String clientNom,
     required String clientTel,
@@ -2913,6 +3096,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     required int dureeMinutes,
     String? linkedUid,
     String? linkedProfileId,
+    String? patientAnimalId,
     String? praticienInit,
     String? salleInit,
   }) async {
@@ -2938,6 +3122,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         if (!linked && clientTel.isNotEmpty) 'client_telephone_manuel': clientTel,
         if (!linked && clientEmail.isNotEmpty) 'client_email_manuel': clientEmail,
         if (animalNom.isNotEmpty) 'animal_nom_manuel': animalNom,
+        if (patientAnimalId != null) 'animal_id': patientAnimalId,
         'cree_par_pro':             true,
         'date_heure':               dh.toIso8601String(),
         'motif':                    motif.isNotEmpty ? motif : 'RDV',
@@ -3010,19 +3195,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     try {
       final supa = Supabase.instance.client;
 
-      // Profil pro actif
-      final proProfile = await supa.from('user_profiles_complet')
-          .select('id').eq('uid', proUid).eq('is_main', true).maybeSingle();
-      final proProfileId = proProfile?['id'] as String?;
-      if (proProfileId == null) return;
+      // Profil pro DU RDV (pas is_main : un cabinet est souvent un profil
+      // secondaire du compte — l'accès partait sur le mauvais profil).
+      final proProfileId = (rdv['pro_profile_id']?.toString().isNotEmpty ?? false)
+          ? rdv['pro_profile_id'].toString()
+          : AgendaContexte.profileId;
+      if (proProfileId.isEmpty) return;
 
-      // Profil propriétaire depuis animaux_proprietes
-      final ownerData = await supa.from('animaux_proprietes')
-          .select('profile_id_proprio')
-          .eq('animal_id', animalId)
-          .maybeSingle();
-      final ownerProfileId = ownerData?['profile_id_proprio'] as String?;
+      // Profil propriétaire : celui du client du RDV, sinon le propriétaire
+      // actuel (plusieurs lignes possibles : co-propriétaires, cessions).
+      String? ownerProfileId = rdv['client_profile_id']?.toString();
+      if (ownerProfileId == null || ownerProfileId.isEmpty) {
+        final ownerRows = await supa.from('animaux_proprietes')
+            .select('profile_id_proprio')
+            .eq('animal_id', animalId)
+            .isFilter('date_fin', null)
+            .limit(1);
+        ownerProfileId = (ownerRows as List).isEmpty ? null : ownerRows.first['profile_id_proprio'] as String?;
+      }
       if (ownerProfileId == null) return;
+
+      // Accès déjà donné par le propriétaire (réservation) : ne pas l'écraser.
+      final existant = await supa.from('animal_access').select('statut')
+          .eq('animal_id', animalId).eq('pro_profile_id', proProfileId).maybeSingle();
+      if (existant != null && existant['statut'] != 'pending') return;
 
       final permissions = AgendaContexte.catPro == 'veterinaire'
           ? ['read_basic', 'read_health', 'write_health']
@@ -3118,7 +3314,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
           : Column(children: [
-              if (_aujourdhui.isNotEmpty) _buildAujourdhuiCard(),
+              // Vétérinaire : la journée est déjà dans « À venir » (encadré trop haut si beaucoup de RDV).
+              if (_aujourdhui.isNotEmpty && !_estClinique) _buildAujourdhuiCard(),
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async { await Future.wait([_loadRdvs(), _loadAujourdhui(), _loadCoursCollectifs()]); },
@@ -4164,9 +4361,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           child: DropdownButtonFormField<String>(
             initialValue: _salleCreneaux,
             decoration: const InputDecoration(
-                labelText: 'Salle attribuée (créneaux ajoutés)', border: OutlineInputBorder(), isDense: true),
+                labelText: 'Salle sur ces créneaux (ponctuel)', border: OutlineInputBorder(), isDense: true),
             items: [
-              const DropdownMenuItem(value: '', child: Text('Aucune (salle libre au moment du RDV)')),
+              const DropdownMenuItem(value: '', child: Text('Salle par défaut du praticien')),
               for (final e in _salles.entries) DropdownMenuItem(value: e.key, child: Text(e.value.nom)),
             ],
             onChanged: (v) => setState(() => _salleCreneaux = v ?? ''),
@@ -4549,6 +4746,12 @@ class _RdvCard extends StatelessWidget {
     this.onFiche,
   });
 
+  Widget _badge(String texte, Color fg, Color bg) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+    child: Text(texte, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, color: fg)),
+  );
+
   @override
   Widget build(BuildContext context) {
     final dateHeure = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
@@ -4640,6 +4843,17 @@ class _RdvCard extends StatelessWidget {
                   const SizedBox(width: 10),
                   Text(animalNom, style: const TextStyle(fontFamily: 'Galey',
                       fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6E9E57))),
+                ]),
+              ],
+              // Vétérinaire : RDV passé non clôturé / retard estimé en cascade.
+              if (statut == 'confirme' && dateHeure != null &&
+                  (dateHeure.isBefore(DateTime.now()) || ((rdv['_retard_min'] as int?) ?? 0) >= 5)) ...[
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  if (dateHeure.add(Duration(minutes: duree ?? 30)).isBefore(DateTime.now()))
+                    _badge('⏳ À clôturer — marquez-le terminé', const Color(0xFF8A5A00), const Color(0xFFFFF4DC)),
+                  if (((rdv['_retard_min'] as int?) ?? 0) >= 5)
+                    _badge('⏱ Retard estimé +${rdv['_retard_min']} min', const Color(0xFFB3261E), const Color(0xFFFDECEA)),
                 ]),
               ],
               const SizedBox(height: 8),

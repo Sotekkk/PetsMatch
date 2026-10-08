@@ -441,10 +441,10 @@ export default function ProCreneauxPage() {
       )}
       {catPro === 'veterinaire' && salles.length > 0 && (
         <div className="mb-4">
-          <label className="text-xs font-semibold text-gray-500 block mb-1">Salle attribuée (créneaux ajoutés)</label>
+          <label className="text-xs font-semibold text-gray-500 block mb-1">Salle sur ces créneaux (ponctuel)</label>
           <select value={salleSel} onChange={e => setSalleSel(e.target.value)}
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
-            <option value="">Aucune (salle libre au moment du RDV)</option>
+            <option value="">Salle par défaut du praticien</option>
             {salles.map(x => <option key={x.id} value={x.id}>{x.nom}</option>)}
           </select>
         </div>

@@ -243,6 +243,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         uid: User_Info.uid,
         nomElevage: nom,
         isReCession: true,
+        associationSeulement: true,
         onCeded: () { _loadCessionCedant(); _loadProprietaires(); },
       ),
     );
@@ -887,7 +888,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             if (_jeSuisPrincipal && _cessionCedant == null)
               IconButton(
                 icon: const Icon(Icons.handshake_outlined, size: 20),
-                tooltip: 'Céder / confier cet animal',
+                tooltip: 'Confier cet animal à une association',
                 onPressed: _ceder,
               ),
             IconButton(

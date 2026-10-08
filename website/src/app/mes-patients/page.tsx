@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
+import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 
 function clientsPageTitle(catPro: string): string {
   if (catPro === 'veterinaire' || catPro === 'sante') return 'Mes patients';
@@ -25,6 +26,9 @@ interface Animal {
   date_naissance: string | null;
   photo_url: string | null;
   uid_proprietaire: string | null;
+  /** Patient créé par la clinique : client du fichier (propriétaire hors appli). */
+  client_clinique_id?: string | null;
+  clientNom?: string;
 }
 
 interface Grant {
@@ -59,6 +63,8 @@ export default function MesPatientsPage() {
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const [grants, setGrants] = useState<Grant[]>([]);
+  const [nouveauPatient, setNouveauPatient] = useState(false);
+  const [rechargement, setRechargement] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [catPro, setCatPro] = useState('');
@@ -202,10 +208,17 @@ export default function MesPatientsPage() {
       const animalIds = allGrants.map(g => g.animal_id).filter(Boolean);
       const { data: animalRows, error: animalErr } = await supabase
         .from('animaux')
-        .select('id, nom, espece, race, date_naissance, photo_url, uid_proprietaire')
+        .select('id, nom, espece, race, date_naissance, photo_url, uid_proprietaire, client_clinique_id')
         .in('id', animalIds);
 
       if (animalErr) console.error('[mes-patients] animaux error:', animalErr);
+      // Patients créés par la clinique : nom du client.
+      const clientIds = [...new Set((animalRows ?? []).map(a => a.client_clinique_id).filter(Boolean) as string[])];
+      if (clientIds.length) {
+        const { data: cs } = await supabase.from('clients_clinique').select('id, nom, prenom').in('id', clientIds);
+        const noms = new Map(((cs ?? []) as { id: string; nom: string; prenom: string | null }[]).map(c => [c.id, `${c.prenom ?? ''} ${c.nom}`.trim()]));
+        for (const a of (animalRows ?? []) as Animal[]) if (a.client_clinique_id) a.clientNom = noms.get(a.client_clinique_id) ?? '';
+      }
 
       const animalMap = new Map((animalRows ?? []).map(a => [a.id, a]));
       const merged = allGrants.map(g => ({
@@ -216,7 +229,7 @@ export default function MesPatientsPage() {
       setLoading(false);
     }
     load();
-  }, [user, activeProfileId]);
+  }, [user, activeProfileId, rechargement]);
 
   // Auto-retrait : le propriétaire peut aussi révoquer depuis la fiche animal
   // (mes-animaux/[id]/page.tsx) — même effet, mêmes colonnes. Ne s'applique
@@ -256,6 +269,13 @@ export default function MesPatientsPage() {
             <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{clientsPageTitle(catPro)}</h1>
             <p className="text-white/60 text-xs">{grants.length} animal{grants.length !== 1 ? 'aux' : ''} avec accès accordé</p>
           </div>
+          {catPro === 'veterinaire' && activeProfileId && (
+            <button onClick={() => setNouveauPatient(true)}
+              className="ml-auto px-3 py-2 rounded-xl bg-white text-sm font-semibold hover:bg-white/90"
+              style={{ color: '#0C5C6C', fontFamily: 'Galey, sans-serif' }}>
+              ＋ Nouveau patient
+            </button>
+          )}
         </div>
       </div>
 
@@ -311,6 +331,9 @@ export default function MesPatientsPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-sm text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{a.nom}</p>
                       <p className="text-xs text-gray-500">{a.race || a.espece}{a.date_naissance ? ` · ${age(a.date_naissance)}` : ''}</p>
+                      {a.client_clinique_id && (
+                        <p className="text-[11px] font-semibold text-[#0C5C6C]">🏥 Fiche clinique{a.clientNom ? ` · ${a.clientNom}` : ''}</p>
+                      )}
                       <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
                         Accès accordé
                       </span>
@@ -413,6 +436,10 @@ export default function MesPatientsPage() {
             <button onClick={closeChipModal} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
           </div>
         </div>
+      )}
+      {nouveauPatient && activeProfileId && (
+        <NouveauPatientModal cliniqueProfileId={activeProfileId} onClose={() => setNouveauPatient(false)}
+          onCree={() => { setNouveauPatient(false); setRechargement(n => n + 1); }} />
       )}
     </div>
   );

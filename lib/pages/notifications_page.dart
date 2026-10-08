@@ -334,11 +334,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final cliniqueUid = d is Map ? d['clinique_uid']?.toString() : null;
       final cliniquePid = d is Map ? d['clinique_profile_id']?.toString() : null;
       if (cliniqueUid != null && cliniquePid != null && cliniqueUid != FirebaseAuth.instance.currentUser?.uid) {
-        await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(initialTabIndex: 0,
             employeur: (uid: cliniqueUid, profileId: cliniquePid, catPro: 'veterinaire'))));
         return;
       }
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()));
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage(initialTabIndex: 0)));
       return;
     }
     if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie') {
