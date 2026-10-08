@@ -54,7 +54,24 @@ async function chargerApplications(t: ProtocoleBase): Promise<Application[]> {
   });
 }
 
-export async function genererFicheProtocole(t: ProtocoleBase, opts: { structure: string; profilSource?: string }): Promise<Blob> {
+/** Logo PetsMatch (version allégée de Logo_petsmatch_fond_blanc) en data URL. */
+async function chargerLogo(): Promise<string | null> {
+  try {
+    const res = await fetch('/logo-pdf.jpg');
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise<string>((ok, ko) => {
+      const r = new FileReader();
+      r.onload = () => ok(r.result as string);
+      r.onerror = ko;
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function genererFicheProtocole(t: ProtocoleBase, opts: { structure: string; profilSource?: string; logo?: string | null }): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
   const { default: autoTable } = await import('jspdf-autotable');
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -65,19 +82,26 @@ export async function genererFicheProtocole(t: ProtocoleBase, opts: { structure:
   const perimetre = perimetreLabel(t, opts.profilSource);
   const locaux = perimetreDe(t, opts.profilSource) === 'locaux';
 
-  // En-tête
+  // En-tête : logo PetsMatch + structure
   doc.setTextColor(0);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-  doc.text('PetsMatch', M, 16);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  const logo = opts.logo === undefined ? await chargerLogo() : opts.logo;
+  if (logo) {
+    doc.addImage(logo, 'JPEG', M, 7, 20, 20);
+  } else {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    doc.text('PetsMatch', M, 18);
+  }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
   doc.text(opts.structure || '', W - M, 16, { align: 'right' });
-  doc.setLineWidth(0.4); doc.line(M, 20, W - M, 20);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.text('Fiche protocole', W - M, 21, { align: 'right' });
+  doc.setLineWidth(0.4); doc.line(M, 30, W - M, 30);
 
   // Titre + périmètre
   doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
   const titre = doc.splitTextToSize(t.nom.toUpperCase(), W - 2 * M);
-  doc.text(titre, W / 2, 32, { align: 'center' });
-  let y = 32 + (titre.length - 1) * 8 + 8;
+  doc.text(titre, W / 2, 42, { align: 'center' });
+  let y = 42 + (titre.length - 1) * 8 + 8;
   doc.setFontSize(12);
   doc.text(perimetre, W / 2, y, { align: 'center' });
   y += 6;

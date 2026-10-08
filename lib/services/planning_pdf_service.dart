@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -114,6 +115,10 @@ class PlanningPdfService {
     final structure = await _nomStructure(template);
     final version = _fmt((template['updated_at'] ?? template['created_at'] ?? DateTime.now().toIso8601String()).toString());
     final apps = await _applications(template);
+    pw.MemoryImage? logo;
+    try {
+      logo = pw.MemoryImage((await rootBundle.load('assets/logo/logo_pdf.jpg')).buffer.asUint8List());
+    } catch (_) {}
     final numEtape = {for (var i = 0; i < etapes.length; i++) (etapes[i]['id'] ?? '').toString(): i + 1};
 
     const base = pw.TextStyle(fontSize: 10.5, color: PdfColors.black);
@@ -131,8 +136,14 @@ class PlanningPdfService {
         margin: const pw.EdgeInsets.only(bottom: 10),
         decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.8))),
         child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Text('PetsMatch', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
-          pw.Text(structure, style: const pw.TextStyle(fontSize: 10)),
+          if (logo != null)
+            pw.Image(logo, width: 56, height: 56)
+          else
+            pw.Text('PetsMatch', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
+            pw.Text(structure, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+            pw.Text('Fiche protocole', style: const pw.TextStyle(fontSize: 9)),
+          ]),
         ]),
       ),
       footer: (ctx) => pw.Container(
