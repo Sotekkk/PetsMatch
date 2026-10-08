@@ -33,17 +33,12 @@ class AnnuaireSubCategoryPage extends StatelessWidget {
       ),
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 30),
-        // Une seule sous-catégorie (Transport) : « Voir tous » menait
-        // exactement à la même liste → doublon masqué (miroir site).
-        itemCount: items.length > 1 ? items.length + 1 : items.length,
+        // Plus de « Voir tous les professionnels » : doublon de la recherche,
+        // où le menu Métier propose « Toute la santé », « Toute l'éducation »…
+        // (miroir site).
+        itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (ctx, i) {
-          if (i == items.length) {
-            // "Voir tous" en bas
-            return _buildSeeAllCard(ctx);
-          }
-          return _buildItemCard(ctx, items[i]);
-        },
+        itemBuilder: (ctx, i) => _buildItemCard(ctx, items[i]),
       ),
     );
   }
@@ -110,47 +105,6 @@ class AnnuaireSubCategoryPage extends StatelessWidget {
             ),
             Icon(Icons.arrow_forward_ios_rounded,
                 size: 14, color: Colors.grey.shade400),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSeeAllCard(BuildContext context) {
-    final allValues = items
-        .expand((i) => i.catProValues)
-        .toSet()
-        .toList();
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ServiceListPage(
-            categoryLabel: 'Tous : $title',
-            categoryColor: color,
-            categoryIcon: icon,
-            catProValues: allValues,
-          ),
-        ),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.20)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.list_alt_outlined, size: 18, color: color),
-            const SizedBox(width: 8),
-            Text('Voir tous les professionnels',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: color)),
           ],
         ),
       ),

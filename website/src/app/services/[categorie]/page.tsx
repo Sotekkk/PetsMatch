@@ -16,8 +16,6 @@ interface SubItem {
 }
 
 interface CategoryDef {
-  /** Métier « tout le domaine » pour « Voir tous » */
-  metier?: string;
   title: string;
   icon: string;
   color: string;
@@ -27,7 +25,6 @@ interface CategoryDef {
 
 const CATEGORIES: Record<string, CategoryDef> = {
   sante: {
-    metier: 'sante',
     title: 'Santé & bien-être',
     icon: '🏥',
     color: '#2E7D5E',
@@ -40,7 +37,6 @@ const CATEGORIES: Record<string, CategoryDef> = {
     ],
   },
   education: {
-    metier: 'education',
     title: 'Éducation & comportement',
     icon: '🎓',
     color: '#E65100',
@@ -51,7 +47,6 @@ const CATEGORIES: Record<string, CategoryDef> = {
     ],
   },
   garde: {
-    metier: 'garde',
     title: 'Garde & hébergement',
     icon: '🏠',
     color: '#F57C00',
@@ -188,25 +183,6 @@ export default function SousCategoriesPage() {
           </div>
         )}
 
-        {/* ── Voir tous ──────────────────────────────────────────────────── */}
-        {/* Une seule sous-catégorie (Transport, Alimentation, Boutiques) :
-            « Voir tous » menait exactement à la même liste → doublon masqué. */}
-        {cat.items.length > 1 && <Link
-          href={cat.metier ? `/services/carte?metier=${cat.metier}` : `/services/carte?cat=${encodeURIComponent(cat.allCatValues)}`}
-          className="rounded-2xl px-4 py-4 flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-          style={{
-            backgroundColor: cat.color + '12',
-            border: `1px solid ${cat.color}33`,
-          }}
-        >
-          <span className="text-lg">📋</span>
-          <span
-            className="text-[14px] font-semibold"
-            style={{ fontFamily: 'Galey, sans-serif', color: cat.color }}
-          >
-            Voir tous les professionnels
-          </span>
-        </Link>}
       </div>
     </div>
   );
