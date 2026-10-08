@@ -559,7 +559,7 @@ class _AgendaPageState extends State<AgendaPage> {
         // cogérant qui emprunte ce profil (elevage_cogerants) a un uid
         // Firebase différent du gérant, cf. commentaire sur agenda_events.
         d1 = await _supa.from('taches_elevage')
-            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
             .gte('date', from).lte('date', to)
             .eq('profile_id', pid);
         if ((d1 as List).isEmpty) {
@@ -571,22 +571,22 @@ class _AgendaPageState extends State<AgendaPage> {
           final ownerUid = await _effectiveUid();
           d1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
                   .eq('uid_eleveur', ownerUid).gte('date', from).lte('date', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('taches_elevage')
-                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
                   .eq('uid_eleveur', ownerUid).gte('date', from).lte('date', to)
                   .eq('profil_source', _taskProfilSource);
         }
       } else {
         d1 = _taskProfilSource == 'eleveur'
             ? await _supa.from('taches_elevage')
-                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .or('profil_source.is.null,profil_source.eq.eleveur')
             : await _supa.from('taches_elevage')
-                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+                .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
                 .eq('profil_source', _taskProfilSource);
       }
@@ -594,10 +594,10 @@ class _AgendaPageState extends State<AgendaPage> {
       final myProfileId = pid.isNotEmpty ? pid : null;
       final d2 = myProfileId != null
           ? await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
               .eq('assigne_profile_id', myProfileId).gte('date', from).lte('date', to)
           : await _supa.from('taches_elevage')
-              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
               .eq('assigne_a', _uid).gte('date', from).lte('date', to);
       final seen = <dynamic>{};
       final all  = <Map<String, dynamic>>[];
@@ -824,6 +824,29 @@ class _AgendaPageState extends State<AgendaPage> {
     _                 => '📋',
   };
 
+  /// Tâche liée à un animal (ex. rappel « Chaleurs probables ») : ouvre sa
+  /// fiche, sur l'onglet Repro pour les chaleurs. Les anciens rappels n'ont
+  /// que animal_nom → repli sur le nom parmi les animaux de l'éleveur.
+  Future<void> _ouvrirAnimalDeTache(Map<String, dynamic> t) async {
+    var animalId = t['animal_id']?.toString() ?? '';
+    final nom = (t['animal_nom'] ?? '').toString();
+    if (animalId.isEmpty && nom.isNotEmpty) {
+      try {
+        final uidEleveur = (t['uid_eleveur'] ?? FirebaseAuth.instance.currentUser?.uid ?? '').toString();
+        final row = await _supa.from('animaux').select('id')
+            .eq('nom', nom).eq('uid_eleveur', uidEleveur).limit(1).maybeSingle();
+        animalId = row?['id']?.toString() ?? '';
+      } catch (_) {}
+    }
+    if (animalId.isEmpty || !mounted) return;
+    final chaleurs = RegExp('chaleur', caseSensitive: false).hasMatch((t['titre'] ?? '').toString());
+    Navigator.push(context, MaterialPageRoute(builder: (_) => AnimalFichePage(
+      animalId: animalId,
+      // Onglet Repro (3e onglet de la fiche éleveur) → sous-onglet Chaleurs
+      initialTabIndex: chaleurs ? 2 : null,
+    )));
+  }
+
   Widget _buildDayTasksSection(List<Map<String, dynamic>> tasks, {DateTime? day}) {
     final manuel = tasks.where((t) => t['_source'] != 'protocole').toList();
 
@@ -865,12 +888,10 @@ class _AgendaPageState extends State<AgendaPage> {
                     groupe: groupe, label: label, emoji: emoji,
                     onDone: _loadTasks,
                     onDelete: (ids) async {
-                      final dayDate = (groupe.first['date_prevue'] as String? ??
-                          groupe.first['date'] as String? ?? '').split('T').first;
-                      await _supa.from('plan_taches').delete()
-                          .inFilter('id', ids)
-                          .gte('date_prevue', '${dayDate}T00:00:00')
-                          .lte('date_prevue', '${dayDate}T23:59:59');
+                      // Par id uniquement : le groupe contient aussi les
+                      // tâches en retard reportées sur le jour (filtrer sur
+                      // une date les laissait, le groupe ne disparaissait pas).
+                      await _supa.from('plan_taches').delete().inFilter('id', ids);
                       _loadTasks();
                     },
                   ),
@@ -983,7 +1004,10 @@ class _AgendaPageState extends State<AgendaPage> {
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Column(
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _ouvrirAnimalDeTache(t),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1025,7 +1049,7 @@ class _AgendaPageState extends State<AgendaPage> {
                       style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
               ],
             ],
-          )),
+          ))),
           if (!isDone) ...[
             GestureDetector(
               onTap: () => _showReporterDialog(t, isProtocole: false),
@@ -1160,14 +1184,11 @@ class _AgendaPageState extends State<AgendaPage> {
       ),
     );
     if (confirmed == true) {
+      // Par id uniquement (ce sont les lignes affichées, les récurrences
+      // futures sont d'autres lignes) : le groupe contient aussi les tâches en
+      // retard reportées sur le jour, qu'un filtre sur la date laissait.
       final ids = groupe.map((t) => t['id']).toList();
-      // On scope explicitement sur la date du jour pour ne pas toucher les récurrences futures
-      final dayDate = (groupe.first['date_prevue'] as String? ??
-          groupe.first['date'] as String? ?? '').split('T').first;
-      await _supa.from('plan_taches').delete()
-          .inFilter('id', ids)
-          .gte('date_prevue', '${dayDate}T00:00:00')
-          .lte('date_prevue', '${dayDate}T23:59:59');
+      await _supa.from('plan_taches').delete().inFilter('id', ids);
       _loadTasks();
     }
   }

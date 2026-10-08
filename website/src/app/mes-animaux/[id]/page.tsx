@@ -2318,7 +2318,7 @@ function AnimalFichePageInner() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
   const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'|'education'|'pension'>(
-    (['sante', 'education', 'pension', 'documents'] as const).includes(tabParam as never)
+    (['sante', 'repro', 'education', 'pension', 'documents'] as const).includes(tabParam as never)
       ? (tabParam as 'sante') : 'identite'
   );
 

@@ -1240,12 +1240,14 @@ export default function AgendaElevagePage() {
     setFocusedMois(d.getMonth());
   }, []);
 
+  // Supprime toutes les tâches de la carte. Elle regroupe aussi les tâches
+  // en retard reportées sur aujourd'hui : filtrer sur date_prevue = jour
+  // affiché laissait ces dernières, et la carte ne disparaissait jamais.
   const deleteGroupe = useCallback(async (g: RoutineGroupe) => {
-    await supabase.from('plan_taches').delete().in('id', g.routines.map(r => r.id))
-      .gte('date_prevue', `${selectedDate}T00:00:00`)
-      .lte('date_prevue', `${selectedDate}T23:59:59`);
+    const { error } = await supabase.from('plan_taches').delete().in('id', g.routines.map(r => r.id));
+    if (error) alert(`Suppression impossible : ${error.message}`);
     load();
-  }, [selectedDate, load]);
+  }, [load]);
 
   const toggleManuel = useCallback(async (t: TacheManuelle) => {
     const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
@@ -1412,6 +1414,10 @@ export default function AgendaElevagePage() {
     const nomFor    = (uid: string | null | undefined) => uid ? (employes.find(e => e.uid === uid)?.nom ?? uid.slice(0,8)) : null;
     const assignees = t.assignes_a?.length ? t.assignes_a : (t.assigne_a ? [t.assigne_a] : []);
     const faitPar   = nameForCompletion(t.fait_par, t.fait_par_profile_id, profileNames, employes);
+    // Rappel « Chaleurs probables » : ouvre le suivi des chaleurs de la
+    // chienne. Les anciens rappels n'ont que animal_nom → repli sur le nom.
+    const animalId  = t.animal_id || animaux.find(a => a.nom === t.animal_nom)?.id || null;
+    const estChaleurs = /chaleur/i.test(t.titre);
     return (
       <div
         className="rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3"
@@ -1427,8 +1433,10 @@ export default function AgendaElevagePage() {
           }`}>
           {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
         </button>
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-gray-800">{t.titre}</span>
+        <div className={`flex-1 min-w-0 ${animalId ? 'cursor-pointer' : ''}`}
+          onClick={animalId ? () => router.push(`/mes-animaux/${animalId}${estChaleurs ? '?tab=repro' : ''}`) : undefined}
+          title={animalId ? (estChaleurs ? 'Ouvrir le suivi des chaleurs' : 'Ouvrir la fiche') : undefined}>
+          <span className={`text-sm font-medium text-gray-800 ${animalId ? 'hover:underline' : ''}`}>{t.titre}</span>
           {t.animal_nom && (
             <p className="text-xs text-gray-500 mt-0.5">🐾 {t.animal_nom}</p>
           )}

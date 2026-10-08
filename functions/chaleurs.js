@@ -356,6 +356,8 @@ exports.sendChaleursNotifications = functions
                         statut: "a_faire",
                         profil_source: "eleveur",
                         animal_nom: animal.nom || null,
+                        // Clic sur la tâche → suivi des chaleurs de la chienne
+                        animal_id: animal.id,
                         ...(assigneA ? {assigne_a: assigneA} : {}),
                         ...(assigneProfileId ? {assigne_profile_id: assigneProfileId} : {}),
                         ...(profileIdByAnimal[animal.id] ? {
