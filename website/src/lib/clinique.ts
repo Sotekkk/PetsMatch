@@ -16,6 +16,7 @@ export const DROITS_PAR_ROLE_VETO: Record<RoleVeto, string[]> = {
 
 export const PERMS_VETO = [
   { key: 'vet_agenda', label: 'Agenda de la clinique', desc: 'Voir, prendre, déplacer et accepter les rendez-vous' },
+  { key: 'vet_rdv_demandes', label: 'Demandes de RDV', desc: "Être notifié(e) de chaque nouvelle demande de rendez-vous (avec l'agenda pour l'accepter)" },
   { key: 'vet_patients', label: 'Patients', desc: 'Fiches et carnets de santé partagés avec la clinique' },
   { key: 'vet_cr_rediger', label: 'Rédiger des comptes rendus', desc: 'Brouillons, à valider par un vétérinaire' },
   { key: 'vet_cr_valider', label: 'Valider les comptes rendus', desc: 'Envoyer au propriétaire (vétérinaire uniquement)' },

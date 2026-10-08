@@ -7,6 +7,9 @@ import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 import { typeFromMotif } from '@/lib/agenda-type';
+import PlanningClinique from '@/components/rdv/PlanningClinique';
+import { trouverUtilisateurParEmail, type UtilisateurTrouve } from '@/lib/user-lookup';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -63,6 +66,8 @@ interface Rdv {
   lieu_lat?: number | null;
   lieu_lng?: number | null;
   instructeur_profile_id?: string | null;
+  /** Clinique : client « peu importe », pas encore attribué. */
+  praticien_indifferent?: boolean | null;
   clientName?: string;
   animalNom?: string;
   visitCount?: number;
@@ -106,6 +111,17 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
   const [date, setDate]     = useState(rdv.date_heure.slice(0, 10));
   const [duree, setDuree]   = useState(rdv.duree_minutes ?? 60);
   const [saving, setSaving] = useState(false);
+  // Clinique : vétérinaire à qui attribuer la demande ('' = titulaire).
+  const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
+  const [attribue, setAttribue] = useState(rdv.praticien_indifferent ? '' : (rdv.instructeur_profile_id ?? ''));
+
+  useEffect(() => {
+    if (rdv.statut !== 'demande' || !rdv.pro_profile_id) return;
+    supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: rdv.pro_profile_id }).then(({ data }) => {
+      setPraticiens(((data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
+        .map(p => ({ id: p.praticien_profile_id ?? '', nom: p.nom?.trim() || 'Vétérinaire' })));
+    });
+  }, [rdv.statut, rdv.pro_profile_id]);
 
   async function handleSubmit() {
     setSaving(true);
@@ -113,9 +129,18 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
       const newDt     = new Date(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
       const newStatut = mode === 'confirme' ? 'confirme' : 'contre_proposition';
 
-      await supabase.from('rdv').update({
-        statut: newStatut, date_heure: newDt.toISOString(), duree_minutes: duree,
-      }).eq('id', rdv.id);
+      const maj = { statut: newStatut, date_heure: newDt.toISOString(), duree_minutes: duree };
+      if (mode === 'confirme' && (rdv.praticien_indifferent || praticiens.length > 1)) {
+        // Clinique : RDV attribué au vétérinaire choisi ; s'il n'est pas libre
+        // (contrôle en base), il reste attribué comme avant.
+        const { error } = await supabase.from('rdv').update({ ...maj, instructeur_profile_id: attribue || null, praticien_indifferent: false }).eq('id', rdv.id);
+        if (error?.code === 'P0001') {
+          await supabase.from('rdv').update({ ...maj, praticien_indifferent: false }).eq('id', rdv.id);
+          alert("Ce vétérinaire n'est pas libre à cette heure : le RDV reste attribué comme avant.");
+        } else if (error) throw error;
+      } else {
+        await supabase.from('rdv').update(maj).eq('id', rdv.id);
+      }
 
       if (mode === 'confirme') {
         await supabase.from('agenda_events').upsert({
@@ -162,6 +187,18 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
       <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5" onClick={e => e.stopPropagation()}>
         <h2 className="font-bold text-lg text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Accepter le RDV</h2>
+        {mode === 'confirme' && praticiens.length > 1 && (
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Attribuer à{rdv.praticien_indifferent ? ' (le client a choisi « peu importe »)' : ''}
+            </label>
+            <select value={attribue} onChange={e => setAttribue(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#2E7D5E]"
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              {praticiens.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600">
           <p className="font-semibold">{rdv.clientName ?? '—'}{rdv.animalNom ? ` · ${rdv.animalNom}` : ''}</p>
@@ -431,6 +468,242 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
   );
 }
 
+// ── Modal Nouveau RDV (saisi par le pro) ─────────────────────────────────────
+// Miroir de l'appli (_showNouveauRdvDialog / _creerRdvManuel, pro_agenda.dart) :
+// client qui appelle → RDV directement confirmé ; rattaché à son compte
+// PetsMatch s'il en a un, sinon e-mail de confirmation + invitation.
+
+const DUREES_MANUEL = [15, 30, 45, 60, 90];
+
+function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose, onDone }: {
+  proUid: string; profileId: string; proName: string; catPro: string;
+  /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle. */
+  initial?: { date?: Date; praticien?: string | null; salle?: string | null };
+  onClose: () => void; onDone: () => void;
+}) {
+  const d0 = initial?.date ?? new Date();
+  const [clientNom, setClientNom] = useState('');
+  const [clientTel, setClientTel] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
+  const [animalNom, setAnimalNom] = useState('');
+  const [motif, setMotif] = useState('');
+  const [notes, setNotes] = useState('');
+  const [date, setDate] = useState(toDateStr(d0));
+  const [heure, setHeure] = useState(`${String(d0.getHours()).padStart(2, '0')}:${String(Math.floor(d0.getMinutes() / 15) * 15).padStart(2, '0')}`);
+  const [duree, setDuree] = useState(30);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Compte PetsMatch existant (e-mail / téléphone exacts)
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [found, setFound] = useState<{ uid: string; nom: string; profileId: string } | null>(null);
+  const [linked, setLinked] = useState<{ uid: string; nom: string; profileId: string } | null>(null);
+  // Clinique : praticien et salle
+  const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
+  const [salles, setSalles] = useState<{ id: string; nom: string }[]>([]);
+  const [praticien, setPraticien] = useState(initial?.praticien ?? '');
+  const [salle, setSalle] = useState(initial?.salle ?? '');
+
+  useEffect(() => {
+    if (catPro !== 'veterinaire' || !profileId) return;
+    Promise.all([
+      supabase.rpc('pm_praticiens_clinique', { p_pro_profile_id: profileId }),
+      supabase.from('salles_clinique').select('id, nom').eq('clinique_profile_id', profileId).eq('actif', true).order('ordre'),
+    ]).then(([pr, sa]) => {
+      setPraticiens(((pr.data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
+        .map(p => ({ id: p.praticien_profile_id ?? '', nom: p.nom?.trim() || 'Vétérinaire' })));
+      setSalles(((sa.data ?? []) as { id: string; nom: string | null }[]).map(s => ({ id: s.id, nom: s.nom ?? 'Salle' })));
+    });
+  }, [catPro, profileId]);
+
+  async function rechercher() {
+    const email = clientEmail.trim(), tel = clientTel.trim();
+    if (!email && !tel) return;
+    setSearching(true); setFound(null);
+    try {
+      let u = email ? await trouverUtilisateurParEmail(email) : null;
+      if (!u && tel.replace(/[^0-9]/g, '').length >= 9) {
+        const { data } = await supabase.rpc('pm_trouver_utilisateur', { p_telephone: tel });
+        u = ((data ?? []) as UtilisateurTrouve[])[0] ?? null;
+      }
+      if (u) {
+        const { data: prof } = await supabase.from('user_profiles_complet')
+          .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
+        if (prof?.id) setFound({ uid: u.uid, nom: `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(), profileId: prof.id as string });
+      }
+    } finally { setSearching(false); setSearched(true); }
+  }
+
+  async function creer() {
+    if (!linked) {
+      const manque = [!clientNom.trim() && 'nom', !clientTel.trim() && 'téléphone', !clientEmail.trim() && 'email'].filter(Boolean);
+      if (manque.length) { setError(`Champs requis : ${manque.join(', ')}.`); return; }
+    }
+    setSaving(true); setError(null);
+    try {
+      const dh = new Date(`${date}T${heure}:00`);
+      const motifTxt = motif.trim() || 'RDV';
+      const { data: ins, error: e } = await supabase.from('rdv').insert({
+        pro_uid: proUid, pro_profile_id: profileId,
+        ...(linked ? { client_uid: linked.uid, client_profile_id: linked.profileId } : {
+          client_nom_manuel: clientNom.trim(),
+          client_telephone_manuel: clientTel.trim() || null,
+          client_email_manuel: clientEmail.trim() || null,
+        }),
+        ...(animalNom.trim() ? { animal_nom_manuel: animalNom.trim() } : {}),
+        cree_par_pro: true,
+        date_heure: dh.toISOString(),
+        motif: motifTxt,
+        duree_minutes: duree,
+        ...(notes.trim() ? { notes_client: notes.trim() } : {}),
+        statut: 'confirme',
+        ...(praticien ? { instructeur_profile_id: praticien } : {}),
+        ...(salle ? { salle_id: salle } : {}),
+      }).select('id').single();
+      if (e || !ins) throw e ?? new Error('insert');
+      const rdvId = ins.id as string;
+      const nomClient = linked?.nom || clientNom.trim() || 'Client';
+
+      // Agenda du pro
+      await supabase.from('agenda_events').insert({
+        uid: proUid, titre: `RDV avec ${nomClient}${animalNom.trim() ? ` — ${animalNom.trim()}` : ''}`,
+        type: typeFromMotif(motifTxt), date_debut: dh.toISOString(), duree_minutes: duree,
+        notes: motifTxt, couleur: `rdv:${rdvId}`, pro_profile_id: profileId,
+      });
+      if (linked) {
+        // Client PetsMatch : son agenda + notification « RDV confirmé ».
+        await supabase.from('agenda_events').upsert({
+          uid: linked.uid, titre: `RDV — ${proName}`, type: typeFromMotif(motifTxt),
+          date_debut: dh.toISOString(), duree_minutes: duree, notes: motifTxt,
+          rdv_id: rdvId, pro_profile_id: linked.profileId,
+        }, { onConflict: 'rdv_id' });
+        await supabase.from('notifications').insert({
+          uid: linked.uid, type: 'rdv_confirme', title: `RDV confirmé par ${proName}`,
+          body: `Votre rendez-vous est confirmé pour le ${dh.toLocaleDateString('fr-FR')} à ${heure.replace(':', 'h')}`,
+          profile_id: linked.profileId, data: { rdv_id: rdvId }, read: false,
+        });
+      } else if (clientEmail.trim()) {
+        // E-mail de confirmation + invitation à rejoindre PetsMatch.
+        await apiFetch('/api/rdv/notify-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: clientEmail.trim(), client_nom: clientNom.trim(), pro_nom: proName,
+            date_heure: dh.toISOString(), motif: motif.trim() || null, duree_minutes: duree }),
+        }).catch(() => {});
+      }
+      onDone();
+    } catch (e) {
+      const msg = (e as { message?: string })?.message;
+      setError(msg && /créneau|salle/i.test(msg) ? msg : 'Erreur lors de la création du RDV.');
+      setSaving(false);
+    }
+  }
+
+  const champ = 'mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]';
+  const label = 'text-xs font-semibold text-gray-500 uppercase tracking-wide';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[92vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+        <div>
+          <h2 className="font-bold text-lg text-[#1E2025]">📅 Nouveau RDV</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Pour un client qui appelle. Le RDV est ajouté directement confirmé.</p>
+        </div>
+
+        {linked ? (
+          <div className="flex items-center gap-3 rounded-xl p-3" style={{ background: '#6E9E570C', border: '1px solid #6E9E5733' }}>
+            <span>✅</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-bold text-[#4A7A32]">RDV lié à un compte PetsMatch</p>
+              <p className="text-sm font-semibold truncate">{linked.nom}</p>
+            </div>
+            <button onClick={() => setLinked(null)} className="text-xs text-gray-400 hover:text-gray-600">Détacher</button>
+          </div>
+        ) : (
+          <>
+            <div><label className={label}>Nom du client *</label>
+              <input value={clientNom} onChange={e => setClientNom(e.target.value)} className={champ} /></div>
+            <div><label className={label}>Téléphone *</label>
+              <input value={clientTel} onChange={e => { setClientTel(e.target.value); setSearched(false); setFound(null); }} type="tel" className={champ} /></div>
+            <div><label className={label}>Email *</label>
+              <input value={clientEmail} onChange={e => { setClientEmail(e.target.value); setSearched(false); setFound(null); }} type="email" className={champ} /></div>
+            {(clientEmail.trim() || clientTel.trim()) && (
+              <button onClick={rechercher} disabled={searching} className="text-xs font-semibold underline" style={{ color: TEAL }}>
+                {searching ? 'Recherche…' : '🔎 Ce client a-t-il déjà PetsMatch ?'}
+              </button>
+            )}
+            {found ? (
+              <div className="rounded-xl p-3 space-y-2" style={{ background: '#6E9E570C', border: '1px solid #6E9E5733' }}>
+                <p className="text-sm font-semibold">Compte trouvé : {found.nom}</p>
+                <button onClick={() => { setLinked(found); setFound(null); }}
+                  className="w-full py-2 rounded-xl text-xs font-bold border" style={{ borderColor: '#6E9E57', color: '#4A7A32' }}>
+                  Rattacher ce RDV à son compte
+                </button>
+              </div>
+            ) : searched && !searching ? (
+              <p className="text-[11px] text-gray-400">Aucun compte trouvé — le client recevra un email de confirmation l&apos;invitant à rejoindre PetsMatch.</p>
+            ) : null}
+          </>
+        )}
+
+        <div><label className={label}>Nom de l&apos;animal</label>
+          <input value={animalNom} onChange={e => setAnimalNom(e.target.value)} className={champ} /></div>
+        <div><label className={label}>Motif</label>
+          <input value={motif} onChange={e => setMotif(e.target.value)} className={champ} /></div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className={label}>Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className={champ} /></div>
+          <div><label className={label}>Heure</label>
+            <input type="time" step={300} value={heure} onChange={e => setHeure(e.target.value)} className={champ} /></div>
+        </div>
+        <div>
+          <label className={label}>Durée</label>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {DUREES_MANUEL.map(d => (
+              <button key={d} onClick={() => setDuree(d)}
+                className="px-3.5 py-1.5 rounded-xl text-xs border transition-all"
+                style={{ background: duree === d ? TEAL : 'white', color: duree === d ? 'white' : '#1E2025',
+                  borderColor: duree === d ? TEAL : '#E4E7E2', fontWeight: duree === d ? 700 : 400 }}>
+                {d < 60 ? `${d} min` : d % 60 ? `${Math.floor(d / 60)}h${d % 60}` : `${d / 60} h`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {praticiens.length > 1 && (
+          <div><label className={label}>Vétérinaire</label>
+            <select value={praticien} onChange={e => setPraticien(e.target.value)} className={`${champ} bg-white`}>
+              {praticiens.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+            </select></div>
+        )}
+        {salles.length > 0 && (
+          <div><label className={label}>Salle</label>
+            <select value={salle} onChange={e => setSalle(e.target.value)} className={`${champ} bg-white`}>
+              <option value="">Attribuée automatiquement</option>
+              {salles.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}
+            </select></div>
+        )}
+
+        <div><label className={label}>Notes (optionnel)</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={`${champ} resize-none`} /></div>
+
+        {error && <p className="text-xs text-red-500">{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">
+            Annuler
+          </button>
+          <button onClick={creer} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
+            {saving ? '…' : 'Créer le RDV'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal Refuser / Annuler ────────────────────────────────────────────────────
 
 function RefuserModal({ rdv, label, type, onClose, onDone }: {
@@ -524,6 +797,9 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <p className="text-xs text-gray-400">⏱ {rdv.duree_minutes} min</p>
           )}
           {rdv.motif && <p className="text-xs text-gray-400 mt-0.5 truncate">Motif : {rdv.motif}</p>}
+          {rdv.praticien_indifferent && rdv.statut === 'demande' && (
+            <p className="text-xs font-semibold mt-0.5" style={{ color: '#2E7D5E' }}>🩺 Vétérinaire au choix — à attribuer</p>
+          )}
           {rdv.lieu && (
             <p className="text-xs text-gray-400 mt-0.5">
               📍 {rdv.lieu}
@@ -997,7 +1273,7 @@ function CreneauxTab({ uid, profileId }: { uid: string; profileId: string }) {
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
-type TabKey = 'demandes' | 'a_venir' | 'historique' | 'creneaux';
+type TabKey = 'demandes' | 'a_venir' | 'historique' | 'creneaux' | 'planning';
 
 export default function MesRdvPage() {
   const { user, userData, loading } = useAuth();
@@ -1013,6 +1289,7 @@ export default function MesRdvPage() {
   const [modalRefuser, setModalRefuser]   = useState<Rdv | null>(null);
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
+  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null } | null>(null);
 
   const [aujourdhui, setAujourdhui] = useState<{ id: string; titre: string; date_debut: string; type: string }[]>([]);
 
@@ -1045,7 +1322,7 @@ export default function MesRdvPage() {
     try {
       const { data } = await supabase
         .from('rdv')
-        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, notes_client, client_nom_manuel, client_telephone_manuel, duree_minutes, premiere_visite, lieu, lieu_lat, lieu_lng, instructeur_profile_id')
+        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, notes_client, client_nom_manuel, client_telephone_manuel, duree_minutes, premiere_visite, lieu, lieu_lat, lieu_lng, instructeur_profile_id, praticien_indifferent')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });
@@ -1193,6 +1470,8 @@ export default function MesRdvPage() {
     { key: 'a_venir',    label: 'À venir',    badge: aVenir.length     },
     { key: 'historique', label: 'Historique', badge: 0                 },
     { key: 'creneaux',   label: 'Créneaux',   badge: 0                 },
+    // Clinique : journée en colonnes par praticien / par salle.
+    ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
   ];
 
   const currentList = activeTab === 'demandes' ? demandes : activeTab === 'a_venir' ? aVenir : historique;
@@ -1209,7 +1488,12 @@ export default function MesRdvPage() {
               className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
               ←
             </button>
-            <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{pageTitle}</h1>
+            <h1 className="text-xl font-bold flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>{pageTitle}</h1>
+            <button onClick={() => setModalNouveau({})}
+              className="px-3 py-2 rounded-xl bg-white text-sm font-semibold hover:bg-white/90 transition-colors"
+              style={{ color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              ＋ Nouveau RDV
+            </button>
           </div>
 
           {/* Stats rapides */}
@@ -1276,8 +1560,20 @@ export default function MesRdvPage() {
           <CreneauxTab uid={user.uid} profileId={activeProfileId ?? ''} />
         )}
 
+        {/* Planning de la clinique */}
+        {activeTab === 'planning' && activeProfileId && (
+          <PlanningClinique profileId={activeProfileId} version={rdvs}
+            onCreer={(date, praticien, salle) => setModalNouveau({ date, praticien, salle })}
+            onOuvrirRdv={id => {
+              const r = rdvs.find(x => x.id === id);
+              if (!r) return;
+              if (r.statut === 'demande') setModalAccepter(r);
+              else if (r.statut === 'confirme') setModalModifier(r);
+            }} />
+        )}
+
         {/* Onglets RDV */}
-        {activeTab !== 'creneaux' && (
+        {activeTab !== 'creneaux' && activeTab !== 'planning' && (
           fetching ? (
             <div className="flex justify-center py-16">
               <div className="w-7 h-7 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
@@ -1311,6 +1607,11 @@ export default function MesRdvPage() {
         )}
       </div>
 
+      {modalNouveau && user && activeProfileId && (
+        <NouveauRdvModal proUid={user.uid} profileId={activeProfileId} proName={proName} catPro={catPro}
+          initial={modalNouveau} onClose={() => setModalNouveau(null)}
+          onDone={() => { setModalNouveau(null); fetchRdvs(); }} />
+      )}
       {modalAccepter && (
         <AccepterModal rdv={modalAccepter} proName={proName}
           onClose={() => setModalAccepter(null)}

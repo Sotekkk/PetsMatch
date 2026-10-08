@@ -10,6 +10,7 @@ import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
+import 'package:PetsMatch/widgets/rdv/rdv_form_widgets.dart';
 
 // Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
 // + marge de sécurité — même heuristique que education_reservation_page.dart,
@@ -109,11 +110,20 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ('autre',        'Autre',         Icons.more_horiz_outlined),
   ];
 
+  static const _vetMotifDescriptions = <String, String>{
+    'consultation': 'Examen, symptôme ou suivi',
+    'vaccination':  'Primo-vaccination ou rappel',
+    'bilan':        'Check-up de santé complet',
+    'urgence':      'Prise en charge rapide',
+    'chirurgie':    'Intervention programmée',
+    'autre':        'Précisez votre demande',
+  };
+
   String? _selectedVetMotif;
 
   // Clinique vétérinaire (migration_clinique_rdv.sql) : praticiens (titulaire
   // = id null), salles actives (id, type), motif → type de salle.
-  List<({String? id, String nom})> _praticiens = [];
+  List<({String? id, String nom, String? photo})> _praticiens = [];
   List<({String id, String type})> _salles = [];
   Map<String, String> _sallesParMotif = {};
   /// '*' = peu importe ; '' = titulaire ; sinon profil du praticien.
@@ -616,7 +626,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         _praticiens = [
           for (final p in pr as List)
             (id: p['praticien_profile_id'] as String?, nom: (p['nom'] as String?)?.trim().isNotEmpty == true
-                ? p['nom'] as String : 'Vétérinaire'),
+                ? p['nom'] as String : 'Vétérinaire', photo: p['avatar_url'] as String?),
         ];
         final sa = await Supabase.instance.client.rpc('pm_salles_actives', params: {'p_pro_profile_id': profileId});
         _salles = [for (final x in sa as List) (id: x['id'] as String, type: (x['type_salle'] as String?) ?? 'consultation')];
@@ -1130,6 +1140,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'statut': 'demande',
           if (_modeClinique && _selectedSlot?['praticien_profile_id'] != null)
             'instructeur_profile_id': _selectedSlot!['praticien_profile_id'],
+          // « Peu importe » : posé sur le premier praticien libre, visible
+          // dans l'agenda de tous jusqu'à validation (migration_rdv_praticien_indifferent.sql).
+          if (_modeClinique && _choixPraticien == '*' && _praticiens.length > 1)
+            'praticien_indifferent': true,
         };
       }).toList();
 
@@ -1309,6 +1323,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       ),
       body: _loadingData
           ? Center(child: CircularProgressIndicator(color: widget.categoryColor))
+          : widget.isVet
+          ? _buildVetForm()
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -1361,6 +1377,239 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 ],
               ),
             ),
+    );
+  }
+
+  // ── Formulaire vétérinaire (briques communes rdv_form_widgets.dart) ─────────
+
+  void _choisirVetMotif(String key) => setState(() {
+    _selectedVetMotif = key;
+    if (_dureesMotifs.containsKey(key)) _selectedVetDuration = _dureesMotifs[key]!;
+    if (key != 'autre') _motifCtrl.clear();
+    _selectedSlot = null; // recalcul des créneaux selon la durée du motif
+  });
+
+  String _emojiEspece(String? espece) {
+    final e = (espece ?? '').toLowerCase();
+    if (e.contains('chien')) return '🐶';
+    if (e.contains('chat')) return '🐱';
+    if (e.contains('cheval') || e.contains('poney') || e.contains('âne') || e == 'ane') return '🐴';
+    if (e.contains('lapin')) return '🐰';
+    if (e.contains('oiseau')) return '🐦';
+    return '🐾';
+  }
+
+  Widget _vignetteAnimal(Map<String, dynamic> a) {
+    final url = a['photo_url'] as String? ?? '';
+    final emoji = Center(child: Text(_emojiEspece(a['espece']?.toString()), style: const TextStyle(fontSize: 18)));
+    return Container(
+      width: 38, height: 38,
+      decoration: BoxDecoration(color: widget.categoryColor.withValues(alpha: 0.08), shape: BoxShape.circle),
+      clipBehavior: Clip.antiAlias,
+      child: url.isNotEmpty
+          ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => emoji)
+          : emoji,
+    );
+  }
+
+  /// Vétérinaire du créneau choisi (« Peu importe » → premier libre).
+  String? _nomPraticienDuCreneau(Map<String, dynamic>? slot) {
+    if (slot == null || _praticiens.length < 2) return null;
+    final pid = slot['praticien_profile_id'] as String?;
+    for (final p in _praticiens) {
+      if ((p.id ?? '') == (pid ?? '')) return p.nom;
+    }
+    return null;
+  }
+
+  Widget _buildVetForm() {
+    final c = widget.categoryColor;
+    final slotsByDate = _smartSlotsByDate;
+    final dates = slotsByDate.keys.toList()..sort();
+    final dateSel = dates.contains(_selectedDateKey) ? _selectedDateKey : null;
+    final slotsJour = dateSel == null ? const <Map<String, dynamic>>[] : (slotsByDate[dateSel] ?? const []);
+    final heureSel = (_selectedSlot != null && _selectedSlot!['date'] == dateSel)
+        ? (_selectedSlot!['heure_debut'] as String).substring(0, 5) : null;
+    final choixPraticien = _praticiens.length > 1 && _choixPraticienPermis;
+    var etape = 0;
+
+    final motifLabel = _vetMotifs.where((m) => m.$1 == _selectedVetMotif).map((m) => m.$2).firstOrNull;
+    final motifRecap = _selectedVetMotif == 'autre' && _motifCtrl.text.trim().isNotEmpty
+        ? _motifCtrl.text.trim() : (motifLabel ?? '');
+    final praticienNom = _nomPraticienDuCreneau(_selectedSlot);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      child: Center(child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _buildProBanner(),
+          const SizedBox(height: 24),
+
+          RdvSection(
+            etape: ++etape, titre: 'Motif du rendez-vous', color: c,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              RdvChoiceGrid(
+                color: c,
+                selected: _selectedVetMotif,
+                onSelect: _choisirVetMotif,
+                options: [
+                  for (final m in _vetMotifs) RdvOption(
+                    key: m.$1, label: m.$2, icon: m.$3,
+                    description: _vetMotifDescriptions[m.$1],
+                    badge: m.$1 == 'autre' || !_dureesMotifs.containsKey(m.$1)
+                        ? null : _durationLabel(_dureesMotifs[m.$1]!),
+                  ),
+                ],
+              ),
+              if (_selectedVetMotif == 'autre') ...[
+                const SizedBox(height: 10),
+                RdvTextArea(controller: _motifCtrl, color: c, minLines: 2,
+                    hint: 'Précisez le motif de la consultation…'),
+              ],
+              const SizedBox(height: 16),
+              const Text('Est-ce votre première visite ?', style: TextStyle(fontFamily: 'Galey',
+                  fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+              const SizedBox(height: 8),
+              RdvSegmented<bool>(
+                color: c,
+                selected: _premiereVisite,
+                onSelect: (v) => setState(() => _premiereVisite = v),
+                options: const [(true, 'Première visite'), (false, 'Déjà patient·e')],
+              ),
+            ]),
+          ),
+
+          if (choixPraticien) ...[
+            const SizedBox(height: 26),
+            RdvSection(
+              etape: ++etape, titre: 'Vétérinaire', color: c,
+              sousTitre: 'Choisissez votre praticien, ou laissez-nous proposer le premier disponible.',
+              child: RdvIntervenantList(
+                color: c,
+                selected: _choixPraticien,
+                onSelect: (id) => setState(() { _choixPraticien = id; _selectedSlot = null; }),
+                intervenants: [
+                  const RdvIntervenant(id: '*', nom: 'Peu importe', sousTitre: 'Créneaux de tous les vétérinaires'),
+                  for (final p in _praticiens) RdvIntervenant(id: p.id ?? '', nom: p.nom, photoUrl: p.photo),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 26),
+          RdvSection(
+            etape: ++etape, titre: 'Votre animal', color: c,
+            child: _animaux.isEmpty
+                ? Text('Aucun animal enregistré dans votre profil.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+                : RdvSelectField(
+                    placeholder: 'Choisir un animal',
+                    leading: _selectedAnimal == null
+                        ? Container(width: 38, height: 38,
+                            decoration: BoxDecoration(color: c.withValues(alpha: 0.08), shape: BoxShape.circle),
+                            child: Icon(Icons.pets_outlined, size: 18, color: c))
+                        : _vignetteAnimal(_selectedAnimal!),
+                    titre: _selectedAnimal?['nom']?.toString(),
+                    sousTitre: _selectedAnimal == null ? null
+                        : [_selectedAnimal!['espece'], _selectedAnimal!['race']]
+                            .where((v) => (v?.toString() ?? '').isNotEmpty).join(' · '),
+                    onTap: () async {
+                      final res = await AnimalPickerSheet.pickOne(context,
+                          preloaded: _animaux, current: _selectedAnimal, accentColor: c);
+                      if (mounted) setState(() => _selectedAnimal = res);
+                    },
+                  ),
+          ),
+
+          const SizedBox(height: 26),
+          RdvSection(
+            etape: ++etape, titre: 'Date et horaire', color: c,
+            sousTitre: 'Durée estimée : ${_durationLabel(_selectedDuration)}',
+            child: dates.isEmpty
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE4E7E2))),
+                    child: Column(children: [
+                      Icon(Icons.event_busy_outlined, size: 30, color: Colors.grey.shade300),
+                      const SizedBox(height: 8),
+                      Text('Aucun créneau disponible pour le moment',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+                      const SizedBox(height: 2),
+                      Text('Contactez directement la clinique.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
+                    ]),
+                  )
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    RdvDateStrip(
+                      color: c,
+                      dates: dates,
+                      selected: dateSel,
+                      disponible: (d) => (slotsByDate[d] ?? const []).isNotEmpty,
+                      onSelect: (d) => setState(() { _selectedDateKey = d; _selectedSlot = null; }),
+                    ),
+                    const SizedBox(height: 14),
+                    if (dateSel == null)
+                      Text('Sélectionnez une date pour voir les horaires disponibles.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade500))
+                    else ...[
+                      Text(_formatDateLong(DateTime.parse(dateSel)),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5,
+                              fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
+                      const SizedBox(height: 10),
+                      if (slotsJour.isEmpty)
+                        Text('Plus de créneau libre ce jour pour cette durée.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.orange.shade700))
+                      else
+                        RdvTimeGrid(
+                          color: c,
+                          horaires: [for (final s in slotsJour) (s['heure_debut'] as String).substring(0, 5)],
+                          selected: heureSel,
+                          onSelect: (h) => setState(() => _selectedSlot = slotsJour.firstWhere(
+                              (s) => (s['heure_debut'] as String).startsWith(h))),
+                        ),
+                    ],
+                  ]),
+          ),
+
+          const SizedBox(height: 26),
+          RdvSection(
+            etape: ++etape, titre: 'Informations complémentaires', color: c,
+            sousTitre: 'Facultatif — symptômes, contexte, traitement en cours…',
+            child: RdvTextArea(controller: _notesCtrl, color: c,
+                hint: 'Ex. : il se gratte l\'oreille gauche depuis 3 jours'),
+          ),
+
+          const SizedBox(height: 26),
+          if (_selectedVetMotif != null && _selectedSlot != null) ...[
+            RdvRecap(color: c, lignes: [
+              (Icons.medical_services_outlined, 'Motif',
+                  '$motifRecap${_premiereVisite == true ? ' · première visite' : ''}'),
+              if (praticienNom != null) (Icons.person_outline, 'Vétérinaire', praticienNom),
+              if (_selectedAnimal != null) (Icons.pets_outlined, 'Animal', _selectedAnimal!['nom']?.toString() ?? ''),
+              (Icons.event_outlined, 'Date',
+                  '${_formatDateLong(DateTime.parse(_selectedSlot!['date'] as String))} à '
+                  '${(_selectedSlot!['heure_debut'] as String).substring(0, 5)}'),
+              (Icons.schedule_outlined, 'Durée', _durationLabel(_selectedDuration)),
+            ]),
+            const SizedBox(height: 16),
+          ],
+          RdvPrimaryButton(
+            label: 'Confirmer le rendez-vous',
+            color: c,
+            loading: _saving,
+            onPressed: _submit,
+          ),
+          const SizedBox(height: 10),
+          Center(child: Text('Le vétérinaire confirmera votre rendez-vous.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))),
+        ]),
+      )),
     );
   }
 

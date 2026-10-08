@@ -4,6 +4,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
+import 'package:PetsMatch/pages/pro/planning_clinique_page.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
@@ -133,7 +134,124 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   List<Map<String, dynamic>> get _rdvsFiltres {
     final f = _filtrePraticien;
     if (f == null) return _rdvs;
-    return _rdvs.where((r) => (r['instructeur_profile_id']?.toString() ?? '') == f).toList();
+    // « Peu importe » non encore validé : visible chez tous les praticiens.
+    return _rdvs.where((r) => (r['instructeur_profile_id']?.toString() ?? '') == f
+        || (r['praticien_indifferent'] == true && r['statut'] == 'demande')).toList();
+  }
+
+  /// rdv id → vétérinaire choisi dans « Attribuer à » ('' = titulaire).
+  final Map<String, String> _attributionChoisie = {};
+  List<({String id, String nom})>? _praticiensClinique;
+
+  /// Praticiens de la clinique (titulaire = id '') — pm_praticiens_clinique.
+  Future<List<({String id, String nom})>> _chargerPraticiens() async {
+    if (_praticiensClinique != null) return _praticiensClinique!;
+    try {
+      final rows = await Supabase.instance.client.rpc('pm_praticiens_clinique',
+          params: {'p_pro_profile_id': AgendaContexte.profileId});
+      return _praticiensClinique = [
+        for (final r in rows as List)
+          (id: r['praticien_profile_id']?.toString() ?? '',
+           nom: (r['nom'] as String?)?.trim().isNotEmpty == true ? r['nom'] as String : 'Vétérinaire'),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Clinique à plusieurs praticiens : avant de valider une demande, choisir
+  /// le vétérinaire (l'ASV l'attribue, elle ne le prend pas). false = annulé.
+  Future<bool> _choisirVeterinaire(Map<String, dynamic> rdv) async {
+    if (!_estClinique || rdv['statut'] != 'demande') return true;
+    final praticiens = await _chargerPraticiens();
+    if (praticiens.length < 2 || !mounted) return true;
+    final actuel = rdv['instructeur_profile_id']?.toString() ?? '';
+    var choix = actuel;
+    if (rdv['praticien_indifferent'] == true) {
+      final moi = AgendaContexte.pourEmployeur ? await AgendaContexte.monProfil() : '';
+      if (moi != null && praticiens.any((p) => p.id == moi)) choix = moi;
+    }
+    if (!mounted) return false;
+    const teal = Color(0xFF0C5C6C);
+    final res = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Attribuer à', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(rdv['praticien_indifferent'] == true
+                  ? 'Le client a choisi « peu importe ». Quel vétérinaire prend ce rendez-vous ?'
+                  : 'Vétérinaire qui assurera ce rendez-vous.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+          const SizedBox(height: 8),
+          for (final p in praticiens) RadioListTile<String>(
+            value: p.id,
+            groupValue: choix,
+            onChanged: (v) => setM(() => choix = v ?? choix),
+            activeColor: teal,
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(p.nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+            subtitle: p.id == actuel && rdv['praticien_indifferent'] == true
+                ? const Text('Libre sur ce créneau', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5))
+                : null,
+          ),
+          const SizedBox(height: 8),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: teal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () => Navigator.pop(ctx, choix),
+            child: const Text('Continuer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ]),
+      ))),
+    );
+    if (res == null) return false;
+    _attributionChoisie[rdv['id'].toString()] = res;
+    return true;
+  }
+
+  /// Validation d'un RDV « peu importe » : le praticien qui accepte le prend
+  /// pour lui (titulaire = sans praticien) ; une ASV le laisse au praticien
+  /// posé provisoirement. Champs à ajouter à l'update de confirmation.
+  Future<Map<String, dynamic>> _attributionPraticien(Map<String, dynamic> rdv) async {
+    if (!_estClinique) return const {};
+    // Vétérinaire choisi à la validation (« Attribuer à ») — '' = titulaire.
+    final choisi = _attributionChoisie.remove(rdv['id']?.toString());
+    if (choisi != null) {
+      return {'praticien_indifferent': false, 'instructeur_profile_id': choisi.isEmpty ? null : choisi};
+    }
+    if (rdv['praticien_indifferent'] != true) return const {};
+    final out = <String, dynamic>{'praticien_indifferent': false};
+    if (!AgendaContexte.pourEmployeur) {
+      out['instructeur_profile_id'] = null;
+    } else {
+      final moi = await AgendaContexte.monProfil();
+      if (moi != null && _employes.any((e) => e.profileId == moi)) out['instructeur_profile_id'] = moi;
+    }
+    return out;
+  }
+
+  /// Update de confirmation avec attribution ; si le praticien qui valide
+  /// n'est pas libre (contrôle en base), le RDV reste au praticien provisoire.
+  Future<void> _updateConfirmation(String rdvId, Map<String, dynamic> update) async {
+    final supa = Supabase.instance.client;
+    final rdv = _rdvs.firstWhere((r) => r['id'].toString() == rdvId, orElse: () => {});
+    final attribution = await _attributionPraticien(rdv);
+    try {
+      await supa.from('rdv').update({...update, ...attribution}).eq('id', rdvId);
+    } on PostgrestException catch (e) {
+      if (!attribution.containsKey('instructeur_profile_id') || e.code != 'P0001') rethrow;
+      await supa.from('rdv').update({...update, 'praticien_indifferent': false}).eq('id', rdvId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Ce vétérinaire n'est pas libre à cette heure : le RDV reste attribué comme avant.",
+              style: TextStyle(fontFamily: 'Galey'))));
+      }
+    }
   }
 
   /// Praticien assigné (clinique), pour l'affichage sur la carte.
@@ -141,7 +259,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (!_estClinique) return null;
     final parts = <String>[];
     final id = rdv['instructeur_profile_id']?.toString();
-    if (id != null && id.isNotEmpty) {
+    if (rdv['praticien_indifferent'] == true && rdv['statut'] == 'demande') {
+      parts.add('🩺 Vétérinaire au choix — à attribuer');
+    } else if (id != null && id.isNotEmpty) {
       for (final e in _employes) {
         if (e.profileId == id) parts.add('🩺 ${e.nom}');
       }
@@ -720,7 +840,56 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }).toList();
   }
 
+  /// Actions sur un RDV depuis le planning de la clinique — mêmes flux que
+  /// les cartes de l'agenda.
+  Future<void> _actionsRdv(Map<String, dynamic> rdv) async {
+    final id = rdv['id']?.toString();
+    if (id == null) return;
+    // Les flux cherchent le RDV dans _rdvs (noms, effets de bord).
+    final i = _rdvs.indexWhere((r) => r['id'].toString() == id);
+    if (i < 0) { _rdvs.add(rdv); } else { _rdvs[i] = {..._rdvs[i], ...rdv}; }
+    final demande = rdv['statut'] == 'demande';
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        Widget tuile(String v, IconData ic, String t, {Color c = _teal}) => ListTile(
+          leading: Icon(ic, color: c),
+          title: Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          onTap: () => Navigator.pop(ctx, v),
+        );
+        return SafeArea(child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Text(rdv['motif']?.toString() ?? 'Rendez-vous',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            if (demande) ...[
+              tuile('accepter', Icons.check_circle_outline, 'Accepter / attribuer'),
+              tuile('refuser', Icons.cancel_outlined, 'Refuser', c: Colors.redAccent),
+            ] else if (rdv['statut'] == 'confirme') ...[
+              tuile('modifier', Icons.edit_calendar_outlined, 'Modifier (heure, praticien…)'),
+              tuile('notes', Icons.notes_outlined, 'Notes'),
+              tuile('annuler', Icons.event_busy_outlined, 'Annuler le RDV', c: Colors.redAccent),
+            ] else
+              tuile('notes', Icons.notes_outlined, 'Notes'),
+          ]),
+        ));
+      },
+    );
+    switch (choix) {
+      case 'accepter': await _showAcceptDialog(rdv);
+      case 'refuser': await _showCancelDialog(rdv, isRefus: true);
+      case 'modifier': await _showModifierDialog(rdv);
+      case 'notes': await _showNotesDialog(rdv);
+      case 'annuler': await _showCancelDialog(rdv);
+    }
+  }
+
   Future<void> _showAcceptDialog(Map<String, dynamic> rdv) async {
+    if (!await _choisirVeterinaire(rdv)) return;
     // Pré-remplir la durée depuis la config du pro selon le motif
     final motifLabel = rdv['motif']?.toString() ?? '';
     final motifKey = _motifToDuree[motifLabel];
@@ -1143,13 +1312,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _updateStatutWithPreciseTime(String rdvId, DateTime preciseDh, int dureeMinutes) async {
     try {
       final supa = Supabase.instance.client;
-      await supa.from('rdv').update({
+      await _updateConfirmation(rdvId, {
         'statut':               'confirme',
         'duree_minutes':        dureeMinutes,
         'date_heure':           preciseDh.toIso8601String(),
         'reminder_1h_sent':    false,  // reset si heure modifiée
         'reminder_15min_sent': false,
-      }).eq('id', rdvId);
+      });
 
       final rdv = _rdvs.firstWhere((r) => r['id'].toString() == rdvId, orElse: () => {});
       final clientUid = rdv['client_uid'] as String?;
@@ -1903,7 +2072,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final update = <String, dynamic>{'statut': statut};
       if (dureeMinutes != null) update['duree_minutes'] = dureeMinutes;
       if (motifAnnulation != null) update['notes_annulation'] = motifAnnulation;
-      await supa.from('rdv').update(update).eq('id', rdvId);
+      if (statut == 'confirme') {
+        await _updateConfirmation(rdvId, update);
+      } else {
+        await supa.from('rdv').update(update).eq('id', rdvId);
+      }
 
       final rdv = _rdvs.firstWhere(
         (r) => r['id'].toString() == rdvId,
@@ -2354,15 +2527,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // ── RDV créé manuellement par le pro (walk-in, téléphone…) ──────────────────
 
-  Future<void> _showNouveauRdvDialog() async {
+  /// [praticienInit] '' = titulaire ; [dateInit] / [salleInit] : depuis le
+  /// planning de la clinique (créneau touché).
+  Future<void> _showNouveauRdvDialog({DateTime? dateInit, String? praticienInit, String? salleInit}) async {
     final clientNomCtrl = TextEditingController();
     final clientTelCtrl = TextEditingController();
     final clientEmailCtrl = TextEditingController();
     final animalNomCtrl = TextEditingController();
     final motifCtrl     = TextEditingController();
     final notesCtrl     = TextEditingController();
-    DateTime date = DateTime.now();
-    TimeOfDay heure = TimeOfDay.now();
+    DateTime date = dateInit ?? DateTime.now();
+    TimeOfDay heure = dateInit != null ? TimeOfDay.fromDateTime(dateInit) : TimeOfDay.now();
     int duree = 30;
     bool saving = false;
     String? error;
@@ -2700,6 +2875,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       dureeMinutes: duree,
                       linkedUid: linkedUid,
                       linkedProfileId: linkedProfileId,
+                      praticienInit: praticienInit,
+                      salleInit: salleInit,
                     );
                     if (ok && ctx.mounted) Navigator.pop(ctx);
                     else setModal(() { saving = false; error = 'Erreur lors de la création du RDV.'; });
@@ -2736,6 +2913,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     required int dureeMinutes,
     String? linkedUid,
     String? linkedProfileId,
+    String? praticienInit,
+    String? salleInit,
   }) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return false;
@@ -2765,6 +2944,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'duree_minutes':            dureeMinutes,
         if (notes.isNotEmpty) 'notes_client': notes,
         'statut':                   'confirme',
+        if (praticienInit != null && praticienInit.isNotEmpty) 'instructeur_profile_id': praticienInit,
+        if (salleInit != null) 'salle_id': salleInit,
       }).select('id').single();
 
       if (mounted) await Future.wait([_loadRdvs(), _loadAujourdhui()]);
@@ -2878,6 +3059,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             tooltip: 'Ajouter une indisponibilité',
             onPressed: _ajouterIndisponibilite,
           ),
+          if (_estClinique)
+            IconButton(
+              icon: const Icon(Icons.view_week_outlined),
+              tooltip: 'Planning de la clinique',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlanningCliniquePage(
+                onOuvrirRdv: _actionsRdv,
+                onNouveauRdv: (dt, praticien, salle) =>
+                    _showNouveauRdvDialog(dateInit: dt, praticienInit: praticien, salleInit: salle),
+              ))).then((_) => _loadRdvs()),
+            ),
           if (_estClinique && _employes.isNotEmpty)
             PopupMenuButton<String>(
               tooltip: 'Filtrer par praticien',

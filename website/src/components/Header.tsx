@@ -918,6 +918,8 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'devis_refuse':
       return devisPath;
     case 'rdv_demande':
+      // Employé de clinique : la demande se traite depuis Mes Employeurs.
+      return d.clinique_profile_id ? '/mes-employeurs' : '/mes-rdv';
     case 'rdv_contre_proposition':
     case 'rdv_annule_client':
       return '/mes-rdv';

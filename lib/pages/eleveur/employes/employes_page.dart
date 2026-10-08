@@ -849,6 +849,7 @@ const _kPerms = [
   ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
   ('suivi_chaleurs',  Icons.favorite_outlined,     'Suivi des chaleurs',      'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)'),
   ('vet_agenda',      Icons.calendar_month_outlined, 'Agenda de la clinique',  'Voir, prendre, déplacer et accepter les rendez-vous'),
+  ('vet_rdv_demandes', Icons.notifications_active_outlined, 'Demandes de RDV', "Être notifié(e) de chaque nouvelle demande de rendez-vous (avec l'agenda pour l'accepter)"),
   ('vet_patients',    Icons.pets_outlined,           'Patients',               'Fiches et carnets de santé partagés avec la clinique'),
   ('vet_cr_rediger',  Icons.edit_note_outlined,      'Rédiger des comptes rendus', 'Brouillons, à valider par un vétérinaire'),
   ('vet_cr_valider',  Icons.task_alt_outlined,       'Valider les comptes rendus', 'Envoyer au propriétaire (vétérinaire uniquement)'),

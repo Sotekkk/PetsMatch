@@ -329,6 +329,15 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     // RDV notifications → pages agenda
     if (type == 'rdv_demande' || type == 'rdv_annule_client' || type == 'rdv_contre_proposition') {
+      // Employé de clinique (praticien / ASV) : agenda AU NOM de la clinique.
+      final d = notif['data'];
+      final cliniqueUid = d is Map ? d['clinique_uid']?.toString() : null;
+      final cliniquePid = d is Map ? d['clinique_profile_id']?.toString() : null;
+      if (cliniqueUid != null && cliniquePid != null && cliniqueUid != FirebaseAuth.instance.currentUser?.uid) {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(
+            employeur: (uid: cliniqueUid, profileId: cliniquePid, catPro: 'veterinaire'))));
+        return;
+      }
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()));
       return;
     }

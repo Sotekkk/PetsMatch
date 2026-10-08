@@ -9,13 +9,16 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
-import { PENSION_ESPECES } from '@/lib/pension-especes';
+import { PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY } from '@/lib/pension-especes';
 import { gardeMotifLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 import AvisPro from '@/components/AvisPro';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
 import { AnimalPickerField } from '@/components/AnimalPickerField';
+import { CATEGORIES_ANNUAIRE } from '@/lib/annuaire-filtres';
+import { RdvSection, RdvChoiceGrid, RdvSegmented, RdvIntervenantList, RdvDateStrip, RdvTimeGrid,
+  RdvTextArea, RdvRecap, RdvPrimaryButton, RdvVide, type RdvIconName } from '@/components/rdv/RdvForm';
 
 // Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
 // + marge de sécurité — même heuristique que EducationReservationModal.tsx.
@@ -152,6 +155,16 @@ const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; 
     { key: 'autre',   label: 'Autre',   icon: '➕', duree: 30 },
   ],
 };
+// Formulaire vétérinaire : icône + courte description de chaque motif.
+const VET_MOTIF_UI: Record<string, { icon: RdvIconName; description: string }> = {
+  consultation: { icon: 'stethoscope', description: 'Examen, symptôme ou suivi' },
+  vaccination:  { icon: 'syringe',     description: 'Primo-vaccination ou rappel' },
+  bilan:        { icon: 'clipboard',   description: 'Check-up de santé complet' },
+  urgence:      { icon: 'alert',       description: 'Prise en charge rapide' },
+  chirurgie:    { icon: 'bandage',     description: 'Intervention programmée' },
+  autre:        { icon: 'more',        description: 'Précisez votre demande' },
+};
+
 const DEFAULT_MOTIFS = [
   { key: 'rdv',   label: 'Rendez-vous', icon: '📅', duree: 30 },
   { key: 'autre', label: 'Autre',       icon: '➕', duree: 30 },
@@ -187,7 +200,7 @@ function ProDetailContent() {
   const [slotsLoading, setSlotsLoading] = useState(false);
   // Plages occupées + clinique vétérinaire (praticiens, salles) — miroir appli.
   const [occupes, setOccupes] = useState<Occupe[]>([]);
-  const [praticiens, setPraticiens] = useState<{ id: string | null; nom: string }[]>([]);
+  const [praticiens, setPraticiens] = useState<{ id: string | null; nom: string; photo: string | null }[]>([]);
   const [salles, setSalles] = useState<{ id: string; type: string }[]>([]);
   const [sallesParMotif, setSallesParMotif] = useState<Record<string, string>>({});
   const [dureesMotifsPro, setDureesMotifsPro] = useState<Record<string, number>>({});
@@ -678,8 +691,8 @@ function ProDetailContent() {
           supabase.rpc('pm_salles_actives', { p_pro_profile_id: profileId }),
           supabase.from('user_profiles_complet').select('salles_par_motif, durees_motifs, rdv_choix_praticien').eq('id', profileId).maybeSingle(),
         ]);
-        setPraticiens(((pr ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
-          .map(p => ({ id: p.praticien_profile_id, nom: p.nom?.trim() || 'Vétérinaire' })));
+        setPraticiens(((pr ?? []) as { praticien_profile_id: string | null; nom: string | null; avatar_url: string | null }[])
+          .map(p => ({ id: p.praticien_profile_id, nom: p.nom?.trim() || 'Vétérinaire', photo: p.avatar_url })));
         setSalles(((sa ?? []) as { id: string; type_salle: string }[]).map(x => ({ id: x.id, type: x.type_salle })));
         setSallesParMotif((pf?.salles_par_motif ?? {}) as Record<string, string>);
         setDureesMotifsPro((pf?.durees_motifs ?? {}) as Record<string, number>);
@@ -862,6 +875,9 @@ function ProDetailContent() {
         const dureeMinutes = Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
         const { error: rdvErr } = await supabase.from('rdv').insert({
           ...(pro.cat_pro === 'veterinaire' && slot.praticien ? { instructeur_profile_id: slot.praticien } : {}),
+          // « Peu importe » : posé sur le premier praticien libre, visible dans
+          // l'agenda de tous jusqu'à validation (migration_rdv_praticien_indifferent.sql).
+          ...(pro.cat_pro === 'veterinaire' && choixPraticien === '*' && praticiens.length > 1 ? { praticien_indifferent: true } : {}),
           pro_uid: pro.uid, client_uid: user.uid,
           animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
           ...(!selectedAnimalId && !isTaxi && animalNomInvite.trim() ? { animal_nom_manuel: animalNomInvite.trim() } : {}),
@@ -1389,7 +1405,7 @@ function ProDetailContent() {
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs — prix par nuit</p>
                 <div className="space-y-1.5">
-                  {PENSION_ESPECES.map(sp => {
+                  {[...PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY].map(sp => {
                     const t = (pro.tarifs_pension!.especes ?? []).find(e => e.espece === sp.key);
                     if (!t || !(t.prix_seul > 0)) return null;
                     const partage = t.prix_partage;
@@ -1648,7 +1664,154 @@ function ProDetailContent() {
                   <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin"
                     style={{ borderColor: `${catColor} transparent transparent transparent` }} />
                 </div>
-              ) : (
+              ) : pro.cat_pro === 'veterinaire' ? (() => {
+                // Formulaire vétérinaire — briques communes components/rdv/RdvForm.tsx
+                // (miroir appli : _buildVetForm, rdv_booking_page.dart).
+                // Même vert-bleu que l'appli (catégorie « Santé » de l'annuaire).
+                const catColor = CATEGORIES_ANNUAIRE.find(c => c.key === 'sante')?.color ?? '#2E7D5E';
+                const dureeMotif = (k: string) => Number(dureesMotifsPro[k]) || (motifs.find(m => m.key === k)?.duree ?? 30);
+                const fmtDuree = (min: number) => min < 60 ? `${min} min` : `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
+                const dureeSel = dureeMotif(motifKey || 'consultation');
+                const dateSel = availableDates.includes(selectedDate) ? selectedDate : null;
+                const slotsJour = dateSel ? [...(slotsByDate[dateSel] ?? [])].sort((a, b) => a.heureDebut.localeCompare(b.heureDebut)) : [];
+                const heureSel = selectedSlot && selectedSlot.date === dateSel ? fmtTime(selectedSlot.heureDebut) : null;
+                const choixVeto = praticiens.length > 1 && choixPraticienPermis;
+                const praticienNom = selectedSlot && praticiens.length > 1
+                  ? praticiens.find(p => (p.id ?? '') === (selectedSlot.praticien ?? ''))?.nom : undefined;
+                const animalSel = animaux.find(a => a.id === selectedAnimalId);
+                const dateLongue = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+                let etape = 0;
+                return (
+                <div className="space-y-7">
+
+                  <RdvSection etape={++etape} titre="Motif du rendez-vous" color={catColor}>
+                    <RdvChoiceGrid color={catColor} selected={motifKey || null}
+                      onSelect={k => { setMotifKey(k); setSelectedSlot(null); }}
+                      options={motifs.map(m => ({
+                        key: m.key, label: m.label,
+                        icon: VET_MOTIF_UI[m.key]?.icon ?? 'more',
+                        description: VET_MOTIF_UI[m.key]?.description,
+                        badge: m.key === 'autre' ? undefined : fmtDuree(dureeMotif(m.key)),
+                      }))} />
+                    <p className="text-[12.5px] font-semibold mt-4 mb-2" style={{ fontFamily: 'Galey, sans-serif', color: '#6F767B' }}>
+                      Est-ce votre première visite ? *
+                    </p>
+                    <RdvSegmented<boolean> color={catColor} selected={premiereVisite} onSelect={setPremiereVisite}
+                      options={[{ value: true, label: 'Première visite' }, { value: false, label: 'Déjà patient·e' }]} />
+                  </RdvSection>
+
+                  {choixVeto && (
+                    <RdvSection etape={++etape} titre="Vétérinaire" color={catColor}
+                      sousTitre="Choisissez votre praticien, ou laissez-nous proposer le premier disponible.">
+                      <RdvIntervenantList color={catColor} selected={choixPraticien}
+                        onSelect={id => { setChoixPraticien(id); setSelectedSlot(null); }}
+                        intervenants={[
+                          { id: '*', nom: 'Peu importe', sousTitre: 'Créneaux de tous les vétérinaires' },
+                          ...praticiens.map(p => ({ id: p.id ?? '', nom: p.nom, photoUrl: p.photo })),
+                        ]} />
+                    </RdvSection>
+                  )}
+
+                  <RdvSection etape={++etape} titre="Votre animal" color={catColor}>
+                    {!user ? (
+                      <input value={animalNomInvite} onChange={e => setAnimalNomInvite(e.target.value)}
+                        placeholder="Nom de votre animal (ex. Rex, chien)"
+                        className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none border border-[#E4E7E2] focus:border-current"
+                        style={{ fontFamily: 'Galey, sans-serif', color: '#1E2025' }} />
+                    ) : animaux.length === 0 ? (
+                      <p className="text-sm text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        Aucun animal enregistré —{' '}
+                        <Link href="/mes-animaux" className="font-semibold underline" style={{ color: catColor }}>Ajouter un animal</Link>
+                      </p>
+                    ) : (
+                      <AnimalPickerField animaux={animaux} selectedId={selectedAnimalId}
+                        onSelect={(id) => setSelectedAnimalId(id as number | null)} accentColor={catColor} />
+                    )}
+                  </RdvSection>
+
+                  <RdvSection etape={++etape} titre="Date et horaire" color={catColor}
+                    sousTitre={`Durée estimée : ${fmtDuree(dureeSel)}`}>
+                    {availableDates.length === 0 ? (
+                      <RdvVide titre="Aucun créneau disponible pour le moment" detail="Contactez directement la clinique." />
+                    ) : (
+                      <>
+                        <RdvDateStrip color={catColor} dates={availableDates.slice(0, 60)} selected={dateSel}
+                          disponible={d => (slotsByDate[d] ?? []).length > 0}
+                          onSelect={d => { setSelectedDate(d); setSelectedSlot(null); }} />
+                        <div className="mt-3.5">
+                          {!dateSel ? (
+                            <p className="text-[12.5px] text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+                              Sélectionnez une date pour voir les horaires disponibles.
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-[13.5px] font-bold mb-2.5 first-letter:uppercase" style={{ fontFamily: 'Galey, sans-serif', color: '#1E2025' }}>
+                                {dateLongue(dateSel)}
+                              </p>
+                              {slotsJour.length === 0 ? (
+                                <p className="text-[12.5px] text-amber-700" style={{ fontFamily: 'Galey, sans-serif' }}>
+                                  Plus de créneau libre ce jour pour cette durée.
+                                </p>
+                              ) : (
+                                <RdvTimeGrid color={catColor} horaires={slotsJour.map(s => fmtTime(s.heureDebut))} selected={heureSel}
+                                  onSelect={h => setSelectedSlot(slotsJour.find(s => fmtTime(s.heureDebut) === h) ?? null)} />
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </RdvSection>
+
+                  <RdvSection etape={++etape} titre="Informations complémentaires" color={catColor}
+                    sousTitre="Facultatif — symptômes, contexte, traitement en cours…">
+                    <RdvTextArea color={catColor} value={notes} onChange={setNotes}
+                      placeholder={motifKey === 'autre' ? 'Précisez le motif de la consultation…' : 'Ex. : il se gratte l’oreille gauche depuis 3 jours'} />
+                  </RdvSection>
+
+                  <div className="space-y-4">
+                    {motifKey && selectedSlot && (
+                      <RdvRecap color={catColor} lignes={[
+                        { icon: 'stethoscope', label: 'Motif', valeur: `${motifLabelFor(motifKey, motifs.find(m => m.key === motifKey)?.label ?? '')}${premiereVisite === true ? ' · première visite' : ''}` },
+                        ...(praticienNom ? [{ icon: 'user' as const, label: 'Vétérinaire', valeur: praticienNom }] : []),
+                        ...((animalSel?.nom || (!user && animalNomInvite.trim())) ? [{ icon: 'paw' as const, label: 'Animal', valeur: animalSel?.nom ?? animalNomInvite.trim() }] : []),
+                        { icon: 'calendar', label: 'Date', valeur: `${dateLongue(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)}` },
+                        { icon: 'clock', label: 'Durée', valeur: fmtDuree(dureeSel) },
+                      ]} />
+                    )}
+
+                    {etapeCompte && !user ? (
+                      <div className="rounded-2xl border border-gray-200 p-4 space-y-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        <p className="font-bold text-[#1E2025]">Dernière étape : identifiez-vous</p>
+                        <p className="text-xs text-gray-500">Votre créneau est mémorisé. Créez votre compte PetsMatch gratuit (1 minute) ou connectez-vous pour confirmer le rendez-vous.</p>
+                        <Link href={`/inscription?suite=${encodeURIComponent(`/services/pro/${uid}?rdv=reprise`)}`}
+                          className="block w-full text-center py-3 rounded-xl text-white font-bold text-sm" style={{ backgroundColor: catColor }}>
+                          Créer mon compte
+                        </Link>
+                        <Link href={`/connexion?suite=${encodeURIComponent(`/services/pro/${uid}?rdv=reprise`)}`}
+                          className="block w-full text-center py-3 rounded-xl border font-semibold text-sm" style={{ borderColor: catColor, color: catColor }}>
+                          J&apos;ai déjà un compte
+                        </Link>
+                        {pro.phone && (
+                          <p className="text-xs text-gray-500 text-center pt-1">
+                            Vous préférez ne pas créer de compte ? Appelez directement{' '}
+                            <a href={`tel:${pro.phone.replace(/[^0-9+]/g, '')}`} className="font-semibold underline" style={{ color: catColor }}>
+                              le {pro.phone}
+                            </a>.
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <RdvPrimaryButton color={catColor} onClick={confirmRdv} disabled={!canConfirm} loading={saving}
+                        label={user ? 'Confirmer le rendez-vous' : 'Continuer'} />
+                    )}
+                    <p className="text-xs text-center text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Le vétérinaire confirmera votre rendez-vous.
+                    </p>
+                  </div>
+                </div>
+                );
+              })() : (
                 <div className="space-y-6">
 
                   {/* Trajet (taxi uniquement) */}
