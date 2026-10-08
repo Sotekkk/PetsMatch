@@ -17,8 +17,7 @@ import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
-import MorphoAnimalTab from '@/components/morpho/MorphoAnimalTab';
-import { morphoSpeciesSupported } from '@/lib/morpho';
+import { labelTypeSuivi } from '@/lib/morpho';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
@@ -2394,6 +2393,8 @@ function AnimalFichePageInner() {
   const [ordonnances, setOrdonnances] = useState<HealthRecord[]>([]);
   const [radios, setRadios] = useState<HealthRecord[]>([]);
   const [crs, setCrs] = useState<HealthRecord[]>([]);
+  // Bilans morphologiques (ex-onglet Morphologie) : carnet › Comptes rendus
+  const [morphos, setMorphos] = useState<{ id: string; date: string; type_suivi: string }[]>([]);
   const [addDocOpen, setAddDocOpen] = useState<string|null>(null);
   const [savingDoc, setSavingDoc] = useState(false);
   const [vetNames, setVetNames] = useState<Record<string,string>>({});
@@ -2521,12 +2522,16 @@ function AnimalFichePageInner() {
 
   const loadDocs = useCallback(async () => {
     if (!id || isNew) return;
-    const [ord, rad, cr, grants] = await Promise.all([
+    const [ord, rad, cr, grants, mo] = await Promise.all([
       supabase.from('ordonnances').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('animal_access').select('id, pro_profile_id, statut, granted_at').eq('animal_id', id).neq('statut', 'revoked'),
+      supabase.from('suivis_morpho').select('id, date, type_suivi, source, notifie_a').eq('animal_id', id).order('date', { ascending: false }),
     ]);
+    // Bilan d'un pro non encore envoyé : pas visible côté propriétaire
+    setMorphos(((mo.data ?? []) as { id: string; date: string; type_suivi: string; source?: string | null; notifie_a?: string | null }[])
+      .filter(m => m.source !== 'professionnel' || !!m.notifie_a));
     const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
     setRadios((rad.data ?? []) as HealthRecord[]);
@@ -4768,7 +4773,7 @@ function AnimalFichePageInner() {
           </HealthSection>
 
           {/* Comptes rendus */}
-          <HealthSection title="Comptes rendus" icon="📄" color="#5F9EAA" count={crs.length}
+          <HealthSection title="Comptes rendus" icon="📄" color="#5F9EAA" count={crs.length + morphos.length}
             onAdd={()=>setAddDocOpen(addDocOpen==='comptes_rendus'?null:'comptes_rendus')}
             addFormOpen={addDocOpen==='comptes_rendus'}
             addForm={<DocUploadForm saving={savingDoc} onCancel={()=>setAddDocOpen(null)}
@@ -4776,7 +4781,17 @@ function AnimalFichePageInner() {
             {crs.map(r=>(
               <DocCard key={r.id} record={r} onDelete={()=>deleteDocRecord('comptes_rendus',r.id as string)}/>
             ))}
-            {crs.length===0 && <p className="p-4 text-sm text-gray-400">Aucun compte rendu</p>}
+            {morphos.map(m=>(
+              <a key={m.id} href={`/sante/suivis/${m.id}`}
+                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50">
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-[#1F2A2E]">{labelTypeSuivi(m.type_suivi)}</span>
+                  <span className="block text-xs text-gray-500">Morphologie · {new Date(m.date).toLocaleDateString('fr-FR')}</span>
+                </span>
+                <span className="text-gray-400" aria-hidden>›</span>
+              </a>
+            ))}
+            {crs.length===0 && morphos.length===0 && <p className="p-4 text-sm text-gray-400">Aucun compte rendu</p>}
           </HealthSection>
           </HealthPanel>
         </div>
@@ -4817,9 +4832,6 @@ function AnimalFichePageInner() {
         <div className="space-y-4">
           <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />
           <AnatomieOwnerSection animalId={id ?? ''} espece={animal.espece ?? ''} />
-          {morphoSpeciesSupported(animal.espece) && (
-            <MorphoAnimalTab animalId={id ?? ''} espece={animal.espece ?? 'chien'} canWrite={false} />
-          )}
         </div>
       )}
 
