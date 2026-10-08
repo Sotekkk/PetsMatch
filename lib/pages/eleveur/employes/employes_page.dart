@@ -56,6 +56,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/widgets/conge_date_range_sheet.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart' show AddTacheSheet;
 
 // ─── Libellé de structure pour les notifications d'invitation ────────────────
 
@@ -2001,10 +2002,28 @@ class _TachesTabState extends State<_TachesTab> {
           await showModalBottomSheet(
             context: context,
             isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _CreateTacheSheet(
-              uid: _ownerUid ?? _uid, employes: _employes, animaux: _animaux,
-              teal: widget.teal, dark: widget.dark,
+            backgroundColor: Colors.white,
+            useSafeArea: true,
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            builder: (_) => AddTacheSheet(
+              day: DateTime.now(),
+              uid: _ownerUid ?? _uid,
+              myUid: _uid,
+              profilSource: 'eleveur',
+              // Même fenêtre « Nouvelle tâche » que l'Agenda
+              employes: [
+                for (final e in _employes)
+                  if ((e['uid_employe'] as String? ?? '').isNotEmpty)
+                    {
+                      'uid': e['uid_employe'],
+                      'nom': (() {
+                        final u = e['user'] as Map<String, dynamic>?;
+                        final n = '${u?['firstname'] ?? ''} ${u?['lastname'] ?? ''}'.trim();
+                        return n.isNotEmpty ? n : '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim();
+                      })(),
+                    },
+              ],
+              onSaved: () {},
             ),
           );
           _load();
@@ -3219,487 +3238,6 @@ class _Badge extends StatelessWidget {
 
 // ─── Bottom sheet : Créer une tâche ──────────────────────────────────────────
 
-class _CreateTacheSheet extends StatefulWidget {
-  final String uid;
-  final List<Map<String, dynamic>> employes, animaux;
-  final Color teal, dark;
-  const _CreateTacheSheet({required this.uid, required this.employes, required this.animaux,
-      required this.teal, required this.dark});
-  @override
-  State<_CreateTacheSheet> createState() => _CreateTacheSheetState();
-}
-
-class _CreateTacheSheetState extends State<_CreateTacheSheet> {
-  final _supa      = Supabase.instance.client;
-  final _titreCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  DateTime _date    = DateTime.now();
-  TimeOfDay? _heure;
-  final Set<String> _selectedAnimalIds = {};
-  String? _selectedEmployeUid;
-  bool _saving = false;
-
-  // ── Récurrence ─────────────────────────────────────────────────────────────
-  bool _recurrent          = false;
-  String _recurrence       = 'quotidien'; // 'quotidien' | 'jours_semaine'
-  DateTime? _dateFin;
-  final Set<int> _joursSemaine = {}; // 1=Lun … 7=Dim
-
-  static const _joursLabels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-
-  List<DateTime> get _datesGenerees {
-    if (!_recurrent || _dateFin == null) return [_date];
-    final result = <DateTime>[];
-    var cur = _date;
-    while (!cur.isAfter(_dateFin!)) {
-      if (_recurrence == 'quotidien' ||
-          (_recurrence == 'jours_semaine' && _joursSemaine.contains(cur.weekday))) {
-        result.add(cur);
-      }
-      cur = cur.add(const Duration(days: 1));
-    }
-    return result;
-  }
-
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
-
-  Future<void> _save() async {
-    if (_titreCtrl.text.trim().isEmpty) return;
-    final dates = _datesGenerees;
-    if (dates.isEmpty) { _snack('Aucun jour dans la période.'); return; }
-    setState(() => _saving = true);
-    try {
-      final heureStr = _heure != null
-          ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}:00'
-          : null;
-      final titre = _titreCtrl.text.trim();
-
-      // Résoudre les profile_ids pour l'employeur et l'assigné — le profil
-      // ACTIF pour l'employeur, pas son profil "is_main" (voir
-      // _EmployesTabState._load pour le même correctif et son explication).
-      // Mais activeProfileId est celui de l'ACTEUR courant : si c'est un
-      // employé qui crée la tâche pour son employeur (widget.uid ≠ uid
-      // courant, cf. _buildTachesTab), il ne faut pas prendre le profil actif
-      // de l'employé — résoudre celui de l'éleveur via son uid à la place
-      // (bug constaté : eleveur_profile_id enregistrait le profil de
-      // l'employé au lieu de celui de l'éleveur).
-      final currentUid = FirebaseAuth.instance.currentUser?.uid;
-      String? eleveurProfileId = (currentUid == widget.uid && User_Info.activeProfileId.isNotEmpty)
-          ? User_Info.activeProfileId
-          : null;
-      if (eleveurProfileId == null) {
-        final eleveurProfileData = await _supa.from('user_profiles_complet')
-            .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-        eleveurProfileId = eleveurProfileData?['id'] as String?;
-      }
-
-      String? assigneProfileId;
-      if (_selectedEmployeUid != null) {
-        final assigneProfileData = await _supa.from('user_profiles_complet')
-            .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
-        assigneProfileId = assigneProfileData?['id'] as String?;
-      }
-
-      final basePayload = <String, dynamic>{
-        'titre':             titre,
-        'uid_eleveur':       widget.uid,
-        if (eleveurProfileId != null) 'eleveur_profile_id': eleveurProfileId,
-        if (heureStr != null) 'heure': heureStr,
-        if (_selectedAnimalIds.isNotEmpty) 'animaux_ids': _selectedAnimalIds.toList(),
-        if (_selectedEmployeUid != null) 'assigne_a': _selectedEmployeUid,
-        if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
-        if (_notesCtrl.text.trim().isNotEmpty) 'notes': _notesCtrl.text.trim(),
-        'statut': 'a_faire',
-      };
-
-      for (int i = 0; i < dates.length; i++) {
-        final result = await _supa.from('taches_elevage').insert({
-          ...basePayload,
-          'date': dates[i].toIso8601String().split('T').first,
-        }).select().single();
-
-        // Notifier l'employé seulement pour la 1ère occurrence
-        if (i == 0 && _selectedEmployeUid != null) {
-          final tacheId = result['id'];
-          await _supa.from('notifications').insert({
-            'uid':   _selectedEmployeUid,
-            'type':  'tache',
-            'title': 'Nouvelle tâche assignée',
-            'body':  dates.length > 1 ? '$titre (${dates.length} occurrences)' : titre,
-            if (assigneProfileId != null) 'profile_id': assigneProfileId,
-            'data':  {'eleveurUid': widget.uid, 'tacheId': tacheId.toString()},
-            'read':  false,
-          });
-          try {
-            await FirebaseFunctions.instance
-                .httpsCallable('notifyTacheAssignee')
-                .call({'assigneUid': _selectedEmployeUid, 'titre': titre});
-          } catch (_) {}
-        }
-      }
-
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) _snack('Erreur : $e');
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 16),
-            const Text('Nouvelle tâche',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 16),
-            // Titre
-            _sheetField('Titre de la tâche *', _titreCtrl, teal: widget.teal),
-            const SizedBox(height: 12),
-            // Date
-            GestureDetector(
-              onTap: () async {
-                final p = await showDatePicker(
-                  context: context, initialDate: _date,
-                  firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                  builder: (ctx, child) => Theme(
-                    data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
-                    child: child!,
-                  ),
-                );
-                if (p != null) setState(() => _date = p);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFE4E7E2)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(children: [
-                  Icon(Icons.calendar_today_outlined, size: 16, color: widget.teal),
-                  const SizedBox(width: 8),
-                  Text(DateFormat('dd MMMM yyyy', 'fr_FR').format(_date),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Heure
-            GestureDetector(
-              onTap: () async {
-                final t = await showTimePicker(
-                  context: context,
-                  initialTime: _heure ?? TimeOfDay.now(),
-                  builder: (ctx, child) => Theme(
-                    data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
-                    child: child!,
-                  ),
-                );
-                if (t != null) setState(() => _heure = t);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFE4E7E2)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(children: [
-                  Icon(Icons.access_time_outlined, size: 16, color: widget.teal),
-                  const SizedBox(width: 8),
-                  Text(
-                    _heure != null ? _heure!.format(context) : 'Heure (optionnel)',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                        color: _heure != null ? const Color(0xFF1F2A2E) : const Color(0xFF6F767B)),
-                  ),
-                  const Spacer(),
-                  if (_heure != null) GestureDetector(
-                    onTap: () => setState(() => _heure = null),
-                    child: const Icon(Icons.close, size: 16, color: Color(0xFF6F767B)),
-                  ),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 12),
-            // Animaux (multi-select)
-            if (widget.animaux.isNotEmpty) ...[
-              GestureDetector(
-                onTap: () async {
-                  final sel = Set<String>.from(_selectedAnimalIds);
-                  await showDialog(
-                    context: context,
-                    builder: (ctx) => StatefulBuilder(
-                      builder: (ctx, setS) => AlertDialog(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        title: const Text('Animaux concernés',
-                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-                        content: SizedBox(
-                          width: double.maxFinite,
-                          child: ListView(shrinkWrap: true, children: widget.animaux.map((a) {
-                            final id = a['id'].toString();
-                            return CheckboxListTile(
-                              value: sel.contains(id),
-                              activeColor: widget.teal,
-                              dense: true,
-                              title: Text(a['nom'] ?? '—',
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                              onChanged: (v) => setS(() => v == true ? sel.add(id) : sel.remove(id)),
-                            );
-                          }).toList()),
-                        ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(backgroundColor: widget.teal),
-                            onPressed: () { setState(() => _selectedAnimalIds..clear()..addAll(sel)); Navigator.pop(ctx); },
-                            child: const Text('Valider', style: TextStyle(color: Colors.white)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: const Color(0xFFE4E7E2)),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(Icons.pets_outlined, size: 16, color: widget.teal),
-                      const SizedBox(width: 8),
-                      Text(_selectedAnimalIds.isEmpty ? 'Animaux concernés (optionnel)' : '${_selectedAnimalIds.length} animal(aux) sélectionné(s)',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                              color: _selectedAnimalIds.isEmpty ? const Color(0xFF6F767B) : const Color(0xFF1F2A2E))),
-                    ]),
-                    if (_selectedAnimalIds.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Wrap(spacing: 4, runSpacing: 4, children: _selectedAnimalIds.map((id) {
-                        final a = widget.animaux.firstWhere((a) => a['id'].toString() == id, orElse: () => {});
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: widget.teal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                          child: Text(a['nom'] ?? id, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: widget.teal, fontWeight: FontWeight.w600)),
-                        );
-                      }).toList()),
-                    ],
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            // Assigné à
-            if (widget.employes.isNotEmpty) ...[
-              _sheetDropdown(
-                hint: '👤 Assigné à (optionnel)',
-                value: _selectedEmployeUid,
-                items: widget.employes.map((e) => DropdownMenuItem(
-                  value: e['uid_employe'] as String,
-                  child: Text(e['nom'] ?? '—', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedEmployeUid = v),
-                teal: widget.teal,
-              ),
-              const SizedBox(height: 12),
-            ],
-            // Notes
-            _sheetField('Notes (optionnel)', _notesCtrl, maxLines: 2, teal: widget.teal),
-            const SizedBox(height: 16),
-
-            // ── Récurrence ───────────────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8F8F6),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE4E7E2)),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(Icons.repeat, size: 16, color: widget.teal),
-                  const SizedBox(width: 8),
-                  const Text('Répétition',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
-                  const Spacer(),
-                  Switch(
-                    value: _recurrent,
-                    activeColor: widget.teal,
-                    onChanged: (v) => setState(() => _recurrent = v),
-                  ),
-                ]),
-                if (_recurrent) ...[
-                  const SizedBox(height: 12),
-                  // Type de récurrence
-                  Row(children: [
-                    _recChip('Quotidien', 'quotidien'),
-                    const SizedBox(width: 8),
-                    _recChip('Jours sélectifs', 'jours_semaine'),
-                  ]),
-                  const SizedBox(height: 12),
-                  // Jours de la semaine (si jours_semaine)
-                  if (_recurrence == 'jours_semaine') ...[
-                    Wrap(spacing: 6, children: List.generate(7, (i) {
-                      final day = i + 1;
-                      final sel = _joursSemaine.contains(day);
-                      return GestureDetector(
-                        onTap: () => setState(() => sel ? _joursSemaine.remove(day) : _joursSemaine.add(day)),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          width: 34, height: 34,
-                          decoration: BoxDecoration(
-                            color: sel ? widget.teal : Colors.white,
-                            border: Border.all(color: sel ? widget.teal : Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(child: Text(_joursLabels[i],
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: sel ? Colors.white : Colors.grey.shade500))),
-                        ),
-                      );
-                    })),
-                    const SizedBox(height: 12),
-                  ],
-                  // Date de fin
-                  GestureDetector(
-                    onTap: () async {
-                      final p = await showDatePicker(
-                        context: context,
-                        initialDate: _dateFin ?? _date.add(const Duration(days: 7)),
-                        firstDate: _date,
-                        lastDate: _date.add(const Duration(days: 365)),
-                        builder: (ctx, child) => Theme(
-                          data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
-                          child: child!,
-                        ),
-                      );
-                      if (p != null) setState(() => _dateFin = p);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: _dateFin != null ? widget.teal : const Color(0xFFE4E7E2)),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(children: [
-                        Icon(Icons.event_repeat_outlined, size: 16, color: widget.teal),
-                        const SizedBox(width: 8),
-                        Text(
-                          _dateFin != null
-                              ? 'Jusqu\'au ${DateFormat('dd MMMM yyyy', 'fr_FR').format(_dateFin!)}'
-                              : 'Date de fin *',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                              color: _dateFin != null ? const Color(0xFF1F2A2E) : const Color(0xFF6F767B)),
-                        ),
-                      ]),
-                    ),
-                  ),
-                  // Résumé
-                  if (_dateFin != null) ...[
-                    const SizedBox(height: 8),
-                    Builder(builder: (_) {
-                      final n = _datesGenerees.length;
-                      return Text('→ $n occurrence${n > 1 ? 's' : ''} créée${n > 1 ? 's' : ''}',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                              color: widget.teal, fontWeight: FontWeight.w600));
-                    }),
-                  ],
-                ],
-              ]),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.teal,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: _saving
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text(
-                        _recurrent && _dateFin != null && _datesGenerees.length > 1
-                            ? 'Créer ${_datesGenerees.length} tâches'
-                            : 'Créer la tâche',
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _recChip(String label, String value) {
-    final sel = _recurrence == value;
-    return GestureDetector(
-      onTap: () => setState(() => _recurrence = value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: sel ? widget.teal : Colors.white,
-          border: Border.all(color: sel ? widget.teal : Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(label, style: TextStyle(
-            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-            color: sel ? Colors.white : Colors.grey.shade600)),
-      ),
-    );
-  }
-
-  Widget _sheetField(String label, TextEditingController ctrl, {int maxLines = 1, required Color teal}) =>
-      TextFormField(
-        controller: ctrl, maxLines: maxLines,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: teal, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
-        ),
-      );
-
-  Widget _sheetDropdown({required String hint, required String? value,
-      required List<DropdownMenuItem<String>> items, required ValueChanged<String?> onChanged, required Color teal}) =>
-      DropdownButtonFormField<String>(
-        value: value,
-        hint: Text(hint, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
-        items: items,
-        onChanged: onChanged,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
-        decoration: InputDecoration(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: teal, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          isDense: true,
-        ),
-      );
-}
-
-// ─── Bottom sheet : Modifier une tâche ───────────────────────────────────────
-
 class _EditTacheSheet extends StatefulWidget {
   final Map<String, dynamic> tache;
   final List<Map<String, dynamic>> employes, animaux;
@@ -4364,17 +3902,26 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                           onCreateTacheTap: () {
                             final relType = u['profile_type_relation'] as String?;
                             final profilSource = relType == 'association' ? 'association' : 'eleveur';
+                            final moi = FirebaseAuth.instance.currentUser!.uid;
                             showModalBottomSheet(
                               context: context,
                               isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => _CreateTacheEmployeSheet(
-                                employerUid: uid,
-                                employerProfileId: eleveurProfileId,
+                              useSafeArea: true,
+                              backgroundColor: Colors.white,
+                              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                              // Même fenêtre « Nouvelle tâche » que l'Agenda,
+                              // pour l'élevage de l'employeur, attribuée à moi.
+                              builder: (_) => AddTacheSheet(
+                                day: DateTime.now(),
+                                uid: uid,
+                                myUid: moi,
                                 profilSource: profilSource,
-                                teal: _teal, dark: _dark,
+                                profileId: eleveurProfileId,
+                                employes: [{'uid': moi, 'nom': 'Moi'}],
+                                initialEmployeUid: moi,
+                                onSaved: _load,
                               ),
-                            ).then((created) { if (created == true) _load(); });
+                            );
                           },
                           onReload: _load,
                           // Clinique vétérinaire : type du PROFIL qui emploie
@@ -5226,147 +4773,6 @@ class _EmployeAnimauxSectionState extends State<_EmployeAnimauxSection> {
 
 // ─── Sheet : l'employé se crée une tâche simple, visible par l'employeur ───────
 
-class _CreateTacheEmployeSheet extends StatefulWidget {
-  final String employerUid;
-  final String employerProfileId;
-  final String profilSource;
-  final Color teal, dark;
-  const _CreateTacheEmployeSheet({
-    required this.employerUid, required this.employerProfileId, required this.profilSource,
-    required this.teal, required this.dark,
-  });
-  @override
-  State<_CreateTacheEmployeSheet> createState() => _CreateTacheEmployeSheetState();
-}
-
-class _CreateTacheEmployeSheetState extends State<_CreateTacheEmployeSheet> {
-  final _supa = Supabase.instance.client;
-  final _titreCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  DateTime _date = DateTime.now();
-  bool _saving = false;
-
-  @override
-  void dispose() {
-    _titreCtrl.dispose();
-    _notesCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_titreCtrl.text.trim().isEmpty) return;
-    setState(() => _saving = true);
-    try {
-      final myUid = FirebaseAuth.instance.currentUser!.uid;
-      final myProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
-      await _supa.from('taches_elevage').insert({
-        'titre': _titreCtrl.text.trim(),
-        'date': _date.toIso8601String().split('T').first,
-        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-        'statut': 'a_faire',
-        'uid_eleveur': widget.employerUid,
-        'eleveur_profile_id': widget.employerProfileId,
-        'profil_source': widget.profilSource,
-        'assigne_a': myUid,
-        if (myProfileId != null) 'assigne_profile_id': myProfileId,
-      });
-      if (mounted) Navigator.pop(context, true);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 16),
-            Text('Nouvelle tâche',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: widget.dark)),
-            const SizedBox(height: 4),
-            Text('Visible par votre employeur, attribuée à vous.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _titreCtrl,
-              decoration: InputDecoration(
-                labelText: 'Titre de la tâche *',
-                labelStyle: const TextStyle(fontFamily: 'Galey'),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              style: const TextStyle(fontFamily: 'Galey'),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () async {
-                final p = await showDatePicker(
-                  context: context, initialDate: _date,
-                  firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                  builder: (ctx, child) => Theme(
-                    data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
-                    child: child!,
-                  ),
-                );
-                if (p != null) setState(() => _date = p);
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
-                child: Row(children: [
-                  Icon(Icons.calendar_today_outlined, size: 16, color: widget.teal),
-                  const SizedBox(width: 10),
-                  Text('${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}/${_date.year}',
-                      style: const TextStyle(fontFamily: 'Galey')),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _notesCtrl,
-              maxLines: 2,
-              decoration: InputDecoration(
-                labelText: 'Notes (optionnel)',
-                labelStyle: const TextStyle(fontFamily: 'Galey'),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              style: const TextStyle(fontFamily: 'Galey'),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saving ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: widget.teal,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text(_saving ? 'Création…' : 'Créer la tâche',
-                    style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Page détail employeur (public — deep link depuis notifications) ───────────
-
 class EmployeurDetailPage extends StatefulWidget {
   final String eleveurUid, eleveurNom;
   final Set<String> perms;
@@ -5691,12 +5097,17 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
           await showModalBottomSheet(
             context: context,
             isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _CreateTacheSheet(
+            backgroundColor: Colors.white,
+            useSafeArea: true,
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            builder: (_) => AddTacheSheet(
+              day: DateTime.now(),
               uid: widget.eleveurUid,
-              employes: [{'uid_employe': uid, 'nom': 'Moi'}],
-              animaux: const [],
-              teal: _teal, dark: _dark,
+              myUid: uid,
+              profilSource: 'eleveur',
+              profileId: widget.eleveurProfileId,
+              employes: [{'uid': uid, 'nom': 'Moi'}],
+              onSaved: () {},
             ),
           );
           _loadTaches();

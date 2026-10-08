@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; }
@@ -70,55 +70,61 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   profileId: string | null;
   profilSource: 'eleveur' | 'association' | 'pension';
   selectedDate?: string;
-  animaux: AnimalOption[];
+  /** Animaux de l'élevage ; absents = chargés au 1er choix « Animal » / « Portée ». */
+  animaux?: AnimalOption[];
   membres: MembreOption[];
   onClose: () => void;
   onSaved: () => void;
   onEmployeCreated: () => void;
 }) {
+  const [animauxCharges, setAnimauxCharges] = useState<AnimalOption[] | null>(animaux ?? null);
+  const [chargementAnimaux, setChargementAnimaux] = useState(false);
+  const animauxDispo = animauxCharges ?? [];
+  async function chargerAnimaux() {
+    if (animauxCharges || chargementAnimaux) return;
+    setChargementAnimaux(true);
+    let q = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere')
+      .eq('uid_eleveur', uid).not('statut', 'in', '(sorti,decede)');
+    if (profileId) q = q.eq('profile_id', profileId);
+    const { data } = await q.order('nom');
+    setAnimauxCharges((data ?? []) as AnimalOption[]);
+    setChargementAnimaux(false);
+  }
   const today = new Date().toISOString().split('T')[0];
   const [titre, setTitre] = useState('');
   const [date, setDate] = useState(selectedDate ?? today);
   const [heure, setHeure] = useState('');
-  const [selectedAnimalIds, setSelectedAnimalIds] = useState<string[]>([]);
   const [assigneUid, setAssigneUid] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [showAddEmploye, setShowAddEmploye] = useState(false);
-  const [animalSearch, setAnimalSearch] = useState('');
+  // Rattachement choisi par l'utilisateur (jamais déduit du titre) :
+  // aucun par défaut, sinon des animaux OU des portées — jamais mélangés.
+  const [rattachement, setRattachement] = useState<'aucun' | 'animal' | 'portee'>('aucun');
+  const [animalIds, setAnimalIds] = useState<string[]>([]);
+  const [porteeIds, setPorteeIds] = useState<string[]>([]);
 
-  const filteredAnimaux = animalSearch.trim()
-    ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
-    : animaux;
-
-  const porteeGroups = new Map<string, AnimalOption[]>();
-  if (profilSource === 'eleveur') {
-    for (const a of animaux) {
+  const portees = useMemo(() => {
+    const map = new Map<string, AnimalOption[]>();
+    for (const a of animauxDispo) {
       if (!a.portee_id) continue;
-      if (!porteeGroups.has(a.portee_id)) porteeGroups.set(a.portee_id, []);
-      porteeGroups.get(a.portee_id)!.push(a);
+      if (!map.has(a.portee_id)) map.set(a.portee_id, []);
+      map.get(a.portee_id)!.push(a);
     }
-  }
+    return [...map.entries()].map(([id, membres]) => ({ id, membres, label: porteeLabel(membres) }));
+  }, [animauxDispo]);
 
   function porteeLabel(membresPortee: AnimalOption[]): string {
     const nomMere = membresPortee.map(a => a.nom_mere).find(n => !!n);
     return nomMere ? `Portée de ${nomMere}` : 'Portée';
   }
 
-  function toggleAnimal(id: string) {
-    setSelectedAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  }
-
-  // Bascule toute la portée : si tous ses membres sont déjà sélectionnés, on
-  // les retire (permet de se rattraper après un clic par erreur), sinon on
-  // les ajoute à la sélection existante.
-  function togglePortee(membresPortee: AnimalOption[]) {
-    const ids = membresPortee.map(a => a.id);
-    const allSelected = ids.every(id => selectedAnimalIds.includes(id));
-    setSelectedAnimalIds(prev => allSelected
-      ? prev.filter(id => !ids.includes(id))
-      : [...new Set([...prev, ...ids])]);
-  }
+  // Animaux réellement concernés à l'enregistrement (portée = ses membres).
+  const idsCibles: string[] = rattachement === 'animal'
+    ? animalIds
+    : rattachement === 'portee'
+      ? [...new Set(portees.filter(p => porteeIds.includes(p.id)).flatMap(p => p.membres.map(a => a.id)))]
+      : [];
 
   async function save() {
     if (!titre.trim() || !date) return;
@@ -134,11 +140,11 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
       assigneProfileId = profileId;
     }
 
-    // Une ligne par animal sélectionné (ou une seule ligne sans animal si aucun choisi).
-    const animalIds: (string | null)[] = selectedAnimalIds.length > 0 ? selectedAnimalIds : [null];
+    // Une ligne par animal concerné (ou une seule ligne sans animal).
+    const lignes: (string | null)[] = idsCibles.length > 0 ? idsCibles : [null];
     let error: { message: string } | null = null;
     const insertedByAnimal: { animalId: string | null; tacheId: string }[] = [];
-    for (const animalId of animalIds) {
+    for (const animalId of lignes) {
       const { data: inserted, error: insertError } = await supabase.from('taches_elevage').insert({
         uid_eleveur: uid,
         titre: titre.trim(),
@@ -148,7 +154,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
         profil_source: profilSource,
         ...(profileId ? { eleveur_profile_id: profileId, profile_id: profileId } : {}),
         animal_id: animalId,
-        animal_nom: animalId ? (animaux.find(a => a.id === animalId)?.nom ?? null) : null,
+        animal_nom: animalId ? (animauxDispo.find(a => a.id === animalId)?.nom ?? null) : null,
         assigne_a: assigneUid || null,
         assignes_a: assigneUid ? [assigneUid] : null,
         ...(assigneProfileId ? { assigne_profile_id: assigneProfileId } : {}),
@@ -159,18 +165,14 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
     }
 
     // Une notification par animal (portée entière = 1 tâche + 1 notif par chiot),
-    // avec le nom du chiot et sa portée dans le corps pour éviter toute confusion
-    // à l'employé qui décoche les tâches une par une. On envoie aussi une copie
-    // à l'éleveur (créateur) pour qu'il puisse suivre quel chiot est assigné à
-    // qui sans avoir à se connecter sur le compte de l'employé.
+    // avec le nom du chiot et sa portée dans le corps, + copie à l'éleveur.
     if (!error && assigneUid && !isSelf) {
       try {
         const nomEmploye = membres.find(m => m.uid === assigneUid)?.nom ?? 'un employé';
         await Promise.all(insertedByAnimal.map(({ animalId, tacheId }) => {
-          const animal = animalId ? animaux.find(a => a.id === animalId) : undefined;
-          const groupePortee = animal?.portee_id ? porteeGroups.get(animal.portee_id) : undefined;
-          const portee = groupePortee ? porteeLabel(groupePortee) : null;
-          const suffix = animal ? ` — ${animal.nom}${portee ? ` (${portee})` : ''}` : '';
+          const animal = animalId ? animauxDispo.find(a => a.id === animalId) : undefined;
+          const groupe = animal?.portee_id ? portees.find(p => p.id === animal.portee_id) : undefined;
+          const suffix = animal ? ` — ${animal.nom}${groupe ? ` (${groupe.label})` : ''}` : '';
           return Promise.all([
             supabase.from('notifications').insert({
               uid: assigneUid, type: 'tache_assignee',
@@ -198,121 +200,46 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
     onSaved();
   }
 
+  const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400';
+  const libelle = 'text-xs font-semibold text-gray-500 mb-1 block';
+  const nbCibles = idsCibles.length;
+
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Nouvelle tâche
-        </h2>
-        <div className="space-y-3">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* En-tête */}
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <h2 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Nouvelle tâche</h2>
+          <button onClick={onClose} aria-label="Fermer" className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        {/* Formulaire (défile seul ; le pied reste visible) */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Titre *</label>
-            <input
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-              placeholder="Ex: Nettoyage cage, Promenade…"
-              value={titre}
-              onChange={e => setTitre(e.target.value)}
-              autoFocus
-            />
+            <label className={libelle}>Titre *</label>
+            <input className={champ} placeholder="Ex : Faire l'inventaire des croquettes"
+              value={titre} onChange={e => setTitre(e.target.value)} autoFocus />
           </div>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Date *</label>
-              <input
-                type="date"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                value={date}
-                onChange={e => setDate(e.target.value)}
-              />
-            </div>
-            <div className="flex-1">
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Heure</label>
-              <input
-                type="time"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                value={heure}
-                onChange={e => setHeure(e.target.value)}
-              />
-            </div>
-          </div>
-          {animaux.length > 0 && (
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">
-                Animaux concernés (optionnel){selectedAnimalIds.length > 0 ? ` — ${selectedAnimalIds.length} sélectionné(s)` : ''}
-              </label>
-              {porteeGroups.size > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {[...porteeGroups.entries()].map(([porteeId, membresPortee]) => {
-                    const allSelected = membresPortee.every(a => selectedAnimalIds.includes(a.id));
-                    return (
-                      <button key={porteeId} type="button" onClick={() => togglePortee(membresPortee)}
-                        className={`text-xs font-semibold rounded-full px-2.5 py-1 border transition-colors ${
-                          allSelected
-                            ? 'text-white bg-teal-600 border-teal-600 hover:bg-teal-700'
-                            : 'text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100'
-                        }`}>
-                        {allSelected ? '✓ ' : ''}{porteeLabel(membresPortee)} ({membresPortee.length})
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {animaux.length > 5 && (
-                <input
-                  type="text"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  placeholder="Rechercher un animal…"
-                  value={animalSearch}
-                  onChange={e => setAnimalSearch(e.target.value)}
-                />
-              )}
-              {selectedAnimalIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {selectedAnimalIds.map(id => {
-                    const a = animaux.find(x => x.id === id);
-                    if (!a) return null;
-                    return (
-                      <button key={id} type="button" onClick={() => toggleAnimal(id)}
-                        className="flex items-center gap-1 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-full pl-2.5 pr-1.5 py-1">
-                        {a.nom}
-                        <span className="text-teal-100">×</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              <div className="border border-gray-200 rounded-xl max-h-32 overflow-y-auto">
-                {filteredAnimaux.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-gray-400">Aucun animal pour « {animalSearch.trim()} »</p>
-                ) : filteredAnimaux.map(a => {
-                  const checked = selectedAnimalIds.includes(a.id);
-                  return (
-                    <label key={a.id} className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-b border-gray-100 last:border-0 transition-colors ${
-                      checked ? 'bg-teal-100 text-teal-900 font-semibold' : 'hover:bg-gray-50'
-                    }`}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleAnimal(a.id)}
-                        className="rounded text-teal-600 focus:ring-teal-400" />
-                      <span>{a.nom}{a.espece ? ` (${a.espece})` : ''}</span>
-                    </label>
-                  );
-                })}
-              </div>
+              <label className={libelle}>Date *</label>
+              <input type="date" className={champ} value={date} onChange={e => setDate(e.target.value)} />
             </div>
-          )}
+            <div>
+              <label className={libelle}>Heure</label>
+              <input type="time" className={champ} value={heure} onChange={e => setHeure(e.target.value)} />
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-gray-500 block">Assigner à (optionnel)</label>
+              <label className="text-xs font-semibold text-gray-500">Attribuer à</label>
               <button type="button" onClick={() => setShowAddEmploye(v => !v)}
-                className="text-xs font-semibold text-teal-700 hover:text-teal-800">
-                + Nouvel employé
-              </button>
+                className="text-xs font-semibold text-teal-700 hover:text-teal-800">+ Nouvel employé</button>
             </div>
-            <select
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-              value={assigneUid}
-              onChange={e => setAssigneUid(e.target.value)}
-            >
-              <option value="">— Personne —</option>
+            <select className={champ} value={assigneUid} onChange={e => setAssigneUid(e.target.value)}>
+              <option value="">Personne</option>
               {membres.map(m => (
                 <option key={m.uid} value={m.uid}>
                   {m.nom} {m.type === 'moi' ? '(Vous)' : m.type === 'benevole' ? '(Bénévole)' : '(Employé)'}
@@ -327,28 +254,187 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
               />
             )}
           </div>
+
+          {/* Rattachement : Aucun / Animal / Portée — jamais mélangés */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes (optionnel)</label>
-            <textarea
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
-              placeholder="Informations complémentaires…"
-              rows={2}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-            />
+            <label className={libelle}>Rattachement (optionnel)</label>
+            <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-xl">
+              {([['aucun', 'Aucun'], ['animal', 'Animal'], ['portee', 'Portée']] as const).map(([v, l]) => {
+                const indispo = !!animauxCharges && ((v === 'animal' && animauxDispo.length === 0) || (v === 'portee' && portees.length === 0));
+                return (
+                  <button key={v} type="button" disabled={indispo} onClick={() => { setRattachement(v); if (v !== 'aucun') chargerAnimaux(); }}
+                    title={indispo ? (v === 'portee' ? 'Aucune portée' : 'Aucun animal') : undefined}
+                    className={`py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-35 ${
+                      rattachement === v ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                    {l}
+                  </button>
+                );
+              })}
+            </div>
+            {rattachement !== 'aucun' && chargementAnimaux && (
+              <p className="text-xs text-gray-400 mt-2">Chargement…</p>
+            )}
+            {rattachement === 'animal' && !chargementAnimaux && (
+              <MultiSelectRattachement
+                placeholder="Choisir des animaux…"
+                recherche="Rechercher un animal…"
+                items={animauxDispo.map(a => ({ id: a.id, label: a.nom, detail: a.espece ?? undefined, filtre: a.espece ?? 'Autre' }))}
+                filtreLabel="Espèce"
+                unite={['animal', 'animaux']}
+                value={animalIds} onChange={setAnimalIds}
+              />
+            )}
+            {rattachement === 'portee' && !chargementAnimaux && (
+              <MultiSelectRattachement
+                placeholder="Choisir des portées…"
+                recherche="Rechercher une portée (nom de la mère)…"
+                items={portees.map(p => ({
+                  id: p.id, label: p.label,
+                  detail: `${p.membres.length} ${p.membres.length > 1 ? 'petits' : 'petit'}`,
+                  filtre: p.membres[0]?.espece ?? 'Autre',
+                }))}
+                filtreLabel="Espèce"
+                unite={['portée', 'portées']}
+                value={porteeIds} onChange={setPorteeIds}
+              />
+            )}
+            {rattachement === 'portee' && nbCibles > 0 && (
+              <p className="text-[11px] text-gray-400 mt-1.5">Une tâche sera créée pour chacun des {nbCibles} petits.</p>
+            )}
+          </div>
+
+          <div>
+            <label className={libelle}>Note (optionnel)</label>
+            <textarea className={`${champ} resize-none`} rows={3}
+              placeholder="Consignes, détails… Ex : après réception de la commande, compter les sacs et mettre à jour les stocks."
+              value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
         </div>
-        <div className="flex gap-3 mt-5">
+
+        {/* Pied fixe */}
+        <div className="flex gap-3 px-5 py-3 border-t border-gray-100">
           <button onClick={onClose}
             className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
             Annuler
           </button>
           <button onClick={save} disabled={!titre.trim() || !date || saving}
-            className="flex-1 py-2.5 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
-            {saving ? 'Ajout…' : 'Ajouter'}
+            className="flex-[1.4] py-2.5 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
+            {saving ? 'Création…' : nbCibles > 1 ? `Créer la tâche (×${nbCibles})` : 'Créer la tâche'}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Menu déroulant multi-sélection (animaux OU portées) ──────────────────────
+// Recherche + filtre (espèce) + cases à cocher, défilement interne. Fermé :
+// étiquettes supprimables, ou un résumé au-delà de 6 éléments.
+
+interface ItemRattachement { id: string; label: string; detail?: string; filtre: string }
+
+function MultiSelectRattachement({ placeholder, recherche, items, filtreLabel, unite, value, onChange }: {
+  placeholder: string;
+  recherche: string;
+  items: ItemRattachement[];
+  filtreLabel: string;
+  unite: [string, string];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [filtre, setFiltre] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const filtres = [...new Set(items.map(i => i.filtre))].sort();
+  const visibles = items.filter(i =>
+    (!filtre || i.filtre === filtre) &&
+    (!q.trim() || i.label.toLowerCase().includes(q.trim().toLowerCase())));
+  const toutVisibleCoche = visibles.length > 0 && visibles.every(i => value.includes(i.id));
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter(x => x !== id) : [...value, id]);
+  const choisis = items.filter(i => value.includes(i.id));
+  const nom = (n: number) => `${n} ${n > 1 ? unite[1] : unite[0]}`;
+
+  return (
+    <div className="relative mt-2" ref={ref}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm bg-white ${open ? 'border-teal-400 ring-2 ring-teal-100' : 'border-gray-200'}`}>
+        <span className={value.length ? 'text-[#1F2A2E] font-medium' : 'text-gray-400'}>
+          {value.length ? `${nom(value.length)} sélectionné${value.length > 1 ? 's' : ''}` : placeholder}
+        </span>
+        <span className={`text-gray-400 text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-2 space-y-2 border-b border-gray-100">
+            <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={recherche}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            {filtres.length > 1 && (
+              <div className="flex flex-wrap gap-1.5" aria-label={filtreLabel}>
+                {['', ...filtres].map(f => (
+                  <button key={f || 'tous'} type="button" onClick={() => setFiltre(f)}
+                    className={`text-xs font-semibold rounded-full px-2.5 py-1 border ${filtre === f ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-200'}`}>
+                    {f || 'Toutes'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="max-h-56 overflow-y-auto overscroll-contain">
+            {visibles.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-gray-400">Aucun résultat</p>
+            ) : visibles.map(i => (
+              <label key={i.id} className={`flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer border-b border-gray-50 last:border-0 ${value.includes(i.id) ? 'bg-teal-50' : 'hover:bg-gray-50'}`}>
+                <input type="checkbox" checked={value.includes(i.id)} onChange={() => toggle(i.id)} className="w-4 h-4 accent-[#0C5C6C]" />
+                <span className="flex-1 min-w-0 truncate">{i.label}</span>
+                {i.detail && <span className="text-xs text-gray-400 flex-shrink-0">{i.detail}</span>}
+              </label>
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-2 p-2 border-t border-gray-100">
+            <button type="button" disabled={visibles.length === 0}
+              onClick={() => onChange(toutVisibleCoche
+                ? value.filter(id => !visibles.some(v => v.id === id))
+                : [...new Set([...value, ...visibles.map(v => v.id)])])}
+              className="text-xs font-semibold text-teal-700 px-2 py-1.5 rounded-lg hover:bg-teal-50 disabled:opacity-40">
+              {toutVisibleCoche ? 'Tout décocher' : 'Tout cocher'}
+            </button>
+            <button type="button" onClick={() => setOpen(false)}
+              className="text-xs font-semibold text-white bg-[#0C5C6C] px-4 py-1.5 rounded-lg">
+              Valider{value.length ? ` (${value.length})` : ''}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!open && choisis.length > 0 && (
+        choisis.length > 6 ? (
+          <div className="flex items-center gap-2 mt-2 text-xs">
+            <span className="font-semibold text-teal-700 bg-teal-50 rounded-full px-3 py-1">{nom(choisis.length)}</span>
+            <button type="button" onClick={() => setOpen(true)} className="text-teal-700 underline">Modifier</button>
+            <button type="button" onClick={() => onChange([])} className="text-gray-400 hover:text-gray-600">Tout retirer</button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {choisis.map(i => (
+              <span key={i.id} className="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-full pl-2.5 pr-1 py-0.5">
+                {i.label}
+                <button type="button" aria-label={`Retirer ${i.label}`} onClick={() => toggle(i.id)}
+                  className="w-4 h-4 rounded-full hover:bg-teal-100 leading-none">×</button>
+              </span>
+            ))}
+          </div>
+        )
+      )}
     </div>
   );
 }

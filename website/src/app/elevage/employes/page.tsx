@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { AddTacheModal, loadMembres, type MembreOption } from '@/components/agenda/AddTacheModal';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -150,6 +151,12 @@ export default function EmployesPage() {
   const [filterEmployeeNom, setFilterEmployeeNom] = useState<string>('');
   const [showAdd, setShowAdd] = useState(false);
   const [tacheModal, setTacheModal] = useState<{ mode: 'create' } | { mode: 'edit'; tache: TacheManuelle } | null>(null);
+  // Création : même fenêtre « Nouvelle tâche » que le Planning (membres chargés à l'ouverture)
+  const [membresTache, setMembresTache] = useState<MembreOption[] | null>(null);
+  useEffect(() => {
+    if (tacheModal?.mode !== 'create' || !user) { setMembresTache(null); return; }
+    loadMembres(user.uid, 'eleveur').then(setMembresTache).catch(() => setMembresTache([]));
+  }, [tacheModal, user]);
   const [isPension, setIsPension] = useState(false);
   // Clinique vétérinaire : rôles ASV / praticien, droits vet_*.
   const [isClinique, setIsClinique] = useState(false);
@@ -1100,7 +1107,19 @@ export default function EmployesPage() {
         <AddEmployeModal uid={user.uid} profileId={profileId || null} estClinique={isClinique} onClose={() => { setShowAdd(false); load(); }} />
       )}
 
-      {tacheModal && user && (
+      {tacheModal?.mode === 'create' && user && membresTache && (
+        <AddTacheModal
+          uid={user.uid}
+          profileId={profileId || null}
+          profilSource="eleveur"
+          membres={membresTache}
+          onClose={() => setTacheModal(null)}
+          onSaved={() => { setTacheModal(null); load(); }}
+          onEmployeCreated={() => { load(); loadMembres(user.uid, 'eleveur').then(setMembresTache); }}
+        />
+      )}
+
+      {tacheModal?.mode === 'edit' && user && (
         <TacheManuelleModal
           uid={user.uid}
           profileId={profileId || null}

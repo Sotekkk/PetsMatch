@@ -10,6 +10,7 @@ import 'package:PetsMatch/widgets/week_events_grid.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
+import 'package:PetsMatch/widgets/rattachement_picker.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
@@ -1382,7 +1383,7 @@ class _AgendaPageState extends State<AgendaPage> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _AddTacheSheet(
+      builder: (_) => AddTacheSheet(
         day: day,
         uid: ownerUid,
         myUid: _uid,
@@ -3648,7 +3649,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
 
 // ── Ajout tâche manuelle depuis l'agenda ──────────────────────────────────────
 
-class _AddTacheSheet extends StatefulWidget {
+class AddTacheSheet extends StatefulWidget {
   final DateTime day;
   /// Propriétaire de l'élevage (uid_eleveur écrit sur la tâche créée).
   final String uid;
@@ -3657,21 +3658,55 @@ class _AddTacheSheet extends StatefulWidget {
   /// cogérant (elevage_cogerants), dont l'uid Firebase diffère du gérant.
   final String? myUid;
   final String profilSource;
+  /// Personnes assignables : {'uid', 'nom'}.
   final List<Map<String, dynamic>> employes;
   final VoidCallback onSaved;
-  const _AddTacheSheet({
+  /// Profil propriétaire de la tâche (défaut : profil actif) — ex. un employé
+  /// qui crée une tâche pour son employeur depuis « Mes employeurs ».
+  final String? profileId;
+  /// Personne pré-sélectionnée dans « Attribuer à ».
+  final String? initialEmployeUid;
+  const AddTacheSheet({
+    super.key,
     required this.day, required this.uid, this.myUid, required this.profilSource,
-    required this.employes, required this.onSaved,
+    required this.employes, required this.onSaved, this.profileId, this.initialEmployeUid,
   });
-  @override State<_AddTacheSheet> createState() => _AddTacheSheetState();
+  @override State<AddTacheSheet> createState() => AddTacheSheetState();
 }
 
-class _AddTacheSheetState extends State<_AddTacheSheet> {
+class AddTacheSheetState extends State<AddTacheSheet> {
   final _titreCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   TimeOfDay _heure = const TimeOfDay(hour: 8, minute: 0);
   String? _selectedEmployeUid;
-  List<Map<String, dynamic>> _selectedAnimaux = [];
+  // Rattachement choisi par l'utilisateur (jamais déduit du titre) : aucun
+  // par défaut, sinon des animaux OU des portées — jamais mélangés.
+  String _rattachement = 'aucun'; // 'aucun' | 'animal' | 'portee'
+  List<String> _animalIds = [];
+  List<String> _porteeIds = [];
+  List<Map<String, dynamic>>? _dispo; // chargés au 1er choix Animal / Portée
+  bool _chargementDispo = false;
+  bool _plusieursJours = false;
+
+  List<PorteeRattachement> get _portees =>
+      widget.profilSource == 'pension' ? const [] : porteesDepuis(_dispo ?? const []);
+
+  /// Animaux réellement concernés à l'enregistrement (portée = ses membres).
+  List<Map<String, dynamic>> get _selectedAnimaux {
+    final dispo = _dispo ?? const <Map<String, dynamic>>[];
+    if (_rattachement == 'animal') {
+      return dispo.where((a) => _animalIds.contains(a['id']?.toString())).toList();
+    }
+    if (_rattachement == 'portee') {
+      final seen = <String>{};
+      return [
+        for (final p in _portees.where((p) => _porteeIds.contains(p.id)))
+          for (final a in p.membres)
+            if (seen.add(a['id'].toString())) a,
+      ];
+    }
+    return const [];
+  }
   late DateTime _dateDebut;
   DateTime? _dateFin;
   bool _saving = false;
@@ -3691,6 +3726,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   void initState() {
     super.initState();
     _dateDebut = widget.day;
+    _selectedEmployeUid = widget.initialEmployeUid;
   }
 
   @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
@@ -3722,31 +3758,54 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     if (d != null && mounted) setState(() => _dateFin = d);
   }
 
-  Future<void> _pickAnimaux() async {
-    // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
-    if (widget.profilSource == 'pension') {
-      final rows = await Supabase.instance.client.from('pension_entrees')
-          .select('id, animal_nom, espece')
-          .eq('pro_uid', widget.uid).eq('statut', 'en_pension').order('animal_nom');
-      final preloaded = (rows as List).map((r) => {
-        'id': r['id'], 'nom': r['animal_nom'], 'espece': r['espece'],
-      }).toList();
-      if (!mounted) return;
-      final result = await AnimalPickerSheet.pickMany(
-        context, preloaded: preloaded, current: _selectedAnimaux,
-      );
-      if (result != null && mounted) setState(() => _selectedAnimaux = result);
-      return;
+  Future<void> _chargerDispo() async {
+    if (_dispo != null || _chargementDispo) return;
+    setState(() => _chargementDispo = true);
+    try {
+      if (widget.profilSource == 'pension') {
+        // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
+        final rows = await Supabase.instance.client.from('pension_entrees')
+            .select('id, animal_nom, espece')
+            .eq('pro_uid', widget.uid).eq('statut', 'en_pension').order('animal_nom');
+        _dispo = (rows as List).map((r) => <String, dynamic>{
+          'id': r['id'], 'nom': r['animal_nom'], 'espece': r['espece'],
+        }).toList();
+      } else {
+        final pid = (widget.profileId ?? User_Info.activeProfileId);
+        _dispo = await chargerAnimauxRattachement(widget.uid, pid.isNotEmpty ? pid : null);
+      }
+    } catch (_) {
+      _dispo = [];
     }
-    final pid = User_Info.activeProfileId;
-    final result = await AnimalPickerSheet.pickMany(
-      context,
-      uid: widget.uid,
-      profileId: pid.isNotEmpty ? pid : null,
-      current: _selectedAnimaux,
-      showPortees: widget.profilSource == 'eleveur',
-    );
-    if (result != null && mounted) setState(() => _selectedAnimaux = result);
+    if (mounted) setState(() => _chargementDispo = false);
+  }
+
+  Future<void> _choisirRattachement(String mode) async {
+    setState(() => _rattachement = mode);
+    if (mode == 'aucun') return;
+    await _chargerDispo();
+    if (!mounted) return;
+    await _ouvrirSelection();
+  }
+
+  Future<void> _ouvrirSelection() async {
+    if (_rattachement == 'animal') {
+      final items = (_dispo ?? []).map((a) => ItemRattachement(
+            a['id'].toString(), (a['nom'] ?? '').toString(),
+            ((a['espece'] ?? '').toString().isEmpty ? 'Autre' : a['espece'].toString()),
+            detail: (a['race'] ?? a['espece'])?.toString())).toList();
+      final res = await showRattachementSheet(context,
+          titre: 'Animaux concernés', recherche: 'Rechercher un animal…', items: items, initial: _animalIds);
+      if (res != null && mounted) setState(() => _animalIds = res);
+    } else if (_rattachement == 'portee') {
+      final items = _portees.map((p) => ItemRattachement(
+            p.id, p.label,
+            ((p.membres.first['espece'] ?? '').toString().isEmpty ? 'Autre' : p.membres.first['espece'].toString()),
+            detail: '${p.membres.length} ${p.membres.length > 1 ? 'petits' : 'petit'}')).toList();
+      final res = await showRattachementSheet(context,
+          titre: 'Portées concernées', recherche: 'Rechercher une portée (nom de la mère)…', items: items, initial: _porteeIds);
+      if (res != null && mounted) setState(() => _porteeIds = res);
+    }
   }
 
   Future<void> _save() async {
@@ -3755,11 +3814,13 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     try {
       final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
       final supa = Supabase.instance.client;
-      final profileIdTache = User_Info.activeProfileId;
+      final profileIdTache = (widget.profileId ?? User_Info.activeProfileId);
       final isSelfAssign = _selectedEmployeUid == (widget.myUid ?? widget.uid);
       String? assigneProfileId;
       if (isSelfAssign) {
-        assigneProfileId = profileIdTache.isNotEmpty ? profileIdTache : null;
+        // Profil de la personne connectée (≠ profil propriétaire de la tâche
+        // quand un employé crée une tâche pour son employeur).
+        assigneProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       } else if (_selectedEmployeUid != null) {
         final assigneProfileData = await supa.from('user_profiles_complet')
             .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
@@ -3844,217 +3905,307 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     }
   }
 
+  InputDecoration _dec({String? hint}) => InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _kTeal, width: 2)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      );
+
+  Widget _libelle(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+            fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+      );
+
+  Widget _boite({required Widget child, VoidCallback? onTap, bool actif = false}) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: actif ? _kTeal : Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(12),
+            color: actif ? _kTeal.withValues(alpha: 0.05) : null,
+          ),
+          child: child,
+        ),
+      );
+
+  Widget _buildRattachement() {
+    final indispoPortee = widget.profilSource == 'pension';
+    final choix = [('aucun', 'Aucun'), ('animal', 'Animal'), if (!indispoPortee) ('portee', 'Portée')];
+    final n = _rattachement == 'animal' ? _animalIds.length : _rattachement == 'portee' ? _porteeIds.length : 0;
+    final nbCibles = _selectedAnimaux.length;
+    final etiquettes = <(String, VoidCallback)>[
+      if (_rattachement == 'animal')
+        for (final a in (_dispo ?? const <Map<String, dynamic>>[]).where((a) => _animalIds.contains(a['id']?.toString())))
+          ((a['nom'] ?? '').toString(), () => setState(() => _animalIds = _animalIds.where((x) => x != a['id'].toString()).toList())),
+      if (_rattachement == 'portee')
+        for (final p in _portees.where((p) => _porteeIds.contains(p.id)))
+          (p.label, () => setState(() => _porteeIds = _porteeIds.where((x) => x != p.id).toList())),
+    ];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _libelle('Rattachement (optionnel)'),
+      Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+        child: Row(children: choix.map((c) {
+          final actif = _rattachement == c.$1;
+          return Expanded(child: GestureDetector(
+            onTap: () => _choisirRattachement(c.$1),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: BoxDecoration(
+                color: actif ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(9),
+                boxShadow: actif ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4)] : null,
+              ),
+              child: Text(c.$2, textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                  fontWeight: FontWeight.w700, color: actif ? _kTeal : Colors.grey.shade600)),
+            ),
+          ));
+        }).toList()),
+      ),
+      if (_rattachement != 'aucun') ...[
+        const SizedBox(height: 8),
+        _boite(
+          onTap: _chargementDispo ? null : () async { await _chargerDispo(); if (mounted) await _ouvrirSelection(); },
+          actif: n > 0,
+          child: Row(children: [
+            Icon(_rattachement == 'animal' ? Icons.pets_outlined : Icons.groups_outlined, size: 17,
+                color: n > 0 ? _kTeal : Colors.grey.shade500),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              _chargementDispo
+                  ? 'Chargement…'
+                  : n == 0
+                      ? (_rattachement == 'animal' ? 'Choisir des animaux…' : 'Choisir des portées…')
+                      : _rattachement == 'animal'
+                          ? '$n animal${n > 1 ? 'x' : ''} sélectionné${n > 1 ? 's' : ''}'
+                          : '$n portée${n > 1 ? 's' : ''} sélectionnée${n > 1 ? 's' : ''}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: n > 0 ? const Color(0xFF1E2025) : Colors.grey.shade500),
+            )),
+            Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade500),
+          ]),
+        ),
+        if (etiquettes.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          if (etiquettes.length > 6)
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: _kTeal.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)),
+                child: Text('${etiquettes.length} ${_rattachement == 'animal' ? 'animaux' : 'portées'}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _kTeal)),
+              ),
+              TextButton(onPressed: _ouvrirSelection,
+                  child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', color: _kTeal))),
+              TextButton(
+                onPressed: () => setState(() { _animalIds = []; _porteeIds = []; }),
+                child: Text('Tout retirer', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
+              ),
+            ])
+          else
+            Wrap(spacing: 6, runSpacing: 6, children: etiquettes.map((e) => InputChip(
+              label: Text(e.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: _kTeal)),
+              onDeleted: e.$2,
+              deleteIconColor: _kTeal,
+              backgroundColor: _kTeal.withValues(alpha: 0.08),
+              side: BorderSide.none,
+              visualDensity: VisualDensity.compact,
+            )).toList()),
+        ],
+        if (_rattachement == 'portee' && nbCibles > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('Une tâche sera créée pour chacun des $nbCibles petits.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          ),
+      ],
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final nbCibles = _selectedAnimaux.length * _jours.length;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          Center(child: Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-          )),
-          const SizedBox(height: 16),
-          const Text('Nouvelle tâche',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Color(0xFF1E2025))),
-          const SizedBox(height: 16),
-          const Text('Titre *', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _titreCtrl,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            onChanged: (_) => setState(() {}),
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Ex: Nettoyage cage, Pesée…',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: _kTeal, width: 2)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // En-tête
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 8, 4),
+            child: Column(children: [
+              Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+              Row(children: [
+                const Expanded(child: Text('Nouvelle tâche',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18, color: Color(0xFF1E2025)))),
+                IconButton(icon: Icon(Icons.close_rounded, color: Colors.grey.shade500), onPressed: () => Navigator.pop(context)),
+              ]),
+            ]),
           ),
-          const SizedBox(height: 12),
-          const Text('Heure (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-          const SizedBox(height: 6),
-          GestureDetector(
-            onTap: () async {
-              final t = await showTimePicker(context: context, initialTime: _heure);
-              if (t != null && mounted) setState(() => _heure = t);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade400),
-                borderRadius: BorderRadius.circular(12),
+          // Formulaire (défile seul ; le bouton reste visible)
+          Flexible(child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _libelle('Titre *'),
+              TextField(
+                controller: _titreCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                onChanged: (_) => setState(() {}),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: _dec(hint: 'Ex : Faire l\'inventaire des croquettes'),
               ),
-              child: Text(
-                _heure.format(context),
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text('Période', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-          const SizedBox(height: 6),
-          Row(children: [
-            Expanded(child: GestureDetector(
-              onTap: _pickDebut,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade400),
-                  borderRadius: BorderRadius.circular(10),
+              const SizedBox(height: 14),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _libelle(_plusieursJours ? 'Du *' : 'Date *'),
+                  _boite(onTap: _pickDebut, child: Text(DateFormat('EEE d MMM', 'fr_FR').format(_dateDebut),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)))),
+                ])),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _libelle('Heure'),
+                  _boite(
+                    onTap: () async {
+                      final t = await showTimePicker(context: context, initialTime: _heure);
+                      if (t != null && mounted) setState(() => _heure = t);
+                    },
+                    child: Text(_heure.format(context),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
+                  ),
+                ])),
+              ]),
+              if (_plusieursJours) ...[
+                const SizedBox(height: 10),
+                _libelle('Au'),
+                _boite(
+                  onTap: _pickFin,
+                  actif: _dateFin != null,
+                  child: Row(children: [
+                    Expanded(child: Text(
+                      _dateFin != null ? DateFormat('EEE d MMM', 'fr_FR').format(_dateFin!) : 'Choisir la date de fin',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                          color: _dateFin != null ? const Color(0xFF1E2025) : Colors.grey.shade500))),
+                    if (_dateFin != null)
+                      Text('${_jours.length} jours', style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                          color: _kTeal, fontWeight: FontWeight.w700)),
+                  ]),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Du', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
-                  const SizedBox(height: 2),
-                  Text(DateFormat('EEE d MMM', 'fr_FR').format(_dateDebut),
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025))),
-                ]),
-              ),
-            )),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(Icons.arrow_forward, size: 16, color: Colors.grey.shade400),
-            ),
-            Expanded(child: GestureDetector(
-              onTap: _pickFin,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  border: Border.all(color: _dateFin != null ? _kTeal : Colors.grey.shade400),
-                  borderRadius: BorderRadius.circular(10),
-                  color: _dateFin != null ? const Color(0xFFE8F5E9) : null,
+              ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => setState(() { _plusieursJours = !_plusieursJours; if (!_plusieursJours) _dateFin = null; }),
+                  style: TextButton.styleFrom(foregroundColor: _kTeal, padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  child: Text(_plusieursJours ? 'Un seul jour' : '+ Sur plusieurs jours',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Au', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
-                  const SizedBox(height: 2),
-                  Text(
-                    _dateFin != null
-                      ? DateFormat('EEE d MMM', 'fr_FR').format(_dateFin!)
-                      : 'Même jour',
-                    style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 13,
-                      color: _dateFin != null ? const Color(0xFF1E2025) : Colors.grey.shade400,
-                    )),
-                ]),
               ),
-            )),
-          ]),
-          if (_dateFin != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(children: [
-                Text('${_jours.length} jours', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _kTeal, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 8),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(child: _libelle('Attribuer à')),
                 GestureDetector(
-                  onTap: () => setState(() => _dateFin = null),
-                  child: Text('Effacer', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500, decoration: TextDecoration.underline)),
+                  onTap: () async {
+                    final created = await showModalBottomSheet<bool>(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => AddEmployeManuelSheet(uid: widget.uid, teal: _kTeal, profilSource: widget.profilSource),
+                    );
+                    if (created == true && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Employé ajouté — visible dans "Mes employés"', style: TextStyle(fontFamily: 'Galey')),
+                        backgroundColor: _kTeal,
+                      ));
+                    }
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.only(bottom: 6),
+                    child: Text('+ Nouvel employé',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _kTeal)),
+                  ),
+                ),
+              ]),
+              if (widget.employes.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  value: _selectedEmployeUid,
+                  isExpanded: true,
+                  onChanged: (v) => setState(() => _selectedEmployeUid = v),
+                  decoration: _dec(),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Personne', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                    ...widget.employes.map((e) => DropdownMenuItem<String?>(
+                      value: e['uid'] as String,
+                      child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                    )),
+                  ],
+                )
+              else
+                Text('Aucun employé pour le moment', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade400)),
+              const SizedBox(height: 14),
+              _buildRattachement(),
+              const SizedBox(height: 14),
+              _libelle('Note (optionnel)'),
+              TextField(
+                controller: _notesCtrl,
+                minLines: 2,
+                maxLines: 4,
+                textCapitalization: TextCapitalization.sentences,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: _dec(hint: 'Consignes, détails…'),
+              ),
+            ]),
+          )),
+          // Pied fixe
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade100))),
+              child: Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey.shade300),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 3,
+                  child: ElevatedButton(
+                    onPressed: _saving || _titreCtrl.text.trim().isEmpty ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _kTeal,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text(
+                      _saving ? 'Création…' : nbCibles > 1 ? 'Créer la tâche (×$nbCibles)' : 'Créer la tâche',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  ),
                 ),
               ]),
             ),
-          const SizedBox(height: 12),
-          const Text('Notes (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _notesCtrl,
-            maxLines: 2,
-            textCapitalization: TextCapitalization.sentences,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Informations complémentaires…',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: _kTeal, width: 2)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
           ),
-          const SizedBox(height: 12),
-          const Text('Animaux concernés (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-          const SizedBox(height: 6),
-          AnimalPickerField(
-            selected: _selectedAnimaux,
-            onTap: _pickAnimaux,
-          ),
-          const SizedBox(height: 12),
-          Row(children: [
-            const Text('Attribuer à (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-            const Spacer(),
-            GestureDetector(
-              onTap: () async {
-                final created = await showModalBottomSheet<bool>(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => AddEmployeManuelSheet(uid: widget.uid, teal: _kTeal, profilSource: widget.profilSource),
-                );
-                if (created == true && mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Employé ajouté — visible dans "Mes employés"', style: TextStyle(fontFamily: 'Galey')),
-                    backgroundColor: _kTeal,
-                  ));
-                }
-              },
-              child: const Text('+ Nouvel employé',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _kTeal)),
-            ),
-          ]),
-          const SizedBox(height: 6),
-          if (widget.employes.isNotEmpty)
-            DropdownButtonFormField<String?>(
-              value: _selectedEmployeUid,
-              onChanged: (v) => setState(() => _selectedEmployeUid = v),
-              decoration: InputDecoration(
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _kTeal, width: 2)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              ),
-              items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('— Personne —', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
-                ...widget.employes.map((e) => DropdownMenuItem<String?>(
-                  value: e['uid'] as String,
-                  child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
-                )),
-              ],
-            )
-          else
-            Text('Aucun employé pour le moment', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade400)),
-          const SizedBox(height: 20),
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.grey.shade300),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: const Text('Annuler',
-                    style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: _saving || _titreCtrl.text.trim().isEmpty ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kTeal,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-                child: Text(_saving ? 'Ajout…' : 'Ajouter',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              ),
-            ),
-          ]),
         ]),
       ),
     );
