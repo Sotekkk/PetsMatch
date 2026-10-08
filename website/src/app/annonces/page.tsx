@@ -603,6 +603,8 @@ function AnnonceCard({
     prix = a.type_vente === 'valorisation'
       ? (a.prix != null && a.prix > 0 ? `${a.prix} €` : 'À convenir')
       : (a.prix != null && a.prix > 0 ? `${a.prix} €${cad}` : 'À convenir');
+  } else if (a.type_vente === 'don') {
+    prix = 'Don';
   } else if (isSaillie) {
     const sp = a.saillie_prix != null ? Number(a.saillie_prix) : null;
     prix = sp != null && !isNaN(sp) ? `${Math.round(sp)} €` : null;
@@ -611,7 +613,7 @@ function AnnonceCard({
     if (parts.length === 2 && parts[0] !== parts[1]) prix = `${parts[0]} – ${parts[1]} €`;
     else if (parts.length > 0) prix = `${parts[0]} €`;
   } else {
-    prix = a.prix != null ? `${a.prix} €` : null;
+    prix = a.prix != null ? `${a.type_vente === 'adoption' ? 'Frais d’adoption : ' : ''}${a.prix} €` : null;
   }
 
   const wholeKey = `${a.id}_null`;

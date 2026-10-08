@@ -37,6 +37,7 @@ const STATUT_LABEL: Record<string, string> = {
   disponible: 'Disponible', reserve: 'Réservé', vendu: 'Vendu',
   archivee: 'Archivée', pause: 'En pause', expiree: 'Expirée',
   brouillon: 'Brouillon · non payée',
+  brouillon_eleveur: 'Brouillon',
   quota_depasse: 'Bloquée · quota dépassé',
 };
 const STATUT_COLOR: Record<string, string> = {
@@ -47,6 +48,7 @@ const STATUT_COLOR: Record<string, string> = {
   pause:      'bg-gray-100 text-gray-500',
   expiree:    'bg-red-100 text-red-500',
   brouillon:  'bg-amber-100 text-amber-700',
+  brouillon_eleveur: 'bg-gray-100 text-gray-600',
   quota_depasse: 'bg-red-100 text-red-600',
 };
 
@@ -185,11 +187,12 @@ export default function MesAnnoncesPage() {
     const p = new URLSearchParams(window.location.search);
     if (p.get('paye') === '1') return '✅ Paiement reçu — votre annonce est en cours de publication.';
     if (p.get('paiement') === 'annule') return 'Paiement annulé — votre annonce reste en brouillon.';
+    if (p.get('brouillon') === '1') return 'Brouillon enregistré. Reprenez-le quand vous voulez avec « Reprendre ».';
     return null;
   });
   useEffect(() => {
     const s = window.location.search;
-    if (s.includes('paye=') || s.includes('paiement=')) {
+    if (s.includes('paye=') || s.includes('paiement=') || s.includes('brouillon=')) {
       window.history.replaceState({}, '', '/mes-annonces');
     }
   }, []);
@@ -316,7 +319,10 @@ export default function MesAnnoncesPage() {
           {filtered.map(a => {
             const isSaillie = a.type_vente === 'saillie';
             const isPortee = a.type === 'portee';
-            const statut = a.statut ?? 'disponible';
+            const statutBrut = a.statut ?? 'disponible';
+            // Brouillon d'éleveur (enregistré depuis Nouvelle annonce, sans paiement attendu)
+            // ≠ brouillon d'annonce cheval en attente de paiement (paiement_statut « attente »).
+            const statut = statutBrut === 'brouillon' && a.paiement_statut !== 'attente' ? 'brouillon_eleveur' : statutBrut;
             const photos = (a.photos as unknown as string[]) ?? [];
             const sailliePrixNum = a.saillie_prix != null ? Number(a.saillie_prix) : null;
             const EQUIDE_FL: Record<string, string> = {
@@ -388,6 +394,19 @@ export default function MesAnnoncesPage() {
                         disabled={deleting === a.id}
                         className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
                         {deleting === a.id ? '…' : '🗑'}
+                      </button>
+                    </div>
+                  ) : statut === 'brouillon_eleveur' ? (
+                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
+                      <Link href={`/annonces/creer?brouillon=${a.id}`}
+                        className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold py-2 rounded-lg transition-colors">
+                        Reprendre
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(a.id)}
+                        disabled={deleting === a.id}
+                        className="px-3 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-500 rounded-lg transition-colors disabled:opacity-50">
+                        {deleting === a.id ? '…' : 'Supprimer'}
                       </button>
                     </div>
                   ) : statut === 'brouillon' ? (

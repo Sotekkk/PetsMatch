@@ -916,8 +916,14 @@ function AnnonceDetailPageInner() {
               </p>
             </div>
           )}
-          {!isPortee && !isSaillie && !equideFormule && annonce.prix != null && (
-            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">{annonce.prix} €</p>
+          {annonce.type_vente === 'don' && (
+            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">Don</p>
+          )}
+          {!isPortee && !isSaillie && !equideFormule && annonce.type_vente !== 'don' && annonce.prix != null && (
+            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">
+              {annonce.type_vente === 'adoption' && <span className="block text-xs font-semibold text-gray-500">Frais d’adoption</span>}
+              {annonce.prix} €
+            </p>
           )}
           {isSaillie && annonce.saillie_prix != null && (
             <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">{Number(annonce.saillie_prix)} €</p>
