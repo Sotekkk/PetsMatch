@@ -8,6 +8,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/utils/reproducteurs.dart';
 import 'package:PetsMatch/widgets/inline_video.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -556,7 +557,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Future<void> _pickEtalon() async {
     final r = await showModalBottomSheet<Map<String, dynamic>>(
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'male'),
+      builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'male', reproducteursSeulement: true),
     );
     if (r != null && mounted) setState(() {
       _etalonAnimalId = r['id'];
@@ -2518,7 +2519,9 @@ class _ReseauEtalonSheetState extends State<_ReseauEtalonSheet> {
 class _AnimalPickerSheet extends StatelessWidget {
   final String espece;
   final String? sexeFilter;
-  const _AnimalPickerSheet({required this.espece, this.sexeFilter});
+  // Saillie : seuls les reproducteurs actifs (utils/reproducteurs.dart)
+  final bool reproducteursSeulement;
+  const _AnimalPickerSheet({required this.espece, this.sexeFilter, this.reproducteursSeulement = false});
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -2550,9 +2553,9 @@ class _AnimalPickerSheet extends StatelessWidget {
                   future: Supabase.instance.client
                       .from('animaux').select()
                       .eq('uid_eleveur', uid).eq('espece', espece)
-                      .then((rows) => sexeFilter == null
-                          ? rows
-                          : rows.where((d) => d['sexe'] == sexeFilter).toList()),
+                      .then((rows) => rows.where((d) =>
+                          (sexeFilter == null || d['sexe'] == sexeFilter) &&
+                          (!reproducteursSeulement || estReproducteurEligible(d))).toList()),
                   builder: (context, snap) {
                     if (!snap.hasData) return const Center(
                         child: CircularProgressIndicator(color: _teal));
@@ -2565,7 +2568,8 @@ class _AnimalPickerSheet extends StatelessWidget {
                             style: TextStyle(fontFamily: 'Galey', fontSize: 15,
                                 color: Colors.grey.shade500)),
                         const SizedBox(height: 4),
-                        Text(sexeFilter == 'femelle' ? 'Aucune femelle de cette espèce'
+                        Text(reproducteursSeulement ? 'Aucun reproducteur actif : cochez « Reproducteur » sur sa fiche'
+                            : sexeFilter == 'femelle' ? 'Aucune femelle de cette espèce'
                             : sexeFilter == 'male' ? 'Aucun mâle de cette espèce'
                             : '',
                             style: TextStyle(fontFamily: 'Galey', fontSize: 12,

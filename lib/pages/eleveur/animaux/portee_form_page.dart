@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/reproducteurs.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -150,7 +151,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       final pid = User_Info.activeProfileId;
       var q = _supa
           .from('animaux')
-          .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
+          .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
           .eq('uid_eleveur', uid)
           .or('statut.is.null,statut.eq.present');
       if (pid.isNotEmpty) q = q.eq('profile_id', pid);
@@ -164,12 +165,14 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     }
   }
 
+  // Parents proposés : reproducteurs actifs uniquement (utils/reproducteurs.dart).
+  // Un parent extérieur ou plus éligible se saisit dans les champs nom / puce.
   List<Map<String, dynamic>> _peres() => _animauxExistants
-      .where((a) => a['espece'] == _espece && (a['sexe'] as String? ?? '').startsWith('m'))
+      .where((a) => a['espece'] == _espece && (a['sexe'] as String? ?? '').startsWith('m') && estReproducteurEligible(a))
       .toList();
 
   List<Map<String, dynamic>> _meres() => _animauxExistants
-      .where((a) => a['espece'] == _espece && (a['sexe'] as String? ?? '').startsWith('f'))
+      .where((a) => a['espece'] == _espece && (a['sexe'] as String? ?? '').startsWith('f') && estReproducteurEligible(a))
       .toList();
 
   void _addAnimal() => setState(() => _animaux.add(_AnimalRow()));
@@ -242,7 +245,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     final peres = _peres();
     if (peres.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Aucun mâle enregistré pour cette espèce')));
+          content: Text('Aucun mâle reproducteur actif pour cette espèce. Saisissez le père ou cochez « Reproducteur » sur sa fiche.')));
       return;
     }
     final sel = await _showAnimalPickerSheet(peres, 'Sélectionner le père');
@@ -259,7 +262,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     final meres = _meres();
     if (meres.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Aucune femelle enregistrée pour cette espèce')));
+          content: Text('Aucune femelle reproductrice active pour cette espèce. Saisissez la mère ou cochez « Reproducteur » sur sa fiche.')));
       return;
     }
     final sel = await _showAnimalPickerSheet(meres, 'Sélectionner la mère');

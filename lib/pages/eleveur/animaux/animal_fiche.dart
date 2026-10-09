@@ -49,6 +49,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/edit_cession_sheet.dart';
 import 'package:PetsMatch/utils/sante_couleurs.dart';
+import 'package:PetsMatch/utils/reproducteurs.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
@@ -2335,7 +2336,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 // plan du propriétaire.
                 if (User_Info.catPro == 'garde')
                   _AlimentationTab(this),
-                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
+                // Pros (véto, santé…) : consultation seule — déclarer chaleurs,
+                // saillies et gestations est réservé à l'éleveur.
+                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: true, sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 if (_isHealthPro)
                   _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
@@ -9187,10 +9190,16 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
   // Dates de saillie de l'épisode (une chaleur) : saillie 1, 2, 3…
   final List<DateTime> _dates = [];
   String? _selectedPartenaireId;
-  List<Map<String, String>> _partenaires = [];
+  // Reproducteurs éligibles (utils/reproducteurs.dart) : mon élevage / extérieurs
+  List<Reproducteur> _partenaires = [];
+  List<Reproducteur> _exterieurs = [];
   bool _loadingPartenaires = true;
+  String _provenance = 'elevage'; // 'elevage' | 'exterieur'
+  String? _raisonAnimalNonEligible; // l'animal de la fiche lui-même (nouvelle saillie)
+  String? _erreur;
 
   String get _sexePartenaire => widget.sexeAnimal == 'male' ? 'femelle' : 'male';
+  String get _libellePartenaire => _sexePartenaire == 'male' ? 'un étalon' : 'une reproductrice';
 
   @override
   void initState() {
@@ -9204,28 +9213,133 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
       _methode = e['methode'] ?? 'naturelle';
       _notes.text = e['notes'] ?? '';
       _selectedPartenaireId = e['partenaire_animal_id'] as String?;
+      if ((_selectedPartenaireId ?? '').isEmpty && _nomPartenaire.text.isNotEmpty) _provenance = 'exterieur';
     }
     _loadPartenaires();
   }
 
   Future<void> _loadPartenaires() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) { if (mounted) setState(() => _loadingPartenaires = false); return; }
-    final rows = await Supabase.instance.client
-        .from('animaux')
-        .select('id, nom, identification, espece, sexe')
-        .eq('uid_eleveur', uid)
-        .eq('espece', widget.espece)
-        .eq('sexe', _sexePartenaire);
-    if (!mounted) return;
+    try {
+      // Élevage propriétaire de la fiche (pas forcément l'utilisateur connecté :
+      // cogérant, salarié)
+      final animal = await Supabase.instance.client.from('animaux')
+          .select('uid_eleveur, reproducteur, is_retraite, sterilise, statut')
+          .eq('id', widget.animalId).maybeSingle();
+      final uid = (animal?['uid_eleveur'] as String?) ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+      final results = await Future.wait([
+        chargerReproducteurs(uidEleveur: uid, sexe: _sexePartenaire, espece: widget.espece, exclureId: widget.animalId),
+        chargerReproducteursExterieurs(uidEleveur: uid, sexe: _sexePartenaire, espece: widget.espece),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _partenaires = results[0];
+        _exterieurs = results[1];
+        _raisonAnimalNonEligible = animal == null ? null : raisonNonEligible(animal);
+        _loadingPartenaires = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPartenaires = false);
+    }
+  }
+
+  Future<void> _choisirInterne() async {
+    final r = await choisirReproducteur(context,
+        titre: _sexePartenaire == 'male' ? 'Sélectionner un étalon' : 'Sélectionner une reproductrice',
+        options: _partenaires,
+        vide: _sexePartenaire == 'male'
+            ? 'Aucun mâle reproducteur actif. Cochez « Reproducteur » sur la fiche de vos mâles (ni retraités, ni stérilisés, ni cédés).'
+            : 'Aucune femelle reproductrice active. Cochez « Reproducteur » sur la fiche de vos femelles (ni retraitées, ni stérilisées, ni cédées).');
+    if (r == null || !mounted) return;
     setState(() {
-      _partenaires = (rows as List).map((d) => <String, String>{
-        'id': (d['id'] ?? '') as String,
-        'nom': (d['nom'] ?? '') as String,
-        'identification': (d['identification'] ?? '') as String,
-      }).toList();
-      _loadingPartenaires = false;
+      _selectedPartenaireId = r.id;
+      _nomPartenaire.text = r.nom;
+      _identPartenaire.text = r.identification ?? '';
+      _erreur = null;
     });
+  }
+
+  Future<void> _choisirExterieur() async {
+    final r = await choisirReproducteur(context,
+        titre: _sexePartenaire == 'male' ? 'Étalon extérieur' : 'Reproductrice extérieure',
+        options: _exterieurs,
+        vide: 'Aucun reproducteur extérieur enregistré. Saisissez-le ci-dessous.');
+    if (r == null || !mounted) return;
+    setState(() {
+      _selectedPartenaireId = null; // jamais rattaché au cheptel
+      _nomPartenaire.text = r.nom;
+      _identPartenaire.text = r.identification ?? '';
+      _erreur = null;
+    });
+  }
+
+  /// Bloc « partenaire » : sélecteur compact (mon élevage) ou extérieur.
+  List<Widget> _partenaireSection() {
+    final interne = _provenance == 'elevage';
+    final selectionInterne = interne && (_selectedPartenaireId ?? '').isNotEmpty;
+    final dansListe = _partenaires.any((r) => r.id == _selectedPartenaireId);
+    return [
+      Container(
+        decoration: BoxDecoration(border: Border.all(color: const Color(0xFFD1D5DB)), borderRadius: BorderRadius.circular(8)),
+        clipBehavior: Clip.antiAlias,
+        child: Row(children: [
+          for (final o in const ['elevage', 'exterieur'])
+            Expanded(child: InkWell(
+              onTap: () => setState(() {
+                if (_provenance == o) return;
+                _provenance = o;
+                _selectedPartenaireId = null;
+                _nomPartenaire.clear(); _identPartenaire.clear();
+              }),
+              child: Container(
+                height: 40, alignment: Alignment.center,
+                color: _provenance == o ? const Color(0xFF0C5C6C) : Colors.white,
+                child: Text(o == 'exterieur' ? (_sexePartenaire == 'male' ? 'Étalon extérieur' : 'Femelle extérieure') : 'Mon élevage',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                        color: _provenance == o ? Colors.white : const Color(0xFF1F2A2E))),
+              ),
+            )),
+        ]),
+      ),
+      const SizedBox(height: 10),
+      if (_loadingPartenaires)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 6),
+            child: Center(child: SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF6E9E57)))))
+      else if (interne) ...[
+        ChampReproducteur(
+          label: 'Sélectionner $_libellePartenaire',
+          valeur: selectionInterne ? _nomPartenaire.text : null,
+          detail: selectionInterne
+              ? (dansListe ? _partenaires.firstWhere((r) => r.id == _selectedPartenaireId).detail
+                  : 'N\'est plus proposé pour une nouvelle saillie (saillie existante conservée)')
+              : null,
+          onTap: _choisirInterne,
+        ),
+        if (_partenaires.isEmpty)
+          Padding(padding: const EdgeInsets.only(top: 6),
+            child: Text(_sexePartenaire == 'male'
+                ? 'Aucun mâle reproducteur actif dans votre élevage.'
+                : 'Aucune femelle reproductrice active dans votre élevage.',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B)))),
+        const SizedBox(height: 10),
+      ] else ...[
+        OutlinedButton.icon(
+          onPressed: _choisirExterieur,
+          icon: const Icon(Icons.search, size: 16, color: Color(0xFF0C5C6C)),
+          label: const Text('Choisir un reproducteur extérieur enregistré',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF0C5C6C))),
+          style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF0C5C6C)),
+              minimumSize: const Size(double.infinity, 40),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+        ),
+        const SizedBox(height: 4),
+        const Text('Ou saisissez-le : il est enregistré dans le dossier de reproduction, sans être ajouté à votre cheptel.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+        const SizedBox(height: 10),
+        _textField(_sexePartenaire == 'male' ? 'Nom de l\'étalon' : 'Nom de la reproductrice', _nomPartenaire),
+        _textField('N° d\'identification', _identPartenaire),
+      ],
+    ];
   }
 
   @override
@@ -9394,42 +9508,15 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
           const SizedBox(height: 16),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 ..._datesSection(),
-                if (_loadingPartenaires)
-                  const Center(child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 6),
-                    child: SizedBox(width: 20, height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF6E9E57))),
-                  )),
-                if (!_loadingPartenaires && _partenaires.isNotEmpty) ...[
-                  Text(
-                    widget.sexeAnimal == 'male' ? 'Femelles de votre élevage' : 'Mâles de votre élevage',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                if (widget.existing == null && _raisonAnimalNonEligible != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade200)),
+                    child: Text('Nouvelle saillie impossible : $_raisonAnimalNonEligible.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.red.shade700)),
                   ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6, runSpacing: 4,
-                    children: _partenaires.map((m) => ActionChip(
-                      label: Text(m['nom']!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                      backgroundColor: _selectedPartenaireId == m['id']
-                          ? const Color(0xFF6E9E57)
-                          : const Color(0xFFEEF5EA),
-                      labelStyle: TextStyle(
-                        fontFamily: 'Galey', fontSize: 12,
-                        color: _selectedPartenaireId == m['id'] ? Colors.white : const Color(0xFF1F2A2E),
-                      ),
-                      side: const BorderSide(color: Color(0xFF6E9E57), width: 0.8),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      onPressed: () => setState(() {
-                        _nomPartenaire.text   = m['nom']!;
-                        _identPartenaire.text = m['identification']!;
-                        _selectedPartenaireId = m['id']!;
-                      }),
-                    )).toList(),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                _textField('Nom du partenaire', _nomPartenaire),
-                _textField('N° identification partenaire', _identPartenaire),
+                ..._partenaireSection(),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: DropdownButtonFormField<String>(
@@ -9450,6 +9537,9 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                 ),
                 _textField('Notes', _notes, maxLines: 2),
               ]),
+          if (_erreur != null)
+            Padding(padding: const EdgeInsets.only(top: 6),
+              child: Text(_erreur!, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.red.shade700))),
           const SizedBox(height: 16),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             TextButton(onPressed: () => Navigator.pop(context),
@@ -9458,6 +9548,22 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
             ElevatedButton(
               onPressed: () async {
                 if (_dates.isEmpty) return;
+                if (_nomPartenaire.text.trim().isEmpty) {
+                  setState(() => _erreur = 'Sélectionnez $_libellePartenaire ou saisissez un reproducteur extérieur.');
+                  return;
+                }
+                // Nouvelle saillie : animal de la fiche et partenaire interne éligibles
+                // (contrôle aussi fait côté serveur à l'enregistrement)
+                if (widget.existing == null) {
+                  if (_raisonAnimalNonEligible != null) {
+                    setState(() => _erreur = 'Nouvelle saillie impossible : $_raisonAnimalNonEligible.');
+                    return;
+                  }
+                  if (_provenance == 'elevage' && !_partenaires.any((r) => r.id == _selectedPartenaireId)) {
+                    setState(() => _erreur = 'Sélectionnez $_libellePartenaire parmi vos reproducteurs actifs.');
+                    return;
+                  }
+                }
                 final supa = Supabase.instance.client;
                 final sorted = [..._dates]..sort();
                 final isoDates = sorted.map((d) => d.toIso8601String()).toList();
@@ -9471,8 +9577,10 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                   'ident_partenaire': _identPartenaire.text.trim(),
                   'methode': _methode,
                   'notes': _notes.text.trim(),
-                  'partenaire_animal_id': _selectedPartenaireId,
+                  'partenaire_animal_id': _provenance == 'elevage' && (_selectedPartenaireId ?? '').isNotEmpty
+                      ? _selectedPartenaireId : null,
                 };
+                try {
                 if (widget.existing != null) {
                   await supa.from('saillies').update(payload).eq('id', widget.existing!['id']);
                   // Répercute la fenêtre sur la gestation auto liée, si elle
@@ -9520,6 +9628,12 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                       });
                     } catch (_) {}
                   }
+                }
+                } on PostgrestException catch (e) {
+                  setState(() => _erreur = e.message.contains('REPRO_NON_ELIGIBLE')
+                      ? 'Enregistrement refusé : reproducteur non éligible (retraité, stérilisé, cédé ou non coché « Reproducteur »).'
+                      : 'Erreur : ${e.message}');
+                  return;
                 }
                 if (context.mounted) Navigator.pop(context);
               },
