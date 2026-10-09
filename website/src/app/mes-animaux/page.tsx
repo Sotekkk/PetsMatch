@@ -69,10 +69,6 @@ const SPECIES = [
   { value: 'autre',  label: 'Autres',  color: '#6F767B' },
 ];
 
-const SPECIES_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
-  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷', autre: '🐾',
-};
 
 function speciesLabel(v: string) {
   return SPECIES.find(s => s.value === v)?.label ?? v;
@@ -83,231 +79,188 @@ function formatDate(d?: string) {
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-function Chip({
-  label, active, color, onClick, emoji,
-}: { label: string; active: boolean; color: string; onClick: () => void; emoji?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      style={active ? { backgroundColor: color, borderColor: color, color: '#fff' } : { borderColor: '#d1d5db', color: '#374151' }}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all">
-      {emoji && <span>{emoji}</span>}
-      {label}
-    </button>
-  );
+
+/** Statut lisible : présence (présent / cédé / décédé) distincte de la réservation. */
+function etatAnimal(a: Animal, isBebe: boolean): { label: string; color: string } {
+  if (a.statut === 'decede') return { label: 'Décédé', color: '#E25C5C' };
+  if (a.statut === 'sorti') return { label: 'Cédé', color: '#0C5C6C' };
+  if (a.statut === 'en_attente_cession' || a.statut === 'cession_en_cours') return { label: 'Cession en cours', color: '#F59E0B' };
+  if (a.statut === 'reserve') return { label: 'Réservé', color: '#D97706' };
+  return { label: isBebe ? 'Disponible' : 'Présent', color: '#6E9E57' };
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false, cede = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
-  a: Animal; tab: 'presents' | 'anciens' | 'decedes'; showPorteeBadge?: boolean;
-  // Carte "Bébés" vendue/cédée (statut 'sorti', filtre « Cédés ») : reste
-  // affichée (historique, courbe de poids) mais non modifiable — indépendant de `tab`
-  // (toujours 'presents' ici), donc un prop dédié plutôt que réutiliser le
-  // badge Sorti/Décédé lié à tab==='anciens'|'decedes'.
-  cede?: boolean;
-  reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
-  selectMode?: boolean; selected?: boolean;
-  onDelete?: () => void; onToggleReproducteur?: () => void; onToggleReproPublic?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
-  onCeder?: () => void;
-  onTransferer?: () => void;
-}) {
-  const espColor = SPECIES.find(s => s.value === a.espece)?.color ?? '#6F767B';
-  const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
-  const isFemale = (a.sexe ?? '').toLowerCase().startsWith('f');
-  const photo    = a.photo_url ? thumbUrl(a.photo_url, 400, 75, 'contain') : undefined;
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const imageArea = (
-    <div className="aspect-square relative overflow-hidden" style={{ background: espColor + '18' }}>
-      {photo
-        ? <img src={photo} alt={a.nom ?? ''} className="w-full h-full object-contain" />
-        : <div className="w-full h-full flex items-center justify-center text-5xl">
-            {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}
-          </div>}
-      {((tab === 'anciens' || tab === 'decedes') && (a.statut === 'sorti' || a.statut === 'decede')) && (
-        <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg ${
-          a.statut === 'decede' ? 'bg-red-500' : 'bg-[#0C5C6C]'
-        }`}>
-          {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
-        </span>
-      )}
-      {cede && tab === 'presents' && (
-        <span className="absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg bg-[#0C5C6C]">
-          Sorti
-        </span>
-      )}
-      {tab === 'presents' && a.statut === 'en_attente_cession' && !selectMode && (
-        <span className="absolute top-2 right-2 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg">
-          ⏳ Cession
-        </span>
-      )}
-      {/* Sur les cartes "Bébés" (showPorteeBadge), le badge Réservé s'affiche
-          juste à côté du badge Portée plutôt qu'en haut à droite, pour que
-          les deux se voient d'un coup d'œil ensemble. */}
-      {tab === 'presents' && a.statut === 'reserve' && !showPorteeBadge && !selectMode && (
-        <span className="absolute top-2 right-2 bg-amber-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg">
-          🔖 Réservé
-        </span>
-      )}
-      {showPorteeBadge && a.portee_id && !selectMode && (
-        <span className="absolute top-2 left-2 flex items-center gap-1">
-          <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
-            🐣 Portée
-          </span>
-          {a.statut === 'reserve' && (
-            <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-amber-600/92">
-              🔖 Réservé
-            </span>
-          )}
-        </span>
-      )}
-      {tab === 'presents' && reproducteur && !selectMode && (
-        <span className="absolute top-2 right-2 bg-amber-400/90 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
-          ⭐
-        </span>
-      )}
-      {tab === 'presents' && reproducteur && reproPublic && !selectMode && (
-        <span className="absolute top-2 right-9 bg-[#0C5C6C]/90 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center" title="Visible sur le profil public">
-          👁
-        </span>
-      )}
-      {tab === 'presents' && isRetraite && !selectMode && (
-        <span className="absolute top-2 left-2 bg-amber-800/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg">
-          Retraite
-        </span>
-      )}
-      {selectMode && (
-        <>
-          {selected && <div className="absolute inset-0 bg-[#0C5C6C]/15" />}
-          <div className={`absolute top-2 left-2 w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-colors ${
-            selected ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'bg-white border-gray-400'
-          }`}>
-            {selected && '✓'}
-          </div>
-        </>
-      )}
-      {!selectMode && (gestanteFlag || chaleurFlag) && (
-        <div className="absolute bottom-2 left-2 flex flex-col gap-1">
-          {gestanteFlag && (
-            <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#6E9E57]/90">
-              🤰 Gestante
-            </span>
-          )}
-          {chaleurFlag && (
-            <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-pink-400/90">
-              🌸 Chaleurs
-            </span>
-          )}
+/** Emplacement photo neutre (photo absente ou en erreur de chargement). */
+function PhotoAnimal({ src, alt, ajouterHref }: { src?: string; alt: string; ajouterHref?: string }) {
+  const [erreur, setErreur] = useState(false);
+  return (
+    <div className="relative flex-shrink-0 w-20 h-20 sm:w-full sm:h-auto sm:aspect-[4/3] rounded-md overflow-hidden bg-[#EDF2F2]">
+      {src && !erreur ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={alt} loading="lazy" onError={() => setErreur(true)} className="w-full h-full object-cover" />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-[#8B9FA1]">
+          <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.16-5.16a2.25 2.25 0 013.18 0l5.16 5.16m-1.5-1.5l1.41-1.41a2.25 2.25 0 013.18 0l2.91 2.91M3.75 21h16.5A1.5 1.5 0 0021.75 19.5V4.5A1.5 1.5 0 0020.25 3H3.75A1.5 1.5 0 002.25 4.5v15A1.5 1.5 0 003.75 21zm10.5-11.25h.008v.008h-.008V9.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+          {ajouterHref && <span className="hidden sm:block text-[11px] font-semibold text-[#0C5C6C]">Ajouter une photo</span>}
         </div>
       )}
     </div>
   );
+}
 
-  const infoArea = (
-    <div className="p-3">
-      <p className="font-bold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-        {a.nom ?? 'Sans nom'}
-      </p>
-      {a.race && <p className="text-[#6F767B] text-xs truncate mt-0.5">{a.race}</p>}
-      <div className="flex items-center gap-1 mt-2 flex-wrap">
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-          style={{ background: espColor + '20', color: espColor }}>
-          {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'} {speciesLabel(a.espece ?? '')}
-        </span>
-        {(isMale || isFemale) && (
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#5F9EAA]/20 text-[#5F9EAA]">
-            {isMale ? '♂ Mâle' : '♀ Femelle'}
+function AnimalCard({ a, tab, isBebe = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, peutModifier = false, onOuvrir, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
+  a: Animal; tab: 'presents' | 'anciens' | 'decedes';
+  /** Chiot d'une portée (vue Bébés) : statut « Disponible » au lieu de « Présent ». */
+  isBebe?: boolean;
+  reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
+  selectMode?: boolean; selected?: boolean;
+  /** Ajout de photo / modifications autorisés (éleveur propriétaire, animal non cédé). */
+  peutModifier?: boolean;
+  onOuvrir?: () => void;
+  onDelete?: () => void; onToggleReproducteur?: () => void; onToggleReproPublic?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
+  onCeder?: () => void;
+  onTransferer?: () => void;
+}) {
+  const isMale   = (a.sexe ?? '').toLowerCase().startsWith('m');
+  const isFemale = (a.sexe ?? '').toLowerCase().startsWith('f');
+  const photo    = a.photo_url ? thumbUrl(a.photo_url, 400, 75, 'cover') : undefined;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const fermer = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false); };
+    document.addEventListener('mousedown', fermer);
+    return () => document.removeEventListener('mousedown', fermer);
+  }, [menu]);
+
+  const etat = etatAnimal(a, isBebe);
+  const nom = a.nom || 'Sans nom';
+  const ligne1 = [isMale ? 'Mâle' : isFemale ? 'Femelle' : null, a.race || speciesLabel(a.espece ?? '')].filter(Boolean).join(' · ');
+  const ligne2 = a.identification ? `Puce ${a.identification}` : 'Identification non renseignée';
+  const reperes = [
+    reproducteur && { t: 'Reproducteur', c: '#0C5C6C' },
+    reproducteur && reproPublic && { t: 'Profil public', c: '#0C5C6C' },
+    isRetraite && { t: 'Retraité', c: '#B45309' },
+    gestanteFlag && { t: 'Gestante', c: '#6E9E57' },
+    chaleurFlag && { t: 'En chaleur', c: '#DB2777' },
+  ].filter(Boolean) as { t: string; c: string }[];
+
+  const actions: { label: string; onClick: () => void; danger?: boolean }[] = [];
+  if (onToggleReproducteur) actions.push({ label: reproducteur ? 'Retirer des reproducteurs' : 'Marquer comme reproducteur', onClick: onToggleReproducteur });
+  if (reproducteur && onToggleReproPublic) actions.push({ label: reproPublic ? 'Masquer du profil public' : 'Afficher sur mon profil public', onClick: onToggleReproPublic });
+  if (onToggleRetraite) actions.push({ label: isRetraite ? 'Annuler la retraite' : 'Mettre en retraite', onClick: onToggleRetraite });
+  if (onCeder) actions.push({ label: 'Céder cet animal', onClick: onCeder });
+  if (onTransferer) actions.push({ label: 'Transférer / donner', onClick: onTransferer });
+  if (onDelete) actions.push({ label: 'Supprimer la fiche', onClick: () => setConfirmDelete(true), danger: true });
+
+  const corps = (
+    <div className="flex sm:flex-col gap-3 sm:gap-2.5 p-3 h-full">
+      <PhotoAnimal src={photo} alt={nom} ajouterHref={peutModifier && !photo ? `/mes-animaux/${a.id}` : undefined} />
+      <div className="min-w-0 flex-1 flex flex-col">
+        <div className="flex items-start justify-between gap-2">
+          <p className="font-semibold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{nom}</p>
+          <span className="flex items-center gap-1.5 text-xs whitespace-nowrap flex-shrink-0" style={{ color: etat.color }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: etat.color }} />{etat.label}
           </span>
+        </div>
+        <p className="text-xs text-gray-500 mt-1 truncate">{ligne1}</p>
+        <p className="text-xs text-gray-500 truncate">{ligne2}</p>
+        {reperes.length > 0 && (
+          <p className="text-[11px] mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+            {reperes.map(r => <span key={r.t} style={{ color: r.c }} className="font-medium">{r.t}</span>)}
+          </p>
         )}
       </div>
     </div>
   );
 
-  const innerCls = `bg-white rounded-2xl shadow-sm overflow-hidden transition-all ${selected ? 'ring-2 ring-[#0C5C6C]' : ''} ${!selectMode ? 'hover:shadow-md' : ''}`;
-
   return (
-    <div className="relative group">
+    <div className={`relative bg-white border rounded-lg transition-colors ${selected ? 'border-[#0C5C6C] ring-1 ring-[#0C5C6C]' : 'border-gray-200 hover:border-gray-300'}`}>
       {selectMode ? (
-        <div onClick={onSelect} className={`${innerCls} cursor-pointer`}>
-          {imageArea}{infoArea}
-        </div>
+        <button type="button" onClick={onSelect} className="block w-full text-left" aria-pressed={selected}>
+          <span className={`absolute top-2 left-2 z-10 w-5 h-5 rounded border flex items-center justify-center ${selected ? 'bg-[#0C5C6C] border-[#0C5C6C]' : 'bg-white border-gray-400'}`}>
+            {selected && <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+          </span>
+          {corps}
+        </button>
       ) : (
-        <Link href={`/mes-animaux/${a.id}`} className={innerCls}>
-          {imageArea}{infoArea}
+        <Link href={`/mes-animaux/${a.id}`} onClick={onOuvrir} className="block" aria-label={`Ouvrir la fiche de ${nom}`}>
+          {corps}
         </Link>
       )}
-      {!selectMode && onToggleReproducteur && (
-        <button
-          onClick={e => { e.preventDefault(); onToggleReproducteur(); }}
-          className={`absolute top-10 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${reproducteur ? 'bg-amber-400 text-white' : 'bg-white text-amber-400 border border-amber-400'}`}
-          title={reproducteur ? 'Retirer reproducteur' : 'Marquer reproducteur'}>
-          ⭐
-        </button>
-      )}
-      {!selectMode && reproducteur && onToggleReproPublic && (
-        <button
-          onClick={e => { e.preventDefault(); onToggleReproPublic(); }}
-          className={`absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${reproPublic ? 'bg-[#0C5C6C] text-white' : 'bg-white text-[#0C5C6C] border border-[#0C5C6C]'}`}
-          title={reproPublic ? 'Masquer du profil public' : 'Afficher sur mon profil public'}>
-          {reproPublic ? '👁' : '🔒'}
-        </button>
-      )}
-      {!selectMode && onToggleRetraite && (
-        <button
-          onClick={e => { e.preventDefault(); onToggleRetraite(); }}
-          className={`absolute top-[72px] right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${isRetraite ? 'bg-amber-800 text-white' : 'bg-white text-amber-800 border border-amber-800'}`}
-          title={isRetraite ? 'Annuler la retraite' : 'Mettre en retraite'}>
-          🏁
-        </button>
-      )}
-      {!selectMode && tab === 'presents' && onCeder && (
-        <button
-          onClick={e => { e.preventDefault(); onCeder(); }}
-          className="absolute top-[108px] right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-amber-500 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
-          title="Céder cet animal">
-          🤝
-        </button>
-      )}
-      {!selectMode && tab === 'presents' && onTransferer && (
-        <button
-          onClick={e => { e.preventDefault(); onTransferer(); }}
-          className="absolute top-[108px] right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-teal-600 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
-          title="Transférer / donner cet animal">
-          🔄
-        </button>
-      )}
-      {!selectMode && onDelete && (
-        <button
-          onClick={e => { e.preventDefault(); setConfirmDelete(true); }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs"
-          title="Supprimer">
-          ✕
-        </button>
-      )}
-      {!selectMode && tab === 'anciens' && a.statut === 'sorti' && (
-        <div className="absolute bottom-2 right-2">
-          <ContactAcquereurButton animal={a} className="bg-white shadow-md" />
+      {!selectMode && (actions.length > 0 || (tab === 'anciens' && a.statut === 'sorti')) && (
+        <div ref={menuRef} className="absolute bottom-2 right-2 flex items-center gap-1">
+          {tab === 'anciens' && a.statut === 'sorti' && <ContactAcquereurButton animal={a} className="bg-white" />}
+          {actions.length > 0 && (
+            <button type="button" onClick={() => setMenu(m => !m)} aria-label={`Autres actions pour ${nom}`} aria-expanded={menu}
+              className="w-8 h-8 rounded-md text-gray-500 hover:bg-gray-100 flex items-center justify-center">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+            </button>
+          )}
+          {menu && (
+            <div className="absolute right-0 bottom-9 z-20 w-60 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+              {actions.map(ac => (
+                <button key={ac.label} type="button" onClick={() => { setMenu(false); ac.onClick(); }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${ac.danger ? 'text-red-600' : 'text-[#1F2A2E]'}`}>
+                  {ac.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDelete(false)}>
-          <div className="bg-white rounded-2xl p-6 shadow-xl max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-xl p-6 shadow-xl max-w-sm w-full mx-4" onClick={e => e.stopPropagation()}>
             <p className="font-bold text-[#1F2A2E] text-base mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
               Supprimer cet animal ?
             </p>
             <p className="text-sm text-gray-500 mb-5">
-              La fiche de <strong>{a.nom ?? 'cet animal'}</strong> sera définitivement supprimée.
+              La fiche de <strong>{nom}</strong> sera définitivement supprimée.
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmDelete(false)}
-                className="px-4 py-2 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">
+                className="px-4 py-2 rounded-lg text-sm text-gray-700 border border-gray-300 hover:bg-gray-50">
                 Annuler
               </button>
               <button onClick={() => { setConfirmDelete(false); onDelete?.(); }}
-                className="px-4 py-2 rounded-xl text-sm text-white bg-red-500 hover:bg-red-600 font-semibold">
+                className="px-4 py-2 rounded-lg text-sm text-white bg-red-600 hover:bg-red-700 font-semibold">
                 Supprimer
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Menu « ⋯ » des actions d'une portée. */
+function MenuPortee({ actions }: { actions: { label: string; onClick?: () => void; href?: string }[] }) {
+  const [ouvert, setOuvert] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ouvert) return;
+    const fermer = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOuvert(false); };
+    document.addEventListener('mousedown', fermer);
+    return () => document.removeEventListener('mousedown', fermer);
+  }, [ouvert]);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOuvert(o => !o)} aria-label="Autres actions de la portée" aria-expanded={ouvert}
+        className="h-9 w-9 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center justify-center">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+      </button>
+      {ouvert && (
+        <div className="absolute right-0 top-10 z-20 w-60 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          {actions.map(ac => ac.href ? (
+            <Link key={ac.label} href={ac.href} onClick={() => setOuvert(false)} className="block px-3 py-2 text-sm text-[#1F2A2E] hover:bg-gray-50">{ac.label}</Link>
+          ) : (
+            <button key={ac.label} type="button" onClick={() => { setOuvert(false); ac.onClick?.(); }}
+              className="w-full text-left px-3 py-2 text-sm text-[#1F2A2E] hover:bg-gray-50">{ac.label}</button>
+          ))}
         </div>
       )}
     </div>
@@ -381,6 +334,8 @@ function MesAnimauxPageInner() {
   const [filtreRepro, setFiltreRepro] = useState(false);
   const [filtreGestante, setFiltreGestante] = useState(false);
   const [filtreChaleur, setFiltreChaleur] = useState(false);
+  // Réservation (statut commercial) — distincte de la présence à l'élevage
+  const [filtreReservation, setFiltreReservation] = useState<'tous' | 'disponible' | 'reserve'>('tous');
 
   // Filtres cédés (ex-« anciens » — les décédés ont leur propre onglet ci-dessous)
   const [anciensEspece, setAnciensEspece] = useState('tous');
@@ -410,6 +365,41 @@ function MesAnimauxPageInner() {
     })();
     return () => { cancelled = true; };
   }, [user, activeProfileId]);
+
+  // Filtres et position conservés au retour depuis une fiche (onglet, catégorie
+  // et portée sont déjà dans l'URL ; le reste dans la session du navigateur).
+  const CLE_ETAT = 'pm_mes_animaux_etat';
+  const etatRestaure = useRef(false);
+  const scrollARestaurer = useRef<number | null>(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(CLE_ETAT);
+      if (raw) {
+        const e = JSON.parse(raw);
+        setSearch(e.search ?? ''); setFiltreEspece(e.espece ?? 'tous'); setFiltreSexe(e.sexe ?? 'tous');
+        setFiltreRace(e.race ?? ''); setFiltreRetraite(!!e.retraite); setFiltreGestante(!!e.gestante);
+        setFiltreChaleur(!!e.chaleur); setFiltreReservation(e.reservation ?? 'tous');
+        setAnciensEspece(e.anciensEspece ?? 'tous'); setDecedesEspece(e.decedesEspece ?? 'tous');
+        if (typeof e.scrollY === 'number') scrollARestaurer.current = e.scrollY;
+      }
+    } catch { /* stockage indisponible */ }
+    etatRestaure.current = true;
+  }, []);
+  useEffect(() => {
+    if (!etatRestaure.current) return;
+    try {
+      const prev = JSON.parse(sessionStorage.getItem(CLE_ETAT) ?? '{}');
+      sessionStorage.setItem(CLE_ETAT, JSON.stringify({ ...prev, search, espece: filtreEspece, sexe: filtreSexe, race: filtreRace,
+        retraite: filtreRetraite, gestante: filtreGestante, chaleur: filtreChaleur, reservation: filtreReservation,
+        anciensEspece, decedesEspece }));
+    } catch { /* */ }
+  }, [search, filtreEspece, filtreSexe, filtreRace, filtreRetraite, filtreGestante, filtreChaleur, filtreReservation, anciensEspece, decedesEspece]);
+  function memoriserPosition() {
+    try {
+      const prev = JSON.parse(sessionStorage.getItem(CLE_ETAT) ?? '{}');
+      sessionStorage.setItem(CLE_ETAT, JSON.stringify({ ...prev, scrollY: window.scrollY }));
+    } catch { /* */ }
+  }
 
   // UI state
   const [filterOpen, setFilterOpen] = useState(false);
@@ -617,6 +607,18 @@ function MesAnimauxPageInner() {
     return () => { cancelled = true; };
   }, [user, loading, isEleveur, activeProfileId]);
 
+  useEffect(() => {
+    if (fetching || scrollARestaurer.current == null) return;
+    const y = scrollARestaurer.current;
+    scrollARestaurer.current = null;
+    requestAnimationFrame(() => window.scrollTo(0, y));
+    try {
+      const prev = JSON.parse(sessionStorage.getItem(CLE_ETAT) ?? '{}');
+      delete prev.scrollY;
+      sessionStorage.setItem(CLE_ETAT, JSON.stringify(prev));
+    } catch { /* */ }
+  }, [fetching]);
+
   async function deleteAnimal(id: string) {
     await supabase.from('animaux').delete().eq('id', id);
     setAnimaux(prev => prev.filter(a => a.id !== id));
@@ -691,6 +693,8 @@ function MesAnimauxPageInner() {
     if (filtreRepro && !a.reproducteur) return false;
     if (filtreGestante && !gestanteFlags[a.id]) return false;
     if (filtreChaleur && !chaleurFlags[a.id]) return false;
+    if (filtreReservation === 'reserve' && a.statut !== 'reserve') return false;
+    if (filtreReservation === 'disponible' && a.statut === 'reserve') return false;
     if (searchLower) {
       const nom  = (a.nom            ?? '').toLowerCase();
       const puce = (a.identification ?? '').toLowerCase();
@@ -723,7 +727,8 @@ function MesAnimauxPageInner() {
 
   const activeFilterCount = tab === 'presents'
     ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0) +
-      (filtreRetraite ? 1 : 0) + (filtreRepro ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0)
+      (filtreRetraite ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0) +
+      (filtreReservation !== 'tous' ? 1 : 0) + (presentsSubTab === 'bebes' && bebesVue === 'cedes' ? 1 : 0)
     : tab === 'decedes'
     ? (decedesEspece !== 'tous' ? 1 : 0)
     : (anciensEspece !== 'tous' ? 1 : 0);
@@ -742,6 +747,10 @@ function MesAnimauxPageInner() {
       if (filtreSexe === 'femelle' && !s.startsWith('f')) return false;
     }
     if (filtreRace && a.race !== filtreRace) return false;
+    if (filtreReservation === 'reserve' && a.statut !== 'reserve') return false;
+    if (filtreReservation === 'disponible' && a.statut === 'reserve') return false;
+    if (filtreGestante && !gestanteFlags[a.id]) return false;
+    if (filtreChaleur && !chaleurFlags[a.id]) return false;
     if (searchLower) {
       const nom  = (a.nom            ?? '').toLowerCase();
       const puce = (a.identification ?? '').toLowerCase();
@@ -790,6 +799,7 @@ function MesAnimauxPageInner() {
     if (tab === 'presents') {
       setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
       setFiltreRetraite(false); setFiltreRepro(false); setFiltreGestante(false); setFiltreChaleur(false);
+      setFiltreReservation('tous'); setBebesVue('presents');
     } else if (tab === 'decedes') {
       setDecedesEspece('tous');
     } else {
@@ -800,57 +810,44 @@ function MesAnimauxPageInner() {
   return (
     <>
     <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* En-tête */}
+      <div className="flex items-start justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Mes Animaux
+            Mes animaux
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} au total
+          <p className="text-gray-500 text-sm mt-1">
+            {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} animal{animaux.length !== 1 ? 'aux' : ''} au total
           </p>
         </div>
         <div className="relative" ref={addMenuRef}>
           {isEleveur ? (
             <>
               <button
-                onClick={() => setAddMenuOpen(v => !v)}
-                className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors flex items-center gap-1">
+                onClick={() => setAddMenuOpen(v => !v)} aria-expanded={addMenuOpen}
+                className="h-10 bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-4 rounded-lg transition-colors flex items-center gap-1.5">
                 + Ajouter
-                <svg className={`w-3 h-3 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                <svg className={`w-3.5 h-3.5 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
               {addMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden z-20">
-                  <Link href="/mes-animaux/ajouter"
-                    onClick={() => setAddMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
-                      style={{ background: '#6E9E5720' }}>🐾</div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter un animal</p>
-                      <p className="text-xs text-gray-400">Fiche individuelle</p>
-                    </div>
+                <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-20 py-1">
+                  <Link href="/mes-animaux/ajouter" onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50">
+                    <p className="text-sm font-semibold text-[#1F2A2E]">Ajouter un animal</p>
+                    <p className="text-xs text-gray-500">Fiche individuelle</p>
                   </Link>
-                  <div className="h-px bg-gray-100 mx-3" />
-                  <Link href="/mes-animaux/portee"
-                    onClick={() => setAddMenuOpen(false)}
-                    className="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl"
-                      style={{ background: '#0C5C6C20' }}>🐣</div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Charger une portée</p>
-                      <p className="text-xs text-gray-400">Plusieurs animaux d&apos;un coup</p>
-                    </div>
+                  <Link href="/mes-animaux/portee" onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50 border-t border-gray-100">
+                    <p className="text-sm font-semibold text-[#1F2A2E]">Charger une portée</p>
+                    <p className="text-xs text-gray-500">Plusieurs animaux d&apos;un coup</p>
                   </Link>
                 </div>
               )}
             </>
           ) : (
             <Link href="/mes-animaux/ajouter"
-              className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-sm font-semibold px-4 py-2 rounded-full transition-colors">
-              + Ajouter un animal
+              className="h-10 inline-flex items-center bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-4 rounded-lg transition-colors">
+              + Ajouter
             </Link>
           )}
         </div>
@@ -861,31 +858,26 @@ function MesAnimauxPageInner() {
         <div className="space-y-2 mb-5">
           {invitesCopro.map(inv => (
             <Link key={inv.animal_id} href={`/mes-animaux/${inv.animal_id}`}
-              className="flex items-center gap-3 rounded-xl bg-[#EAF2F4] border border-[#0C5C6C]/25 px-4 py-3 hover:bg-[#dde9ec] transition-colors">
-              <span className="text-lg">👥</span>
-              <span className="text-sm font-medium text-[#1F2A2E] flex-1">
-                Invitation à co-gérer la fiche de {inv.nom}
-              </span>
-              <span className="text-xs font-semibold text-[#0C5C6C]">Voir →</span>
+              className="flex items-center gap-3 rounded-lg bg-white border border-gray-200 px-4 py-3 hover:border-gray-300">
+              <span className="text-sm text-[#1F2A2E] flex-1">Invitation à co-gérer la fiche de <strong>{inv.nom}</strong></span>
+              <span className="text-sm font-semibold text-[#0C5C6C]">Voir</span>
             </Link>
           ))}
         </div>
       )}
 
-      {/* Tabs (éleveur uniquement) */}
+      {/* Onglets (éleveur uniquement) */}
       {isEleveur && (
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4 overflow-x-auto">
+        <div className="flex gap-6 border-b border-gray-200 mb-4 overflow-x-auto" role="tablist">
           {(['presents', 'anciens', 'suivi', 'decedes'] as const).map((t) => (
-            <button key={t} onClick={() => { setTab(t); setFilterOpen(false); }}
-              className={`flex-1 py-2 px-2 text-sm font-semibold rounded-lg transition-all whitespace-nowrap ${
-                tab === t ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            <button key={t} role="tab" aria-selected={tab === t}
+              onClick={() => { setTab(t); setFilterOpen(false); setSelectMode(false); setSelectedIds(new Set()); }}
+              className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+                tab === t ? 'border-[#0C5C6C] text-[#0C5C6C]' : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}>
-              {t === 'presents'
-                ? `Présents (${presents.length})`
-                : t === 'anciens'
-                ? `Cédés (${anciens.length})`
-                : t === 'decedes'
-                ? `Décédés (${decedes.length})`
+              {t === 'presents' ? `Présents · ${presents.length}`
+                : t === 'anciens' ? `Cédés · ${anciens.length}`
+                : t === 'decedes' ? `Décédés · ${decedes.length}`
                 : 'Suivi'}
             </button>
           ))}
@@ -902,194 +894,108 @@ function MesAnimauxPageInner() {
         />
       )}
 
-      {/* Sous-onglets présents */}
-      {tab === 'presents' && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          {isEleveur && ([['tous', 'Tous'], ['repro', '⭐ Repro'], ['bebes', '🐣 Bébés']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => { setPresentsSubTab(v); setSelectMode(false); setSelectedIds(new Set()); }}
-              className={`px-4 py-1.5 rounded-full border text-sm font-medium transition-all ${
-                presentsSubTab === v
-                  ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white'
-                  : 'border-gray-300 text-gray-600 hover:border-gray-400'
-              }`}>
-              {l}
-            </button>
-          ))}
-          <div className="ml-auto">
-            {selectMode ? (
-              <button onClick={() => { setSelectMode(false); setSelectedIds(new Set()); }}
-                className="px-3 py-1.5 rounded-full border border-gray-300 text-sm text-gray-500 hover:border-gray-400">
-                Annuler
-              </button>
-            ) : (
-              <button onClick={() => setSelectMode(true)}
-                className="px-3 py-1.5 rounded-full border border-gray-300 text-sm text-gray-600 hover:border-[#0C5C6C] hover:text-[#0C5C6C] transition-colors">
-                ☑️ Sélectionner
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Filtre Bébés : présents (défaut) ou cédés */}
-      {tab === 'presents' && presentsSubTab === 'bebes' && (
-        <div className="flex gap-2 mb-3">
-          {([['presents', 'Présents'], ['cedes', 'Cédés']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => { setBebesVue(v); setSelectedPortee(''); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                bebesVue === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
-              }`}
-              style={{ fontFamily: 'Galey, sans-serif' }}>
-              {l}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Filtre portée (une seule portée à la fois, uniquement si plusieurs) */}
-      {tab === 'presents' && presentsSubTab === 'bebes' && porteeGroups.size > 1 && (
-        <div className="mb-4">
-          <select
-            value={selectedPortee}
-            onChange={e => setSelectedPortee(e.target.value)}
-            className="w-full sm:w-auto border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white"
-            style={{ fontFamily: 'Galey, sans-serif' }}
-          >
-            <option value="">Toutes les portées ({porteeGroups.size})</option>
-            {[...porteeGroups.entries()].map(([pid, members]) => {
-              const first = members[0];
-              const dn = first.date_naissance ? new Date(first.date_naissance).toLocaleDateString('fr-FR') : null;
-              const nomMere = first.nom_mere?.trim() ?? '';
-              const label = [nomMere ? `Portée de ${nomMere}` : 'Portée', dn ? `née le ${dn}` : null]
-                .filter(Boolean).join(' — ');
-              return <option key={pid} value={pid}>{label}</option>;
-            })}
-          </select>
-        </div>
-      )}
-
       {tab !== 'suivi' && (
       <>
-      {/* Barre de recherche */}
-      <div className="relative mb-3">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6E9E57]">🔍</span>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Nom ou numéro de puce..."
-          className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-gray-200 bg-[#F8F8F6] text-sm focus:outline-none focus:border-[#6E9E57] transition-colors"
-          style={{ fontFamily: 'Galey, sans-serif' }}
-        />
-        {search && (
-          <button onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">
-            ✕
-          </button>
-        )}
-      </div>
-
-      {/* Barre filtres */}
-      <div className="flex items-center gap-2 mb-4">
-        <button
-          onClick={() => setFilterOpen(!filterOpen)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-sm font-medium transition-colors ${
-            activeFilterCount > 0
-              ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white'
-              : 'border-gray-300 text-gray-600 hover:border-gray-400'
-          }`}>
-          ⚙️ Filtres
-          {activeFilterCount > 0 && (
-            <span className="bg-white text-[#0C5C6C] rounded-full text-xs w-4 h-4 flex items-center justify-center font-bold">
-              {activeFilterCount}
-            </span>
+      {/* Barre : recherche, catégorie, portée, filtres */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 mb-3">
+        <label className="relative flex-1 min-w-0 sm:min-w-[220px]">
+          <span className="sr-only">Rechercher un animal</span>
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" d="M21 21l-5.2-5.2m0 0A7.5 7.5 0 105.2 5.2a7.5 7.5 0 0010.6 10.6z" />
+          </svg>
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher par nom ou numéro de puce"
+            className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-[#0C5C6C]" />
+        </label>
+        <div className="flex gap-2 flex-wrap">
+          {tab === 'presents' && isEleveur && (
+            <select value={presentsSubTab} aria-label="Catégorie"
+              onChange={e => { setPresentsSubTab(e.target.value as 'tous' | 'repro' | 'bebes'); setSelectedPortee(''); setSelectMode(false); setSelectedIds(new Set()); }}
+              className="h-10 flex-1 sm:flex-none rounded-lg border border-gray-300 bg-white px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]">
+              <option value="tous">Tous les animaux</option>
+              <option value="repro">Reproducteurs</option>
+              <option value="bebes">Bébés</option>
+            </select>
           )}
-        </button>
-        {activeFilterCount > 0 && (
-          <button onClick={resetFilters}
-            className="text-xs text-[#6E9E57] font-medium hover:underline">
-            Réinitialiser
+          {tab === 'presents' && presentsSubTab === 'bebes' && porteeGroups.size > 0 && (
+            <select value={selectedPortee} aria-label="Portée" onChange={e => setSelectedPortee(e.target.value)}
+              className="h-10 flex-1 sm:flex-none sm:max-w-[260px] rounded-lg border border-gray-300 bg-white px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]">
+              <option value="">Toutes les portées</option>
+              {[...porteeGroups.entries()].map(([pid, members]) => {
+                const first = members[0];
+                const nomMere = first.nom_mere?.trim() ?? '';
+                return <option key={pid} value={pid}>{nomMere ? `Portée de ${nomMere}` : 'Portée'}{first.date_naissance ? ` — ${new Date(first.date_naissance).toLocaleDateString('fr-FR')}` : ''}</option>;
+              })}
+            </select>
+          )}
+          <button type="button" onClick={() => setFilterOpen(!filterOpen)} aria-expanded={filterOpen}
+            className={`h-10 px-3 rounded-lg border text-sm font-semibold flex items-center gap-2 ${
+              activeFilterCount > 0 ? 'border-[#0C5C6C] text-[#0C5C6C] bg-[#E8F4F6]' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`}>
+            Filtres{activeFilterCount > 0 && <span className="text-xs bg-[#0C5C6C] text-white rounded px-1.5">{activeFilterCount}</span>}
           </button>
-        )}
+          {tab === 'presents' && (
+            <button type="button" onClick={() => { setSelectMode(m => !m); setSelectedIds(new Set()); }}
+              className="h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50">
+              {selectMode ? 'Annuler la sélection' : 'Sélectionner'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Panel filtres */}
+      {/* Panneau de filtres compact */}
       {filterOpen && (
-        <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 space-y-4">
-          {tab === 'presents' ? (
-            <>
-              {/* Espèce */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
-                <div className="flex flex-wrap gap-2">
-                  {SPECIES.filter(s => s.value === 'tous' || especesPresents.includes(s.value)).map(sp => (
-                    <Chip key={sp.value} label={sp.label} active={filtreEspece === sp.value}
-                      color={sp.color} onClick={() => { setFiltreEspece(sp.value); setFiltreRace(''); }}
-                      emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
-                  ))}
-                </div>
-              </div>
-              {/* Sexe */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Sexe</p>
-                <div className="flex gap-2">
-                  {[{ v: 'tous', l: 'Tous' }, { v: 'male', l: '♂ Mâle' }, { v: 'femelle', l: '♀ Femelle' }].map(s => (
-                    <Chip key={s.v} label={s.l} active={filtreSexe === s.v}
-                      color="#0C5C6C" onClick={() => setFiltreSexe(s.v)} />
-                  ))}
-                </div>
-              </div>
-              {/* Race */}
-              {racesDisponibles.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Race</p>
-                  <div className="flex flex-wrap gap-2">
-                    {racesDisponibles.map(r => (
-                      <Chip key={r} label={r} active={filtreRace === r}
-                        color="#0C5C6C" onClick={() => setFiltreRace(filtreRace === r ? '' : r)} />
-                    ))}
-                  </div>
-                </div>
+        <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <select aria-label="Espèce"
+              value={tab === 'presents' ? filtreEspece : tab === 'decedes' ? decedesEspece : anciensEspece}
+              onChange={e => { const v = e.target.value; if (tab === 'presents') { setFiltreEspece(v); setFiltreRace(''); } else if (tab === 'decedes') setDecedesEspece(v); else setAnciensEspece(v); }}
+              className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+              <option value="tous">Toutes les espèces</option>
+              {SPECIES.filter(s => s.value !== 'tous' && (tab === 'presents' ? especesPresents : tab === 'decedes' ? especesDecedes : especesAnciens).includes(s.value))
+                .map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            {tab === 'presents' && (
+              <>
+                <select aria-label="Sexe" value={filtreSexe} onChange={e => setFiltreSexe(e.target.value)}
+                  className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                  <option value="tous">Tous les sexes</option>
+                  <option value="male">Mâles</option>
+                  <option value="femelle">Femelles</option>
+                </select>
+                {racesDisponibles.length > 0 && (
+                  <select aria-label="Race" value={filtreRace} onChange={e => setFiltreRace(e.target.value)}
+                    className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                    <option value="">Toutes les races</option>
+                    {racesDisponibles.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                )}
+                <select aria-label="Réservation" value={filtreReservation} onChange={e => setFiltreReservation(e.target.value as 'tous' | 'disponible' | 'reserve')}
+                  className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                  <option value="tous">Toutes les réservations</option>
+                  <option value="disponible">Disponibles</option>
+                  <option value="reserve">Réservés</option>
+                </select>
+                {presentsSubTab === 'bebes' && (
+                  <select aria-label="Présence des bébés" value={bebesVue} onChange={e => { setBebesVue(e.target.value as 'presents' | 'cedes'); setSelectedPortee(''); }}
+                    className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
+                    <option value="presents">Bébés présents</option>
+                    <option value="cedes">Bébés cédés</option>
+                  </select>
+                )}
+              </>
+            )}
+          </div>
+          {tab === 'presents' && (
+            <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-sm text-[#1F2A2E]">
+              {isEleveur && (
+                <label className="flex items-center gap-2"><input type="checkbox" checked={filtreRetraite} onChange={e => setFiltreRetraite(e.target.checked)} className="accent-[#0C5C6C] w-4 h-4" />Retraités</label>
               )}
-              {/* Statut spécial */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Statut spécial</p>
-                <div className="flex flex-wrap gap-2">
-                  {isEleveur && <Chip label="🏁 Retraité" active={filtreRetraite} color="#B45309" onClick={() => setFiltreRetraite(!filtreRetraite)} />}
-                  {isEleveur && <Chip label="⭐ Repro"    active={filtreRepro}    color="#0C5C6C" onClick={() => setFiltreRepro(!filtreRepro)} />}
-                  <Chip label="🤰 Gestante"    active={filtreGestante} color="#6E9E57" onClick={() => setFiltreGestante(!filtreGestante)} />
-                  <Chip label="🌸 En chaleur"  active={filtreChaleur}  color="#F472B6" onClick={() => setFiltreChaleur(!filtreChaleur)} />
-                </div>
-              </div>
-            </>
-          ) : tab === 'decedes' ? (
-            <>
-              {/* Espèce décédés */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
-                <div className="flex flex-wrap gap-2">
-                  {SPECIES.filter(s => s.value === 'tous' || especesDecedes.includes(s.value)).map(sp => (
-                    <Chip key={sp.value} label={sp.label} active={decedesEspece === sp.value}
-                      color={sp.color} onClick={() => setDecedesEspece(sp.value)}
-                      emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Espèce cédés */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
-                <div className="flex flex-wrap gap-2">
-                  {SPECIES.filter(s => s.value === 'tous' || especesAnciens.includes(s.value)).map(sp => (
-                    <Chip key={sp.value} label={sp.label} active={anciensEspece === sp.value}
-                      color={sp.color} onClick={() => setAnciensEspece(sp.value)}
-                      emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
-                  ))}
-                </div>
-              </div>
-            </>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={filtreGestante} onChange={e => setFiltreGestante(e.target.checked)} className="accent-[#0C5C6C] w-4 h-4" />Gestantes</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={filtreChaleur} onChange={e => setFiltreChaleur(e.target.checked)} className="accent-[#0C5C6C] w-4 h-4" />En chaleur</label>
+            </div>
+          )}
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={resetFilters} className="mt-3 text-sm font-semibold text-[#0C5C6C] hover:underline">Réinitialiser les filtres</button>
           )}
         </div>
       )}
@@ -1100,101 +1006,88 @@ function MesAnimauxPageInner() {
           <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (tab === 'presents' && presentsSubTab === 'bebes' ? visiblePorteeGroups.length === 0 : currentList.length === 0) ? (
-        <div className="flex flex-col items-center py-20 text-center">
-          <span className="text-5xl mb-4">🐾</span>
-          <p className="text-gray-500 font-medium" style={{ fontFamily: 'Galey, sans-serif' }}>
-            {tab === 'presents' && presentsSubTab === 'repro'
-              ? 'Aucun animal reproducteur'
-              : tab === 'presents' && presentsSubTab === 'bebes'
-              ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé cédé')
+        <div className="text-center py-16 px-4 bg-white border border-dashed border-gray-300 rounded-lg">
+          <p className="text-[15px] font-semibold text-[#1F2A2E]">
+            {searchLower || activeFilterCount > 0 ? 'Aucun animal ne correspond'
+              : tab === 'presents' && presentsSubTab === 'repro' ? 'Aucun reproducteur'
+              : tab === 'presents' && presentsSubTab === 'bebes' ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé cédé')
               : tab === 'presents' ? 'Aucun animal présent'
               : tab === 'decedes' ? 'Aucun animal décédé'
               : 'Aucun animal cédé'}
           </p>
-          <p className="text-gray-400 text-sm mt-1">
-            {tab === 'presents' && presentsSubTab === 'repro'
-              ? 'Survolez une carte et cliquez ⭐ pour marquer un reproducteur'
-              : tab === 'presents' && presentsSubTab === 'bebes' && bebesVue === 'presents'
-              ? 'Choisissez « Cédés » pour retrouver les portées déjà parties'
-              : tab === 'presents' && animaux.length === 0
-              ? 'Ajoutez votre premier animal'
-              : 'Modifiez les filtres pour voir plus de résultats'}
+          <p className="text-sm text-gray-500 mt-1">
+            {searchLower || activeFilterCount > 0 ? 'Modifiez la recherche ou les filtres.'
+              : tab === 'presents' && presentsSubTab === 'repro' ? 'Ouvrez le menu d’un animal pour le marquer comme reproducteur.'
+              : tab === 'presents' && presentsSubTab === 'bebes' && bebesVue === 'presents' ? 'Les portées déjà parties se retrouvent dans Filtres › Bébés cédés.'
+              : tab === 'presents' && animaux.length === 0 ? 'Ajoutez votre premier animal.' : ''}
           </p>
+          {(searchLower || activeFilterCount > 0) && (
+            <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mt-3 text-sm font-semibold text-[#0C5C6C] hover:underline">Réinitialiser</button>
+          )}
         </div>
-      ) : presentsSubTab === 'bebes' && visiblePorteeGroups.length > 0 ? (
-        <div className="space-y-6">
+      ) : presentsSubTab === 'bebes' && tab === 'presents' ? (
+        <div className="space-y-4">
           {visiblePorteeGroups.map(([pid, members]) => {
             const first = members[0];
             const dn = first.date_naissance ? new Date(first.date_naissance).toLocaleDateString('fr-FR') : null;
-            const race = first.race ?? '';
-            const espece = first.espece ?? '';
             const nomMere = first.nom_mere?.trim() ?? '';
+            const meta = [first.race || speciesLabel(first.espece ?? ''), `${members.length} ${members.length > 1 ? 'chiots' : 'chiot'}`, dn ? `Nés le ${dn}` : null].filter(Boolean).join(' · ');
+            const cedes = bebesVue === 'cedes';
             return (
-              <div key={pid}>
-                <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-3"
-                  style={{ background: '#0C5C6C0D', border: '1px solid #0C5C6C30' }}>
-                  <span className="text-lg">🐣</span>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                      {nomMere ? `Portée de ${nomMere}` : 'Portée'} {espece && <span>· {SPECIES_EMOJI[espece] ?? ''} {speciesLabel(espece)}</span>}
-                    </p>
-                    {race && <p className="text-xs text-[#5F9EAA]">{race}</p>}
-                    {dn && <p className="text-xs text-[#5F9EAA]">Nés le {dn}</p>}
+              <section key={pid} className="bg-white border border-gray-200 rounded-lg overflow-visible">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-gray-100">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{nomMere ? `Portée de ${nomMere}` : 'Portée'}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{meta}</p>
                   </div>
-                  <span className="text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C20] px-2 py-0.5 rounded-full">
-                    {members.length}
-                  </span>
-                  <button
-                    onClick={() => setEditPorteeGroup({ pid, members })}
-                    className="flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C40] px-2.5 py-1.5 rounded-lg hover:bg-[#0C5C6C0D] transition-colors"
-                    title="Modifier les informations de la portée"
-                    style={{ fontFamily: 'Galey, sans-serif' }}>
-                    ✏️ Modifier
-                  </button>
-                  <button
-                    onClick={() => setPoidsPortee({ animals: members, dn: first.date_naissance ?? null })}
-                    className="flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C40] px-2.5 py-1.5 rounded-lg hover:bg-[#0C5C6C0D] transition-colors"
-                    title="Courbes de poids de la portée"
-                    style={{ fontFamily: 'Galey, sans-serif' }}>
-                    📈 Poids
-                  </button>
-                  <button
-                    onClick={() => setSoinPorteeAnimals(members)}
-                    className="flex items-center gap-1 text-xs font-semibold text-[#F57F17] border border-[#FFCA28] px-2.5 py-1.5 rounded-lg hover:bg-[#FFF8E1] transition-colors"
-                    title="Soin pour toute la portée"
-                    style={{ fontFamily: 'Galey, sans-serif' }}>
-                    💊 Soin portée
-                  </button>
-                  <Link
-                    href={`/annonces/creer?portee_id=${pid}`}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-[#6E9E57] border border-[#6E9E57] px-3 py-1.5 rounded-lg hover:bg-[#6E9E57] hover:text-white transition-colors"
-                    style={{ fontFamily: 'Galey, sans-serif' }}>
-                    📢 Créer annonce
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    {selectedPortee !== pid && (
+                      <button type="button" onClick={() => { setSelectedPortee(pid); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                        className="h-9 px-3 rounded-lg border border-[#0C5C6C] text-[#0C5C6C] text-sm font-semibold hover:bg-[#E8F4F6]">
+                        Voir la portée
+                      </button>
+                    )}
+                    {isEleveur && !cedes && (
+                      <MenuPortee actions={[
+                        { label: 'Modifier les informations de la portée', onClick: () => setEditPorteeGroup({ pid, members }) },
+                        { label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: members, dn: first.date_naissance ?? null }) },
+                        { label: 'Soin pour toute la portée', onClick: () => setSoinPorteeAnimals(members) },
+                        { label: 'Créer une annonce', href: `/annonces/creer?portee_id=${pid}` },
+                      ]} />
+                    )}
+                    {cedes && (
+                      <MenuPortee actions={[{ label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: members, dn: first.date_naissance ?? null }) }]} />
+                    )}
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-3">
                   {members.map(a => {
                     const cede = a.statut === 'sorti';
-                    return <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge cede={cede}
-                    reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
-                    chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
-                    selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
-                    onDelete={selectMode || cede ? undefined : () => deleteAnimal(a.id)}
-                    onToggleReproducteur={isEleveur && !selectMode && !cede ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
-                    onToggleReproPublic={isEleveur && !selectMode && !cede ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
-                    onToggleRetraite={isEleveur && !selectMode && !cede ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />;
+                    return <AnimalCard key={a.id} a={a} tab={tab} isBebe={!a.reproducteur}
+                      reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
+                      chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
+                      selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
+                      peutModifier={isEleveur && !cede} onOuvrir={memoriserPosition}
+                      onDelete={selectMode || cede ? undefined : () => deleteAnimal(a.id)}
+                      onToggleReproducteur={isEleveur && !selectMode && !cede ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+                      onToggleReproPublic={isEleveur && !selectMode && !cede ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
+                      onToggleRetraite={isEleveur && !selectMode && !cede ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />;
                   })}
                 </div>
-              </div>
+              </section>
             );
           })}
+          {selectedPortee && (
+            <button type="button" onClick={() => setSelectedPortee('')} className="text-sm font-semibold text-[#0C5C6C] hover:underline">Afficher toutes les portées</button>
+          )}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab}
             reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
             chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
+            peutModifier={tab === 'presents'} onOuvrir={memoriserPosition}
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
             onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
             onToggleReproPublic={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
@@ -1216,7 +1109,7 @@ function MesAnimauxPageInner() {
             onClick={regrouperEnPortee}
             disabled={selectedIds.size < 2}
             className="bg-[#0C5C6C] hover:bg-[#0a4d5b] disabled:opacity-40 text-white text-sm font-semibold px-4 py-1.5 rounded-xl transition-colors">
-            🐣 Regrouper en portée
+            Regrouper en portée
           </button>
         </div>
       )}
@@ -1224,53 +1117,22 @@ function MesAnimauxPageInner() {
       {/* Liens admin éleveur */}
       {isEleveur && (
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {plan === 'free' ? (
-            <>
-              <Link href="/abonnement"
-                className="flex items-center gap-3 bg-gray-100 border border-gray-200 rounded-2xl p-4 opacity-60 hover:opacity-80 transition-opacity">
-                <span className="text-2xl">🏥</span>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-gray-500 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Registre sanitaire</p>
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">Pro</span>
-                  </div>
-                  <p className="text-gray-400 text-xs">Actes vétérinaires</p>
-                </div>
-                <span className="text-gray-400 text-lg">🔒</span>
-              </Link>
-              <Link href="/abonnement"
-                className="flex items-center gap-3 bg-gray-100 border border-gray-200 rounded-2xl p-4 opacity-60 hover:opacity-80 transition-opacity">
-                <span className="text-2xl">📂</span>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-gray-500 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Entrées / Sorties</p>
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">Pro</span>
-                  </div>
-                  <p className="text-gray-400 text-xs">Registre légal</p>
-                </div>
-                <span className="text-gray-400 text-lg">🔒</span>
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link href="/elevage/registre-sanitaire"
-                className="flex items-center gap-3 bg-[#E8F4F6] border border-[#0C5C6C]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
-                <span className="text-2xl">🏥</span>
-                <div>
-                  <p className="font-semibold text-[#0C5C6C] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Registre sanitaire</p>
-                  <p className="text-[#0C5C6C]/60 text-xs">Actes vétérinaires</p>
-                </div>
-              </Link>
-              <Link href="/elevage/registre-entree-sortie"
-                className="flex items-center gap-3 bg-[#EEF5EA] border border-[#6E9E57]/20 rounded-2xl p-4 hover:shadow-md transition-shadow">
-                <span className="text-2xl">📂</span>
-                <div>
-                  <p className="font-semibold text-[#5A8A45] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Entrées / Sorties</p>
-                  <p className="text-[#5A8A45]/60 text-xs">Registre légal</p>
-                </div>
-              </Link>
-            </>
-          )}
+          {([
+            ['/elevage/registre-sanitaire', 'Registre sanitaire', 'Actes vétérinaires'],
+            ['/elevage/registre-entree-sortie', 'Entrées / Sorties', 'Registre légal'],
+          ] as const).map(([href, titre, sous]) => (
+            <Link key={href} href={plan === 'free' ? '/abonnement' : href}
+              className="flex items-center justify-between gap-3 bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-gray-300">
+              <span>
+                <span className="flex items-center gap-2">
+                  <span className="font-semibold text-[#1F2A2E] text-sm">{titre}</span>
+                  {plan === 'free' && <span className="text-[10px] font-bold text-[#B45309] border border-[#B45309]/40 rounded px-1.5">Pro</span>}
+                </span>
+                <span className="block text-gray-500 text-xs">{sous}</span>
+              </span>
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+            </Link>
+          ))}
         </div>
       )}
     </div>

@@ -827,7 +827,7 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
           <span className="w-5 h-5 bg-white rounded-full shadow mx-0.5 block" />
         </button>
         <span className="text-sm font-medium text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>
-          {confirmed ? '✓ Gestation confirmée' : 'Gestation confirmée ?'}
+          {confirmed ? 'Gestation confirmée' : 'Gestation confirmée ?'}
         </span>
       </div>
       {!confirmed && CONFIRMATION_INFO[espece] && (
@@ -1833,7 +1833,6 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
                   onSave={async d => { await updateRepro('chaleurs', r.id, d); setEditId(null); }} />
               ) : (
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center text-xl flex-shrink-0">🌸</div>
                   <div className="flex-1 cursor-pointer" onClick={() => startEdit(r)}>
                     <p className="font-semibold text-sm">
                       {fmtDate(String(r.date ?? ''))}{r.date_fin ? ` → ${fmtDate(String(r.date_fin))}` : ''}
@@ -1875,7 +1874,6 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
                   onCancel={() => setEditId(null)} />
               ) : (
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-xl flex-shrink-0">💕</div>
                   <div className="flex-1 cursor-pointer" onClick={() => startEdit(r)}>
                     {sd.length > 1 ? (
                       <div className="text-sm font-semibold leading-snug">
@@ -1926,13 +1924,12 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
                   onSave={async d => { await updateRepro('gestations', r.id, d); setEditId(null); }} />
               ) : (
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl flex-shrink-0">🤰</div>
                   <div className="flex-1 cursor-pointer" onClick={() => startEdit(r)}>
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <p className="font-semibold text-sm">Conception : {fmtDate(String(r.date ?? ''))}</p>
                       {r.gestation_confirmee != null && (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.gestation_confirmee ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {r.gestation_confirmee ? '✓ Confirmée' : 'À confirmer'}
+                          {r.gestation_confirmee ? 'Confirmée' : 'À confirmer'}
                         </span>
                       )}
                     </div>

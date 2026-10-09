@@ -193,23 +193,26 @@ export default function AjouterAnimalPage() {
         {/* ── Photo ── */}
         <div className="flex justify-center">
           <label className="relative cursor-pointer">
-            <div className="w-24 h-24 rounded-2xl overflow-hidden bg-[#EEF5EA] flex items-center justify-center border-2 border-dashed border-[#6E9E57]/40 hover:border-[#6E9E57] transition-colors">
+            <div className="w-24 h-24 rounded-lg overflow-hidden bg-[#EDF2F2] flex items-center justify-center border border-dashed border-gray-300 hover:border-[#0C5C6C] transition-colors">
               {photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={photoUrl} alt="" className="w-full h-full object-cover" />
               ) : photoUploading ? (
                 <div className="w-6 h-6 border-2 border-[#6E9E57] border-t-transparent rounded-full animate-spin" />
               ) : (
-                <div className="text-center">
-                  <span className="text-3xl block">📷</span>
-                  <span className="text-xs text-[#6E9E57] font-medium mt-1 block">Photo</span>
+                <div className="text-center text-[#8B9FA1]">
+                  <svg className="w-7 h-7 mx-auto" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.8 6.2A2.3 2.3 0 015 7.2c-.4.1-.8.1-1.1.2C2.8 7.5 2 8.4 2 9.5V18a2.3 2.3 0 002.3 2.3h15.4A2.3 2.3 0 0022 18V9.5c0-1.1-.8-2-1.9-2.2l-1.1-.1a2.3 2.3 0 01-1.8-1.1l-.8-1.3a2.2 2.2 0 00-1.8-1H9.4a2.2 2.2 0 00-1.8 1l-.8 1.4zM16.5 12.8a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+                  </svg>
+                  <span className="text-xs text-[#0C5C6C] font-semibold mt-1 block">Ajouter une photo</span>
                 </div>
               )}
             </div>
-            <input type="file" accept="image/*" className="hidden"
+            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
               onChange={handlePhotoChange} disabled={photoUploading} />
           </label>
         </div>
+        <p className="text-xs text-gray-500 text-center -mt-2">JPG, PNG ou WebP. La photo est recadrée puis réduite automatiquement (1 200 px max).</p>
 
         {/* ── Espèce ── */}
         <div>
