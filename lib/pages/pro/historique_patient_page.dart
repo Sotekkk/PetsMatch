@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
+import 'package:PetsMatch/widgets/vet/consultation_widgets.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -22,6 +23,7 @@ class HistoriquePatientPage extends StatefulWidget {
 
 class _HistoriquePatientPageState extends State<HistoriquePatientPage> {
   List<Map<String, dynamic>> _crs = [];
+  Map<String, String> _noms = {};
   bool _loading = true;
 
   String get _pid {
@@ -44,7 +46,10 @@ class _HistoriquePatientPageState extends State<HistoriquePatientPage> {
       final rows = await Supabase.instance.client.from('comptes_rendus').select()
           .eq('animal_id', widget.animalId).eq('pro_profile_id', _pid)
           .order('created_at', ascending: false);
-      if (mounted) setState(() { _crs = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
+      final crs = List<Map<String, dynamic>>.from(rows as List);
+      final cites = intervenantsCites(crs, const []);
+      final noms = await chargerNomsIntervenants(profils: cites.profils, uids: cites.uids);
+      if (mounted) setState(() { _crs = crs; _noms = noms; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -53,6 +58,17 @@ class _HistoriquePatientPageState extends State<HistoriquePatientPage> {
   String _date(String? iso) {
     final d = DateTime.tryParse(iso ?? '')?.toLocal();
     return d == null ? '' : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  String? _nom(dynamic profil, dynamic uid) => _noms[profil?.toString() ?? ''] ?? _noms[uid?.toString() ?? ''];
+
+  /// Traçabilité : validateur + date de validation (horodatées côté serveur).
+  String _valide(Map<String, dynamic> cr) {
+    if (cr['statut'] == 'brouillon') return 'À valider';
+    final qui = _nom(cr['valide_par_profile_id'], cr['valide_par_uid']);
+    final le = DateTime.tryParse(cr['valide_le']?.toString() ?? '')?.toLocal();
+    final t = [if (qui != null) qui, if (le != null) 'le ${fmtJourHeure(le)}'].join(' ');
+    return t.isEmpty ? 'Oui' : t;
   }
 
   void _ouvrir(Map<String, dynamic> cr) => showModalBottomSheet(
@@ -102,6 +118,8 @@ class _HistoriquePatientPageState extends State<HistoriquePatientPage> {
                           DataColumn(label: Text('Poids', style: entete), numeric: true),
                           DataColumn(label: Text('Actes réalisés', style: entete)),
                           DataColumn(label: Text('Prescription', style: entete)),
+                          DataColumn(label: Text('Rédigé par', style: entete)),
+                          DataColumn(label: Text('Validé', style: entete)),
                         ],
                         rows: [
                           for (final cr in _crs) DataRow(
@@ -116,6 +134,8 @@ class _HistoriquePatientPageState extends State<HistoriquePatientPage> {
                               DataCell(SizedBox(width: 240, child: Text(
                                   (cr['prescription'] ?? '').toString().isEmpty ? '—' : cr['prescription'].toString(),
                                   style: cellule, maxLines: 4))),
+                              DataCell(Text(_nom(cr['redige_par_profile_id'], cr['redige_par_uid']) ?? '—', style: cellule)),
+                              DataCell(SizedBox(width: 150, child: Text(_valide(cr), style: cellule, maxLines: 3))),
                             ],
                           ),
                         ],

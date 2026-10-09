@@ -7,10 +7,13 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { chargerNoms } from '@/components/pro/ConsultationsVet';
 
 interface Cr {
   id: string; created_at: string; contenu: string | null;
   motif?: string | null; poids?: number | null; actes?: string[] | null; prescription?: string | null;
+  statut?: string | null; redige_par_uid?: string | null; redige_par_profile_id?: string | null;
+  valide_par_uid?: string | null; valide_par_profile_id?: string | null; valide_le?: string | null;
 }
 
 export default function HistoriquePatient({ animalId, animalNom, profileId, onClose }: {
@@ -18,14 +21,29 @@ export default function HistoriquePatient({ animalId, animalNom, profileId, onCl
 }) {
   const [crs, setCrs] = useState<Cr[] | null>(null);
   const [ouvert, setOuvert] = useState<Cr | null>(null);
+  const [noms, setNoms] = useState<Record<string, string>>({});
 
   useEffect(() => {
     supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).eq('pro_profile_id', profileId)
       .order('created_at', { ascending: false })
-      .then(({ data }) => setCrs((data ?? []) as Cr[]));
+      .then(async ({ data }) => {
+        const liste = (data ?? []) as Cr[];
+        setCrs(liste);
+        setNoms(await chargerNoms(
+          liste.flatMap(c => [c.redige_par_profile_id ?? '', c.valide_par_profile_id ?? '']),
+          liste.flatMap(c => [c.redige_par_uid ?? '', c.valide_par_uid ?? ''])));
+      });
   }, [animalId, profileId]);
 
   const date = (iso: string) => new Date(iso).toLocaleDateString('fr-FR');
+  const nom = (p?: string | null, u?: string | null) => (p && noms[p]) || (u && noms[u]) || null;
+  // Traçabilité : validateur + date de validation (horodatées côté serveur).
+  const valide = (c: Cr) => {
+    if (c.statut === 'brouillon') return 'À valider';
+    const qui = nom(c.valide_par_profile_id, c.valide_par_uid);
+    const le = c.valide_le ? new Date(c.valide_le).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : null;
+    return [qui, le ? `le ${le}` : null].filter(Boolean).join(' ') || 'Oui';
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
@@ -49,6 +67,8 @@ export default function HistoriquePatient({ animalId, animalNom, profileId, onCl
                   <th className="text-right px-3 py-2">Poids</th>
                   <th className="text-left px-3 py-2">Actes réalisés</th>
                   <th className="text-left px-3 py-2">Prescription</th>
+                  <th className="text-left px-3 py-2">Rédigé par</th>
+                  <th className="text-left px-3 py-2">Validé</th>
                 </tr>
               </thead>
               <tbody>
@@ -59,6 +79,8 @@ export default function HistoriquePatient({ animalId, animalNom, profileId, onCl
                     <td className="px-3 py-2 text-right whitespace-nowrap">{c.poids != null ? `${c.poids} kg` : '—'}</td>
                     <td className="px-3 py-2">{c.actes?.length ? c.actes.join(', ') : '—'}</td>
                     <td className="px-3 py-2">{c.prescription || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{nom(c.redige_par_profile_id, c.redige_par_uid) ?? '—'}</td>
+                    <td className="px-3 py-2">{valide(c)}</td>
                   </tr>
                 ))}
               </tbody>

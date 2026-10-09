@@ -15,6 +15,8 @@ import MorphoAnimalTab from '@/components/morpho/MorphoAnimalTab';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 import LienDocument from '@/components/LienDocument';
+import ConsultationsVet, { type CrVet, type OrdoVet } from '@/components/pro/ConsultationsVet';
+import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob } from '@/lib/ordonnance-pdf';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
@@ -34,10 +36,17 @@ interface Owner {
   phone_number: string | null; numero_elevage: string | null;
   adress_elevage: string | null; rue_elevage: string | null;
   ville_elevage: string | null; code_postal_elevage: string | null;
-  ville: string | null; code_postal: string | null;
+  ville: string | null; code_postal: string | null; rue?: string | null;
   is_elevage: boolean | null; is_pro: boolean | null;
 }
-interface Grant { id: string; statut: string; pro_profile_id: string; }
+interface Grant { id: string; statut: string; pro_profile_id: string; granted_by_profile_id?: string | null }
+/** Profil (user_profiles) qui a confié l'animal : son adresse prime sur celle
+ *  du compte (multi-profil : un compte éleveur peut avoir un profil particulier). */
+interface OwnerProfil {
+  id: string; profile_type: string | null; firstname: string | null; lastname: string | null; nom: string | null;
+  adresse?: string | null; rue?: string | null; code_postal?: string | null; ville?: string | null;
+  rue_elevage?: string | null; adress_elevage?: string | null; code_postal_elevage?: string | null; ville_elevage?: string | null;
+}
 interface VaccinEntry {
   id: string; vaccin: string; date: string;
   date_rappel: string | null; lot: string | null; veterinaire: string | null; source: string | null;
@@ -613,6 +622,27 @@ function PatientDetailPageInner() {
   const [traitementsCr, setTraitementsCr] = useState<TraitementCr[]>([]);
   const [requestingWrite, setRequestingWrite] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+  const [historiqueOuvert, setHistoriqueOuvert] = useState(false);
+  const [ownerProfil, setOwnerProfil] = useState<OwnerProfil | null>(null);
+
+  // Profil propriétaire : celui qui a accordé l'accès, sinon le client du
+  // dernier RDV de l'animal.
+  useEffect(() => {
+    if (!animalId) return;
+    let annule = false;
+    (async () => {
+      let profilId = grant?.granted_by_profile_id ?? null;
+      if (!profilId) {
+        const { data } = await supabase.from('rdv').select('client_profile_id').eq('animal_id', animalId)
+          .not('client_profile_id', 'is', null).order('date_heure', { ascending: false }).limit(1).maybeSingle();
+        profilId = (data as { client_profile_id: string } | null)?.client_profile_id ?? null;
+      }
+      if (!profilId) return;
+      const { data } = await supabase.from('user_profiles_complet').select('*').eq('id', profilId).maybeSingle();
+      if (!annule) setOwnerProfil(data as OwnerProfil | null);
+    })();
+    return () => { annule = true; };
+  }, [animalId, grant?.granted_by_profile_id]);
 
   // Pro type
   useEffect(() => {
@@ -664,7 +694,7 @@ function PatientDetailPageInner() {
     async function load() {
       const [animalRes, grantRes] = await Promise.all([
         supabase.from('animaux').select('*').eq('id', animalId).single(),
-        supabase.from('animal_access').select('id, statut, pro_profile_id')
+        supabase.from('animal_access').select('id, statut, pro_profile_id, granted_by_profile_id')
           .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).maybeSingle(),
       ]);
       const a = animalRes.data as Animal | null;
@@ -682,7 +712,7 @@ function PatientDetailPageInner() {
 
       const results = await Promise.allSettled([
         ownerUid
-          ? supabase.from('users_complet').select('uid, firstname, lastname, name_elevage, email, phone_number, numero_elevage, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, ville, code_postal, is_elevage, is_pro').eq('uid', ownerUid).maybeSingle()
+          ? supabase.from('users_complet').select('uid, firstname, lastname, name_elevage, email, phone_number, numero_elevage, adress_elevage, rue_elevage, ville_elevage, code_postal_elevage, rue, ville, code_postal, is_elevage, is_pro').eq('uid', ownerUid).maybeSingle()
           : Promise.resolve({ data: null }),
         supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('visites').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
@@ -1564,7 +1594,23 @@ function PatientDetailPageInner() {
     <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">Animal introuvable ou accès refusé.</div>
   );
 
-  const ownerName = owner
+  // Adresse postale : celle du profil propriétaire, sinon celle du compte
+  // (perso pour un particulier, élevage pour un élevage / pro).
+  const pro = !!(owner?.is_elevage || owner?.is_pro);
+  const adresseCompte = owner ? [
+    (pro ? owner.rue_elevage ?? owner.adress_elevage : null) ?? owner.rue,
+    [(pro ? owner.code_postal_elevage : null) ?? owner.code_postal, (pro ? owner.ville_elevage : null) ?? owner.ville].filter(Boolean).join(' '),
+  ].filter(Boolean).join(', ') : '';
+  const p = ownerProfil;
+  const adresseProfil = p ? (p.profile_type === 'particulier'
+    ? [p.rue || p.adresse, [p.code_postal, p.ville].filter(Boolean).join(' ')]
+    : [p.rue_elevage || p.adress_elevage || p.rue || p.adresse,
+       [p.code_postal_elevage || p.code_postal, p.ville_elevage || p.ville].filter(Boolean).join(' ')]
+  ).filter(Boolean).join(', ') : '';
+  const ownerAdresse = adresseProfil || adresseCompte || null;
+  const ownerName = p?.profile_type === 'particulier' && `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim()
+    ? `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim()
+    : owner
     ? (owner.is_elevage || owner.is_pro) && owner.name_elevage
       ? owner.name_elevage
       : [owner.firstname, owner.lastname].filter(Boolean).join(' ') || 'Propriétaire'
@@ -1777,6 +1823,112 @@ function PatientDetailPageInner() {
                 </div>
               )}
             </Card>
+            {isVet && (
+              <>
+            {/* Vermifuges */}
+            <Card title={`🪱 Vermifuges (${vermifuges.length})`}>
+              {vermifuges.length === 0 ? <EmptyState text="Aucun vermifuge enregistré" /> : (
+                <div className="space-y-2">
+                  {vermifuges.map(v => {
+                    const due = v.date_rappel && new Date(v.date_rappel) <= new Date();
+                    return (
+                      <div key={v.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{v.produit}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(v.date)}</p>
+                        </div>
+                        {v.dosage && <p className="text-xs text-gray-600">{v.dosage}</p>}
+                        {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
+                        {v.notes && <p className="text-xs text-gray-400 mt-1">{v.notes}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Antiparasitaires */}
+            <Card title={`🦟 Antiparasitaires (${antiparasitaires.length})`}>
+              {antiparasitaires.length === 0 ? <EmptyState text="Aucun antiparasitaire enregistré" /> : (
+                <div className="space-y-2">
+                  {antiparasitaires.map(a => {
+                    const due = a.date_rappel && new Date(a.date_rappel) <= new Date();
+                    return (
+                      <div key={a.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{a.produit}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(a.date)}</p>
+                        </div>
+                        {a.type && <p className="text-xs text-gray-600">{a.type}</p>}
+                        {a.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(a.date_rappel)}</p>}
+                        {a.notes && <p className="text-xs text-gray-400 mt-1">{a.notes}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Chirurgies / Hospitalisations */}
+            <Card title={`🏥 Chirurgies / Hospitalisations (${chirurgies.length})`}>
+              {chirurgies.length === 0 ? <EmptyState text="Aucune chirurgie enregistrée" /> : (
+                <div className="space-y-2">
+                  {chirurgies.map(c => (
+                    <div key={c.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-semibold text-sm text-[#1F2A2E]">{c.intitule}</p>
+                        <p className="text-xs text-gray-400">{fmtDateShort(c.date)}</p>
+                      </div>
+                      {c.statut && <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full">{c.statut === 'realise' ? 'Réalisée' : c.statut === 'annule' ? 'Annulée' : 'Prévue'}</span>}
+                      {c.clinique && <p className="text-xs text-gray-500 mt-1">{c.clinique}</p>}
+                      {c.protocole_preop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Pré-op : </span>{c.protocole_preop}</p>}
+                      {c.protocole_postop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Post-op : </span>{c.protocole_postop}</p>}
+                      {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Allergies */}
+            <Card title={`⚠️ Allergies / pathologies (${allergies.length})`}>
+              {allergies.length === 0 ? <EmptyState text="Aucune allergie enregistrée" /> : (
+                <div className="space-y-2">
+                  {allergies.map(a => (
+                    <div key={a.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-sm text-[#1F2A2E]">{a.description}</p>
+                        {a.date && <p className="text-xs text-gray-400">{fmtDateShort(a.date)}</p>}
+                      </div>
+                      {(a.type || a.severite) && <p className="text-xs text-gray-600">{[a.type, a.severite].filter(Boolean).join(' · ')}</p>}
+                      {a.notes && <p className="text-xs text-gray-400 mt-1">{a.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Radios / Examens */}
+            {isVet && (
+              <Card title={`🩻 Radios / Examens (${radios.length})`}>
+                {radios.length === 0 ? <EmptyState text="Aucun examen enregistré" /> : (
+                  <div className="space-y-2">
+                    {radios.map(r => (
+                      <div key={r.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{r.titre || 'Radio / Examen'}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(r.date)}</p>
+                        </div>
+                        {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
+                        {r.veterinaire && <p className="text-xs text-gray-400">Dr {r.veterinaire}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+              </>
+            )}
             {/* Mesures */}
             {(animal.poids || animal.taille) && (
               <Card title="⚖️ Mesures">
@@ -2335,13 +2487,7 @@ function PatientDetailPageInner() {
                         ? owner.numero_elevage
                         : owner.phone_number,
                     },
-                    {
-                      label: 'Adresse',
-                      value: [
-                        owner.rue_elevage ?? owner.adress_elevage,
-                        [owner.code_postal_elevage ?? owner.code_postal, owner.ville_elevage ?? owner.ville].filter(Boolean).join(' '),
-                      ].filter(Boolean).join(', ') || null,
-                    },
+                    { label: 'Adresse postale', value: ownerAdresse },
                   ]} />
                 </div>
                 <div className="flex gap-2 mt-2">
@@ -2362,309 +2508,43 @@ function PatientDetailPageInner() {
           </Card>
         )}
 
-        {/* ── Consultations (carnet de santé complet) — réservé santé ── */}
+        {/* ── Consultations : suivi des consultations (CR + ordonnances) ; le
+             carnet de santé reste dans l'onglet Santé ── */}
         {tab === 'Consultations' && isVet && (
           <>
-            {/* Bouton + avec submenu */}
-            {hasWriteAccess && (
-              <div className="relative">
-                <button onClick={() => setShowAddMenu(v => !v)}
-                  className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2"
-                  style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
-                  <span className="text-lg leading-none">+</span>
-                  {isVet ? 'Ajouter au dossier' : 'Ajouter une observation'}
-                </button>
-                {showAddMenu && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 z-10 overflow-hidden">
-                    {[
-                      { type: 'cr',         label: '📋 Rédiger un CR',       show: isVet },
-                      { type: 'vaccin',     label: '💉 Vaccin',               show: true },
-                      { type: 'visite',     label: '🩺 Visite vétérinaire',   show: isVet },
-                      { type: 'traitement', label: '💊 Traitement',            show: true },
-                      { type: 'vermifuge',       label: '🪱 Vermifuge',                    show: isVet },
-                      { type: 'antiparasitaire', label: '🦟 Antiparasitaire',              show: isVet },
-                      { type: 'chirurgie',       label: '🏥 Chirurgie / Hospitalisation',  show: isVet },
-                      { type: 'allergie',        label: '⚠️ Allergie / pathologie',        show: isVet },
-                      { type: 'ordonnance', label: '📄 Ordonnance',            show: isVet },
-                      { type: 'radio',      label: '🩻 Radio / Examen',        show: isVet },
-                      { type: 'mesure',     label: '⚖️ Nouvelle mesure',       show: isVet },
-                    ].filter(i => i.show).map(item => (
-                      <button key={item.type}
-                        onClick={() => { setAddingType(item.type as AddType); setShowAddMenu(false); }}
-                        className="w-full text-left px-4 py-3 text-sm font-medium text-[#1F2A2E] hover:bg-gray-50 border-b border-gray-50 last:border-0 transition-colors"
-                        style={{ fontFamily: 'Galey, sans-serif' }}>
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             {!hasWriteAccess && !writeRequested && (
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3 items-start">
-                <span className="text-xl">📖</span>
-                <div>
-                  <p className="text-sm font-semibold text-amber-800">Lecture seule</p>
-                  <p className="text-xs text-amber-600 mt-0.5">Demandez l&apos;accès en écriture depuis l&apos;onglet Identité.</p>
-                </div>
-              </div>
+              <p className="text-xs text-[#8A5A00] bg-[#FFF8EA] border border-[#F3E2BD] rounded-lg px-3 py-2">
+                Lecture seule — demandez l&apos;accès en écriture depuis l&apos;onglet Identité.
+              </p>
             )}
-
-            {/* Vaccins */}
-            <Card title={`💉 Vaccinations (${vaccins.length})`}>
-              {vaccins.length === 0 ? <EmptyState text="Aucun vaccin enregistré" /> : (
-                <div className="space-y-2">
-                  {vaccins.map(v => {
-                    const due = v.date_rappel && new Date(v.date_rappel) <= new Date();
-                    return (
-                      <div key={v.id} className="border border-gray-100 rounded-xl p-3">
-                        <div className="flex items-center justify-between">
-                          <p className="font-semibold text-sm text-[#1F2A2E]">{v.vaccin}</p>
-                          <p className="text-xs text-gray-400">{fmtDateShort(v.date)}</p>
-                        </div>
-                        {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
-                        {v.lot && <p className="text-xs text-gray-400">Lot : {v.lot}</p>}
-                        {v.veterinaire && <p className="text-xs text-gray-400">Dr {v.veterinaire}</p>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-
-            {/* Visites */}
-            <Card title={`🩺 Visites vétérinaires (${visites.length})`}>
-              {visites.length === 0 ? <EmptyState text="Aucune visite enregistrée" /> : (
-                <div className="space-y-3">
-                  {visites.map(v => (
-                    <div key={v.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-semibold text-sm text-[#1F2A2E]">{fmtDateShort(v.date)}</p>
-                        {v.motif && <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full">{v.motif}</span>}
-                      </div>
-                      {v.diagnostic && <p className="text-xs text-gray-600"><span className="font-medium">Diagnostic : </span>{v.diagnostic}</p>}
-                      {v.notes && <p className="text-xs text-gray-400 mt-1">{v.notes}</p>}
-                      {v.veterinaire && <p className="text-xs text-gray-400 mt-0.5">Dr {v.veterinaire}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Traitements */}
-            <Card title={`💊 Traitements (${traitements.length})`}>
-              {traitements.length === 0 ? <EmptyState text="Aucun traitement enregistré" /> : (
-                <div className="space-y-2">
-                  {traitements.map(t => (
-                    <div key={t.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-sm text-[#1F2A2E]">{t.nom}</p>
-                        <p className="text-xs text-gray-400">{fmtDateShort(t.date)}</p>
-                      </div>
-                      {t.posologie && <p className="text-xs text-gray-600">{t.posologie}</p>}
-                      {t.date_fin && <p className="text-xs text-gray-400">Fin : {fmtDateShort(t.date_fin)}</p>}
-                      {t.notes && <p className="text-xs text-gray-400 mt-1">{t.notes}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Vermifuges */}
-            <Card title={`🪱 Vermifuges (${vermifuges.length})`}>
-              {vermifuges.length === 0 ? <EmptyState text="Aucun vermifuge enregistré" /> : (
-                <div className="space-y-2">
-                  {vermifuges.map(v => {
-                    const due = v.date_rappel && new Date(v.date_rappel) <= new Date();
-                    return (
-                      <div key={v.id} className="border border-gray-100 rounded-xl p-3">
-                        <div className="flex items-center justify-between">
-                          <p className="font-semibold text-sm text-[#1F2A2E]">{v.produit}</p>
-                          <p className="text-xs text-gray-400">{fmtDateShort(v.date)}</p>
-                        </div>
-                        {v.dosage && <p className="text-xs text-gray-600">{v.dosage}</p>}
-                        {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
-                        {v.notes && <p className="text-xs text-gray-400 mt-1">{v.notes}</p>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-
-            {/* Antiparasitaires */}
-            <Card title={`🦟 Antiparasitaires (${antiparasitaires.length})`}>
-              {antiparasitaires.length === 0 ? <EmptyState text="Aucun antiparasitaire enregistré" /> : (
-                <div className="space-y-2">
-                  {antiparasitaires.map(a => {
-                    const due = a.date_rappel && new Date(a.date_rappel) <= new Date();
-                    return (
-                      <div key={a.id} className="border border-gray-100 rounded-xl p-3">
-                        <div className="flex items-center justify-between">
-                          <p className="font-semibold text-sm text-[#1F2A2E]">{a.produit}</p>
-                          <p className="text-xs text-gray-400">{fmtDateShort(a.date)}</p>
-                        </div>
-                        {a.type && <p className="text-xs text-gray-600">{a.type}</p>}
-                        {a.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(a.date_rappel)}</p>}
-                        {a.notes && <p className="text-xs text-gray-400 mt-1">{a.notes}</p>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-
-            {/* Chirurgies / Hospitalisations */}
-            <Card title={`🏥 Chirurgies / Hospitalisations (${chirurgies.length})`}>
-              {chirurgies.length === 0 ? <EmptyState text="Aucune chirurgie enregistrée" /> : (
-                <div className="space-y-2">
-                  {chirurgies.map(c => (
-                    <div key={c.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-semibold text-sm text-[#1F2A2E]">{c.intitule}</p>
-                        <p className="text-xs text-gray-400">{fmtDateShort(c.date)}</p>
-                      </div>
-                      {c.statut && <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full">{c.statut === 'realise' ? 'Réalisée' : c.statut === 'annule' ? 'Annulée' : 'Prévue'}</span>}
-                      {c.clinique && <p className="text-xs text-gray-500 mt-1">{c.clinique}</p>}
-                      {c.protocole_preop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Pré-op : </span>{c.protocole_preop}</p>}
-                      {c.protocole_postop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Post-op : </span>{c.protocole_postop}</p>}
-                      {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Allergies */}
-            <Card title={`⚠️ Allergies / pathologies (${allergies.length})`}>
-              {allergies.length === 0 ? <EmptyState text="Aucune allergie enregistrée" /> : (
-                <div className="space-y-2">
-                  {allergies.map(a => (
-                    <div key={a.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center justify-between">
-                        <p className="font-semibold text-sm text-[#1F2A2E]">{a.description}</p>
-                        {a.date && <p className="text-xs text-gray-400">{fmtDateShort(a.date)}</p>}
-                      </div>
-                      {(a.type || a.severite) && <p className="text-xs text-gray-600">{[a.type, a.severite].filter(Boolean).join(' · ')}</p>}
-                      {a.notes && <p className="text-xs text-gray-400 mt-1">{a.notes}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Comptes rendus */}
-            {isVet && comptesRendus.length > 0 && (
-              <Card title="🕘 Historique des consultations">
-                <div className="divide-y divide-gray-100">
-                  {comptesRendus.map(c => (
-                    <div key={c.id} className="py-2 first:pt-0 last:pb-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-[#0C5C6C]">{fmtDateShort(c.created_at)}</span>
-                        <span className="flex-1 text-sm font-semibold text-[#1F2A2E] truncate">{c.motif || 'Consultation'}</span>
-                        {c.poids != null && <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C]">⚖ {c.poids} kg</span>}
-                      </div>
-                      {c.actes && c.actes.length > 0 && <p className="text-xs text-gray-600 mt-0.5">Actes : {c.actes.join(', ')}</p>}
-                      {c.prescription && <p className="text-xs text-gray-600">💊 {c.prescription}</p>}
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-
-            <Card title={`📋 Comptes rendus (${comptesRendus.length})`}>
-              {comptesRendus.length === 0 ? <EmptyState text="Aucun compte rendu enregistré" /> : (
-                <div className="space-y-3">
-                  {comptesRendus.map(c => (
-                    <div key={c.id} className="border border-gray-100 rounded-xl p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-xs text-gray-400">{fmtDateShort(c.created_at)}</p>
-                        {c.statut === 'brouillon' && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">Brouillon — à valider</span>
-                        )}
-                        {c.statut === 'brouillon' && (
-                          <button type="button"
-                            onClick={async () => {
-                              const { error } = await supabase.from('comptes_rendus').update({
-                                statut: 'valide', ...(activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
-                              }).eq('id', c.id);
-                              if (error) { alert(error.message); return; }
-                              setComptesRendus(prev => prev.map(x => x.id === c.id ? { ...x, statut: 'valide' } : x));
-                            }}
-                            className="ml-auto text-xs font-semibold text-white bg-[#0C5C6C] rounded-full px-3 py-1">
-                            Valider et envoyer
-                          </button>
-                        )}
-                      </div>
-                      {c.contenu
-                        ? <p className="text-sm text-[#1F2A2E] whitespace-pre-wrap">{c.contenu}</p>
-                        : <p className="text-xs text-gray-400 italic">Compte rendu vide</p>
-                      }
-                      {c.statut !== 'brouillon' && isVet && (
-                        <div className="flex gap-2 mt-2">
-                          <button type="button" onClick={() => transmettreCr(c, 'imprimer')}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>🖨 Imprimer</button>
-                          <button type="button" onClick={() => transmettreCr(c, 'email')}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg border" style={{ borderColor: TEAL, color: TEAL }}>✉ Envoyer au propriétaire</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Ordonnances */}
-            <Card title={`📄 Ordonnances (${ordonnances.length})`}>
-              {ordonnances.length === 0 ? <EmptyState text="Aucune ordonnance enregistrée" /> : (
-                <div className="space-y-2">
-                  {ordonnances.map(o => (
-                    <div key={o.id} className="border border-gray-100 rounded-xl p-3 flex items-center gap-3">
-                      <span className="text-xl">📄</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-[#1F2A2E]">{fmtDateShort(o.date_emit)}</p>
-                        {o.notes && <p className="text-xs text-gray-400">{o.notes}</p>}
-                      </div>
-                      {o.doc_url && isVet && (
-                        <>
-                          <button type="button" onClick={() => transmettreOrdo(o, 'imprimer')} title="Imprimer"
-                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border flex-shrink-0" style={{ borderColor: TEAL, color: TEAL }}>🖨</button>
-                          <button type="button" onClick={() => transmettreOrdo(o, 'email')} title="Envoyer au propriétaire"
-                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border flex-shrink-0" style={{ borderColor: TEAL, color: TEAL }}>✉</button>
-                        </>
-                      )}
-                      {o.doc_url && (
-                        <LienDocument href={o.doc_url} target="_blank" rel="noopener noreferrer"
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white flex-shrink-0"
-                          style={{ background: TEAL }}>
-                          Voir
-                        </LienDocument>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Radios / Examens */}
-            {isVet && (
-              <Card title={`🩻 Radios / Examens (${radios.length})`}>
-                {radios.length === 0 ? <EmptyState text="Aucun examen enregistré" /> : (
-                  <div className="space-y-2">
-                    {radios.map(r => (
-                      <div key={r.id} className="border border-gray-100 rounded-xl p-3">
-                        <div className="flex items-center justify-between">
-                          <p className="font-semibold text-sm text-[#1F2A2E]">{r.titre || 'Radio / Examen'}</p>
-                          <p className="text-xs text-gray-400">{fmtDateShort(r.date)}</p>
-                        </div>
-                        {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
-                        {r.veterinaire && <p className="text-xs text-gray-400">Dr {r.veterinaire}</p>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
+            <ConsultationsVet
+              crs={comptesRendus as CrVet[]} ordos={ordonnances as OrdoVet[]}
+              peutCr={hasWriteAccess} peutCarnet={hasWriteAccess} peutValider={hasWriteAccess}
+              menuCarnet={[
+                { label: 'Vaccin', onClick: () => setAddingType('vaccin') },
+                { label: 'Traitement', onClick: () => setAddingType('traitement') },
+                { label: 'Visite vétérinaire', onClick: () => setAddingType('visite') },
+                { label: 'Ordonnance (PDF)', onClick: () => setAddingType('ordonnance') },
+                { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
+                { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
+              ]}
+              onNouveauCr={() => setAddingType('cr')}
+              onHistorique={() => setHistoriqueOuvert(true)}
+              onValider={async (cr) => {
+                const { error } = await supabase.from('comptes_rendus').update({
+                  statut: 'valide', ...(activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
+                }).eq('id', cr.id);
+                if (error) { alert(error.message); return; }
+                // Relit le CR : validateur / date posés par le serveur.
+                const { data } = await supabase.from('comptes_rendus').select('*').eq('id', cr.id).maybeSingle();
+                setComptesRendus(prev => prev.map(x => x.id === cr.id ? { ...x, ...(data ?? { statut: 'valide' }) } : x));
+              }}
+              onTransmettreCr={(cr, action) => transmettreCr(cr as CompteRendu, action)}
+              onTransmettreOrdo={(o, action) => transmettreOrdo(o as Ordonnance, action)}
+            />
+            {historiqueOuvert && animal && (
+              <HistoriquePatient animalId={String(animal.id)} animalNom={animal.nom ?? 'Patient'}
+                profileId={activeProfileId} onClose={() => setHistoriqueOuvert(false)} />
             )}
           </>
         )}
