@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/utils/retards_rdv.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1E2025);
@@ -315,13 +316,13 @@ class _VetDashboardState extends State<VetDashboard> {
 
   Widget _kpis(DateTime now, int nbACloturer, bool large) {
     final cartes = [
-      _Kpi(valeur: _rdvAujourdhui(now), label: "RDV aujourd'hui", icon: Icons.today_outlined,
+      DashKpi(valeur: _rdvAujourdhui(now), label: "RDV aujourd'hui", icon: Icons.today_outlined,
           onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))),
-      _Kpi(valeur: _demandes.length, label: 'Demandes à confirmer', icon: Icons.mark_email_unread_outlined,
+      DashKpi(valeur: _demandes.length, label: 'Demandes à confirmer', icon: Icons.mark_email_unread_outlined,
           onTap: () => _go(const ProAgendaPage(initialTabIndex: 0))),
-      _Kpi(valeur: nbACloturer, label: 'Consultations à clôturer', icon: Icons.assignment_late_outlined,
+      DashKpi(valeur: nbACloturer, label: 'Consultations à clôturer', icon: Icons.assignment_late_outlined,
           onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))),
-      _Kpi(valeur: widget.patientsCount, label: 'Patients suivis', icon: Icons.favorite_outline,
+      DashKpi(valeur: widget.patientsCount, label: 'Patients suivis', icon: Icons.favorite_outline,
           onTap: () => _go(const VetPatientsPage())),
     ];
     return GridView.count(
@@ -594,7 +595,7 @@ class _VetDashboardState extends State<VetDashboard> {
             child: Text('Aucun rendez-vous sur la période.', textAlign: TextAlign.center,
                 style: TextStyle(fontFamily: 'Galey', color: _muted)))
       else
-        _DonutMotifs(parMotif: parMotif, total: total),
+        DashDonut(segments: [for (final m in vetMotifs) (key: m.key, label: m.label, color: m.color, n: parMotif[m.key] ?? 0)]),
       const SizedBox(height: 18),
       const Divider(height: 1, color: Color(0xFFF0F1EF)),
       const SizedBox(height: 14),
@@ -602,184 +603,7 @@ class _VetDashboardState extends State<VetDashboard> {
           fontWeight: FontWeight.w700, color: _ink)),
       const Text('RDV par jour', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
       const SizedBox(height: 10),
-      _BarresSemaine(parJour: parJour, aujourdhui: now.weekday - 1),
+      DashBarresSemaine(series: [parJour], couleurs: const [_teal], aujourdhui: now.weekday - 1),
     ]));
-  }
-}
-
-class _Kpi extends StatelessWidget {
-  final int valeur;
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  const _Kpi({required this.valeur, required this.label, required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: _border)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Row(children: [
-                Icon(icon, size: 20, color: _teal),
-                const Spacer(),
-                const Icon(Icons.chevron_right, size: 18, color: _muted),
-              ]),
-              Text('$valeur', style: const TextStyle(fontFamily: 'Galey', fontSize: 26,
-                  fontWeight: FontWeight.w800, color: _ink, height: 1.1)),
-              Text(label, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5,
-                  color: _muted, height: 1.2)),
-            ]),
-          ),
-        ),
-      );
-}
-
-/// Anneau par motif + légende (libellé, nombre, %) : l'identité ne repose
-/// jamais sur la couleur seule. Toucher une ligne met son segment en avant.
-class _DonutMotifs extends StatefulWidget {
-  final Map<String, int> parMotif;
-  final int total;
-  const _DonutMotifs({required this.parMotif, required this.total});
-
-  @override
-  State<_DonutMotifs> createState() => _DonutMotifsState();
-}
-
-class _DonutMotifsState extends State<_DonutMotifs> {
-  String? _actif;
-
-  @override
-  Widget build(BuildContext context) {
-    final segments = [
-      for (final m in vetMotifs)
-        if ((widget.parMotif[m.key] ?? 0) > 0) (key: m.key, label: m.label, color: m.color, n: widget.parMotif[m.key]!),
-    ];
-    final actif = segments.where((s) => s.key == _actif).firstOrNull;
-    final anneau = SizedBox(
-      width: 150, height: 150,
-      child: CustomPaint(
-        painter: _DonutPainter(segments: [for (final s in segments) (color: s.color, n: s.n, key: s.key)],
-            total: widget.total, actif: _actif),
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('${actif?.n ?? widget.total}', style: const TextStyle(fontFamily: 'Galey', fontSize: 24,
-                fontWeight: FontWeight.w800, color: _ink)),
-            Text(actif?.label ?? 'RDV', style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
-          ]),
-        ),
-      ),
-    );
-    final legende = Column(children: [
-      for (final s in segments)
-        InkWell(
-          onTap: () => setState(() => _actif = _actif == s.key ? null : s.key),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
-            child: Row(children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: s.color, borderRadius: BorderRadius.circular(3))),
-              const SizedBox(width: 8),
-              Expanded(child: Text(s.label, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink,
-                  fontWeight: _actif == s.key ? FontWeight.w800 : FontWeight.w500))),
-              Text('${s.n}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: _ink)),
-              SizedBox(width: 48, child: Text('${(s.n * 100 / widget.total).round()} %', textAlign: TextAlign.right,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted))),
-            ]),
-          ),
-        ),
-    ]);
-    return LayoutBuilder(builder: (context, c) => c.maxWidth >= 420
-        ? Row(children: [anneau, const SizedBox(width: 20), Expanded(child: legende)])
-        : Column(children: [anneau, const SizedBox(height: 12), legende]));
-  }
-}
-
-class _DonutPainter extends CustomPainter {
-  final List<({Color color, int n, String key})> segments;
-  final int total;
-  final String? actif;
-  _DonutPainter({required this.segments, required this.total, this.actif});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (total == 0) return;
-    const epaisseur = 20.0;
-    final rect = Rect.fromLTWH(epaisseur / 2 + 3, epaisseur / 2 + 3,
-        size.width - epaisseur - 6, size.height - epaisseur - 6);
-    // Écart de 2 px (couleur de la surface) entre segments.
-    final rayon = rect.width / 2;
-    final ecart = segments.length > 1 ? 2 / rayon : 0.0;
-    var angle = -math.pi / 2;
-    for (final s in segments) {
-      final balayage = 2 * math.pi * s.n / total;
-      final p = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = s.key == actif ? epaisseur + 6 : epaisseur
-        ..color = actif == null || s.key == actif ? s.color : s.color.withValues(alpha: 0.35);
-      canvas.drawArc(rect, angle + ecart / 2, math.max(0.001, balayage - ecart), false, p);
-      angle += balayage;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DonutPainter old) =>
-      old.actif != actif || old.total != total || old.segments != segments;
-}
-
-/// Barres RDV / jour (lundi → dimanche) ; valeur affichée sur aujourd'hui et
-/// sur la barre touchée, pas sur chaque barre.
-class _BarresSemaine extends StatefulWidget {
-  final List<int> parJour;
-  final int aujourdhui;
-  const _BarresSemaine({required this.parJour, required this.aujourdhui});
-
-  @override
-  State<_BarresSemaine> createState() => _BarresSemaineState();
-}
-
-class _BarresSemaineState extends State<_BarresSemaine> {
-  int? _touche;
-  static const _jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-
-  @override
-  Widget build(BuildContext context) {
-    final max = widget.parJour.fold<int>(0, math.max);
-    const hauteur = 110.0;
-    return SizedBox(
-      height: hauteur + 40,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        for (var i = 0; i < 7; i++)
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _touche = _touche == i ? null : i),
-              child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-                if (i == widget.aujourdhui || i == _touche)
-                  Text('${widget.parJour[i]}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      fontWeight: FontWeight.w700, color: _ink)),
-                const SizedBox(height: 3),
-                Container(
-                  width: 22,
-                  height: max == 0 ? 2 : math.max(2, hauteur * widget.parJour[i] / max),
-                  decoration: BoxDecoration(
-                    color: i == widget.aujourdhui || i == _touche ? _teal : _teal.withValues(alpha: 0.45),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(_jours[i], style: TextStyle(fontFamily: 'Galey', fontSize: 11.5,
-                    color: i == widget.aujourdhui ? _ink : _muted,
-                    fontWeight: i == widget.aujourdhui ? FontWeight.w800 : FontWeight.w500)),
-              ]),
-            ),
-          ),
-      ]),
-    );
   }
 }

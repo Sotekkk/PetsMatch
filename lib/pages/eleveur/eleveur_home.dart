@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/message.dart';
+import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
@@ -42,10 +43,9 @@ import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/vet_dashboard.dart';
+import 'package:PetsMatch/pages/pro/sante_dashboard.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
-import 'package:PetsMatch/pages/pro/sante_suivis_morpho_page.dart';
-import 'package:PetsMatch/pages/pro/sante_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
@@ -359,6 +359,9 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         if (User_Info.catPro == 'veterinaire')
                           VetDashboard(key: ValueKey(_refreshTick), patientsCount: _patientCount,
                               raccourcis: _buildVetShortcuts(context))
+                        // Ostéopathe / santé : tableau de bord (remplace les raccourcis).
+                        else if (User_Info.catPro == 'sante')
+                          SanteDashboard(key: ValueKey(_refreshTick), patientsCount: _patientCount)
                         else
                           _buildStatsRow(),
                         if (User_Info.catPro == 'education') ...[
@@ -368,10 +371,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         if (User_Info.catPro == 'garde') ...[
                           const SizedBox(height: 12),
                           _buildGardeShortcuts(context),
-                        ],
-                        if (User_Info.catPro == 'sante') ...[
-                          const SizedBox(height: 12),
-                          _buildSanteShortcuts(context),
                         ],
                         if (User_Info.catPro == 'photographe') ...[
                           const SizedBox(height: 12),
@@ -431,7 +430,16 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       pinned: true,
       backgroundColor: _teal,
       automaticallyImplyLeading: false,
-      actions: const [QuickSearchButton()],
+      actions: [
+        // Véto / ostéo : accès direct aux notifications depuis le tableau de bord.
+        if (User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante')
+          IconButton(
+            tooltip: 'Notifications',
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsPage())),
+          ),
+        const QuickSearchButton(),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(
@@ -476,12 +484,12 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
-                        if (User_Info.catPro == 'veterinaire') ...[
+                        if (User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante') ...[
                           const SizedBox(height: 4),
                           Text(
                             [
-                              '${User_Info.firstname} ${User_Info.lastname}'.trim(),
-                              'Vétérinaire · Gérant',
+                              if (User_Info.catPro == 'veterinaire') '${User_Info.firstname} ${User_Info.lastname}'.trim(),
+                              User_Info.catPro == 'veterinaire' ? 'Vétérinaire · Gérant' : _metierSante(),
                             ].where((t) => t.isNotEmpty).join(' — '),
                             maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
@@ -522,6 +530,12 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         ),
       ),
     );
+  }
+
+  /// Libellé du métier santé (spécialité du profil, sinon ostéopathe).
+  String _metierSante() {
+    final p = User_Info.professionPro.trim();
+    return p.isEmpty || p.toLowerCase().contains('osté') ? 'Ostéopathe animalier' : p;
   }
 
   String _dateDuJour() {
@@ -740,40 +754,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => go(const ClesClientsPage())),
         _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
             onTap: () => go(const FacturationPage())),
-      ],
-    );
-  }
-
-  Widget _buildSanteShortcuts(BuildContext context) {
-    void go(Widget page) =>
-        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-    final contratsLocked = _santePlanCode != 'pro';
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.0,
-      children: [
-        _QuickTile(icon: Icons.medical_information_outlined, label: 'Mes\npatients', color: _teal,
-            onTap: () => go(const ProClientsPage())),
-        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF5F9EAA),
-            onTap: () => go(const ProAgendaPage())),
-        _QuickTile(icon: Icons.accessibility_new, label: 'Mes\nsuivis', color: const Color(0xFF7B5EA7),
-            onTap: () => go(const SanteSuivisMorphoPage())),
-        _QuickTile(
-            icon: Icons.description_outlined,
-            label: 'Mes\ncontrats',
-            color: contratsLocked ? Colors.grey : const Color(0xFFB8860B),
-            isLocked: contratsLocked,
-            onTap: () => go(contratsLocked
-                ? const SanteAbonnementPage(profilType: 'sante')
-                : const SanteContratsPage())),
-        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
-            onTap: () => go(const FacturationPage())),
-        _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
-            onTap: () => go(const SanteAbonnementPage(profilType: 'sante'))),
       ],
     );
   }

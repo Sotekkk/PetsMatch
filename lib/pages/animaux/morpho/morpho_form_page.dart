@@ -55,6 +55,8 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   final _professionnelCtrl = TextEditingController();
   final _motifCtrl = TextEditingController();
   final _commentairesCtrl = TextEditingController();
+  /// Contrôle conseillé par le professionnel (null = aucun).
+  DateTime? _prochainControle;
   final _poidsCtrl = TextEditingController();
   final _tailleCtrl = TextEditingController();
   final _checkpointCtrl = TextEditingController();
@@ -116,6 +118,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     _professionnelCtrl.text = s['professionnel_nom']?.toString() ?? '';
     _motifCtrl.text = s['motif']?.toString() ?? '';
     _commentairesCtrl.text = s['commentaires']?.toString() ?? '';
+    _prochainControle = DateTime.tryParse(s['prochain_controle']?.toString() ?? '');
     _poidsCtrl.text = s['poids']?.toString() ?? '';
     _tailleCtrl.text = s['taille']?.toString() ?? '';
     _niveauActivite = s['niveau_activite']?.toString() ?? _niveauActivite;
@@ -301,6 +304,10 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         'professionnel_nom': _professionnelCtrl.text.trim().isEmpty ? null : _professionnelCtrl.text.trim(),
         'motif': _motifCtrl.text.trim().isEmpty ? null : _motifCtrl.text.trim(),
         'commentaires': _commentairesCtrl.text.trim().isEmpty ? null : _commentairesCtrl.text.trim(),
+        // Envoyé seulement si renseigné (ou à effacer) : sans la migration
+        // migration_suivis_prochain_controle.sql, la colonne n'existe pas.
+        if (widget.proProfileId != null && (_prochainControle != null || widget.existingSuivi?['prochain_controle'] != null))
+          'prochain_controle': _prochainControle?.toIso8601String().split('T').first,
         'poids': double.tryParse(_poidsCtrl.text.replaceAll(',', '.')),
         'taille': double.tryParse(_tailleCtrl.text.replaceAll(',', '.')),
         'niveau_activite': _niveauActivite,
@@ -463,6 +470,10 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           _textField('Motif / raison du suivi', _motifCtrl, maxLines: 2),
           const SizedBox(height: 12),
           _textField('Commentaires généraux', _commentairesCtrl, maxLines: 3),
+          if (widget.proProfileId != null) ...[
+            const SizedBox(height: 12),
+            _prochainControleField(),
+          ],
         ])),
 
         if (_saisieLibre) ...[
@@ -661,6 +672,30 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           child: Text(label, style: TextStyle(
               fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
               color: selected ? Colors.white : Colors.grey.shade700)),
+        ),
+      );
+
+  /// Contrôle conseillé (professionnel) : alimente « Suivis à prévoir ».
+  Widget _prochainControleField() => InkWell(
+        onTap: () async {
+          final picked = await showDatePicker(
+            context: context, initialDate: _prochainControle ?? DateTime.now().add(const Duration(days: 30)),
+            firstDate: DateTime.now().subtract(const Duration(days: 1)),
+            lastDate: DateTime.now().add(const Duration(days: 730)),
+          );
+          if (picked != null) setState(() => _prochainControle = picked);
+        },
+        child: InputDecorator(
+          decoration: _decoration('Prochain contrôle conseillé (optionnel)').copyWith(
+            suffixIcon: _prochainControle == null ? null : IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: () => setState(() => _prochainControle = null),
+            ),
+          ),
+          child: Text(_prochainControle == null ? 'Aucun'
+              : '${_prochainControle!.day.toString().padLeft(2, '0')}/${_prochainControle!.month.toString().padLeft(2, '0')}/${_prochainControle!.year}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                  color: _prochainControle == null ? Colors.grey : null)),
         ),
       );
 

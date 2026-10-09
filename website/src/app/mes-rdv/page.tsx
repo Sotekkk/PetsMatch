@@ -1438,6 +1438,8 @@ export default function MesRdvPage() {
     if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning'].includes(onglet)) setActiveTab(onglet);
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
+    // Accès rapide « Nouveau RDV » de l'accueil.
+    if (q.get('nouveau') === '1') setModalNouveau({});
   }, [catPro]);
 
   // RDV visé : défile jusqu'à sa carte et la met en avant.

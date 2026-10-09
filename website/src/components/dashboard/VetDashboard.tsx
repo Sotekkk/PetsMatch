@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { retardsEnCascade } from '@/lib/retards-rdv';
 import TuilesSanteVet from '@/components/dashboard/TuilesSanteVet';
+import { Kpi, PhotoAnimal, Donut, BarresSemaine } from '@/components/dashboard/kit';
 
 const TEAL = '#0C5C6C';
 
@@ -326,27 +327,6 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
   );
 }
 
-function Kpi({ valeur, label, icone, href }: { valeur: number; label: string; icone: string; href: string }) {
-  return (
-    <Link href={href} className="bg-white rounded-2xl border border-[#E4E7E2] p-4 hover:shadow-md transition-shadow flex flex-col gap-1">
-      <div className="flex items-center"><span className="text-lg" aria-hidden>{icone}</span><span className="ml-auto text-gray-400">›</span></div>
-      <p className="text-3xl font-extrabold text-[#1E2025] leading-tight">{valeur}</p>
-      <p className="text-xs text-gray-500">{label}</p>
-    </Link>
-  );
-}
-
-function PhotoAnimal({ url, taille = 38 }: { url?: string | null; taille?: number }) {
-  return (
-    <div className="rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center bg-[#E6F2F3]" style={{ width: taille, height: taille }}>
-      {url
-        // eslint-disable-next-line @next/next/no-img-element
-        ? <img src={url} alt="" className="w-full h-full object-cover" />
-        : <span className="text-sm" aria-hidden>🐾</span>}
-    </div>
-  );
-}
-
 function GroupeActions({ titre, total, voirTout, children }: { titre: string; total: number; voirTout: string; children: React.ReactNode }) {
   return (
     <div>
@@ -378,9 +358,6 @@ function Statistiques({ rdvs, now, periode, setPeriode, filtre, setFiltre, prati
   rdvs: Rdv[]; now: Date; periode: 'semaine' | 'mois' | 'annee'; setPeriode: (p: 'semaine' | 'mois' | 'annee') => void;
   filtre: string; setFiltre: (f: string) => void; praticiens: { id: string; nom: string }[];
 }) {
-  const [actif, setActif] = useState<string | null>(null);
-  const [barre, setBarre] = useState<number | null>(null);
-
   // RDV réels : confirmés ou terminés (ni demandes, ni annulés).
   const compte = (r: Rdv) => (r.statut === 'confirme' || r.statut === 'termine') && (filtre === '*' || praticienDe(r) === filtre);
   const lundi = useMemo(() => new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)), [now]);
@@ -405,14 +382,7 @@ function Statistiques({ rdvs, now, periode, setPeriode, filtre, setFiltre, prati
     const i = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - lundi.getTime()) / 86400000);
     if (i >= 0 && i < 7) parJour[i]++;
   }
-  const maxJour = Math.max(0, ...parJour);
   const aujourdhui = (now.getDay() + 6) % 7;
-
-  // Anneau SVG : écart de 2 px (couleur de la surface) entre segments.
-  const R = 60, EP = 20, C = 2 * Math.PI * R;
-  const ecart = segments.length > 1 ? 2 : 0;
-  const decalages = segments.map((_, i) => segments.slice(0, i).reduce((a, x) => a + (x.n / total) * C, 0));
-  const seg = segments.find(s => s.key === actif);
 
   return (
     <section className="bg-white rounded-2xl border border-[#E4E7E2] p-4">
@@ -436,67 +406,13 @@ function Statistiques({ rdvs, now, periode, setPeriode, filtre, setFiltre, prati
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        {total === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-10">Aucun rendez-vous sur la période.</p>
-        ) : (
-          <div className="flex flex-col sm:flex-row items-center gap-5">
-            <svg viewBox="0 0 160 160" width={160} height={160} role="img" aria-label="Répartition des rendez-vous par motif" className="flex-shrink-0">
-              <g transform="rotate(-90 80 80)">
-                {segments.map((s, i) => {
-                  const long = (s.n / total) * C;
-                  return (
-                    <circle key={s.key} cx={80} cy={80} r={R} fill="none" stroke={s.color}
-                      strokeWidth={actif === s.key ? EP + 6 : EP}
-                      strokeDasharray={`${Math.max(0.5, long - ecart)} ${C}`} strokeDashoffset={-decalages[i]}
-                      opacity={actif && actif !== s.key ? 0.35 : 1}
-                      onMouseEnter={() => setActif(s.key)} onMouseLeave={() => setActif(null)}
-                      style={{ cursor: 'pointer', transition: 'opacity .15s' }}>
-                      <title>{`${s.label} : ${s.n} (${Math.round(s.n * 100 / total)} %)`}</title>
-                    </circle>
-                  );
-                })}
-              </g>
-              <text x={80} y={78} textAnchor="middle" fontSize={24} fontWeight={800} fill="#1E2025">{seg?.n ?? total}</text>
-              <text x={80} y={96} textAnchor="middle" fontSize={11} fill="#6B7280">{seg?.label ?? 'RDV'}</text>
-            </svg>
-            <table className="w-full text-sm">
-              <tbody>
-                {segments.map(s => (
-                  <tr key={s.key} onMouseEnter={() => setActif(s.key)} onMouseLeave={() => setActif(null)}
-                    className={`cursor-default ${actif === s.key ? 'font-extrabold' : ''}`}>
-                    <td className="py-1 pr-2"><span className="inline-block w-2.5 h-2.5 rounded-[3px] align-middle" style={{ background: s.color }} /></td>
-                    <td className="py-1 text-[#1E2025]">{s.label}</td>
-                    <td className="py-1 text-right font-bold text-[#1E2025]">{s.n}</td>
-                    <td className="py-1 pl-3 text-right text-gray-500 w-14">{Math.round(s.n * 100 / total)} %</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
+        {total === 0
+          ? <p className="text-sm text-gray-400 text-center py-10">Aucun rendez-vous sur la période.</p>
+          : <Donut segments={segments.map(sg => ({ key: sg.key, label: sg.label, color: sg.color, n: sg.n }))} />}
         <div>
           <p className="text-sm font-bold text-[#1E2025]">Activité de la semaine</p>
           <p className="text-xs text-gray-500 mb-3">RDV par jour</p>
-          <div className="flex items-end gap-2 h-40">
-            {parJour.map((n, i) => {
-              const fort = i === aujourdhui || i === barre;
-              return (
-                <div key={i} className="flex-1 h-full flex flex-col items-center justify-end"
-                  onMouseEnter={() => setBarre(i)} onMouseLeave={() => setBarre(null)}
-                  title={`${['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'][i]} : ${n} RDV`}>
-                  <span className={`text-xs font-bold text-[#1E2025] mb-1 ${fort ? '' : 'invisible'}`}>{n}</span>
-                  <div className="w-full max-w-[28px] rounded-t" style={{
-                    height: maxJour === 0 ? 2 : Math.max(2, (n / maxJour) * 110),
-                    background: fort ? TEAL : `${TEAL}73`,
-                  }} />
-                  <span className={`text-[11px] mt-1.5 ${i === aujourdhui ? 'font-extrabold text-[#1E2025]' : 'text-gray-500'}`}>
-                    {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][i]}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <BarresSemaine series={[parJour]} couleurs={[TEAL]} aujourdhui={aujourdhui} />
         </div>
       </div>
     </section>

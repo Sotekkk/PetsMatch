@@ -43,6 +43,8 @@ function NouveauSuiviContent() {
   const [niveauActivite, setNiveauActivite] = useState('non_evalue');
   const [activiteSportive, setActiviteSportive] = useState('');
   const [checkpoint, setCheckpoint] = useState('');
+  // Contrôle conseillé par le professionnel (alimente « Suivis à prévoir »).
+  const [prochainControle, setProchainControle] = useState('');
   const [animalNom, setAnimalNom] = useState('');
   const [clientNom, setClientNom] = useState('');
   const [clientContact, setClientContact] = useState('');
@@ -97,6 +99,7 @@ function NouveauSuiviContent() {
       setNiveauActivite((s.niveau_activite as string) ?? 'non_evalue');
       setActiviteSportive((s.activite_sportive as string) ?? '');
       setCheckpoint((s.checkpoint_age as string) ?? '');
+      setProchainControle(((s.prochain_controle as string) ?? '').slice(0, 10));
       setAnimalNom((s.animal_nom_libre as string) ?? '');
       setClientNom((s.client_nom_libre as string) ?? '');
       setClientContact((s.client_contact_libre as string) ?? '');
@@ -166,6 +169,8 @@ function NouveauSuiviContent() {
         commentaires: commentaires.trim() || null,
         activite_sportive: activiteSportive.trim() || null,
         checkpoint_age: checkpoint.trim() || null,
+        // Seulement si renseigné : sans migration_suivis_prochain_controle.sql la colonne n'existe pas.
+        ...(activeProfileId && prochainControle ? { prochain_controle: prochainControle } : {}),
       };
       const poidsN = parseFloat(poids.replace(',', '.'));
       headerRow.poids = isNaN(poidsN) ? null : poidsN;
@@ -302,6 +307,11 @@ function NouveauSuiviContent() {
         <Field label="Professionnel (si applicable)"><input className={inputCls} value={professionnel} onChange={e => setProfessionnel(e.target.value)} /></Field>
         <Field label="Motif / raison du suivi"><textarea rows={2} className={inputCls} value={motif} onChange={e => setMotif(e.target.value)} /></Field>
         <Field label="Commentaires généraux"><textarea rows={3} className={inputCls} value={commentaires} onChange={e => setCommentaires(e.target.value)} /></Field>
+        {activeProfileId && (
+          <Field label="Prochain contrôle conseillé (optionnel)">
+            <input type="date" className={inputCls} value={prochainControle} onChange={e => setProchainControle(e.target.value)} />
+          </Field>
+        )}
       </Card>
 
       <Card title="Données de l'animal">

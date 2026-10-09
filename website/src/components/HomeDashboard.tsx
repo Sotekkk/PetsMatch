@@ -10,6 +10,7 @@ import EleveurDashboard from './EleveurDashboard';
 import ParticulierDashboard from './ParticulierDashboard';
 import ProDashboard from './ProDashboard';
 import VetDashboard from './dashboard/VetDashboard';
+import SanteDashboard from './dashboard/SanteDashboard';
 
 const features = [
   {
@@ -173,6 +174,10 @@ export default function HomeDashboard() {
     return <VetDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma clinique'}
       avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
   }
+  if (activeProfile?.profile_type === 'sante') {
+    return <SanteDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon cabinet'}
+      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+  }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
@@ -184,6 +189,9 @@ export default function HomeDashboard() {
       avatar_url: (userData.profilePictureUrlElevage ?? userData.profilePictureUrl) as string | null ?? null,
       cat_pro: userData.catPro ?? '',
     };
+    if (primaryProProfile.profile_type === 'sante') {
+      return <SanteDashboard nom={primaryProProfile.nom || 'Mon cabinet'} avatar={primaryProProfile.avatar_url} />;
+    }
     if (primaryProProfile.profile_type === 'veterinaire') {
       return <VetDashboard nom={primaryProProfile.nom || 'Ma clinique'} avatar={primaryProProfile.avatar_url} />;
     }

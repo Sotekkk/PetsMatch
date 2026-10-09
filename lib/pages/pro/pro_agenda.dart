@@ -60,7 +60,9 @@ class ProAgendaPage extends StatefulWidget {
   final ({String uid, String profileId, String catPro})? employeur;
   /// RDV dont on ouvre directement la fiche d'actions (accueil vétérinaire).
   final String? focusRdvId;
-  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur, this.focusRdvId});
+  /// Ouvre directement le formulaire « Nouveau RDV » (accès rapide accueil).
+  final bool nouveauRdv;
+  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur, this.focusRdvId, this.nouveauRdv = false});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -390,6 +392,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadSalles();
     _loadCoursCollectifs();
     _loadFormuleVeto();
+    if (widget.nouveauRdv) {
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _showNouveauRdvDialog(); });
+    }
     User_Info.profileNotifier.addListener(_onProfileChange);
   }
 
