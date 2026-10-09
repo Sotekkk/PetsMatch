@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/planning_clinique_page.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/historique_patient_page.dart';
 import 'package:PetsMatch/widgets/rdv/salles_clinique_widgets.dart';
 import 'package:PetsMatch/utils/retards_rdv.dart';
@@ -113,6 +114,41 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // du compte, sinon employe_profile_id du praticien).
   String? _filtrePraticien;
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
+  /// Formule véto de la clinique (titulaire) : planning par praticien et
+  /// salles réservés à la formule Clinique.
+  VetPlanConfig _vetCfg = PlanService.getVetConfig('free');
+  bool get _planningClinique => _vetCfg.hasMultiPraticiens || _vetCfg.hasSallesRdv;
+
+  Future<void> _loadFormuleVeto() async {
+    final uid = AgendaContexte.uid;
+    if (!_estClinique || uid == null) return;
+    final code = await PlanService.getVetPlanCode(uid);
+    if (mounted) setState(() => _vetCfg = PlanService.getVetConfig(code));
+  }
+
+  void _formuleRequise(String fonction) {
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(fonction, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text(AgendaContexte.pourEmployeur
+          ? 'Disponible avec la formule Clinique de la clinique.'
+          : 'Disponible avec la formule Clinique (plusieurs vétérinaires, salles, planning par praticien).',
+          style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey'))),
+        if (!AgendaContexte.pourEmployeur)
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _teal),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const VetAbonnementPage()))
+                  .then((_) => _loadFormuleVeto());
+            },
+            child: const Text('Voir les formules', style: TextStyle(fontFamily: 'Galey')),
+          ),
+      ],
+    ));
+  }
   /// Onglet Créneaux (clinique) : disponibilités de quel praticien
   /// ('' = titulaire). Un praticien employé gère les siennes.
   String _praticienCreneaux = '';
@@ -353,6 +389,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadEmployes();
     _loadSalles();
     _loadCoursCollectifs();
+    _loadFormuleVeto();
     User_Info.profileNotifier.addListener(_onProfileChange);
   }
 
@@ -3269,7 +3306,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             tooltip: 'Ajouter une indisponibilité',
             onPressed: _ajouterIndisponibilite,
           ),
-          if (_estClinique)
+          if (_estClinique && !_planningClinique)
+            IconButton(
+              icon: Icon(Icons.view_week_outlined, color: Colors.white.withValues(alpha: 0.45)),
+              tooltip: 'Planning de la clinique — formule Clinique',
+              onPressed: () => _formuleRequise('Planning de la clinique'),
+            ),
+          if (_estClinique && _planningClinique)
             IconButton(
               icon: const Icon(Icons.view_week_outlined),
               tooltip: 'Planning de la clinique',
@@ -3279,7 +3322,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     _showNouveauRdvDialog(dateInit: dt, praticienInit: praticien, salleInit: salle),
               ))).then((_) => _loadRdvs()),
             ),
-          if (_estClinique && _employes.isNotEmpty)
+          if (_estClinique && _employes.isNotEmpty && _vetCfg.hasMultiPraticiens)
             PopupMenuButton<String>(
               tooltip: 'Filtrer par praticien',
               icon: Icon(_filtrePraticien == null ? Icons.filter_alt_outlined : Icons.filter_alt),

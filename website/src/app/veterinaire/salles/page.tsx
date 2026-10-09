@@ -3,6 +3,7 @@
 // Clinique — salles typées et salle occupée par motif (miroir appli :
 // salles_clinique_page.dart). Un RDV en ligne n'est proposé que si un
 // vétérinaire ET une salle du bon type sont libres.
+import FormuleVetRequise from '@/components/pro/FormuleVetRequise';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -14,7 +15,7 @@ interface Salle { id: string; nom: string; type_salle: string; actif: boolean; o
 
 const iCls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
 
-export default function SallesPage() {
+function SallesPageContenu() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { id: pid, loaded } = useActiveProfileState();
@@ -198,4 +199,9 @@ export default function SallesPage() {
       )}
     </div>
   );
+}
+
+// Salles typées + RDV par vétérinaire : formule Clinique.
+export default function SallesPage() {
+  return <FormuleVetRequise requise="clinique" fonction="Salles & motifs"><SallesPageContenu /></FormuleVetRequise>;
 }

@@ -310,6 +310,11 @@ export function useEducationPlan(): UseEducationPlanResult {
 // distinctes, cf. plans_tarifaires / chaque page <métier>/abonnement).
 // Partagé entre Header.tsx (badge « Premium » dans le drawer) et
 // elevage/facturation/page.tsx (verrou d'accès réel) — ne pas dupliquer.
+/** Formules véto ordonnées : une fonction « Avancé » est incluse en Clinique. */
+export const VET_RANG: Record<string, number> = { free: 0, avance: 1, clinique: 2 };
+export const VET_FORMULE_LABEL: Record<string, string> = { free: 'Découverte', avance: 'Avancé', clinique: 'Clinique' };
+export const vetFormuleOk = (plan: string, requise: string) => (VET_RANG[plan] ?? 0) >= (VET_RANG[requise] ?? 99);
+
 export const PROFESSION_TOP_TIER: Record<string, string> = {
   education: 'premium',
   toilettage: 'premium',

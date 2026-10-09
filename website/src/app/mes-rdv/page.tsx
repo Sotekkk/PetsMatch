@@ -8,6 +8,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 import { typeFromMotif } from '@/lib/agenda-type';
 import PlanningClinique from '@/components/rdv/PlanningClinique';
+import FormuleVetRequise from '@/components/pro/FormuleVetRequise';
 import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { retardsEnCascade } from '@/lib/retards-rdv';
 import { LieuSalleSelect, LIEU_AUTO, LIEU_DOMICILE, champsLieu, lieuInitial, useSallesDispo } from '@/components/rdv/SallesClinique';
@@ -1703,6 +1704,7 @@ export default function MesRdvPage() {
 
         {/* Planning de la clinique */}
         {activeTab === 'planning' && activeProfileId && (
+          <FormuleVetRequise requise="clinique" fonction="Planning de la clinique">
           <PlanningClinique profileId={activeProfileId} version={rdvs} uid={user?.uid}
             onCreer={(date, praticien, salle) => setModalNouveau({ date, praticien, salle })}
             onOuvrirRdv={id => {
@@ -1711,6 +1713,7 @@ export default function MesRdvPage() {
               if (r.statut === 'demande') setModalAccepter(r);
               else if (r.statut === 'confirme') setModalModifier(r);
             }} />
+          </FormuleVetRequise>
         )}
 
         {/* Onglets RDV */}

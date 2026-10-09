@@ -13,6 +13,7 @@ import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSIO
 import { useRouter } from 'next/navigation';
 import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT, useActiveProfile } from '@/hooks/useActiveProfile';
 import { compterFacturesNonVues, FACTURES_VUES_EVENT } from '@/lib/factures-non-vues';
+import { vetFormuleOk, VET_FORMULE_LABEL } from '@/lib/use-plan';
 import { apiFetch } from '@/lib/api-fetch';
 
 interface Notif {
@@ -1168,10 +1169,11 @@ export default function Header() {
   const withVetoClinique = (effectiveSubCatPro === 'veterinaire')
     ? withSanteContrats.map((sec, i) => i === 0
         ? { ...sec, items: [...sec.items,
-            { href: '/veterinaire/comptes-rendus', label: 'Comptes rendus à valider', icon: '📝' },
-            { href: '/veterinaire/inventaire', label: 'Inventaire & pharmacie', icon: '💊' },
-            { href: '/veterinaire/salles', label: 'Salles & motifs', icon: '🚪' },
-            { href: '/elevage/employes', label: 'Mon équipe', icon: '👥' },
+            // formule : formule véto minimale (grisé + étiquette sinon).
+            { href: '/veterinaire/comptes-rendus', label: 'Comptes rendus à valider', icon: '📝', formule: 'avance' },
+            { href: '/veterinaire/inventaire', label: 'Inventaire & pharmacie', icon: '💊', formule: 'avance' },
+            { href: '/veterinaire/salles', label: 'Salles & motifs', icon: '🚪', formule: 'clinique' },
+            { href: '/elevage/employes', label: 'Mon équipe', icon: '👥', formule: 'avance' },
           ] }
         : sec)
     : withSanteContrats;
@@ -1842,7 +1844,7 @@ export default function Header() {
                         {expandedSections[sec.section] && (
                           <div className="bg-gray-50">
                             {sec.items.map((item) => {
-                              const it = item as { pro?: boolean; premium?: boolean; href: string; icon: string; label: string };
+                              const it = item as { pro?: boolean; premium?: boolean; formule?: string; href: string; icon: string; label: string };
                               const isProLocked = !!it.pro && (
                                 effectiveIsPension ? pensionPlan === 'free'
                                 : effectiveIsGarde ? gardePlan === 'free'
@@ -1860,8 +1862,9 @@ export default function Header() {
                                 : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
                                 : false
                               );
-                              const isLocked = isProLocked || isPremiumLocked;
-                              const badge = isPremiumLocked ? 'Premium' : 'Pro';
+                              const isFormuleLocked = !!it.formule && !vetFormuleOk(otherPlan, it.formule);
+                              const isLocked = isProLocked || isPremiumLocked || isFormuleLocked;
+                              const badge = isFormuleLocked ? VET_FORMULE_LABEL[it.formule!] : isPremiumLocked ? 'Premium' : 'Pro';
                               const badgeCls = isPremiumLocked
                                 ? 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1'
                                 : 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1';
@@ -2034,7 +2037,7 @@ export default function Header() {
                   {expandedSections[sec.section] && (
                     <div className="pl-6 space-y-0.5 mb-1">
                       {sec.items.map((item) => {
-                        const it = item as { pro?: boolean; premium?: boolean; href: string; icon: string; label: string };
+                        const it = item as { pro?: boolean; premium?: boolean; formule?: string; href: string; icon: string; label: string };
                         const isProLocked = !!it.pro && (
                           effectiveIsPension ? pensionPlan === 'free'
                           : effectiveIsGarde ? gardePlan === 'free'
@@ -2048,8 +2051,9 @@ export default function Header() {
                           : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
                           : false
                         );
-                        const isLocked = isProLocked || isPremiumLocked;
-                        const badge = isPremiumLocked ? 'Premium' : 'Pro';
+                        const isFormuleLocked = !!it.formule && !vetFormuleOk(otherPlan, it.formule);
+                              const isLocked = isProLocked || isPremiumLocked || isFormuleLocked;
+                        const badge = isFormuleLocked ? VET_FORMULE_LABEL[it.formule!] : isPremiumLocked ? 'Premium' : 'Pro';
                         const abonnementHrefFor = effectiveIsPension ? '/pension/abonnement'
                           : effectiveIsGarde ? '/garde/abonnement'
                           : otherProfilType ? `/${otherProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : otherProfilType}/abonnement`

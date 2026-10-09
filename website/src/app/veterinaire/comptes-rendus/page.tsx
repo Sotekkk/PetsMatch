@@ -3,6 +3,7 @@
 // Clinique vétérinaire — comptes rendus rédigés par un(e) ASV, à valider
 // (miroir appli : cr_a_valider_page.dart). Scopé au profil clinique actif ;
 // un vétérinaire employé l'ouvre au nom de la clinique (?clinique=<profil>).
+import FormuleVetRequise from '@/components/pro/FormuleVetRequise';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -14,7 +15,7 @@ interface Cr {
   redige_par_profile_id: string | null; _animal?: string; _auteur?: string;
 }
 
-export default function CrAValiderPage() {
+function CrAValiderContenu() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { id: activeProfileId, loaded } = useActiveProfileState();
@@ -104,4 +105,9 @@ export default function CrAValiderPage() {
       )}
     </div>
   );
+}
+
+// Validation des CR rédigés par l'équipe (ASV) : dès la formule Avancé.
+export default function CrAValiderPage() {
+  return <FormuleVetRequise requise="avance" fonction="Comptes rendus à valider"><CrAValiderContenu /></FormuleVetRequise>;
 }

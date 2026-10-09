@@ -389,12 +389,17 @@ class _EleveurNavState extends State<EleveurNav> {
                           ChipScannerService.scanFromVet(context);
                         },
                       ),
+                      // Validation des CR rédigés par l'équipe (ASV) : dès Avancé.
                       _DrawerSubItem(
                         label: 'Comptes rendus à valider',
                         icon: Icons.task_alt_outlined,
+                        locked: !PlanService.getVetConfig(_vetPlanCode).hasEquipeAsv,
+                        badgeLabel: 'Avancé',
                         onTap: () {
                           Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const CrAValiderPage()));
+                          Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                              PlanService.getVetConfig(_vetPlanCode).hasEquipeAsv
+                                  ? const CrAValiderPage() : const VetAbonnementPage()));
                         },
                       ),
                       // Pharmacie : formules Avancé et Clinique.
@@ -402,6 +407,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         label: 'Inventaire & pharmacie',
                         icon: Icons.medication_outlined,
                         locked: !PlanService.getVetConfig(_vetPlanCode).hasInventaire,
+                        badgeLabel: 'Avancé',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
@@ -411,12 +417,17 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
+                      // Salles typées + RDV par vétérinaire : formule Clinique.
                       _DrawerSubItem(
                         label: 'Salles & motifs',
                         icon: Icons.meeting_room_outlined,
+                        locked: !PlanService.getVetConfig(_vetPlanCode).hasSallesRdv,
+                        badgeLabel: 'Clinique',
                         onTap: () {
                           Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const SallesCliniquePage()));
+                          Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                              PlanService.getVetConfig(_vetPlanCode).hasSallesRdv
+                                  ? const SallesCliniquePage() : const VetAbonnementPage()));
                         },
                       ),
                       // Équipe (ASV dès Avancé, praticiens en Clinique —
@@ -424,10 +435,14 @@ class _EleveurNavState extends State<EleveurNav> {
                       _DrawerSubItem(
                         label: 'Mon équipe',
                         icon: Icons.groups_outlined,
+                        locked: !PlanService.getVetConfig(_vetPlanCode).hasEquipeAsv,
+                        badgeLabel: 'Avancé',
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const EmployesPage(profileType: 'veterinaire'),
+                            builder: (_) => PlanService.getVetConfig(_vetPlanCode).hasEquipeAsv
+                                ? const EmployesPage(profileType: 'veterinaire')
+                                : const VetAbonnementPage(),
                           ));
                         },
                       ),
