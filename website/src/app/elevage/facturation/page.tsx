@@ -316,7 +316,11 @@ export default function FacturationPage() {
     <div className="max-w-5xl mx-auto px-4 py-10">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Link href="/mes-annonces" className="text-sm text-[#0C5C6C] hover:underline">← Mes annonces</Link>
+          {/* « Mes annonces » n'a de sens que pour un élevage / une association ;
+              les autres métiers (véto, pension, garde…) reviennent à l'accueil. */}
+          {isPensionSource || isGardeSource || isOtherProfession || (userData?.isPro && !isAssociation)
+            ? <Link href="/" className="text-sm text-[#0C5C6C] hover:underline">← Accueil</Link>
+            : <Link href="/mes-annonces" className="text-sm text-[#0C5C6C] hover:underline">← Mes annonces</Link>}
           <h1 className="text-2xl font-bold text-[#1F2A2E] mt-1">Facturation</h1>
           <p className="text-gray-500 text-sm">
             {factures.length} facture{factures.length !== 1 ? 's' : ''}

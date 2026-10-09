@@ -36,7 +36,6 @@ function featureLabels(f0: Record<string, boolean | number>, code = ''): string[
   if (f.hasEcritureCarnetSante) out.push('Écriture carnet santé');
   if (f.hasRappelsPush) out.push('Rappels push');
   if (f.hasMultiPraticiens) out.push(f.maxPraticiens === -1 ? 'Multi-praticiens illimité' : `Jusqu'à ${f.maxPraticiens} praticiens`);
-  if (f.hasExportCsv) out.push('Export CSV logiciels vétérinaires');
   if (f.hasEquipeAsv) out.push('Équipe : assistant(e)s vétérinaires (agenda, comptes rendus à valider)');
   if (f.hasMultiPraticiens) out.push('Vétérinaires praticiens : patients partagés, agenda par praticien');
   if (f.hasSallesRdv) out.push('Salles typées (consultation, bloc…) et prise de RDV en ligne par vétérinaire');

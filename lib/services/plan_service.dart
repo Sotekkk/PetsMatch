@@ -661,7 +661,9 @@ class PlanService {
     ),
     'clinique': VetPlanConfig(
       code: 'clinique', label: 'Clinique', hasAccesPermanent: true, hasEcritureCarnetSante: true,
-      hasRappelsPush: true, hasMultiPraticiens: true, maxPraticiens: 5, hasExportCsv: true,
+      hasRappelsPush: true, hasMultiPraticiens: true, maxPraticiens: 5,
+      // Export CSV patients pas encore développé : non annoncé (09/10/2026).
+      hasExportCsv: false,
       hasEquipeAsv: true, hasInventaire: true, hasSallesRdv: true,
       prixMensuel: 49, prixAnnuel: 490,
     ),

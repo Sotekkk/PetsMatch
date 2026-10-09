@@ -124,7 +124,6 @@ function featureLabels(profilType: string, raw: unknown): string[] {
       if (f.hasEcritureCarnetSante) out.push('Écriture carnet santé');
       if (f.hasRappelsPush) out.push('Rappels push');
       if (f.hasMultiPraticiens) out.push(f.maxPraticiens === -1 ? 'Multi-praticiens illimité' : `Jusqu'à ${f.maxPraticiens} praticiens`);
-      if (f.hasExportCsv) out.push('Export CSV logiciels vétérinaires');
       return out;
     }
     default:

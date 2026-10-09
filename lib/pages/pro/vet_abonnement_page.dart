@@ -121,7 +121,6 @@ class _VetAbonnementPageState extends State<VetAbonnementPage> {
       c.hasAccesPermanent ? 'Accès lecture permanent' : 'Lecture via token 72h',
       if (c.hasEcritureCarnetSante) 'Écriture carnet santé',
       if (c.hasMultiPraticiens) (c.maxPraticiens == -1 ? 'Multi-praticiens illimité' : 'Jusqu\'à ${c.maxPraticiens} praticiens'),
-      if (c.hasExportCsv) 'Export CSV',
     ];
     return parts.join(' · ');
   }
@@ -149,7 +148,6 @@ class _VetPlanCard extends StatelessWidget {
       config.hasMultiPraticiens
           ? (config.maxPraticiens == -1 ? 'Multi-praticiens illimité' : 'Jusqu\'à ${config.maxPraticiens} praticiens')
           : null,
-      config.hasExportCsv ? 'Export CSV logiciels vétérinaires' : null,
       config.hasEquipeAsv ? 'Équipe : assistant(e)s vétérinaires (agenda, comptes rendus à valider)' : null,
       config.hasMultiPraticiens ? 'Vétérinaires praticiens : patients partagés, agenda par praticien' : null,
       config.hasSallesRdv ? 'Salles typées (consultation, bloc…) et prise de RDV en ligne par vétérinaire' : null,
