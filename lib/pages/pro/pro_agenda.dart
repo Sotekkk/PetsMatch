@@ -57,7 +57,9 @@ class ProAgendaPage extends StatefulWidget {
   final int? initialTabIndex;
   /// Agenda d'une clinique ouvert par un de ses employés (null = le mien).
   final ({String uid, String profileId, String catPro})? employeur;
-  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur});
+  /// RDV dont on ouvre directement la fiche d'actions (accueil vétérinaire).
+  final String? focusRdvId;
+  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur, this.focusRdvId});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -732,6 +734,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           }).toList();
           _loading = false;
         });
+        _ouvrirFocus();
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -907,6 +910,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   /// Actions sur un RDV depuis le planning de la clinique — mêmes flux que
   /// les cartes de l'agenda.
+  bool _focusFait = false;
+  void _ouvrirFocus() {
+    final id = widget.focusRdvId;
+    if (_focusFait || id == null) return;
+    _focusFait = true;
+    final rdv = _rdvs.where((r) => r['id']?.toString() == id).firstOrNull;
+    if (rdv == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _actionsRdv(rdv); });
+  }
+
   Future<void> _actionsRdv(Map<String, dynamic> rdv) async {
     final id = rdv['id']?.toString();
     if (id == null) return;

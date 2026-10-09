@@ -9,6 +9,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import EleveurDashboard from './EleveurDashboard';
 import ParticulierDashboard from './ParticulierDashboard';
 import ProDashboard from './ProDashboard';
+import VetDashboard from './dashboard/VetDashboard';
 
 const features = [
   {
@@ -168,6 +169,10 @@ export default function HomeDashboard() {
   if (activeProfile?.profile_type === 'eleveur' && activeProfile.is_main) return <EleveurDashboard />;
 
   // Profil secondaire actif (pro/eleveur) → ProDashboard avec son ID
+  if (activeProfile?.profile_type === 'veterinaire') {
+    return <VetDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma clinique'}
+      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+  }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
@@ -179,6 +184,9 @@ export default function HomeDashboard() {
       avatar_url: (userData.profilePictureUrlElevage ?? userData.profilePictureUrl) as string | null ?? null,
       cat_pro: userData.catPro ?? '',
     };
+    if (primaryProProfile.profile_type === 'veterinaire') {
+      return <VetDashboard nom={primaryProProfile.nom || 'Ma clinique'} avatar={primaryProProfile.avatar_url} />;
+    }
     return <ProDashboard profile={primaryProProfile} profileId="" />;
   }
 

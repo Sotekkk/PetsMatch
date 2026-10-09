@@ -41,6 +41,7 @@ import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
+import 'package:PetsMatch/pages/pro/vet_dashboard.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_suivis_morpho_page.dart';
@@ -73,6 +74,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   int _rdvTodayCount = 0;
   int _patientCount = 0;
   int _rdvMonthCount = 0;
+  /// Change à chaque « tirer pour rafraîchir » → recharge le tableau de bord véto.
+  int _refreshTick = 0;
   int _pensionnairesCount = 0;
   int _logementsDispo = 0;
   int _logementsTotal = 0;
@@ -344,7 +347,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _green))
           : RefreshIndicator(
-              onRefresh: _loadData,
+              onRefresh: () async { setState(() => _refreshTick++); await _loadData(); },
               color: _green,
               child: CustomScrollView(
                 slivers: [
@@ -353,7 +356,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                     padding: const EdgeInsets.all(16),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
-                        _buildStatsRow(),
+                        if (User_Info.catPro == 'veterinaire')
+                          VetDashboard(key: ValueKey(_refreshTick), patientsCount: _patientCount,
+                              raccourcis: _buildVetShortcuts(context))
+                        else
+                          _buildStatsRow(),
                         if (User_Info.catPro == 'education') ...[
                           const SizedBox(height: 12),
                           _buildEducationShortcuts(context),
@@ -365,10 +372,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         if (User_Info.catPro == 'sante') ...[
                           const SizedBox(height: 12),
                           _buildSanteShortcuts(context),
-                        ],
-                        if (User_Info.catPro == 'veterinaire') ...[
-                          const SizedBox(height: 12),
-                          _buildVetShortcuts(context),
                         ],
                         if (User_Info.catPro == 'photographe') ...[
                           const SizedBox(height: 12),
@@ -473,7 +476,19 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
-                        if (city.isNotEmpty) ...[
+                        if (User_Info.catPro == 'veterinaire') ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            [
+                              '${User_Info.firstname} ${User_Info.lastname}'.trim(),
+                              'Vétérinaire · Gérant',
+                            ].where((t) => t.isNotEmpty).join(' — '),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text(_dateDuJour(),
+                              style: const TextStyle(color: Color(0xFFEEF5EA), fontSize: 12.5, fontFamily: 'Galey')),
+                        ] else if (city.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Row(children: [
                             const Icon(Icons.location_on_outlined, color: Color(0xFFEEF5EA), size: 14),
@@ -507,6 +522,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         ),
       ),
     );
+  }
+
+  String _dateDuJour() {
+    final t = DateFormat('EEEE d MMMM y', 'fr').format(DateTime.now());
+    return t.isEmpty ? t : t[0].toUpperCase() + t.substring(1);
   }
 
   String _proLabel() {

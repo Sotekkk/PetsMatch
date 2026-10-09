@@ -1426,11 +1426,25 @@ export default function MesRdvPage() {
 
   // Vétérinaire : l'agenda s'ouvre sur « À venir » (une seule fois).
   const ongletInitialFait = useRef(false);
+  const [rdvFocus, setRdvFocus] = useState<string | null>(null);
   useEffect(() => {
     if (ongletInitialFait.current || !catPro) return;
     ongletInitialFait.current = true;
-    if (catPro === 'veterinaire') setActiveTab('a_venir');
+    // Lien depuis l'accueil vétérinaire : ?onglet=…&rdv=… (lu sans
+    // useSearchParams, qui exige un Suspense au build).
+    const q = new URLSearchParams(window.location.search);
+    const onglet = q.get('onglet') as TabKey | null;
+    if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning'].includes(onglet)) setActiveTab(onglet);
+    else if (catPro === 'veterinaire') setActiveTab('a_venir');
+    setRdvFocus(q.get('rdv'));
   }, [catPro]);
+
+  // RDV visé : défile jusqu'à sa carte et la met en avant.
+  useEffect(() => {
+    if (!rdvFocus || fetching) return;
+    const el = document.getElementById(`rdv-${rdvFocus}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [rdvFocus, fetching, activeTab]);
 
   const proName = userData?.nameElevage ?? userData?.firstname ?? 'Le professionnel';
 
@@ -1718,7 +1732,9 @@ export default function MesRdvPage() {
           ) : (
             <div className="space-y-3">
               {currentList.map(rdv => (
-                <RdvCard key={rdv.id} rdv={rdv} tab={activeTab as 'demandes' | 'a_venir' | 'historique'}
+                <div key={rdv.id} id={`rdv-${rdv.id}`}
+                  className={rdvFocus === rdv.id ? 'rounded-2xl ring-2 ring-[#0C5C6C] ring-offset-2' : undefined}>
+                <RdvCard rdv={rdv} tab={activeTab as 'demandes' | 'a_venir' | 'historique'}
                   myUid={user?.uid ?? ''} myProfileId={activeProfileId || null}
                   onAccepter={() => setModalAccepter(rdv)}
                   onRefuser={() => setModalRefuser(rdv)}
@@ -1729,6 +1745,7 @@ export default function MesRdvPage() {
                   onModifier={() => setModalModifier(rdv)}
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
                 />
+                </div>
               ))}
             </div>
           )
