@@ -1,5 +1,4 @@
 import 'package:PetsMatch/pages/message.dart';
-import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
@@ -430,16 +429,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       pinned: true,
       backgroundColor: _teal,
       automaticallyImplyLeading: false,
-      actions: [
-        // Véto / ostéo : accès direct aux notifications depuis le tableau de bord.
-        if (User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante')
-          IconButton(
-            tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_none, color: Colors.white),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsPage())),
-          ),
-        const QuickSearchButton(),
-      ],
+      actions: const [QuickSearchButton()],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(

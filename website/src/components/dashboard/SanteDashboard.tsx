@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import ItineraireMenu from '@/components/dashboard/ItineraireMenu';
 import { Kpi, Section, Badge, PhotoAnimal, Donut, BarresSemaine, PALETTE, TEAL, type Segment } from '@/components/dashboard/kit';
 
 const VERT = '#2E7D5E';
@@ -67,11 +68,6 @@ function lienRdv(r: Rdv) {
   const futur = debutDe(r) > new Date();
   const onglet = r.statut === 'demande' || r.statut === 'contre_proposition' ? 'demandes' : r.statut === 'confirme' && futur ? 'a_venir' : 'historique';
   return `/mes-rdv?onglet=${onglet}&rdv=${r.id}`;
-}
-
-function itineraireUrl(r: Rdv) {
-  const dest = r.lieu_lat != null && r.lieu_lng != null ? `${r.lieu_lat},${r.lieu_lng}` : encodeURIComponent(r.lieu?.trim() ?? '');
-  return `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
 }
 
 // Icônes vectorielles sobres (trait, 18 px).
@@ -314,7 +310,8 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                 {/* Prochain déplacement */}
                 <Section titre="Prochain déplacement" icone={I.pin}
                   action={deplacement[0] && (deplacement[0].lieu?.trim() || deplacement[0].lieu_lat != null)
-                    ? <a href={itineraireUrl(deplacement[0])} target="_blank" rel="noopener noreferrer" className="text-sm font-bold" style={{ color: TEAL }}>Voir l&apos;itinéraire</a> : undefined}>
+                    ? <ItineraireMenu lat={deplacement[0].lieu_lat} lng={deplacement[0].lieu_lng} adresse={deplacement[0].lieu}
+                        className="text-sm font-bold text-[#0C5C6C]">Voir l&apos;itinéraire ▾</ItineraireMenu> : undefined}>
                   {deplacement.length === 0 ? (
                     <p className="text-sm text-gray-400">Aucun rendez-vous extérieur à venir.</p>
                   ) : (() => {
@@ -388,15 +385,19 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                   { l: 'Rechercher un patient', href: '/mes-patients' },
                   { l: 'Créer un suivi', href: '/sante/suivis/nouveau' },
                   { l: 'Rédiger un compte rendu', onClick: choisirPatientCr },
-                  { l: 'Itinéraire du prochain déplacement', href: deplacement[0] && (deplacement[0].lieu?.trim() || deplacement[0].lieu_lat != null) ? itineraireUrl(deplacement[0]) : undefined, externe: true },
+                  { l: 'Itinéraire du prochain déplacement', itineraire: deplacement[0] && (deplacement[0].lieu?.trim() || deplacement[0].lieu_lat != null) ? deplacement[0] : undefined },
                   { l: 'Envoyer un message', href: '/messages' },
                 ].map(t => {
                   const cls = 'border border-[#E4E7E2] rounded-xl px-3 py-2.5 text-sm font-semibold text-left';
                   if (t.onClick) return <button key={t.l} onClick={t.onClick} className={`${cls} text-[#1E2025] hover:bg-gray-50`}>{t.l}</button>;
-                  if (!t.href) return <span key={t.l} className={`${cls} text-gray-300`} title="Aucun déplacement prévu">{t.l}</span>;
-                  return t.externe
-                    ? <a key={t.l} href={t.href} target="_blank" rel="noopener noreferrer" className={`${cls} text-[#1E2025] hover:bg-gray-50`}>{t.l}</a>
-                    : <Link key={t.l} href={t.href} className={`${cls} text-[#1E2025] hover:bg-gray-50`}>{t.l}</Link>;
+                  if ('itineraire' in t) {
+                    return t.itineraire
+                      ? <ItineraireMenu key={t.l} lat={t.itineraire.lieu_lat} lng={t.itineraire.lieu_lng} adresse={t.itineraire.lieu}
+                          className={`${cls} w-full text-[#1E2025] hover:bg-gray-50`}>{t.l}</ItineraireMenu>
+                      : <span key={t.l} className={`${cls} text-gray-300`} title="Aucun déplacement prévu">{t.l}</span>;
+                  }
+                  if (!t.href) return <span key={t.l} className={`${cls} text-gray-300`}>{t.l}</span>;
+                  return <Link key={t.l} href={t.href} className={`${cls} text-[#1E2025] hover:bg-gray-50`}>{t.l}</Link>;
                 })}
               </div>
             </Section>

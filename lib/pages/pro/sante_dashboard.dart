@@ -13,7 +13,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/utils/itineraire.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart' show labelTypeSuivi;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
@@ -253,18 +253,10 @@ class _SanteDashboardState extends State<SanteDashboard> {
     return candidats.where((r) => _memeJour(_debut(r), _debut(premier)) && memeLieu(r, premier)).toList();
   }
 
-  Future<void> _itineraire(Map<String, dynamic> r) async {
-    final lat = (r['lieu_lat'] as num?)?.toDouble(), lng = (r['lieu_lng'] as num?)?.toDouble();
-    final adresse = r['lieu']?.toString().trim() ?? '';
-    if (lat == null && adresse.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Adresse d\'intervention non renseignée pour ce rendez-vous.', style: TextStyle(fontFamily: 'Galey'))));
-      return;
-    }
-    final dest = lat != null && lng != null ? '$lat,$lng' : Uri.encodeComponent(adresse);
-    await launchUrl(Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dest'),
-        mode: LaunchMode.externalApplication);
-  }
+  /// Choix de l'appli de navigation (Google Maps, Waze, Plans, autre GPS).
+  Future<void> _itineraire(Map<String, dynamic> r) => ouvrirItineraire(context,
+      lat: (r['lieu_lat'] as num?)?.toDouble(), lng: (r['lieu_lng'] as num?)?.toDouble(),
+      adresse: r['lieu']?.toString());
 
   // ── Navigation vers les modules existants ───────────────────────────────
 
