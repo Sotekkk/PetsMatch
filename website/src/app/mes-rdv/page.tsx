@@ -14,6 +14,8 @@ import { retardsEnCascade } from '@/lib/retards-rdv';
 import { LieuSalleSelect, LIEU_AUTO, LIEU_DOMICILE, champsLieu, lieuInitial, useSallesDispo } from '@/components/rdv/SallesClinique';
 import { trouverUtilisateurParEmail, type UtilisateurTrouve } from '@/lib/user-lookup';
 import { apiFetch } from '@/lib/api-fetch';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -1426,6 +1428,19 @@ export default function MesRdvPage() {
   }, [activeProfileId, userData]);
 
   // Vétérinaire : l'agenda s'ouvre sur « À venir » (une seule fois).
+  // Ostéo / santé : coordonnées du cabinet (trajets des retards en cascade).
+  const [cabinet, setCabinet] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    if (catPro !== 'sante' || !activeProfileId) return;
+    supabase.from('user_profiles_complet').select('latitude, longitude, lat, lng').eq('id', activeProfileId).maybeSingle()
+      .then(({ data }) => {
+        const p = data as { latitude?: number | null; longitude?: number | null; lat?: number | null; lng?: number | null } | null;
+        const lat = p?.latitude ?? p?.lat, lng = p?.longitude ?? p?.lng;
+        setCabinet(lat != null && lng != null ? { lat: Number(lat), lng: Number(lng) } : null);
+      });
+  }, [catPro, activeProfileId]);
+  const [modalRetard, setModalRetard] = useState(false);
+
   const ongletInitialFait = useRef(false);
   const [rdvFocus, setRdvFocus] = useState<string | null>(null);
   useEffect(() => {
@@ -1599,10 +1614,12 @@ export default function MesRdvPage() {
   // Vétérinaire : un RDV reste « À venir » tant qu'il n'est pas marqué
   // terminé (même passé — « À clôturer ») et porte son retard estimé.
   const estVeto = catPro === 'veterinaire';
-  const retards = estVeto ? retardsEnCascade(rdvs) : {};
+  // Ostéo / santé : retard estimé en cascade, trajets compris.
+  const retards = estVeto ? retardsEnCascade(rdvs)
+    : catPro === 'sante' ? retardsEnCascade(rdvs, now, { avecTrajets: true, cabinet }) : {};
   const aVenir     = estVeto
     ? rdvs.filter(r => r.statut === 'confirme').map(r => ({ ...r, retardMin: retards[r.id] }))
-    : rdvs.filter(r => r.statut === 'confirme' && new Date(r.date_heure) > now);
+    : rdvs.filter(r => r.statut === 'confirme' && new Date(r.date_heure) > now).map(r => ({ ...r, retardMin: retards[r.id] }));
   const historique = rdvs.filter(r =>
     r.statut !== 'demande' && r.statut !== 'contre_proposition' &&
     !(r.statut === 'confirme' && (estVeto || new Date(r.date_heure) > now))
@@ -1632,6 +1649,11 @@ export default function MesRdvPage() {
               ←
             </button>
             <h1 className="text-xl font-bold flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>{pageTitle}</h1>
+            <button onClick={() => setModalRetard(true)} title="Prévenir les clients d'un retard"
+              className="px-3 py-2 rounded-xl bg-white/10 text-sm font-semibold hover:bg-white/20 transition-colors"
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              Signaler un retard
+            </button>
             <button onClick={() => setModalNouveau({})}
               className="px-3 py-2 rounded-xl bg-white text-sm font-semibold hover:bg-white/90 transition-colors"
               style={{ color: TEAL, fontFamily: 'Galey, sans-serif' }}>
@@ -1761,6 +1783,9 @@ export default function MesRdvPage() {
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}
           profileId={activeProfileId} onClose={() => setHistoriqueRdv(null)} />
       )}
+      {modalRetard && (
+        <ModalRetard profileId={activeProfileId} onClose={() => setModalRetard(false)} />
+      )}
       {modalNouveau && user && activeProfileId && (
         <NouveauRdvModal proUid={user.uid} profileId={activeProfileId} proName={proName} catPro={catPro}
           initial={modalNouveau} onClose={() => setModalNouveau(null)}
@@ -1786,6 +1811,52 @@ export default function MesRdvPage() {
           onClose={() => setModalAnnuler(null)}
           onDone={() => { setModalAnnuler(null); fetchRdvs(); }} />
       )}
+    </div>
+  );
+}
+
+// ── Signaler un retard (même Cloud Function que l'appli : sendRetardNotification) ──
+function ModalRetard({ profileId, onClose }: { profileId: string; onClose: () => void }) {
+  const [delai, setDelai] = useState(15);
+  const [message, setMessage] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+  const [resultat, setResultat] = useState<string | null>(null);
+  async function envoyer() {
+    setEnvoi(true);
+    try {
+      const fn = httpsCallable(functions, 'sendRetardNotification');
+      const res = await fn({ delaiMinutes: delai, message: message.trim(), ...(profileId ? { proProfileId: profileId } : {}), praticienProfileId: '*' });
+      const n = (res.data as { notified?: number })?.notified ?? 0;
+      setResultat(n > 0 ? `Retard signalé — ${n} client(s) prévenu(s).` : 'Retard signalé. Aucun client avec RDV dans les 3 h.');
+    } catch (e) {
+      setResultat(`Envoi impossible : ${(e as Error).message}`);
+    } finally { setEnvoi(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+        <h2 className="font-bold text-lg text-[#1E2025]">Signaler un retard</h2>
+        <p className="text-xs text-gray-500">Les clients ayant un RDV dans les 3 prochaines heures sont prévenus (notification).</p>
+        <div className="flex flex-wrap gap-2">
+          {[10, 15, 20, 30, 45, 60].map(m => (
+            <button key={m} onClick={() => setDelai(m)} className="px-3 py-1.5 rounded-lg text-sm font-semibold border"
+              style={delai === m ? { background: TEAL, color: 'white', borderColor: TEAL } : { color: '#1E2025', borderColor: '#E4E7E2' }}>
+              {m < 60 ? `${m} min` : '1 h'}
+            </button>
+          ))}
+        </div>
+        <textarea rows={2} value={message} onChange={e => setMessage(e.target.value)} placeholder="Message (facultatif)"
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+        {resultat && <p className="text-sm text-[#1E2025]">{resultat}</p>}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 font-semibold">Fermer</button>
+          {!resultat && (
+            <button onClick={envoyer} disabled={envoi} className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
+              {envoi ? '…' : 'Prévenir les clients'}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

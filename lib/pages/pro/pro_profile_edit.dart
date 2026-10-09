@@ -810,7 +810,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           ..._billingFields,
           ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
-          if (_catPro == 'veterinaire') 'retard_alerte_auto': _retardAlerteAuto,
+          if (_catPro == 'veterinaire' || _catPro == 'sante') 'retard_alerte_auto': _retardAlerteAuto,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -925,7 +925,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           ..._billingFields,
           ..._vetoFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
-          if (_catPro == 'veterinaire') 'retard_alerte_auto': _retardAlerteAuto,
+          if (_catPro == 'veterinaire' || _catPro == 'sante') 'retard_alerte_auto': _retardAlerteAuto,
           'cat_pro':            _catPro,
           'is_pro':             true,
           'durees_motifs':      _dureesMotifs,
@@ -1180,6 +1180,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   if (_catPro == 'veterinaire') ...[
                     const SizedBox(height: 12),
                     _urgences24hToggle(),
+                    const SizedBox(height: 12),
+                    _retardAutoToggle(),
+                  ],
+                  // Ostéo / santé : alerte retard, trajets compris.
+                  if (_catPro == 'sante') ...[
                     const SizedBox(height: 12),
                     _retardAutoToggle(),
                   ],
@@ -2577,10 +2582,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     child: Row(children: [
       Icon(Icons.timer_outlined, color: _retardAlerteAuto ? const Color(0xFF0C5C6C) : Colors.grey, size: 20),
       const SizedBox(width: 10),
-      const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Alerte retard automatique', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
-        Text('Prévenir les clients dès 30 min de retard dans l\'enchaînement des RDV (calculé quand vous marquez un RDV terminé).',
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Alerte retard automatique', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+        const Text('Prévenir les clients dès 30 min de retard dans l\'enchaînement des RDV (calculé quand vous marquez un RDV terminé).',
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B))),
+        if (_catPro == 'sante')
+          const Text('Le temps de trajet entre vos rendez-vous (domicile, cabinet) est pris en compte.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B))),
       ])),
       Switch(value: _retardAlerteAuto, activeThumbColor: const Color(0xFF0C5C6C),
           onChanged: (v) => setState(() => _retardAlerteAuto = v)),

@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ItineraireMenu from '@/components/dashboard/ItineraireMenu';
+import { retardsEnCascade } from '@/lib/retards-rdv';
 import { Kpi, Section, Badge, PhotoAnimal, Donut, BarresSemaine, PALETTE, TEAL, type Segment } from '@/components/dashboard/kit';
 
 const VERT = '#2E7D5E';
@@ -103,6 +104,7 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
   const [periode, setPeriode] = useState<'semaine' | 'mois' | 'annee'>('mois');
   const [choixCr, setChoixCr] = useState<Animal[] | null>(null);
   const [specialite, setSpecialite] = useState('');
+  const [positionCabinet, setPositionCabinet] = useState<{ lat: number; lng: number } | null>(null);
   const planningRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -131,9 +133,12 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
       supabase.from('suivis_morpho')
         .select('id, animal_id, animal_nom_libre, type_suivi, date, prochain_controle, motif')
         .eq('pro_profile_id', pid).order('date', { ascending: false }),
-      supabase.from('user_profiles_complet').select('profession_pro').eq('id', pid).maybeSingle(),
+      supabase.from('user_profiles_complet').select('profession_pro, latitude, longitude, lat, lng').eq('id', pid).maybeSingle(),
     ]);
-    setSpecialite(((profilRes.data as { profession_pro?: string | null } | null)?.profession_pro ?? '').trim());
+    const prof = profilRes.data as { profession_pro?: string | null; latitude?: number | null; longitude?: number | null; lat?: number | null; lng?: number | null } | null;
+    setSpecialite((prof?.profession_pro ?? '').trim());
+    const cLat = prof?.latitude ?? prof?.lat, cLng = prof?.longitude ?? prof?.lng;
+    setPositionCabinet(cLat != null && cLng != null ? { lat: Number(cLat), lng: Number(cLng) } : null);
     const liste = (rdvRes.data ?? []) as Rdv[];
     // Suivis à prévoir : dernier suivi de chaque animal avec un contrôle
     // conseillé (saisi par le praticien) dans les 30 jours ou dépassé.
@@ -208,6 +213,8 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
   const domicile = planning.filter(estExterieur);
   const listePlanning = filtreLieu === 'cabinet' ? cabinet : filtreLieu === 'domicile' ? domicile : planning;
   const estAujourdhui = memeJour(jour, now);
+  // Retard estimé en cascade (trajets compris) — aujourd'hui seulement.
+  const retards = estAujourdhui ? retardsEnCascade(rdvs, now, { avecTrajets: true, cabinet: positionCabinet }) : {};
   const dateLongue = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   async function choisirPatientCr() {
@@ -296,7 +303,10 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                               <p className="text-xs truncate flex items-center gap-1" style={{ color: ext ? VERT : '#6B7280' }}>{ext ? I.maison : I.cabinet}<span className="truncate">{lieuCourt(r)}</span></p>
                             </div>
                             <div className="flex-1 sm:hidden" />
-                            <Badge texte={st.label} fg={st.fg} bg={st.bg} />
+                            <span className="flex flex-col items-end gap-0.5">
+                              <Badge texte={st.label} fg={st.fg} bg={st.bg} />
+                              {(retards[r.id] ?? 0) >= 5 && <span className="text-[11px] font-bold" style={{ color: '#B45309' }}>+{retards[r.id]} min</span>}
+                            </span>
                             <span className="text-gray-400">›</span>
                           </Link>
                         );

@@ -1199,6 +1199,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
       ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h, retard_alerte_auto: retardAlerteAuto } : {}),
+      ...(catPro === 'sante' ? { retard_alerte_auto: retardAlerteAuto } : {}),
       ...(catPro === 'veterinaire'
         ? {
             tarifs_veto: tarifsVeto,
@@ -1459,13 +1460,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             </div>
           )}
 
-          {/* Alerte retard automatique — vétérinaires (Cloud Function sendRetardsAutomatiques) */}
-          {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire') && (
+          {/* Alerte retard automatique — vétérinaires et ostéo / santé, trajets
+              compris pour la santé (Cloud Function sendRetardsAutomatiques) */}
+          {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' || catPro === 'sante') && (
             <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl"
               style={{ backgroundColor: retardAlerteAuto ? 'rgba(12,92,108,0.06)' : 'transparent', border: retardAlerteAuto ? '1px solid rgba(12,92,108,0.25)' : '1px solid transparent' }}>
               <div>
                 <p className="text-sm font-medium" style={{ color: retardAlerteAuto ? '#0C5C6C' : '#1F2A2E' }}>⏱ Alerte retard automatique</p>
-                <p className="text-xs text-gray-400">Prévenir les clients dès 30 min de retard dans l&apos;enchaînement des RDV (calculé quand vous marquez un RDV terminé).</p>
+                <p className="text-xs text-gray-400">Prévenir les clients dès 30 min de retard dans l&apos;enchaînement des RDV (calculé quand vous marquez un RDV terminé).{catPro === 'sante' ? ' Le temps de trajet entre vos rendez-vous est pris en compte.' : ''}</p>
               </div>
               <button type="button" onClick={() => setRetardAlerteAuto(v => !v)}
                 className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${retardAlerteAuto ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>

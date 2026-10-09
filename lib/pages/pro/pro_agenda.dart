@@ -119,6 +119,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// Formule véto de la clinique (titulaire) : planning par praticien et
   /// salles réservés à la formule Clinique.
   VetPlanConfig _vetCfg = PlanService.getVetConfig('free');
+  /// Ostéo / santé : coordonnées du cabinet (trajets des retards en cascade).
+  ({double lat, double lng})? _cabinet;
+
+  Future<void> _loadCabinet() async {
+    if (AgendaContexte.catPro != 'sante') return;
+    final pid = _resolveProProfileId();
+    if (pid.isEmpty) return;
+    try {
+      final p = await Supabase.instance.client.from('user_profiles_complet')
+          .select('latitude, longitude, lat, lng').eq('id', pid).maybeSingle();
+      final lat = ((p?['latitude'] ?? p?['lat']) as num?)?.toDouble();
+      final lng = ((p?['longitude'] ?? p?['lng']) as num?)?.toDouble();
+      if (lat != null && lng != null && mounted) setState(() => _cabinet = (lat: lat, lng: lng));
+    } catch (_) {}
+  }
   bool get _planningClinique => _vetCfg.hasMultiPraticiens || _vetCfg.hasSallesRdv;
 
   Future<void> _loadFormuleVeto() async {
@@ -392,6 +407,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadSalles();
     _loadCoursCollectifs();
     _loadFormuleVeto();
+    _loadCabinet();
     if (widget.nouveauRdv) {
       WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _showNouveauRdvDialog(); });
     }
@@ -930,11 +946,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             {...r, if (retards[r['id'].toString()] != null) '_retard_min': retards[r['id'].toString()]},
       ];
     }
-    return _rdvsFiltres.where((r) {
-      if (r['statut'] != 'confirme') return false;
-      final dh = DateTime.tryParse(r['date_heure'] ?? '');
-      return dh != null && dh.isAfter(now);
-    }).toList();
+    // Ostéo / santé : retard estimé en cascade, trajets compris.
+    final retards = AgendaContexte.catPro == 'sante'
+        ? retardsEnCascade(_rdvs, cabinet: _cabinet, avecTrajets: true) : const <String, int>{};
+    return [
+      for (final r in _rdvsFiltres)
+        if (r['statut'] == 'confirme' && (DateTime.tryParse(r['date_heure'] ?? '')?.isAfter(now) ?? false))
+          {...r, if (retards[r['id'].toString()] != null) '_retard_min': retards[r['id'].toString()]},
+    ];
   }
   List<Map<String, dynamic>> get _historique {
     final now = DateTime.now();

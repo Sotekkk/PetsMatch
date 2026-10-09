@@ -14,6 +14,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/itineraire.dart';
+import 'package:PetsMatch/utils/retards_rdv.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart' show labelTypeSuivi;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
@@ -78,6 +79,7 @@ class _SanteDashboardState extends State<SanteDashboard> {
   String _periode = 'mois';
   RealtimeChannel? _canal;
   final _planningKey = GlobalKey();
+  ({double lat, double lng})? _cabinet;
 
   String get _pid {
     final p = User_Info.activeProfileId;
@@ -124,6 +126,13 @@ class _SanteDashboardState extends State<SanteDashboard> {
           .or('date_heure.gte.${depuis.toUtc().toIso8601String()},statut.in.(demande,contre_proposition,confirme)')
           .order('date_heure');
       _rdvs = List<Map<String, dynamic>>.from((rows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+    } catch (_) {}
+    try {
+      final p = await _supa.from('user_profiles_complet')
+          .select('latitude, longitude, lat, lng').eq('id', pid).maybeSingle();
+      final lat = ((p?['latitude'] ?? p?['lat']) as num?)?.toDouble();
+      final lng = ((p?['longitude'] ?? p?['lng']) as num?)?.toDouble();
+      _cabinet = lat != null && lng != null ? (lat: lat, lng: lng) : null;
     } catch (_) {}
     await _chargerSuivis(pid, now);
     await _chargerNoms();
@@ -410,6 +419,9 @@ class _SanteDashboardState extends State<SanteDashboard> {
     final domicile = duJour.where(estExterieur).toList();
     final liste = _filtreLieu == 'cabinet' ? cabinet : _filtreLieu == 'domicile' ? domicile : duJour;
     final estAujourdhui = _memeJour(_jour, now);
+    // Retard estimé en cascade (trajets compris) — aujourd'hui seulement.
+    final retards = estAujourdhui
+        ? retardsEnCascade(_rdvs, maintenant: now, cabinet: _cabinet, avecTrajets: true) : const <String, int>{};
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       DashTitre('Planning du jour', icone: Icons.calendar_today_outlined,
           trailing: DashLien("Voir l'agenda complet", onTap: () => _go(const ProAgendaPage(initialTabIndex: 1)))),
@@ -439,11 +451,11 @@ class _SanteDashboardState extends State<SanteDashboard> {
               textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', color: _muted)),
         )
       else
-        for (final r in liste) _ligneRdv(r, now),
+        for (final r in liste) _ligneRdv(r, now, retards[r['id']?.toString()]),
     ]);
   }
 
-  Widget _ligneRdv(Map<String, dynamic> r, DateTime now) {
+  Widget _ligneRdv(Map<String, dynamic> r, DateTime now, [int? retard]) {
     final st = statutRdvSante(r, now);
     final annule = st.label == 'Annulé';
     final duree = (r['duree_minutes'] as num?)?.toInt() ?? 45;
@@ -482,7 +494,14 @@ class _SanteDashboardState extends State<SanteDashboard> {
             ]),
           ),
           const SizedBox(width: 6),
-          DashBadge(st.label, fg: st.fg, bg: st.bg),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            DashBadge(st.label, fg: st.fg, bg: st.bg),
+            if (retard != null && retard >= 5) ...[
+              const SizedBox(height: 3),
+              Text('+$retard min', style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  fontWeight: FontWeight.w700, color: Color(0xFFB45309))),
+            ],
+          ]),
         ]),
       ),
     );
