@@ -30,7 +30,10 @@ const WHITELISTED_PATHS = [
   '/__/auth/',
 ];
 
-const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf)$/;
+// manifest.json / service workers : le navigateur charge le manifeste SANS
+// cookie → sans cette exception il recevait la page /beta-login (« Manifest:
+// Syntax error »).
+const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf|json|webmanifest)$|^\/firebase-messaging-sw\.js$/;
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

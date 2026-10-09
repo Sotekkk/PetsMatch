@@ -513,8 +513,15 @@ export default function InscriptionPage() {
         cgu_accepted_at: new Date().toISOString(),
       }, { uid: cred.user.uid });
       router.push(suiteRdv ?? '/');
-    } catch {
-      setError('Connexion Google annulée ou échouée.');
+    } catch (e) {
+      const code = (e as { code?: string })?.code ?? '';
+      setError(code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'
+        ? 'Connexion Google annulée.'
+        : code === 'auth/unauthorized-domain'
+          ? `Connexion Google refusée : le domaine ${window.location.hostname} n'est pas autorisé dans Firebase.`
+          : code === 'auth/popup-blocked'
+            ? 'La fenêtre Google a été bloquée par le navigateur : autorisez les pop-ups pour ce site.'
+            : `Connexion Google échouée (${code || 'erreur inconnue'}).`);
     } finally {
       setLoading(false);
     }

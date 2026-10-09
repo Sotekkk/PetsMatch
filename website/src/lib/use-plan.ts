@@ -384,11 +384,14 @@ export function usePlan(): UsePlanResult {
           .eq('uid_eleveur', ownerUid)
           .in('statut', ['disponible', 'en_attente', 'pause', 'reserve']),
       ]);
-      setPlan((abo.data?.plan_code ?? 'free') as PlanCode);
+      // Code inconnu des formules éleveur (ex. ligne d'un autre métier
+      // enregistrée à tort en « eleveur ») → gratuit, jamais de config vide.
+      const code = abo.data?.plan_code as string | undefined;
+      setPlan(code && code in PLAN_CONFIG ? (code as PlanCode) : 'free');
       setActiveAnnonces(ann.count ?? 0);
       setLoading(false);
     })().catch(() => setLoading(false));
   }, [user, activeProfileId]);
 
-  return { plan, config: PLAN_CONFIG[plan], activeAnnonces, loading };
+  return { plan, config: PLAN_CONFIG[plan] ?? PLAN_CONFIG.free, activeAnnonces, loading };
 }
