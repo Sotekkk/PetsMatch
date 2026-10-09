@@ -79,6 +79,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   bool _filterRepro    = false;
   bool _filterGestante = false;
   bool _filterChaleur  = false;
+  // Réservation (statut commercial) — distincte de la présence à l'élevage
+  String _filterReservation = 'tous';
   bool   _selectMode    = false;
   final Set<String> _selectedIds = {};
 
@@ -578,9 +580,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_filterSexe != 'tous')   c++;
     if (_filterRace.isNotEmpty)  c++;
     if (_filterRetraite) c++;
-    if (_filterRepro)    c++;
     if (_filterGestante) c++;
     if (_filterChaleur)  c++;
+    if (_filterReservation != 'tous') c++;
+    if (_presentsSubTab == 'bebes' && _bebesCedes) c++;
     return c;
   }
 
@@ -628,6 +631,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     bool tmpRepro     = _filterRepro;
     bool tmpGestante  = _filterGestante;
     bool tmpChaleur   = _filterChaleur;
+    String tmpReservation = _filterReservation;
+    bool tmpBebesCedes = _bebesCedes;
 
     await showModalBottomSheet(
       context: context,
@@ -637,7 +642,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         builder: (ctx, setSheet) {
           void apply({String? espece, String? sexe, String? race,
                      bool toggleRetraite = false, bool toggleRepro = false,
-                     bool toggleGestante = false, bool toggleChaleur = false}) {
+                     bool toggleGestante = false, bool toggleChaleur = false,
+                     String? reservation, bool? bebesCedes}) {
             setSheet(() {
               if (espece != null) {
                 tmpEspece = espece;
@@ -650,6 +656,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               if (toggleRepro)    tmpRepro    = !tmpRepro;
               if (toggleGestante) tmpGestante = !tmpGestante;
               if (toggleChaleur)  tmpChaleur  = !tmpChaleur;
+              if (reservation != null) tmpReservation = reservation;
+              if (bebesCedes != null) tmpBebesCedes = bebesCedes;
             });
             setState(() {
               _filterEspece   = tmpEspece;
@@ -659,6 +667,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               _filterRepro    = tmpRepro;
               _filterGestante = tmpGestante;
               _filterChaleur  = tmpChaleur;
+              _filterReservation = tmpReservation;
+              if (_bebesCedes != tmpBebesCedes) _selectedPorteeId = '';
+              _bebesCedes = tmpBebesCedes;
             });
           }
 
@@ -683,13 +694,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const Spacer(),
                 if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty ||
-                    tmpRetraite || tmpRepro || tmpGestante || tmpChaleur)
+                    tmpRetraite || tmpGestante || tmpChaleur || tmpReservation != 'tous' || tmpBebesCedes)
                   TextButton(
                     onPressed: () {
                       setSheet(() { tmpEspece = 'tous'; tmpSexe = 'tous'; tmpRace = '';
-                        tmpRetraite = false; tmpRepro = false; tmpGestante = false; tmpChaleur = false; });
+                        tmpRetraite = false; tmpRepro = false; tmpGestante = false; tmpChaleur = false;
+                        tmpReservation = 'tous'; tmpBebesCedes = false; });
                       setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
-                        _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false; });
+                        _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
+                        _filterReservation = 'tous'; _bebesCedes = false; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text('Réinitialiser',
@@ -713,7 +726,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     decoration: BoxDecoration(
                       color: active ? sp.color : Colors.transparent,
                       border: Border.all(color: active ? sp.color : Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (sp.value != 'tous') ...[
@@ -734,10 +747,32 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               Row(children: [
                 _SexeChip(label: 'Tous',       active: tmpSexe == 'tous',    onTap: () => apply(sexe: 'tous')),
                 const SizedBox(width: 8),
-                _SexeChip(label: '♂  Mâle',    active: tmpSexe == 'male',    onTap: () => apply(sexe: 'male')),
+                _SexeChip(label: 'Mâles',    active: tmpSexe == 'male',    onTap: () => apply(sexe: 'male')),
                 const SizedBox(width: 8),
-                _SexeChip(label: '♀  Femelle',  active: tmpSexe == 'femelle', onTap: () => apply(sexe: 'femelle')),
+                _SexeChip(label: 'Femelles',  active: tmpSexe == 'femelle', onTap: () => apply(sexe: 'femelle')),
               ]),
+              const SizedBox(height: 18),
+              const Text('Réservation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 13, color: Color(0xFF6F767B))),
+              const SizedBox(height: 10),
+              Row(children: [
+                _SexeChip(label: 'Toutes', active: tmpReservation == 'tous', onTap: () => apply(reservation: 'tous')),
+                const SizedBox(width: 8),
+                _SexeChip(label: 'Disponibles', active: tmpReservation == 'disponible', onTap: () => apply(reservation: 'disponible')),
+                const SizedBox(width: 8),
+                _SexeChip(label: 'Réservés', active: tmpReservation == 'reserve', onTap: () => apply(reservation: 'reserve')),
+              ]),
+              if (_presentsSubTab == 'bebes') ...[
+                const SizedBox(height: 18),
+                const Text('Bébés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                    fontSize: 13, color: Color(0xFF6F767B))),
+                const SizedBox(height: 10),
+                Row(children: [
+                  _SexeChip(label: 'Présents', active: !tmpBebesCedes, onTap: () => apply(bebesCedes: false)),
+                  const SizedBox(width: 8),
+                  _SexeChip(label: 'Cédés', active: tmpBebesCedes, onTap: () => apply(bebesCedes: true)),
+                ]),
+              ],
               if (races.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
@@ -768,10 +803,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (final item in [
-                  ('🏁 Retraité',   tmpRetraite, const Color(0xFFB45309), () => apply(toggleRetraite: true)),
-                  ('⭐ Repro',      tmpRepro,    _teal,                   () => apply(toggleRepro: true)),
-                  ('🤰 Gestante',   tmpGestante, _green,                  () => apply(toggleGestante: true)),
-                  ('🌸 En chaleur', tmpChaleur,  Colors.pink,             () => apply(toggleChaleur: true)),
+                  ('Retraités',   tmpRetraite, const Color(0xFFB45309), () => apply(toggleRetraite: true)),
+                  ('Gestantes',   tmpGestante, _green,                  () => apply(toggleGestante: true)),
+                  ('En chaleur',  tmpChaleur,  const Color(0xFFDB2777), () => apply(toggleChaleur: true)),
                 ] as List<(String, bool, Color, VoidCallback)>)
                   GestureDetector(
                     onTap: item.$4,
@@ -877,7 +911,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     decoration: BoxDecoration(
                       color: active ? sp.color : Colors.transparent,
                       border: Border.all(color: active ? sp.color : Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (sp.value != 'tous') ...[
@@ -991,66 +1025,35 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     }
   }
 
-  Widget _buildSearchField() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: TextField(
-        controller: _searchController,
-        onChanged: (v) => setState(() => _search = v.trim().toLowerCase()),
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-        decoration: InputDecoration(
-          hintText: 'Nom ou numéro de puce...',
-          hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFB0B8C1)),
-          prefixIcon: const Icon(Icons.search, color: Color(0xFF6E9E57), size: 20),
-          suffixIcon: _search.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: Color(0xFF6F767B)),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _search = '');
-                  },
-                )
-              : null,
-          filled: true,
-          fillColor: const Color(0xFFF8F8F6),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5),
-          ),
-        ),
-      ),
-    );
-  }
+  // ── Compteurs des onglets ─────────────────────────────────────────────────────
+
+  int get _nbPresents => _animauxData.where((d) {
+    final statut = d['statut'] as String? ?? '';
+    return _currentOwnerIds.contains(d['id']) && statut != 'decede' && statut != 'sorti';
+  }).length;
+  int get _nbCedes => _animauxData.where((d) => d['statut'] == 'sorti').length;
+  int get _nbDecedes => _animauxData.where((d) => d['statut'] == 'decede').length;
 
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final isPresents  = _tabController.index == 0;
-    final filterCount = switch (_tabController.index) {
-      0 => _presentsFilterCount,
-      3 => _decedesFilterCount,
-      _ => _anciensFilterCount,
-    };
+    final isPresents = _tabController.index == 0;
+    final nbPresents = _nbPresents;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: const Color(0xFFF4F7F7),
       appBar: AppBar(
+        titleSpacing: 16,
         title: _selectMode
             ? Text('${_selectedIds.length} sélectionné${_selectedIds.length != 1 ? 's' : ''}',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))
-            : const Text('Mes Animaux',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                const Text('Mes animaux', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+                if (!_loading)
+                  Text('$nbPresents présent${nbPresents > 1 ? 's' : ''} · ${_animauxData.length} au total',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
+              ]),
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -1079,603 +1082,434 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               onPressed: () => ChipScannerService.scanFromElevage(context, _ownerUid ?? _uid),
               tooltip: 'Scanner une puce',
             ),
-          if (_tabController.index != 2)
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.tune),
-                  onPressed: _openFilterSheet,
-                  tooltip: 'Filtres',
-                ),
-                if (filterCount > 0)
-                  Positioned(
-                    right: 4, top: 4,
-                    child: Container(
-                      width: 16, height: 16,
-                      decoration: const BoxDecoration(
-                          color: Color(0xFF6E9E57), shape: BoxShape.circle),
-                      child: Center(
-                        child: Text('$filterCount',
-                            style: const TextStyle(color: Colors.white,
-                                fontSize: 9, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ),
-              ],
+            child: TextButton(
+              onPressed: () => _showAddSheet(context),
+              style: TextButton.styleFrom(foregroundColor: Colors.white,
+                  backgroundColor: Colors.white.withValues(alpha: 0.14),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: const Text('+ Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             ),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(text: 'Présents'),
-            Tab(text: 'Cédés'),
-            Tab(text: 'Suivi'),
-            Tab(text: 'Décédés'),
-          ],
-          indicatorColor: const Color(0xFF6E9E57),
-          indicatorWeight: 3,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14),
-          unselectedLabelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-        ),
       ),
-      floatingActionButton: isPresents && !_selectMode
-          ? FloatingActionButton(
-              onPressed: () => _showAddSheet(context),
-              backgroundColor: _green,
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildPresentsTab(),
-          _buildAnciensTab(),
-          SuiviCessionsTab(
-            uid: _ownerUid ?? _uid,
-            myUid: _uid,
-            animaux: _animauxData,
-            loading: _loading,
-            onChanged: _loadAnimaux,
+      body: Column(children: [
+        Material(
+          color: Colors.white,
+          child: TabBar(
+            controller: _tabController,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            tabs: [
+              Tab(text: _loading ? 'Présents' : 'Présents · $nbPresents'),
+              Tab(text: _loading ? 'Cédés' : 'Cédés · $_nbCedes'),
+              const Tab(text: 'Suivi'),
+              Tab(text: _loading ? 'Décédés' : 'Décédés · $_nbDecedes'),
+            ],
+            indicatorColor: _teal,
+            indicatorWeight: 2,
+            labelColor: _teal,
+            unselectedLabelColor: const Color(0xFF6F767B),
+            dividerColor: Colors.grey.shade300,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
+            unselectedLabelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14),
           ),
-          _buildDecedesTab(),
-        ],
-      ),
+        ),
+        Expanded(child: TabBarView(
+          controller: _tabController,
+          children: [
+            _buildPresentsTab(),
+            _buildAnciensTab(),
+            SuiviCessionsTab(
+              uid: _ownerUid ?? _uid,
+              myUid: _uid,
+              animaux: _animauxData,
+              loading: _loading,
+              onChanged: _loadAnimaux,
+            ),
+            _buildDecedesTab(),
+          ],
+        )),
+      ]),
     );
   }
+
+  // ── Barre : recherche, catégorie, portée, filtres ──────────────────────────
+
+  InputDecoration _decoChamp(String hint, {Widget? prefix, Widget? suffix}) => InputDecoration(
+    hintText: hint,
+    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Colors.grey.shade500),
+    prefixIcon: prefix,
+    suffixIcon: suffix,
+    isDense: true,
+    filled: true, fillColor: Colors.white,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _teal, width: 1.5)),
+  );
+
+  Widget _buildSearchField() => TextField(
+    controller: _searchController,
+    onChanged: (v) => setState(() => _search = v.trim().toLowerCase()),
+    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+    decoration: _decoChamp('Rechercher par nom ou numéro de puce',
+      prefix: Icon(Icons.search, color: Colors.grey.shade500, size: 20),
+      suffix: _search.isNotEmpty
+          ? IconButton(
+              icon: Icon(Icons.close, size: 18, color: Colors.grey.shade600),
+              onPressed: () { _searchController.clear(); setState(() => _search = ''); })
+          : null),
+  );
+
+  Widget _boutonFiltres(int count) => OutlinedButton(
+    onPressed: _openFilterSheet,
+    style: OutlinedButton.styleFrom(
+      foregroundColor: count > 0 ? _teal : const Color(0xFF1F2A2E),
+      backgroundColor: count > 0 ? _teal.withValues(alpha: 0.06) : Colors.white,
+      side: BorderSide(color: count > 0 ? _teal : Colors.grey.shade300),
+      minimumSize: const Size(0, 46),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    ),
+    child: Text(count > 0 ? 'Filtres · $count' : 'Filtres',
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+  );
+
+  Widget _dropdown<T>({required T value, required List<(T, String)> items, required ValueChanged<T> onChanged, required String label}) =>
+    DropdownButtonFormField<T>(
+      initialValue: value,
+      key: ValueKey('$label-$value'),
+      isExpanded: true,
+      decoration: _decoChamp(label),
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF1F2A2E)),
+      items: [for (final it in items) DropdownMenuItem(value: it.$1, child: Text(it.$2, overflow: TextOverflow.ellipsis))],
+      onChanged: (v) { if (v != null) onChanged(v); },
+    );
+
+  Widget _barre({required int filtres, List<Widget> menus = const []}) => Container(
+    color: Colors.white,
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    child: Column(children: [
+      _buildSearchField(),
+      const SizedBox(height: 8),
+      Row(children: [
+        for (final m in menus) ...[Expanded(child: m), const SizedBox(width: 8)],
+        if (menus.isEmpty) const Spacer(),
+        _boutonFiltres(filtres),
+      ]),
+    ]),
+  );
 
   // ── Présents tab ──────────────────────────────────────────────────────────────
 
-  Widget _buildPresentsTab() {
-    return Column(children: [
-      _buildSearchField(),
-      _buildPresentsSubTabs(),
-      if (_presentsSubTab == 'bebes') _buildBebesVueToggle(),
-      if (_presentsFilterCount > 0) _buildPresentsFiltersRow(),
-      Expanded(child: _buildPresentsList()),
-    ]);
+  bool get _rechercheOuFiltre => _search.isNotEmpty || _presentsFilterCount > 0;
+
+  bool _filtresCommuns(Map<String, dynamic> d) {
+    if (_filterEspece != 'tous' && d['espece'] != _filterEspece) return false;
+    if (_filterSexe != 'tous' && d['sexe'] != _filterSexe) return false;
+    if (_filterRace.isNotEmpty &&
+        (d['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
+    final statut = d['statut'] as String? ?? '';
+    // Réservation (statut commercial) ≠ présence : un réservé reste présent
+    if (_filterReservation == 'reserve' && statut != 'reserve') return false;
+    if (_filterReservation == 'disponible' && statut == 'reserve') return false;
+    final aid = d['id'] as String? ?? '';
+    if (_filterGestante && !(_gestanteFlags[aid] ?? false)) return false;
+    if (_filterChaleur  && !(_chaleurFlags[aid]  ?? false)) return false;
+    if (_search.isNotEmpty) {
+      final nom  = (d['nom']            ?? '').toString().toLowerCase();
+      final puce = (d['identification'] ?? '').toString().toLowerCase();
+      if (!nom.contains(_search) && !puce.contains(_search)) return false;
+    }
+    return true;
   }
 
-  Widget _buildPresentsSubTabs() {
-    const tabs = [
-      ('tous',  'Tous'),
-      ('repro', '⭐ Repro'),
-      ('bebes', '🐣 Bébés'),
-    ];
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-      child: Row(children: tabs.map((t) {
-        final active = _presentsSubTab == t.$1;
-        return Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: GestureDetector(
-            onTap: () => setState(() => _presentsSubTab = t.$1),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                color: active ? _teal : Colors.transparent,
-                border: Border.all(color: active ? _teal : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(t.$2, style: TextStyle(
-                fontFamily: 'Galey', fontSize: 13,
-                color: active ? Colors.white : Colors.black87,
-                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-              )),
-            ),
-          ),
-        );
-      }).toList()),
-    );
-  }
-
-  Widget _buildBebesVueToggle() {
-    const vues = [(false, 'Présents'), (true, 'Cédés')];
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: Row(children: vues.map((v) {
-        final active = _bebesCedes == v.$1;
-        return Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: GestureDetector(
-            onTap: () => setState(() { _bebesCedes = v.$1; _selectedPorteeId = ''; }),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: active ? _teal.withValues(alpha: 0.12) : Colors.transparent,
-                border: Border.all(color: active ? _teal : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(v.$2, style: TextStyle(
-                fontFamily: 'Galey', fontSize: 12,
-                color: active ? _teal : Colors.black54,
-                fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-              )),
-            ),
-          ),
-        );
-      }).toList()),
-    );
-  }
-
-  Widget _buildPresentsFiltersRow() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          if (_filterEspece != 'tous')
-            _ActiveChip(
-              label: speciesLabel(_filterEspece),
-              color: speciesColor(_filterEspece),
-              onRemove: () => setState(() { _filterEspece = 'tous'; _filterRace = ''; }),
-            ),
-          if (_filterSexe != 'tous') ...[
-            if (_filterEspece != 'tous') const SizedBox(width: 6),
-            _ActiveChip(
-              label: _filterSexe == 'male' ? '♂ Mâle' : '♀ Femelle',
-              color: const Color(0xFF5F9EAA),
-              onRemove: () => setState(() => _filterSexe = 'tous'),
-            ),
-          ],
-          if (_filterRace.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(
-              label: _filterRace,
-              color: const Color(0xFF0C5C6C),
-              onRemove: () => setState(() => _filterRace = ''),
-            ),
-          ],
-          if (_filterRetraite) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(label: '🏁 Retraité', color: const Color(0xFFB45309),
-                onRemove: () => setState(() => _filterRetraite = false)),
-          ],
-          if (_filterRepro) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(label: '⭐ Repro', color: _teal,
-                onRemove: () => setState(() => _filterRepro = false)),
-          ],
-          if (_filterGestante) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(label: '🤰 Gestante', color: _green,
-                onRemove: () => setState(() => _filterGestante = false)),
-          ],
-          if (_filterChaleur) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(label: '🌸 En chaleur', color: Colors.pink,
-                onRemove: () => setState(() => _filterChaleur = false)),
-          ],
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildPresentsList() {
-    if (_uid == null) return const Center(child: Text('Non connecté'));
-    if (_loading) return const Center(child: CircularProgressIndicator(color: _green));
-
-    // Base filter: présents only + search + espèce/sexe/race
-    var base = _animauxData.where((data) {
-      final statut = data['statut'] as String? ?? '';
-      final aid = data['id'] as String? ?? '';
-      // animaux_proprietes = source unique : date_fin IS NULL = présent.
-      // On exclut aussi explicitement sorti/decede par le statut de l'animal
-      // lui-même : une cession déclarée manuellement dans le registre (sans
-      // repasser par la fiche de cession) ne clôture pas toujours la ligne
-      // animaux_proprietes, il ne faut pas que l'animal reste visible dans
-      // Présents pour autant.
-      if (!_currentOwnerIds.contains(aid)) return false;
-      if (statut == 'decede' || statut == 'sorti') return false;
-      if (_filterEspece != 'tous' && data['espece'] != _filterEspece) return false;
-      if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
-      if (_filterRace.isNotEmpty &&
-          (data['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
-      if (_filterRetraite && data['is_retraite'] != true) return false;
-      if (_filterRepro    && data['reproducteur'] != true) return false;
-      final String _aid = data['id'] as String? ?? '';
-      if (_filterGestante && !(_gestanteFlags[_aid] ?? false)) return false;
-      if (_filterChaleur  && !(_chaleurFlags[_aid]  ?? false)) return false;
-      if (_search.isNotEmpty) {
-        final nom  = (data['nom']            ?? '').toString().toLowerCase();
-        final puce = (data['identification'] ?? '').toString().toLowerCase();
-        if (!nom.contains(_search) && !puce.contains(_search)) return false;
-      }
-      return true;
-    }).toList()
-      ..sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
-
-    // Sub-tab filtering
-    List<Map<String, dynamic>> docs;
-    if (_presentsSubTab == 'repro') {
-      docs = base.where((d) => d['reproducteur'] == true).toList();
-    } else if (_presentsSubTab == 'bebes') {
-      // Un bébé vendu/cédé (statut 'sorti') est masqué par défaut (filtre
-      // « Présents ») et seul affiché, grisé, avec « Cédés » — ce n'est plus le sien
-      // mais l'éleveur garde l'historique de la portée (courbe de poids
-      // saisie lui-même) : contrairement à `base`, on ne filtre donc PAS sur
-      // _currentOwnerIds ici.
-      docs = _animauxData.where((d) {
+  /// Animaux présents (onglet) selon la catégorie et les filtres.
+  List<Map<String, dynamic>> _presentsDocs() {
+    if (_presentsSubTab == 'bebes') {
+      // Bébés cédés (statut 'sorti') : seulement avec Filtres › Bébés cédés —
+      // l'éleveur garde l'historique de la portée.
+      return _animauxData.where((d) {
         final pid = d['portee_id'] as String? ?? '';
         final statut = d['statut'] as String? ?? '';
         if (pid.isEmpty || d['reproducteur'] == true) return false;
         if (statut == 'decede') return false;
         if (_bebesCedes != (statut == 'sorti')) return false;
-        if (_filterEspece != 'tous' && d['espece'] != _filterEspece) return false;
-        if (_filterSexe != 'tous' && d['sexe'] != _filterSexe) return false;
-        if (_filterRace.isNotEmpty &&
-            (d['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
-        if (_search.isNotEmpty) {
-          final nom  = (d['nom']            ?? '').toString().toLowerCase();
-          final puce = (d['identification'] ?? '').toString().toLowerCase();
-          if (!nom.contains(_search) && !puce.contains(_search)) return false;
-        }
-        return true;
+        return _filtresCommuns(d);
       }).toList();
-    } else {
-      docs = base;
     }
-
-    if (docs.isEmpty) {
-      String emptyMsg;
-      if (_presentsSubTab == 'repro') {
-        emptyMsg = 'Aucun animal reproducteur\nAppui long sur une carte pour en marquer un';
-      } else if (_presentsSubTab == 'bebes') {
-        emptyMsg = _bebesCedes
-            ? 'Aucun bébé cédé'
-            : 'Aucun bébé présent\nChoisissez « Cédés » pour retrouver\nles portées déjà parties';
-      } else {
-        emptyMsg = _presentsFilterCount > 0
-            ? 'Aucun animal présent\ncorrespondant aux filtres'
-            : 'Vous n\'avez aucun animal présent';
-      }
-      return Center(
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          speciesIcon(_filterEspece == 'tous' ? 'autre' : _filterEspece, 56, Colors.grey.shade300),
-          const SizedBox(height: 12),
-          Text(emptyMsg, textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey', fontSize: 15)),
-          const SizedBox(height: 16),
-          if (_presentsSubTab == 'tous' && _presentsFilterCount == 0)
-            ElevatedButton.icon(
-              onPressed: () => _showAddSheet(context),
-              icon: const Icon(Icons.add),
-              label: const Text('Ajouter un animal', style: TextStyle(fontFamily: 'Galey')),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: _green, foregroundColor: Colors.white),
-            )
-          else if (_presentsSubTab == 'tous' && _presentsFilterCount > 0)
-            TextButton(
-              onPressed: () => setState(() {
-                _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
-                _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
-              }),
-              child: const Text('Réinitialiser les filtres',
-                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),
-            ),
-        ]),
-      );
-    }
-
-    if (_presentsSubTab == 'bebes') return _buildPorteeGroupedView(docs);
-
-    return RefreshIndicator(
-      onRefresh: _loadAnimaux,
-      color: _green,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.68,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: docs.length,
-        itemBuilder: (_, i) {
-          final data = docs[i];
-          final id = data['id'] as String? ?? '';
-          return _AnimalCard(
-            id: id,
-            data: data,
-            reproducteur: data['reproducteur'] == true,
-            isRetraite: data['is_retraite'] == true,
-            chaleurFlag:  _chaleurFlags[id]  ?? false,
-            gestanteFlag: _gestanteFlags[id] ?? false,
-            selectMode: _selectMode,
-            selected: _selectedIds.contains(id),
-            onTap: _selectMode
-                ? () => setState(() {
-                    if (_selectedIds.contains(id)) _selectedIds.remove(id);
-                    else _selectedIds.add(id);
-                  })
-                : () => _openFiche(context, id, data: data),
-            onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
-            onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
-            onToggleRetraite: id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
-            reproPublic: data['reproducteur_public'] == true,
-            onToggleReproPublic: id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
-          );
-        },
-      ),
-    );
+    final base = _animauxData.where((d) {
+      final statut = d['statut'] as String? ?? '';
+      final aid = d['id'] as String? ?? '';
+      // animaux_proprietes = source unique (date_fin IS NULL = présent) ; on
+      // exclut aussi sorti/décédé d'après le statut de l'animal lui-même.
+      if (!_currentOwnerIds.contains(aid)) return false;
+      if (statut == 'decede' || statut == 'sorti') return false;
+      if (_filterRetraite && d['is_retraite'] != true) return false;
+      return _filtresCommuns(d);
+    }).toList()
+      ..sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
+    // Reproducteurs : marquage existant uniquement (jamais déduit du sexe ou de l'âge)
+    return _presentsSubTab == 'repro' ? base.where((d) => d['reproducteur'] == true).toList() : base;
   }
 
-  Widget _buildPorteeGroupedView(List<Map<String, dynamic>> docs) {
-    final fmt = DateFormat('dd/MM/yyyy');
-    // Grouper par portee_id (depuis docs, sans reproducteurs)
-    final Map<String, List<Map<String, dynamic>>> groups = {};
+  /// Portées (bébés) triées par date de naissance décroissante.
+  Map<String, List<Map<String, dynamic>>> _groupesPortees(List<Map<String, dynamic>> docs) {
+    final groups = <String, List<Map<String, dynamic>>>{};
     for (final d in docs) {
       final pid = (d['portee_id'] as String?) ?? '';
-      if (pid.isEmpty) continue;
-      groups.putIfAbsent(pid, () => []).add(d);
+      if (pid.isNotEmpty) groups.putIfAbsent(pid, () => []).add(d);
     }
-    // Ajouter les frères/sœurs reproducteurs qui ont le même portee_id
-    for (final pid in groups.keys.toList()) {
-      final existingIds = groups[pid]!.map((a) => a['id']).toSet();
-      final siblings = _animauxData.where((a) {
-        final aPid = (a['portee_id'] as String?) ?? '';
-        final statut = (a['statut'] as String?) ?? '';
-        return aPid == pid && !existingIds.contains(a['id']) && statut != 'decede'
-            && _bebesCedes == (statut == 'sorti');
-      });
-      groups[pid]!.addAll(siblings);
+    // Sans recherche ni filtre : on ajoute les frères et sœurs gardés comme reproducteurs
+    if (!_rechercheOuFiltre) {
+      for (final pid in groups.keys.toList()) {
+        final ids = groups[pid]!.map((a) => a['id']).toSet();
+        groups[pid]!.addAll(_animauxData.where((a) {
+          final statut = (a['statut'] as String?) ?? '';
+          return a['portee_id'] == pid && !ids.contains(a['id']) && statut != 'decede'
+              && _bebesCedes == (statut == 'sorti');
+        }));
+      }
     }
-    // Trier les groupes par date de naissance décroissante
-    final sortedKeys = groups.keys.toList()
+    final keys = groups.keys.toList()
       ..sort((a, b) {
         final da = DateTime.tryParse(groups[a]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
         final db = DateTime.tryParse(groups[b]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
         return db.compareTo(da);
       });
+    return {for (final k in keys) k: groups[k]!};
+  }
 
-    // Filtre "une seule portée" — si la portée sélectionnée n'existe plus
-    // dans la vue courante (ex: tous ses membres sortis/décédés), retombe
-    // silencieusement sur "toutes".
-    final visibleKeys = _selectedPorteeId.isEmpty || !sortedKeys.contains(_selectedPorteeId)
-        ? sortedKeys
-        : [_selectedPorteeId];
+  String _titrePortee(Map<String, dynamic> first) {
+    final nomMere = ((first['nom_mere'] as String?) ?? '').trim();
+    return nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée';
+  }
 
-    return Column(
-      children: [
-        if (sortedKeys.length > 1)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _teal.withValues(alpha: 0.3)),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedPorteeId.isEmpty || !sortedKeys.contains(_selectedPorteeId) ? '' : _selectedPorteeId,
-                  isExpanded: true,
-                  icon: const Icon(Icons.expand_more, color: _teal),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal, fontWeight: FontWeight.w600),
-                  items: [
-                    DropdownMenuItem(value: '', child: Text('Toutes les portées (${sortedKeys.length})')),
-                    ...sortedKeys.map((pid) {
-                      final first = groups[pid]!.first;
-                      final dn = DateTime.tryParse(first['date_naissance'] as String? ?? '');
-                      final nomMere = ((first['nom_mere'] as String?) ?? '').trim();
-                      final label = [
-                        nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée',
-                        if (dn != null) 'née le ${fmt.format(dn)}',
-                      ].join(' — ');
-                      return DropdownMenuItem(value: pid, child: Text(label, overflow: TextOverflow.ellipsis));
-                    }),
-                  ],
-                  onChanged: (v) => setState(() => _selectedPorteeId = v ?? ''),
-                ),
-              ),
-            ),
+  Widget _buildPresentsTab() {
+    final docs = _presentsDocs();
+    final groupes = _presentsSubTab == 'bebes' ? _groupesPortees(docs) : const <String, List<Map<String, dynamic>>>{};
+    final fmt = DateFormat('dd/MM/yyyy');
+    return Column(children: [
+      _barre(filtres: _presentsFilterCount, menus: [
+        _dropdown<String>(
+          label: 'Catégorie', value: _presentsSubTab,
+          items: const [('tous', 'Tous les animaux'), ('repro', 'Reproducteurs'), ('bebes', 'Bébés')],
+          onChanged: (v) => setState(() { _presentsSubTab = v; _selectedPorteeId = ''; }),
+        ),
+        if (_presentsSubTab == 'bebes' && groupes.isNotEmpty)
+          _dropdown<String>(
+            label: 'Portée',
+            value: groupes.containsKey(_selectedPorteeId) ? _selectedPorteeId : '',
+            items: [
+              ('', 'Toutes les portées'),
+              for (final e in groupes.entries)
+                (e.key, () {
+                  final dn = DateTime.tryParse(e.value.first['date_naissance'] as String? ?? '');
+                  return '${_titrePortee(e.value.first)}${dn != null ? ' — ${fmt.format(dn)}' : ''}';
+                }()),
+            ],
+            onChanged: (v) => setState(() => _selectedPorteeId = v),
           ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadAnimaux,
-            color: _green,
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: visibleKeys.length,
-              itemBuilder: (_, gi) {
-        final pid      = visibleKeys[gi];
-        final members  = groups[pid]!;
-        final first    = members.first;
-        final dn       = DateTime.tryParse(first['date_naissance'] as String? ?? '');
-        final race     = (first['race'] as String?) ?? '';
-        final espece   = (first['espece'] as String?) ?? '';
-        final nomMere  = ((first['nom_mere'] as String?) ?? '').trim();
+      ]),
+      Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+      Expanded(child: _buildPresentsList(docs, groupes)),
+    ]);
+  }
 
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (gi > 0) const SizedBox(height: 20),
-          // Header portée
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: _teal.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _teal.withOpacity(0.2)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.diversity_3, size: 18, color: _teal),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    [
-                      nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée',
-                      if (espece.isNotEmpty) '· ${speciesLabel(espece)}',
-                    ].join(' '),
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 13, color: _teal),
+  Widget _etatVide(String titre, String detail, {VoidCallback? onReset, String? resetLabel}) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(titre, textAlign: TextAlign.center,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+        if (detail.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(detail, textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+        ],
+        if (onReset != null)
+          TextButton(onPressed: onReset,
+              child: Text(resetLabel ?? 'Réinitialiser', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal))),
+      ]),
+    ),
+  );
+
+  void _resetPresents() => setState(() {
+    _searchController.clear(); _search = '';
+    _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterReservation = 'tous';
+    _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
+    _bebesCedes = false;
+  });
+
+  /// Carte d'un animal présent (actions selon les droits).
+  Widget _carte(Map<String, dynamic> data, {required bool vertical, bool isBebe = false}) {
+    final id = data['id'] as String? ?? '';
+    final cede = (data['statut'] as String? ?? '') == 'sorti';
+    return _AnimalCard(
+      id: id,
+      data: data,
+      vertical: vertical,
+      isBebe: isBebe,
+      reproducteur: data['reproducteur'] == true,
+      isRetraite: data['is_retraite'] == true,
+      chaleurFlag:  _chaleurFlags[id]  ?? false,
+      gestanteFlag: _gestanteFlags[id] ?? false,
+      selectMode: _selectMode,
+      selected: _selectedIds.contains(id),
+      peutAjouterPhoto: !cede && id.isNotEmpty,
+      onTap: _selectMode
+          ? () => setState(() {
+              if (_selectedIds.contains(id)) { _selectedIds.remove(id); } else { _selectedIds.add(id); }
+            })
+          : () => _openFiche(context, id, data: data),
+      onDelete: cede || id.isEmpty ? null : () => _deleteAnimal(id),
+      onToggleReproducteur: cede || id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
+      onToggleRetraite: cede || id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
+      reproPublic: data['reproducteur_public'] == true,
+      onToggleReproPublic: cede || id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
+    );
+  }
+
+  /// Liste (mobile) ou grille (tablette) de cartes homogènes.
+  Widget _cartes(List<Widget> Function(bool vertical) build, {bool scrollable = true, EdgeInsets padding = const EdgeInsets.all(16)}) =>
+    LayoutBuilder(builder: (context, c) {
+      final colonnes = c.maxWidth >= 1000 ? 4 : c.maxWidth >= 700 ? 3 : 1;
+      final items = build(colonnes > 1);
+      if (colonnes == 1) {
+        return ListView.separated(
+          shrinkWrap: !scrollable,
+          physics: scrollable ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
+          padding: padding,
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (_, i) => items[i],
+        );
+      }
+      return GridView.count(
+        shrinkWrap: !scrollable,
+        physics: scrollable ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
+        padding: padding,
+        crossAxisCount: colonnes,
+        crossAxisSpacing: 12, mainAxisSpacing: 12,
+        childAspectRatio: 0.68,
+        children: items,
+      );
+    });
+
+  Widget _buildPresentsList(List<Map<String, dynamic>> docs, Map<String, List<Map<String, dynamic>>> groupes) {
+    if (_uid == null) return const Center(child: Text('Non connecté'));
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
+
+    final bebes = _presentsSubTab == 'bebes';
+    final visibles = bebes
+        ? (groupes.containsKey(_selectedPorteeId) ? [_selectedPorteeId] : groupes.keys.toList())
+        : const <String>[];
+    if ((bebes && visibles.isEmpty) || (!bebes && docs.isEmpty)) {
+      if (_rechercheOuFiltre) {
+        return _etatVide('Aucun animal ne correspond', 'Modifiez la recherche ou les filtres.', onReset: _resetPresents);
+      }
+      return _presentsSubTab == 'repro'
+          ? _etatVide('Aucun reproducteur', 'Ouvrez le menu d’un animal pour le marquer comme reproducteur.')
+          : bebes
+              ? _etatVide(_bebesCedes ? 'Aucun bébé cédé' : 'Aucun bébé présent',
+                  _bebesCedes ? '' : 'Les portées déjà parties se retrouvent dans Filtres › Bébés cédés.')
+              : _etatVide('Aucun animal présent', 'Ajoutez votre premier animal.',
+                  onReset: () => _showAddSheet(context), resetLabel: 'Ajouter un animal');
+    }
+
+    if (bebes) return _buildPorteeGroupedView(groupes, visibles);
+
+    return RefreshIndicator(
+      onRefresh: _loadAnimaux,
+      color: _teal,
+      child: _cartes((vertical) => [for (final d in docs) _carte(d, vertical: vertical)]),
+    );
+  }
+
+  Widget _buildPorteeGroupedView(Map<String, List<Map<String, dynamic>>> groups, List<String> visibleKeys) {
+    final fmt = DateFormat('dd/MM/yyyy');
+    return RefreshIndicator(
+      onRefresh: _loadAnimaux,
+      color: _teal,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        itemCount: visibleKeys.length + (_selectedPorteeId.isNotEmpty ? 1 : 0),
+        itemBuilder: (_, gi) {
+          if (gi == visibleKeys.length) {
+            return Align(alignment: Alignment.centerLeft, child: TextButton(
+              onPressed: () => setState(() => _selectedPorteeId = ''),
+              child: const Text('Afficher toutes les portées', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal))));
+          }
+          final pid     = visibleKeys[gi];
+          final members = groups[pid]!;
+          final first   = members.first;
+          final dn      = DateTime.tryParse(first['date_naissance'] as String? ?? '');
+          final race    = (first['race'] as String?) ?? '';
+          final espece  = (first['espece'] as String?) ?? '';
+          final meta = [
+            race.isNotEmpty ? race : speciesLabel(espece),
+            '${members.length} ${members.length > 1 ? 'chiots' : 'chiot'}',
+            if (dn != null) 'Nés le ${fmt.format(dn)}',
+          ].join(' · ');
+          return Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade300)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+                child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(_titrePortee(first), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 15, color: Color(0xFF1F2A2E))),
+                    const SizedBox(height: 2),
+                    Text(meta, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                  ])),
+                  if (_selectedPorteeId != pid)
+                    OutlinedButton(
+                      onPressed: () => setState(() => _selectedPorteeId = pid),
+                      style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                          minimumSize: const Size(0, 36), padding: const EdgeInsets.symmetric(horizontal: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                      child: const Text('Voir la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700)),
+                    ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Autres actions de la portée',
+                    icon: const Icon(Icons.more_horiz, color: Color(0xFF4B5A60)),
+                    onSelected: (v) async {
+                      switch (v) {
+                        case 'modifier':
+                          final ok = await PorteeEditSheet.show(context, members);
+                          if (ok && mounted) _loadAnimaux();
+                        case 'poids':
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => PorteePoidsPage(animals: members, dateNaissance: dn)));
+                        case 'soin':
+                          final ok = await PorteeSoinSheet.show(context, members);
+                          if (ok && mounted) _loadAnimaux();
+                        case 'annonce':
+                          _openAnnonceFromPortee(members);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      if (!_bebesCedes) const PopupMenuItem(value: 'modifier', child: Text('Modifier les informations de la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      const PopupMenuItem(value: 'poids', child: Text('Courbes de poids', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!_bebesCedes) const PopupMenuItem(value: 'soin', child: Text('Soin pour toute la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!_bebesCedes) const PopupMenuItem(value: 'annonce', child: Text('Créer une annonce', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                    ],
                   ),
-                  if (race.isNotEmpty)
-                    Text(race,
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                            color: Color(0xFF5F9EAA))),
-                  if (dn != null)
-                    Text('Nés le ${fmt.format(dn)}',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                            color: Color(0xFF5F9EAA))),
                 ]),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _teal.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text('${members.length}',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 13, color: _teal)),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () async {
-                  final ok = await PorteeEditSheet.show(context, members);
-                  if (ok && mounted) _loadAnimaux();
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: _teal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _teal.withOpacity(0.3)),
-                  ),
-                  child: const Icon(Icons.edit_outlined, size: 18, color: _teal),
-                ),
-              ),
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => PorteePoidsPage(
-                    animals: members,
-                    dateNaissance: dn,
-                  ),
-                )),
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: _teal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.bar_chart, size: 18, color: _teal),
-                ),
-              ),
-              const SizedBox(width: 4),
-              // Soin portée complète
-              GestureDetector(
-                onTap: () async {
-                  final ok = await PorteeSoinSheet.show(context, members);
-                  if (ok && mounted) _loadAnimaux();
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF8E1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFFFCA28).withOpacity(0.4)),
-                  ),
-                  child: const Icon(Icons.medical_services_outlined, size: 18, color: Color(0xFFF57F17)),
-                ),
-              ),
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: () => _openAnnonceFromPortee(members),
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: _green.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.campaign_outlined, size: 18, color: _green),
-                ),
-              ),
+              Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+              _cartes((vertical) => [for (final d in members) _carte(d, vertical: vertical, isBebe: d['reproducteur'] != true)],
+                  scrollable: false, padding: const EdgeInsets.all(10)),
             ]),
-          ),
-          // Grille animaux de la portée
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.68,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: members.length,
-            itemBuilder: (_, i) {
-              final data = members[i];
-              final id = data['id'] as String? ?? '';
-              // Vendu/cédé (filtre « Cédés ») : plus le sien, la carte reste
-              // visible — l'éleveur garde l'historique (dont la courbe de
-              // poids saisie lui-même), mais ne peut plus le modifier.
-              final cede = (data['statut'] as String? ?? '') == 'sorti';
-              return _AnimalCard(
-                id: id,
-                data: data,
-                showPorteeBadge: true,
-                showStatut: cede,
-                reproducteur: data['reproducteur'] == true,
-                isRetraite: data['is_retraite'] == true,
-                chaleurFlag:  _chaleurFlags[id]  ?? false,
-                gestanteFlag: _gestanteFlags[id] ?? false,
-                selectMode: _selectMode,
-                selected: _selectedIds.contains(id),
-                onTap: _selectMode
-                    ? () => setState(() {
-                        if (_selectedIds.contains(id)) _selectedIds.remove(id);
-                        else _selectedIds.add(id);
-                      })
-                    : () => _openFiche(context, id, data: data),
-                onDelete: cede || id.isEmpty ? null : () => _deleteAnimal(id),
-                onToggleReproducteur: cede || id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
-                onToggleRetraite: cede || id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
-                reproPublic: data['reproducteur_public'] == true,
-                onToggleReproPublic: cede || id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
-              );
-            },
-          ),
-        ]);
+          );
         },
       ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -1683,40 +1517,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   Widget _buildAnciensTab() {
     return Column(children: [
-      _buildSearchField(),
-      if (_anciensFilterCount > 0) _buildAnciensFiltersRow(),
+      _barre(filtres: _anciensFilterCount),
+      Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
       Expanded(child: _buildAnciensList()),
     ]);
-  }
-
-  Widget _buildAnciensFiltersRow() {
-    final fmt = DateFormat('dd/MM/yy');
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          if (_anciensEspece != 'tous')
-            _ActiveChip(
-              label: speciesLabel(_anciensEspece),
-              color: speciesColor(_anciensEspece),
-              onRemove: () => setState(() => _anciensEspece = 'tous'),
-            ),
-          if (_anciensDtDebut != null || _anciensDtFin != null) ...[
-            const SizedBox(width: 6),
-            _ActiveChip(
-              label: [
-                if (_anciensDtDebut != null) 'Du ${fmt.format(_anciensDtDebut!)}',
-                if (_anciensDtFin != null) 'au ${fmt.format(_anciensDtFin!)}',
-              ].join(' '),
-              color: const Color(0xFF5F9EAA),
-              onRemove: () => setState(() { _anciensDtDebut = null; _anciensDtFin = null; }),
-            ),
-          ],
-        ]),
-      ),
-    );
   }
 
   Widget _buildAnciensList() {
@@ -1757,8 +1561,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (docs.isEmpty) {
       return Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.history, size: 56, color: Colors.grey.shade300),
-          const SizedBox(height: 12),
           Text(
             _anciensFilterCount > 0
                 ? 'Aucun animal cédé\ncorrespondant aux filtres'
@@ -1784,29 +1586,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     return RefreshIndicator(
       onRefresh: _loadAnimaux,
       color: _green,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.68,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: docs.length,
-        itemBuilder: (_, i) {
-          final data = docs[i];
-          final id = data['id'] as String? ?? '';
-          return _AnimalCard(
-            id: id,
+      child: _cartes((vertical) => [
+        for (final data in docs)
+          _AnimalCard(
+            id: data['id'] as String? ?? '',
             data: data,
-            showStatut: true,
-            chaleurFlag:  _chaleurFlags[id]  ?? false,
-            gestanteFlag: _gestanteFlags[id] ?? false,
-            onTap: () => _openFiche(context, id, data: data),
-            onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
-          );
-        },
-      ),
+            vertical: vertical,
+            onTap: () => _openFiche(context, data['id'] as String?, data: data),
+            onDelete: (data['id'] as String? ?? '').isEmpty ? null : () => _deleteAnimal(data['id'] as String),
+          ),
+      ]),
     );
   }
 
@@ -1814,40 +1603,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   Widget _buildDecedesTab() {
     return Column(children: [
-      _buildSearchField(),
-      if (_decedesFilterCount > 0) _buildDecedesFiltersRow(),
+      _barre(filtres: _decedesFilterCount),
+      Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
       Expanded(child: _buildDecedesList()),
     ]);
-  }
-
-  Widget _buildDecedesFiltersRow() {
-    final fmt = DateFormat('dd/MM/yy');
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          if (_decedesEspece != 'tous')
-            _ActiveChip(
-              label: speciesLabel(_decedesEspece),
-              color: speciesColor(_decedesEspece),
-              onRemove: () => setState(() => _decedesEspece = 'tous'),
-            ),
-          if (_decedesDtDebut != null || _decedesDtFin != null) ...[
-            if (_decedesEspece != 'tous') const SizedBox(width: 6),
-            _ActiveChip(
-              label: [
-                if (_decedesDtDebut != null) 'Du ${fmt.format(_decedesDtDebut!)}',
-                if (_decedesDtFin != null) 'au ${fmt.format(_decedesDtFin!)}',
-              ].join(' '),
-              color: const Color(0xFF5F9EAA),
-              onRemove: () => setState(() { _decedesDtDebut = null; _decedesDtFin = null; }),
-            ),
-          ],
-        ]),
-      ),
-    );
   }
 
   Widget _buildDecedesList() {
@@ -1883,8 +1642,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (docs.isEmpty) {
       return Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.pets_outlined, size: 56, color: Colors.grey.shade300),
-          const SizedBox(height: 12),
           Text(
             _decedesFilterCount > 0
                 ? 'Aucun animal décédé\ncorrespondant aux filtres'
@@ -1910,29 +1667,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     return RefreshIndicator(
       onRefresh: _loadAnimaux,
       color: _green,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(16),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.68,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemCount: docs.length,
-        itemBuilder: (_, i) {
-          final data = docs[i];
-          final id = data['id'] as String? ?? '';
-          return _AnimalCard(
-            id: id,
+      child: _cartes((vertical) => [
+        for (final data in docs)
+          _AnimalCard(
+            id: data['id'] as String? ?? '',
             data: data,
-            showStatut: true,
-            chaleurFlag:  false,
-            gestanteFlag: false,
-            onTap: () => _openFiche(context, id, data: data),
-            onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
-          );
-        },
-      ),
+            vertical: vertical,
+            onTap: () => _openFiche(context, data['id'] as String?, data: data),
+            onDelete: (data['id'] as String? ?? '').isEmpty ? null : () => _deleteAnimal(data['id'] as String),
+          ),
+      ]),
     );
   }
 
@@ -2014,7 +1758,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     decoration: BoxDecoration(
                       color: active ? sp.color : Colors.transparent,
                       border: Border.all(color: active ? sp.color : Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (sp.value != 'tous') ...[
@@ -2203,8 +1947,11 @@ class _AnimalCard extends StatelessWidget {
   final VoidCallback? onToggleReproducteur;
   final VoidCallback? onToggleRetraite;
   final VoidCallback? onToggleReproPublic;
-  final bool showStatut;
-  final bool showPorteeBadge;
+  /// Grille (tablette) : photo en haut ; liste (mobile) : photo à gauche.
+  final bool vertical;
+  /// Chiot d'une portée : statut « Disponible » au lieu de « Présent ».
+  final bool isBebe;
+  final bool peutAjouterPhoto;
   final bool reproducteur;
   final bool reproPublic;
   final bool isRetraite;
@@ -2220,8 +1967,9 @@ class _AnimalCard extends StatelessWidget {
     this.onToggleReproducteur,
     this.onToggleRetraite,
     this.onToggleReproPublic,
-    this.showStatut = false,
-    this.showPorteeBadge = false,
+    this.vertical = false,
+    this.isBebe = false,
+    this.peutAjouterPhoto = false,
     this.reproducteur = false,
     this.reproPublic = false,
     this.isRetraite = false,
@@ -2231,6 +1979,91 @@ class _AnimalCard extends StatelessWidget {
     this.selected = false,
   });
 
+  static const _dark = Color(0xFF1F2A2E);
+
+  /// Présence (présent / cédé / décédé) distincte de la réservation.
+  (String, Color) get _etat {
+    final statut = data['statut'] as String? ?? '';
+    return switch (statut) {
+      'decede' => ('Décédé', const Color(0xFFE25C5C)),
+      'sorti' => ('Cédé', const Color(0xFF0C5C6C)),
+      'en_attente_cession' || 'cession_en_cours' => ('Cession en cours', const Color(0xFFF59E0B)),
+      'reserve' => ('Réservé', const Color(0xFFD97706)),
+      _ => (isBebe ? 'Disponible' : 'Présent', const Color(0xFF6E9E57)),
+    };
+  }
+
+  bool get _aDesActions => !selectMode && (onDelete != null || onToggleReproducteur != null || onToggleRetraite != null);
+
+  void _menu(BuildContext context) {
+    final nom = data['nom'] as String? ?? 'Sans nom';
+    Widget item(String label, VoidCallback action, {bool danger = false}) => ListTile(
+      title: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+          color: danger ? Colors.redAccent : _dark, fontWeight: danger ? FontWeight.w600 : FontWeight.normal)),
+      onTap: () { Navigator.pop(context); action(); },
+    );
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark))),
+          item('Ouvrir la fiche', onTap),
+          if (onToggleReproducteur != null)
+            item(reproducteur ? 'Retirer des reproducteurs' : 'Marquer comme reproducteur', onToggleReproducteur!),
+          if (onToggleReproPublic != null && reproducteur)
+            item(reproPublic ? 'Masquer du profil public' : 'Afficher sur mon profil public', onToggleReproPublic!),
+          if (onToggleRetraite != null)
+            item(isRetraite ? 'Annuler la retraite' : 'Mettre en retraite', onToggleRetraite!),
+          if (onDelete != null)
+            item('Supprimer la fiche', () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text('Supprimer cet animal ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  content: Text('La fiche de $nom sera définitivement supprimée.', style: const TextStyle(fontFamily: 'Galey')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+                    TextButton(onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent, fontWeight: FontWeight.w700))),
+                  ],
+                ),
+              );
+              if (confirm == true) onDelete!();
+            }, danger: true),
+        ]),
+      )),
+    );
+  }
+
+  /// Emplacement photo neutre (absente ou en erreur de chargement), même cadre.
+  Widget _photo(String? url) {
+    final vide = Container(
+      color: const Color(0xFFEDF2F2),
+      alignment: Alignment.center,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.image_outlined, size: 26, color: Color(0xFF8B9FA1)),
+        if (peutAjouterPhoto && vertical) ...[
+          const SizedBox(height: 4),
+          const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+              fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+        ],
+      ]),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: url == null || url.isEmpty ? vide
+          : CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: const Color(0xFFEDF2F2)),
+              errorWidget: (_, __, ___) => vide),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final photoUrl = data['photo_url'] as String?;
@@ -2238,357 +2071,105 @@ class _AnimalCard extends StatelessWidget {
     final espece = data['espece'] as String? ?? '';
     final race   = data['race']   as String? ?? '';
     final sexe   = data['sexe']   as String? ?? '';
+    final ident  = (data['identification'] as String? ?? '').trim();
     final statut = data['statut'] as String? ?? '';
-    final color  = speciesColor(espece);
+    final (etatLabel, etatColor) = _etat;
+    final ligne1 = [
+      if (sexe == 'male') 'Mâle' else if (sexe == 'femelle') 'Femelle',
+      race.isNotEmpty ? race : speciesLabel(espece),
+    ].join(' · ');
+    final ligne2 = ident.isNotEmpty ? 'Puce $ident' : 'Identification non renseignée';
+    final reperes = <(String, Color)>[
+      if (reproducteur) ('Reproducteur', const Color(0xFF0C5C6C)),
+      if (reproducteur && reproPublic) ('Profil public', const Color(0xFF0C5C6C)),
+      if (isRetraite) ('Retraité', const Color(0xFFB45309)),
+      if (gestanteFlag) ('Gestante', const Color(0xFF6E9E57)),
+      if (chaleurFlag) ('En chaleur', const Color(0xFFDB2777)),
+    ];
 
-    return GestureDetector(
-      onTap: onTap,
-      onLongPress: selectMode || (onDelete == null && onToggleReproducteur == null) ? null : () {
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: Colors.transparent,
-          builder: (_) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 40, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 14),
-              Text(nom, style: const TextStyle(fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-              const SizedBox(height: 6),
-              const Divider(),
-              if (onToggleReproducteur != null)
-                ListTile(
-                  leading: Icon(Icons.star,
-                      color: reproducteur ? Colors.amber : Colors.grey.shade400),
-                  title: Text(
-                    reproducteur ? 'Retirer reproducteur' : 'Marquer reproducteur',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onToggleReproducteur!();
-                  },
-                ),
-              if (onToggleReproPublic != null && reproducteur)
-                ListTile(
-                  leading: Icon(
-                      reproPublic ? Icons.visibility : Icons.visibility_off_outlined,
-                      color: reproPublic ? const Color(0xFF0C5C6C) : Colors.grey.shade400),
-                  title: Text(
-                    reproPublic
-                        ? 'Masquer du profil public'
-                        : 'Afficher sur mon profil public',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
-                  ),
-                  subtitle: const Text('Visible par les visiteurs de votre élevage',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onToggleReproPublic!();
-                  },
-                ),
-              if (onToggleRetraite != null)
-                ListTile(
-                  leading: Icon(Icons.elderly,
-                      color: isRetraite ? const Color(0xFFB45309) : Colors.grey.shade400),
-                  title: Text(
-                    isRetraite ? 'Annuler la retraite' : 'Mettre en retraite',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
-                  ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    onToggleRetraite!();
-                  },
-                ),
-              if (onDelete != null)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                  title: const Text('Supprimer',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 15,
-                          color: Colors.redAccent)),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16)),
-                        title: const Text('Supprimer cet animal ?',
-                            style: TextStyle(fontFamily: 'Galey',
-                                fontWeight: FontWeight.w700)),
-                        content: Text(
-                            'La fiche de $nom sera définitivement supprimée.',
-                            style: const TextStyle(fontFamily: 'Galey')),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Annuler',
-                                style: TextStyle(fontFamily: 'Galey')),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(ctx, true),
-                            child: const Text('Supprimer',
-                                style: TextStyle(fontFamily: 'Galey',
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.w700)),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (confirm == true) onDelete!();
-                  },
-                ),
+    final infos = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Text(nom, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark))),
+        const SizedBox(width: 6),
+        Container(width: 6, height: 6, margin: const EdgeInsets.only(top: 6),
+            decoration: BoxDecoration(color: etatColor, shape: BoxShape.circle)),
+        const SizedBox(width: 4),
+        Text(etatLabel, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: etatColor)),
+      ]),
+      const SizedBox(height: 3),
+      Text(ligne1, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+      Text(ligne2, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+      if (reperes.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Wrap(spacing: 8, runSpacing: 2, children: [
+          for (final r in reperes)
+            Text(r.$1, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: r.$2)),
+        ]),
+      ],
+    ]);
+
+    final actions = Row(mainAxisSize: MainAxisSize.min, children: [
+      if (statut == 'sorti')
+        SizedBox(width: 36, height: 36, child: Center(child: ContactAcquereurButton(animal: data, size: 18))),
+      if (_aDesActions)
+        IconButton(
+          tooltip: 'Autres actions',
+          icon: const Icon(Icons.more_horiz, color: Color(0xFF4B5A60)),
+          onPressed: () => _menu(context),
+          visualDensity: VisualDensity.compact,
+        )
+      else if (!selectMode && !vertical)
+        const Icon(Icons.chevron_right, color: Color(0xFFB0B8BB)),
+    ]);
+
+    final caseSelection = Container(
+      width: 22, height: 22,
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFF0C5C6C) : Colors.white,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade400, width: 1.5),
+      ),
+      child: selected ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
+    );
+
+    final contenu = vertical
+        ? Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              AspectRatio(aspectRatio: 4 / 3, child: Stack(fit: StackFit.expand, children: [
+                _photo(photoUrl),
+                if (selectMode) Positioned(top: 6, left: 6, child: caseSelection),
+              ])),
+              const SizedBox(height: 8),
+              Expanded(child: infos),
+              Align(alignment: Alignment.centerRight, child: actions),
             ]),
-          ),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 3))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: AspectRatio(
-                aspectRatio: 1.0,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    photoUrl != null
-                        ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover)
-                        : Container(
-                            color: color.withOpacity(0.12),
-                            child: Center(child: speciesIcon(espece, 44, color)),
-                          ),
-                    if (statut == 'cession_en_cours')
-                      Positioned(
-                        top: 6, right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF8F00),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('⏳ Cession',
-                              style: TextStyle(color: Colors.white, fontSize: 9,
-                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                    // Sur les cartes « Bébés » (showPorteeBadge), le badge Réservé est
-                    // affiché juste à côté du badge Portée (en haut à gauche) plutôt
-                    // qu'ici, pour que les deux se voient d'un coup d'œil ensemble.
-                    if (statut == 'reserve' && !showPorteeBadge)
-                      Positioned(
-                        top: 6, right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFD97706),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('🔖 Réservé',
-                              style: TextStyle(color: Colors.white, fontSize: 9,
-                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                    if (showStatut && (statut == 'sorti' || statut == 'decede'))
-                      Positioned(
-                        top: 6, right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: statut == 'decede' ? Colors.redAccent : const Color(0xFF0C5C6C),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            statut == 'decede' ? 'Décédé' : 'Sorti',
-                            style: const TextStyle(color: Colors.white, fontSize: 9,
-                                fontFamily: 'Galey', fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ),
-                    if (!showStatut && reproducteur)
-                      Positioned(
-                        top: 6, right: 6,
-                        child: Row(children: [
-                          if (reproPublic)
-                            Container(
-                              margin: const EdgeInsets.only(right: 4),
-                              padding: const EdgeInsets.all(3),
-                              decoration: const BoxDecoration(
-                                color: Color(0xE60C5C6C),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.visibility, size: 11, color: Colors.white),
-                            ),
-                          Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.92),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.star, size: 11, color: Colors.white),
-                          ),
-                        ]),
-                      ),
-                    if (isRetraite)
-                      Positioned(
-                        top: 6, left: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFB45309).withOpacity(0.9),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('Retraite',
-                              style: TextStyle(color: Colors.white, fontSize: 8,
-                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                    if (showPorteeBadge && (data['portee_id'] as String? ?? '').isNotEmpty)
-                      Positioned(
-                        top: 6, left: 6,
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0C5C6C).withOpacity(0.85),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.diversity_3, size: 8, color: Colors.white),
-                              SizedBox(width: 3),
-                              Text('Portée', style: TextStyle(color: Colors.white, fontSize: 8,
-                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                            ]),
-                          ),
-                          if (statut == 'reserve') ...[
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFD97706).withOpacity(0.92),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.bookmark, size: 8, color: Colors.white),
-                                SizedBox(width: 3),
-                                Text('Réservé', style: TextStyle(color: Colors.white, fontSize: 8,
-                                    fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                              ]),
-                            ),
-                          ],
-                        ]),
-                      ),
-                    if (selectMode)
-                      Positioned.fill(
-                        child: Container(
-                          color: selected
-                              ? const Color(0xFF0C5C6C).withOpacity(0.18)
-                              : Colors.transparent,
-                        ),
-                      ),
-                    if (selectMode)
-                      Positioned(
-                        top: 6, left: 6,
-                        child: Container(
-                          width: 22, height: 22,
-                          decoration: BoxDecoration(
-                            color: selected ? const Color(0xFF0C5C6C) : Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                                color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade400,
-                                width: 2),
-                          ),
-                          child: selected
-                              ? const Icon(Icons.check, size: 13, color: Colors.white)
-                              : null,
-                        ),
-                      ),
-                    if (gestanteFlag || chaleurFlag)
-                      Positioned(
-                        bottom: 6, left: 6,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (gestanteFlag)
-                              Container(
-                                margin: const EdgeInsets.only(bottom: 2),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF6E9E57).withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('🤰 Gestante',
-                                    style: TextStyle(color: Colors.white, fontSize: 8,
-                                        fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                              ),
-                            if (chaleurFlag)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.pink.shade400.withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('🌸 Chaleurs',
-                                    style: TextStyle(color: Colors.white, fontSize: 8,
-                                        fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                              ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(nom,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 14, color: Color(0xFF1F2A2E)),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (race.isNotEmpty)
-                  Text(race,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B)),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 5),
-                Row(children: [
-                  _Chip(speciesLabel(espece), color),
-                  if (sexe.isNotEmpty) ...[
-                    const SizedBox(width: 4),
-                    _Chip(sexe == 'male' ? '♂' : '♀', const Color(0xFF5F9EAA)),
-                  ],
-                  if (showStatut && statut == 'sorti') ...[
-                    const Spacer(),
-                    // Le bouton fait 32 px de haut minimum : sans plafond, il
-                    // agrandissait la ligne des chips et la carte débordait
-                    // (« BOTTOM OVERFLOWED BY 13 PIXELS » sur les cédés).
-                    SizedBox(
-                      width: 24, height: 18,
-                      child: OverflowBox(
-                        maxWidth: 32, maxHeight: 32,
-                        child: ContactAcquereurButton(animal: data, size: 16),
-                      ),
-                    ),
-                  ],
-                ]),
-              ]),
-            ),
-          ],
-        ),
+          )
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+            child: Row(children: [
+              if (selectMode) ...[caseSelection, const SizedBox(width: 10)],
+              SizedBox(width: 72, height: 72, child: _photo(photoUrl)),
+              const SizedBox(width: 12),
+              Expanded(child: infos),
+              actions,
+            ]),
+          );
+
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: selected ? const Color(0xFF0C5C6C) : Colors.grey.shade300, width: selected ? 1.5 : 1),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: _aDesActions ? () => _menu(context) : null,
+        child: contenu,
       ),
     );
   }
@@ -2596,23 +2177,6 @@ class _AnimalCard extends StatelessWidget {
 
 // ─── Widgets helpers ──────────────────────────────────────────────────────────
 
-class _Chip extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _Chip(this.label, this.color);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-          color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-      child: Text(label,
-          style: TextStyle(fontSize: 10, color: color,
-              fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-    );
-  }
-}
 
 class _SexeChip extends StatelessWidget {
   final String label;
@@ -2690,30 +2254,3 @@ class _AddOptionTile extends StatelessWidget {
   }
 }
 
-class _ActiveChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onRemove;
-  const _ActiveChip({required this.label, required this.color, required this.onRemove});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        border: Border.all(color: color.withOpacity(0.4)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-            color: color, fontWeight: FontWeight.w600)),
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: onRemove,
-          child: Icon(Icons.close, size: 13, color: color),
-        ),
-      ]),
-    );
-  }
-}

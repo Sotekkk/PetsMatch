@@ -2505,6 +2505,7 @@ class _IdentiteTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _photoSection(),
+                Center(child: _photoAide()),
                 const SizedBox(height: 12),
                 _card([_field('Description', s._descriptionCtrl, maxLines: 4)]),
                 const SizedBox(height: 16),
@@ -3001,20 +3002,37 @@ class _IdentiteTab extends StatelessWidget {
                         ? Image.file(s._photoFile!, fit: BoxFit.cover, width: 140, height: 140)
                         : CachedNetworkImage(imageUrl: s._photoUrl!, fit: BoxFit.cover, width: 140, height: 140))
                     : Container(
-                        color: const Color(0xFFEEF5EA),
-                        child: Center(child: speciesIcon(s._espece, 52, const Color(0xFF6E9E57))),
+                        color: const Color(0xFFEDF2F2),
+                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          const Icon(Icons.photo_camera_outlined, size: 32, color: Color(0xFF8B9FA1)),
+                          if (s._editing) ...[
+                            const SizedBox(height: 6),
+                            const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+                          ],
+                        ]),
                       ),
               ),
             ),
-            if (s._editing)
+            if (s._editing && hasPhoto)
               Positioned(bottom: 6, right: 6,
-                child: CircleAvatar(radius: 14, backgroundColor: const Color(0xFF6E9E57),
-                    child: const Icon(Icons.camera_alt, size: 14, color: Colors.white))),
+                child: CircleAvatar(radius: 14, backgroundColor: const Color(0xFF0C5C6C),
+                    child: const Icon(Icons.photo_camera_outlined, size: 14, color: Colors.white))),
           ],
         ),
       ),
     );
   }
+
+  /// Formats réellement pris en charge par le sélecteur (recadrage + compression).
+  Widget _photoAide() => s._editing
+      ? Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text('JPG, PNG ou HEIC. La photo est recadrée puis compressée automatiquement.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        )
+      : const SizedBox.shrink();
 
   Widget _especeDropdown(BuildContext context) {
     return DropdownButtonFormField<String>(
@@ -5083,7 +5101,7 @@ class _ReproListState extends State<_ReproList> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Gestation confirmée ✓  ·  Agenda mis à jour'),
+            content: Text('Gestation confirmée · agenda mis à jour'),
             backgroundColor: Color(0xFF6E9E57)));
       }
     } catch (e) {
@@ -5529,8 +5547,8 @@ class _SanteListState extends State<_SanteList> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Text(
               widget.writeRequested
-                  ? '🔒 Lecture seule — demande d\'accès en écriture envoyée, en attente d\'autorisation du propriétaire.'
-                  : '🔒 Lecture seule — le propriétaire n\'a pas autorisé l\'ajout/la suppression d\'entrées ici.',
+                  ? 'Lecture seule — demande d\'accès en écriture envoyée, en attente d\'autorisation du propriétaire.'
+                  : 'Lecture seule — le propriétaire n\'a pas autorisé l\'ajout/la suppression d\'entrées ici.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.amber.shade900),
             ),
           ),
@@ -5691,7 +5709,7 @@ class _SimpleCard extends StatelessWidget {
                 border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
               ),
               child: Text(
-                confirmee ? '✓ Gestation confirmée' : '⏳ Gestation à confirmer',
+                confirmee ? 'Gestation confirmée' : 'Gestation à confirmer',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
                     color: confirmee ? const Color(0xFF4A7A3A) : const Color(0xFF9E7000)),
               ),
@@ -5758,7 +5776,7 @@ class _SimpleCard extends StatelessWidget {
                     border: Border.all(color: confirmee ? const Color(0xFF6E9E57) : const Color(0xFFFFCC02)),
                   ),
                   child: Text(
-                    confirmee ? '✓ Confirmée' : 'À confirmer',
+                    confirmee ? 'Confirmée' : 'À confirmer',
                     style: TextStyle(
                       fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
                       color: confirmee ? const Color(0xFF4A7A3A) : const Color(0xFF9E7000),
@@ -6078,7 +6096,7 @@ class _SanteCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  vetName != null && vetName.isNotEmpty ? vetName : '🩺 Vétérinaire',
+                  vetName != null && vetName.isNotEmpty ? vetName : 'Vétérinaire',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 10,
                       fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C)),
                 ),
@@ -8624,8 +8642,6 @@ class _CycleSuspenduBanner extends StatelessWidget {
         border: Border.all(color: const Color(0xFF6E9E57)),
       ),
       child: Row(children: [
-        Icon(icon, color: const Color(0xFF4A7A3A), size: 20),
-        const SizedBox(width: 10),
         Expanded(child: Text(label,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12.5, color: Color(0xFF4A7A3A)))),
       ]),
@@ -9428,8 +9444,6 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
             border: Border.all(color: const Color(0xFF6E9E57), width: 0.6),
           ),
           child: Row(children: [
-            const Icon(Icons.child_friendly_outlined, size: 15, color: Color(0xFF4A7A3A)),
-            const SizedBox(width: 6),
             Expanded(child: Text(
               f.debut == f.fin
                   ? 'Mise-bas estimée : ${df.format(f.probable)}'
@@ -9817,8 +9831,6 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
                       border: Border.all(color: const Color(0xFF6E9E57), width: 0.6),
                     ),
                     child: Row(children: [
-                      const Icon(Icons.child_friendly_outlined, size: 15, color: Color(0xFF4A7A3A)),
-                      const SizedBox(width: 6),
                       Expanded(child: Text(
                         'Fenêtre : ${DateFormat('dd/MM/yyyy').format(_datePrevue!)} → ${DateFormat('dd/MM/yyyy').format(_datePrevueFin!)}\nDate la plus probable : ${DateFormat('dd/MM/yyyy').format(_dateProbable!)}',
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF4A7A3A), height: 1.35),
