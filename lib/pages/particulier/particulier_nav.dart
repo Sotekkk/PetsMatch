@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:PetsMatch/services/factures_non_vues.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/pages/particulier/particulier_home.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
@@ -59,6 +61,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
   void initState() {
     super.initState();
     _checkRoles();
+    FacturesNonVues.rafraichir();
   }
 
   Future<void> _checkRoles() async {
@@ -157,7 +160,10 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 _NavItem(
                   icon: Icons.menu, activeIcon: Icons.menu,
                   label: 'Menu', active: false,
-                  onTap: () => drawerKey.currentState?.openEndDrawer(),
+                  onTap: () {
+                    FacturesNonVues.rafraichir();
+                    drawerKey.currentState?.openEndDrawer();
+                  },
                 ),
               ],
             ),
@@ -261,6 +267,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 _DrawerSection(
                   icon: Icons.folder_outlined,
                   label: 'Administratif',
+                  badge: FacturesNonVues.compteur,
                   children: [
                     _DrawerSubItem(
                       label: 'Mes Contrats',
@@ -275,6 +282,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     _DrawerSubItem(
                       label: 'Mes Factures',
                       icon: Icons.receipt_long_outlined,
+                      badge: FacturesNonVues.compteur,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
@@ -604,10 +612,12 @@ class _DrawerSection extends StatefulWidget {
   final String label;
   final List<Widget> children;
   final bool initiallyExpanded;
+  /// Bulle rouge (ex. nouvelles factures) ; masquée à 0.
+  final ValueListenable<int>? badge;
 
   const _DrawerSection({
     required this.icon, required this.label, required this.children,
-    this.initiallyExpanded = false,
+    this.initiallyExpanded = false, this.badge,
   });
 
   @override
@@ -630,11 +640,14 @@ class _DrawerSectionState extends State<_DrawerSection> {
             leading: Icon(widget.icon, color: const Color(0xFF0C5C6C), size: 22),
             title: Text(widget.label,
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15)),
-            trailing: AnimatedRotation(
-              turns: _expanded ? 0.5 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF0C5C6C)),
-            ),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              if (widget.badge != null) _BulleRouge(widget.badge!),
+              AnimatedRotation(
+                turns: _expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF0C5C6C)),
+              ),
+            ]),
             onTap: () => setState(() => _expanded = !_expanded),
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20),
@@ -656,7 +669,8 @@ class _DrawerSubItem extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
-  const _DrawerSubItem({required this.label, required this.icon, required this.onTap});
+  final ValueListenable<int>? badge;
+  const _DrawerSubItem({required this.label, required this.icon, required this.onTap, this.badge});
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -665,12 +679,36 @@ class _DrawerSubItem extends StatelessWidget {
           children: [
             Icon(icon, color: const Color(0xFF6E9E57), size: 18),
             const SizedBox(width: 10),
-            Text(label,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E))),
+            Expanded(child: Text(label,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)))),
+            if (badge != null) _BulleRouge(badge!),
           ],
         ),
         onTap: onTap,
         dense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      );
+}
+
+/// Bulle rouge avec compteur, masquée à 0.
+class _BulleRouge extends StatelessWidget {
+  final ValueListenable<int> valeur;
+  const _BulleRouge(this.valeur);
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: valeur,
+        builder: (_, n, __) => n <= 0
+            ? const SizedBox.shrink()
+            : Container(
+                margin: const EdgeInsets.only(right: 6),
+                constraints: const BoxConstraints(minWidth: 18),
+                height: 18,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(9)),
+                child: Text('$n', style: const TextStyle(color: Colors.white, fontSize: 10.5,
+                    fontWeight: FontWeight.w700, fontFamily: 'Galey')),
+              ),
       );
 }

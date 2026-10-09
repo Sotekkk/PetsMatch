@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/factures_non_vues.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FactureDetailPage;
 
 /// « Mes Factures » côté particulier — factures REÇUES d'un pro (garde,
@@ -23,6 +24,8 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
   static const _dark = Color(0xFF1F2A2E);
 
   late Future<List<Map<String, dynamic>>> _future;
+  /// Dernière ouverture avant celle-ci : les factures plus récentes sont « nouvelles ».
+  String? _vuAvant;
 
   @override
   void initState() {
@@ -84,6 +87,7 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
     'conditionsEscompte': r['conditions_escompte'],
     'noteComplementaire': r['note_complementaire'],
     'statut':             r['statut'],
+    'createdAt':          r['created_at'],
   };
 
   static String numAff(Map<String, dynamic> d) {
@@ -98,6 +102,11 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
     if (uid == null) return [];
     final supa = Supabase.instance.client;
     final activePid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    // Première ouverture : retient la dernière visite puis efface la bulle rouge.
+    if (_vuAvant == null) {
+      _vuAvant = await FacturesNonVues.derniereVue();
+      FacturesNonVues.marquerVues();
+    }
 
     final rows = activePid != null
         ? await supa.from('factures').select()
@@ -108,6 +117,12 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
   }
 
   void _refresh() => setState(() => _future = _load());
+
+  bool _estNouvelle(Map<String, dynamic> d) {
+    final cree = DateTime.tryParse(d['createdAt']?.toString() ?? '');
+    final vu = DateTime.tryParse(_vuAvant ?? '');
+    return cree != null && vu != null && d['statut'] != 'annulee' && cree.isAfter(vu);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,7 +185,15 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
                       ),
                       const SizedBox(width: 14),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Facture n° ${numAff(d)}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
+                        Row(children: [
+                          Flexible(child: Text('Facture n° ${numAff(d)}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark))),
+                          if (_estNouvelle(d)) Container(
+                            margin: const EdgeInsets.only(left: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(8)),
+                            child: const Text('Nouvelle', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
+                          ),
+                        ]),
                         const SizedBox(height: 2),
                         Text(d['nomEmetteur'] ?? '', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                         Text(d['dateFacture'] ?? '', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),

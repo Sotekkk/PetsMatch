@@ -11,7 +11,8 @@ import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
-import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
+import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT, useActiveProfile } from '@/hooks/useActiveProfile';
+import { compterFacturesNonVues, FACTURES_VUES_EVENT } from '@/lib/factures-non-vues';
 import { apiFetch } from '@/lib/api-fetch';
 
 interface Notif {
@@ -991,6 +992,20 @@ export default function Header() {
   const [isBenevole, setIsBenevole] = useState(false);
   const [hasParticulierAnnonce, setHasParticulierAnnonce] = useState(false);
   const activeProfileId = authActiveId;
+  // Bulle rouge « nouvelle facture » (Administratif → Mes Factures) — même
+  // profil que /mes-factures (useActiveProfile).
+  const profilFactures = useActiveProfile();
+  const [facturesNonVues, setFacturesNonVues] = useState(0);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const uid = user.uid;
+    let actif = true;
+    const maj = () => { compterFacturesNonVues(uid, profilFactures).then(n => { if (actif) setFacturesNonVues(n); }); };
+    maj();
+    window.addEventListener(FACTURES_VUES_EVENT, maj);
+    const t = setInterval(maj, 120000);
+    return () => { actif = false; window.removeEventListener(FACTURES_VUES_EVENT, maj); clearInterval(t); };
+  }, [user?.uid, profilFactures]);
   const cachedProfileType: string | null =
     typeof window !== 'undefined' ? (localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) ?? null) : null;
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
@@ -1816,6 +1831,9 @@ export default function Header() {
                           className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
                           <span>{sec.icon}</span>
                           <span className="flex-1 text-left">{sec.section}</span>
+                          {(sec.items as { href: string }[]).some(i => i.href === '/mes-factures') && facturesNonVues > 0 && (
+                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
+                          )}
                           <svg className={`w-4 h-4 text-gray-400 transition-transform ${expandedSections[sec.section] ? 'rotate-180' : ''}`}
                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1864,7 +1882,10 @@ export default function Header() {
                                   onClick={() => setDropdownOpen(false)}
                                   className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors">
                                   <span className="text-base">{it.icon}</span>
-                                  {it.label}
+                                  <span className="flex-1">{it.label}</span>
+                                  {it.href === '/mes-factures' && facturesNonVues > 0 && (
+                                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
+                                  )}
                                 </Link>
                               );
                             })}
@@ -2002,6 +2023,9 @@ export default function Header() {
                     className="w-full flex items-center gap-2 py-2 text-white/80 text-sm font-semibold">
                     <span>{sec.icon}</span>
                     <span className="flex-1 text-left">{sec.section}</span>
+                    {(sec.items as { href: string }[]).some(i => i.href === '/mes-factures') && facturesNonVues > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
+                    )}
                     <svg className={`w-4 h-4 text-white/40 transition-transform ${expandedSections[sec.section] ? 'rotate-180' : ''}`}
                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -2040,7 +2064,10 @@ export default function Header() {
                         ) : (
                           <Link key={it.href} href={it.href} onClick={() => setMenuOpen(false)}
                             className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                            <span>{it.icon}</span> {it.label}
+                            <span>{it.icon}</span> <span className="flex-1">{it.label}</span>
+                            {it.href === '/mes-factures' && facturesNonVues > 0 && (
+                              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center mr-2">{facturesNonVues}</span>
+                            )}
                           </Link>
                         );
                       })}

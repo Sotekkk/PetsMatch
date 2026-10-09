@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { marquerFacturesVues } from '@/lib/factures-non-vues';
 
 interface FactureRow {
   id: string;
@@ -19,6 +20,7 @@ interface FactureRow {
   total_ttc: number | null;
   nom_emetteur: string | null;
   statut: string | null;
+  created_at: string | null;
 }
 
 const STATUT: Record<string, { label: string; cls: string }> = {
@@ -33,6 +35,9 @@ export default function MesFacturesPage() {
   const router = useRouter();
   const [factures, setFactures] = useState<FactureRow[]>([]);
   const [fetching, setFetching] = useState(true);
+  // Dernière ouverture avant celle-ci : les factures plus récentes sont « nouvelles ».
+  const [vuAvant, setVuAvant] = useState<string | null>(null);
+  const [il30j] = useState(() => new Date(Date.now() - 30 * 86400000).toISOString());
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -40,14 +45,19 @@ export default function MesFacturesPage() {
 
   useEffect(() => {
     if (!user?.uid) return;
-    const cols = 'id, token, numero_facture, numero_affichage, date_facture, total_ttc, nom_emetteur, statut';
-    const q = supabase.from('factures').select(cols);
-    (activePid ? q.eq('client_profile_id', activePid) : q.eq('client_uid', user.uid))
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setFactures((data ?? []) as FactureRow[]);
-        setFetching(false);
-      });
+    const uid = user.uid;
+    const cols = 'id, token, numero_facture, numero_affichage, date_facture, total_ttc, nom_emetteur, statut, created_at';
+    (async () => {
+      const { data: vu } = await supabase.from('factures_vues').select('vu_le').eq('cle', activePid || uid).maybeSingle();
+      setVuAvant((vu as { vu_le: string } | null)?.vu_le ?? null);
+      const q = supabase.from('factures').select(cols);
+      const { data } = await (activePid ? q.eq('client_profile_id', activePid) : q.eq('client_uid', uid))
+        .order('created_at', { ascending: false });
+      setFactures((data ?? []) as FactureRow[]);
+      setFetching(false);
+      // Ouverture de « Mes Factures » : la bulle rouge du menu disparaît.
+      marquerFacturesVues(uid, activePid);
+    })();
   }, [user?.uid, activePid]);
 
   if (loading || fetching) return (
@@ -74,11 +84,15 @@ export default function MesFacturesPage() {
             const st = STATUT[f.statut ?? 'emise'] ?? STATUT.emise;
             const num = f.numero_affichage?.trim() || (f.numero_facture != null ? String(f.numero_facture) : '—');
             const date = f.date_facture ? new Date(f.date_facture).toLocaleDateString('fr-FR') : '';
+            const nouvelle = !!f.created_at && f.statut !== 'annulee' && f.created_at > (vuAvant ?? il30j);
             const contenu = (
               <div className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm flex items-center gap-4 hover:border-teal-200 transition-colors">
                 <div className="w-11 h-11 rounded-xl bg-[#EEF5EA] flex items-center justify-center text-xl shrink-0">🧾</div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[#1F2A2E] text-sm">Facture n° {num}</p>
+                  <p className="font-semibold text-[#1F2A2E] text-sm flex items-center gap-2">
+                    Facture n° {num}
+                    {nouvelle && <span className="text-[10px] font-bold text-white bg-red-500 rounded-full px-2 py-0.5">Nouvelle</span>}
+                  </p>
                   {f.nom_emetteur && <p className="text-xs text-gray-500 truncate">{f.nom_emetteur}</p>}
                   {date && <p className="text-xs text-gray-400">{date}</p>}
                 </div>
