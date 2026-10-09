@@ -573,6 +573,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     const labels = {
       'consultation': 'Consultation',
       'seance': 'Séance de suivi',
+      'deplacement': 'Supplément déplacement',
       'autre': 'Autre prestation',
     };
     final out = <(String, String)>[];

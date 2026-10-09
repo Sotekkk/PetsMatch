@@ -1144,6 +1144,7 @@ function ProDetailContent() {
   const SANTE_TARIF_LABELS: Record<string, string> = {
     consultation: 'Consultation',
     seance: 'Séance de suivi',
+    deplacement: 'Supplément déplacement',
     autre: 'Autre prestation',
   };
   const santeTarifs: { label: string; prix: string }[] =

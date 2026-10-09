@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_action_step.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
@@ -30,15 +31,15 @@ final List<OnboardingStepDef> _steps = [
   ),
   OnboardingStepDef(
     key: 'seances',
-    label: 'Séances',
+    label: 'Créneaux',
     builder: (context, {required profileId, required onNext, required onSkip}) => OnboardingActionStep(
-      icon: Icons.checklist_outlined,
+      icon: Icons.event_available_outlined,
       color: OnboardingTheme.green,
-      title: 'Vos séances',
-      description: 'Consultation initiale (bilan), séance de suivi, à domicile ou en cabinet '
-          '— indiquez une durée et un tarif pour chacune, elles serviront à calculer vos créneaux disponibles.',
-      primaryLabel: 'Configurer mes séances →',
-      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
+      title: 'Vos créneaux',
+      description: 'Ouvrez vos plages de disponibilité : vos clients réservent directement en ligne. '
+          'Les durées et tarifs de vos séances (bilan, suivi, déplacement) se règlent dans votre profil.',
+      primaryLabel: 'Créer mes créneaux →',
+      pageBuilder: (_) => const ProAgendaPage(initialTabIndex: 3),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',

@@ -1,5 +1,6 @@
 'use client';
 
+import { useProfessionPlanCode, vetFormuleOk } from '@/lib/use-plan';
 import { TARIFS_VETO_GROUPES } from '@/lib/tarifs-veto';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
@@ -782,6 +783,7 @@ const PRESTATIONS_EDUCATION = [
 const PRESTATIONS_SANTE = [
   { value: 'consultation', label: 'Consultation' },
   { value: 'seance', label: 'Séance de suivi' },
+  { value: 'deplacement', label: 'Supplément déplacement' },
   { value: 'autre', label: 'Autre prestation' },
 ];
 
@@ -1251,6 +1253,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       ...((data?.profile_type ?? data?.cat_pro) === 'sante'
         ? {
             tarifs_sante: tarifsSante,
+            se_deplace: seDeplace,
             tarifs_sante_visibles: tarifsSanteVisibles,
             tarifs_sante_extra: tarifsSanteExtra
               .filter(e => e.label.trim())
@@ -1509,7 +1512,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Field>
           {/* Vétérinaire : tous ne se déplacent pas — sans visites à domicile,
               pas de rayon (cabinet seul). Miroir appli. */}
-          {catPro === 'veterinaire' && (
+          {(catPro === 'veterinaire' || catPro === 'sante') && (
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1">
                 <p className="text-sm font-medium text-[#1F2A2E]">🚗 Je me déplace à domicile</p>
@@ -1524,7 +1527,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             </div>
           )}
           {(['garde', 'toilettage', 'education', 'photographe', 'marechal_ferrant', 'taxi_animalier'].includes(catPro)
-            || (catPro === 'veterinaire' && seDeplace)) && (
+            || ((catPro === 'veterinaire' || catPro === 'sante') && seDeplace)) && (
             <div>
               <label className="text-xs font-medium text-gray-500 block mb-1">
                 Rayon d&apos;intervention : {rayon} km
@@ -1763,7 +1766,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {PRESTATIONS_SANTE.map(({ value, label }) => (
+              {PRESTATIONS_SANTE.filter(p => p.value !== 'deplacement' || seDeplace).map(({ value, label }) => (
                 <div key={value}>
                   <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
                   <input type="number" min={0} step={1}
@@ -2191,6 +2194,12 @@ export default function ProfilPage() {
   const { loaded: activeProfileLoaded, id: activeProfileId } = useActiveProfileState();
   // Type du profil secondaire actif (null = en cours de résolution)
   const [resolvedType, setResolvedType] = useState<string | null>(null);
+  // Équipe incluse dans la formule (véto : dès Avancé ; santé : Pro).
+  const metierEquipe = resolvedType ?? userData?.catPro ?? '';
+  const { planCode: planMetier } = useProfessionPlanCode(metierEquipe === 'veterinaire' || metierEquipe === 'sante' ? metierEquipe : '');
+  const equipeIncluse = metierEquipe === 'veterinaire' ? vetFormuleOk(planMetier, 'avance')
+    : metierEquipe === 'sante' ? planMetier === 'pro' : true;
+  const equipeFormule = metierEquipe === 'veterinaire' ? 'Avancé' : 'Pro';
 
   // Identity
   const [firstname, setFirstname] = useState('');
@@ -3129,9 +3138,10 @@ export default function ProfilPage() {
       <EmployeursLink uid={user?.uid ?? ''} />
 
 
-      {/* Employés — visible pour éleveurs, pros et associations */}
+      {/* Employés — visible pour éleveurs, pros et associations ; véto dès
+          Avancé, santé en formule Pro (sinon grisé → formules). */}
       {(isEleveur || userData?.isPro || userData?.isAssociation) && (
-        <Link href="/elevage/employes"
+        <Link href={equipeIncluse ? '/elevage/employes' : metierEquipe === 'veterinaire' ? '/veterinaire/abonnement' : '/sante/abonnement'}
           className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow mb-5">
           <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
             <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3140,9 +3150,10 @@ export default function ProfilPage() {
             </svg>
           </div>
           <div className="flex-1">
-            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Gestion des employés</p>
-            <p className="text-xs text-gray-400">Ajouter, révoquer et gérer les accès de votre équipe</p>
+            <p className={`font-semibold text-sm ${equipeIncluse ? 'text-[#1F2A2E]' : 'text-gray-400'}`} style={{ fontFamily: 'Galey, sans-serif' }}>Gestion des employés</p>
+            <p className="text-xs text-gray-400">{equipeIncluse ? 'Ajouter, révoquer et gérer les accès de votre équipe' : `Incluse dans la formule ${equipeFormule}`}</p>
           </div>
+          {!equipeIncluse && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full">{equipeFormule}</span>}
           <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>

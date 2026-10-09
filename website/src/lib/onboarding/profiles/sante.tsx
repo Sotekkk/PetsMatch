@@ -27,15 +27,15 @@ const steps: OnboardingStepDef[] = [
   },
   {
     key: 'seances',
-    label: 'Séances',
+    label: 'Créneaux',
     render: ({ onNext, onSkip }) => (
       <OnboardingActionStep
-        icon="✅"
+        icon="📅"
         color={GREEN}
-        title="Vos séances"
-        description="Consultation initiale (bilan), séance de suivi, à domicile ou en cabinet — indiquez une durée et un tarif pour chacune, elles serviront à calculer vos créneaux disponibles."
-        primaryLabel="Configurer mes séances →"
-        href="/profil"
+        title="Vos créneaux"
+        description="Ouvrez vos plages de disponibilité : vos clients réservent directement en ligne. Les durées et tarifs de vos séances (bilan, suivi, déplacement) se règlent dans votre profil."
+        primaryLabel="Créer mes créneaux →"
+        href="/pro/creneaux"
         onNext={onNext}
         onSkip={onSkip}
         secondaryLabel="Plus tard"

@@ -1,3 +1,6 @@
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'dart:async';
 import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'dart:io';
@@ -138,6 +141,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   static const _prestationsSante = [
     ('consultation', 'Consultation'),
     ('seance',       'Séance de suivi'),
+    ('deplacement',  'Supplément déplacement'),
     ('autre',        'Autre prestation'),
   ];
   // Vitrine publique, comme l'éducateur.
@@ -212,6 +216,23 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _horaires = {for (var j in _jours) j: _HoraireJour()};
     _loadProProfile();
+    _chargerEquipeFormule();
+  }
+
+  /// Équipe incluse dans la formule ? Véto : dès Avancé (ASV) ; santé :
+  /// formule Pro (plusieurs intervenants). Autres métiers : inchangé.
+  bool _equipeIncluse = true;
+  String _equipeFormule = '';
+  Future<void> _chargerEquipeFormule() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    if (User_Info.catPro == 'veterinaire') {
+      final code = await PlanService.getVetPlanCode(uid);
+      if (mounted) setState(() { _equipeIncluse = PlanService.getVetConfig(code).hasEquipeAsv; _equipeFormule = 'Avancé'; });
+    } else if (User_Info.catPro == 'sante') {
+      final code = await PlanService.getPlanCode(uid, profilType: 'sante');
+      if (mounted) setState(() { _equipeIncluse = PlanService.getSanteConfig(code).hasMultiIntervenants; _equipeFormule = 'Pro'; });
+    }
   }
 
   @override
@@ -799,6 +820,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
+          if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
@@ -862,6 +884,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
+          if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
@@ -912,6 +935,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
+          if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
@@ -1142,11 +1166,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   // Vétérinaire : tous ne se déplacent pas — sans visites à
                   // domicile, pas de rayon d'intervention (cabinet seul).
-                  if (_catPro == 'veterinaire') ...[
+                  // Véto et ostéo / kiné : à domicile ou cabinet seul.
+                  if (_catPro == 'veterinaire' || _catPro == 'sante') ...[
                     _seDeplaceToggle(),
                     const SizedBox(height: 12),
                   ],
-                  if (_catPro != 'pension' && (_catPro != 'veterinaire' || _seDeplace)) ...[
+                  if (_catPro != 'pension' && ((_catPro != 'veterinaire' && _catPro != 'sante') || _seDeplace)) ...[
                     _zoneTile(),
                     const SizedBox(height: 16),
                   ],
@@ -1489,7 +1514,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                       ),
                     ]),
                     const SizedBox(height: 12),
-                    ..._prestationsSante.map((t) => Padding(
+                    ..._prestationsSante.where((t) => t.$1 != 'deplacement' || _seDeplace).map((t) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Row(children: [
                         Expanded(child: Text(t.$2,
@@ -1825,8 +1850,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   _sectionTitle('Équipe'),
                   const SizedBox(height: 12),
                   GestureDetector(
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => EmployesPage(profileType: _catPro))),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _equipeIncluse
+                        ? EmployesPage(profileType: _catPro)
+                        : _catPro == 'veterinaire'
+                            ? const VetAbonnementPage()
+                            : const SanteAbonnementPage(profilType: 'sante'))),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
@@ -1845,14 +1873,23 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                           child: const Icon(Icons.group_outlined, color: Color(0xFF0C5C6C), size: 20),
                         ),
                         const SizedBox(width: 14),
-                        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text('Gestion des employés',
                               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                                  fontSize: 14, color: Color(0xFF1F2A2E))),
-                          SizedBox(height: 2),
-                          Text('Ajouter, révoquer, gérer les accès',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+                                  fontSize: 14, color: _equipeIncluse ? const Color(0xFF1F2A2E) : Colors.grey.shade400)),
+                          const SizedBox(height: 2),
+                          Text(_equipeIncluse ? 'Ajouter, révoquer, gérer les accès'
+                                  : 'Incluse dans la formule $_equipeFormule',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
                         ])),
+                        if (!_equipeIncluse) Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: const Color(0xFFD97706).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8)),
+                          child: Text(_equipeFormule, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                              fontFamily: 'Galey', color: Color(0xFFD97706))),
+                        ),
                         const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF9CA3AF)),
                       ]),
                     ),

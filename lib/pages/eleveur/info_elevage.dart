@@ -5,6 +5,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/document_elevage.dart';
 import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/utils/annuaire_filtres.dart' show kEspecesPro;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -298,8 +299,8 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
 
       // Espèces et races
       User_Info.especesElevees = List.from(_selectedEspeces);
-      User_Info.isDog          = _selectedEspeces.contains('chien');
-      User_Info.isCat          = _selectedEspeces.contains('chat');
+      User_Info.isDog          = _selectedEspeces.contains('chien') || _selectedEspeces.contains('Chiens');
+      User_Info.isCat          = _selectedEspeces.contains('chat') || _selectedEspeces.contains('Chats');
       User_Info.dogBreeds      = List.from(_selectedRaces['chien'] ?? []);
       User_Info.catBreeds      = List.from(_selectedRaces['chat'] ?? []);
 
@@ -541,7 +542,11 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: _kInscriptionEspeces.map((sp) {
+                // Pro : même liste que le profil et l'annuaire (kEspecesPro) —
+                // sinon l'onboarding / le profil ne retrouvaient pas les espèces.
+                children: (User_Info.isPro
+                    ? [for (final e in kEspecesPro) (value: e.label, label: e.label)]
+                    : _kInscriptionEspeces).map((sp) {
                   final active = _selectedEspeces.contains(sp.value);
                   return GestureDetector(
                     onTap: () => _toggleEspece(sp.value),

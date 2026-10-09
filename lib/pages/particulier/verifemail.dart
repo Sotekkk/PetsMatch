@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/annuaire_filtres.dart' show normaliserEspecesPro;
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'package:PetsMatch/utils/photos_inscription.dart';
@@ -299,6 +300,14 @@ Future<Object> registerElevage(String email, String password) async {
     // du profil principal (create_main_profile_on_signup) ne copie pas cette
     // colonne, donc `user_profiles.numero_ordre` (colonne dédiée, déjà en
     // base) resterait vide. On le reporte ici explicitement.
+    if (User_Info.isPro && User_Info.especesElevees.isNotEmpty) {
+      try {
+        await Supabase.instance.client.from('user_profiles')
+            .update({'especes_acceptees': normaliserEspecesPro(User_Info.especesElevees)})
+            .eq('uid', uid).eq('is_main', true);
+      } catch (_) {}
+    }
+
     if (User_Info.catPro == 'veterinaire') {
       final ordre = User_Info.certifications.firstWhere(
         (c) => c['nom'] == 'Numéro d\'ordre vétérinaire',
