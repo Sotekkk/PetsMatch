@@ -26,6 +26,8 @@ import { fetchContactAcquereur, type ContactAcquereur } from '@/lib/contact-acqu
 import EditCessionModal from '@/components/animaux/EditCessionModal';
 
 import LienDocument from '@/components/LienDocument';
+import ReproducteurSelect from '@/components/animaux/ReproducteurSelect';
+import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible, type Reproducteur } from '@/lib/reproducteurs';
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -613,8 +615,11 @@ function fenetreMiseBas(dates: string[], espece: string): { debut: string; fin: 
   return { debut: iso(debut), fin: iso(fin), probable: iso(probable) };
 }
 
-function SaillieForm({ partners, isMale, initial, saving, espece, onSave, onCancel }: {
-  partners: { id: string; nom: string; identification: string }[];
+function SaillieForm({ partners, exterieurs = [], raisonAnimal, isMale, initial, saving, espece, onSave, onCancel }: {
+  partners: Reproducteur[];
+  exterieurs?: Reproducteur[];
+  /** Nouvelle saillie impossible si l'animal de la fiche n'est pas éligible. */
+  raisonAnimal?: string | null;
   isMale: boolean;
   initial?: Record<string, string>;
   saving: boolean;
@@ -623,6 +628,13 @@ function SaillieForm({ partners, isMale, initial, saving, espece, onSave, onCanc
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>(initial ?? {});
+  const [provenance, setProvenance] = useState<'elevage' | 'exterieur'>(
+    initial && !initial.partenaire_animal_id && initial.nom_partenaire ? 'exterieur' : 'elevage');
+  const nouvelle = !initial;
+  const libelle = isMale ? 'une reproductrice' : 'un étalon';
+  const choisi = partners.find(p => p.id === form.partenaire_animal_id);
+  const bloqueAnimal = nouvelle && !!raisonAnimal;
+  const partenaireInvalide = nouvelle && provenance === 'elevage' && !choisi;
   const [dates, setDates] = useState<string[]>(
     parseSaillieDates(initial?.dates, initial?.date));
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
@@ -655,29 +667,51 @@ function SaillieForm({ partners, isMale, initial, saving, espece, onSave, onCanc
           </div>
         )}
       </div>
-      {partners.length > 0 && (
-        <div>
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 block">
-            {isMale ? 'Femelles de votre élevage' : 'Mâles de votre élevage'}
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {partners.map(p => (
-              <button key={p.id} type="button"
-                onClick={() => setForm(prev => ({ ...prev, nom_partenaire: p.nom, ident_partenaire: p.identification ?? '', partenaire_animal_id: p.id }))}
-                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${form.partenaire_animal_id === p.id ? 'bg-[#6E9E57] text-white border-[#6E9E57]' : 'border-gray-200 text-gray-600 hover:border-[#6E9E57]'}`}>
-                {p.nom}
-              </button>
-            ))}
-          </div>
-        </div>
+      {bloqueAnimal && (
+        <p className="text-xs text-red-700 border border-red-200 rounded-lg px-3 py-2">Nouvelle saillie impossible : {raisonAnimal}.</p>
       )}
       <div>
-        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Nom du partenaire <span className="text-red-400 ml-0.5">*</span></label>
-        <input type="text" value={form.nom_partenaire ?? ''} onChange={e => setF('nom_partenaire', e.target.value)} className={cls} />
-      </div>
-      <div>
-        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Identification partenaire</label>
-        <input type="text" value={form.ident_partenaire ?? ''} onChange={e => setF('ident_partenaire', e.target.value)} className={cls} />
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5 block">
+          {isMale ? 'Reproductrice' : 'Étalon'} <span className="text-red-400 ml-0.5">*</span>
+        </label>
+        <div className="grid grid-cols-2 border border-gray-300 rounded-lg overflow-hidden text-sm font-semibold mb-2" role="group">
+          {(['elevage', 'exterieur'] as const).map((v, i) => (
+            <button key={v} type="button" aria-pressed={provenance === v}
+              onClick={() => { if (provenance === v) return; setProvenance(v); setForm(p => ({ ...p, partenaire_animal_id: '', nom_partenaire: '', ident_partenaire: '' })); }}
+              className={`h-10 ${i > 0 ? 'border-l border-gray-300' : ''} ${provenance === v ? 'bg-[#0C5C6C] text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+              {v === 'elevage' ? 'Mon élevage' : isMale ? 'Femelle extérieure' : 'Étalon extérieur'}
+            </button>
+          ))}
+        </div>
+        {provenance === 'elevage' ? (
+          <ReproducteurSelect
+            label={`Sélectionner ${libelle}`}
+            options={partners}
+            valeur={form.partenaire_animal_id ? form.nom_partenaire : null}
+            detail={form.partenaire_animal_id
+              ? (choisi ? [choisi.race, choisi.identification].filter(Boolean).join(' · ') : 'N’est plus proposé pour une nouvelle saillie (saillie existante conservée)')
+              : null}
+            vide={isMale
+              ? 'Aucune femelle reproductrice active. Cochez « Reproducteur » sur la fiche de vos femelles (ni retraitées, ni stérilisées, ni cédées).'
+              : 'Aucun mâle reproducteur actif. Cochez « Reproducteur » sur la fiche de vos mâles (ni retraités, ni stérilisés, ni cédés).'}
+            onSelect={r => setForm(prev => ({ ...prev, nom_partenaire: r.nom, ident_partenaire: r.identification ?? '', partenaire_animal_id: r.id ?? '' }))}
+          />
+        ) : (
+          <div className="space-y-2">
+            <ReproducteurSelect
+              label="Choisir un reproducteur extérieur enregistré"
+              options={exterieurs}
+              valeur={null}
+              vide="Aucun reproducteur extérieur enregistré. Saisissez-le ci-dessous."
+              onSelect={r => setForm(prev => ({ ...prev, nom_partenaire: r.nom, ident_partenaire: r.identification ?? '', partenaire_animal_id: '' }))}
+            />
+            <p className="text-xs text-gray-500">Ou saisissez-le : il est enregistré dans le dossier de reproduction, sans être ajouté à votre cheptel.</p>
+            <input type="text" value={form.nom_partenaire ?? ''} onChange={e => setF('nom_partenaire', e.target.value)}
+              placeholder={isMale ? 'Nom de la reproductrice' : 'Nom de l’étalon'} className={cls} />
+            <input type="text" value={form.ident_partenaire ?? ''} onChange={e => setF('ident_partenaire', e.target.value)}
+              placeholder="N° d’identification" className={cls} />
+          </div>
+        )}
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Méthode</label>
@@ -700,7 +734,7 @@ function SaillieForm({ partners, isMale, initial, saving, espece, onSave, onCanc
             const clean = [...new Set(dates.filter(Boolean))].sort();
             onSave({ ...form, date: clean[0], dates: JSON.stringify(clean) });
           }}
-          disabled={saving || dates.filter(Boolean).length === 0 || !form.nom_partenaire}
+          disabled={saving || dates.filter(Boolean).length === 0 || !form.nom_partenaire || bloqueAnimal || partenaireInvalide}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -1659,22 +1693,35 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
   })();
   const [editId, setEditId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Record<string, string>>({});
-  const [partners, setPartners] = useState<{ id: string; nom: string; identification: string }[]>([]);
+  const [partners, setPartners] = useState<Reproducteur[]>([]);
+  const [exterieurs, setExterieurs] = useState<Reproducteur[]>([]);
+  const [raisonAnimal, setRaisonAnimal] = useState<string | null>(null);
   const [showIntervalModal, setShowIntervalModal] = useState(false);
   const [intervalInput, setIntervalInput] = useState('');
   const [savingInterval, setSavingInterval] = useState(false);
 
+  // Reproducteurs proposés pour une NOUVELLE saillie (lib/reproducteurs) :
+  // actifs de l'élevage + extérieurs déjà enregistrés. Les saillies passées
+  // gardent leur partenaire, même retraité ou cédé depuis.
   useEffect(() => {
-    if (!userId || !animalId) return;
-    const sexePartenaire = isMale ? 'femelle' : 'male';
-    supabase.from('animaux')
-      .select('id, nom, identification')
-      .eq('uid_eleveur', userId)
-      .eq('espece', espece)
-      .eq('sexe', sexePartenaire)
-      .neq('id', animalId)
-      .then(({ data }) => { if (data) setPartners(data as { id: string; nom: string; identification: string }[]); });
-  }, [userId, espece, isMale, animalId]);
+    if (!animalId) return;
+    let annule = false;
+    (async () => {
+      const { data: a } = await supabase.from('animaux')
+        .select('uid_eleveur, reproducteur, is_retraite, sterilise, statut').eq('id', animalId).maybeSingle();
+      const uid = (a?.uid_eleveur as string | undefined) ?? uidEleveur ?? userId;
+      if (!uid) return;
+      const sexePartenaire = isMale ? 'femelle' : 'male';
+      const [internes, ext] = await Promise.all([
+        chargerReproducteurs({ uidEleveur: uid, sexe: sexePartenaire, espece, exclureId: animalId }),
+        chargerReproducteursExterieurs({ uidEleveur: uid, sexe: sexePartenaire, espece }),
+      ]);
+      if (annule) return;
+      setPartners(internes); setExterieurs(ext);
+      setRaisonAnimal(a ? raisonNonEligible(a) : null);
+    })();
+    return () => { annule = true; };
+  }, [userId, uidEleveur, espece, isMale, animalId]);
 
   function startEdit(record: HealthRecord) {
     const data: Record<string, string> = {};
@@ -1812,7 +1859,7 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
           </div>
           {reproAdd === 'saillies' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <SaillieForm partners={partners} isMale={isMale} saving={savingRepro} espece={espece}
+              <SaillieForm partners={partners} exterieurs={exterieurs} raisonAnimal={raisonAnimal} isMale={isMale} saving={savingRepro} espece={espece}
                 onSave={saveSaillie} onCancel={() => setReproAdd(null)} />
             </div>
           )}
@@ -1823,7 +1870,7 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
             return (
             <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm">
               {editId === r.id ? (
-                <SaillieForm partners={partners} isMale={isMale} saving={savingRepro} initial={editData} espece={espece}
+                <SaillieForm partners={partners} exterieurs={exterieurs} isMale={isMale} saving={savingRepro} initial={editData} espece={espece}
                   onSave={async d => { await updateRepro('saillies', r.id, d); setEditId(null); }}
                   onCancel={() => setEditId(null)} />
               ) : (
@@ -3288,9 +3335,16 @@ function AnimalFichePageInner() {
     try {
       const dates = parseSaillieDates(data.dates, data.date);
       const premiere = dates[0] ?? data.date;
-      await supabase.from('saillies').insert({
-        ...data, dates, date: premiere, animal_id: id, id: crypto.randomUUID(),
+      const { error: errSaillie } = await supabase.from('saillies').insert({
+        ...data, partenaire_animal_id: data.partenaire_animal_id || null,
+        dates, date: premiere, animal_id: id, id: crypto.randomUUID(),
       });
+      if (errSaillie) {
+        alert(errSaillie.message.includes('REPRO_NON_ELIGIBLE')
+          ? 'Enregistrement refusé : reproducteur non éligible (retraité, stérilisé, cédé ou non coché « Reproducteur »).'
+          : `Erreur : ${errSaillie.message}`);
+        return;
+      }
       if (data.partenaire_animal_id) {
         await supabase.from('saillies').insert({
           id: crypto.randomUUID(),

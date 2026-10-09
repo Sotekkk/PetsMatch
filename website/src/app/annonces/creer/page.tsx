@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
+import { estReproducteurEligible } from '@/lib/reproducteurs';
 
 const PLAN_CONFIG: Record<string, { maxAnnonces: number; dureeDays: number; autoPublish: boolean }> = {
   free:    { maxAnnonces: 0, dureeDays: 30, autoPublish: false },
@@ -526,9 +527,10 @@ function CreerAnnoncePageInner() {
   async function loadAllMales() {
     setLoadingAllMales(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre')
-      .eq('uid_eleveur', user!.uid).eq('sexe', 'male').order('nom');
-    setMyAllMales((data ?? []) as MyAnimal[]);
+      .select('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre, statut, reproducteur, is_retraite, sterilise')
+      .eq('uid_eleveur', user!.uid).eq('sexe', 'male').eq('reproducteur', true).order('nom');
+    // Annonce de saillie : seuls les étalons reproducteurs actifs (lib/reproducteurs)
+    setMyAllMales(((data ?? []) as (MyAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
     setLoadingAllMales(false);
   }
 

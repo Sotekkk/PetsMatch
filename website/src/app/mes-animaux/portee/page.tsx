@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { estReproducteurEligible } from '@/lib/reproducteurs';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -127,14 +128,15 @@ export default function PorteePage() {
     if (!user) return;
     setLoadingMales(true);
     let qm = supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
+      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
       .eq('uid_eleveur', user.uid)
       .eq('espece', espece)
-      .eq('sexe', 'male')
+      .eq('sexe', 'male').eq('reproducteur', true)
       .or('statut.is.null,statut.eq.present');
     if (activeProfileId) qm = qm.eq('profile_id', activeProfileId) as typeof qm;
     const { data } = await qm.order('nom');
-    setMyMales((data ?? []) as ExistingAnimal[]);
+    // Reproducteurs actifs uniquement (lib/reproducteurs) — un parent extérieur se saisit
+    setMyMales(((data ?? []) as (ExistingAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
     setLoadingMales(false);
   }
 
@@ -142,14 +144,14 @@ export default function PorteePage() {
     if (!user) return;
     setLoadingFemelles(true);
     let qf = supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
+      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
       .eq('uid_eleveur', user.uid)
       .eq('espece', espece)
-      .eq('sexe', 'femelle')
+      .eq('sexe', 'femelle').eq('reproducteur', true)
       .or('statut.is.null,statut.eq.present');
     if (activeProfileId) qf = qf.eq('profile_id', activeProfileId) as typeof qf;
     const { data } = await qf.order('nom');
-    setMyFemelles((data ?? []) as ExistingAnimal[]);
+    setMyFemelles(((data ?? []) as (ExistingAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
     setLoadingFemelles(false);
   }
 

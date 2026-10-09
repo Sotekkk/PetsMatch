@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { estReproducteurEligible } from '@/lib/reproducteurs';
 
 export interface PorteeAnimal {
   id: string;
@@ -65,12 +66,13 @@ export default function EditPorteeModal({ pid, members, uid, activeProfileId, on
     if (!uid) return;
     setLoadingMales(true);
     let qm = supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
-      .eq('uid_eleveur', uid).eq('espece', espece).eq('sexe', 'male')
+      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
+      .eq('uid_eleveur', uid).eq('espece', espece).eq('sexe', 'male').eq('reproducteur', true)
       .or('statut.is.null,statut.eq.present');
     if (activeProfileId) qm = qm.eq('profile_id', activeProfileId) as typeof qm;
     const { data } = await qm.order('nom');
-    setMyMales((data ?? []) as PorteeAnimal[]);
+    // Reproducteurs actifs uniquement ; les parents déjà saisis restent dans les champs
+    setMyMales(((data ?? []) as (PorteeAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
     setLoadingMales(false);
   }
 
@@ -78,12 +80,12 @@ export default function EditPorteeModal({ pid, members, uid, activeProfileId, on
     if (!uid) return;
     setLoadingFemelles(true);
     let qf = supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
-      .eq('uid_eleveur', uid).eq('espece', espece).eq('sexe', 'femelle')
+      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
+      .eq('uid_eleveur', uid).eq('espece', espece).eq('sexe', 'femelle').eq('reproducteur', true)
       .or('statut.is.null,statut.eq.present');
     if (activeProfileId) qf = qf.eq('profile_id', activeProfileId) as typeof qf;
     const { data } = await qf.order('nom');
-    setMyFemelles((data ?? []) as PorteeAnimal[]);
+    setMyFemelles(((data ?? []) as (PorteeAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
     setLoadingFemelles(false);
   }
 
