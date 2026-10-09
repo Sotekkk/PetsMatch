@@ -219,7 +219,8 @@ function AbonnementContent() {
           <div className="col-span-3 text-center text-gray-400 py-10">Chargement des plans…</div>
         ) : plans.map(plan => {
           const prix = periodicite === 'mensuel' ? plan.prix_mensuel : Math.round(plan.prix_annuel / 12 * 10) / 10;
-          const prixAff = prix === 0 ? 'Gratuit' : `${prix} €/mois`;
+          // Annuel : le prix de l'année, payé en une fois, mis en avant.
+          const prixAff = prix === 0 ? 'Gratuit' : periodicite === 'annuel' ? `${plan.prix_annuel} €/an` : `${prix} €/mois`;
           const isCurrent = currentPlan === plan.plan_code;
           const features: string[] = Array.isArray(plan.features) ? plan.features : JSON.parse(plan.features as unknown as string ?? '[]');
 
@@ -235,7 +236,7 @@ function AbonnementContent() {
               <p className="text-2xl font-bold text-[#1F2A2E] mb-1">
                 {prixAff}
                 {prix > 0 && periodicite === 'annuel' && (
-                  <span className="text-sm font-normal text-gray-400 ml-1">({plan.prix_annuel} €/an)</span>
+                  <span className="block text-sm font-normal text-gray-500">soit {prix} €/mois, payé en une fois</span>
                 )}
               </p>
               <p className="text-xs text-gray-400 mb-4">
@@ -263,7 +264,7 @@ function AbonnementContent() {
                   className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-colors ${PLAN_BTN[plan.plan_code]}`}>
                   {loadingPlan === plan.plan_code ? (
                     <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : isCurrent ? 'Plan actuel' : `Passer en ${plan.label}`}
+                  ) : isCurrent ? 'Plan actuel' : (periodicite === 'annuel' && plan.prix_annuel > 0 ? `${plan.label} — payer ${plan.prix_annuel} € pour 1 an` : `Passer en ${plan.label}`)}
                 </button>
               )}
             </div>

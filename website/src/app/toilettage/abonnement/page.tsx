@@ -192,7 +192,8 @@ function ToilettageAbonnementContent() {
           <div className="col-span-3 text-center text-gray-400 py-10">Chargement des formules…</div>
         ) : plans.map(plan => {
           const prix = periodicite === 'mensuel' ? plan.prix_mensuel : Math.round(plan.prix_annuel / 12 * 10) / 10;
-          const prixAff = prix === 0 ? 'Gratuit' : `${prix} €/mois`;
+          // Annuel : le prix de l'année, payé en une fois, mis en avant.
+          const prixAff = prix === 0 ? 'Gratuit' : periodicite === 'annuel' ? `${plan.prix_annuel} €/an` : `${prix} €/mois`;
           const isCurrent = currentPlan === plan.plan_code;
 
           return (
@@ -207,7 +208,7 @@ function ToilettageAbonnementContent() {
               <p className="text-2xl font-bold text-[#1F2A2E] mb-1">
                 {prixAff}
                 {prix > 0 && periodicite === 'annuel' && (
-                  <span className="text-sm font-normal text-gray-400 ml-1">({plan.prix_annuel} €/an)</span>
+                  <span className="block text-sm font-normal text-gray-500">soit {prix} €/mois, payé en une fois</span>
                 )}
               </p>
               <ul className="flex-1 space-y-2 mb-6 mt-4">
@@ -230,7 +231,7 @@ function ToilettageAbonnementContent() {
                   className="w-full py-2.5 rounded-xl text-sm font-semibold bg-[#0C5C6C] text-white hover:bg-[#094F5D] disabled:opacity-50 transition-colors">
                   {loadingPlan === plan.plan_code ? (
                     <span className="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  ) : `Passer en ${plan.label}`}
+                  ) : (periodicite === 'annuel' && plan.prix_annuel > 0 ? `${plan.label} — payer ${plan.prix_annuel} € pour 1 an` : `Passer en ${plan.label}`)}
                 </button>
               )}
             </div>

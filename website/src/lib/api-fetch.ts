@@ -8,6 +8,10 @@ import { auth } from '@/lib/firebase';
  */
 export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
+  // Au chargement d'une page (retour Stripe, fiche admin…), Firebase n'a pas
+  // encore restauré la session : sans cette attente, l'appel partait sans
+  // jeton → « Non authentifié ».
+  await auth.authStateReady();
   const user = auth.currentUser;
   if (user) headers.set('Authorization', `Bearer ${await user.getIdToken()}`);
   return fetch(input, { ...init, headers });

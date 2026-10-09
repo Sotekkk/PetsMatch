@@ -91,23 +91,41 @@ export async function POST(req: NextRequest) {
           const plan = session.metadata?.plan ?? 'pro';
           const periodicite = session.metadata?.periodicite ?? 'mensuel';
           const profileId = session.metadata?.profile_id ?? null;
+          // Métier payé (véto, pension, garde…) : jamais « eleveur » d'office —
+          // sinon un abonnement véto devenait un abonnement éleveur.
+          const profilType = session.metadata?.profil_type ?? 'eleveur';
           const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription.id;
+
+          // Déjà enregistré (par /api/stripe/activate au retour de paiement) :
+          // rien à faire si le métier est bon ; sinon on corrige la ligne
+          // (anciens événements enregistrés à tort en « eleveur »).
+          const { data: dejaLa } = await supabase.from('abonnements').select('id, profil_type')
+            .eq('stripe_subscription_id', subId).limit(1).maybeSingle();
+          if (dejaLa && dejaLa.profil_type === profilType) break;
 
           const sub = await stripe.subscriptions.retrieve(subId, { expand: ['items'] });
           const periodEnd = sub.items.data[0]?.current_period_end ?? null;
           const dateFin = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
 
-          // Désactiver l'ancien abonnement actif pour ce profil avant d'insérer le nouveau
+          // Désactiver l'ancien abonnement actif de CE métier (et de ce profil)
+          // avant d'insérer le nouveau — jamais ceux des autres métiers du compte.
           const cancelQ = supabase.from('abonnements')
             .update({ statut: 'annule', updated_at: new Date().toISOString() })
-            .eq('uid', uid).eq('statut', 'actif');
+            .eq('uid', uid).eq('statut', 'actif').eq('profil_type', profilType)
+            // (« neq » seul écarterait les abonnements manuels, sans id Stripe)
+            .or(`stripe_subscription_id.is.null,stripe_subscription_id.neq.${subId}`);
           if (profileId) await cancelQ.eq('profile_id', profileId);
           else await cancelQ;
 
-          await supabase.from('abonnements').insert({
+          if (dejaLa) {
+            await supabase.from('abonnements').update({
+              profil_type: profilType, profile_id: profileId, plan_code: plan, periodicite,
+              statut: 'actif', date_fin: dateFin, updated_at: new Date().toISOString(),
+            }).eq('id', dejaLa.id);
+          } else await supabase.from('abonnements').insert({
             uid,
             profile_id: profileId,
-            profil_type: 'eleveur',
+            profil_type: profilType,
             plan_code: plan,
             periodicite,
             statut: 'actif',
