@@ -12,14 +12,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ItineraireMenu from '@/components/dashboard/ItineraireMenu';
 import { retardsEnCascade } from '@/lib/retards-rdv';
-import { Kpi, Section, Badge, PhotoAnimal, Donut, BarresSemaine, PALETTE, TEAL, type Segment } from '@/components/dashboard/kit';
+import { Kpi, Section, Badge, PhotoAnimal, Donut, BarresSemaine, EnteteAccueil, PALETTE, TEAL, type Segment } from '@/components/dashboard/kit';
 
 const VERT = '#2E7D5E';
 const VIOLET = '#7B5EA7';
@@ -230,23 +229,19 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
   const chip = (actifChip: boolean) => `px-3 py-1.5 rounded-lg text-xs font-semibold border ${actifChip ? 'text-white border-transparent' : 'text-[#1E2025] border-[#E4E7E2] bg-white'}`;
 
   return (
-    <div className="min-h-screen bg-[#F6F8F8]" style={{ fontFamily: 'Galey, sans-serif' }}>
+    <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
       <div className="max-w-6xl mx-auto px-4 py-5 space-y-5">
         {/* En-tête */}
-        <header className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full overflow-hidden bg-[#E6F2F3] flex-shrink-0 border border-[#E4E7E2]">
-            {avatar
-              ? <Image src={avatar} alt="" width={56} height={56} className="object-cover w-full h-full" />
-              : <div className="w-full h-full flex items-center justify-center text-xl font-bold text-[#0C5C6C]">{nom[0]?.toUpperCase() ?? '?'}</div>}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold text-[#1E2025] truncate">{nom}</h1>
-            <p className="text-sm text-gray-500">{libelleMetier}</p>
-          </div>
-          <span className="hidden sm:inline-flex items-center gap-2 text-sm text-[#1E2025] bg-white border border-[#E4E7E2] rounded-xl px-3 py-2 first-letter:uppercase">
-            {I.cal}{now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-          </span>
-        </header>
+        <EnteteAccueil
+          nom={nom}
+          avatar={avatar}
+          sousTitre={libelleMetier}
+          actions={
+            <span className="hidden sm:inline-flex items-center gap-2 text-sm text-[#1E2025] bg-white border border-[#E5E8E6] rounded-full px-3.5 py-2">
+              {I.cal}<span className="first-letter:uppercase">{now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            </span>
+          }
+        />
 
         {loading ? (
           <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
@@ -271,7 +266,7 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                       <button key={k} onClick={() => setFiltreLieu(k)} className={chip(filtreLieu === k)} style={filtreLieu === k ? { background: TEAL } : undefined}>{l}</button>
                     ))}
                     <span className="flex-1" />
-                    <div className="flex items-center gap-1 border border-[#E4E7E2] rounded-lg px-1">
+                    <div className="flex items-center gap-1 border border-[#E5E8E6] rounded-lg px-1">
                       <button aria-label="Jour précédent" onClick={() => setJour(d => new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1))} className="px-2 py-1 text-[#0C5C6C]">‹</button>
                       <button onClick={() => setJour(new Date())} className="text-xs font-semibold text-[#1E2025] px-1 first-letter:uppercase">
                         {estAujourdhui ? `Aujourd'hui · ${dateLongue(jour)}` : dateLongue(jour)}
@@ -398,7 +393,7 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                   { l: 'Itinéraire du prochain déplacement', itineraire: deplacement[0] && (deplacement[0].lieu?.trim() || deplacement[0].lieu_lat != null) ? deplacement[0] : undefined },
                   { l: 'Envoyer un message', href: '/messages' },
                 ].map(t => {
-                  const cls = 'border border-[#E4E7E2] rounded-xl px-3 py-2.5 text-sm font-semibold text-left';
+                  const cls = 'border border-[#E5E8E6] rounded-xl px-3 py-2.5 text-sm font-semibold text-left';
                   if (t.onClick) return <button key={t.l} onClick={t.onClick} className={`${cls} text-[#1E2025] hover:bg-gray-50`}>{t.l}</button>;
                   if ('itineraire' in t) {
                     return t.itineraire

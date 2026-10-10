@@ -1,25 +1,14 @@
 'use client';
 // Accès rapide de l'accueil — santé (ostéo / kiné) et vétérinaire — en MIROIR
 // de l'appli (eleveur_home.dart : _buildSanteShortcuts / _buildVetShortcuts) :
-// mêmes tuiles, même ordre, même style (fond blanc, fin contour coloré, petite
-// icône, texte foncé de même taille).
-import Link from 'next/link';
+// mêmes tuiles, même ordre, même style (fond blanc, contour fin, icône au
+// trait dans un cercle teinté de la couleur de la tuile, texte foncé).
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { Tuile as TuileAccueil, TitreRubrique } from '@/components/dashboard/kit';
 
 interface Tuile { label: string; icone: string; couleur: string; href?: string; acte?: { libelle: string; onglet: string } }
-
-const classeTuile = 'h-24 bg-white rounded-2xl border shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center gap-1.5 px-2 text-center';
-
-function contenu(t: Tuile) {
-  return (
-    <>
-      <span className="text-lg leading-none" aria-hidden>{t.icone}</span>
-      <span className="text-xs font-semibold text-[#1F2A2E] leading-tight line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{t.label}</span>
-    </>
-  );
-}
 
 interface Patient { id: string; nom: string | null; espece: string | null; race: string | null }
 
@@ -33,23 +22,23 @@ export default function TuilesSanteVet({ catPro, uid, profileId, abonnementHref 
 
   const tuiles: Tuile[] = catPro === 'sante'
     ? [
-        { label: 'Mes patients', icone: '🩺', couleur: '#0C5C6C', href: '/mes-patients' },
-        { label: 'Agenda RDV', icone: '📅', couleur: '#5F9EAA', href: '/agenda' },
-        { label: 'Mes suivis', icone: '🦴', couleur: '#7B5EA7', href: '/sante/suivis' },
-        { label: 'Mes contrats', icone: '📄', couleur: '#B8860B', href: '/sante/contrat' },
-        { label: 'Facturation', icone: '🧾', couleur: '#6E9E57', href: '/elevage/facturation' },
-        { label: 'Mon abonnement', icone: '⭐', couleur: '#D97706', href: abonnementHref },
+        { label: 'Mes patients', icone: 'stetho', couleur: '#0C5C6C', href: '/mes-patients' },
+        { label: 'Agenda RDV', icone: 'calendrier', couleur: '#5F9EAA', href: '/agenda' },
+        { label: 'Mes suivis', icone: 'suivi', couleur: '#7B5EA7', href: '/sante/suivis' },
+        { label: 'Mes contrats', icone: 'document', couleur: '#B8860B', href: '/sante/contrat' },
+        { label: 'Facturation', icone: 'facture', couleur: '#6E9E57', href: '/elevage/facturation' },
+        { label: 'Mon abonnement', icone: 'etoile', couleur: '#D97706', href: abonnementHref },
       ]
     : [
-        { label: 'Mes patients', icone: '🩺', couleur: '#0C5C6C', href: '/mes-patients' },
-        { label: 'Agenda RDV', icone: '📅', couleur: '#5F9EAA', href: '/agenda' },
-        { label: 'Rechercher une puce', icone: '🔍', couleur: '#475569', href: '/mes-patients' },
-        { label: 'Ordonnance', icone: '💊', couleur: '#7B5EA7', acte: { libelle: 'une ordonnance', onglet: 'Consultations' } },
-        { label: 'Vaccin', icone: '💉', couleur: '#2E7D5E', acte: { libelle: 'un vaccin', onglet: 'Santé' } },
-        { label: 'Compte rendu', icone: '📝', couleur: '#B8860B', acte: { libelle: 'un compte rendu', onglet: 'Consultations' } },
-        { label: 'Messages', icone: '💬', couleur: '#5F9EAA', href: '/messages' },
-        { label: 'Facturation', icone: '🧾', couleur: '#6E9E57', href: '/elevage/facturation' },
-        { label: 'Mon abonnement', icone: '⭐', couleur: '#D97706', href: abonnementHref },
+        { label: 'Mes patients', icone: 'stetho', couleur: '#0C5C6C', href: '/mes-patients' },
+        { label: 'Agenda RDV', icone: 'calendrier', couleur: '#5F9EAA', href: '/agenda' },
+        { label: 'Rechercher une puce', icone: 'recherche', couleur: '#475569', href: '/mes-patients' },
+        { label: 'Ordonnance', icone: 'pilule', couleur: '#7B5EA7', acte: { libelle: 'une ordonnance', onglet: 'Consultations' } },
+        { label: 'Vaccin', icone: 'seringue', couleur: '#2E7D5E', acte: { libelle: 'un vaccin', onglet: 'Santé' } },
+        { label: 'Compte rendu', icone: 'crayon', couleur: '#B8860B', acte: { libelle: 'un compte rendu', onglet: 'Consultations' } },
+        { label: 'Messages', icone: 'message', couleur: '#5F9EAA', href: '/messages' },
+        { label: 'Facturation', icone: 'facture', couleur: '#6E9E57', href: '/elevage/facturation' },
+        { label: 'Mon abonnement', icone: 'etoile', couleur: '#D97706', href: abonnementHref },
       ];
 
   // Patients avec accès accordé (profil pro ACTIF), comme l'appli.
@@ -75,13 +64,11 @@ export default function TuilesSanteVet({ catPro, uid, profileId, abonnementHref 
 
   return (
     <div>
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Accès rapide</p>
+      <TitreRubrique titre="Accès rapide" />
       <div className="grid grid-cols-3 gap-3">
-        {tuiles.map(t => t.href ? (
-          <Link key={t.label} href={t.href} className={classeTuile} style={{ borderColor: `${t.couleur}59` }}>{contenu(t)}</Link>
-        ) : (
-          <button key={t.label} type="button" onClick={() => t.acte && choisirPatient(t.acte)}
-            className={classeTuile} style={{ borderColor: `${t.couleur}59` }}>{contenu(t)}</button>
+        {tuiles.map(t => (
+          <TuileAccueil key={t.label} label={t.label} icone={t.icone} teinte={t.couleur}
+            href={t.href} onClick={t.href ? undefined : () => t.acte && choisirPatient(t.acte)} />
         ))}
       </div>
 

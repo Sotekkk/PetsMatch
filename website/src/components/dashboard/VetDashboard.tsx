@@ -8,13 +8,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { retardsEnCascade } from '@/lib/retards-rdv';
 import TuilesSanteVet from '@/components/dashboard/TuilesSanteVet';
-import { Kpi, PhotoAnimal, Donut, BarresSemaine } from '@/components/dashboard/kit';
+import { Kpi, PhotoAnimal, Donut, BarresSemaine, EnteteAccueil, Icone } from '@/components/dashboard/kit';
 
 const TEAL = '#0C5C6C';
 
@@ -183,21 +182,15 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
   const dateJour = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
-    <div className="min-h-screen bg-[#F8F8F8]" style={{ fontFamily: 'Galey, sans-serif' }}>
+    <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
       {/* En-tête */}
-      <div className="text-white" style={{ background: `linear-gradient(135deg, ${TEAL}, #5F9EAA)` }}>
-        <div className="max-w-6xl mx-auto px-4 py-6 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full overflow-hidden bg-white/20 flex-shrink-0 border-2 border-white/30">
-            {avatar
-              ? <Image src={avatar} alt="" width={56} height={56} className="object-cover w-full h-full" />
-              : <div className="w-full h-full flex items-center justify-center text-xl font-bold">{nom[0]?.toUpperCase() ?? '?'}</div>}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold truncate">{nom}</h1>
-            <p className="text-sm font-semibold text-white/90 truncate">{[personne, 'Vétérinaire · Gérant'].filter(Boolean).join(' — ')}</p>
-            <p className="text-xs text-white/75 first-letter:uppercase">{dateJour}</p>
-          </div>
-        </div>
+      <div className="max-w-6xl mx-auto px-4 pt-5 sm:pt-8">
+        <EnteteAccueil
+          nom={nom}
+          avatar={avatar}
+          sousTitre={[personne, 'Vétérinaire · Gérant'].filter(Boolean).join(' — ')}
+          statut={<span className="inline-flex items-center gap-1.5 text-sm text-gray-600"><Icone nom="calendrier" taille={15} className="text-[#0C5C6C]" /><span className="first-letter:uppercase">{dateJour}</span></span>}
+        />
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-5 space-y-5">
@@ -210,12 +203,12 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
               <div className="flex flex-wrap gap-2">
                 {retardMax > 0 && (
                   <Link href="/mes-rdv?onglet=a_venir" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold" style={{ background: '#FFEDD5', color: '#B45309' }}>
-                    ⏱ Retard estimé : +{retardMax} min
+                    <Icone nom="horloge" taille={15} />Retard estimé : +{retardMax} min
                   </Link>
                 )}
                 {demandes.length > 0 && (
                   <Link href="/mes-rdv?onglet=demandes" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold" style={{ background: '#FFF4DC', color: '#8A5A00' }}>
-                    🔔 {demandes.length} demande{demandes.length > 1 ? 's' : ''} à confirmer
+                    <Icone nom="cloche" taille={15} />{demandes.length} demande{demandes.length > 1 ? 's' : ''} à confirmer
                   </Link>
                 )}
               </div>
@@ -223,15 +216,15 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
 
             {/* Indicateurs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Kpi valeur={rdvAujourdhui} label="RDV aujourd'hui" icone="📅" href="/mes-rdv?onglet=a_venir" />
-              <Kpi valeur={demandes.length} label="Demandes à confirmer" icone="📨" href="/mes-rdv?onglet=demandes" />
-              <Kpi valeur={aCloturer.length} label="Consultations à clôturer" icone="📋" href="/mes-rdv?onglet=a_venir" />
-              <Kpi valeur={patientsCount} label="Patients suivis" icone="🩺" href="/mes-patients" />
+              <Kpi valeur={rdvAujourdhui} label="RDV aujourd'hui" icone="calendrier" href="/mes-rdv?onglet=a_venir" />
+              <Kpi valeur={demandes.length} label="Demandes à confirmer" icone="boite" href="/mes-rdv?onglet=demandes" />
+              <Kpi valeur={aCloturer.length} label="Consultations à clôturer" icone="presse" href="/mes-rdv?onglet=a_venir" />
+              <Kpi valeur={patientsCount} label="Patients suivis" icone="stetho" href="/mes-patients" />
             </div>
 
             <div className="grid lg:grid-cols-3 gap-5 items-start">
               {/* Planning du jour */}
-              <section className={`bg-white rounded-2xl border border-[#E4E7E2] p-4 ${demandes.length || aCloturer.length || crs.length ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+              <section className={`bg-white rounded-2xl border border-[#E5E8E6] p-4 ${demandes.length || aCloturer.length || crs.length ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <h2 className="flex-1 font-bold text-base text-[#1E2025]">Planning du jour</h2>
                   <Link href="/mes-rdv?onglet=a_venir" className="text-sm font-bold" style={{ color: TEAL }}>Voir l&apos;agenda complet</Link>
@@ -282,7 +275,7 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
 
               {/* Actions — aucune section vide */}
               {(demandes.length > 0 || aCloturer.length > 0 || crs.length > 0) && (
-                <section className="bg-white rounded-2xl border border-[#E4E7E2] p-4 space-y-4">
+                <section className="bg-white rounded-2xl border border-[#E5E8E6] p-4 space-y-4">
                   <h2 className="font-bold text-base text-[#1E2025]">Actions</h2>
                   {demandes.length > 0 && (
                     <GroupeActions titre="Demandes en attente" total={demandes.length} voirTout="/mes-rdv?onglet=demandes">
@@ -385,7 +378,7 @@ function Statistiques({ rdvs, now, periode, setPeriode, filtre, setFiltre, prati
   const aujourdhui = (now.getDay() + 6) % 7;
 
   return (
-    <section className="bg-white rounded-2xl border border-[#E4E7E2] p-4">
+    <section className="bg-white rounded-2xl border border-[#E5E8E6] p-4">
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex-1 min-w-[180px]">
           <h2 className="font-bold text-base text-[#1E2025]">Répartition des rendez-vous</h2>

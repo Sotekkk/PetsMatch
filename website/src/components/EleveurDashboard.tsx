@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { usePlan, PLAN_CONFIG } from '@/lib/use-plan';
+import { usePlan } from '@/lib/use-plan';
+import { Kpi, EnteteAccueil, Puce, BoutonPilule, TitreRubrique, Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
 
 interface Annonce {
   id: string;
@@ -17,26 +17,6 @@ interface Annonce {
   vues?: number;
   created_at?: string;
 }
-
-const SPECIES_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
-  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷',
-};
-
-const QUICK_LINKS = [
-  { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
-  { href: '/mes-annonces',                   label: 'Mes Annonces',       icon: '📋', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
-  { href: '/annonces/creer',                 label: 'Nouvelle annonce',   icon: '➕', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
-  { href: '/animaux-perdus',                 label: 'Animaux perdus',     icon: '🔍', bg: 'bg-amber-50',  border: 'border-amber-200',    text: 'text-amber-700', pro: false },
-  { href: '/elevage/profil',                  label: 'Mon profil élevage', icon: '🏡', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
-  { href: '/elevage/agenda',                 label: 'Agenda du jour',     icon: '🗓️', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
-  { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: false },
-  { href: '/mes-taches?add=1',               label: 'Ajouter une tâche',  icon: '➕', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
-  { href: '/elevage/registre-sanitaire',     label: 'Registre sanitaire', icon: '🏥', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
-  { href: '/elevage/registre-entree-sortie', label: 'Entrées / Sorties',  icon: '📂', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: true  },
-  { href: '/elevage/facturation',            label: 'Facturation',        icon: '🧾', bg: 'bg-[#EEF5EA]', border: 'border-[#6E9E57]/30', text: 'text-[#5A8A45]', pro: true  },
-  { href: '/elevages',                       label: 'Élevages',           icon: '🏡', bg: 'bg-[#E8F4F6]', border: 'border-[#0C5C6C]/30', text: 'text-[#0C5C6C]', pro: false },
-];
 
 export default function EleveurDashboard() {
   const { user, userData, loading: authLoading, activeProfileId } = useAuth();
@@ -115,140 +95,100 @@ export default function EleveurDashboard() {
     );
   }
 
-  return (
-    <div className="bg-[#F8F8F6] min-h-screen">
-      <div className="bg-gradient-to-br from-[#0C5C6C] to-[#5F9EAA] text-white">
-        <div className="max-w-6xl mx-auto px-4 py-8 flex items-center gap-5">
-          <Link href="/elevage/profil" className="flex-shrink-0">
-            <div className="w-20 h-20 rounded-full bg-[#A7C79A] overflow-hidden flex items-center justify-center border-2 border-white/30">
-              {avatar ? (
-                <Image src={avatar} alt="" width={80} height={80} className="object-cover w-full h-full" />
-              ) : (
-                <span className="text-3xl">🐾</span>
-              )}
-            </div>
-          </Link>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {displayName}
-              </h1>
-              {!planLoading && (
-                <Link href="/abonnement"
-                  className="flex items-center gap-1 text-xs font-bold px-2.5 py-0.5 rounded-full transition-opacity hover:opacity-80"
-                  style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}>
-                  {planConfig.badge} {planConfig.label}
-                </Link>
-              )}
-            </div>
-            {city && <p className="text-white/70 text-sm mt-0.5">📍 {city}</p>}
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <Link href="/elevage/profil"
-                className="inline-flex items-center gap-1.5 text-xs border border-white/40 rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
-                🏡 Mon profil élevage
-              </Link>
-              {plan === 'free' && (
-                <Link href="/abonnement"
-                  className="inline-flex items-center gap-1.5 text-xs bg-white/20 rounded-full px-3 py-1 hover:bg-white/30 transition-colors font-semibold">
-                  ⚡ Passer Pro
-                </Link>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+  const planIcone = plan === 'premium' ? 'couronne' : plan === 'pro' ? 'etoile' : 'valide';
+  const carte = `bg-white rounded-2xl ${OMBRE}`;
 
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { value: animalCount, label: 'Animaux', icon: '🐾', href: '/mes-animaux' },
-            { value: postCount,   label: 'Annonces', icon: '📋', href: '/mes-annonces' },
-            { value: planConfig.badge + ' ' + planConfig.label, label: 'Plan', icon: null, href: '/abonnement' },
-          ].map((s) => (
-            <Link key={s.label} href={s.href} className="bg-white rounded-2xl p-4 flex flex-col items-center shadow-sm hover:shadow-md transition-shadow">
-              {s.icon && <span className="text-xl mb-1">{s.icon}</span>}
-              <span className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {s.value}
-              </span>
-              <span className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>{s.label}</span>
-            </Link>
-          ))}
+  return (
+    <div className="bg-[#F6F7F5] min-h-screen" style={{ fontFamily: 'Galey, sans-serif' }}>
+      <div className="max-w-6xl mx-auto px-4 py-5 sm:py-8 space-y-6">
+        <EnteteAccueil
+          nom={displayName}
+          avatar={avatar}
+          avatarHref="/elevage/profil"
+          lieu={city || undefined}
+          statut={!planLoading && (
+            <Puce texte={planConfig.label} fg={planConfig.color} bg={planConfig.bg} icone={planIcone} href="/abonnement" />
+          )}
+          actions={<>
+            <BoutonPilule href="/elevage/profil" icone="reglages">Mon profil élevage</BoutonPilule>
+            {plan === 'free' && <BoutonPilule href="/abonnement" contour>Passer Pro</BoutonPilule>}
+          </>}
+        />
+
+        <div className="grid grid-cols-3 gap-3 sm:gap-4">
+          <Kpi valeur={animalCount} label="Animaux" icone="patte" href="/mes-animaux" />
+          <Kpi valeur={postCount} label="Annonces" icone="document" href="/mes-annonces" />
+          <Kpi valeur={planConfig.label} label="Plan" icone={planIcone} teinte={planConfig.color} href="/abonnement" />
         </div>
 
         {mesAlertes.length > 0 && (
           <Link href="/mes-alertes"
-            className="flex items-center gap-4 bg-amber-50 border border-amber-300 rounded-2xl p-4 hover:bg-amber-100 transition-colors">
-            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-lg">🔍</span>
-            </div>
-            <div className="flex-1">
-              <p className="font-bold text-amber-800 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+            className="flex items-center gap-4 bg-white rounded-2xl p-4 hover:shadow-md transition-shadow"
+            style={{ border: '1px solid #F3D9A4' }}>
+            <span className="w-10 h-10 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center flex-shrink-0">
+              <Icone nom="recherche" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[#1E2025] text-sm">
                 {mesAlertes.length} alerte{mesAlertes.length > 1 ? 's' : ''} active{mesAlertes.length > 1 ? 's' : ''}
               </p>
-              <p className="text-amber-600 text-xs">
+              <p className="text-gray-600 text-xs">
                 {mesAlertes.length === 1 ? 'Gérer votre alerte' : 'Gérer vos alertes'}
               </p>
             </div>
-            <span className="text-amber-400 text-lg">›</span>
+            <Icone nom="fleche" taille={18} className="text-gray-400" />
           </Link>
         )}
 
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-              Dernières annonces
-            </h2>
-            <Link href="/mes-annonces" className="text-sm text-[#0C5C6C] font-medium hover:underline">
-              Voir tout →
-            </Link>
-          </div>
+          <TitreRubrique titre="Dernières annonces" lien="/mes-annonces" />
 
           {recentAnnonces.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3 shadow-sm">
-              <span className="text-4xl text-gray-200">📋</span>
-              <p className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune annonce publiée</p>
+            <div className={`${carte} p-8 flex flex-col items-center gap-3`} style={{ border: `1px solid ${BORDURE}` }}>
+              <span className="w-12 h-12 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="document" taille={22} /></span>
+              <p className="text-gray-500 text-sm">Aucune annonce publiée</p>
               <Link href="/annonces/creer"
                 className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors">
                 Créer une annonce
               </Link>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {recentAnnonces.map((a) => {
-                const title = a.titre || a.race || (a.espece ? (SPECIES_EMOJI[a.espece] + ' ' + a.espece) : 'Annonce');
+                const title = a.titre || a.race || a.espece || 'Annonce';
                 const photos = (a.photos as unknown as string[]) ?? [];
                 const statut = a.statut ?? 'disponible';
                 const statutLabel = statut === 'pause' ? 'En pause' : statut === 'reserve' ? 'Réservé' : 'En ligne';
-                const statutColor = statut === 'pause' ? 'bg-gray-100 text-gray-500'
-                  : statut === 'reserve' ? 'bg-amber-100 text-amber-700'
-                  : 'bg-[#EEF5EA] text-[#5A8A45]';
+                const [fg, bg] = statut === 'pause' ? ['#6B7280', '#F3F4F6']
+                  : statut === 'reserve' ? ['#B45309', '#FEF3C7']
+                  : ['#2F7D3A', '#EAF5EC'];
                 const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
 
                 return (
                   <Link key={a.id} href={`/annonces/${a.id}`}
-                    className="flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#EEF5EA] flex-shrink-0 flex items-center justify-center">
+                    className={`${carte} flex items-center gap-3 sm:gap-4 p-3 hover:shadow-md transition-shadow`}
+                    style={{ border: `1px solid ${BORDURE}` }}>
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0 flex items-center justify-center">
                       {photos[0] ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img src={photos[0]} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-2xl">{SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}</span>
+                        <Icone nom="patte" taille={24} />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-[#1F2A2E] text-sm truncate capitalize" style={{ fontFamily: 'Galey, sans-serif' }}>
-                        {title}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statutColor}`}>
-                          {statutLabel}
-                        </span>
+                      <p className="font-semibold text-[#1E2025] text-[15px] truncate capitalize">{title}</p>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <Puce texte={statutLabel} fg={fg} bg={bg} point />
                         {(a.vues ?? 0) > 0 && (
-                          <span className="text-xs text-gray-400">👁 {a.vues}</span>
+                          <span className="inline-flex items-center gap-1 text-xs text-gray-500 tabular-nums">
+                            <Icone nom="oeil" taille={14} />{a.vues}
+                          </span>
                         )}
                       </div>
                     </div>
                     {dateStr && (
-                      <span className="text-xs text-gray-400 flex-shrink-0">{dateStr}</span>
+                      <span className="text-xs text-gray-500 tabular-nums flex-shrink-0 self-center">{dateStr}</span>
                     )}
                   </Link>
                 );

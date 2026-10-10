@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { Kpi, TitreRubrique, Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
 
 interface Stats {
   total: number;
@@ -64,25 +65,22 @@ export default function AssociationDashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold font-galey text-teal-800">Tableau de bord</h1>
+    <div className="space-y-6 font-galey">
+      <h1 className="text-2xl font-bold text-[#1E2025]">Tableau de bord</h1>
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="Animaux total" value={stats.total} color="teal" icon="🐾" href="/association/animaux" />
-        <StatCard label="Disponibles" value={stats.disponible} color="green" icon="💚" href="/association/animaux?statut=disponible" />
-        <StatCard label="En soin" value={stats.enSoin} color="orange" icon="🏥" href="/association/animaux?statut=en_soin" />
-        <StatCard label="En famille d'accueil" value={stats.enFa} color="purple" icon="🏡" href="/association/animaux?statut=en_fa" />
-        <StatCard label="Adoptés" value={stats.adopte} color="blue" icon="🎉" href="/association/animaux?statut=adopte" />
-        <StatCard label="Équipe" value={stats.benevoles} color="teal" icon="🤝" href="/association/equipe" />
+        <Kpi label="Animaux total" valeur={stats.total} icone="patte" teinte="#0C5C6C" href="/association/animaux" />
+        <Kpi label="Disponibles" valeur={stats.disponible} icone="coeur" teinte="#2F7D3A" href="/association/animaux?statut=disponible" />
+        <Kpi label="En soin" valeur={stats.enSoin} icone="soin" teinte="#C2410C" href="/association/animaux?statut=en_soin" />
+        <Kpi label="En famille d'accueil" valeur={stats.enFa} icone="maison" teinte="#7B5EA7" href="/association/animaux?statut=en_fa" />
+        <Kpi label="Adoptés" valeur={stats.adopte} icone="valide" teinte="#2563EB" href="/association/animaux?statut=adopte" />
+        <Kpi label="Équipe" valeur={stats.benevoles} icone="equipe" teinte="#0C5C6C" href="/association/equipe" />
       </div>
 
       {/* Animaux récents */}
-      <div className="bg-white rounded-2xl shadow-sm p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold font-galey text-teal-800">Animaux récents</h2>
-          <Link href="/association/animaux" className="text-sm text-teal-600 hover:underline">Voir tous →</Link>
-        </div>
+      <div className={`bg-white rounded-2xl p-5 ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
+        <TitreRubrique titre="Animaux récents" lien="/association/animaux" libelleLien="Voir tous" />
         {recentAnimaux.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-8">Aucun animal enregistré</p>
         ) : (
@@ -91,17 +89,17 @@ export default function AssociationDashboard() {
               const sc = STATUT_CONFIG[a.statut] ?? { label: a.statut, color: 'bg-gray-100 text-gray-600' };
               return (
                 <Link key={a.id} href={`/association/animaux/${a.id}`}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-teal-200 hover:bg-teal-50/30 transition-all">
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 flex-shrink-0">
+                  className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E8E6] hover:border-[#0C5C6C]/30 hover:bg-[#F4F9FA] transition-all">
+                  <div className="w-11 h-11 rounded-full overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0">
                     {a.photo_url ? (
                       <img src={a.photo_url} alt={a.nom} className="w-full h-full object-cover" />
                     ) : (
-                      <span className="w-full h-full flex items-center justify-center text-lg">🐾</span>
+                      <span className="w-full h-full flex items-center justify-center"><Icone nom="patte" taille={18} /></span>
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold font-galey text-sm truncate">{a.nom}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${sc.color}`}>{sc.label}</span>
+                    <p className="font-semibold text-sm text-[#1E2025] truncate">{a.nom}</p>
+                    <span className={`inline-block mt-1 text-xs font-semibold px-2 py-0.5 rounded-full ${sc.color}`}>{sc.label}</span>
                   </div>
                 </Link>
               );
@@ -111,32 +109,4 @@ export default function AssociationDashboard() {
       </div>
     </div>
   );
-}
-
-function StatCard({ label, value, color, icon, href }: { label: string; value: number; color: string; icon: string; href?: string }) {
-  const colorMap: Record<string, string> = {
-    teal: 'bg-teal-50 border-teal-100',
-    green: 'bg-green-50 border-green-100',
-    orange: 'bg-orange-50 border-orange-100',
-    purple: 'bg-purple-50 border-purple-100',
-    blue: 'bg-blue-50 border-blue-100',
-  };
-  const valColor: Record<string, string> = {
-    teal: 'text-teal-700', green: 'text-green-700', orange: 'text-orange-600',
-    purple: 'text-purple-700', blue: 'text-blue-700',
-  };
-  const content = (
-    <>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xl">{icon}</span>
-        <p className="text-xs text-gray-500 font-galey">{label}</p>
-      </div>
-      <p className={`text-3xl font-bold font-galey ${valColor[color] ?? 'text-gray-700'}`}>{value}</p>
-    </>
-  );
-  const className = `rounded-2xl p-4 border ${colorMap[color] ?? 'bg-gray-50 border-gray-100'}${href ? ' transition-shadow hover:shadow-md cursor-pointer' : ''}`;
-  if (href) {
-    return <Link href={href} className={`block ${className}`}>{content}</Link>;
-  }
-  return <div className={className}>{content}</div>;
 }

@@ -25,7 +25,8 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
         width={0}
         height={0}
         sizes="100vw"
-        className="w-full h-auto block"
+        // Accueil : hauteur plafonnée sur très grand écran (bannière entière, centrée)
+        className={pathname === '/' ? 'w-full h-auto max-h-[260px] object-contain object-center block bg-white' : 'w-full h-auto block'}
         priority
       />
       <ValidationGuard>

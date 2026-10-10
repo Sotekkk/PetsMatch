@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { typeFromMotif } from '@/lib/agenda-type';
 
 import TuilesSanteVet from '@/components/dashboard/TuilesSanteVet';
+import { Kpi, EnteteAccueil, Puce, Tuile, TitreRubrique, Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface ProProfile {
@@ -66,8 +67,6 @@ function fmtDate(iso: string) {
   if (d.toDateString() === tomorrow.toDateString()) return 'Demain ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
-
-const ESPECE_EMOJI: Record<string, string> = { chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰', oiseau: '🦜', autre: '🐾' };
 
 const TYPE_LABEL: Record<string, string> = {
   veterinaire: 'Vétérinaire', sante: 'Santé animale', education: 'Éducateur',
@@ -271,87 +270,41 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F8F8]">
-      {/* Header */}
-      <div className="bg-[#0C5C6C] text-white">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full overflow-hidden bg-white/20 flex-shrink-0 border-2 border-white/30">
-              {avatar
-                ? <Image src={avatar} alt="" width={56} height={56} className="object-cover w-full h-full" />
-                : <div className="w-full h-full flex items-center justify-center text-xl font-bold">{name[0]?.toUpperCase() ?? '?'}</div>
-              }
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-white/70">Bonjour,</p>
-              <h1 className="text-xl font-bold truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{name}</h1>
-              <span className="text-xs text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
-                {TYPE_LABEL[catPro] ?? catPro}
-              </span>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
+      <div className="max-w-4xl mx-auto px-4 pt-5 sm:pt-8">
+        <EnteteAccueil
+          nom={name}
+          avatar={avatar}
+          surTitre="Bonjour,"
+          statut={<Puce texte={TYPE_LABEL[catPro] ?? catPro} fg="#0C5C6C" bg="#E8F4F6" />}
+        />
 
-          {/* Stats rapides */}
+        {/* Stats rapides */}
+        <div className="grid grid-cols-3 gap-3 sm:gap-4 mt-4">
           {isPension ? (
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <Link href="/pension/registre" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{pensionnairesCount}</p>
-                <p className="text-xs text-white/70 mt-0.5">Pensionnaires</p>
-              </Link>
-              <Link href="/agenda" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{rdvTodayCount}</p>
-                <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
-              </Link>
-              <Link href="/pension/abonnement" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
-                <p className="text-base font-bold">Pension</p>
-                <p className="text-xs text-white/70 mt-0.5">Mon abonnement</p>
-              </Link>
-            </div>
+            <>
+              <Kpi valeur={pensionnairesCount} label="Pensionnaires" icone="patte" href="/pension/registre" />
+              <Kpi valeur={rdvTodayCount} label="RDV aujourd'hui" icone="calendrier" href="/agenda" />
+              <Kpi valeur="Pension" label="Mon abonnement" icone="etoile" href="/pension/abonnement" />
+            </>
           ) : isEducation ? (
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <Link href="/education/planning" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{rdvToday}</p>
-                <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
-              </Link>
-              <Link href="/mes-rdv" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{upcomingRdvs.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">RDV à venir</p>
-              </Link>
-              <Link href="/education/abonnement" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
-                <p className="text-base font-bold">Éducateur</p>
-                <p className="text-xs text-white/70 mt-0.5">Ma formule</p>
-              </Link>
-            </div>
+            <>
+              <Kpi valeur={rdvToday} label="RDV aujourd'hui" icone="calendrier" href="/education/planning" />
+              <Kpi valeur={upcomingRdvs.length} label="RDV à venir" icone="horloge" href="/mes-rdv" />
+              <Kpi valeur="Éducateur" label="Ma formule" icone="etoile" href="/education/abonnement" />
+            </>
           ) : isVet ? (
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <Link href="/mes-patients" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{patients.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">Patients</p>
-              </Link>
-              <Link href="/mes-rdv" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{rdvToday}</p>
-                <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
-              </Link>
-              <Link href={abonnementHref} className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
-                <p className="text-base font-bold">{TYPE_LABEL[catPro] ?? 'Pro'}</p>
-                <p className="text-xs text-white/70 mt-0.5">Mon forfait</p>
-              </Link>
-            </div>
+            <>
+              <Kpi valeur={patients.length} label="Patients" icone="stetho" href="/mes-patients" />
+              <Kpi valeur={rdvToday} label="RDV aujourd'hui" icone="calendrier" href="/mes-rdv" />
+              <Kpi valeur={TYPE_LABEL[catPro] ?? 'Pro'} label="Mon forfait" icone="etoile" href={abonnementHref} />
+            </>
           ) : (
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{pendingRdvs.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">En attente</p>
-              </div>
-              <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{upcomingRdvs.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">RDV à venir</p>
-              </div>
-              <div className="bg-white/10 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{patients.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">Animaux suivis</p>
-              </div>
-            </div>
+            <>
+              <Kpi valeur={pendingRdvs.length} label="En attente" icone="horloge" />
+              <Kpi valeur={upcomingRdvs.length} label="RDV à venir" icone="calendrier" />
+              <Kpi valeur={patients.length} label="Animaux suivis" icone="patte" />
+            </>
           )}
         </div>
       </div>
@@ -361,9 +314,9 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
         {/* Disponibilité logements (pension) */}
         {isPension && logementsTotal > 0 && (
           <Link href="/pension/planning"
-            className="block bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+            className={`block bg-white rounded-2xl p-4 hover:shadow-md transition-shadow ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🏘️</span>
+              <span className="w-10 h-10 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0"><Icone nom="logement" /></span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-[#1F2A2E]">{logementsDispo} / {logementsTotal} places disponibles</p>
                 <div className="w-full h-1.5 bg-gray-100 rounded-full mt-1.5 overflow-hidden">
@@ -374,7 +327,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                     }} />
                 </div>
               </div>
-              <span className="text-gray-400">›</span>
+              <Icone nom="fleche" taille={18} className="text-gray-400" />
             </div>
           </Link>
         )}
@@ -384,86 +337,38 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
           <TuilesSanteVet catPro={catPro} uid={uid ?? ''} profileId={profileId} abonnementHref={abonnementHref} />
         ) : (
         <div>
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Accès rapide</p>
+          <TitreRubrique titre="Accès rapide" />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Link href="/agenda" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-2xl mb-1">📅</div>
-              <p className="text-xs font-semibold text-[#1F2A2E]">Mon agenda</p>
-            </Link>
-            <Link href="/mes-rdv" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-2xl mb-1">🗓️</div>
-              <p className="text-xs font-semibold text-[#1F2A2E]">Gérer les RDV</p>
-            </Link>
-            <Link href="/pro/creneaux" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-2xl mb-1">⏰</div>
-              <p className="text-xs font-semibold text-[#1F2A2E]">Mes créneaux</p>
-            </Link>
-            <Link href="/messages" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-              <div className="text-2xl mb-1">💬</div>
-              <p className="text-xs font-semibold text-[#1F2A2E]">Messages</p>
-            </Link>
+            <Tuile href="/agenda" icone="calendrier" label="Mon agenda" />
+            <Tuile href="/mes-rdv" icone="calendrier" label="Gérer les RDV" />
+            <Tuile href="/pro/creneaux" icone="horloge" label="Mes créneaux" />
+            <Tuile href="/messages" icone="message" label="Messages" />
             {isEducation && (
               <>
-                <Link href="/mes-patients" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">🐾</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Mes élèves</p>
-                </Link>
-                <Link href="/education/bibliotheque" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">🏋️</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Bibliothèque d&apos;exercices</p>
-                </Link>
+                <Tuile href="/mes-patients" icone="patte" label="Mes élèves" />
+                <Tuile href="/education/bibliotheque" icone="exercice" label="Bibliothèque d'exercices" />
               </>
             )}
             {isVet && (
               <>
-                <Link href="/mes-patients" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">🐾</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Mes patients</p>
-                </Link>
+                <Tuile href="/mes-patients" icone="patte" label="Mes patients" />
                 {catPro === 'sante' && (
                   <>
-                    <Link href="/sante/suivis" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                      <div className="text-2xl mb-1">🦴</div>
-                      <p className="text-xs font-semibold text-[#1F2A2E]">Mes suivis</p>
-                    </Link>
-                    <Link href="/sante/contrat" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                      <div className="text-2xl mb-1">📄</div>
-                      <p className="text-xs font-semibold text-[#1F2A2E]">Mes contrats</p>
-                    </Link>
+                    <Tuile href="/sante/suivis" icone="suivi" label="Mes suivis" />
+                    <Tuile href="/sante/contrat" icone="document" label="Mes contrats" />
                   </>
                 )}
-                <Link href="/elevage/facturation" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">🧾</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Facturation</p>
-                </Link>
-                <Link href={abonnementHref} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">⭐</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Mon abonnement</p>
-                </Link>
+                <Tuile href="/elevage/facturation" icone="facture" label="Facturation" />
+                <Tuile href={abonnementHref} icone="etoile" label="Mon abonnement" />
               </>
             )}
             {isGarde && (
               <>
-                <Link href="/garde/registre" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">📖</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Registre des visites</p>
-                </Link>
-                <Link href="/garde/cles" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">🔑</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Gestion des clés</p>
-                </Link>
-                <Link href="/garde/devis" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">📝</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Devis</p>
-                </Link>
-                <Link href="/garde/tarifs-clients" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">💶</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Tarifs clients</p>
-                </Link>
-                <Link href="/garde/abonnement" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
-                  <div className="text-2xl mb-1">⭐</div>
-                  <p className="text-xs font-semibold text-[#1F2A2E]">Mon abonnement</p>
-                </Link>
+                <Tuile href="/garde/registre" icone="livre" label="Registre des visites" />
+                <Tuile href="/garde/cles" icone="cle" label="Gestion des clés" />
+                <Tuile href="/garde/devis" icone="crayon" label="Devis" />
+                <Tuile href="/garde/tarifs-clients" icone="euro" label="Tarifs clients" />
+                <Tuile href="/garde/abonnement" icone="etoile" label="Mon abonnement" />
               </>
             )}
           </div>
@@ -473,20 +378,15 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
         {/* RDV en attente */}
         {(loading || pendingRdvs.length > 0) && (
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                RDV en attente {!loading && `(${pendingRdvs.length})`}
-              </p>
-              <Link href="/mes-rdv" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
-            </div>
+            <TitreRubrique titre={`RDV en attente${!loading ? ` (${pendingRdvs.length})` : ''}`} lien="/mes-rdv" />
             {loading ? (
-              <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
+              <div className="bg-white rounded-2xl border border-[#E5E8E6] p-6 flex justify-center">
                 <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
               </div>
             ) : pendingRdvs.length === 0 ? null : (
               <div className="space-y-2">
                 {pendingRdvs.map(rdv => (
-                  <div key={rdv.id} className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                  <div key={rdv.id} className={`bg-white rounded-2xl px-4 py-3 ${OMBRE}`} style={{ border: '1px solid #F3D9A4' }}>
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <p className="font-semibold text-sm text-[#1F2A2E]">{clientNames[rdv.client_uid] ?? '…'}</p>
@@ -494,18 +394,16 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                           {fmtDate(rdv.date_heure)}{rdv.motif ? ` · ${rdv.motif}` : ''}
                         </p>
                       </div>
-                      <span className="text-[10px] font-bold bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
-                        En attente
-                      </span>
+                      <span className="flex-shrink-0 ml-2"><Puce texte="En attente" fg="#B45309" bg="#FEF3C7" point /></span>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => confirmRdv(rdv)} disabled={savingRdv === rdv.id}
                         className="flex-1 text-xs font-semibold py-1.5 rounded-xl bg-[#0C5C6C] text-white hover:bg-[#0a4a5a] disabled:opacity-50 transition-colors">
-                        ✓ Confirmer
+                        Confirmer
                       </button>
                       <button onClick={() => rejectRdv(rdv)} disabled={savingRdv === rdv.id}
                         className="flex-1 text-xs font-semibold py-1.5 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors">
-                        ✗ Refuser
+                        Refuser
                       </button>
                     </div>
                   </div>
@@ -517,17 +415,14 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
 
         {/* Prochains RDV confirmés */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Prochains RDV</p>
-            <Link href="/agenda" className="text-xs text-[#0C5C6C] font-medium hover:underline">Agenda →</Link>
-          </div>
+          <TitreRubrique titre="Prochains RDV" lien="/agenda" libelleLien="Agenda" />
           {loading ? (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
+            <div className="bg-white rounded-2xl border border-[#E5E8E6] p-6 flex justify-center">
               <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : upcomingRdvs.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
-              <p className="text-3xl mb-2">📭</p>
+            <div className="bg-white rounded-2xl border border-[#E5E8E6] p-6 text-center">
+              <span className="w-11 h-11 mx-auto mb-2 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="boite" /></span>
               <p className="text-sm text-gray-400">Aucun RDV confirmé à venir</p>
               <Link href="/pro/creneaux" className="text-xs text-[#0C5C6C] font-medium hover:underline mt-1 inline-block">
                 Configurer mes créneaux →
@@ -536,12 +431,12 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
           ) : (
             <div className="space-y-2">
               {upcomingRdvs.map(rdv => (
-                <div key={rdv.id} className="bg-white border border-gray-100 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-sm"
-                  style={{ borderLeft: '4px solid #0C5C6C' }}>
-                  <span className="text-xl flex-shrink-0">🩺</span>
+                <div key={rdv.id} className={`bg-white rounded-2xl px-4 py-3 flex items-center gap-3 ${OMBRE}`}
+                  style={{ border: `1px solid ${BORDURE}` }}>
+                  <span className="w-10 h-10 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0"><Icone nom="calendrier" taille={18} /></span>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm text-[#1F2A2E] truncate">{clientNames[rdv.client_uid] ?? '…'}</p>
-                    <p className="text-xs text-gray-400">{fmtDate(rdv.date_heure)}{rdv.motif ? ` · ${rdv.motif}` : ''}</p>
+                    <p className="text-xs text-gray-500">{fmtDate(rdv.date_heure)}{rdv.motif ? ` · ${rdv.motif}` : ''}</p>
                   </div>
                 </div>
               ))}
@@ -551,17 +446,14 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
 
         {/* Clients / patients — pour TOUS les profils pro */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">{clientsLabel}</p>
-            <Link href="/mes-patients" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
-          </div>
+          <TitreRubrique titre={clientsLabel} lien="/mes-patients" />
           {loading ? (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
+            <div className="bg-white rounded-2xl border border-[#E5E8E6] p-6 flex justify-center">
               <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : patients.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
-              <p className="text-3xl mb-2">🐾</p>
+            <div className="bg-white rounded-2xl border border-[#E5E8E6] p-6 text-center">
+              <span className="w-11 h-11 mx-auto mb-2 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="patte" /></span>
               <p className="text-sm text-gray-400">Aucun animal suivi pour l&apos;instant</p>
               <p className="text-xs text-gray-300 mt-1">Les propriétaires peuvent vous accorder l&apos;accès depuis la fiche de leur animal</p>
             </div>
@@ -572,21 +464,21 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                 if (!animal) return null;
                 return (
                   <Link key={p.id} href={`/mes-patients/${animal.id}`}
-                    className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 hover:shadow-md transition-shadow">
+                    className={`bg-white rounded-2xl p-3 hover:shadow-md transition-shadow ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
                     <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0 flex items-center justify-center">
                         {animal.photo_url
                           ? <Image src={animal.photo_url} alt="" width={40} height={40} className="object-cover w-full h-full" />
-                          : <span className="text-lg">{ESPECE_EMOJI[animal.espece?.toLowerCase()] ?? '🐾'}</span>
+                          : <Icone nom="patte" taille={18} />
                         }
                       </div>
                       <div className="min-w-0">
                         <p className="font-semibold text-sm text-[#1F2A2E] truncate">{animal.nom}</p>
-                        <p className="text-xs text-gray-400 truncate">{animal.race || animal.espece}</p>
+                        <p className="text-xs text-gray-500 truncate">{animal.race || animal.espece}</p>
                       </div>
                     </div>
                     {p.status === 'active_write' && (
-                      <span className="mt-1 text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full block text-center">✏️ Accès écriture</span>
+                      <span className="mt-2 text-[10px] font-semibold text-[#2F7D3A] bg-[#EAF5EC] border border-[#2F7D3A]/15 px-1.5 py-0.5 rounded-full block text-center">Accès écriture</span>
                     )}
                   </Link>
                 );
@@ -597,24 +489,21 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
 
         {/* Animaux perdus */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Animaux perdus / trouvés</p>
-            <Link href="/animaux-perdus" className="text-xs text-[#0C5C6C] font-medium hover:underline">Voir tout →</Link>
-          </div>
+          <TitreRubrique titre="Animaux perdus / trouvés" lien="/animaux-perdus" />
           {lostAnimals.length === 0 ? (
-            <Link href="/animaux-perdus" className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 hover:shadow-sm transition-shadow">
-              <span className="text-2xl">🔍</span>
+            <Link href="/animaux-perdus" className={`bg-white rounded-2xl p-4 flex items-center gap-3 hover:shadow-md transition-shadow ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
+              <span className="w-10 h-10 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0"><Icone nom="recherche" /></span>
               <p className="text-sm text-gray-500">Consulter les alertes animaux perdus</p>
             </Link>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {lostAnimals.map(a => (
                 <Link key={a.id} href={`/animaux-perdus/${a.id}`}
-                  className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                  className={`bg-white rounded-2xl overflow-hidden hover:shadow-md transition-shadow ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
                   <div className="h-24 bg-amber-50 relative overflow-hidden">
                     {a.photo_url
                       ? <Image src={a.photo_url} alt="" fill className="object-cover" />
-                      : <div className="absolute inset-0 flex items-center justify-center text-3xl">🔍</div>
+                      : <div className="absolute inset-0 flex items-center justify-center text-amber-700"><Icone nom="recherche" taille={28} /></div>
                     }
                     <span className={`absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                       a.statut === 'perdu' ? 'bg-red-500 text-white' : 'bg-green-500 text-white'
@@ -624,7 +513,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                   </div>
                   <div className="p-2">
                     <p className="font-semibold text-xs text-[#1F2A2E] truncate">{a.nom || 'Inconnu'}</p>
-                    <p className="text-[10px] text-gray-400">{a.espece}</p>
+                    <p className="text-[11px] text-gray-500">{a.espece}</p>
                   </div>
                 </Link>
               ))}
