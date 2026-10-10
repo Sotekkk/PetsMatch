@@ -1,5 +1,6 @@
 'use client';
 
+import { enregistrerModificationAnnonce } from '@/lib/annonce-paiement';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -128,8 +129,10 @@ function CreerObjetInner() {
         updated_at: new Date().toISOString(),
       };
       if (editId) {
-        const { error } = await supabase.from('annonces_objets').update(payload).eq('id', editId);
-        if (error) throw error;
+        // Photos / disponibilité gratuites, le reste payant (4,99 €).
+        const { statut: _statut, ...sansStatut } = payload; void _statut;
+        const applique = await enregistrerModificationAnnonce('annonces_objets', editId, JSON.parse(JSON.stringify(sansStatut)));
+        if (!applique) { setSaving(false); return; }
       } else {
         payload.created_at = new Date().toISOString();
         payload.expires_at = new Date(Date.now() + 60 * 86400_000).toISOString();

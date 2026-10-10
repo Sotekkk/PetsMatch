@@ -925,11 +925,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (!mounted) return;
       if (action == 'renouveler') {
         try {
-          await renewAnnonceListing(annonceId);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: const Text('Annonce renouvelée pour 30 jours ✓', style: TextStyle(fontFamily: 'Galey')),
-                backgroundColor: const Color(0xFF6E9E57)));
+          final ouvert = await renewAnnonceListing(context, annonceId);
+          if (ouvert && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text("Paiement ouvert : l'annonce sera prolongée dès le paiement.", style: TextStyle(fontFamily: 'Galey')),
+                backgroundColor: Color(0xFF6E9E57)));
           }
         } catch (e) {
           if (mounted) {

@@ -1,5 +1,6 @@
 'use client';
 
+import { enregistrerModificationAnnonce } from '@/lib/annonce-paiement';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -272,8 +273,9 @@ function CreerAnnonceChevalInner() {
 
       let annonceId = editId;
       if (editId) {
-        const { error: e2 } = await supabase.from('annonces').update(payload).eq('id', editId);
-        if (e2) throw new Error(e2.message);
+        // Brouillon : tout ; publiée : photos / disponibilité gratuites, le reste payant.
+        const applique = await enregistrerModificationAnnonce('annonces', editId, JSON.parse(JSON.stringify(payload)));
+        if (!applique) { setSaving(false); return; }
       } else {
         annonceId = genId();
         const { error: e2 } = await supabase.from('annonces').insert({

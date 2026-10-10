@@ -1,3 +1,4 @@
+import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
@@ -22,12 +23,10 @@ import 'package:url_launcher/url_launcher.dart';
 // Réutilisée depuis la carte annonce ET depuis le tap sur une notification
 // d'expiration (voir notifications_page.dart) — évite de dupliquer la
 // logique de renouvellement (+30 jours à partir de maintenant).
-Future<void> renewAnnonceListing(String annonceId) async {
-  final newExpires = DateTime.now().add(const Duration(days: 30)).toIso8601String();
-  await Supabase.instance.client.from('annonces').update({
-    'statut': 'disponible', 'expires_at': newExpires,
-  }).eq('id', annonceId);
-}
+/// Renouvellement payant (4,99 €, +30 jours) : paiement sur le site, le
+/// webhook prolonge l'annonce. true = page de paiement ouverte.
+Future<bool> renewAnnonceListing(BuildContext context, String annonceId) =>
+    renouvelerAnnoncePayant(context, table: 'annonces', id: annonceId);
 
 /// « Mes annonces » : annonces d'animaux ET de matériel & équipements du
 /// profil actif sur une même page, avec un filtre de type (Toutes / Animaux /
@@ -659,13 +658,14 @@ class _AnnonceCardState extends State<_AnnonceCard> {
   }
 
   Future<void> _renew() async {
-    final prevStatut = _statut;
-    setState(() => _statut = 'disponible');
     try {
-      await renewAnnonceListing(widget.id);
+      final ouvert = await renewAnnonceListing(context, widget.id);
+      if (ouvert && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+            "Paiement ouvert : l'annonce sera prolongée dès le paiement.", style: TextStyle(fontFamily: 'Galey'))));
+      }
       widget.onRefresh();
     } catch (e) {
-      setState(() => _statut = prevStatut);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erreur: $e', style: const TextStyle(fontFamily: 'Galey'))));

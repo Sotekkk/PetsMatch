@@ -1,3 +1,4 @@
+import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -390,7 +391,17 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         data['suspect_reasons'] = reasons;
       }
 
-      if (widget.annonceId != null) {
+      if (widget.annonceId != null && dejaPayee) {
+        // Annonce publiée : photos / disponibilité gratuites, le reste payant.
+        final issue = await enregistrerModificationAnnonce(context,
+            table: 'annonces', id: widget.annonceId!, changements: data);
+        if (!mounted) return;
+        if (issue == IssueModification.annulee) { setState(() => _saving = false); return; }
+        _snack(issue == IssueModification.appliquee ? 'Modifications enregistrées.'
+            : 'Paiement ouvert : vos changements seront appliqués dès le paiement.');
+        Navigator.pop(context, true);
+        return;
+      } else if (widget.annonceId != null) {
         await Supabase.instance.client.from('annonces').update(data).eq('id', widget.annonceId!);
       } else {
         data['id']         = _genUuid();

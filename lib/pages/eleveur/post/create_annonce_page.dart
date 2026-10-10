@@ -1,3 +1,4 @@
+import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -994,7 +995,22 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       supaData['is_suspect'] = _suspectReasons.isNotEmpty;
       supaData['suspect_reasons'] = _suspectReasons;
 
-      if (widget.annonceId != null) {
+      if (widget.annonceId != null && !_estBrouillon) {
+        // Annonce publiée : photos / disponibilité gratuites, le reste payant
+        // (4,99 €) ; espèce, race, sexe, parents verrouillés côté serveur.
+        final issue = await enregistrerModificationAnnonce(context,
+            table: 'annonces', id: widget.annonceId!, changements: supaData);
+        if (!mounted) return;
+        if (issue == IssueModification.annulee) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+            issue == IssueModification.appliquee ? 'Annonce mise à jour.'
+                : 'Paiement ouvert : vos changements seront appliqués dès le paiement.',
+            style: const TextStyle(fontFamily: 'Galey'))));
+        await _oublierBrouillonLocal();
+        _autoSaveTimer?.cancel();
+        Navigator.pop(context);
+        return;
+      } else if (widget.annonceId != null) {
         // Brouillon publié : la durée de publication démarre maintenant
         if (_estBrouillon && !brouillon) {
           supaData['expires_at'] = DateTime.now().add(Duration(days: _dureePlan ?? _dureeAnnonce)).toIso8601String();
@@ -1055,8 +1071,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final chienChat  = _espece == 'chien' || _espece == 'chat';
     const gap = SizedBox(height: 12);
     final etape1 = <Widget>[
-      _sectionType(), gap,
-      _sectionEspece(), gap,
+      // Type, espèce et race : verrouillés une fois publiée (contrôle serveur).
+      _lockable(_sectionType()), gap,
+      _lockable(_sectionEspece()), gap,
       if (_type == 'portee') ...[_sectionPortee(), gap],
       if (_type == 'animal') ...[_sectionAnimal(), gap],
       if (_type == 'portee') ...[_sectionAnimauxPortee(), gap],
@@ -1888,7 +1905,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         for (final s in (_espece == 'cheval'
             ? const [('jument', 'Jument'), ('hongre', 'Hongre'), ('entier', 'Entier')]
             : const [('male', 'Mâle'), ('femelle', 'Femelle')]))
-          GestureDetector(onTap: () => setState(() => _sexe = s.$1),
+          GestureDetector(onTap: _isEditLocked ? null : () => setState(() => _sexe = s.$1),
             child: AnimatedContainer(duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               decoration: BoxDecoration(

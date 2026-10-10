@@ -1,3 +1,4 @@
+import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -205,7 +206,16 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       };
 
       if (_isEdit) {
-        await _supa.from('annonces_objets').update(data).eq('id', widget.annonceId!);
+        // Photos / disponibilité gratuites, le reste payant (4,99 €).
+        data.remove('statut');
+        final issue = await enregistrerModificationAnnonce(context,
+            table: 'annonces_objets', id: widget.annonceId!, changements: data);
+        if (!mounted) return;
+        if (issue == IssueModification.annulee) { setState(() => _saving = false); return; }
+        _snack(issue == IssueModification.appliquee ? 'Annonce mise à jour.'
+            : 'Paiement ouvert : vos changements seront appliqués dès le paiement.');
+        Navigator.pop(context, true);
+        return;
       } else {
         data['created_at'] = now;
         data['expires_at'] =

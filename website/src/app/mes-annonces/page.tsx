@@ -1,5 +1,6 @@
 'use client';
 
+import { renouvelerAnnonce } from '@/lib/annonce-paiement';
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -177,12 +178,11 @@ export default function MesAnnoncesPage() {
     setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: newStatut } : x));
   }
 
+  // Renouvellement payant (4,99 €, +30 jours) : paiement sur Stripe, le
+  // webhook prolonge l'annonce (lib/annonce-modification.ts).
   async function handleRenew(a: Annonce) {
-    const newExpires = new Date();
-    newExpires.setDate(newExpires.getDate() + 30);
-    const newExpiresIso = newExpires.toISOString();
-    await supabase.from('annonces').update({ statut: 'disponible', expires_at: newExpiresIso }).eq('id', a.id);
-    setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: 'disponible', expires_at: newExpiresIso } : x));
+    try { await renouvelerAnnonce('annonces', a.id); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Renouvellement impossible'); }
   }
 
   const [payingId, setPayingId] = useState<string | null>(null);

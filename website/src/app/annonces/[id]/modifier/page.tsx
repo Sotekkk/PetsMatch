@@ -1,5 +1,6 @@
 'use client';
 
+import { enregistrerModificationAnnonce } from '@/lib/annonce-paiement';
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -325,7 +326,8 @@ export default function ModifierAnnoncePage() {
       const isEquide = annonce.espece === 'cheval';
       const isEquideFormule = ['location', 'demi_pension', 'pension_complete', 'valorisation'].includes(annonce.type_vente ?? '');
 
-      const { error: err } = await supabase.from('annonces').update({
+      // Gratuit : photos et disponibilité ; le reste est payant (4,99 €).
+      const changementsAnnonce = {
         description: description || null,
         photos: allPhotos,
         couleur: !isPortee ? (couleur || null) : undefined,
@@ -352,9 +354,10 @@ export default function ModifierAnnoncePage() {
           prix_max_portee: prixMax ? Number(prixMax) : null,
           animaux_portee: savedBabies,
         }),
-      }).eq('id', annonce.id);
+      };
+      const applique = await enregistrerModificationAnnonce('annonces', id, JSON.parse(JSON.stringify(changementsAnnonce)));
+      if (!applique) { setSaving(false); return; }
 
-      if (err) throw new Error(err.message);
       router.push('/mes-annonces');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');

@@ -1,3 +1,4 @@
+import { appliquerModification } from '@/lib/annonce-modification';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
@@ -160,6 +161,11 @@ export async function POST(req: NextRequest) {
 
         if (session.mode === 'payment') {
           const { produit_code, annonce_id } = session.metadata ?? {};
+          // Modification / renouvellement d'annonce payé : appliqué ici
+          // (lib/annonce-modification.ts, idempotent).
+          if (session.metadata?.modification_id) {
+            await appliquerModification(session.metadata.modification_id, session.id);
+          }
           if (produit_code) {
             const { data: produit } = await supabase.from('produits_ponctuels').select('id, label, prix, duree_heures').eq('code', produit_code).maybeSingle();
             if (produit) {
