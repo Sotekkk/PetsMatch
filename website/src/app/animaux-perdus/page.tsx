@@ -475,7 +475,7 @@ export default function AnimauxPerdusPage() {
           <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : view === 'carte' ? (
-        <div className="relative rounded-2xl overflow-hidden border border-[#E5E8E6] shadow-[0_1px_3px_rgba(16,24,40,0.06)]" style={{ height: '65vh' }}>
+        <div className="relative isolate rounded-2xl overflow-hidden border border-[#E5E8E6] shadow-[0_1px_3px_rgba(16,24,40,0.06)]" style={{ height: '65vh' }}>
           <AnimauxPerdusMap alertes={withCoords} />
           {/* Légende des espèces (couleurs des marqueurs « Perdu ») */}
           <div className="absolute top-3 left-3 z-[1000] bg-white rounded-xl border border-[#E5E8E6] shadow-md text-sm max-w-[200px]">

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { couleurMarqueurPro } from '@/lib/annuaire-couleurs';
 
 export interface ProMapItem {
   uid: string;
@@ -21,42 +22,19 @@ export interface ProMapItem {
   rayon_intervention?: number;
 }
 
-// Couleur par cat_pro (miroir app Flutter)
-const CAT_COLORS: Record<string, string> = {
-  sante:            '#2196F3',
-  veterinaire:      '#2196F3',
-  education:        '#FF9800',
-  garde:            '#4CAF50',
-  pension:          '#8BC34A',
-  toilettage:       '#00BCD4',
-  referencement:    '#CDDC39',
-  photographe:      '#E91E63',
-  marechal_ferrant: '#795548',
-  taxi_animalier:   '#00838F',
-};
-const DEFAULT_COLOR = '#9C27B0'; // violet
-
-const CAT_EMOJI: Record<string, string> = {
-  sante:         '🩺',
-  veterinaire:   '🩺',
-  education:     '🎓',
-  garde:         '🐾',
-  pension:       '🏡',
-  toilettage:    '✂️',
-  referencement: '📋',
-};
-const DEFAULT_EMOJI = '💼';
+// Couleurs : src/lib/annuaire-couleurs.ts (partagées avec la liste).
+// Pastille neutre (patte) à la place de l'ancien émoji.
+const PATTE_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="white" aria-hidden="true"><ellipse cx="12" cy="16.5" rx="4.2" ry="3.4"/><circle cx="6.5" cy="10.5" r="1.8"/><circle cx="9.8" cy="6.5" r="1.8"/><circle cx="14.2" cy="6.5" r="1.8"/><circle cx="17.5" cy="10.5" r="1.8"/></svg>';
 
 function makeIcon(cat: string) {
-  const color = CAT_COLORS[cat] ?? DEFAULT_COLOR;
-  const emoji = CAT_EMOJI[cat] ?? DEFAULT_EMOJI;
+  const color = couleurMarqueurPro(cat);
   return L.divIcon({
     className: '',
     html: `<div style="
       background:${color};width:36px;height:36px;border-radius:50% 50% 50% 0;
       transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;
       box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white;">
-      <span style="transform:rotate(45deg);font-size:16px;line-height:1">${emoji}</span>
+      <span style="transform:rotate(45deg);display:flex">${PATTE_SVG}</span>
     </div>`,
     iconSize: [36, 36],
     iconAnchor: [18, 36],
@@ -96,17 +74,14 @@ export default function ServicesMap({ pros }: { pros: ProMapItem[] }) {
                   <img src={p.photo} alt={p.name}
                     style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }} />
                 ) : (
-                  <div style={{ width: 36, height: 36, borderRadius: 8, background: CAT_COLORS[p.cat_pro ?? ''] ?? DEFAULT_COLOR,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-                    {CAT_EMOJI[p.cat_pro ?? ''] ?? DEFAULT_EMOJI}
-                  </div>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: '#F3F4F6', flexShrink: 0 }} />
                 )}
                 <div>
                   <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: '#1E2025' }}>{p.name}</p>
-                  {p.profession && <p style={{ margin: 0, fontSize: 11, color: CAT_COLORS[p.cat_pro ?? ''] ?? DEFAULT_COLOR }}>{p.profession}</p>}
+                  {p.profession && <p style={{ margin: 0, fontSize: 11, color: couleurMarqueurPro(p.cat_pro) }}>{p.profession}</p>}
                 </div>
               </div>
-              {p.ville && <p style={{ margin: '0 0 4px', fontSize: 11, color: '#888' }}>📍 {p.ville}</p>}
+              {p.ville && <p style={{ margin: '0 0 4px', fontSize: 11, color: '#6B7280' }}>{p.ville}</p>}
               {p.especes.length > 0 && (
                 <p style={{ margin: '0 0 8px', fontSize: 11, color: '#aaa' }}>{p.especes.join(' · ')}</p>
               )}

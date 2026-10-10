@@ -56,3 +56,10 @@ h1, h2, h3, h4 {
 .rich-text i, .rich-text em { font-style: italic; }
 .rich-text u { text-decoration: underline; }
 .rich-text p { margin: 0.2rem 0; }
+
+/* Cartes Leaflet : leurs calques (z-index 400 à 1000) restent confinés à la
+   carte, pour que l'en-tête et ses menus déroulants passent toujours devant. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+}

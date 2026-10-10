@@ -1,10 +1,10 @@
 'use client';
 
-// Annuaire des professionnels — page unique : recherche + filtres en haut
-// (animaux concernés à cases à cocher, ville / code postal, rayon),
-// catégories en cartes, types de service de la catégorie choisie, filtres
-// actifs supprimables, résultats. Sur mobile, les filtres sont regroupés dans
-// un panneau « Filtres ». Critères combinables (ex. Transport + Taxi
+// Annuaire des professionnels — page unique : recherche + barre de filtres
+// compacte (catégorie et type de service, animaux concernés à cases à
+// cocher, ville / code postal, rayon), filtres actifs supprimables,
+// résultats. Sur mobile : filtres sur deux colonnes, le rayon passe dans le
+// panneau « Filtres ». Critères combinables (ex. Transport + Taxi
 // animalier + Chevaux). Logique partagée : src/lib/annuaire-filtres.ts —
 // miroir app : lib/pages/services/services_page.dart.
 
@@ -17,6 +17,9 @@ import { useAuth } from '@/lib/auth-context';
 import type { ProMapItem } from '@/components/ServicesMap';
 import AnimauxMultiSelect from '@/components/annuaire/AnimauxMultiSelect';
 import LieuPicker from '@/components/annuaire/LieuPicker';
+import CategoriesSelect from '@/components/annuaire/CategoriesSelect';
+import { couleurMarqueurPro } from '@/lib/annuaire-couleurs';
+import { Icone } from '@/components/dashboard/kit';
 import {
   CATEGORIES_ANNUAIRE, GROUPES_ESPECES, RAYONS_KM,
   categorieByKey, metierByKey, metierFromLegacy, metierSelectionne, selectionDepuisMetier,
@@ -171,109 +174,74 @@ export default function AnnuaireRecherche() {
     ...especes.map(k => ({ key: `e-${k}`, label: GROUPES_ESPECES.find(g => g.key === k)?.label ?? k, retirer: () => setEspeces(e => e.filter(x => x !== k)) })),
     ...(lieu ? [{ key: 'lieu', label: lieu.ville ?? lieu.label, retirer: () => setLieu(null) }, { key: 'rayon', label: `${rayon} km`, retirer: () => setLieu(null) }] : []),
   ];
-  const nbFiltresPanneau = especes.length + (lieu ? 1 : 0);
+
+  const champ = 'h-11 px-3 rounded-xl border border-[#E5E8E6] text-sm bg-white text-[#1E2025] outline-none focus:border-[#0C5C6C] disabled:bg-gray-50 disabled:text-gray-400';
 
   return (
-    <div className="min-h-screen bg-[#F8F8F8]">
+    <div className="min-h-screen bg-[#F6F7F5]" style={font}>
       {/* ── En-tête + recherche + filtres ─────────────────────────────── */}
-      <div className="bg-gradient-to-b from-[#E6F2F1] to-[#F8F8F8] px-4 pt-6 pb-4">
-        <div className="max-w-5xl mx-auto">
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#0C5C6C]" style={font}>Annuaire des professionnels</h1>
-          <p className="text-sm text-gray-600 mt-0.5" style={font}>Trouvez le bon professionnel pour votre animal.</p>
+      <div className="max-w-5xl mx-auto px-4 pt-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#1E2025]">Annuaire des professionnels</h1>
+        <p className="text-sm text-gray-600 mt-0.5">Trouvez le bon professionnel pour votre animal.</p>
 
-          <form className="mt-4 flex gap-2" onSubmit={e => { e.preventDefault(); setQ(qSaisie.trim()); }}>
-            <div className="flex-1 flex items-center gap-2 px-4 py-3 rounded-2xl border border-gray-200 bg-white shadow-sm focus-within:border-[#0C5C6C]">
-              <span className="text-gray-400">🔍</span>
-              <input type="text" value={qSaisie} onChange={e => setQSaisie(e.target.value)}
-                placeholder="Rechercher un professionnel ou un service…"
-                className="flex-1 min-w-0 text-sm outline-none bg-transparent" style={font} />
-            </div>
-            <button type="button" onClick={() => setPanneau(true)}
-              className="md:hidden px-4 rounded-2xl border border-gray-200 bg-white text-sm font-semibold text-[#0C5C6C] shadow-sm" style={font}>
-              Filtres{nbFiltresPanneau ? ` (${nbFiltresPanneau})` : ''}
-            </button>
-          </form>
-
-          {/* Filtres en ligne (ordinateur / tablette) */}
-          <div className="hidden md:grid grid-cols-[1.4fr_1.2fr_0.7fr_auto] gap-2 mt-3">
-            <AnimauxMultiSelect value={especes} onApply={setEspeces} />
-            <LieuPicker value={lieu} maPosition={maPosition} onChange={setLieu} />
-            <select value={rayon} disabled={!lieu} onChange={e => setRayon(parseInt(e.target.value, 10))}
-              className="px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white outline-none focus:border-[#0C5C6C] disabled:opacity-40" style={font}>
-              {RAYONS_KM.map(r => <option key={r} value={r}>Rayon : {r} km</option>)}
-            </select>
-            <button type="button" onClick={() => setQ(qSaisie.trim())}
-              className="px-6 bg-[#0C5C6C] hover:bg-[#0a4d5b] text-white rounded-xl text-sm font-semibold" style={font}>
-              🔍 Rechercher
-            </button>
+        <form className="mt-4" onSubmit={e => { e.preventDefault(); setQ(qSaisie.trim()); }}>
+          <div className="h-12 flex items-center gap-2 px-4 rounded-xl border border-[#E5E8E6] bg-white focus-within:border-[#0C5C6C]">
+            <Icone nom="recherche" taille={18} className="text-gray-400 flex-shrink-0" />
+            <input type="text" value={qSaisie} onChange={e => setQSaisie(e.target.value)}
+              placeholder="Rechercher un professionnel ou un service…"
+              className="flex-1 min-w-0 text-sm outline-none bg-transparent" />
           </div>
+        </form>
+
+        {/* Filtres : 2 colonnes sur mobile, barre compacte sur ordinateur */}
+        <div className="grid grid-cols-2 md:grid-cols-[1.2fr_1.3fr_1.4fr_0.9fr_auto] gap-2 mt-2">
+          <CategoriesSelect categorie={categorie} type={type} onCategorie={choisirCategorie} onType={setType} />
+          <AnimauxMultiSelect value={especes} onApply={setEspeces} />
+          <LieuPicker value={lieu} maPosition={maPosition} onChange={setLieu} />
+          {/* Rayon : en ligne sur ordinateur, dans « Filtres » sur mobile */}
+          <select value={rayon} disabled={!lieu} onChange={e => setRayon(parseInt(e.target.value, 10))}
+            className={`hidden md:block ${champ}`} aria-label="Rayon">
+            {RAYONS_KM.map(r => <option key={r} value={r}>Rayon : {r} km</option>)}
+          </select>
+          <button type="button" onClick={() => setPanneau(true)}
+            className="md:hidden h-11 inline-flex items-center justify-center gap-2 rounded-xl border border-[#0C5C6C]/40 bg-[#E8F4F6] text-sm font-semibold text-[#0C5C6C]">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+            Filtres{lieu ? ' (1)' : ''}
+          </button>
+          <button type="button" onClick={() => setQ(qSaisie.trim())}
+            className="hidden md:block h-11 px-6 bg-[#0C5C6C] hover:bg-[#094F5D] text-white rounded-xl text-sm font-semibold">
+            Rechercher
+          </button>
         </div>
       </div>
 
       <div className="max-w-5xl mx-auto px-4 pb-10">
-        {/* ── Catégories ──────────────────────────────────────────────── */}
-        <h2 className="text-lg font-bold text-[#1F2A2E] mt-2 mb-3" style={font}>Catégories</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {CATEGORIES_ANNUAIRE.map(c => {
-            const actif = c.key === categorie;
-            return (
-              <button key={c.key} onClick={() => choisirCategorie(c.key)}
-                className={`bg-white rounded-2xl border-2 px-3 py-4 flex flex-col items-center gap-2 text-center transition-all ${actif ? 'shadow-md' : 'border-transparent shadow-sm hover:shadow-md'}`}
-                style={actif ? { borderColor: c.color, backgroundColor: c.color + '0D' } : undefined}>
-                <span className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ backgroundColor: c.color + '18' }}>{c.icon}</span>
-                <span className={`text-[13px] leading-tight ${actif ? 'font-bold' : 'font-semibold text-[#1F2A2E]'}`}
-                  style={{ ...font, color: actif ? c.color : undefined }}>{c.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ── Types de service de la catégorie ────────────────────────── */}
-        {cat && cat.types.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-bold text-[#1F2A2E] mr-1" style={font}>Type de service ({cat.label}) :</span>
-            {[{ key: '', label: 'Tous' }, ...cat.types.map(t => ({ key: t, label: metierByKey(t).label }))].map(t => {
-              const actif = t.key === type;
-              return (
-                <button key={t.key || 'tous'} onClick={() => setType(t.key)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${actif ? 'text-white' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}
-                  style={{ ...font, ...(actif ? { backgroundColor: cat.color, borderColor: cat.color } : {}) }}>
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         {/* ── Filtres appliqués ───────────────────────────────────────── */}
         {actifs.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-gray-500" style={font}>Filtres appliqués :</span>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             {actifs.map(a => (
-              <span key={a.key} className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1 rounded-full text-xs font-semibold bg-[#0C5C6C]/10 text-[#0C5C6C]" style={font}>
+              <span key={a.key} className="inline-flex items-center gap-1 pl-3 pr-1.5 py-1 rounded-full text-xs font-semibold border border-[#0C5C6C]/25 bg-white text-[#0C5C6C]">
                 {a.label}
                 <button type="button" aria-label={`Retirer ${a.label}`} onClick={a.retirer}
-                  className="w-4 h-4 rounded-full hover:bg-[#0C5C6C]/20 leading-none">✕</button>
+                  className="w-5 h-5 rounded-full hover:bg-[#E8F4F6] leading-none text-base">×</button>
               </span>
             ))}
-            <button onClick={reinitialiser} className="text-xs font-semibold text-[#0C5C6C] underline ml-1" style={font}>↺ Réinitialiser</button>
+            <button onClick={reinitialiser} className="text-xs font-semibold text-[#0C5C6C] underline underline-offset-2 ml-1">Réinitialiser</button>
           </div>
         )}
 
         {/* ── Résultats ───────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mt-6 mb-3">
-          <h2 className="text-lg font-bold text-[#1F2A2E]" style={font}>Professionnels correspondants</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400" style={font}>{loading ? '…' : `${resultats.length} résultat${resultats.length > 1 ? 's' : ''}`}</span>
-            <div className="flex bg-gray-100 rounded-full p-0.5">
-              {(['list', 'map'] as const).map(v => (
-                <button key={v} onClick={() => setView(v)}
-                  className="px-3 py-1 rounded-full text-xs font-semibold"
-                  style={{ ...font, background: view === v ? 'white' : 'transparent', color: view === v ? '#0C5C6C' : '#6B7280' }}>
-                  {v === 'list' ? 'Liste' : 'Carte'}
-                </button>
-              ))}
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-5 mb-3">
+          <h2 className="text-lg font-bold text-[#1E2025]">
+            {loading ? 'Recherche…' : `${resultats.length} professionnel${resultats.length > 1 ? 's' : ''}`}
+          </h2>
+          <div className="inline-flex rounded-xl border border-[#E5E8E6] overflow-hidden" role="group" aria-label="Affichage">
+            {(['list', 'map'] as const).map(v => (
+              <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
+                className={`px-4 py-2 text-sm font-semibold transition-colors ${v === 'map' ? 'border-l border-[#E5E8E6]' : ''} ${view === v ? 'bg-[#0C5C6C] text-white' : 'bg-white text-[#374151] hover:bg-gray-50'}`}>
+                {v === 'list' ? 'Liste' : 'Carte'}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -282,28 +250,27 @@ export default function AnnuaireRecherche() {
             <div className="w-8 h-8 border-4 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
           </div>
         ) : resultats.length === 0 ? (
-          <div className="py-12 flex flex-col items-center gap-2 text-center bg-white rounded-2xl">
-            <span className="text-4xl">🔍</span>
-            <p className="text-sm text-gray-500" style={font}>Aucun professionnel ne correspond à ces critères.</p>
-            {lieu && <p className="text-xs text-gray-400">Essayez un rayon plus large ou retirez le lieu.</p>}
-            <button onClick={reinitialiser} className="text-xs text-[#0C5C6C] underline mt-1">Réinitialiser</button>
+          <div className="py-12 text-center bg-white border border-[#E5E8E6] rounded-2xl">
+            <p className="text-sm text-[#1E2025]">Aucun professionnel ne correspond à ces critères.</p>
+            {lieu && <p className="text-xs text-gray-500 mt-1">Essayez un rayon plus large ou retirez le lieu.</p>}
+            <button onClick={reinitialiser} className="text-sm font-semibold text-[#0C5C6C] underline underline-offset-2 mt-3">Réinitialiser les filtres</button>
           </div>
         ) : view === 'map' ? (
-          <div className="h-[60vh] min-h-[400px]">
+          <div className="h-[60vh] min-h-[400px] relative isolate rounded-2xl overflow-hidden border border-[#E5E8E6]">
             <ServicesMap pros={resultats.filter(p => p.lat && p.lng)} />
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {resultats.map((p, i) => <CarteResultat key={`${p.uid}-${p.cat_pro}-${i}`} pro={p} distance={p.distance} />)}
           </div>
         )}
       </div>
 
-      {/* ── Panneau Filtres (mobile) ───────────────────────────────────── */}
+      {/* ── Panneau Filtres (mobile) : critères hors barre (rayon) ─────── */}
       {panneau && (
-        <PanneauFiltres especes={especes} lieu={lieu} rayon={rayon} maPosition={maPosition}
+        <PanneauFiltres lieu={lieu} rayon={rayon}
           onClose={() => setPanneau(false)}
-          onApply={(e, l, r) => { setEspeces(e); setLieu(l); setRayon(r); setQ(qSaisie.trim()); setPanneau(false); }} />
+          onApply={r => { setRayon(r); setQ(qSaisie.trim()); setPanneau(false); }} />
       )}
     </div>
   );
@@ -317,94 +284,68 @@ function CarteResultat({ pro, distance }: { pro: Pro; distance: number | null })
   const image = pro.banner || pro.photo;
   const metierLabel = pro.profession || CATEGORIES_ANNUAIRE.find(c => metierByKey(c.metier).cats.includes(pro.cat_pro ?? ''))?.label || 'Professionnel';
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex gap-3">
-      <Link href={href} className="w-28 sm:w-36 flex-shrink-0 rounded-xl overflow-hidden bg-[#0C5C6C]/10 flex items-center justify-center" style={{ minHeight: 112 }}>
+    <Link href={href}
+      className="group bg-white rounded-2xl border border-[#E5E8E6] shadow-[0_1px_3px_rgba(16,24,40,0.06)] hover:shadow-md transition-shadow p-3 flex gap-3">
+      <div className="w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0 rounded-xl overflow-hidden bg-[#F3F4F6] flex items-center justify-center text-gray-400">
         {image
+          // eslint-disable-next-line @next/next/no-img-element
           ? <img src={image} alt={pro.name} className="w-full h-full object-cover" />
-          : <span className="text-4xl opacity-40">💼</span>}
-      </Link>
+          : <Icone nom="personne" taille={30} />}
+      </div>
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[15px] font-bold text-[#1F2A2E] truncate" style={font}>{metierLabel}</p>
-            <p className="text-sm text-gray-600 truncate" style={font}>{pro.name}</p>
-          </div>
-          <Link href={href}
-            className="hidden sm:inline-block flex-shrink-0 bg-[#0C5C6C] hover:bg-[#0a4d5b] text-white text-xs font-semibold px-3 py-1.5 rounded-lg" style={font}>
-            Voir la fiche
-          </Link>
-        </div>
-        <p className="text-xs text-gray-500 mt-1" style={font}>
-          📍 {pro.ville || 'Ville non renseignée'}
-          {distance != null && <span className="text-gray-400"> · à {distance < 1 ? '< 1' : Math.round(distance)} km</span>}
+        <p className="text-[15px] font-bold text-[#1E2025] leading-snug line-clamp-2">{pro.name}</p>
+        <p className="text-sm text-gray-600 mt-0.5 flex items-center gap-1.5 min-w-0">
+          {/* Repère : couleur du marqueur de ce métier sur la carte */}
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: couleurMarqueurPro(pro.cat_pro) }} />
+          <span className="truncate">{metierLabel}</span>
+        </p>
+        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1 min-w-0">
+          <Icone nom="pin" taille={13} className="flex-shrink-0" />
+          <span className="truncate">
+            {pro.ville || 'Ville non renseignée'}
+            {distance != null && ` · à ${distance < 1 ? '< 1' : Math.round(distance)} km`}
+          </span>
         </p>
         {groupes.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {groupes.map(g => (
-              <span key={g.key} className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-[#0C5C6C]/10 text-[#0C5C6C]" style={font}>{g.label}</span>
-            ))}
-          </div>
+          <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1 min-w-0">
+            <Icone nom="patte" taille={13} className="flex-shrink-0" />
+            <span className="line-clamp-2">{groupes.map(g => g.label).join(' · ')}</span>
+          </p>
         )}
-        {pro.description && <p className="text-xs text-gray-500 mt-1.5 line-clamp-2" style={font}>{pro.description}</p>}
-        <Link href={href} className="sm:hidden mt-2 self-start bg-[#0C5C6C] text-white text-xs font-semibold px-3 py-1.5 rounded-lg" style={font}>
-          Voir la fiche
-        </Link>
+        <span className="mt-auto pt-1.5 text-sm font-semibold text-[#0C5C6C] group-hover:underline underline-offset-2">Voir la fiche →</span>
       </div>
-    </div>
+    </Link>
   );
 }
 
 // ── Panneau Filtres (mobile) ──────────────────────────────────────────────────
+// Critère qui n'a pas sa place dans la barre mobile : le rayon autour du lieu.
 
-function PanneauFiltres({ especes, lieu, rayon, maPosition, onClose, onApply }: {
-  especes: string[]; lieu: LieuRecherche | null; rayon: number; maPosition: LieuRecherche | null;
-  onClose: () => void; onApply: (e: string[], l: LieuRecherche | null, r: number) => void;
+function PanneauFiltres({ lieu, rayon, onClose, onApply }: {
+  lieu: LieuRecherche | null; rayon: number;
+  onClose: () => void; onApply: (r: number) => void;
 }) {
-  const [e, setE] = useState(especes);
-  const [l, setL] = useState(lieu);
   const [r, setR] = useState(rayon);
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={onClose}>
-      <div className="bg-white w-full rounded-t-3xl max-h-[88vh] overflow-y-auto" onClick={ev => ev.stopPropagation()}>
+      <div className="bg-white w-full rounded-t-3xl max-h-[88vh] flex flex-col" onClick={ev => ev.stopPropagation()} style={font}>
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <p className="text-base font-bold text-[#1F2A2E]" style={font}>Filtres</p>
-          <button onClick={onClose} className="text-gray-400 text-xl leading-none" aria-label="Fermer">×</button>
+          <p className="text-lg font-bold text-[#1E2025]">Filtres</p>
+          <button onClick={onClose} className="text-gray-400 text-2xl leading-none px-1" aria-label="Fermer">×</button>
         </div>
-        <div className="px-5 space-y-4 pb-4">
-          <div>
-            <p className="text-xs font-semibold text-gray-500 mb-1" style={font}>Animaux concernés <span className="font-normal">· plusieurs choix possibles</span></p>
-            <div className="rounded-xl border border-gray-100 divide-y divide-gray-50">
-              {GROUPES_ESPECES.map(g => (
-                <label key={g.key} className="flex items-center gap-3 px-3 py-2.5">
-                  <input type="checkbox" checked={e.includes(g.key)} className="w-4 h-4 accent-[#0C5C6C]"
-                    onChange={() => setE(x => x.includes(g.key) ? x.filter(k => k !== g.key) : [...x, g.key])} />
-                  <span className="text-sm text-[#1F2A2E]" style={font}>
-                    {g.label}{g.detail && <span className="block text-[11px] text-gray-400">{g.detail}</span>}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500 mb-1" style={font}>Ville ou code postal</p>
-            <LieuPicker value={l} maPosition={maPosition} onChange={setL} />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500 mb-1" style={font}>Rayon</p>
-            <div className="flex flex-wrap gap-2">
-              {RAYONS_KM.map(x => (
-                <button key={x} type="button" disabled={!l} onClick={() => setR(x)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border disabled:opacity-40 ${r === x ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}
-                  style={font}>{x} km</button>
-              ))}
-            </div>
-          </div>
+        <div className="px-5 pb-4 overflow-y-auto">
+          <label className="block text-sm font-semibold text-[#374151] mb-1.5" htmlFor="rayon-mobile">Rayon autour du lieu</label>
+          <select id="rayon-mobile" value={r} disabled={!lieu} onChange={e => setR(parseInt(e.target.value, 10))}
+            className="w-full h-11 px-3 rounded-xl border border-[#E5E8E6] text-sm bg-white outline-none focus:border-[#0C5C6C] disabled:bg-gray-50 disabled:text-gray-400">
+            {RAYONS_KM.map(x => <option key={x} value={x}>{x} km</option>)}
+          </select>
+          {!lieu && <p className="text-xs text-gray-500 mt-1.5">Choisissez d&apos;abord une ville ou un code postal.</p>}
         </div>
-        <div className="sticky bottom-0 bg-white flex gap-2 px-5 py-3 border-t border-gray-100">
-          <button onClick={() => { setE([]); setL(null); setR(50); }}
-            className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm font-semibold" style={font}>Réinitialiser</button>
-          <button onClick={() => onApply(e, l, r)}
-            className="flex-1 bg-[#0C5C6C] text-white rounded-xl py-2.5 text-sm font-semibold" style={font}>Appliquer</button>
+        <div className="flex gap-2 px-5 py-3 border-t border-[#E5E8E6]" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
+          <button onClick={() => setR(50)}
+            className="flex-1 h-11 border border-[#0C5C6C] text-[#0C5C6C] rounded-xl text-sm font-semibold">Réinitialiser</button>
+          <button onClick={() => onApply(r)}
+            className="flex-1 h-11 bg-[#0C5C6C] text-white rounded-xl text-sm font-semibold">Appliquer</button>
         </div>
       </div>
     </div>
