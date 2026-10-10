@@ -10,12 +10,14 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, query, where, getDocs, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
 import type { AlerteMapItem } from '@/components/AnimauxPerdusMap';
+import { MARQUEUR_ESPECE, MARQUEUR_PERDU_DEFAUT, MARQUEUR_TROUVE } from '@/lib/perdus-couleurs';
+import { Icone } from '@/components/dashboard/kit';
 
 const AnimauxPerdusMap = dynamic(() => import('@/components/AnimauxPerdusMap'), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-full bg-gray-100 rounded-2xl">
-      <div className="w-8 h-8 border-2 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
     </div>
   ),
 });
@@ -88,12 +90,17 @@ export const ESPECE_COLORS: Record<string, { bg: string; text: string; border: s
   autre:  { bg: '#F9FAFB', text: '#6B7280', border: '#E5E7EB', dot: '#9CA3AF' },
 };
 
-const ESPECE_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐇',
-  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷', autre: '🐾',
-};
+const ESPECE_LIBELLE: Record<string, string> = { nac: 'NAC' };
+function nomEspece(e?: string): string {
+  if (!e) return 'Animal';
+  return ESPECE_LIBELLE[e.toLowerCase()] ?? e.charAt(0).toUpperCase() + e.slice(1);
+}
 
-const SEXE_LABEL: Record<string, string> = { male: '♂ Mâle', femelle: '♀ Femelle', inconnu: 'Inconnu' };
+const SEXE_LABEL: Record<string, string> = { male: 'Mâle', femelle: 'Femelle', inconnu: 'Inconnu' };
+
+// Styles communs de la section (bleu pétrole, bordures fines).
+const CHAMP = 'w-full border border-[#E5E8E6] rounded-xl px-3 py-2.5 text-sm text-[#1E2025] bg-white focus:outline-none focus:border-[#0C5C6C] disabled:bg-gray-50 disabled:text-gray-400';
+const LIBELLE = 'block text-[13px] font-medium text-[#374151] mb-1.5';
 
 function fmtDate(s?: string) {
   if (!s) return null;
@@ -127,6 +134,7 @@ export default function AnimauxPerdusPage() {
   const [selectedTrouve, setSelectedTrouve] = useState<Trouve | null>(null);
   const [contacting, setContacting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [legendeOuverte, setLegendeOuverte] = useState(true);
 
   // Filtres
   const [filterType,   setFilterType]   = useState<'perdu' | 'trouve' | 'tous'>('perdu');
@@ -346,180 +354,161 @@ export default function AnimauxPerdusPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const filtresActifs = filtreEspece !== 'tous' || !!filtreRace || !!filtreVille || !!filtrePays || !!filtreRegion || !!filtreDept;
+  const reinitialiserFiltres = () => {
+    setFiltreEspece('tous'); setFiltreRace(''); setFiltreVille('');
+    setFiltrePays(''); setFiltreRegion(''); setFiltreDept('');
+  };
+  const bascule = (actif: boolean) =>
+    `px-4 py-2 text-sm font-semibold transition-colors ${actif ? 'bg-[#0C5C6C] text-white' : 'bg-white text-[#374151] hover:bg-gray-50'}`;
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
+    <div className="bg-[#F6F7F5] min-h-screen" style={{ fontFamily: 'Galey, sans-serif' }}>
+    <div className="max-w-6xl mx-auto px-4 py-8">
 
       {/* En-tête */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-[#1F2A2E] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-            {filterType === 'trouve' ? 'Animaux trouvés' : filterType === 'tous' ? 'Perdus & trouvés' : 'Animaux perdus'}
-          </h1>
-          <p className="text-gray-500 text-sm">
-            {totalFiltered} résultat{totalFiltered !== 1 ? 's' : ''}
-            {view === 'carte' && withCoords.length < totalFiltered ? ` · ${withCoords.length} sur la carte` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Type toggle */}
-          <div className="flex bg-gray-100 rounded-xl p-1">
-            {([
-              { value: 'perdu',  label: '🚨 Perdus',  color: '#E65100' },
-              { value: 'trouve', label: '🐾 Trouvés', color: '#0C5C6C' },
-              { value: 'tous',   label: 'Tous',        color: '#6B7280' },
-            ] as const).map(opt => (
-              <button key={opt.value} onClick={() => setFilterType(opt.value)}
-                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
-                style={filterType === opt.value
-                  ? { background: opt.color, color: 'white' }
-                  : { color: '#6B7280' }}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <a href="/animaux-perdus/declarer"
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors shadow-sm">
-            📍 Déclarer un animal perdu
-          </a>
-          <a href="/animaux-perdus/declarer-trouve"
-            className="flex items-center gap-2 bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors shadow-sm">
-            🐾 J&apos;ai trouvé un animal
-          </a>
-          {/* Toggle liste / carte */}
-          <div className="flex bg-gray-100 rounded-xl p-1">
-            <button onClick={() => setView('liste')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${view === 'liste' ? 'bg-white text-[#1F2A2E] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              ☰ Liste
-            </button>
-            <button onClick={() => setView('carte')}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${view === 'carte' ? 'bg-white text-[#1F2A2E] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-              🗺 Carte
-            </button>
-          </div>
+      <h1 className="text-2xl sm:text-3xl font-bold text-[#1E2025]">Animaux perdus / trouvés</h1>
+      <p className="text-gray-500 text-sm mt-1">
+        {totalFiltered} résultat{totalFiltered !== 1 ? 's' : ''}
+        {view === 'carte' && withCoords.length < totalFiltered ? ` · ${withCoords.length} sur la carte` : ''}
+      </p>
+      <div className="flex flex-wrap items-center gap-3 mt-4 mb-5">
+        <a href="/animaux-perdus/declarer"
+          className="inline-flex items-center justify-center bg-[#E8590C] hover:bg-[#C2410C] text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-colors">
+          Déclarer un animal perdu
+        </a>
+        <a href="/animaux-perdus/declarer-trouve"
+          className="inline-flex items-center justify-center bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold text-sm px-5 py-2.5 rounded-xl transition-colors">
+          J&apos;ai trouvé un animal
+        </a>
+        <div className="sm:ml-auto inline-flex rounded-xl border border-[#E5E8E6] overflow-hidden" role="group" aria-label="Affichage">
+          <button onClick={() => setView('liste')} aria-pressed={view === 'liste'} className={bascule(view === 'liste')}>Liste</button>
+          <button onClick={() => setView('carte')} aria-pressed={view === 'carte'} className={`${bascule(view === 'carte')} border-l border-[#E5E8E6]`}>Carte</button>
         </div>
       </div>
 
       {/* ── Filtres ── */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-6 space-y-3">
-        {/* Ligne 1 : Espèce · Race · Ville */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="bg-white border border-[#E5E8E6] rounded-2xl shadow-[0_1px_3px_rgba(16,24,40,0.06)] p-4 sm:p-5 mb-6">
+        {/* Ligne 1 : Statut · Espèce · Race */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Espèce</label>
-            <select value={filtreEspece}
+            <label className={LIBELLE} htmlFor="f-statut">Statut</label>
+            <select id="f-statut" value={filterType} onChange={e => setFilterType(e.target.value as 'perdu' | 'trouve' | 'tous')} className={CHAMP}>
+              <option value="tous">Tous</option>
+              <option value="perdu">Perdus</option>
+              <option value="trouve">Trouvés</option>
+            </select>
+          </div>
+          <div>
+            <label className={LIBELLE} htmlFor="f-espece">Espèce</label>
+            <select id="f-espece" value={filtreEspece}
               onChange={e => { setFiltreEspece(e.target.value); setFiltreRace(''); setRaceSugg([]); }}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white">
+              className={CHAMP}>
               <option value="tous">Toutes les espèces</option>
-              {ESPECES.map(e => (
-                <option key={e} value={e}>{ESPECE_EMOJI[e]} {e.charAt(0).toUpperCase() + e.slice(1)}</option>
-              ))}
+              {ESPECES.map(e => <option key={e} value={e}>{nomEspece(e)}</option>)}
             </select>
           </div>
           <div className="relative">
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Race</label>
-            <input value={filtreRace}
+            <label className={LIBELLE} htmlFor="f-race">Race</label>
+            <input id="f-race" value={filtreRace}
               onChange={e => onRaceInput(e.target.value)}
               onFocus={() => filtreRace && setShowRaceSugg(raceSugg.length > 0)}
               onBlur={() => setTimeout(() => setShowRaceSugg(false), 150)}
               placeholder="Toutes les races"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
+              autoComplete="off"
+              className={CHAMP} />
             {showRaceSugg && (
-              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-[#E5E8E6] rounded-xl shadow-lg overflow-hidden">
                 {raceSugg.map(b => (
                   <button key={b} type="button" onMouseDown={() => { setFiltreRace(b); setShowRaceSugg(false); }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50">{b}</button>
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-[#E8F4F6]">{b}</button>
                 ))}
               </div>
             )}
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">
-              Ville {userData?.ville && <span className="text-orange-500 font-normal">(votre ville par défaut)</span>}
-            </label>
-            <input value={filtreVille} onChange={e => setFiltreVille(e.target.value)}
-              placeholder="Ex : Rennes, Lyon…"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
-          </div>
         </div>
-        {/* Ligne 2 : Pays · Région · Département */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Ligne 2 : Ville · Pays · Région · Département */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-3 sm:mt-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Pays</label>
-            <select value={filtrePays}
+            <label className={LIBELLE} htmlFor="f-ville">
+              Ville {userData?.ville && <span className="text-gray-400 font-normal">(votre ville par défaut)</span>}
+            </label>
+            <input id="f-ville" value={filtreVille} onChange={e => setFiltreVille(e.target.value)}
+              placeholder="Ex : Rennes, Lyon…" className={CHAMP} />
+          </div>
+          <div>
+            <label className={LIBELLE} htmlFor="f-pays">Pays</label>
+            <select id="f-pays" value={filtrePays}
               onChange={e => { setFiltrePays(e.target.value); setFiltreRegion(''); setFiltreDept(''); }}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white">
+              className={CHAMP}>
               <option value="">Tous les pays</option>
               {PAYS_LIST.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Région</label>
-            <select value={filtreRegion}
+            <label className={LIBELLE} htmlFor="f-region">Région</label>
+            <select id="f-region" value={filtreRegion}
               onChange={e => { setFiltreRegion(e.target.value); setFiltreDept(''); }}
-              disabled={regionsDisponibles.length === 0}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white disabled:opacity-50">
-              <option value="">{filtrePays ? 'Toutes les régions' : 'Pays d\'abord'}</option>
+              disabled={regionsDisponibles.length === 0} className={CHAMP}>
+              <option value="">{filtrePays ? 'Toutes les régions' : 'Choisir un pays d\'abord'}</option>
               {regionsDisponibles.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Département</label>
-            <select value={filtreDept} onChange={e => setFiltreDept(e.target.value)}
-              disabled={departementsDisponibles.length === 0}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white disabled:opacity-50">
-              <option value="">{filtreRegion ? 'Tous les départements' : 'Région d\'abord'}</option>
+            <label className={LIBELLE} htmlFor="f-dept">Département</label>
+            <select id="f-dept" value={filtreDept} onChange={e => setFiltreDept(e.target.value)}
+              disabled={departementsDisponibles.length === 0} className={CHAMP}>
+              <option value="">{filtreRegion ? 'Tous les départements' : 'Choisir une région d\'abord'}</option>
               {departementsDisponibles.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
         </div>
-        {/* Reset */}
-        {(filtreEspece !== 'tous' || filtreRace || filtreVille || filtrePays || filtreRegion || filtreDept) && (
-          <button onClick={() => {
-            setFiltreEspece('tous'); setFiltreRace(''); setFiltreVille('');
-            setFiltrePays(''); setFiltreRegion(''); setFiltreDept('');
-          }} className="text-xs text-gray-400 hover:text-gray-600 underline">
-            Réinitialiser les filtres
-          </button>
-        )}
-      </div>
-
-      {/* Légende espèces */}
-      <div className="flex flex-wrap gap-2 mb-5">
-        {ESPECES.map(esp => {
-          const c = ESPECE_COLORS[esp];
-          const active = filtreEspece === esp;
-          return (
-            <button key={esp} onClick={() => setFiltreEspece(active ? 'tous' : esp)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all"
-              style={{ background: active ? c.dot : c.bg, color: active ? 'white' : c.text, borderColor: active ? c.dot : c.border }}>
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: active ? 'rgba(255,255,255,0.7)' : c.dot }} />
-              {ESPECE_EMOJI[esp]} {esp.charAt(0).toUpperCase() + esp.slice(1)}
-            </button>
-          );
-        })}
+        {/* Réinitialiser (toujours visible) */}
+        <button onClick={reinitialiserFiltres} disabled={!filtresActifs}
+          className="mt-4 text-sm font-medium text-[#0C5C6C] underline underline-offset-2 hover:text-[#094F5D] disabled:text-gray-400 disabled:no-underline">
+          Réinitialiser les filtres
+        </button>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 border-[#EF4444] border-t-transparent rounded-full animate-spin" />
+          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : view === 'carte' ? (
-        <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: '65vh' }}>
+        <div className="relative rounded-2xl overflow-hidden border border-[#E5E8E6] shadow-[0_1px_3px_rgba(16,24,40,0.06)]" style={{ height: '65vh' }}>
           <AnimauxPerdusMap alertes={withCoords} />
-          {/* Légende */}
-          <div className="absolute bottom-4 left-4 bg-white/95 rounded-xl shadow-md px-4 py-3 space-y-1.5 text-xs font-semibold pointer-events-none">
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-orange-500 flex-shrink-0" />Perdu</div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-green-600 flex-shrink-0" />Trouvé</div>
+          {/* Légende des espèces (couleurs des marqueurs « Perdu ») */}
+          <div className="absolute top-3 left-3 z-[1000] bg-white rounded-xl border border-[#E5E8E6] shadow-md text-sm max-w-[200px]">
+            <button onClick={() => setLegendeOuverte(o => !o)} aria-expanded={legendeOuverte}
+              className="w-full flex items-center justify-between gap-3 px-3 py-2 font-semibold text-[#0C5C6C]">
+              Légende des espèces
+              <Icone nom="fleche" taille={14} className={`transition-transform ${legendeOuverte ? '-rotate-90' : 'rotate-90'}`} />
+            </button>
+            {legendeOuverte && (
+              <ul className="px-3 pb-3 space-y-1.5 max-h-[40vh] overflow-y-auto">
+                {ESPECES.map(esp => (
+                  <li key={esp} className="flex items-center gap-2 text-[#1E2025]">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: MARQUEUR_ESPECE[esp] ?? MARQUEUR_PERDU_DEFAUT }} />
+                    {nomEspece(esp)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {/* Légende des statuts */}
+          <div className="absolute top-3 right-3 z-[1000] bg-white rounded-xl border border-[#E5E8E6] shadow-md px-3 py-2 text-sm text-[#1E2025] space-y-1 pointer-events-none">
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full border-2 border-gray-400 flex-shrink-0" />Perdu <span className="text-gray-500">(couleur de l&apos;espèce)</span></div>
+            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: MARQUEUR_TROUVE }} />Trouvé</div>
           </div>
         </div>
       ) : totalFiltered === 0 ? (
-        <div className="text-center py-20 text-gray-400">
-          <div className="text-5xl mb-4">🔍</div>
-          <p className="font-medium">Aucun résultat pour ces filtres</p>
+        <div className="text-center py-14 bg-white border border-[#E5E8E6] rounded-2xl">
+          <p className="font-medium text-[#1E2025]">Aucun résultat pour ces filtres.</p>
           <button onClick={() => { setFiltreEspece('tous'); setFiltreRace(''); setFiltreVille(''); }}
-            className="mt-3 text-sm text-orange-500 underline">Réinitialiser les filtres</button>
+            className="mt-3 text-sm font-medium text-[#0C5C6C] underline underline-offset-2">Réinitialiser les filtres</button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredPerdus.map(a => (
             <AlerteCard key={`p_${a.id}`} alerte={a} onClick={() => setSelectedAlerte(a)} />
           ))}
@@ -554,6 +543,7 @@ export default function AnimauxPerdusPage() {
         />
       )}
     </div>
+    </div>
   );
 }
 
@@ -563,35 +553,44 @@ function AlerteCard({ alerte: a, onClick }: { alerte: Alerte; onClick: () => voi
   const colors = ESPECE_COLORS[a.espece?.toLowerCase()] ?? ESPECE_COLORS.autre;
   const date   = fmtDate(a.date_perte);
   const loc    = extractVille(a);
-
   return (
-    <div onClick={onClick} className="bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all cursor-pointer group"
-      style={{ borderColor: colors.border }}>
-      <div className="aspect-square relative overflow-hidden bg-gray-50">
-        {thumbUrl(a.photo_url)
-          ? <Image src={thumbUrl(a.photo_url)!} alt={a.nom_animal} fill className="object-contain group-hover:scale-105 transition-transform duration-300" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" />
-          : <div className="w-full h-full flex items-center justify-center text-5xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
-        {/* Badge espèce */}
-        <span className="absolute top-2 left-2 text-xs font-bold px-2 py-0.5 rounded-full"
-          style={{ background: colors.dot, color: 'white' }}>
-          {ESPECE_EMOJI[a.espece] ?? '🐾'} {a.espece?.charAt(0).toUpperCase() + (a.espece?.slice(1) ?? '')}
+    <CarteResultat onClick={onClick} photo={thumbUrl(a.photo_url)} alt={a.nom_animal} fond={colors.bg}
+      espece={a.espece} pastille={colors.dot} statut="Perdu" statutCouleur="#C2410C" statutFond="#FFEDD5"
+      titre={a.nom_animal} race={a.race} sexe={a.sexe} lieu={loc} date={date ? `Perdu le ${date}` : null} />
+  );
+}
+
+/** Carte de résultat sobre, commune aux déclarations perdues et trouvées. */
+function CarteResultat({ onClick, photo, alt, fond, espece, pastille, statut, statutCouleur, statutFond, titre, race, sexe, lieu, date }: {
+  onClick: () => void; photo?: string; alt: string; fond: string; espece?: string; pastille: string;
+  statut: string; statutCouleur: string; statutFond: string; titre: string; race?: string; sexe?: string;
+  lieu?: string; date?: string | null;
+}) {
+  return (
+    <button type="button" onClick={onClick}
+      className="text-left bg-white rounded-2xl border border-[#E5E8E6] shadow-[0_1px_3px_rgba(16,24,40,0.06)] overflow-hidden hover:shadow-md transition-shadow group">
+      <div className="aspect-[4/3] relative overflow-hidden bg-[#F3F4F6]">
+        {photo
+          ? <Image src={photo} alt={alt} fill className="object-contain group-hover:scale-[1.03] transition-transform duration-300" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw" />
+          : <div className="w-full h-full flex items-center justify-center text-gray-400" style={{ background: fond }}><Icone nom="patte" taille={36} /></div>}
+        <span className="absolute top-2 left-2 inline-flex items-center gap-1.5 bg-white/95 border border-[#E5E8E6] text-[#1E2025] text-xs font-semibold px-2 py-0.5 rounded-full">
+          <span className="w-2 h-2 rounded-full" style={{ background: pastille }} />{nomEspece(espece)}
         </span>
-        <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
-          Perdu
+        <span className="absolute top-2 right-2 text-xs font-semibold px-2 py-0.5 rounded-full"
+          style={{ color: statutCouleur, background: statutFond, border: `1px solid ${statutCouleur}33` }}>
+          {statut}
         </span>
       </div>
       <div className="p-4">
-        <h3 className="font-bold text-[#1F2A2E] text-base truncate">{a.nom_animal}</h3>
-        {a.race && <p className="text-sm capitalize truncate" style={{ color: colors.text }}>{a.race}</p>}
-        {a.sexe && <p className="text-xs text-gray-400">{SEXE_LABEL[a.sexe] ?? a.sexe}</p>}
-        {loc && <p className="text-gray-400 text-xs mt-1 truncate">📍 {loc}</p>}
-        {date && <p className="text-gray-400 text-xs">🗓 Perdu le {date}</p>}
-        <div className="mt-3 text-center text-xs font-semibold py-1.5 rounded-lg"
-          style={{ background: colors.bg, color: colors.text }}>
-          Voir le détail →
-        </div>
+        <h3 className="font-bold text-[#1E2025] text-[15px] truncate">{titre}</h3>
+        {(race || sexe) && (
+          <p className="text-sm text-gray-600 truncate capitalize">{[race, sexe ? (SEXE_LABEL[sexe] ?? sexe) : null].filter(Boolean).join(' · ')}</p>
+        )}
+        {lieu && <p className="text-gray-500 text-xs mt-1.5 truncate flex items-center gap-1"><Icone nom="pin" taille={13} className="flex-shrink-0" />{lieu}</p>}
+        {date && <p className="text-gray-500 text-xs mt-0.5 flex items-center gap-1"><Icone nom="calendrier" taille={13} className="flex-shrink-0" />{date}</p>}
+        <p className="mt-3 pt-3 border-t border-[#EEF0EE] text-xs font-semibold text-[#0C5C6C]">Voir le détail →</p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -619,9 +618,9 @@ function AlerteDetailModal({
     const loc    = a.derniere_localisation ?? a.ville ?? '';
     const date   = a.date_perte ? `perdu le ${fmtDate(a.date_perte)}` : '';
     const text   = [
-      `🚨 ANIMAL PERDU — ${a.nom_animal}${a.espece ? ` (${a.espece})` : ''}`,
-      loc  ? `📍 ${loc}` : null,
-      date ? `🗓 ${date}` : null,
+      `ANIMAL PERDU — ${a.nom_animal}${a.espece ? ` (${a.espece})` : ''}`,
+      loc  ? `Lieu : ${loc}` : null,
+      date ? date.charAt(0).toUpperCase() + date.slice(1) : null,
       'Aidez à retrouver cet animal !',
     ].filter(Boolean).join('\n');
     const title = `Animal perdu : ${a.nom_animal}`;
@@ -661,14 +660,13 @@ function AlerteDetailModal({
         <div className="relative aspect-video bg-gray-50">
           {a.photo_url
             ? <Image src={a.photo_url} alt={a.nom_animal} fill className="object-contain" sizes="(max-width: 768px) 100vw, 512px" />
-            : <div className="w-full h-full flex items-center justify-center text-8xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
-          <button onClick={onClose}
+            : <div className="w-full h-full flex items-center justify-center text-gray-400" style={{ background: colors.bg }}><Icone nom="patte" taille={56} /></div>}
+          <button onClick={onClose} aria-label="Fermer"
             className="absolute top-3 right-3 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-lg transition-colors">
             ×
           </button>
-          <span className="absolute top-3 left-3 text-sm font-bold px-3 py-1 rounded-full"
-            style={{ background: colors.dot, color: 'white' }}>
-            {ESPECE_EMOJI[a.espece] ?? '🐾'} {a.espece?.charAt(0).toUpperCase() + (a.espece?.slice(1) ?? '')} — Perdu
+          <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full bg-white/95 text-[#1E2025] border border-[#E5E8E6]">
+            <span className="w-2 h-2 rounded-full" style={{ background: colors.dot }} />{nomEspece(a.espece)} — Perdu
           </span>
           {a.numero_alerte && (
             <span className="absolute bottom-3 right-3 text-xs bg-black/60 text-white px-2 py-1 rounded-full">
@@ -683,28 +681,28 @@ function AlerteDetailModal({
 
           {/* Infos identité */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-4 text-sm">
-            {a.race && <InfoRow icon="🐾" label="Race" value={a.race} />}
-            {a.sexe && <InfoRow icon={a.sexe === 'male' ? '♂' : a.sexe === 'femelle' ? '♀' : '?'} label="Sexe" value={SEXE_LABEL[a.sexe] ?? a.sexe} />}
-            {a.couleur && <InfoRow icon="🎨" label="Couleur" value={a.couleur} />}
-            {a.couleur_yeux && <InfoRow icon="👁" label="Couleur des yeux" value={a.couleur_yeux} />}
-            {a.identification && <InfoRow icon="💾" label="Identification" value={a.identification} />}
+            {a.race && <InfoRow label="Race" value={a.race} />}
+            {a.sexe && <InfoRow label="Sexe" value={SEXE_LABEL[a.sexe] ?? a.sexe} />}
+            {a.couleur && <InfoRow label="Couleur" value={a.couleur} />}
+            {a.couleur_yeux && <InfoRow label="Couleur des yeux" value={a.couleur_yeux} />}
+            {a.identification && <InfoRow label="Identification" value={a.identification} />}
           </div>
 
           {/* Localisation + dates */}
-          <div className="bg-orange-50 border border-orange-100 rounded-xl p-3 mb-4 space-y-1">
+          <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-xl p-3 mb-4 space-y-1">
             {(a.derniere_localisation ?? a.ville) && (
               <p className="text-sm text-orange-800">
-                <span className="font-semibold">📍 Dernière localisation :</span> {a.derniere_localisation ?? a.ville}
+                <span className="font-semibold">Dernière localisation :</span> {a.derniere_localisation ?? a.ville}
               </p>
             )}
             {a.date_perte && (
               <p className="text-sm text-orange-700">
-                <span className="font-semibold">🗓 Disparu le :</span> {fmtDate(a.date_perte)}
+                <span className="font-semibold">Disparu le :</span> {fmtDate(a.date_perte)}
               </p>
             )}
             {a.date_derniere_localisation && a.date_derniere_localisation !== a.date_perte && (
               <p className="text-sm text-orange-700">
-                <span className="font-semibold">📅 Vu en dernier le :</span> {fmtDate(a.date_derniere_localisation)}
+                <span className="font-semibold">Vu en dernier le :</span> {fmtDate(a.date_derniere_localisation)}
               </p>
             )}
           </div>
@@ -723,8 +721,8 @@ function AlerteDetailModal({
               {a.contact && (
                 <a href={a.contact.includes('@') ? `mailto:${a.contact}` : `tel:${a.contact}`}
                   className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm text-white transition-colors"
-                  style={{ background: colors.dot }}>
-                  {a.contact.includes('@') ? '✉️ Envoyer un email' : `📞 Appeler : ${a.contact}`}
+                  style={{ background: '#0C5C6C' }}>
+                  {a.contact.includes('@') ? 'Envoyer un e-mail' : `Appeler : ${a.contact}`}
                 </a>
               )}
               {user && a.uid_proprietaire && (
@@ -732,7 +730,7 @@ function AlerteDetailModal({
                   className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white transition-colors disabled:opacity-60">
                   {contacting
                     ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Connexion…</>
-                    : '💬 Contacter via la messagerie'}
+                    : 'Contacter via la messagerie'}
                 </button>
               )}
               {!user && (
@@ -747,11 +745,11 @@ function AlerteDetailModal({
             <div className="space-y-2">
               <button onClick={onRetrouve} disabled={actionLoading}
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#EEF5EA] text-[#6E9E57] hover:bg-[#DCF0D2] transition-colors disabled:opacity-60">
-                ✅ Animal retrouvé !
+                Animal retrouvé
               </button>
               <button onClick={onDelete} disabled={actionLoading}
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-60">
-                🗑 Supprimer l&apos;alerte
+                Supprimer l&apos;alerte
               </button>
               <a href="/mes-alertes"
                 className="flex items-center justify-center w-full py-2 rounded-xl text-sm border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
@@ -764,7 +762,7 @@ function AlerteDetailModal({
           <button onClick={handleShare}
             className="flex items-center justify-center gap-2 w-full py-2.5 mt-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors">
             {copied
-              ? <><span>✅</span> Lien copié !</>
+              ? <>Lien copié</>
               : <><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg> Partager cette alerte</>}
@@ -775,10 +773,9 @@ function AlerteDetailModal({
   );
 }
 
-function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start gap-1.5">
-      <span className="text-sm">{icon}</span>
       <div>
         <span className="text-xs text-gray-400">{label} </span>
         <span className="text-sm font-medium text-gray-700 capitalize">{value}</span>
@@ -791,39 +788,13 @@ function InfoRow({ icon, label, value }: { icon: string; label: string; value: s
 
 function TrouveCard({ trouve: a, onClick }: { trouve: Trouve; onClick: () => void }) {
   const colors = ESPECE_COLORS[a.espece?.toLowerCase()] ?? ESPECE_COLORS.autre;
-  const photoUrl = a.photos?.[0];
   const date = fmtDate(a.date_trouve);
   const loc = a.localisation_adresse ?? a.ville ?? '';
-
   return (
-    <div onClick={onClick}
-      className="bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-md transition-all cursor-pointer group"
-      style={{ borderColor: '#89CDD8' }}>
-      <div className="aspect-square relative overflow-hidden bg-gray-50">
-        {photoUrl
-          ? <Image src={photoUrl} alt="Animal trouvé" fill className="object-contain group-hover:scale-105 transition-transform duration-300" sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" />
-          : <div className="w-full h-full flex items-center justify-center text-5xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
-        <span className="absolute top-2 left-2 text-xs font-bold px-2 py-0.5 rounded-full"
-          style={{ background: colors.dot, color: 'white' }}>
-          {ESPECE_EMOJI[a.espece] ?? '🐾'} {a.espece?.charAt(0).toUpperCase() + (a.espece?.slice(1) ?? '')}
-        </span>
-        <span className="absolute top-2 right-2 bg-[#0C5C6C] text-white text-xs font-semibold px-2 py-0.5 rounded-full">
-          Trouvé
-        </span>
-      </div>
-      <div className="p-4">
-        <h3 className="font-bold text-[#1F2A2E] text-base truncate">
-          {a.espece ? `${a.espece.charAt(0).toUpperCase()}${a.espece.slice(1)} trouvé${a.sexe === 'femelle' ? 'e' : ''}` : 'Animal trouvé'}
-        </h3>
-        {a.race && <p className="text-sm capitalize truncate" style={{ color: colors.text }}>{a.race}</p>}
-        {a.sexe && <p className="text-xs text-gray-400">{SEXE_LABEL[a.sexe] ?? a.sexe}</p>}
-        {loc && <p className="text-gray-400 text-xs mt-1 truncate">📍 {loc}</p>}
-        {date && <p className="text-gray-400 text-xs">🗓 Trouvé le {date}</p>}
-        <div className="mt-3 text-center text-xs font-semibold py-1.5 rounded-lg bg-[#E8F4F6] text-[#0C5C6C]">
-          Voir le détail →
-        </div>
-      </div>
-    </div>
+    <CarteResultat onClick={onClick} photo={a.photos?.[0]} alt="Animal trouvé" fond={colors.bg}
+      espece={a.espece} pastille={colors.dot} statut="Trouvé" statutCouleur="#0C5C6C" statutFond="#E8F4F6"
+      titre={a.espece ? `${nomEspece(a.espece)} trouvé${a.sexe === 'femelle' ? 'e' : ''}` : 'Animal trouvé'}
+      race={a.race} sexe={a.sexe} lieu={loc} date={date ? `Trouvé le ${date}` : null} />
   );
 }
 
@@ -854,13 +825,13 @@ function TrouveDetailModal({
         <div className="relative aspect-video bg-gray-50">
           {photoUrl
             ? <Image src={photoUrl} alt="Animal trouvé" fill className="object-contain" sizes="(max-width: 768px) 100vw, 512px" />
-            : <div className="w-full h-full flex items-center justify-center text-8xl" style={{ background: colors.bg }}>{ESPECE_EMOJI[a.espece] ?? '🐾'}</div>}
-          <button onClick={onClose}
+            : <div className="w-full h-full flex items-center justify-center text-gray-400" style={{ background: colors.bg }}><Icone nom="patte" taille={56} /></div>}
+          <button onClick={onClose} aria-label="Fermer"
             className="absolute top-3 right-3 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-lg transition-colors">
             ×
           </button>
-          <span className="absolute top-3 left-3 text-sm font-bold px-3 py-1 rounded-full bg-[#0C5C6C] text-white">
-            {ESPECE_EMOJI[a.espece] ?? '🐾'} {a.espece?.charAt(0).toUpperCase()}{a.espece?.slice(1) ?? 'Animal'} — Trouvé
+          <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full bg-white/95 text-[#1E2025] border border-[#E5E8E6]">
+            <span className="w-2 h-2 rounded-full" style={{ background: colors.dot }} />{nomEspece(a.espece)} — Trouvé
           </span>
           {photos.length > 1 && (
             <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
@@ -879,24 +850,24 @@ function TrouveDetailModal({
 
           {/* Infos */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-4 text-sm">
-            {a.race && <InfoRow icon="🐾" label="Race" value={a.race} />}
-            {a.sexe && <InfoRow icon={a.sexe === 'male' ? '♂' : a.sexe === 'femelle' ? '♀' : '?'} label="Sexe" value={a.sexe} />}
-            {a.taille && <InfoRow icon="📏" label="Taille" value={a.taille} />}
-            {a.couleur && <InfoRow icon="🎨" label="Couleur" value={a.couleur} />}
-            {a.couleur_yeux && <InfoRow icon="👁" label="Couleur des yeux" value={a.couleur_yeux} />}
-            {a.numero_puce && <InfoRow icon="💾" label="Puce" value={a.numero_puce} />}
+            {a.race && <InfoRow label="Race" value={a.race} />}
+            {a.sexe && <InfoRow label="Sexe" value={a.sexe} />}
+            {a.taille && <InfoRow label="Taille" value={a.taille} />}
+            {a.couleur && <InfoRow label="Couleur" value={a.couleur} />}
+            {a.couleur_yeux && <InfoRow label="Couleur des yeux" value={a.couleur_yeux} />}
+            {a.numero_puce && <InfoRow label="Puce" value={a.numero_puce} />}
           </div>
 
           {/* Date + lieu */}
           <div className="bg-[#E8F4F6] border border-[#89CDD8] rounded-xl p-3 mb-4 space-y-1">
             {(a.localisation_adresse ?? a.ville) && (
               <p className="text-sm text-[#0C5C6C]">
-                <span className="font-semibold">📍 Trouvé à :</span> {a.localisation_adresse ?? a.ville}
+                <span className="font-semibold">Trouvé à :</span> {a.localisation_adresse ?? a.ville}
               </p>
             )}
             {a.date_trouve && (
               <p className="text-sm text-[#0C5C6C]">
-                <span className="font-semibold">🗓 Trouvé le :</span> {fmtDate(a.date_trouve)}
+                <span className="font-semibold">Trouvé le :</span> {fmtDate(a.date_trouve)}
               </p>
             )}
           </div>
@@ -925,20 +896,20 @@ function TrouveDetailModal({
             <div className="space-y-2">
               {accepte ? (
                 <p className="text-sm text-center text-gray-500 py-2 bg-[#E8F4F6] rounded-xl">
-                  💬 Connectez-vous pour contacter via la messagerie
+                  Connectez-vous pour contacter via la messagerie
                 </p>
               ) : (
                 <>
                   {a.contact_telephone && (
                     <a href={`tel:${a.contact_telephone}`}
                       className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#0C5C6C] text-white hover:bg-[#094F5D] transition-colors">
-                      📞 {a.contact_telephone}
+                      Appeler : {a.contact_telephone}
                     </a>
                   )}
                   {a.contact_email && (
                     <a href={`mailto:${a.contact_email}`}
                       className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
-                      ✉️ {a.contact_email}
+                      {a.contact_email}
                     </a>
                   )}
                 </>
@@ -949,7 +920,7 @@ function TrouveDetailModal({
             <div className="space-y-2">
               <button onClick={onDelete} disabled={actionLoading}
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-red-50 text-red-600 hover:bg-red-100 transition-colors disabled:opacity-60">
-                🗑 Supprimer la déclaration
+                Supprimer la déclaration
               </button>
             </div>
           )}

@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { couleurMarqueur } from '@/lib/perdus-couleurs';
 
 export interface AlerteMapItem {
   id: string;
@@ -21,12 +22,9 @@ export interface AlerteMapItem {
   onDetail?: () => void;
 }
 
-function especeEmoji(espece?: string): string {
-  return ({
-    chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐇',
-    oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷',
-  } as Record<string, string>)[espece ?? ''] ?? '🐾';
-}
+// Pastille neutre (patte) à la place de l'ancien émoji : couleurs et logique
+// des marqueurs inchangées (src/lib/perdus-couleurs.ts).
+const PATTE_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="white" aria-hidden="true"><ellipse cx="12" cy="16.5" rx="4.2" ry="3.4"/><circle cx="6.5" cy="10.5" r="1.8"/><circle cx="9.8" cy="6.5" r="1.8"/><circle cx="14.2" cy="6.5" r="1.8"/><circle cx="17.5" cy="10.5" r="1.8"/></svg>';
 
 const ESPECE_BG: Record<string, string> = {
   chien:  '#DBEAFE',
@@ -40,29 +38,15 @@ const ESPECE_BG: Record<string, string> = {
   porcin: '#FDF2F8',
 };
 
-const ESPECE_BORDER: Record<string, string> = {
-  chien:  '#3B82F6',
-  chat:   '#EC4899',
-  cheval: '#F59E0B',
-  lapin:  '#10B981',
-  oiseau: '#8B5CF6',
-  nac:    '#EF4444',
-  ovin:   '#22C55E',
-  caprin: '#F97316',
-  porcin: '#D946EF',
-};
-
 function makeIcon(espece?: string, type: 'perdu' | 'trouve' = 'perdu') {
-  const emoji = especeEmoji(espece);
-  const key = espece ?? '';
-  const border = type === 'trouve' ? '#16A34A' : (ESPECE_BORDER[key] ?? '#EF4444');
+  const border = couleurMarqueur(espece, type);
   return L.divIcon({
     className: '',
     html: `<div style="
       background:${border};width:38px;height:38px;border-radius:50% 50% 50% 0;
       transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;
       box-shadow:0 2px 8px rgba(0,0,0,.35);border:2px solid white;">
-      <span style="transform:rotate(45deg);font-size:17px;line-height:1">${emoji}</span>
+      <span style="transform:rotate(45deg);display:flex">${PATTE_SVG}</span>
     </div>`,
     iconSize: [38, 38],
     iconAnchor: [19, 38],
@@ -91,7 +75,10 @@ export default function AnimauxPerdusMap({ alertes }: { alertes: AlerteMapItem[]
       center={[46.5, 2.5]}
       zoom={6}
       style={{ height: '100%', width: '100%', borderRadius: '1rem' }}
-      scrollWheelZoom>
+      scrollWheelZoom
+      // Zoom en bas à gauche : le haut de la carte porte les légendes.
+      zoomControl={false}>
+      <ZoomControl position="bottomleft" />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -100,7 +87,8 @@ export default function AnimauxPerdusMap({ alertes }: { alertes: AlerteMapItem[]
       {alertes.map(a => {
         const isPerdu = (a.type ?? 'perdu') === 'perdu';
         const bg = ESPECE_BG[a.espece ?? ''] ?? '#FEE2E2';
-        const markerColor = isPerdu ? (ESPECE_BORDER[a.espece ?? ''] ?? '#EF4444') : '#16A34A';
+        const markerColor = couleurMarqueur(a.espece, isPerdu ? 'perdu' : 'trouve');
+        const especeNom = a.espece ? a.espece.charAt(0).toUpperCase() + a.espece.slice(1) : 'Animal trouvé';
         return (
         <Marker key={`${a.type ?? 'perdu'}_${a.id}`} position={[a.lat, a.lng]} icon={makeIcon(a.espece, a.type ?? 'perdu')}
           eventHandlers={{ click: a.onDetail ? () => a.onDetail!() : undefined }}>
@@ -111,16 +99,14 @@ export default function AnimauxPerdusMap({ alertes }: { alertes: AlerteMapItem[]
                   <img src={a.photo_url} alt={a.nom_animal}
                     style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                 ) : (
-                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: isPerdu ? bg : '#DCFCE7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
-                    {especeEmoji(a.espece)}
-                  </div>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: isPerdu ? bg : '#DCFCE7', flexShrink: 0 }} />
                 )}
                 <div style={{ minWidth: 0 }}>
                   <p style={{ fontWeight: 700, fontSize: 13, margin: 0, color: '#1F2A2E' }}>
-                    {isPerdu ? a.nom_animal : `${especeEmoji(a.espece)} ${a.espece?.charAt(0).toUpperCase() ?? ''}${a.espece?.slice(1) ?? 'Animal trouvé'}`}
+                    {isPerdu ? a.nom_animal : especeNom}
                   </p>
                   <p style={{ fontSize: 11, color: markerColor, fontWeight: 600, margin: 0 }}>
-                    {isPerdu ? '🚨 Perdu' : '🐾 Trouvé'}
+                    {isPerdu ? 'Perdu' : 'Trouvé'}
                   </p>
                 </div>
               </div>
@@ -130,7 +116,7 @@ export default function AnimauxPerdusMap({ alertes }: { alertes: AlerteMapItem[]
                 </p>
               )}
               {a.derniere_localisation && (
-                <p style={{ fontSize: 11, color: '#F97316', margin: '2px 0' }}>📍 {a.derniere_localisation}</p>
+                <p style={{ fontSize: 11, color: '#4B5563', margin: '2px 0' }}>{a.derniere_localisation}</p>
               )}
               {isPerdu && a.date_perte && (
                 <p style={{ fontSize: 11, color: '#9CA3AF', margin: '2px 0' }}>Perdu le {fmtDate(a.date_perte)}</p>

@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { Icone } from '@/components/dashboard/kit';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -332,7 +333,7 @@ function DeclarerPerduPageInner() {
         if (p.uid_proprio === user!.uid) continue;
         await supabase.from('notifications').insert({
           uid: p.uid_proprio, type: 'alerte_perdu_copro',
-          title: `🚨 ${nom.trim()} est déclaré(e) perdu(e)`,
+          title: `${nom.trim()} est déclaré(e) perdu(e)`,
           body: `Alerte N° ${numeroAlerte} — retrouvez-la dans Mes alertes.`,
           ...(p.profile_id_proprio ? { profile_id: p.profile_id_proprio } : {}),
           data: { alerteId, animalId: animalIdChoisi, url: '/mes-alertes' }, read: false,
@@ -388,7 +389,7 @@ function DeclarerPerduPageInner() {
             className="relative w-28 h-28 rounded-2xl overflow-hidden bg-orange-50 border-2 border-dashed border-orange-200 hover:border-orange-400 transition-colors flex items-center justify-center">
             {photoPreview
               ? <Image src={photoPreview} alt="" fill className="object-cover" />
-              : <span className="text-4xl">🐾</span>}
+              : <span className="text-gray-400"><Icone nom="patte" taille={32} /></span>}
             <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors" />
           </button>
           <p className="text-xs text-gray-400">{photoPreview ? 'Cliquer pour changer la photo' : 'Cliquer pour ajouter une photo'}</p>
@@ -402,7 +403,7 @@ function DeclarerPerduPageInner() {
             {userAnimaux.length > 0 && (
               <button type="button" onClick={() => setShowPicker(true)}
                 className="text-xs text-orange-600 font-semibold hover:text-orange-800 flex items-center gap-1">
-                🐾 Mes animaux
+                Mes animaux
               </button>
             )}
           </div>
@@ -442,7 +443,7 @@ function DeclarerPerduPageInner() {
                 <button key={b} type="button"
                   onMouseDown={() => { setRace(b); setShowBreedSugg(false); }}
                   className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 flex items-center gap-2">
-                  <span className="text-gray-400 text-xs">🐾</span> {b}
+                  {b}
                 </button>
               ))}
             </div>
@@ -453,7 +454,7 @@ function DeclarerPerduPageInner() {
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">Sexe *</label>
           <div className="flex gap-2">
-            {[['male', '♂ Mâle'], ['femelle', '♀ Femelle'], ['inconnu', 'Inconnu']].map(([v, label]) => (
+            {[['male', 'Mâle'], ['femelle', 'Femelle'], ['inconnu', 'Inconnu']].map(([v, label]) => (
               <button key={v} type="button" onClick={() => setSexe(sexe === v ? '' : v)}
                 className={`px-4 py-2 rounded-full text-sm font-semibold border transition-colors ${
                   sexe === v ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-400'
@@ -518,7 +519,7 @@ function DeclarerPerduPageInner() {
                     <button key={p.place_id} type="button"
                       onMouseDown={() => selectLocPrediction(p)}
                       className="w-full text-left px-4 py-2.5 text-sm hover:bg-orange-50 text-gray-700 border-b border-gray-50 last:border-0">
-                      📍 {p.description}
+                      {p.description}
                     </button>
                   ))}
                 </div>
@@ -592,7 +593,7 @@ function DeclarerPerduPageInner() {
           {saving ? (
             <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publication…</>
           ) : (
-            <>📍 Publier l&apos;alerte</>
+            <>Publier l&apos;alerte</>
           )}
         </button>
 
@@ -616,7 +617,7 @@ function DeclarerPerduPageInner() {
                   <div className="w-10 h-10 rounded-xl overflow-hidden bg-orange-50 flex-shrink-0">
                     {a.photo_url
                       ? <Image src={a.photo_url} alt="" width={40} height={40} className="object-cover w-full h-full" />
-                      : <span className="flex items-center justify-center w-full h-full text-lg">🐾</span>}
+                      : <span className="flex items-center justify-center w-full h-full text-gray-400"><Icone nom="patte" taille={18} /></span>}
                   </div>
                   <div>
                     <p className="font-semibold text-sm text-[#1F2A2E]">{a.nom}</p>

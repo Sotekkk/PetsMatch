@@ -375,7 +375,7 @@ export default function DeclarerTrouvePage() {
                     <button key={b} type="button" onMouseDown={() => { setRace(b); setShowBreedSugg(false); }}
                       className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-2"
                       style={{ fontFamily: 'Galey, sans-serif' }}>
-                      <span className="text-gray-400">🐾</span>{b}
+                      {b}
                     </button>
                   ))}
                 </div>
@@ -573,7 +573,7 @@ export default function DeclarerTrouvePage() {
             style={{ fontFamily: 'Galey, sans-serif' }}>
             {saving
               ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Publication…</>
-              : <><span>🐾</span> Publier la déclaration</>
+              : <>Publier la déclaration</>
             }
           </button>
 
