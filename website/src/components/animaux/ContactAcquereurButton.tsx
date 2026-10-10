@@ -19,7 +19,12 @@ interface AnimalRef {
  * Si l'acquéreur n'a pas (ou plus) de compte PetsMatch actif, les coordonnées
  * sont modifiables (info reçue autrement que par l'appli).
  */
-export default function ContactAcquereurButton({ animal, className = '' }: { animal: AnimalRef; className?: string }) {
+export default function ContactAcquereurButton({ animal, className = '', variante = 'icone', onOuvert }: {
+  animal: AnimalRef; className?: string;
+  /** 'menu' : ligne de menu texte « Coordonnées de la famille » au lieu de l'icône. */
+  variante?: 'icone' | 'menu';
+  onOuvert?: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [contact, setContact] = useState<ContactAcquereur | null>(null);
@@ -63,11 +68,22 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
 
   return (
     <>
-      <button type="button" onClick={handleOpen} disabled={loading}
-        title="Coordonnées du propriétaire"
-        className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[#0C5C6C] hover:bg-[#0C5C6C]/10 transition-colors disabled:opacity-50 ${className}`}>
-        {loading ? '…' : '📇'}
-      </button>
+      {variante === 'menu' ? (
+        <button type="button" onClick={async () => { await handleOpen(); onOuvert?.(); }} disabled={loading}
+          className={`w-full text-left px-3 py-2 text-sm text-[#1F2A2E] hover:bg-gray-50 disabled:opacity-50 ${className}`}>
+          {loading ? 'Chargement…' : 'Coordonnées de la famille'}
+        </button>
+      ) : (
+        <button type="button" onClick={handleOpen} disabled={loading}
+          title="Coordonnées du propriétaire" aria-label="Coordonnées du propriétaire"
+          className={`shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-[#0C5C6C] hover:bg-[#0C5C6C]/10 transition-colors disabled:opacity-50 ${className}`}>
+          {loading ? '…' : (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.28 6.72 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.37c0-.52-.35-.97-.85-1.09l-4.42-1.1a1.12 1.12 0 00-1.17.42l-.97 1.29a1.12 1.12 0 01-1.21.38 12.04 12.04 0 01-7.14-7.14 1.12 1.12 0 01.38-1.21l1.29-.97c.36-.27.52-.73.42-1.17l-1.1-4.42a1.13 1.13 0 00-1.09-.85H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+            </svg>
+          )}
+        </button>
+      )}
 
       {open && contact && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4"
@@ -80,7 +96,7 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
               </h3>
               {editable && !editing && (
                 <button onClick={() => setEditing(true)} className="text-xs font-semibold text-[#0C5C6C] shrink-0">
-                  ✏️ Modifier
+                  Modifier
                 </button>
               )}
             </div>
@@ -121,11 +137,11 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
               <p className="text-sm text-gray-500 mb-4">Aucune coordonnée enregistrée pour cet animal.</p>
             ) : (
               <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm space-y-1 mb-4">
-                {nomComplet && <p>👤 {nomComplet}</p>}
-                {contact.tel && <p>📞 <a href={`tel:${contact.tel}`} className="hover:underline">{contact.tel}</a></p>}
-                {contact.email && <p>✉️ <a href={`mailto:${contact.email}`} className="hover:underline break-all">{contact.email}</a></p>}
+                {nomComplet && <p><span className="text-gray-500">Nom : </span>{nomComplet}</p>}
+                {contact.tel && <p><span className="text-gray-500">Téléphone : </span><a href={`tel:${contact.tel}`} className="hover:underline">{contact.tel}</a></p>}
+                {contact.email && <p><span className="text-gray-500">Email : </span><a href={`mailto:${contact.email}`} className="hover:underline break-all">{contact.email}</a></p>}
                 {contact.adresse && (
-                  <p>🏠 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.adresse)}`}
+                  <p><span className="text-gray-500">Adresse : </span><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(contact.adresse)}`}
                     target="_blank" rel="noopener noreferrer" className="hover:underline">{contact.adresse}</a></p>
                 )}
               </div>
@@ -136,7 +152,7 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
                 {contact.tel && (
                   <a href={`tel:${contact.tel}`}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30">
-                    📞 Appeler
+                    Appeler
                   </a>
                 )}
                 {contact.tel && (

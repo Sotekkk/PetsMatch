@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { fetchContactAcquereur } from '@/lib/contact-acquereur';
 import ContactAcquereurButton from '@/components/animaux/ContactAcquereurButton';
@@ -41,6 +42,12 @@ function parseDate(s?: string | null): Date | null {
 }
 
 function fmt(d: Date) { return d.toLocaleDateString('fr-FR'); }
+function fmtLong(d: Date) { return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }); }
+
+type StatutSuivi = 'a_faire' | 'retard' | 'recu';
+type StatutFiltre = 'a_suivre' | 'tous' | 'a_faire' | 'retard' | 'recu';
+type EcheanceFiltre = 'toutes' | 'depassees' | '30j';
+interface DossierSuivi { a: AnimalLite; ech: Date | null; days: number | null; statut: StatutSuivi; declaree: boolean }
 
 /** Téléphone au format international sans « + » pour wa.me (France par défaut). */
 function waPhone(raw: string): string {
@@ -52,7 +59,11 @@ function waPhone(raw: string): string {
 
 export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId, onLocalUpdate }: Props) {
   const senderUid = myUid ?? uid;
-  const [nonFaitesOnly, setNonFaitesOnly] = useState(false);
+  const [q, setQ] = useState('');
+  const [statutFiltre, setStatutFiltre] = useState<StatutFiltre>('a_suivre');
+  const [echeanceFiltre, setEcheanceFiltre] = useState<EcheanceFiltre>('toutes');
+  const [certif, setCertif] = useState<AnimalLite | null>(null);
+  const [valideesLe, setValideesLe] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [annivAuto, setAnnivAuto] = useState(false);
   const [annivLoaded, setAnnivLoaded] = useState(false);
@@ -78,14 +89,90 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
 
   const today = new Date(new Date().toDateString());
 
-  let sterilList = cedes.filter(a => a.sterilisation_requise);
-  const sterilCount = sterilList.length;
-  if (nonFaitesOnly) sterilList = sterilList.filter(a => !a.sterilise || !a.sterilisation_validee);
-  sterilList = [...sterilList].sort((a, b) => {
-    const da = parseDate(a.sterilisation_echeance)?.getTime() ?? Infinity;
-    const db = parseDate(b.sterilisation_echeance)?.getTime() ?? Infinity;
-    return da - db;
+  // Dossiers de stérilisation : délais calculés depuis l'échéance contractuelle
+  // enregistrée (jamais déduits d'un âge type). « Certificat reçu » = validé par
+  // l'éleveur ; une échéance passée ne vaut jamais stérilisation réalisée.
+  const sterilAll: DossierSuivi[] = cedes.filter(a => a.sterilisation_requise).map(a => {
+    const ech = parseDate(a.sterilisation_echeance);
+    const days = ech ? Math.round((new Date(ech.toDateString()).getTime() - today.getTime()) / 86400000) : null;
+    const recu = !!a.sterilisation_validee;
+    const statut: StatutSuivi = recu ? 'recu' : days != null && days < 0 ? 'retard' : 'a_faire';
+    return { a, ech, days, statut, declaree: !!a.sterilise };
   });
+  const nbASuivre = sterilAll.filter(d => d.statut !== 'recu').length;
+  const nbRetard = sterilAll.filter(d => d.statut === 'retard').length;
+  const nbRecus = sterilAll.filter(d => d.statut === 'recu').length;
+  const qn = q.trim().toLowerCase();
+  const rang: Record<StatutSuivi, number> = { retard: 0, a_faire: 1, recu: 2 };
+  const sterilList = sterilAll.filter(d => {
+    if (statutFiltre === 'a_suivre' && d.statut === 'recu') return false;
+    if (statutFiltre !== 'a_suivre' && statutFiltre !== 'tous' && d.statut !== statutFiltre) return false;
+    if (echeanceFiltre === 'depassees' && !(d.days != null && d.days < 0)) return false;
+    if (echeanceFiltre === '30j' && !(d.days != null && d.days >= 0 && d.days <= 30)) return false;
+    if (qn && ![d.a.nom, d.a.destinataire_nom, d.a.race].some(v => (v ?? '').toLowerCase().includes(qn))) return false;
+    return true;
+  }).sort((x, y) => rang[x.statut] - rang[y.statut]
+    || (x.ech?.getTime() ?? Infinity) - (y.ech?.getTime() ?? Infinity));
+
+  // Date de validation du certificat (ligne cession, si elle existe)
+  const idsRecus = sterilAll.filter(d => d.statut === 'recu').map(d => d.a.id).join(',');
+  useEffect(() => {
+    if (!idsRecus) return;
+    supabase.from('cessions').select('animal_id, sterilisation_validee_at')
+      .in('animal_id', idsRecus.split(',')).not('sterilisation_validee_at', 'is', null)
+      .then(({ data }) => {
+        const m: Record<string, string> = {};
+        for (const r of (data ?? []) as { animal_id: string; sterilisation_validee_at: string }[]) m[r.animal_id] = r.sterilisation_validee_at;
+        setValideesLe(m);
+      });
+  }, [idsRecus]);
+
+  const Echeance = ({ d, inline = false }: { d: DossierSuivi; inline?: boolean }) => {
+    if (!d.ech) return <span className="text-gray-500">Échéance non renseignée</span>;
+    const delai = d.statut === 'recu' || d.days == null ? null
+      : d.days < 0 ? `Dépassée de ${-d.days} jour${-d.days > 1 ? 's' : ''}`
+      : d.days === 0 ? 'Aujourd’hui' : `Dans ${d.days} jour${d.days > 1 ? 's' : ''}`;
+    const rouge = d.statut === 'retard';
+    return inline ? (
+      <span className="text-gray-600">{fmtLong(d.ech)}{delai && <span className={rouge ? 'text-[#B91C1C]' : ''}> · {delai}</span>}</span>
+    ) : (
+      <span className="block">
+        <span className="block text-[#1F2A2E]">{fmtLong(d.ech)}</span>
+        {delai && <span className={`block text-xs ${rouge ? 'text-[#B91C1C]' : 'text-gray-500'}`}>{delai}</span>}
+      </span>
+    );
+  };
+
+  const BadgeStatut = ({ s, declaree }: { s: StatutSuivi; declaree: boolean }) => {
+    const m = { a_faire: ['À faire', 'bg-gray-100 text-[#1F2A2E]'], retard: ['En retard', 'bg-red-50 text-[#DC2626]'], recu: ['Certificat reçu', 'bg-[#EAF2E5] text-[#4D7A3C]'] }[s];
+    return (
+      <span className="inline-flex flex-col items-start gap-0.5">
+        <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap ${m[1]}`}>{m[0]}</span>
+        {declaree && s !== 'recu' && <span className="text-[11px] text-gray-500">Déclarée par la famille</span>}
+      </span>
+    );
+  };
+
+  const ActionsSuivi = ({ d, mobile = false }: { d: DossierSuivi; mobile?: boolean }) => {
+    const enCours = busy === d.a.id;
+    const btn = `${mobile ? 'h-8 px-3 text-xs' : 'h-9 px-3 text-sm'} rounded-md border border-gray-300 text-[#1F2A2E] font-medium hover:border-[#0C5C6C] hover:text-[#0C5C6C] disabled:opacity-50 whitespace-nowrap`;
+    const lien = `${mobile ? 'h-8 text-xs' : 'h-9 text-sm'} px-2 font-semibold text-[#0C5C6C] hover:underline disabled:opacity-50 whitespace-nowrap`;
+    return (
+      <div className={`flex items-center gap-2 ${mobile ? '' : 'justify-start'}`}>
+        {d.statut === 'recu' ? (
+          <button type="button" onClick={() => setCertif(d.a)} className={btn}>Voir le certificat</button>
+        ) : (
+          <>
+            <button type="button" onClick={() => valider(d.a)} disabled={enCours} className={btn}>
+              {enCours ? '…' : mobile ? 'Certificat' : 'Recevoir le certificat'}
+            </button>
+            <button type="button" onClick={() => openRelance(d.a)} disabled={enCours} className={lien}>Relancer</button>
+          </>
+        )}
+        {!mobile && <MenuDossier a={d.a} />}
+      </div>
+    );
+  };
 
   const anniv = cedes
     .map(a => {
@@ -120,7 +207,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
         await supabase.from('notifications').insert({
           uid: a.uid_acquereur,
           type: 'sterilisation_validee',
-          title: `✅ Stérilisation validée — ${a.nom ?? 'Animal'}`,
+          title: `Stérilisation validée — ${a.nom ?? 'Animal'}`,
           body: `L'éleveur a validé la stérilisation de ${a.nom ?? 'votre animal'}. Merci !`,
           ...(acqProfile?.id ? { profile_id: acqProfile.id } : {}),
           data: { animalId: a.id },
@@ -143,7 +230,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
       const { contact: c } = await fetchContactAcquereur(a);
       const nom = a.nom ?? 'votre compagnon';
       const salut = c.prenom ? `Bonjour ${c.prenom},\n\n` : '';
-      setVoeuxMsg(`${salut}Joyeux anniversaire ${nom} ! 🎂 Toute l'équipe pense à lui aujourd'hui.`);
+      setVoeuxMsg(`${salut}Joyeux anniversaire ${nom} ! Toute l'équipe pense à lui aujourd'hui.`);
       setVoeux({ a, contact: c });
     } finally {
       setBusy(null);
@@ -275,7 +362,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
         read: false,
       });
       onDone();
-      alert('Message envoyé dans l\'application ✅');
+      alert('Message envoyé dans l\'application.');
     } finally {
       setBusy(null);
     }
@@ -283,128 +370,191 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
 
   if (cedes.length === 0) {
     return (
-      <div className="flex flex-col items-center py-20 text-center">
-        <span className="text-5xl mb-4">🐾</span>
-        <p className="text-gray-500 font-medium" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun animal cédé</p>
-        <p className="text-xs text-gray-400 mt-1">Le suivi de stérilisation et les anniversaires de vos chiots cédés apparaîtront ici.</p>
+      <div className="text-center py-16 px-4 bg-white border border-dashed border-gray-300 rounded-lg">
+        <p className="text-[15px] font-semibold text-[#1F2A2E]">Aucun animal cédé</p>
+        <p className="text-sm text-gray-500 mt-1">Le suivi des stérilisations et les anniversaires de vos animaux cédés apparaîtront ici.</p>
       </div>
     );
   }
 
+  const filtresActifs = !!q || statutFiltre !== 'a_suivre' || echeanceFiltre !== 'toutes';
+
   return (
     <div className="space-y-8">
-      {/* ── Stérilisation ── */}
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>✂️ Stérilisation</h3>
-          {sterilCount > 0 && (
-            <button onClick={() => setNonFaitesOnly(v => !v)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                nonFaitesOnly ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'border-gray-300 text-gray-600'
-              }`}>
-              Non faite
-            </button>
-          )}
+      {/* ── Suivi des stérilisations ── */}
+      <section className="bg-white border border-gray-200 rounded-lg p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Suivi des stérilisations</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Échéances, certificats et relances des familles.</p>
+
+        {/* Compteurs */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+          {([
+            ['À suivre', nbASuivre, 'bg-[#E8F4F6] text-[#0C5C6C]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7.5V12l3 2" /></svg>],
+            ['Échéances dépassées', nbRetard, 'bg-red-50 text-[#DC2626]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2.2} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M12 6v8M12 18h.01" /></svg>],
+            ['Certificats reçus', nbRecus, 'bg-[#EAF2E5] text-[#4D7A3C]', <svg key="i" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.6} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.63a3.38 3.38 0 00-3.38-3.37h-1.5a1.13 1.13 0 01-1.12-1.13v-1.5a3.38 3.38 0 00-3.38-3.37H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.63c-.62 0-1.13.5-1.13 1.13v17.25c0 .62.5 1.12 1.13 1.12h12.75c.62 0 1.12-.5 1.12-1.12V11.25a9 9 0 00-9-9z" /></svg>],
+          ] as const).map(([label, n, pastille, icone]) => (
+            <div key={label} className="flex items-center gap-4 border border-gray-200 rounded-lg px-4 py-3">
+              <span className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${pastille}`}>{icone}</span>
+              <span>
+                <span className="block text-sm text-gray-600">{label}</span>
+                <span className="block text-2xl font-bold text-[#1F2A2E] tabular-nums leading-tight">{n}</span>
+              </span>
+            </div>
+          ))}
         </div>
-        {sterilList.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            {nonFaitesOnly ? 'Toutes les stérilisations demandées sont faites et validées. 🎉' : 'Aucune condition de stérilisation sur vos cessions.'}
-          </p>
+
+        {/* Recherche + filtres */}
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
+          <label className="relative flex-1 min-w-0">
+            <span className="sr-only">Rechercher un animal ou une famille</span>
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" d="M21 21l-5.2-5.2m0 0A7.5 7.5 0 105.2 5.2a7.5 7.5 0 0010.6 10.6z" />
+            </svg>
+            <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Rechercher un animal ou une famille"
+              className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-[#0C5C6C]" />
+          </label>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <select value={statutFiltre} onChange={e => setStatutFiltre(e.target.value as StatutFiltre)} aria-label="Statut"
+              className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:border-[#0C5C6C]">
+              <option value="a_suivre">Statut : À suivre</option>
+              <option value="tous">Statut : Tous</option>
+              <option value="a_faire">Statut : À faire</option>
+              <option value="retard">Statut : En retard</option>
+              <option value="recu">Statut : Certificat reçu</option>
+            </select>
+            <select value={echeanceFiltre} onChange={e => setEcheanceFiltre(e.target.value as EcheanceFiltre)} aria-label="Échéance"
+              className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm focus:outline-none focus:border-[#0C5C6C]">
+              <option value="toutes">Échéance : Toutes</option>
+              <option value="depassees">Échéance : Dépassées</option>
+              <option value="30j">Échéance : 30 prochains jours</option>
+            </select>
+          </div>
+        </div>
+
+        {sterilAll.length === 0 ? (
+          <p className="text-sm text-gray-500 mt-5">Aucune condition de stérilisation sur vos cessions.</p>
+        ) : sterilList.length === 0 ? (
+          <div className="text-center py-10 mt-4 border border-dashed border-gray-300 rounded-lg">
+            <p className="text-sm font-semibold text-[#1F2A2E]">Aucun suivi ne correspond à vos filtres</p>
+            {filtresActifs && (
+              <button type="button" onClick={() => { setQ(''); setStatutFiltre('a_suivre'); setEcheanceFiltre('toutes'); }}
+                className="mt-2 text-sm font-semibold text-[#0C5C6C] hover:underline">Réinitialiser les filtres</button>
+            )}
+          </div>
         ) : (
-          <div className="space-y-2">
-            {sterilList.map(a => {
-              const ech = parseDate(a.sterilisation_echeance);
-              const validee = !!a.sterilisation_validee;
-              const done = !!a.sterilise;
-              const enRetard = !!ech && ech < today && !validee;
-              const days = ech ? Math.round((ech.getTime() - today.getTime()) / 86400000) : null;
-              const chip = validee
-                ? { label: '✅ Validée', cls: 'bg-[#6E9E57]/15 text-[#4d7a3c]' }
-                : done
-                ? { label: '🟡 Déclarée · à valider', cls: 'bg-orange-100 text-orange-700' }
-                : enRetard
-                ? { label: `En retard de ${-(days ?? 0)} j`, cls: 'bg-red-100 text-red-700' }
-                : { label: '⏳ À faire', cls: 'bg-gray-100 text-gray-600' };
-              return (
-                <div key={a.id} className="border border-gray-200 rounded-xl p-3">
-                  <div className="flex items-center gap-3">
-                    <Avatar a={a} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-[#1F2A2E] truncate">{a.nom ?? 'Sans nom'}</p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {[a.destinataire_nom, a.race].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${chip.cls}`}>{chip.label}</span>
-                      <ContactAcquereurButton animal={a} />
+          <>
+            {/* Ordinateur : tableau */}
+            <div className="hidden md:block mt-4 border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-left text-xs font-semibold text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3">Animal</th>
+                    <th className="px-4 py-3">Famille</th>
+                    <th className="px-4 py-3">Échéance</th>
+                    <th className="px-4 py-3">Statut</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {sterilList.map(d => (
+                    <tr key={d.a.id} className="align-middle">
+                      <td className="px-4 py-3">
+                        <Link href={`/mes-animaux/${d.a.id}`} className="flex items-center gap-3 group">
+                          <Avatar a={d.a} />
+                          <span className="min-w-0">
+                            <span className="block font-semibold text-[#1F2A2E] group-hover:underline truncate">{d.a.nom ?? 'Sans nom'}</span>
+                            {d.a.race && <span className="block text-xs text-gray-500 truncate">{d.a.race}</span>}
+                          </span>
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-[#1F2A2E]">{d.a.destinataire_nom || <span className="text-gray-400">—</span>}</td>
+                      <td className="px-4 py-3"><Echeance d={d} /></td>
+                      <td className="px-4 py-3"><BadgeStatut s={d.statut} declaree={d.declaree} /></td>
+                      <td className="px-4 py-3"><ActionsSuivi d={d} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile : cartes compactes */}
+            <div className="md:hidden mt-4 space-y-2">
+              {sterilList.map(d => (
+                <div key={d.a.id} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-start gap-3">
+                    <Link href={`/mes-animaux/${d.a.id}`} className="flex-shrink-0"><Avatar a={d.a} /></Link>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <Link href={`/mes-animaux/${d.a.id}`} className="font-semibold text-sm text-[#1F2A2E] truncate hover:underline">
+                          {d.a.nom ?? 'Sans nom'}{d.a.race && <span className="font-normal text-gray-500"> · {d.a.race}</span>}
+                        </Link>
+                        <BadgeStatut s={d.statut} declaree={false} />
+                      </div>
+                      <p className="text-xs text-gray-600 truncate">{d.a.destinataire_nom || 'Famille non renseignée'}</p>
+                      <div className="text-xs mt-0.5"><Echeance d={d} inline /></div>
+                      {d.declaree && d.statut !== 'recu' && <p className="text-[11px] text-gray-500">Stérilisation déclarée par la famille</p>}
                     </div>
                   </div>
-                  <p className={`text-xs mt-2 ${enRetard ? 'text-red-700' : 'text-gray-600'}`}>
-                    {ech
-                      ? (enRetard
-                        ? `Devait être fait avant le ${fmt(ech)}`
-                        : validee ? `Échéance : ${fmt(ech)}` : `Avant le ${fmt(ech)}${days != null ? ` · dans ${days} j` : ''}`)
-                      : 'Échéance non définie'}
-                  </p>
-                  {!validee && (
-                    <div className="mt-2 flex gap-2">
-                      <button onClick={() => valider(a)} disabled={busy === a.id}
-                        className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:opacity-50">
-                        {busy === a.id ? '…' : (done ? '✓ Valider' : '✓ Certificat reçu')}
-                      </button>
-                      <button onClick={() => openRelance(a)} disabled={busy === a.id}
-                        className="flex-1 border border-[#0C5C6C] text-[#0C5C6C] text-xs font-semibold py-2 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
-                        {busy === a.id ? '…' : '📣 Relancer la famille'}
-                      </button>
-                    </div>
-                  )}
+                  <div className="mt-2.5 flex items-center justify-between gap-2"><ActionsSuivi d={d} mobile /><MenuDossier a={d.a} /></div>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
 
       {/* ── Anniversaires ── */}
-      <section>
-        <h3 className="text-base font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>🎂 Anniversaires</h3>
+      <section className="bg-white border border-gray-200 rounded-lg p-4 sm:p-5">
+        <h2 className="text-lg font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Anniversaires</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Animaux cédés fêtant leur anniversaire dans les 60 prochains jours.</p>
         {annivLoaded && (
-          <label className="flex items-start gap-2 mb-3 p-2.5 rounded-xl bg-gray-50 border border-gray-200 cursor-pointer">
+          <label className="flex items-start gap-2 mt-3 cursor-pointer">
             <input type="checkbox" checked={annivAuto} onChange={e => toggleAnnivAuto(e.target.checked)}
-              className="mt-0.5 accent-[#6E9E57] w-4 h-4" />
+              className="mt-0.5 accent-[#0C5C6C] w-4 h-4" />
             <span>
               <span className="block text-sm font-semibold text-[#1F2A2E]">Message d&apos;anniversaire automatique</span>
-              <span className="block text-[11px] text-gray-500">Envoie chaque année un message de vœux aux acquéreurs qui ont l&apos;appli.</span>
+              <span className="block text-xs text-gray-500">Envoie chaque année un message de vœux aux acquéreurs qui ont l&apos;application.</span>
             </span>
           </label>
         )}
         {anniv.length === 0 ? (
-          <p className="text-sm text-gray-500">Aucun anniversaire dans les 60 prochains jours.</p>
+          <p className="text-sm text-gray-500 mt-3">Aucun anniversaire dans les 60 prochains jours.</p>
         ) : (
-          <div className="space-y-2">
-            {anniv.map(({ a, days, age }) => {
-              const aujourdhui = days === 0;
-              return (
-                <div key={a.id} className={`border rounded-xl p-3 flex items-center gap-3 ${aujourdhui ? 'border-[#6E9E57]/40 bg-[#6E9E57]/5' : 'border-gray-200'}`}>
-                  <Avatar a={a} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-[#1F2A2E] truncate">{a.nom ?? 'Sans nom'}</p>
-                    <p className={`text-xs ${aujourdhui ? 'text-[#4d7a3c] font-semibold' : 'text-gray-500'}`}>
-                      {aujourdhui ? `🎉 Aujourd'hui · ${age} an${age > 1 ? 's' : ''}` : `Dans ${days} j · aura ${age} an${age > 1 ? 's' : ''}`}
-                    </p>
-                  </div>
-                  <ContactAcquereurButton animal={a} />
-                  <button onClick={() => openVoeux(a)} disabled={busy === a.id}
-                    className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
-                    {busy === a.id ? '…' : '🎂 Vœux'}
-                  </button>
+          <div className="mt-3 border border-gray-200 rounded-lg divide-y divide-gray-100">
+            {anniv.map(({ a, days, age }) => (
+              <div key={a.id} className="flex items-center gap-3 px-3 py-2.5">
+                <Link href={`/mes-animaux/${a.id}`} className="flex-shrink-0"><Avatar a={a} /></Link>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#1F2A2E] truncate">{a.nom ?? 'Sans nom'}</p>
+                  <p className="text-xs text-gray-500">
+                    {days === 0 ? `Aujourd'hui · ${age} an${age > 1 ? 's' : ''}` : `Dans ${days} jour${days > 1 ? 's' : ''} · aura ${age} an${age > 1 ? 's' : ''}`}
+                  </p>
                 </div>
-              );
-            })}
+                <button onClick={() => openVoeux(a)} disabled={busy === a.id}
+                  className="h-9 px-3 rounded-lg border border-[#0C5C6C] text-[#0C5C6C] text-sm font-semibold hover:bg-[#E8F4F6] disabled:opacity-50 whitespace-nowrap">
+                  {busy === a.id ? '…' : 'Envoyer mes vœux'}
+                </button>
+                <MenuDossier a={a} />
+              </div>
+            ))}
           </div>
         )}
       </section>
+
+      {/* ── Modale « Voir le certificat » ── */}
+      {certif && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4" onClick={() => setCertif(null)}>
+          <div className="bg-white rounded-t-xl sm:rounded-xl w-full sm:max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Certificat de stérilisation — {certif.nom ?? 'Animal'}</h3>
+            <p className="text-sm text-[#4D7A3C] font-semibold mt-3">Certificat reçu{valideesLe[certif.id] ? ` le ${fmt(new Date(valideesLe[certif.id]))}` : ''}</p>
+            <p className="text-sm text-gray-600 mt-1">La stérilisation a été validée à réception du certificat vétérinaire. Aucun fichier n’est joint dans PetsMatch : les documents de l’animal se trouvent dans sa fiche, onglet Administratif.</p>
+            <div className="flex gap-2 mt-4">
+              <Link href={`/mes-animaux/${certif.id}`} className="flex-1 h-10 inline-flex items-center justify-center rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D]">Ouvrir la fiche</Link>
+              <button type="button" onClick={() => setCertif(null)} className="flex-1 h-10 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50">Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modale « Relancer la famille » ── */}
       {relance && (() => {
@@ -420,10 +570,10 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
                 Relancer la famille — {a.nom ?? 'Animal'}
               </h3>
               <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-xs space-y-1 mb-3">
-                {(c.prenom || c.nom) && <p>👤 {[c.prenom, c.nom].filter(Boolean).join(' ')}</p>}
-                {c.tel && <p>📞 <a href={`tel:${c.tel}`} className="text-[#0C5C6C] font-medium">{c.tel}</a></p>}
-                {c.email && <p>✉️ {c.email}</p>}
-                {c.adresse && <p>🏠 {c.adresse}</p>}
+                {(c.prenom || c.nom) && <p><span className="text-gray-500">Destinataire : </span>{[c.prenom, c.nom].filter(Boolean).join(' ')}</p>}
+                {c.tel && <p><span className="text-gray-500">Téléphone : </span><a href={`tel:${c.tel}`} className="text-[#0C5C6C] font-medium">{c.tel}</a></p>}
+                {c.email && <p><span className="text-gray-500">Email : </span>{c.email}</p>}
+                {c.adresse && <p><span className="text-gray-500">Adresse : </span>{c.adresse}</p>}
                 {aucune && <p className="text-gray-500">Aucune coordonnée dans le contrat.</p>}
               </div>
               <textarea value={relanceMsg} onChange={e => setRelanceMsg(e.target.value)} rows={6}
@@ -432,10 +582,10 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
               <div className="flex flex-wrap gap-2">
                 {a.uid_acquereur && (
                   <button onClick={() => envoyerInApp(a, relanceMsg.trim(), 'sterilisation_relance',
-                      `✂️ Rappel stérilisation — ${a.nom ?? 'votre animal'}`, () => setRelance(null))}
+                      `Rappel stérilisation — ${a.nom ?? 'votre animal'}`, () => setRelance(null))}
                     disabled={busy === a.id}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30 disabled:opacity-50">
-                    🔔 Application
+                    Application
                   </button>
                 )}
                 {c.tel && (
@@ -470,13 +620,13 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
             <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 max-h-[90vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}>
               <h3 className="font-bold text-[#1F2A2E] text-base mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
-                🎂 Envoyer mes vœux — {a.nom ?? 'Animal'}
+                Envoyer mes vœux — {a.nom ?? 'Animal'}
               </h3>
               <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-xs space-y-1 mb-3">
-                {(c.prenom || c.nom) && <p>👤 {[c.prenom, c.nom].filter(Boolean).join(' ')}</p>}
-                {c.tel && <p>📞 <a href={`tel:${c.tel}`} className="text-[#0C5C6C] font-medium">{c.tel}</a></p>}
-                {c.email && <p>✉️ {c.email}</p>}
-                {c.adresse && <p>🏠 {c.adresse}</p>}
+                {(c.prenom || c.nom) && <p><span className="text-gray-500">Destinataire : </span>{[c.prenom, c.nom].filter(Boolean).join(' ')}</p>}
+                {c.tel && <p><span className="text-gray-500">Téléphone : </span><a href={`tel:${c.tel}`} className="text-[#0C5C6C] font-medium">{c.tel}</a></p>}
+                {c.email && <p><span className="text-gray-500">Email : </span>{c.email}</p>}
+                {c.adresse && <p><span className="text-gray-500">Adresse : </span>{c.adresse}</p>}
                 {aucune && <p className="text-gray-500">Aucune coordonnée connue pour cet animal.</p>}
               </div>
               <textarea value={voeuxMsg} onChange={e => setVoeuxMsg(e.target.value)} rows={6}
@@ -488,11 +638,11 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
                       const { data: me } = await supabase.from('user_profiles_complet')
                         .select('firstname, lastname, nom').eq('uid', senderUid).eq('is_main', true).maybeSingle();
                       const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Votre éleveur';
-                      envoyerInApp(a, voeuxMsg.trim(), 'message', `💬 ${myName}`, () => setVoeux(null));
+                      envoyerInApp(a, voeuxMsg.trim(), 'message', myName, () => setVoeux(null));
                     }}
                     disabled={busy === a.id}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30 disabled:opacity-50">
-                    🔔 Application
+                    Application
                   </button>
                 )}
                 {c.tel && (
@@ -503,7 +653,7 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
                   </a>
                 )}
                 {c.email && (
-                  <a href={`mailto:${c.email}?subject=${encodeURIComponent(`Joyeux anniversaire ${a.nom ?? ''} 🎂`)}&body=${encodeURIComponent(voeuxMsg.trim())}`}
+                  <a href={`mailto:${c.email}?subject=${encodeURIComponent(`Joyeux anniversaire ${a.nom ?? ''}`)}&body=${encodeURIComponent(voeuxMsg.trim())}`}
                     onClick={() => setVoeux(null)}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#EA4335] bg-[#EA4335]/10 border border-[#EA4335]/30">
                     Email
@@ -519,8 +669,39 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
   );
 }
 
+function MenuDossier({ a }: { a: AnimalLite }) {
+  const [ouvert, setOuvert] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ouvert) return;
+    const fermer = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOuvert(false); };
+    document.addEventListener('mousedown', fermer);
+    return () => document.removeEventListener('mousedown', fermer);
+  }, [ouvert]);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOuvert(o => !o)} aria-label={`Autres actions pour ${a.nom ?? 'cet animal'}`} aria-expanded={ouvert}
+        className="w-8 h-8 rounded-md text-gray-500 hover:bg-gray-100 flex items-center justify-center">
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+      </button>
+      {ouvert && (
+        <div className="absolute right-0 top-9 z-20 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+          <ContactAcquereurButton animal={a} variante="menu" />
+          <Link href={`/mes-animaux/${a.id}`} className="block px-3 py-2 text-sm text-[#1F2A2E] hover:bg-gray-50">Ouvrir la fiche</Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Avatar({ a }: { a: AnimalLite }) {
-  return a.photo_url
-    ? <img src={a.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-    : <div className="w-10 h-10 rounded-lg bg-[#0C5C6C]/10 flex items-center justify-center flex-shrink-0">🐾</div>;
+  const [erreur, setErreur] = useState(false);
+  return a.photo_url && !erreur
+    // eslint-disable-next-line @next/next/no-img-element
+    ? <img src={a.photo_url} alt="" onError={() => setErreur(true)} className="w-11 h-11 rounded-md object-cover flex-shrink-0" />
+    : (
+      <div className="w-11 h-11 rounded-md bg-[#EDF2F2] text-[#8B9FA1] flex items-center justify-center flex-shrink-0" aria-hidden>
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.16-5.16a2.25 2.25 0 013.18 0l5.16 5.16m-1.5-1.5l1.41-1.41a2.25 2.25 0 013.18 0l2.91 2.91M3.75 21h16.5A1.5 1.5 0 0021.75 19.5V4.5A1.5 1.5 0 0020.25 3H3.75A1.5 1.5 0 002.25 4.5v15A1.5 1.5 0 003.75 21z" /></svg>
+      </div>
+    );
 }

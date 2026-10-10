@@ -190,17 +190,16 @@ function AnimalCard({ a, tab, isBebe = false, reproducteur = false, reproPublic 
           {corps}
         </Link>
       )}
-      {!selectMode && (actions.length > 0 || (tab === 'anciens' && a.statut === 'sorti')) && (
-        <div ref={menuRef} className="absolute bottom-2 right-2 flex items-center gap-1">
-          {tab === 'anciens' && a.statut === 'sorti' && <ContactAcquereurButton animal={a} className="bg-white" />}
-          {actions.length > 0 && (
-            <button type="button" onClick={() => setMenu(m => !m)} aria-label={`Autres actions pour ${nom}`} aria-expanded={menu}
-              className="w-8 h-8 rounded-md text-gray-500 hover:bg-gray-100 flex items-center justify-center">
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
-            </button>
-          )}
+      {/* Actions dans le flux (jamais par-dessus le texte) */}
+      {!selectMode && (actions.length > 0 || a.statut === 'sorti') && (
+        <div ref={menuRef} className="relative flex justify-end px-2 pb-2 -mt-1">
+          <button type="button" onClick={() => setMenu(m => !m)} aria-label={`Autres actions pour ${nom}`} aria-expanded={menu}
+            className="w-8 h-8 rounded-md text-gray-500 hover:bg-gray-100 flex items-center justify-center">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+          </button>
           {menu && (
-            <div className="absolute right-0 bottom-9 z-20 w-60 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+            <div className="absolute right-2 bottom-10 z-20 w-60 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+              {a.statut === 'sorti' && <ContactAcquereurButton animal={a} variante="menu" />}
               {actions.map(ac => (
                 <button key={ac.label} type="button" onClick={() => { setMenu(false); ac.onClick(); }}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${ac.danger ? 'text-red-600' : 'text-[#1F2A2E]'}`}>
