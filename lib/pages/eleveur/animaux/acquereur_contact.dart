@@ -223,6 +223,20 @@ Future<void> _openUri(BuildContext context, Uri uri) async {
 /// n'importe quelle carte animal (Anciens, Suivi…) — on sait jamais si on a
 /// besoin de le recontacter. Si l'acquéreur n'a pas (ou plus) de compte
 /// PetsMatch actif, les coordonnées sont modifiables (info reçue autrement).
+/// Ouvre la fiche « Coordonnées » de la famille (même feuille que le bouton),
+/// depuis un menu d'actions.
+Future<void> afficherContactAcquereur(BuildContext context, Map<String, dynamic> animal) async {
+  AcquereurContact c;
+  try {
+    c = await fetchContactAcquereur(Supabase.instance.client, animal);
+  } catch (_) {
+    c = const AcquereurContact({}, false);
+  }
+  if (!context.mounted) return;
+  // ignore: invalid_use_of_protected_member
+  await _ContactAcquereurButtonState()._showSheet(context, animal, c);
+}
+
 class ContactAcquereurButton extends StatefulWidget {
   final Map<String, dynamic> animal;
   final Color color;

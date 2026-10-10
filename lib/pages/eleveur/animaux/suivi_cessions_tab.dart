@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -41,7 +42,11 @@ class SuiviCessionsTab extends StatefulWidget {
 
 class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   final _supa = Supabase.instance.client;
-  bool _nonFaitesOnly = false;
+  // Recherche + filtres (par défaut : dossiers à suivre)
+  final _qCtrl = TextEditingController();
+  String _q = '';
+  String _statutFiltre = 'a_suivre';   // a_suivre | tous | a_faire | retard | recu
+  String _echeanceFiltre = 'toutes';   // toutes | depassees | 30j
   String? _validating;
   String? _wishing;
   String? _relancing;
@@ -53,6 +58,12 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   void initState() {
     super.initState();
     _loadAnnivSetting();
+  }
+
+  @override
+  void dispose() {
+    _qCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAnnivSetting() async {
@@ -93,23 +104,6 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       .where((a) => (a['statut'] as String?) == 'sorti')
       .toList();
 
-  List<Map<String, dynamic>> get _sterilList {
-    var list = _cedes.where((a) => a['sterilisation_requise'] == true).toList();
-    if (_nonFaitesOnly) {
-      list = list.where((a) =>
-          a['sterilise'] != true || a['sterilisation_validee'] != true).toList();
-    }
-    list.sort((a, b) {
-      final da = _parseDate(a['sterilisation_echeance']);
-      final db = _parseDate(b['sterilisation_echeance']);
-      if (da == null && db == null) return 0;
-      if (da == null) return 1;
-      if (db == null) return -1;
-      return da.compareTo(db);
-    });
-    return list;
-  }
-
   /// Animaux cédés avec date de naissance, triés par prochain anniversaire (≤ 60 j).
   List<Map<String, dynamic>> get _anniversaires {
     final now = DateTime.now();
@@ -144,7 +138,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         context: context,
         builder: (_) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Valider la stérilisation',
+          title: const Text('Enregistrer le certificat',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           content: Text(
               'Confirmez-vous avoir reçu le certificat de stérilisation vétérinaire '
@@ -155,7 +149,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
             TextButton(onPressed: () => Navigator.pop(context, false),
                 child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
             TextButton(onPressed: () => Navigator.pop(context, true),
-                child: const Text('Valider', style: TextStyle(color: _green, fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+                child: const Text('Enregistrer', style: TextStyle(color: _teal, fontFamily: 'Galey', fontWeight: FontWeight.w700))),
           ],
         ),
       );
@@ -185,7 +179,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         await _supa.from('notifications').insert({
           'uid':   acqUid,
           'type':  'sterilisation_validee',
-          'title': '✅ Stérilisation validée — ${a['nom'] ?? 'Animal'}',
+          'title': 'Stérilisation validée — ${a['nom'] ?? 'Animal'}',
           'body':  'L\'éleveur a validé la stérilisation de ${a['nom'] ?? 'votre animal'}. Merci !',
           if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data':  {'animalId': a['id']},
@@ -195,7 +189,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       await widget.onChanged();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('✅ Stérilisation validée'), backgroundColor: _green));
+            content: Text('Certificat enregistré : stérilisation validée'), backgroundColor: _green));
       }
     } catch (e) {
       if (mounted) {
@@ -231,7 +225,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     final prenom = c['prenom'] ?? '';
     final salut = prenom.isNotEmpty ? 'Bonjour $prenom,\n\n' : '';
     final ctrl = TextEditingController(
-        text: '${salut}Joyeux anniversaire $nom ! 🎂 Toute l\'équipe pense à lui aujourd\'hui.');
+        text: '${salut}Joyeux anniversaire $nom ! Toute l\'équipe pense à lui aujourd\'hui.');
 
     final acqUid = (a['uid_acquereur'] ?? '').toString();
     final tel = c['tel'] ?? '';
@@ -254,7 +248,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
                 decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            Text('🎂 Envoyer mes vœux — $nom',
+            Text('Envoyer mes vœux — $nom',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
             const SizedBox(height: 12),
             Container(
@@ -289,7 +283,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
                   Navigator.pop(ctx);
                   _envoyerInApp(a, acqUid, ctrl.text.trim(),
                       notifType: 'message',
-                      notifTitre: '💬 ${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : "Votre éleveur"}');
+                      notifTitre: '${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : "Votre éleveur"}');
                 }),
               if (tel.isNotEmpty)
                 _canalBtn('WhatsApp', const FaIcon(FontAwesomeIcons.whatsapp, size: 15, color: Color(0xFF25D366)), const Color(0xFF25D366), () {
@@ -304,7 +298,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
               if (email.isNotEmpty)
                 _canalBtn('Email', const Icon(Icons.email_outlined, size: 16, color: Color(0xFFEA4335)), const Color(0xFFEA4335), () {
                   Navigator.pop(ctx);
-                  final subj = Uri.encodeComponent('Joyeux anniversaire $nom 🎂');
+                  final subj = Uri.encodeComponent('Joyeux anniversaire $nom');
                   final body = Uri.encodeComponent(ctrl.text.trim());
                   _openUri(Uri.parse('mailto:$email?subject=$subj&body=$body'));
                 }),
@@ -454,7 +448,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Message envoyé dans l\'application ✅'), backgroundColor: _green));
+            content: Text('Message envoyé dans l\'application.'), backgroundColor: _green));
       }
     } catch (e) {
       if (mounted) {
@@ -552,7 +546,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
                   Navigator.pop(ctx);
                   _envoyerInApp(a, acqUid, ctrl.text.trim(),
                       notifType: 'sterilisation_relance',
-                      notifTitre: '✂️ Rappel stérilisation — ${a['nom'] ?? 'votre animal'}');
+                      notifTitre: 'Rappel stérilisation — ${a['nom'] ?? 'votre animal'}');
                 }),
               if (tel.isNotEmpty)
                 _canalBtn('WhatsApp', const FaIcon(FontAwesomeIcons.whatsapp, size: 15, color: Color(0xFF25D366)), const Color(0xFF25D366), () {
@@ -613,81 +607,183 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     );
   }
 
+  // ── Dossiers de stérilisation ─────────────────────────────────────────────────
+  // Délais calculés depuis l'échéance contractuelle enregistrée (jamais un âge
+  // type). « Certificat reçu » = validé par l'éleveur ; une échéance passée ne
+  // vaut jamais stérilisation réalisée.
+
+  String _statut(Map<String, dynamic> a) {
+    if (a['sterilisation_validee'] == true) return 'recu';
+    final j = _jours(a);
+    return j != null && j < 0 ? 'retard' : 'a_faire';
+  }
+
+  int? _jours(Map<String, dynamic> a) {
+    final ech = _parseDate(a['sterilisation_echeance']);
+    if (ech == null) return null;
+    final now = DateTime.now();
+    return DateTime(ech.year, ech.month, ech.day).difference(DateTime(now.year, now.month, now.day)).inDays;
+  }
+
+  List<Map<String, dynamic>> get _dossiers =>
+      _cedes.where((a) => a['sterilisation_requise'] == true).toList();
+
+  List<Map<String, dynamic>> get _dossiersFiltres {
+    final q = _q.trim().toLowerCase();
+    const rang = {'retard': 0, 'a_faire': 1, 'recu': 2};
+    final list = _dossiers.where((a) {
+      final s = _statut(a);
+      if (_statutFiltre == 'a_suivre' && s == 'recu') return false;
+      if (_statutFiltre != 'a_suivre' && _statutFiltre != 'tous' && s != _statutFiltre) return false;
+      final j = _jours(a);
+      if (_echeanceFiltre == 'depassees' && !(j != null && j < 0)) return false;
+      if (_echeanceFiltre == '30j' && !(j != null && j >= 0 && j <= 30)) return false;
+      if (q.isNotEmpty && ![a['nom'], a['destinataire_nom'], a['race']]
+          .any((v) => (v ?? '').toString().toLowerCase().contains(q))) return false;
+      return true;
+    }).toList();
+    list.sort((x, y) {
+      final r = rang[_statut(x)]!.compareTo(rang[_statut(y)]!);
+      if (r != 0) return r;
+      final jx = _jours(x), jy = _jours(y);
+      if (jx == null && jy == null) return 0;
+      if (jx == null) return 1;
+      if (jy == null) return -1;
+      return jx.compareTo(jy);
+    });
+    return list;
+  }
+
+  bool get _filtresActifs => _q.isNotEmpty || _statutFiltre != 'a_suivre' || _echeanceFiltre != 'toutes';
+
+  InputDecoration _deco(String hint, {Widget? prefix}) => InputDecoration(
+    hintText: hint,
+    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Colors.grey.shade500),
+    prefixIcon: prefix,
+    isDense: true,
+    filled: true, fillColor: Colors.white,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey.shade300)),
+    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _teal, width: 1.5)),
+  );
+
+  Widget _menu(String label, String valeur, List<(String, String)> items, ValueChanged<String> onChanged) =>
+    DropdownButtonFormField<String>(
+      initialValue: valeur,
+      key: ValueKey('$label$valeur'),
+      isExpanded: true,
+      decoration: _deco(label),
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: _dark),
+      items: [for (final it in items) DropdownMenuItem(value: it.$1, child: Text(it.$2, overflow: TextOverflow.ellipsis))],
+      onChanged: (v) { if (v != null) onChanged(v); },
+    );
+
+  Widget _compteur(String label, int n, IconData icone, Color fond, Color teinte) => Expanded(child: Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Container(width: 30, height: 30, decoration: BoxDecoration(color: fond, shape: BoxShape.circle),
+            child: Icon(icone, size: 17, color: teinte)),
+        const SizedBox(width: 8),
+        Text('$n', style: const TextStyle(fontFamily: 'Galey', fontSize: 20, fontWeight: FontWeight.w800, color: _dark)),
+      ]),
+      const SizedBox(height: 6),
+      Text(label, maxLines: 2, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600, height: 1.2)),
+    ]),
+  ));
+
   @override
   Widget build(BuildContext context) {
     if (widget.loading) {
-      return const Center(child: CircularProgressIndicator(color: _green));
+      return const Center(child: CircularProgressIndicator(color: _teal));
     }
-    final steril = _sterilList;
-    final anniv = _anniversaires;
     if (_cedes.isEmpty) {
-      return _emptyState('Aucun animal cédé pour le moment.',
-          'Vous retrouverez ici le suivi de stérilisation et les anniversaires de vos chiots cédés.');
+      return _emptyState('Aucun animal cédé',
+          'Le suivi des stérilisations et les anniversaires de vos animaux cédés apparaîtront ici.');
     }
+    final dossiers = _dossiers;
+    final liste = _dossiersFiltres;
+    final anniv = _anniversaires;
+    final nbRetard = dossiers.where((a) => _statut(a) == 'retard').length;
     return RefreshIndicator(
       onRefresh: widget.onChanged,
+      color: _teal,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
-          // ── Stérilisation ──
+          const Text('Suivi des stérilisations',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: _dark)),
+          const SizedBox(height: 2),
+          Text('Échéances, certificats et relances des familles.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+          const SizedBox(height: 12),
           Row(children: [
-            const Text('✂️  Stérilisation',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16, color: _dark)),
-            const Spacer(),
-            if (_sterilRequiseCount > 0)
-              GestureDetector(
-                onTap: () => setState(() => _nonFaitesOnly = !_nonFaitesOnly),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _nonFaitesOnly ? _teal : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(_nonFaitesOnly ? Icons.check_circle : Icons.filter_alt_outlined,
-                        size: 14, color: _nonFaitesOnly ? Colors.white : Colors.grey.shade600),
-                    const SizedBox(width: 4),
-                    Text('Non faite',
-                        style: TextStyle(fontSize: 11, fontFamily: 'Galey',
-                            color: _nonFaitesOnly ? Colors.white : Colors.grey.shade700)),
-                  ]),
-                ),
-              ),
+            _compteur('À suivre', dossiers.where((a) => _statut(a) != 'recu').length,
+                Icons.schedule, const Color(0xFFE8F4F6), _teal),
+            const SizedBox(width: 8),
+            _compteur('Échéances dépassées', nbRetard,
+                Icons.priority_high, const Color(0xFFFDECEC), const Color(0xFFDC2626)),
+            const SizedBox(width: 8),
+            _compteur('Certificats reçus', dossiers.where((a) => _statut(a) == 'recu').length,
+                Icons.description_outlined, const Color(0xFFEAF2E5), const Color(0xFF4D7A3C)),
           ]),
-          const SizedBox(height: 10),
-          if (steril.isEmpty)
-            _hint(_nonFaitesOnly
-                ? 'Toutes les stérilisations demandées sont faites et validées. 🎉'
-                : 'Aucune condition de stérilisation sur vos cessions.')
-          else
-            ...steril.map(_sterilCard),
-
-          const SizedBox(height: 26),
-
-          // ── Anniversaires ──
-          const Text('🎂  Anniversaires',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16, color: _dark)),
-          const SizedBox(height: 6),
-          if (_annivLoaded)
+          const SizedBox(height: 12),
+          TextField(
+            controller: _qCtrl,
+            onChanged: (v) => setState(() => _q = v),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: _deco('Rechercher un animal ou une famille',
+                prefix: Icon(Icons.search, size: 20, color: Colors.grey.shade500)),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _menu('Statut', _statutFiltre, const [
+              ('a_suivre', 'À suivre'), ('tous', 'Tous'), ('a_faire', 'À faire'), ('retard', 'En retard'), ('recu', 'Certificat reçu'),
+            ], (v) => setState(() => _statutFiltre = v))),
+            const SizedBox(width: 8),
+            Expanded(child: _menu('Échéance', _echeanceFiltre, const [
+              ('toutes', 'Toutes les échéances'), ('depassees', 'Dépassées'), ('30j', '30 prochains jours'),
+            ], (v) => setState(() => _echeanceFiltre = v))),
+          ]),
+          const SizedBox(height: 12),
+          if (dossiers.isEmpty)
+            _hint('Aucune condition de stérilisation sur vos cessions.')
+          else if (liste.isEmpty)
             Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                activeThumbColor: _green,
-                title: const Text('Message d\'anniversaire automatique',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: _dark)),
-                subtitle: const Text('Envoie chaque année un message de vœux aux acquéreurs qui ont l\'appli.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
-                value: _annivAuto,
-                onChanged: _toggleAnnivAuto,
-              ),
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
+              child: Column(children: [
+                const Text('Aucun suivi ne correspond à vos filtres', textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
+                if (_filtresActifs)
+                  TextButton(
+                    onPressed: () => setState(() { _qCtrl.clear(); _q = ''; _statutFiltre = 'a_suivre'; _echeanceFiltre = 'toutes'; }),
+                    child: const Text('Réinitialiser les filtres', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
+                  ),
+              ]),
+            )
+          else
+            ...liste.map(_sterilCard),
+
+          const SizedBox(height: 28),
+          const Text('Anniversaires',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: _dark)),
+          const SizedBox(height: 2),
+          Text('Animaux cédés fêtant leur anniversaire dans les 60 prochains jours.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+          if (_annivLoaded)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              activeThumbColor: _teal,
+              title: const Text('Message d\'anniversaire automatique',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5, color: _dark)),
+              subtitle: Text('Envoie chaque année un message de vœux aux acquéreurs qui ont l\'application.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+              value: _annivAuto,
+              onChanged: _toggleAnnivAuto,
             ),
           if (anniv.isEmpty)
             _hint('Aucun anniversaire dans les 60 prochains jours.')
@@ -698,112 +794,184 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     );
   }
 
-  int get _sterilRequiseCount =>
-      _cedes.where((a) => a['sterilisation_requise'] == true).length;
+  Widget _badge(String statut) {
+    final (label, fond, texte) = switch (statut) {
+      'recu' => ('Certificat reçu', const Color(0xFFEAF2E5), const Color(0xFF4D7A3C)),
+      'retard' => ('En retard', const Color(0xFFFDECEC), const Color(0xFFB91C1C)),
+      _ => ('À faire', const Color(0xFFF1F3F4), const Color(0xFF4B5A60)),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(color: fond, borderRadius: BorderRadius.circular(5)),
+      child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: texte)),
+    );
+  }
+
+  void _menuDossier(Map<String, dynamic> a) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Text(a['nom'] as String? ?? 'Animal',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark))),
+          ListTile(
+            title: const Text('Coordonnées de la famille', style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: _dark)),
+            onTap: () { Navigator.pop(ctx); afficherContactAcquereur(context, a); },
+          ),
+          ListTile(
+            title: const Text('Ouvrir la fiche', style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: _dark)),
+            onTap: () { Navigator.pop(ctx); _ouvrirFiche(a); },
+          ),
+        ]),
+      )),
+    );
+  }
+
+  void _ouvrirFiche(Map<String, dynamic> a) {
+    final id = a['id'] as String?;
+    if (id == null) return;
+    // Animal cédé : la fiche s'ouvre en lecture seule (elle n'est plus à l'élevage)
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AnimalFichePage(animalId: id, initialData: a, readOnly: true),
+    ));
+  }
+
+  Future<void> _voirCertificat(Map<String, dynamic> a) async {
+    String? le;
+    try {
+      final r = await _supa.from('cessions').select('sterilisation_validee_at')
+          .eq('animal_id', a['id']).not('sterilisation_validee_at', 'is', null).limit(1).maybeSingle();
+      final d = _parseDate(r?['sterilisation_validee_at']);
+      if (d != null) le = DateFormat('dd/MM/yyyy').format(d.toLocal());
+    } catch (_) {}
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Certificat de stérilisation — ${a['nom'] ?? 'Animal'}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+          const SizedBox(height: 10),
+          Text('Certificat reçu${le != null ? ' le $le' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: Color(0xFF4D7A3C))),
+          const SizedBox(height: 4),
+          Text('La stérilisation a été validée à réception du certificat vétérinaire. Aucun fichier n\'est joint dans PetsMatch : '
+              'les documents de l\'animal se trouvent dans sa fiche, onglet Administratif.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: ElevatedButton(
+              onPressed: () { Navigator.pop(ctx); _ouvrirFiche(a); },
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                  minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: const Text('Ouvrir la fiche', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: OutlinedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: OutlinedButton.styleFrom(foregroundColor: _dark, side: BorderSide(color: Colors.grey.shade400),
+                  minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            )),
+          ]),
+        ]),
+      )),
+    );
+  }
 
   Widget _sterilCard(Map<String, dynamic> a) {
     final ech = _parseDate(a['sterilisation_echeance']);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final done = a['sterilise'] == true;
-    final validee = a['sterilisation_validee'] == true;
-    final enRetard = ech != null && ech.isBefore(today) && !validee;
-    final days = ech?.difference(today).inDays;
-
-    late final String chipLabel;
-    late final Color chipColor;
-    if (validee) {
-      chipLabel = '✅ Validée'; chipColor = _green;
-    } else if (done) {
-      chipLabel = '🟡 Déclarée · à valider'; chipColor = Colors.orange.shade700;
-    } else if (enRetard) {
-      chipLabel = 'En retard de ${-days!} j'; chipColor = Colors.red.shade600;
-    } else {
-      chipLabel = '⏳ À faire'; chipColor = Colors.grey.shade600;
-    }
+    final statut = _statut(a);
+    final j = _jours(a);
+    final declaree = a['sterilise'] == true;
+    final enCours = _validating == a['id'] || _relancing == a['id'];
+    final race = (a['race'] as String?) ?? '';
+    final famille = (a['destinataire_nom'] as String?) ?? '';
+    final delai = statut == 'recu' || j == null ? null
+        : j < 0 ? 'Dépassée de ${-j} jour${-j > 1 ? 's' : ''}'
+        : j == 0 ? 'Aujourd\'hui' : 'Dans $j jour${j > 1 ? 's' : ''}';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          _avatar(a),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(a['nom'] as String? ?? 'Sans nom',
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
-            const SizedBox(height: 2),
-            Text([
-              if ((a['destinataire_nom'] as String?)?.isNotEmpty == true) a['destinataire_nom'],
-              if ((a['race'] as String?)?.isNotEmpty == true) a['race'],
-            ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
-          ])),
-          Column(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(color: chipColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-              child: Text(chipLabel, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: chipColor)),
-            ),
-            ContactAcquereurButton(animal: a),
-          ]),
-        ]),
-        const SizedBox(height: 8),
-        Row(children: [
-          Icon(enRetard ? Icons.warning_amber_rounded : Icons.event_outlined,
-              size: 14, color: enRetard ? Colors.red.shade600 : Colors.grey.shade500),
-          const SizedBox(width: 4),
-          Text(
-            ech != null
-                ? (validee
-                    ? 'Échéance : ${DateFormat('dd/MM/yyyy').format(ech)}'
-                    : enRetard
-                        ? 'Devait être fait avant le ${DateFormat('dd/MM/yyyy').format(ech)}'
-                        : 'Avant le ${DateFormat('dd/MM/yyyy').format(ech)}${days != null ? ' · dans $days j' : ''}')
-                : 'Échéance non définie',
-            style: TextStyle(fontSize: 11, color: enRetard ? Colors.red.shade700 : Colors.grey.shade700),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        InkWell(
+          onTap: () => _ouvrirFiche(a),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _avatar(a),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text.rich(TextSpan(children: [
+                  TextSpan(text: a['nom'] as String? ?? 'Sans nom',
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: _dark)),
+                  if (race.isNotEmpty) TextSpan(text: ' · $race', style: TextStyle(color: Colors.grey.shade600)),
+                ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                Text(famille.isNotEmpty ? famille : 'Famille non renseignée', maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+                const SizedBox(height: 1),
+                Text.rich(TextSpan(children: [
+                  TextSpan(text: ech != null ? DateFormat('dd/MM/yyyy').format(ech) : 'Échéance non renseignée'),
+                  if (delai != null) TextSpan(text: ' · $delai',
+                      style: TextStyle(color: statut == 'retard' ? const Color(0xFFB91C1C) : null)),
+                ]), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                if (declaree && statut != 'recu')
+                  Text('Stérilisation déclarée par la famille',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              ])),
+              const SizedBox(width: 8),
+              _badge(statut),
+            ]),
           ),
-        ]),
-        if (!validee) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _validating == a['id'] ? null : () => _valider(a),
-                icon: _validating == a['id']
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.verified_outlined, size: 16),
-                label: Text(done ? 'Valider' : 'Certificat reçu',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green, foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 4, 8),
+          child: Row(children: [
+            if (statut == 'recu')
+              OutlinedButton(
+                onPressed: () => _voirCertificat(a),
+                style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                    minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text('Voir le certificat', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+              )
+            else ...[
+              Flexible(child: OutlinedButton(
+                onPressed: enCours ? null : () => _valider(a),
+                style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                    minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: _validating == a['id']
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                    : const Text('Certificat', maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+              )),
+              TextButton(
+                onPressed: enCours ? null : () => _relancer(a),
+                style: TextButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                child: _relancing == a['id']
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                    : const Text('Relancer', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _relancing == a['id'] ? null : () => _relancer(a),
-                icon: _relancing == a['id']
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
-                    : const Icon(Icons.campaign_outlined, size: 16),
-                label: const Text('Relancer la famille',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _teal,
-                  side: const BorderSide(color: _teal),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
+            ],
+            const Spacer(),
+            IconButton(
+              tooltip: 'Autres actions',
+              icon: const Icon(Icons.more_horiz, color: Color(0xFF4B5A60)),
+              onPressed: () => _menuDossier(a),
             ),
           ]),
-        ],
+        ),
       ]),
     );
   }
@@ -811,78 +979,66 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   Widget _annivCard(Map<String, dynamic> a) {
     final days = a['_annivDays'] as int;
     final age = a['_annivAge'] as int;
-    final aujourdHui = days == 0;
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: aujourdHui ? _green.withValues(alpha: 0.08) : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: aujourdHui ? _green.withValues(alpha: 0.4) : Colors.grey.shade200),
-      ),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
       child: Row(children: [
         _avatar(a),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(a['nom'] as String? ?? 'Sans nom',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
-          const SizedBox(height: 2),
-          Text(
-            aujourdHui
-                ? '🎉 Aujourd\'hui · $age an${age > 1 ? 's' : ''}'
-                : 'Dans $days j · aura $age an${age > 1 ? 's' : ''}',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                color: aujourdHui ? _green : Colors.grey.shade600,
-                fontWeight: aujourdHui ? FontWeight.w700 : FontWeight.w400),
-          ),
+          Text(days == 0
+                  ? 'Aujourd\'hui · $age an${age > 1 ? 's' : ''}'
+                  : 'Dans $days jour${days > 1 ? 's' : ''} · aura $age an${age > 1 ? 's' : ''}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
         ])),
-        ContactAcquereurButton(animal: a),
-        if ((a['uid_acquereur'] as String?)?.isNotEmpty == true)
-          TextButton.icon(
-            onPressed: _wishing == a['id'] ? null : () => _envoyerVoeux(a),
-            icon: _wishing == a['id']
-                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.cake_outlined, size: 16),
-            label: const Text('Vœux', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-            style: TextButton.styleFrom(foregroundColor: _teal),
-          ),
+        TextButton(
+          onPressed: _wishing == a['id'] ? null : () => _envoyerVoeux(a),
+          style: TextButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(0, 40)),
+          child: _wishing == a['id']
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+              : const Text('Envoyer mes vœux', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700)),
+        ),
+        IconButton(
+          tooltip: 'Autres actions',
+          icon: const Icon(Icons.more_horiz, color: Color(0xFF4B5A60)),
+          onPressed: () => _menuDossier(a),
+        ),
       ]),
     );
   }
 
+  /// Photo de l'animal ou emplacement neutre (absente / erreur de chargement).
   Widget _avatar(Map<String, dynamic> a) {
     final url = a['photo_url'] as String?;
-    return Container(
-      width: 42, height: 42,
-      decoration: BoxDecoration(
-        color: _teal.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        image: (url != null && url.isNotEmpty)
-            ? DecorationImage(image: CachedNetworkImageProvider(url), fit: BoxFit.cover)
-            : null,
-      ),
-      child: (url == null || url.isEmpty)
-          ? const Icon(Icons.pets, size: 20, color: _teal)
-          : null,
+    const vide = ColoredBox(color: Color(0xFFEDF2F2),
+        child: Center(child: Icon(Icons.image_outlined, size: 20, color: Color(0xFF8B9FA1))));
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(width: 44, height: 44,
+        child: url == null || url.isEmpty ? vide
+            : CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
+                placeholder: (_, __) => const ColoredBox(color: Color(0xFFEDF2F2)),
+                errorWidget: (_, __, ___) => vide)),
     );
   }
 
   Widget _hint(String msg) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Text(msg, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        child: Text(msg, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
       );
 
   Widget _emptyState(String title, String sub) => Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.pets_outlined, size: 48, color: Color(0xFFB0B8C1)),
-            const SizedBox(height: 12),
             Text(title, textAlign: TextAlign.center,
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _dark)),
             const SizedBox(height: 6),
             Text(sub, textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
           ]),
         ),
       );
