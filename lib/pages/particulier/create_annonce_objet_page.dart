@@ -10,7 +10,7 @@ import 'package:PetsMatch/data/annonce_objet_categories.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
-/// Publier / modifier une petite annonce « objet & matériel » liée aux animaux.
+/// Publier / modifier une annonce « Matériel & équipements ».
 /// JAMAIS un animal vivant — voir `annonces_objets`. Publication gratuite.
 class CreateAnnonceObjetPage extends StatefulWidget {
   final String? annonceId;
@@ -163,7 +163,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       'lapereau', 'poussin à vendre', 'poussin a vendre',
     ];
     if (interdits.any(txt.contains)) {
-      _snack('Cette rubrique est réservée au matériel. Pour un animal, utilisez « Trouver un compagnon ».');
+      _snack('Cette rubrique est réservée au matériel et aux équipements. Pour un animal, choisissez « Animal » dans « Publier une annonce ».');
       return;
     }
 
@@ -229,7 +229,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(_isEdit ? 'Modifier l\'annonce' : 'Publier une annonce',
+        title: Text(_isEdit ? 'Modifier l\'annonce' : 'Matériel & équipements',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
       ),
       body: ListView(
@@ -242,9 +242,9 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Text(
-              'Matériel lié aux animaux uniquement (cage, harnais, foin, location '
-              'de prairie, matériel agricole…). La vente d\'un animal n\'est pas '
-              'autorisée ici.',
+              'Matériel destiné aux animaux et aux activités professionnelles : paniers, '
+              'grilles de chenil, parcs, caisses de transport, équipements de mise bas… '
+              'La vente d\'un animal n\'est pas autorisée ici.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF41525A), height: 1.4),
             ),
           ),
@@ -292,7 +292,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
             decoration: _dec(),
             items: [
               for (final c in kAnnonceObjetCategories)
-                DropdownMenuItem(value: c.slug, child: Text('${c.emoji}  ${c.label}',
+                DropdownMenuItem(value: c.slug, child: Text(c.label,
                     overflow: TextOverflow.ellipsis)),
             ],
             onChanged: (v) => setState(() => _categorie = v ?? _categorie),
@@ -354,7 +354,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
           _field(_descCtrl, hint: 'Dimensions, marque, état, retrait sur place / envoi…', maxLines: 5),
           const SizedBox(height: 16),
 
-          _sectionTitle('📍 Localisation'),
+          _sectionTitle('Localisation'),
           const SizedBox(height: 10),
           _label('Code postal'),
           _field(_cpCtrl, hint: '5 chiffres', keyboard: TextInputType.number,

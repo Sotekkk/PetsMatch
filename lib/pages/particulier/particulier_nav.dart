@@ -1,17 +1,11 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:PetsMatch/services/factures_non_vues.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/pages/particulier/particulier_home.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/eleveur_list_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
-import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
-import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
-import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -52,7 +46,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
   bool _isEmploye = false;
   bool _isBenevole = false;
   bool _isFa = false;
-  bool _hasChevalAnnonce = false;
 
   static const _teal = Color(0xFF0C5C6C);
   static const _dark = Color(0xFF1F2A2E);
@@ -79,17 +72,12 @@ class _ParticulierNavState extends State<ParticulierNav> {
     final results = await Future.wait([
       supa.from('employes').select('id, type').eq('employe_profile_id', particulierProfileId).eq('actif', true),
       supa.from('familles_accueil').select('id').eq('fa_uid', uid).eq('actif', true).limit(1),
-      // « Mes annonces (cheval) » : visible seulement si le particulier a déjà
-      // une annonce (la création reste accessible depuis la fiche du cheval).
-      supa.from('annonces').select('id')
-          .eq('uid_eleveur', uid).eq('profil_source', 'particulier').limit(1),
     ]);
     final employes = results[0] as List;
     if (mounted) setState(() {
       _isEmploye  = employes.any((e) => e['type'] != 'benevole');
       _isBenevole = employes.any((e) => e['type'] == 'benevole');
       _isFa       = (results[1] as List).isNotEmpty;
-      _hasChevalAnnonce = (results[2] as List).isNotEmpty;
     });
   }
 
@@ -329,28 +317,13 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 _DrawerSection(
                   icon: Icons.campaign_outlined,
                   label: 'Annonces',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Trouver un compagnon',
-                      icon: Icons.favorite_border,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TrouverCompagnonPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Carte des élevages',
-                      icon: Icons.map_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const EleveurListPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
+                  children: entreesMenuAnnonces(
+                    ouvrir: (page) {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+                    },
+                    extras: [
+                      _DrawerSubItem(
                       label: 'Annonces d\'adoption',
                       icon: Icons.favorite_border,
                       onTap: () {
@@ -360,7 +333,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         ));
                       },
                     ),
-                    _DrawerSubItem(
+                      _DrawerSubItem(
                       label: 'Carte des associations',
                       icon: Icons.map_outlined,
                       onTap: () {
@@ -370,38 +343,8 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         ));
                       },
                     ),
-                    _DrawerSubItem(
-                      label: 'Petites annonces (matériel)',
-                      icon: Icons.inventory_2_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesObjetsFeedPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Mes annonces (matériel)',
-                      icon: Icons.sell_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnnoncesObjetsPage(),
-                        ));
-                      },
-                    ),
-                    if (_hasChevalAnnonce)
-                      _DrawerSubItem(
-                        label: 'Mes annonces (cheval)',
-                        icon: Icons.pets_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesAnnoncesParticulierPage(),
-                          ));
-                        },
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
                 if (_isEmploye)
                   _DrawerItem(

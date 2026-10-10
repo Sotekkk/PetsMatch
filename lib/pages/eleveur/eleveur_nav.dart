@@ -4,7 +4,6 @@ import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/salles_clinique_page.dart';
@@ -14,19 +13,13 @@ import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
 import 'package:PetsMatch/pages/pro/restauration/restauration_home_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
-import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
-import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
-import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
@@ -79,19 +72,15 @@ import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
-import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
-import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/widgets/menu_pro.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class EleveurNav extends StatefulWidget {
@@ -1027,58 +1016,13 @@ class _EleveurNavState extends State<EleveurNav> {
                   _DrawerSection(
                     icon: Icons.campaign_outlined,
                     label: 'Annonces',
-                    children: [
-                      _DrawerSubItem(
-                        label: 'Mes Annonces',
-                        icon: Icons.campaign_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesAnnoncesPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Déposer une annonce',
-                        icon: Icons.add_circle_outline_rounded,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const CreateAnnoncePage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Petites annonces (matériel)',
-                        icon: Icons.inventory_2_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const AnnoncesObjetsFeedPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mes annonces (matériel)',
-                        icon: Icons.sell_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesAnnoncesObjetsPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Trouver un compagnon',
-                        icon: Icons.pets_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const TrouverCompagnonPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
+                    children: entreesMenuAnnonces(
+                      ouvrir: (page) {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+                      },
+                      extras: [
+                        _DrawerSubItem(
                         label: 'Saillie',
                         icon: Icons.diversity_1_outlined,
                         onTap: () {
@@ -1088,58 +1032,21 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      _DrawerSubItem(
-                        label: 'Carte des élevages',
-                        icon: Icons.map_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const EleveurListPage(),
-                          ));
-                        },
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
-                // Profils pro (pension, véto, éducateur…) : mêmes autorisations
-                // d'annonces que les particuliers — petites annonces « matériel »
+                // Profils pro (pension, véto, éducateur…) : menu « Annonces »
+                // commun ; publication limitée au matériel & équipements
                 // (jamais d'animaux vivants).
                 if (User_Info.isPro)
                   _DrawerSection(
                     icon: Icons.campaign_outlined,
                     label: 'Annonces',
-                    children: [
-                      _DrawerSubItem(
-                        label: 'Petites annonces (matériel)',
-                        icon: Icons.inventory_2_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const AnnoncesObjetsFeedPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mes annonces (matériel)',
-                        icon: Icons.sell_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MesAnnoncesObjetsPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Trouver un compagnon',
-                        icon: Icons.pets_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const TrouverCompagnonPage(),
-                          ));
-                        },
-                      ),
-                    ],
+                    children: entreesMenuAnnonces(ouvrir: (page) {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+                    }),
                   ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,

@@ -6,6 +6,11 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
+import 'package:PetsMatch/pages/annonces/publier_annonce_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
+import 'package:PetsMatch/utils/annonces_droits.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -24,16 +29,20 @@ Future<void> renewAnnonceListing(String annonceId) async {
   }).eq('id', annonceId);
 }
 
+/// « Mes annonces » : annonces d'animaux ET de matériel & équipements du
+/// profil actif sur une même page, avec un filtre de type (Toutes / Animaux /
+/// Matériel & équipements) et un filtre de statut. Chaque type garde ses
+/// données, statuts et actions.
 class MesAnnoncesPage extends StatefulWidget {
   final bool isAssociation;
-  const MesAnnoncesPage({super.key, this.isAssociation = false});
+  /// 'toutes', 'animaux' ou 'materiel'.
+  final String typeInitial;
+  const MesAnnoncesPage({super.key, this.isAssociation = false, this.typeInitial = 'toutes'});
   @override
   State<MesAnnoncesPage> createState() => _MesAnnoncesPageState();
 }
 
-class _MesAnnoncesPageState extends State<MesAnnoncesPage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   int _refreshKey = 0;
 
@@ -64,11 +73,34 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
 
+  late String _type = widget.typeInitial;
+  String _statut = 'all';
+  int _nbAnimaux = 0;
+  int _nbMateriel = 0;
+
+  /// Annonces d'animaux du profil : éleveur / association (liste et quota
+  /// d'origine), particulier (chevaux), aucune pour un profil pro.
+  late final String _animaux = widget.isAssociation ? 'association' : typeAnimauxProfilActif();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _resolveOwnerUid().then((_) => _loadPlan());
+    if (_animaux == 'eleveur' || _animaux == 'association') {
+      _resolveOwnerUid().then((_) => _loadPlan());
+    } else {
+      _planLoading = false;
+    }
+  }
+
+  void _rafraichir() {
+    if (!mounted) return;
+    setState(() => _refreshKey++);
+    if (_animaux == 'eleveur' || _animaux == 'association') _loadPlan();
+  }
+
+  Future<void> _publier() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const PublierAnnoncePage()));
+    _rafraichir();
   }
 
   Future<void> _loadPlan() async {
@@ -85,7 +117,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
     final planCode = widget.isAssociation ? 'association' : results[0] as String;
     final config = widget.isAssociation
         ? const PlanConfig(code: 'association', label: 'Association', maxAnnonces: -1,
-            dureeDays: 30, hasRegistres: true, badge: '❤️')
+            dureeDays: 30, hasRegistres: true, badge: '')
         : await PlanService.getConfig(planCode);
     if (!mounted) return;
     setState(() {
@@ -94,27 +126,6 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
       _planConfig  = config;
       _planLoading = false;
     });
-  }
-
-  void _onFabTap() {
-    final config = _planConfig ?? const PlanConfig(
-        code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
-        hasRegistres: false, badge: '🌱');
-    final atLimit = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
-    if (atLimit) {
-      _showQuotaSheet();
-    } else {
-      final page = widget.isAssociation
-          ? const CreateAnnonceAssoPage()
-          : const CreateAnnoncePage();
-      Navigator.push(context, MaterialPageRoute(builder: (_) => page))
-          .then((_) {
-        if (mounted) {
-          setState(() => _refreshKey++);
-          _loadPlan();
-        }
-      });
-    }
   }
 
   void _showQuotaSheet() {
@@ -137,26 +148,26 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final config    = _planConfig ?? const PlanConfig(
         code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
-        hasRegistres: false, badge: '🌱');
+        hasRegistres: false, badge: '');
     final atLimit   = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
     final progress  = config.maxAnnonces == -1
         ? 0.0 : (_activeCount / config.maxAnnonces).clamp(0.0, 1.0);
+    final aAnimaux = _animaux != 'aucun';
+    final voirAnimaux = _type == 'animaux' || (_type == 'toutes' && aAnimaux);
+    final voirMateriel = _type != 'animaux';
+    final quota = (_animaux == 'eleveur' || _animaux == 'association') && voirAnimaux && !_planLoading;
+    final total = (aAnimaux ? _nbAnimaux : 0) + _nbMateriel;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
+      backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Mes Annonces',
+        surfaceTintColor: _teal,
+        title: const Text('Mes annonces',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
         actions: [
@@ -168,112 +179,168 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
                     abonnement: !widget.isAssociation && User_Info.isElevage ? const AbonnementPage() : null))),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: _green,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [
-            Tab(text: 'Toutes'),
-            Tab(text: 'En ligne'),
-            Tab(text: 'En pause'),
-            Tab(text: 'Terminées'),
+      ),
+      body: RefreshIndicator(
+        color: _teal,
+        onRefresh: () async => _rafraichir(),
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(dashMargeLaterale(context), 14, dashMargeLaterale(context), 100),
+          children: [
+            Text('$total annonce${total > 1 ? 's' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted)),
+            const SizedBox(height: 10),
+            // ── Filtres compacts ─────────────────────────────────────────────
+            Row(children: [
+              Expanded(child: _Liste(
+                libelle: 'Type', valeur: _type,
+                options: kFiltresTypeAnnonces,
+                onChanged: (v) => setState(() => _type = v),
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: _Liste(
+                libelle: 'Statut', valeur: _statut,
+                options: const [('all', 'Tous les statuts'), ('actives', 'En ligne'), ('pause', 'En pause'), ('terminees', 'Terminées')],
+                onChanged: (v) => setState(() => _statut = v),
+              )),
+            ]),
+            const SizedBox(height: 14),
+
+            // ── Quota (annonces d'animaux, éleveur / association) ────────────
+            if (quota) ...[
+              GestureDetector(
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AbonnementPage())),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: atLimit ? Colors.red.shade200 : kDashBorder),
+                    boxShadow: kDashOmbre,
+                  ),
+                  child: Row(children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Text('Plan ${config.label}',
+                            style: const TextStyle(fontFamily: 'Galey',
+                                fontWeight: FontWeight.w700, fontSize: 13, color: kDashInk)),
+                        const SizedBox(width: 8),
+                        Text(
+                          config.maxAnnonces == -1
+                              ? 'Illimité'
+                              : '$_activeCount / ${config.maxAnnonces}',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              color: atLimit ? Colors.red : kDashMuted),
+                        ),
+                        if (atLimit) ...[
+                          const SizedBox(width: 4),
+                          const Text('· Limite atteinte',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                  color: Colors.red, fontWeight: FontWeight.w600)),
+                        ],
+                      ]),
+                      if (config.maxAnnonces != -1) ...[
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            backgroundColor: Colors.grey.shade100,
+                            color: atLimit ? Colors.red.shade300 : _green,
+                            minHeight: 4,
+                          ),
+                        ),
+                      ],
+                    ])),
+                    const SizedBox(width: 10),
+                    if (_planCode == 'free')
+                      const DashPuce('Pro', fg: _teal, bg: Color(0xFFE8F4F6)),
+                    const Icon(Icons.chevron_right, color: kDashMuted, size: 18),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Animaux ──────────────────────────────────────────────────────
+            if (voirAnimaux) ...[
+              if (_type == 'toutes') const _TitreType('Animaux'),
+              if (!aAnimaux)
+                const DashCarte(
+                  child: Text('Les annonces d\'animaux ne sont pas proposées pour ce profil. '
+                      'Vous pouvez publier du matériel et des équipements.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
+                )
+              else if (_animaux == 'particulier')
+                MesAnnoncesChevalListe(statut: _statut, refreshKey: _refreshKey,
+                    onCompte: (n) { if (mounted && n != _nbAnimaux) setState(() => _nbAnimaux = n); })
+              else
+                _AnnoncesList(uid: _ownerUid ?? _uid, filter: _statut, refreshKey: _refreshKey,
+                    isAssociation: widget.isAssociation, embedded: true,
+                    onCompte: (n) { if (mounted && n != _nbAnimaux) setState(() => _nbAnimaux = n); }),
+              const SizedBox(height: 18),
+            ],
+
+            // ── Matériel & équipements ───────────────────────────────────────
+            if (voirMateriel) ...[
+              if (_type == 'toutes' && voirAnimaux) const _TitreType('Matériel & équipements'),
+              MesAnnoncesObjetsListe(statut: _statut, refreshKey: _refreshKey,
+                  onCompte: (n) { if (mounted && n != _nbMateriel) setState(() => _nbMateriel = n); }),
+            ],
           ],
         ),
       ),
-      body: Column(children: [
-        // ── Quota banner ──────────────────────────────────────────────────
-        if (!_planLoading)
-          GestureDetector(
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AbonnementPage())),
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: atLimit ? const Color(0xFFFFF0F0) : Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                    color: atLimit ? Colors.red.shade200 : Colors.grey.shade100),
-                boxShadow: [BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 4, offset: const Offset(0, 2))],
-              ),
-              child: Row(children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text('${config.badge} Plan ${config.label}',
-                        style: const TextStyle(fontFamily: 'Galey',
-                            fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E))),
-                    const SizedBox(width: 8),
-                    Text(
-                      config.maxAnnonces == -1
-                          ? 'Illimité'
-                          : '$_activeCount / ${config.maxAnnonces}',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                          color: atLimit ? Colors.red : Colors.grey.shade500),
-                    ),
-                    if (atLimit) ...[
-                      const SizedBox(width: 4),
-                      const Text('· Limite atteinte',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                              color: Colors.red, fontWeight: FontWeight.w600)),
-                    ],
-                  ]),
-                  if (config.maxAnnonces != -1) ...[
-                    const SizedBox(height: 6),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: Colors.grey.shade100,
-                        color: atLimit ? Colors.red.shade300 : _green,
-                        minHeight: 4,
-                      ),
-                    ),
-                  ],
-                ])),
-                const SizedBox(width: 10),
-                if (_planCode == 'free')
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                        color: _teal.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: const Text('⚡ Pro',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                            fontSize: 12, color: Color(0xFF0C5C6C))),
-                  ),
-              ]),
-            ),
-          ),
-
-        // ── Tab body ──────────────────────────────────────────────────────
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'all',      refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'actives',  refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'pause',    refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'terminees',refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-            ],
-          ),
-        ),
-      ]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _onFabTap,
-        backgroundColor: atLimit ? Colors.grey.shade400 : _teal,
+        onPressed: _publier,
+        backgroundColor: _teal,
         foregroundColor: Colors.white,
-        icon: Icon(atLimit ? Icons.lock_outline : Icons.add),
-        label: Text(atLimit ? 'Quota atteint' : 'Nouvelle annonce',
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        icon: const Icon(Icons.add),
+        label: const Text('Publier une annonce',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
       ),
     );
   }
+}
+
+class _TitreType extends StatelessWidget {
+  final String texte;
+  const _TitreType(this.texte);
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(texte, style: const TextStyle(fontFamily: 'Galey', fontSize: 17,
+            fontWeight: FontWeight.w700, color: kDashInk)),
+      );
+}
+
+/// Liste déroulante compacte (filtre).
+class _Liste extends StatelessWidget {
+  final String libelle;
+  final String valeur;
+  final List<(String, String)> options;
+  final ValueChanged<String> onChanged;
+  const _Liste({required this.libelle, required this.valeur, required this.options, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) => DropdownButtonFormField<String>(
+        initialValue: valeur,
+        isExpanded: true,
+        isDense: true,
+        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: kDashMuted),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: kDashInk),
+        decoration: InputDecoration(
+          labelText: libelle,
+          labelStyle: const TextStyle(fontFamily: 'Galey', color: kDashMuted),
+          filled: true, fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kDashBorder)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kDashBorder)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _MesAnnoncesPageState._teal)),
+        ),
+        items: [for (final o in options) DropdownMenuItem(value: o.$1, child: Text(o.$2, overflow: TextOverflow.ellipsis))],
+        onChanged: (v) { if (v != null) onChanged(v); },
+      );
 }
 
 // ── Quota bottom sheet ───────────────────────────────────────────────────────
@@ -298,7 +365,11 @@ class _QuotaSheet extends StatelessWidget {
           Container(width: 36, height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 20),
-          const Text('🚫', style: TextStyle(fontSize: 40)),
+          Container(
+            width: 52, height: 52,
+            decoration: BoxDecoration(color: Colors.red.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.block_outlined, color: Colors.red.shade400, size: 26),
+          ),
           const SizedBox(height: 12),
           const Text('Quota atteint',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
@@ -328,7 +399,7 @@ class _QuotaSheet extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: onUpgradePro,
-              icon: const Text('⚡', style: TextStyle(fontSize: 16)),
+              icon: const Icon(Icons.workspace_premium_outlined, size: 18),
               label: const Text('Passer au plan Pro',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               style: ElevatedButton.styleFrom(
@@ -358,7 +429,11 @@ class _AnnoncesList extends StatefulWidget {
   final String filter;
   final int refreshKey;
   final bool isAssociation;
-  const _AnnoncesList({required this.uid, required this.filter, required this.refreshKey, this.isAssociation = false});
+  /// Intégrée à la page « Mes annonces » (pas de défilement propre).
+  final bool embedded;
+  final ValueChanged<int>? onCompte;
+  const _AnnoncesList({required this.uid, required this.filter, required this.refreshKey,
+      this.isAssociation = false, this.embedded = false, this.onCompte});
 
   @override
   State<_AnnoncesList> createState() => _AnnoncesListState();
@@ -397,7 +472,7 @@ class _AnnoncesListState extends State<_AnnoncesList> {
   @override
   void didUpdateWidget(_AnnoncesList old) {
     super.didUpdateWidget(old);
-    if (old.refreshKey != widget.refreshKey) _load();
+    if (old.refreshKey != widget.refreshKey || old.filter != widget.filter || old.uid != widget.uid) _load();
   }
 
   Future<void> _load() async {
@@ -426,6 +501,7 @@ class _AnnoncesListState extends State<_AnnoncesList> {
       final data = await query.order('created_at', ascending: false);
       if (!mounted) return;
       var rows = (data as List).map((r) => _norm(Map<String, dynamic>.from(r))).toList();
+      widget.onCompte?.call(rows.where((d) => (d['statut'] as String?) != 'supprime').length);
       rows = rows.where((d) {
         final s = (d['statut'] as String?) ?? '';
         switch (widget.filter) {
@@ -445,7 +521,33 @@ class _AnnoncesListState extends State<_AnnoncesList> {
   Widget build(BuildContext context) {
     if (widget.uid == null) return const Center(child: Text('Non connecté'));
     if (_loading && _rows.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: _teal));
+      return const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: _teal)));
+    }
+    if (widget.embedded) {
+      if (_rows.isEmpty) {
+        return DashCarte(
+          padding: const EdgeInsets.all(20),
+          child: Column(children: [
+            Container(
+              width: 44, height: 44,
+              decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
+              child: const Icon(Icons.pets_outlined, color: _teal, size: 21),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              widget.filter == 'pause' ? 'Aucune annonce d\'animal en pause.'
+                  : widget.filter == 'terminees' ? 'Aucune annonce d\'animal terminée.'
+                  : widget.filter == 'actives' ? 'Aucune annonce d\'animal en ligne.'
+                  : 'Aucune annonce d\'animal pour le moment.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
+          ]),
+        );
+      }
+      return Column(children: [
+        for (final r in _rows)
+          _AnnonceCard(id: r['id'] as String, data: r, onRefresh: _load, isAssociation: widget.isAssociation),
+      ]);
     }
     if (_rows.isEmpty) {
       return Center(
@@ -696,7 +798,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
                   // Badges : type + statut
                   Wrap(spacing: 6, runSpacing: 4, children: [
                     if (isBoosted)
-                      _badge('⚡ Boostée', const Color(0xFFFF8A00)),
+                      _badge('Boostée', const Color(0xFFB45309)),
                     _badge(type == 'portee' ? 'Portée' : 'Animal',
                         type == 'portee' ? _teal : _green),
                     _badge(_statutLabel(_statut), _statutColor(_statut)),
@@ -1020,7 +1122,7 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
                     child: Text(
-                      _typeVente == 'saillie' ? '🐴 Saillie' : _typeVente == 'portee' ? '🐾 Portée' : '🐾 Animal',
+                      _typeVente == 'saillie' ? 'Saillie' : _typeVente == 'portee' ? 'Portée' : 'Animal',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white),
                     ),
                   ),
@@ -1066,11 +1168,11 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
     return ListView(controller: sc, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
       // KPIs principaux
       Row(children: [
-        _KpiCard(icon: '👁️', label: 'Vues', value: '$vues', color: _teal),
+        _KpiCard(icon: Icons.visibility_outlined, label: 'Vues', value: '$vues', color: _teal),
         const SizedBox(width: 10),
-        _KpiCard(icon: isSaillie ? '🤝' : '💬', label: isSaillie ? 'Demandes' : 'Contacts', value: '$contacts', color: _green),
+        _KpiCard(icon: isSaillie ? Icons.handshake_outlined : Icons.chat_bubble_outline, label: isSaillie ? 'Demandes' : 'Contacts', value: '$contacts', color: _green),
         const SizedBox(width: 10),
-        _KpiCard(icon: '❤️', label: 'Favoris', value: '$favoris', color: const Color(0xFFEC4899)),
+        _KpiCard(icon: Icons.favorite_border, label: 'Favoris', value: '$favoris', color: const Color(0xFFEC4899)),
       ]),
       const SizedBox(height: 12),
 
@@ -1081,7 +1183,7 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
             border: Border.all(color: Colors.grey.shade100)),
         child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🏆 Score attractivité', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
+            const Text('Score attractivité', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
             const SizedBox(height: 6),
             ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
               value: score / 100,
@@ -1107,7 +1209,7 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade100)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🐾 Portée — podium', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
+            const Text('Portée — podium', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
             const SizedBox(height: 10),
             Row(children: [
               // Top vues
@@ -1115,10 +1217,10 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12)),
                 child: Column(children: [
-                  const Text('🏆 Plus consulté', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706), fontWeight: FontWeight.w600)),
+                  const Text('Plus consulté', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706), fontWeight: FontWeight.w600)),
                   const SizedBox(height: 4),
                   Text('Chiot #${(portee.first['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFB45309))),
-                  Text('👁️ ${portee.first['vues']} vues', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706))),
+                  Text('${portee.first['vues']} vues', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706))),
                 ]),
               )),
               const SizedBox(width: 10),
@@ -1129,10 +1231,10 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(color: const Color(0xFFFFF1F2), borderRadius: BorderRadius.circular(12)),
                   child: Column(children: [
-                    const Text('❤️ Plus aimé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48), fontWeight: FontWeight.w600)),
+                    const Text('Plus aimé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48), fontWeight: FontWeight.w600)),
                     const SizedBox(height: 4),
                     Text('Chiot #${(topFav.first['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFBE123C))),
-                    Text('❤️ ${topFav.first['favoris']} favoris', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48))),
+                    Text('${topFav.first['favoris']} favoris', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48))),
                   ]),
                 );
               }()),
@@ -1152,9 +1254,9 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
                     const SizedBox(width: 8),
                     Text('Chiot #${(b['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF374151))),
                     const Spacer(),
-                    Text('👁️ ${b['vues']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
+                    Text('${b['vues']} vues', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
                     const SizedBox(width: 12),
-                    Text('❤️ ${b['favoris']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
+                    Text('${b['favoris']} favoris', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
                   ]),
                 );
               }),
@@ -1171,7 +1273,7 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.grey.shade100)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🐴 Données saillie', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
+            const Text('Données saillie', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
             const SizedBox(height: 8),
             _InfoRow('Demandes de contact', '$contacts'),
             _InfoRow('Intérêt (favoris)', '$favoris éleveurs'),
@@ -1195,7 +1297,8 @@ Widget _InfoRow(String label, String value) => Padding(
 );
 
 class _KpiCard extends StatelessWidget {
-  final String icon, label, value;
+  final IconData icon;
+  final String label, value;
   final Color color;
   const _KpiCard({required this.icon, required this.label, required this.value, required this.color});
   @override
@@ -1205,7 +1308,7 @@ class _KpiCard extends StatelessWidget {
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.grey.shade100)),
       child: Column(children: [
-        Text(icon, style: const TextStyle(fontSize: 18)),
+        Icon(icon, size: 19, color: color),
         const SizedBox(height: 4),
         Text(value, style: TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.bold, color: color)),
         Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF9CA3AF))),

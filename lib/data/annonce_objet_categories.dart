@@ -1,30 +1,30 @@
-/// Catégories des petites annonces « objets & matériel » liées aux animaux
-/// (profil particulier). Aucune catégorie ne concerne un animal vivant.
+/// Catégories des annonces « Matériel & équipements » (matériel destiné aux
+/// animaux et aux activités professionnelles). Aucune catégorie ne concerne
+/// un animal vivant. Slugs inchangés (données existantes).
 ///
 /// Doit rester aligné avec `website/src/lib/annonce-objet-categories.ts`.
 class AnnonceObjetCategorie {
   final String slug;
   final String label;
-  final String emoji;
   final String exemples;
-  const AnnonceObjetCategorie(this.slug, this.label, this.emoji, this.exemples);
+  const AnnonceObjetCategorie(this.slug, this.label, this.exemples);
 }
 
 const kAnnonceObjetCategories = <AnnonceObjetCategorie>[
-  AnnonceObjetCategorie('habitat', 'Habitat & cage', '🏠',
-      'Cage, clapier, volière, aquarium, terrarium, niche, box, abri'),
-  AnnonceObjetCategorie('accessoires', 'Accessoires', '🦮',
-      'Harnais, laisse, collier, gamelle, sac de transport, jouets, couchage'),
-  AnnonceObjetCategorie('alimentation', 'Alimentation & fourrage', '🌾',
+  AnnonceObjetCategorie('habitat', 'Couchage, habitat & parcs',
+      'Paniers, niches, grilles de chenil, parcs, cages, volières, clapiers, aquariums'),
+  AnnonceObjetCategorie('accessoires', 'Transport & accessoires',
+      'Caisses de transport, harnais, laisses, colliers, gamelles'),
+  AnnonceObjetCategorie('alimentation', 'Alimentation & fourrage',
       'Foin, paille, granulés, litière, compléments'),
-  AnnonceObjetCategorie('entretien', 'Entretien & soin', '✂️',
+  AnnonceObjetCategorie('entretien', 'Entretien & soin',
       'Matériel de toilettage, tondeuse, pharmacie, brosses'),
-  AnnonceObjetCategorie('terrain', 'Terrain & pâture', '🌳',
-      'Location de prairie, parcelle, pré, box en écurie, stabulation, pension'),
-  AnnonceObjetCategorie('materiel_agricole', 'Matériel agricole', '🚜',
-      "Tracteur, remorque, clôture, abreuvoir, matériel d'élevage"),
-  AnnonceObjetCategorie('autre', 'Autre (lié aux animaux)', '📦',
-      'Tout autre objet ou service lié aux animaux (pas un animal)'),
+  AnnonceObjetCategorie('terrain', 'Terrain & pâture',
+      'Location de prairie, parcelle, pré, box en écurie, stabulation'),
+  AnnonceObjetCategorie('materiel_agricole', 'Équipements d\'élevage & agricoles',
+      'Équipements de mise bas, couveuses, abreuvoirs, clôtures, remorque, tracteur'),
+  AnnonceObjetCategorie('autre', 'Autre matériel',
+      'Tout autre matériel ou équipement destiné aux animaux (jamais un animal)'),
 ];
 
 const kAnnonceObjetTransactions = <String, String>{
@@ -46,13 +46,6 @@ String annonceObjetCategorieLabel(String? slug) {
     if (c.slug == slug) return c.label;
   }
   return 'Autre';
-}
-
-String annonceObjetCategorieEmoji(String? slug) {
-  for (final c in kAnnonceObjetCategories) {
-    if (c.slug == slug) return c.emoji;
-  }
-  return '📦';
 }
 
 /// Libellé de prix affichable pour une ligne `annonces_objets`.

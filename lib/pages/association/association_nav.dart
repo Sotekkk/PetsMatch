@@ -15,12 +15,8 @@ import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
-import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
-import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
-import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -31,8 +27,8 @@ import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/widgets/menu_pro.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -249,48 +245,13 @@ class _AssociationNavState extends State<AssociationNav> {
                 _DrawerSection(
                   icon: Icons.campaign_outlined,
                   label: 'Annonces',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mes Annonces',
-                      icon: Icons.campaign_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnnoncesPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Déposer une annonce',
-                      icon: Icons.add_circle_outline_rounded,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const CreateAnnonceAssoPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Petites annonces (matériel)',
-                      icon: Icons.inventory_2_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesObjetsFeedPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Mes annonces (matériel)',
-                      icon: Icons.sell_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnnoncesObjetsPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
+                  children: entreesMenuAnnonces(
+                    ouvrir: (page) {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+                    },
+                    extras: [
+                      _DrawerSubItem(
                       label: 'Annonces d\'adoption',
                       icon: Icons.pets_outlined,
                       onTap: () {
@@ -300,7 +261,7 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
-                    _DrawerSubItem(
+                      _DrawerSubItem(
                       label: 'Fil adoption associations',
                       icon: Icons.favorite_border,
                       onTap: () {
@@ -310,7 +271,7 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
-                    _DrawerSubItem(
+                      _DrawerSubItem(
                       label: 'Carte des associations',
                       icon: Icons.map_outlined,
                       onTap: () {
@@ -320,7 +281,8 @@ class _AssociationNavState extends State<AssociationNav> {
                         ));
                       },
                     ),
-                  ],
+                    ],
+                  ),
                 ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,

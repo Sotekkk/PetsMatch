@@ -7,6 +7,9 @@
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
+import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
+import 'package:PetsMatch/pages/annonces/publier_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
@@ -372,11 +375,30 @@ List<QuickAction> _all(BuildContext ctx) => [
     open: (c) => _push(c, const CreateAnnonceChevalPage()),
   ),
   QuickAction(
-    label: 'Mes annonces (cheval)',
-    keywords: ['gérer mes annonces', 'mes ventes cheval', 'mes annonces équines'],
+    label: 'Mes annonces',
+    keywords: ['gérer mes annonces', 'mes ventes cheval', 'mes annonces équines', 'mes annonces matériel'],
     icon: Icons.campaign_outlined, group: 'Annonces',
     visible: () => _particulier,
     open: (c) => _push(c, const MesAnnoncesParticulierPage()),
+  ),
+  // Menu « Annonces » commun à tous les profils.
+  QuickAction(
+    label: 'Publier une annonce',
+    keywords: ['publier', 'déposer une annonce', 'vendre du matériel', 'nouvelle annonce', 'vendre un panier', 'caisse de transport'],
+    icon: Icons.add_circle_outline_rounded, group: 'Annonces', isAction: true,
+    visible: () => true, open: (c) => _push(c, const PublierAnnoncePage()),
+  ),
+  QuickAction(
+    label: 'Matériel & équipements',
+    keywords: ['matériel', 'équipements', 'petites annonces', 'panier', 'grille de chenil', 'parc', 'caisse de transport', 'mise bas', 'cage', 'harnais'],
+    icon: Icons.inventory_2_outlined, group: 'Annonces',
+    visible: () => true, open: (c) => _push(c, const AnnoncesObjetsFeedPage()),
+  ),
+  QuickAction(
+    label: 'Mes annonces (matériel & équipements)',
+    keywords: ['mes annonces matériel', 'mes objets', 'mes équipements'],
+    icon: Icons.sell_outlined, group: 'Annonces',
+    visible: () => true, open: (c) => _push(c, const MesAnnoncesObjetsPage()),
   ),
 
   // ── Éleveur ────────────────────────────────────────────────────────────────

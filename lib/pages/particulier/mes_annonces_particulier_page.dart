@@ -1,5 +1,7 @@
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -9,17 +11,30 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Mes annonces (particulier) — aujourd'hui uniquement les annonces chevaux
-/// (vente / location / demi-pension / pension / valorisation) publiées via
-/// [CreateAnnonceChevalPage]. Scopé au profil particulier actif.
-class MesAnnoncesParticulierPage extends StatefulWidget {
+/// Ancien accès « Mes annonces (cheval) » : ouvre « Mes annonces » (animaux
+/// et matériel & équipements regroupés), filtré sur les animaux.
+class MesAnnoncesParticulierPage extends StatelessWidget {
   const MesAnnoncesParticulierPage({super.key});
 
   @override
-  State<MesAnnoncesParticulierPage> createState() => _MesAnnoncesParticulierPageState();
+  Widget build(BuildContext context) => const MesAnnoncesPage(typeInitial: 'animaux');
 }
 
-class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage> {
+/// Annonces chevaux du particulier (vente / location / demi-pension /
+/// pension / valorisation) publiées via [CreateAnnonceChevalPage], scopées au
+/// profil particulier actif. Intégrées à « Mes annonces ».
+/// [statut] : 'all', 'actives', 'pause', 'terminees'.
+class MesAnnoncesChevalListe extends StatefulWidget {
+  final String statut;
+  final int refreshKey;
+  final ValueChanged<int>? onCompte;
+  const MesAnnoncesChevalListe({super.key, this.statut = 'all', this.refreshKey = 0, this.onCompte});
+
+  @override
+  State<MesAnnoncesChevalListe> createState() => _MesAnnoncesChevalListeState();
+}
+
+class _MesAnnoncesChevalListeState extends State<MesAnnoncesChevalListe> {
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
   final _supa = Supabase.instance.client;
@@ -32,6 +47,12 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(MesAnnoncesChevalListe old) {
+    super.didUpdateWidget(old);
+    if (old.refreshKey != widget.refreshKey) _load();
   }
 
   Future<void> _load() async {
@@ -54,7 +75,10 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
           .map((r) => Map<String, dynamic>.from(r))
           .where((r) => (r['statut'] as String?) != 'supprime')
           .toList();
-      if (mounted) setState(() { _rows = rows; _loading = false; });
+      if (mounted) {
+        setState(() { _rows = rows; _loading = false; });
+        widget.onCompte?.call(rows.length);
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -189,46 +213,44 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
     return label.isEmpty ? base : '$label · $base';
   }
 
+  bool _garde(Map<String, dynamic> r) {
+    final s = (r['statut'] as String?) ?? 'disponible';
+    switch (widget.statut) {
+      case 'actives': return s == 'disponible' || s == 'reserve';
+      case 'pause': return s == 'pause';
+      case 'terminees': return s == 'vendu' || s == 'cede' || s == 'expiree';
+      default: return true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
-      appBar: AppBar(
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        title: const Text('Mes annonces',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openCreate(),
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Annonce cheval',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-      ),
-      body: _loading && _rows.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _rows.isEmpty
-              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.campaign_outlined, size: 64, color: Colors.grey.shade300),
-                  const SizedBox(height: 12),
-                  Text('Aucune annonce',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
-                  const SizedBox(height: 6),
-                  Text('Appuyez sur + pour publier une annonce cheval',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
-                ]))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  color: _teal,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                    itemCount: _rows.length,
-                    itemBuilder: (_, i) => _card(_rows[i]),
-                  ),
-                ),
-    );
+    if (_loading && _rows.isEmpty) {
+      return const Padding(padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator(color: _teal)));
+    }
+    final liste = _rows.where(_garde).toList();
+    if (liste.isEmpty) {
+      return DashCarte(
+        padding: const EdgeInsets.all(20),
+        child: Column(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
+            child: const Icon(Icons.pets_outlined, color: _teal, size: 21),
+          ),
+          const SizedBox(height: 10),
+          Text(widget.statut == 'all' ? 'Aucune annonce de cheval pour le moment.' : 'Aucune annonce de cheval avec ce statut.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
+          if (widget.statut == 'all') ...[
+            const SizedBox(height: 12),
+            DashBoutonPilule(label: 'Publier une annonce cheval', icon: Icons.add, onTap: () => _openCreate()),
+          ],
+        ]),
+      );
+    }
+    return Column(children: liste.map(_card).toList());
   }
 
   Widget _card(Map<String, dynamic> r) {
@@ -241,11 +263,12 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
     final boostUntil = DateTime.tryParse(r['boost_until']?.toString() ?? '');
     final isBoosted = boostUntil != null && boostUntil.isAfter(DateTime.now());
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: kDashBorder),
+        boxShadow: kDashOmbre,
       ),
       child: Column(children: [
         InkWell(
@@ -273,7 +296,7 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
                         : isPause ? 'En pause' : 'En ligne',
                     isBrouillon ? const Color(0xFFB45309)
                         : isPause ? const Color(0xFF9CA3AF) : _green),
-                  if (isBoosted) _badge('⚡ Boostée', const Color(0xFFFF8A00)),
+                  if (isBoosted) _badge('Boostée', const Color(0xFFB45309)),
                 ]),
                 const SizedBox(height: 6),
                 Text(titre.isEmpty ? 'Cheval' : titre,
@@ -305,7 +328,7 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
                   _finaliserSurSite)
             else ...[
               _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
-                  isPause ? 'Activer' : 'Pause', isPause ? _green : const Color(0xFF9CA3AF),
+                  isPause ? 'Activer' : 'Mettre en pause', isPause ? _green : const Color(0xFF4B5563),
                   () => _togglePause(r)),
               const SizedBox(width: 6),
               _act(Icons.bolt, isBoosted ? 'Boostée' : 'Booster',
@@ -321,7 +344,7 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
 
   Widget _ph() => Container(
     color: const Color(0xFFEEF5EA),
-    child: const Center(child: Text('🐴', style: TextStyle(fontSize: 30))),
+    child: const Center(child: Icon(Icons.pets_outlined, color: _teal, size: 26)),
   );
 
   Widget _badge(String label, Color color) => Container(

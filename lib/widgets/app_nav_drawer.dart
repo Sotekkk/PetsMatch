@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/widgets/menu_pro.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -11,7 +12,6 @@ import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
-import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 // Particulier pages
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
@@ -21,21 +21,15 @@ import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
-import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
-import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
-import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 // Eleveur pages
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
@@ -67,7 +61,6 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
   bool _isEmploye = false;
   bool _isBenevole = false;
   bool _isFa = false;
-  bool _hasChevalAnnonce = false;
   String _planCode = 'free';
 
   @override
@@ -108,27 +101,12 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
       planCode = await PlanService.getPlanCode(uid);
     }
 
-    // « Mes annonces (cheval) » n'apparaît que si le particulier a déjà publié
-    // (ou mis en brouillon) au moins une annonce cheval. La création reste
-    // accessible depuis la fiche du cheval.
-    bool hasChevalAnnonce = false;
-    if (!User_Info.isElevage && !User_Info.isPro && !User_Info.isAssociation) {
-      try {
-        final rows = await supa.from('annonces')
-            .select('id')
-            .eq('uid_eleveur', uid)
-            .eq('profil_source', 'particulier')
-            .limit(1);
-        hasChevalAnnonce = (rows as List).isNotEmpty;
-      } catch (_) {}
-    }
 
     if (mounted) {
       setState(() {
         _isEmploye = isEmploye;
         _isBenevole = isBenevole;
         _isFa = isFa;
-        _hasChevalAnnonce = hasChevalAnnonce;
         _planCode = planCode;
       });
     }
@@ -267,44 +245,21 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
         _DrawerSection(
           icon: Icons.campaign_outlined,
           label: 'Annonces',
-          children: [
-            _DrawerSubItem(
-              label: 'Trouver un compagnon',
-              icon: Icons.favorite_border,
-              onTap: () => _push(const TrouverCompagnonPage()),
-            ),
-            _DrawerSubItem(
-              label: 'Carte des élevages',
-              icon: Icons.map_outlined,
-              onTap: () => _push(const EleveurListPage()),
-            ),
-            _DrawerSubItem(
+          children: entreesMenuAnnonces(
+            ouvrir: _push,
+            extras: [
+              _DrawerSubItem(
               label: "Annonces d'adoption",
               icon: Icons.favorite_border,
               onTap: () => _push(const AnnoncesAssoFeedPage()),
             ),
-            _DrawerSubItem(
+              _DrawerSubItem(
               label: 'Carte des associations',
               icon: Icons.map_outlined,
               onTap: () => _push(const AssociationsListPage()),
             ),
-            _DrawerSubItem(
-              label: 'Petites annonces (matériel)',
-              icon: Icons.inventory_2_outlined,
-              onTap: () => _push(const AnnoncesObjetsFeedPage()),
-            ),
-            _DrawerSubItem(
-              label: 'Mes annonces (matériel)',
-              icon: Icons.sell_outlined,
-              onTap: () => _push(const MesAnnoncesObjetsPage()),
-            ),
-            if (_hasChevalAnnonce)
-              _DrawerSubItem(
-                label: 'Mes annonces (cheval)',
-                icon: Icons.pets_outlined,
-                onTap: () => _push(const MesAnnoncesParticulierPage()),
-              ),
-          ],
+            ],
+          ),
         ),
         if (_isEmploye)
           _DrawerItem(
@@ -439,33 +394,16 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           _DrawerSection(
             icon: Icons.campaign_outlined,
             label: 'Annonces',
-            children: [
-              _DrawerSubItem(
-                label: 'Mes Annonces',
-                icon: Icons.campaign_outlined,
-                onTap: () => _push(const MesAnnoncesPage()),
-              ),
-              _DrawerSubItem(
-                label: 'Déposer une annonce',
-                icon: Icons.add_circle_outline_rounded,
-                onTap: () => _push(const CreateAnnoncePage()),
-              ),
-              _DrawerSubItem(
-                label: 'Trouver un compagnon',
-                icon: Icons.pets_outlined,
-                onTap: () => _push(const TrouverCompagnonPage()),
-              ),
-              _DrawerSubItem(
+            children: entreesMenuAnnonces(
+              ouvrir: _push,
+              extras: [
+                _DrawerSubItem(
                 label: 'Saillie',
                 icon: Icons.diversity_1_outlined,
                 onTap: () => _push(const AnnoncesPublicPage(typeFilter: 'saillie')),
               ),
-              _DrawerSubItem(
-                label: 'Carte des élevages',
-                icon: Icons.map_outlined,
-                onTap: () => _push(const EleveurListPage()),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
         _DrawerSection(

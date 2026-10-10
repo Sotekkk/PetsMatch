@@ -6,21 +6,38 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/annonce_objet_categories.dart';
 import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_objet_page.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 
-const _teal  = Color(0xFF0C5C6C);
-const _green = Color(0xFF6E9E57);
-const _orange = Color(0xFFFF8A00);
+const _teal = Color(0xFF0C5C6C);
 
-/// « Mes annonces (matériel) » — gestion de ses petites annonces objets.
-/// Disponible pour tous les profils (particulier, éleveur, association, pro).
-class MesAnnoncesObjetsPage extends StatefulWidget {
+/// Ancien accès « Mes annonces (matériel) » : ouvre « Mes annonces » filtré
+/// sur Matériel & équipements (les deux types sont regroupés sur une page).
+class MesAnnoncesObjetsPage extends StatelessWidget {
   const MesAnnoncesObjetsPage({super.key});
+
   @override
-  State<MesAnnoncesObjetsPage> createState() => _MesAnnoncesObjetsPageState();
+  Widget build(BuildContext context) => MesAnnoncesPage(
+        isAssociation: User_Info.activeType == 'association',
+        typeInitial: 'materiel',
+      );
 }
 
-class _MesAnnoncesObjetsPageState extends State<MesAnnoncesObjetsPage> {
+/// Annonces « Matériel & équipements » du profil actif, intégrées à « Mes
+/// annonces ». Mêmes données, statuts et actions (modifier, pause / activer,
+/// supprimer). [statut] : 'all', 'actives', 'pause', 'terminees'.
+class MesAnnoncesObjetsListe extends StatefulWidget {
+  final String statut;
+  final int refreshKey;
+  final ValueChanged<int>? onCompte;
+  const MesAnnoncesObjetsListe({super.key, this.statut = 'all', this.refreshKey = 0, this.onCompte});
+
+  @override
+  State<MesAnnoncesObjetsListe> createState() => _MesAnnoncesObjetsListeState();
+}
+
+class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
   final _supa = Supabase.instance.client;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   List<Map<String, dynamic>> _rows = [];
@@ -30,6 +47,12 @@ class _MesAnnoncesObjetsPageState extends State<MesAnnoncesObjetsPage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void didUpdateWidget(MesAnnoncesObjetsListe old) {
+    super.didUpdateWidget(old);
+    if (old.refreshKey != widget.refreshKey) _load();
   }
 
   Future<void> _load() async {
@@ -52,6 +75,7 @@ class _MesAnnoncesObjetsPageState extends State<MesAnnoncesObjetsPage> {
           _rows = List<Map<String, dynamic>>.from(data as List);
           _loading = false;
         });
+        widget.onCompte?.call(_rows.length);
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -99,55 +123,46 @@ class _MesAnnoncesObjetsPageState extends State<MesAnnoncesObjetsPage> {
     return d != null && d.isAfter(DateTime.now());
   }
 
+  bool _garde(Map<String, dynamic> r) {
+    final s = (r['statut'] ?? 'disponible').toString();
+    switch (widget.statut) {
+      case 'actives': return s == 'disponible';
+      case 'pause': return s == 'pause';
+      case 'terminees': return false;
+      default: return true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6F6F4),
-      appBar: AppBar(
-        backgroundColor: _teal, foregroundColor: Colors.white,
-        title: const Text('Mes annonces — matériel',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        actions: [
-          IconButton(
-            tooltip: 'Voir le fil public',
-            icon: const Icon(Icons.travel_explore_outlined),
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const AnnoncesObjetsFeedPage())),
+    if (_loading && _rows.isEmpty) {
+      return const Padding(padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator(color: _teal)));
+    }
+    final liste = _rows.where(_garde).toList();
+    if (liste.isEmpty) {
+      return DashCarte(
+        padding: const EdgeInsets.all(20),
+        child: Column(children: [
+          Container(
+            width: 44, height: 44,
+            decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
+            child: const Icon(Icons.inventory_2_outlined, color: _teal, size: 21),
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _teal,
-        onPressed: () => _create(),
-        icon: const Icon(Icons.add),
-        label: const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _rows.isEmpty
-              ? Center(child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Text('📦', style: TextStyle(fontSize: 44)),
-                    const SizedBox(height: 12),
-                    const Text('Aucune annonce matériel',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-                    const SizedBox(height: 6),
-                    Text('Cage, harnais, foin, location de prairie, matériel agricole… '
-                        'Publiez gratuitement. Pas d\'animaux ici.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade500)),
-                  ]),
-                ))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
-                    itemCount: _rows.length,
-                    itemBuilder: (_, i) => _card(_rows[i]),
-                  ),
-                ),
-    );
+          const SizedBox(height: 10),
+          Text(widget.statut == 'all'
+                  ? 'Aucune annonce de matériel ou d\'équipement pour le moment.'
+                  : 'Aucune annonce de matériel avec ce statut.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
+          if (widget.statut == 'all') ...[
+            const SizedBox(height: 12),
+            DashBoutonPilule(label: 'Publier du matériel', icon: Icons.add, onTap: () => _create()),
+          ],
+        ]),
+      );
+    }
+    return Column(children: liste.map(_card).toList());
   }
 
   Widget _card(Map<String, dynamic> r) {
@@ -156,65 +171,71 @@ class _MesAnnoncesObjetsPageState extends State<MesAnnoncesObjetsPage> {
     final isPause = statut == 'pause';
     final created = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: kDashBorder),
+        boxShadow: kDashOmbre,
       ),
       child: Column(children: [
         InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           onTap: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => AnnonceObjetDetailPage(data: r))),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
-              child: SizedBox(
-                width: 92, height: 100,
-                child: photos.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _ph())
-                    : _ph(),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 60, height: 60,
+                  child: photos.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _ph())
+                      : _ph(),
+                ),
               ),
-            ),
-            Expanded(child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  _badge(isPause ? 'En pause' : 'En ligne', isPause ? const Color(0xFF9CA3AF) : _green),
-                  if (_boosted(r)) _badge('⚡ Boostée', _orange),
-                  _badge(annonceObjetCategorieLabel(r['categorie'] as String?), _teal),
-                ]),
-                const SizedBox(height: 6),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text((r['titre'] ?? '').toString(),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
-                const SizedBox(height: 3),
-                Row(children: [
-                  Text(annonceObjetPrixLabel(r),
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
-                  const Spacer(),
-                  if (created != null)
-                    Text(DateFormat('dd/MM/yy').format(created),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: kDashInk)),
+                const SizedBox(height: 2),
+                Text(annonceObjetCategorieLabel(r['categorie'] as String?),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                const SizedBox(height: 6),
+                Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  isPause
+                      ? const DashPuce('En pause', fg: Color(0xFF6B7280), bg: Color(0xFFF3F4F6), point: true)
+                      : const DashPuce('En ligne', fg: Color(0xFF2F7D3A), bg: Color(0xFFEAF5EC), point: true),
+                  if (_boosted(r)) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
                 ]),
+              ])),
+              const SizedBox(width: 8),
+              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                Text(annonceObjetPrixLabel(r),
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
+                if (created != null) ...[
+                  const SizedBox(height: 4),
+                  Text(DateFormat('dd/MM/yy').format(created),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: kDashMuted)),
+                ],
               ]),
-            )),
-          ]),
+            ]),
+          ),
         ),
-        Divider(height: 1, color: Colors.grey.shade100),
+        Divider(height: 1, color: Colors.grey.shade200),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(children: [
             _act(Icons.edit_outlined, 'Modifier', _teal, () => _create(edit: r)),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
             _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
-                isPause ? 'Activer' : 'Pause',
-                isPause ? _green : const Color(0xFF9CA3AF), () => _togglePause(r)),
+                isPause ? 'Activer' : 'Mettre en pause', const Color(0xFF4B5563), () => _togglePause(r)),
             const Spacer(),
-            _act(Icons.delete_outline, 'Supprimer', Colors.redAccent, () => _delete(r)),
+            _act(Icons.delete_outline, 'Supprimer', const Color(0xFFC0392B), () => _delete(r)),
           ]),
         ),
       ]),
@@ -222,26 +243,21 @@ class _MesAnnoncesObjetsPageState extends State<MesAnnoncesObjetsPage> {
   }
 
   Widget _ph() => Container(
-        color: const Color(0xFFEEF3F0),
-        child: const Center(child: Text('📦', style: TextStyle(fontSize: 28))),
+        color: const Color(0xFFE8F4F6),
+        child: const Center(child: Icon(Icons.inventory_2_outlined, color: _teal, size: 24)),
       );
 
-  Widget _badge(String label, Color color) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-        child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-      );
-
-  Widget _act(IconData icon, String label, Color color, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 14, color: color),
-            const SizedBox(width: 4),
-            Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color)),
-          ]),
+  Widget _act(IconData icon, String label, Color color, VoidCallback onTap) => TextButton.icon(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+          foregroundColor: color, visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
+        icon: Icon(icon, size: 16),
+        label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
       );
 }
+
+/// Accès au fil public depuis la page (gardé pour les anciens appels).
+void ouvrirFilMateriel(BuildContext context) =>
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const AnnoncesObjetsFeedPage()));

@@ -44,8 +44,8 @@ Future<List<String>> fetchCommunes(String cp) async {
   }
 }
 
-/// Fil public des petites annonces « objets & matériel » liées aux animaux —
-/// style « petites annonces » : recherche mot-clé, catégories, filtres
+/// Fil public « Matériel & équipements » (matériel destiné aux animaux et aux
+/// activités professionnelles) : recherche mot-clé, catégorie, filtres
 /// région / département / ville, géolocalisation, tri. Ouvert à tous.
 class AnnoncesObjetsFeedPage extends StatefulWidget {
   const AnnoncesObjetsFeedPage({super.key});
@@ -185,7 +185,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
         _departement = geo.departement;
       });
       _load();
-      _snack('📍 ${geo.departement}');
+      _snack('Localisation : ${geo.departement}');
     } catch (_) {
       _snack('Impossible de récupérer votre position.');
     } finally {
@@ -256,7 +256,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                 items: [
                   const DropdownMenuItem(value: 'tous', child: Text('Toutes les catégories')),
                   for (final c in kAnnonceObjetCategories)
-                    DropdownMenuItem(value: c.slug, child: Text('${c.emoji}  ${c.label}', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(value: c.slug, child: Text(c.label, overflow: TextOverflow.ellipsis)),
                 ],
                 onChanged: (v) => setSheet(() => _cat = v ?? 'tous'),
               ),
@@ -412,7 +412,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Petites annonces — matériel',
+        title: const Text('Matériel & équipements',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -423,7 +423,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
           if (ok == true) _load();
         },
         icon: const Icon(Icons.add),
-        label: const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        label: const Text('Publier du matériel', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: Column(children: [
         // ── Recherche + bouton filtres ─────────────────────────────
@@ -438,7 +438,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                 textInputAction: TextInputAction.search,
                 onSubmitted: (v) { setState(() => _kw = v.trim()); _load(); },
                 decoration: InputDecoration(
-                  hintText: 'Rechercher (cage, foin, harnais…)',
+                  hintText: 'Rechercher (panier, parc, caisse de transport…)',
                   hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13),
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: _searchCtrl.text.isEmpty
@@ -477,17 +477,32 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
             ]),
           ]),
         ),
-        // ── Catégories ─────────────────────────────────────────────
+        // ── Catégorie (liste compacte) ─────────────────────────────
         Container(
           color: Colors.white,
-          height: 44,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            children: [
-              _catChip('tous', 'Tout', '🔎'),
-              for (final c in kAnnonceObjetCategories) _catChip(c.slug, c.label, c.emoji),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          child: DropdownButtonFormField<String>(
+            initialValue: _cat,
+            isExpanded: true,
+            isDense: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
+            decoration: InputDecoration(
+              labelText: 'Catégorie',
+              labelStyle: const TextStyle(fontFamily: 'Galey', color: Color(0xFF6B7280)),
+              isDense: true,
+              filled: true, fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E8E6))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE5E8E6))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal)),
+            ),
+            items: [
+              const DropdownMenuItem(value: 'tous', child: Text('Toutes les catégories')),
+              for (final c in kAnnonceObjetCategories)
+                DropdownMenuItem(value: c.slug, child: Text(c.label, overflow: TextOverflow.ellipsis)),
             ],
+            onChanged: (v) { setState(() => _cat = v ?? 'tous'); _load(); },
           ),
         ),
         // ── Barre localisation active ──────────────────────────────
@@ -520,7 +535,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                   ? Center(child: Padding(
                       padding: const EdgeInsets.all(32),
                       child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        const Text('🔎', style: TextStyle(fontSize: 40)),
+                        Icon(Icons.search_off_rounded, size: 40, color: Colors.grey.shade400),
                         const SizedBox(height: 10),
                         Text(
                           _kw.isNotEmpty || _activeFilters > 0 || _cat != 'tous'
@@ -548,20 +563,6 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
     );
   }
 
-  Widget _catChip(String slug, String label, String emoji) => Padding(
-        padding: const EdgeInsets.only(right: 6),
-        child: ChoiceChip(
-          label: Text('$emoji $label'),
-          selected: _cat == slug,
-          onSelected: (_) { setState(() => _cat = slug); _load(); },
-          selectedColor: _teal.withValues(alpha: 0.15),
-          labelStyle: TextStyle(
-              fontFamily: 'Galey', fontSize: 12,
-              color: _cat == slug ? _teal : Colors.grey.shade700,
-              fontWeight: FontWeight.w600),
-        ),
-      );
-
   Widget _card(Map<String, dynamic> r) {
     final photos = List<String>.from(r['photos'] ?? const []);
     final boosted = annonceObjetBoostActif(r['boost_until']);
@@ -574,42 +575,51 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+          border: Border.all(color: const Color(0xFFE5E8E6)),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 1))],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Stack(children: [
+        // Photo = espace restant, texte = hauteur fixe : aucune carte ne
+        // déborde, quelle que soit la longueur du titre.
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(child: Stack(fit: StackFit.expand, children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: AspectRatio(
-                aspectRatio: 1.1,
-                child: photos.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _ph())
-                    : _ph(),
-              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              child: photos.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _ph())
+                  : _ph(),
             ),
             if (boosted)
-              Positioned(top: 6, left: 6, child: _tag('⚡ Boostée', _orange)),
+              Positioned(top: 6, left: 6, child: _tag('Boostée', _orange)),
             Positioned(
               bottom: 6, left: 6,
-              child: _tag(annonceObjetCategorieEmoji(r['categorie'] as String?), Colors.black54),
+              child: _tag(kAnnonceObjetTransactions[r['type_transaction']] ?? 'Vente', Colors.black54),
             ),
-          ]),
+          ])),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text((r['titre'] ?? '').toString(),
-                  maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(
+                height: 34,
+                child: Text((r['titre'] ?? '').toString(),
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, height: 1.25, color: Color(0xFF1F2A2E))),
+              ),
               const SizedBox(height: 4),
               Text(annonceObjetPrixLabel(r),
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
-              if (loc.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text('📍 $loc',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-              ],
+              const SizedBox(height: 2),
+              // Ligne de lieu toujours réservée : cartes alignées.
+              SizedBox(
+                height: 16,
+                child: loc.isEmpty ? null : Row(children: [
+                  Icon(Icons.place_outlined, size: 13, color: Colors.grey.shade500),
+                  const SizedBox(width: 3),
+                  Expanded(child: Text(loc,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600))),
+                ]),
+              ),
             ]),
           ),
         ]),
@@ -619,7 +629,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
 
   Widget _ph() => Container(
         color: const Color(0xFFEEF3F0),
-        child: const Center(child: Text('📦', style: TextStyle(fontSize: 34))),
+        child: const Center(child: Icon(Icons.inventory_2_outlined, size: 32, color: _teal)),
       );
 
   Widget _tag(String t, Color c) => Container(
@@ -758,8 +768,7 @@ class _AnnonceObjetDetailPageState extends State<AnnonceObjetDetailPage> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Wrap(spacing: 6, runSpacing: 6, children: [
-              _chip('${annonceObjetCategorieEmoji(d['categorie'] as String?)} '
-                  '${annonceObjetCategorieLabel(d['categorie'] as String?)}', _teal),
+              _chip(annonceObjetCategorieLabel(d['categorie'] as String?), _teal),
               _chip(kAnnonceObjetTransactions[d['type_transaction']] ?? 'Vente', _green),
               if (d['etat'] != null)
                 _chip(kAnnonceObjetEtats[d['etat']] ?? d['etat'].toString(), Colors.blueGrey),
