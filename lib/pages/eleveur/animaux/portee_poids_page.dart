@@ -94,6 +94,12 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
   // Couleur stable par bébé (indépendante du fait qu'il ait des pesées).
   Color _colorFor(int index) => _seriesColors[index % _seriesColors.length];
 
+  /// Cédé / décédé : gardé dans la courbe (historique de la portée), grisé,
+  /// sans saisie de pesée (ce n'est plus l'animal de l'éleveur).
+  static String? _etatParti(Map<String, dynamic> a) => switch (a['statut']) {
+        'sorti' => 'cédé', 'decede' => 'décédé', _ => null,
+      };
+
   Future<void> _openAddPoids(Map<String, dynamic> animal) async {
     final id = animal['id'] as String?;
     if (id == null) return;
@@ -131,7 +137,7 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
       final a = widget.animals[i];
       final id = a['id'] as String?;
       if (id == null) continue;
-      colorMap[id] = _colorFor(i);
+      colorMap[id] = _etatParti(a) != null ? _colorFor(i).withValues(alpha: 0.35) : _colorFor(i);
       nameMap[id] = (a['nom'] as String?)?.trim().isNotEmpty == true
           ? a['nom'] as String
           : 'Bébé ${i + 1}';
@@ -237,14 +243,16 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
                     ? a['nom'] as String
                     : 'Bébé ${i + 1}';
                 final sexe = (a['sexe'] as String?) ?? '';
-                final color = _colorFor(i);
+                final parti = _etatParti(a);
+                final color = parti != null ? Colors.grey.shade400 : _colorFor(i);
+                final peser = widget.canEditPoids && parti == null;
                 final docs = _poidsPerAnimal[id] ?? [];
                 final nbPesees = docs.length;
                 final dernierPoids = docs.isNotEmpty
                     ? double.tryParse(docs.last['valeur']?.toString() ?? '')
                     : null;
                 return InkWell(
-                  onTap: widget.canEditPoids ? () => _openAddPoids(a) : null,
+                  onTap: peser ? () => _openAddPoids(a) : null,
                   borderRadius: BorderRadius.circular(10),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 9),
@@ -260,8 +268,9 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('$nom${sexe.isNotEmpty ? " · $sexe" : ""}',
-                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                          Text('$nom${sexe.isNotEmpty ? " · $sexe" : ""}${parti != null ? " · $parti" : ""}',
+                              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13,
+                                  color: parti != null ? Colors.grey.shade500 : null)),
                           Text(
                             nbPesees == 0
                                 ? 'Aucune pesée'
@@ -283,7 +292,7 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                                   color: color, fontWeight: FontWeight.w700)),
                         ),
-                      if (widget.canEditPoids) ...[
+                      if (peser) ...[
                         const SizedBox(width: 4),
                         Icon(Icons.add_circle_outline, size: 18, color: _teal.withValues(alpha: 0.6)),
                       ],

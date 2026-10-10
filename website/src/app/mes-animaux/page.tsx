@@ -286,7 +286,7 @@ function MesAnimauxPageInner() {
   const initialSubTab: 'tous' | 'repro' | 'bebes' =
     initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
   const initialPortee = searchParams.get('portee') ?? '';
-  const initialBebesVue: 'presents' | 'cedes' = searchParams.get('bebes') === 'cedes' ? 'cedes' : 'presents';
+  const initialCedesSub: 'tous' | 'bebes' = searchParams.get('cedes') === 'bebes' ? 'bebes' : 'tous';
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
@@ -301,9 +301,11 @@ function MesAnimauxPageInner() {
   const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>(initialSubTab);
   // Portée sélectionnée dans le filtre "Bébés" — '' = toutes les portées.
   const [selectedPortee, setSelectedPortee] = useState(initialPortee);
-  // Filtre "Bébés" : présents (défaut) ou cédés — pour retrouver une portée
-  // et ses données après les départs.
-  const [bebesVue, setBebesVue] = useState<'presents' | 'cedes'>(initialBebesVue);
+  // Onglet Cédés : tous les animaux, ou bébés cédés regroupés par portée
+  // (retrouver une portée et ses courbes de poids après les départs).
+  const [cedesSubTab, setCedesSubTab] = useState<'tous' | 'bebes'>(initialCedesSub);
+  const bebesVue: 'presents' | 'cedes' = tab === 'anciens' ? 'cedes' : 'presents';
+  const vueBebes = (tab === 'presents' && presentsSubTab === 'bebes') || (tab === 'anciens' && cedesSubTab === 'bebes');
 
   // Garde l'URL synchro avec les filtres actifs (remplace l'entrée d'historique,
   // pas de nouvelle entrée à chaque clic) pour que le retour depuis une fiche
@@ -312,11 +314,11 @@ function MesAnimauxPageInner() {
     const params = new URLSearchParams();
     if (tab !== 'presents') params.set('tab', tab);
     if (presentsSubTab !== 'tous') params.set('sub', presentsSubTab);
-    if (presentsSubTab === 'bebes' && selectedPortee) params.set('portee', selectedPortee);
-    if (presentsSubTab === 'bebes' && bebesVue === 'cedes') params.set('bebes', 'cedes');
+    if (vueBebes && selectedPortee) params.set('portee', selectedPortee);
+    if (tab === 'anciens' && cedesSubTab === 'bebes') params.set('cedes', 'bebes');
     const qs = params.toString();
     router.replace(qs ? `/mes-animaux?${qs}` : '/mes-animaux', { scroll: false });
-  }, [tab, presentsSubTab, selectedPortee, bebesVue, router]);
+  }, [tab, presentsSubTab, selectedPortee, cedesSubTab, vueBebes, router]);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -727,7 +729,7 @@ function MesAnimauxPageInner() {
   const activeFilterCount = tab === 'presents'
     ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0) +
       (filtreRetraite ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0) +
-      (filtreReservation !== 'tous' ? 1 : 0) + (presentsSubTab === 'bebes' && bebesVue === 'cedes' ? 1 : 0)
+      (filtreReservation !== 'tous' ? 1 : 0)
     : tab === 'decedes'
     ? (decedesEspece !== 'tous' ? 1 : 0)
     : (anciensEspece !== 'tous' ? 1 : 0);
@@ -739,6 +741,12 @@ function MesAnimauxPageInner() {
   const filteredBebes = animaux.filter(a => {
     if (a.statut === 'decede') return false;
     if ((bebesVue === 'cedes') !== (a.statut === 'sorti')) return false;
+    // Onglet Cédés : seuls ses filtres (espèce) et la recherche s'appliquent.
+    if (bebesVue === 'cedes') {
+      if (anciensEspece !== 'tous' && a.espece !== anciensEspece) return false;
+      if (searchLower && !(a.nom ?? '').toLowerCase().includes(searchLower) && !(a.identification ?? '').toLowerCase().includes(searchLower)) return false;
+      return true;
+    }
     if (filtreEspece !== 'tous' && a.espece !== filtreEspece) return false;
     if (filtreSexe !== 'tous') {
       const s = (a.sexe ?? '').toLowerCase();
@@ -769,7 +777,7 @@ function MesAnimauxPageInner() {
 
   // Groupement par portée (bébés uniquement) — inclut les frères/sœurs reproducteurs
   const porteeGroups: Map<string, Animal[]> = new Map();
-  if (tab === 'presents' && presentsSubTab === 'bebes') {
+  if (vueBebes) {
     // 1) Collecter les portee_id des vrais bébés (non-reproducteurs)
     const porteeIdsEnVue = new Set(
       filteredBebes.filter(a => !!a.portee_id && !a.reproducteur).map(a => a.portee_id!)
@@ -798,7 +806,7 @@ function MesAnimauxPageInner() {
     if (tab === 'presents') {
       setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
       setFiltreRetraite(false); setFiltreRepro(false); setFiltreGestante(false); setFiltreChaleur(false);
-      setFiltreReservation('tous'); setBebesVue('presents');
+      setFiltreReservation('tous');
     } else if (tab === 'decedes') {
       setDecedesEspece('tous');
     } else {
@@ -916,7 +924,15 @@ function MesAnimauxPageInner() {
               <option value="bebes">Bébés</option>
             </select>
           )}
-          {tab === 'presents' && presentsSubTab === 'bebes' && porteeGroups.size > 0 && (
+          {tab === 'anciens' && (
+            <select value={cedesSubTab} aria-label="Catégorie"
+              onChange={e => { setCedesSubTab(e.target.value as 'tous' | 'bebes'); setSelectedPortee(''); }}
+              className="h-10 flex-1 sm:flex-none rounded-lg border border-gray-300 bg-white px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]">
+              <option value="tous">Tous les animaux</option>
+              <option value="bebes">Bébés (par portée)</option>
+            </select>
+          )}
+          {vueBebes && porteeGroups.size > 0 && (
             <select value={selectedPortee} aria-label="Portée" onChange={e => setSelectedPortee(e.target.value)}
               className="h-10 flex-1 sm:flex-none sm:max-w-[260px] rounded-lg border border-gray-300 bg-white px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]">
               <option value="">Toutes les portées</option>
@@ -974,13 +990,6 @@ function MesAnimauxPageInner() {
                   <option value="disponible">Disponibles</option>
                   <option value="reserve">Réservés</option>
                 </select>
-                {presentsSubTab === 'bebes' && (
-                  <select aria-label="Présence des bébés" value={bebesVue} onChange={e => { setBebesVue(e.target.value as 'presents' | 'cedes'); setSelectedPortee(''); }}
-                    className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm">
-                    <option value="presents">Bébés présents</option>
-                    <option value="cedes">Bébés cédés</option>
-                  </select>
-                )}
               </>
             )}
           </div>
@@ -1004,12 +1013,12 @@ function MesAnimauxPageInner() {
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : (tab === 'presents' && presentsSubTab === 'bebes' ? visiblePorteeGroups.length === 0 : currentList.length === 0) ? (
+      ) : (vueBebes ? visiblePorteeGroups.length === 0 : currentList.length === 0) ? (
         <div className="text-center py-16 px-4 bg-white border border-dashed border-gray-300 rounded-lg">
           <p className="text-[15px] font-semibold text-[#1F2A2E]">
             {searchLower || activeFilterCount > 0 ? 'Aucun animal ne correspond'
               : tab === 'presents' && presentsSubTab === 'repro' ? 'Aucun reproducteur'
-              : tab === 'presents' && presentsSubTab === 'bebes' ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé cédé')
+              : vueBebes ? (bebesVue === 'presents' ? 'Aucun bébé présent' : 'Aucun bébé cédé')
               : tab === 'presents' ? 'Aucun animal présent'
               : tab === 'decedes' ? 'Aucun animal décédé'
               : 'Aucun animal cédé'}
@@ -1017,14 +1026,14 @@ function MesAnimauxPageInner() {
           <p className="text-sm text-gray-500 mt-1">
             {searchLower || activeFilterCount > 0 ? 'Modifiez la recherche ou les filtres.'
               : tab === 'presents' && presentsSubTab === 'repro' ? 'Ouvrez le menu d’un animal pour le marquer comme reproducteur.'
-              : tab === 'presents' && presentsSubTab === 'bebes' && bebesVue === 'presents' ? 'Les portées déjà parties se retrouvent dans Filtres › Bébés cédés.'
+              : vueBebes && bebesVue === 'presents' ? 'Les portées déjà parties se retrouvent dans Cédés › Bébés.'
               : tab === 'presents' && animaux.length === 0 ? 'Ajoutez votre premier animal.' : ''}
           </p>
           {(searchLower || activeFilterCount > 0) && (
             <button type="button" onClick={() => { setSearch(''); resetFilters(); }} className="mt-3 text-sm font-semibold text-[#0C5C6C] hover:underline">Réinitialiser</button>
           )}
         </div>
-      ) : presentsSubTab === 'bebes' && tab === 'presents' ? (
+      ) : vueBebes ? (
         <div className="space-y-4">
           {visiblePorteeGroups.map(([pid, members]) => {
             const first = members[0];
@@ -1049,13 +1058,13 @@ function MesAnimauxPageInner() {
                     {isEleveur && !cedes && (
                       <MenuPortee actions={[
                         { label: 'Modifier les informations de la portée', onClick: () => setEditPorteeGroup({ pid, members }) },
-                        { label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: members, dn: first.date_naissance ?? null }) },
+                        { label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: animaux.filter(x => x.portee_id === pid), dn: first.date_naissance ?? null }) },
                         { label: 'Soin pour toute la portée', onClick: () => setSoinPorteeAnimals(members) },
                         { label: 'Créer une annonce', href: `/annonces/creer?portee_id=${pid}` },
                       ]} />
                     )}
                     {cedes && (
-                      <MenuPortee actions={[{ label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: members, dn: first.date_naissance ?? null }) }]} />
+                      <MenuPortee actions={[{ label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: animaux.filter(x => x.portee_id === pid), dn: first.date_naissance ?? null }) }]} />
                     )}
                   </div>
                 </div>

@@ -74,7 +74,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   String _selectedPorteeId = ''; // '' = toutes les portées (filtre "Bébés")
   // Filtre "Bébés" : présents (défaut) ou cédés — pour retrouver une portée
   // et ses données après les départs.
-  bool _bebesCedes = false;
+  /// Onglet Cédés : tous les animaux, ou bébés regroupés par portée.
+  String _cedesVue = 'tous';
+  String _selectedPorteeCedeeId = '';
   bool _filterRetraite = false;
   bool _filterRepro    = false;
   bool _filterGestante = false;
@@ -583,7 +585,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_filterGestante) c++;
     if (_filterChaleur)  c++;
     if (_filterReservation != 'tous') c++;
-    if (_presentsSubTab == 'bebes' && _bebesCedes) c++;
     return c;
   }
 
@@ -632,7 +633,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     bool tmpGestante  = _filterGestante;
     bool tmpChaleur   = _filterChaleur;
     String tmpReservation = _filterReservation;
-    bool tmpBebesCedes = _bebesCedes;
 
     await showModalBottomSheet(
       context: context,
@@ -643,7 +643,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           void apply({String? espece, String? sexe, String? race,
                      bool toggleRetraite = false, bool toggleRepro = false,
                      bool toggleGestante = false, bool toggleChaleur = false,
-                     String? reservation, bool? bebesCedes}) {
+                     String? reservation}) {
             setSheet(() {
               if (espece != null) {
                 tmpEspece = espece;
@@ -657,7 +657,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               if (toggleGestante) tmpGestante = !tmpGestante;
               if (toggleChaleur)  tmpChaleur  = !tmpChaleur;
               if (reservation != null) tmpReservation = reservation;
-              if (bebesCedes != null) tmpBebesCedes = bebesCedes;
             });
             setState(() {
               _filterEspece   = tmpEspece;
@@ -668,8 +667,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               _filterGestante = tmpGestante;
               _filterChaleur  = tmpChaleur;
               _filterReservation = tmpReservation;
-              if (_bebesCedes != tmpBebesCedes) _selectedPorteeId = '';
-              _bebesCedes = tmpBebesCedes;
             });
           }
 
@@ -694,15 +691,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const Spacer(),
                 if (tmpEspece != 'tous' || tmpSexe != 'tous' || tmpRace.isNotEmpty ||
-                    tmpRetraite || tmpGestante || tmpChaleur || tmpReservation != 'tous' || tmpBebesCedes)
+                    tmpRetraite || tmpGestante || tmpChaleur || tmpReservation != 'tous')
                   TextButton(
                     onPressed: () {
                       setSheet(() { tmpEspece = 'tous'; tmpSexe = 'tous'; tmpRace = '';
                         tmpRetraite = false; tmpRepro = false; tmpGestante = false; tmpChaleur = false;
-                        tmpReservation = 'tous'; tmpBebesCedes = false; });
+                        tmpReservation = 'tous'; });
                       setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
                         _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
-                        _filterReservation = 'tous'; _bebesCedes = false; });
+                        _filterReservation = 'tous'; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text('Réinitialiser',
@@ -762,17 +759,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 const SizedBox(width: 8),
                 _SexeChip(label: 'Réservés', active: tmpReservation == 'reserve', onTap: () => apply(reservation: 'reserve')),
               ]),
-              if (_presentsSubTab == 'bebes') ...[
-                const SizedBox(height: 18),
-                const Text('Bébés', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                    fontSize: 13, color: Color(0xFF6F767B))),
-                const SizedBox(height: 10),
-                Row(children: [
-                  _SexeChip(label: 'Présents', active: !tmpBebesCedes, onTap: () => apply(bebesCedes: false)),
-                  const SizedBox(width: 8),
-                  _SexeChip(label: 'Cédés', active: tmpBebesCedes, onTap: () => apply(bebesCedes: true)),
-                ]),
-              ],
               if (races.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
@@ -1231,14 +1217,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   /// Animaux présents (onglet) selon la catégorie et les filtres.
   List<Map<String, dynamic>> _presentsDocs() {
     if (_presentsSubTab == 'bebes') {
-      // Bébés cédés (statut 'sorti') : seulement avec Filtres › Bébés cédés —
-      // l'éleveur garde l'historique de la portée.
+      // Bébés présents seulement : les cédés sont dans Cédés › Bébés.
       return _animauxData.where((d) {
         final pid = d['portee_id'] as String? ?? '';
         final statut = d['statut'] as String? ?? '';
         if (pid.isEmpty || d['reproducteur'] == true) return false;
-        if (statut == 'decede') return false;
-        if (_bebesCedes != (statut == 'sorti')) return false;
+        if (statut == 'decede' || statut == 'sorti') return false;
         return _filtresCommuns(d);
       }).toList();
     }
@@ -1258,7 +1242,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   }
 
   /// Portées (bébés) triées par date de naissance décroissante.
-  Map<String, List<Map<String, dynamic>>> _groupesPortees(List<Map<String, dynamic>> docs) {
+  Map<String, List<Map<String, dynamic>>> _groupesPortees(List<Map<String, dynamic>> docs, {bool cedes = false}) {
     final groups = <String, List<Map<String, dynamic>>>{};
     for (final d in docs) {
       final pid = (d['portee_id'] as String?) ?? '';
@@ -1271,7 +1255,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         groups[pid]!.addAll(_animauxData.where((a) {
           final statut = (a['statut'] as String?) ?? '';
           return a['portee_id'] == pid && !ids.contains(a['id']) && statut != 'decede'
-              && _bebesCedes == (statut == 'sorti');
+              && cedes == (statut == 'sorti');
         }));
       }
     }
@@ -1342,7 +1326,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     _searchController.clear(); _search = '';
     _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterReservation = 'tous';
     _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
-    _bebesCedes = false;
   });
 
   /// Carte d'un animal présent (actions selon les droits).
@@ -1415,13 +1398,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       return _presentsSubTab == 'repro'
           ? _etatVide('Aucun reproducteur', 'Ouvrez le menu d’un animal pour le marquer comme reproducteur.')
           : bebes
-              ? _etatVide(_bebesCedes ? 'Aucun bébé cédé' : 'Aucun bébé présent',
-                  _bebesCedes ? '' : 'Les portées déjà parties se retrouvent dans Filtres › Bébés cédés.')
+              ? _etatVide('Aucun bébé présent', 'Les portées déjà parties se retrouvent dans Cédés › Bébés.')
               : _etatVide('Aucun animal présent', 'Ajoutez votre premier animal.',
                   onReset: () => _showAddSheet(context), resetLabel: 'Ajouter un animal');
     }
 
-    if (bebes) return _buildPorteeGroupedView(groupes, visibles);
+    if (bebes) {
+      return _buildPorteeGroupedView(groupes, visibles,
+          selection: _selectedPorteeId, onSelect: (v) => setState(() => _selectedPorteeId = v));
+    }
 
     return RefreshIndicator(
       onRefresh: _loadAnimaux,
@@ -1430,18 +1415,25 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     );
   }
 
-  Widget _buildPorteeGroupedView(Map<String, List<Map<String, dynamic>>> groups, List<String> visibleKeys) {
+  /// Toute la portée (présents, cédés, décédés) : la courbe de poids garde
+  /// l'historique complet, cédés et décédés grisés (PorteePoidsPage).
+  List<Map<String, dynamic>> _porteeComplete(String pid) =>
+      _animauxData.where((a) => a['portee_id'] == pid).toList()
+        ..sort((a, b) => (a['nom'] ?? '').toString().compareTo((b['nom'] ?? '').toString()));
+
+  Widget _buildPorteeGroupedView(Map<String, List<Map<String, dynamic>>> groups, List<String> visibleKeys,
+      {bool cedes = false, required String selection, required ValueChanged<String> onSelect}) {
     final fmt = DateFormat('dd/MM/yyyy');
     return RefreshIndicator(
       onRefresh: _loadAnimaux,
       color: _teal,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-        itemCount: visibleKeys.length + (_selectedPorteeId.isNotEmpty ? 1 : 0),
+        itemCount: visibleKeys.length + (selection.isNotEmpty ? 1 : 0),
         itemBuilder: (_, gi) {
           if (gi == visibleKeys.length) {
             return Align(alignment: Alignment.centerLeft, child: TextButton(
-              onPressed: () => setState(() => _selectedPorteeId = ''),
+              onPressed: () => onSelect(''),
               child: const Text('Afficher toutes les portées', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal))));
           }
           final pid     = visibleKeys[gi];
@@ -1469,9 +1461,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                     const SizedBox(height: 2),
                     Text(meta, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                   ])),
-                  if (_selectedPorteeId != pid)
+                  if (selection != pid)
                     OutlinedButton(
-                      onPressed: () => setState(() => _selectedPorteeId = pid),
+                      onPressed: () => onSelect(pid),
                       style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
                           minimumSize: const Size(0, 36), padding: const EdgeInsets.symmetric(horizontal: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
@@ -1486,7 +1478,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                           final ok = await PorteeEditSheet.show(context, members);
                           if (ok && mounted) _loadAnimaux();
                         case 'poids':
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => PorteePoidsPage(animals: members, dateNaissance: dn)));
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => PorteePoidsPage(animals: _porteeComplete(pid), dateNaissance: dn)));
                         case 'soin':
                           final ok = await PorteeSoinSheet.show(context, members);
                           if (ok && mounted) _loadAnimaux();
@@ -1495,10 +1487,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                       }
                     },
                     itemBuilder: (_) => [
-                      if (!_bebesCedes) const PopupMenuItem(value: 'modifier', child: Text('Modifier les informations de la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!cedes) const PopupMenuItem(value: 'modifier', child: Text('Modifier les informations de la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
                       const PopupMenuItem(value: 'poids', child: Text('Courbes de poids', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
-                      if (!_bebesCedes) const PopupMenuItem(value: 'soin', child: Text('Soin pour toute la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
-                      if (!_bebesCedes) const PopupMenuItem(value: 'annonce', child: Text('Créer une annonce', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!cedes) const PopupMenuItem(value: 'soin', child: Text('Soin pour toute la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!cedes) const PopupMenuItem(value: 'annonce', child: Text('Créer une annonce', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
                     ],
                   ),
                 ]),
@@ -1516,12 +1508,57 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   // ── Anciens tab ───────────────────────────────────────────────────────────────
 
   Widget _buildAnciensTab() {
+    final bebes = _cedesVue == 'bebes';
+    final groupes = bebes ? _groupesPortees(_bebesCedesDocs(), cedes: true) : const <String, List<Map<String, dynamic>>>{};
+    final fmt = DateFormat('dd/MM/yyyy');
     return Column(children: [
-      _barre(filtres: _anciensFilterCount),
+      _barre(filtres: _anciensFilterCount, menus: [
+        _dropdown<String>(
+          label: 'Catégorie', value: _cedesVue,
+          items: const [('tous', 'Tous les animaux'), ('bebes', 'Bébés (par portée)')],
+          onChanged: (v) => setState(() { _cedesVue = v; _selectedPorteeCedeeId = ''; }),
+        ),
+        if (bebes && groupes.isNotEmpty)
+          _dropdown<String>(
+            label: 'Portée',
+            value: groupes.containsKey(_selectedPorteeCedeeId) ? _selectedPorteeCedeeId : '',
+            items: [
+              ('', 'Toutes les portées'),
+              for (final e in groupes.entries)
+                (e.key, () {
+                  final dn = DateTime.tryParse(e.value.first['date_naissance'] as String? ?? '');
+                  return '${_titrePortee(e.value.first)}${dn != null ? ' — ${fmt.format(dn)}' : ''}';
+                }()),
+            ],
+            onChanged: (v) => setState(() => _selectedPorteeCedeeId = v),
+          ),
+      ]),
       Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
-      Expanded(child: _buildAnciensList()),
+      Expanded(child: !bebes
+          ? _buildAnciensList()
+          : _loading
+              ? const Center(child: CircularProgressIndicator(color: _green))
+              : groupes.isEmpty
+                  ? _etatVide('Aucun bébé cédé', _anciensFilterCount > 0 || _search.isNotEmpty ? 'Modifiez la recherche ou les filtres.' : '')
+                  : _buildPorteeGroupedView(groupes,
+                      groupes.containsKey(_selectedPorteeCedeeId) ? [_selectedPorteeCedeeId] : groupes.keys.toList(),
+                      cedes: true, selection: _selectedPorteeCedeeId,
+                      onSelect: (v) => setState(() => _selectedPorteeCedeeId = v))),
     ]);
   }
+
+  /// Bébés cédés (statut « sorti ») d'une portée, filtres de l'onglet Cédés.
+  List<Map<String, dynamic>> _bebesCedesDocs() => _animauxData.where((d) {
+        if ((d['portee_id'] as String? ?? '').isEmpty || d['reproducteur'] == true) return false;
+        if ((d['statut'] as String? ?? '') != 'sorti') return false;
+        if (_anciensEspece != 'tous' && d['espece'] != _anciensEspece) return false;
+        if (_search.isNotEmpty) {
+          final nom  = (d['nom']            ?? '').toString().toLowerCase();
+          final puce = (d['identification'] ?? '').toString().toLowerCase();
+          if (!nom.contains(_search) && !puce.contains(_search)) return false;
+        }
+        return true;
+      }).toList();
 
   Widget _buildAnciensList() {
     if (_uid == null) return const Center(child: Text('Non connecté'));

@@ -2742,11 +2742,20 @@ function AnimalFichePageInner() {
     } else {
       await supabase.from('animaux').update({ statut: 'present' }).eq('id', id);
     }
-    // Contrats non signés de cette cession avortée
-    await supabase.from('documents_animaux').delete()
+    // Contrats de cette cession avortée : tout ce qui n'est pas signé des
+    // deux côtés est supprimé (brouillon, généré, en attente, signé par une
+    // seule partie) ; un contrat de vente / certificat déjà signé passe en
+    // « Annulé » (trace conservée). Un contrat de réservation signé reste
+    // valable. Même règle que l'appli (animal_fiche.dart).
+    const { error: errContrats } = await supabase.from('documents_animaux').delete()
+      .eq('animal_id', id)
+      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+      .in('statut', ['brouillon', 'en_attente', 'genere', 'partiellement_signe', 'signe_acquereur', 'signe_vendeur']);
+    if (errContrats) console.error('Révocation cession — contrats', errContrats.message);
+    await supabase.from('documents_animaux').update({ statut: 'annule' })
       .eq('animal_id', id)
       .in('type', ['contrat_vente', 'certificat_cession'])
-      .in('statut', ['brouillon', 'en_attente']);
+      .eq('statut', 'signe');
     setAnimal(p => ({ ...p, statut: 'present', ...(p.statut === 'en_attente_cession' ? { date_sortie: undefined } : {}) }));
     setCessionEnCours(null);
     setRevokingCession(false);

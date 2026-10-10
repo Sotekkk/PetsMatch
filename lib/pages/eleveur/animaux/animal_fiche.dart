@@ -53,6 +53,13 @@ import 'package:PetsMatch/utils/reproducteurs.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
 
+
+/// Statuts d'un contrat pas encore signé des deux côtés (supprimé quand la
+/// cession est révoquée). Même liste côté site : mes-animaux/[id]/page.tsx.
+const kStatutsContratNonFinalises = [
+  'brouillon', 'en_attente', 'genere', 'partiellement_signe', 'signe_acquereur', 'signe_vendeur',
+];
+
 class _ContactUrgence {
   final TextEditingController nom;
   final TextEditingController tel;
@@ -1527,14 +1534,25 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       } else {
         await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
       }
-      // Supprimer les contrats non signés générés pour cette cession avortée
+      // Contrats de cette cession avortée : tout ce qui n'est pas signé des
+      // deux côtés est supprimé (brouillon, généré, en attente, signé par une
+      // seule partie) ; un contrat de vente / certificat déjà signé passe en
+      // « Annulé » (trace conservée). Un contrat de réservation signé reste
+      // valable (la réservation peut tenir).
       try {
         await _supa.from('documents_animaux')
             .delete()
             .eq('animal_id', widget.animalId!)
             .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
-            .inFilter('statut', ['brouillon', 'en_attente']);
-      } catch (_) {}
+            .inFilter('statut', kStatutsContratNonFinalises);
+        await _supa.from('documents_animaux')
+            .update({'statut': 'annule'})
+            .eq('animal_id', widget.animalId!)
+            .inFilter('type', ['contrat_vente', 'certificat_cession'])
+            .eq('statut', 'signe');
+      } catch (e) {
+        debugPrint('Révocation cession — contrats : $e');
+      }
       if (uidAcq != null) {
         final acqProfileNotif = await _supa.from('user_profiles_complet')
             .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();

@@ -8,7 +8,12 @@ interface AnimalLite {
   nom?: string | null;
   sexe?: string | null;
   date_naissance?: string | null;
+  statut?: string | null;
 }
+
+/** Cédé / décédé : gardé dans la courbe (historique de la portée), grisé,
+ *  sans saisie de pesée — ce n'est plus l'animal de l'éleveur. */
+const etatParti = (a: AnimalLite) => a.statut === 'sorti' ? 'cédé' : a.statut === 'decede' ? 'décédé' : null;
 
 interface Pesee { id: string; animal_id: string; date: string | null; valeur: string | number | null; }
 
@@ -268,7 +273,7 @@ export default function PorteePoidsModal({ animals, dateNaissance, canWrite = tr
 
   const colors = useMemo(() => {
     const m: Record<string, string> = {};
-    animals.forEach((a, i) => { m[a.id] = SERIES_COLORS[i % SERIES_COLORS.length]; });
+    animals.forEach((a, i) => { m[a.id] = etatParti(a) ? '#B8BEC6' : SERIES_COLORS[i % SERIES_COLORS.length]; });
     return m;
   }, [animals]);
 
@@ -331,6 +336,8 @@ export default function PorteePoidsModal({ animals, dateNaissance, canWrite = tr
                   const nb = docs.length;
                   const last = nb ? [...docs].sort((x, y) => String(y.date ?? '').localeCompare(String(x.date ?? '')))[0] : null;
                   const isOpen = openId === a.id;
+                  const parti = etatParti(a);
+                  const peser = canWrite && !parti;
                   return (
                     <div key={a.id} className="py-1">
                       <button
@@ -339,8 +346,8 @@ export default function PorteePoidsModal({ animals, dateNaissance, canWrite = tr
                         <span className="w-3.5 h-3.5 rounded-[4px] shrink-0"
                           style={{ background: nb > 0 ? colors[a.id] : 'transparent', border: `1.5px solid ${colors[a.id] ?? '#ccc'}` }} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#1F2A2E] truncate">
-                            {a.nom?.trim() || `Bébé ${i + 1}`}{a.sexe ? ` · ${a.sexe}` : ''}
+                          <p className={`text-sm font-semibold truncate ${parti ? 'text-gray-400' : 'text-[#1F2A2E]'}`}>
+                            {a.nom?.trim() || `Bébé ${i + 1}`}{a.sexe ? ` · ${a.sexe}` : ''}{parti ? ` · ${parti}` : ''}
                           </p>
                           <p className={`text-[11px] ${nb === 0 ? 'text-[#E29B3B]' : 'text-gray-400'}`}>
                             {nb === 0 ? 'Aucune pesée' : `${nb} pesée${nb > 1 ? 's' : ''}`}
@@ -352,10 +359,10 @@ export default function PorteePoidsModal({ animals, dateNaissance, canWrite = tr
                             {poidsLabel(parseFloat(String(last.valeur ?? '0')) || 0)}
                           </span>
                         )}
-                        <span className="text-gray-300 text-sm shrink-0">{isOpen ? '▾' : (canWrite ? '＋' : '›')}</span>
+                        <span className="text-gray-300 text-sm shrink-0">{isOpen ? '▾' : (peser ? '＋' : '›')}</span>
                       </button>
                       {isOpen && (
-                        <BebePanel animal={a} pesees={docs} canWrite={canWrite} onChanged={load} />
+                        <BebePanel animal={a} pesees={docs} canWrite={peser} onChanged={load} />
                       )}
                     </div>
                   );
