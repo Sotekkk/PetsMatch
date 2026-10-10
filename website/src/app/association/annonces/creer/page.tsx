@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
+import { Icone } from '@/components/dashboard/kit';
 
 const ESPECES = ['chien', 'chat', 'lapin', 'oiseau', 'cheval', 'nac', 'autre'];
 const ESPECE_LABEL: Record<string, string> = {
@@ -250,7 +251,7 @@ function CreerAnnonceAssoPageInner() {
     <label className="flex items-center justify-between cursor-pointer py-2 border-b border-gray-100 last:border-0">
       <span className="text-sm font-galey text-gray-700">{label}</span>
       <button type="button" onClick={() => onChange(!value)}
-        className={`w-11 h-6 rounded-full transition-colors ${value ? 'bg-teal-600' : 'bg-gray-300'} relative flex-shrink-0`}>
+        className={`w-11 h-6 rounded-full transition-colors ${value ? 'bg-[#0C5C6C]' : 'bg-gray-300'} relative flex-shrink-0`}>
         <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </button>
     </label>
@@ -259,7 +260,7 @@ function CreerAnnonceAssoPageInner() {
   if (loadingEdit) {
     return (
       <div className="flex justify-center py-24">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+        <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -268,7 +269,7 @@ function CreerAnnonceAssoPageInner() {
     <div className="space-y-6 max-w-xl">
       <div className="flex items-center gap-3">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
-        <h1 className="text-2xl font-bold font-galey text-teal-800">
+        <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">
           {editId ? 'Modifier l\'annonce' : linkedAnimalNom ? `Adoption — ${linkedAnimalNom}` : 'Nouvelle annonce d\'adoption'}
         </h1>
       </div>
@@ -276,12 +277,12 @@ function CreerAnnonceAssoPageInner() {
       <form onSubmit={handleSubmit} className="space-y-5">
 
         {/* Sélecteur d'animal */}
-        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4">
-          <p className="text-sm font-galey font-semibold text-teal-800 mb-2">Lier à un animal</p>
+        <div className="bg-[#E8F4F6] border border-[#0C5C6C]/30 rounded-2xl p-4">
+          <p className="text-sm font-galey font-semibold text-[#0C5C6C] mb-2">Lier à un animal</p>
           {linkedAnimalId ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-galey font-semibold text-teal-800">
+                <span className="text-sm font-galey font-semibold text-[#0C5C6C]">
                   {linkedAnimalNom ?? linkedAnimalId}
                 </span>
               </div>
@@ -290,8 +291,8 @@ function CreerAnnonceAssoPageInner() {
             </div>
           ) : (
             <button type="button" onClick={() => setShowPicker(!showPicker)}
-              className="w-full text-sm text-teal-700 border border-teal-300 bg-white rounded-xl py-2 font-galey hover:bg-teal-50 transition-colors">
-              🐾 Sélectionner un animal disponible
+              className="w-full text-sm text-[#0C5C6C] border border-[#0C5C6C]/40 bg-white rounded-xl py-2 font-galey hover:bg-[#E8F4F6] transition-colors">
+              Sélectionner un animal disponible
             </button>
           )}
           {showPicker && (
@@ -301,11 +302,11 @@ function CreerAnnonceAssoPageInner() {
               )}
               {mesAnimaux.map(a => (
                 <button key={a.id} type="button" onClick={() => selectAnimal(a)}
-                  className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-teal-100 text-left transition-colors">
+                  className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-[#D5ECEF] text-left transition-colors">
                   {a.photo_url ? (
                     <img src={a.photo_url} alt={a.nom} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
                   ) : (
-                    <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg flex-shrink-0">🐾</div>
+                    <div className="w-10 h-10 rounded-lg bg-gray-100 text-gray-400 flex items-center justify-center flex-shrink-0"><Icone nom="patte" taille={18} /></div>
                   )}
                   <div>
                     <p className="text-sm font-galey font-semibold text-gray-800">{a.nom}</p>
@@ -321,7 +322,7 @@ function CreerAnnonceAssoPageInner() {
         <div>
           <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Titre</label>
           <input value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex : Rex cherche une famille aimante"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400" />
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C]" />
         </div>
 
         {/* Espèce */}
@@ -331,7 +332,7 @@ function CreerAnnonceAssoPageInner() {
             {ESPECES.map(e => (
               <button key={e} type="button" onClick={() => setEspece(e)}
                 className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-all ${
-                  espece === e ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
+                  espece === e ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]/40'
                 }`}>
                 {ESPECE_LABEL[e]}
               </button>
@@ -340,7 +341,7 @@ function CreerAnnonceAssoPageInner() {
           {espece === 'autre' && (
             <input value={especeAutre} onChange={e => setEspeceAutre(e.target.value)}
               placeholder="Préciser l'espèce (ex : Furet, Tortue...)"
-              className="mt-2 w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400" />
+              className="mt-2 w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C]" />
           )}
         </div>
 
@@ -352,12 +353,12 @@ function CreerAnnonceAssoPageInner() {
               onChange={e => { setRaceQuery(e.target.value); setRace(e.target.value); }}
               placeholder={espece ? 'Rechercher…' : 'Choisir une espèce d\'abord'}
               disabled={!espece}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400 disabled:bg-gray-50" />
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C] disabled:bg-gray-50" />
             {raceQuery.length >= 1 && filteredBreeds.length > 0 && (
               <div className="absolute z-10 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
                 {filteredBreeds.map(b => (
                   <button key={b} type="button" onClick={() => { setRace(b); setRaceQuery(b); }}
-                    className="w-full text-left px-3 py-2 text-sm font-galey hover:bg-teal-50 transition-colors">
+                    className="w-full text-left px-3 py-2 text-sm font-galey hover:bg-[#E8F4F6] transition-colors">
                     {b}
                   </button>
                 ))}
@@ -367,7 +368,7 @@ function CreerAnnonceAssoPageInner() {
           <div>
             <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Sexe</label>
             <select value={sexe} onChange={e => setSexe(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400 bg-white">
+              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C] bg-white">
               <option value="">–</option>
               <option value="male">Mâle</option>
               <option value="femelle">Femelle</option>
@@ -380,7 +381,7 @@ function CreerAnnonceAssoPageInner() {
           <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Description</label>
           <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
             placeholder="Décrivez le caractère, les besoins, l'histoire de l'animal…"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400 resize-none" />
+            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C] resize-none" />
         </div>
 
         {/* Photos */}
@@ -388,22 +389,22 @@ function CreerAnnonceAssoPageInner() {
           <label className="block text-sm font-galey font-semibold text-gray-700 mb-2">Photos * (max 6)</label>
           <div className="flex flex-wrap gap-2">
             {existingPhotoUrls.map((url, i) => (
-              <div key={`existing-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-teal-200">
+              <div key={`existing-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-[#0C5C6C]/30">
                 <img src={url} alt="" className="w-full h-full object-cover" />
                 <button type="button" onClick={() => removeExistingPhoto(url)}
-                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✕</button>
+                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
               </div>
             ))}
             {previews.map((src, i) => (
               <div key={`new-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200">
                 <img src={src} alt="" className="w-full h-full object-cover" />
                 <button type="button" onClick={() => removePhoto(i)}
-                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">✕</button>
+                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
               </div>
             ))}
             {(existingPhotoUrls.length + photos.length) < 6 && (
               <button type="button" onClick={() => fileRef.current?.click()}
-                className="w-20 h-20 rounded-xl border-2 border-dashed border-teal-300 flex items-center justify-center text-teal-400 hover:bg-teal-50 transition-colors">
+                className="w-20 h-20 rounded-xl border-2 border-dashed border-[#0C5C6C]/40 flex items-center justify-center text-[#0C5C6C] hover:bg-[#E8F4F6] transition-colors">
                 <span className="text-2xl">+</span>
               </button>
             )}
@@ -430,7 +431,7 @@ function CreerAnnonceAssoPageInner() {
         {error && <p className="text-red-500 text-sm font-galey">{error}</p>}
 
         <button type="submit" disabled={loading}
-          className="w-full bg-teal-700 text-white py-3.5 rounded-xl font-galey font-bold text-base hover:bg-teal-800 transition-colors disabled:opacity-50">
+          className="w-full bg-[#0C5C6C] text-white py-3.5 rounded-xl font-galey font-bold text-base hover:bg-[#094F5D] transition-colors disabled:opacity-50">
           {loading ? (editId ? 'Sauvegarde…' : 'Publication…') : (editId ? 'Sauvegarder les modifications' : 'Publier l\'annonce')}
         </button>
       </form>

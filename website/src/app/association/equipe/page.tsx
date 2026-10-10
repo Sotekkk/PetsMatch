@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
+import { Icone } from '@/components/dashboard/kit';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ interface MembreEquipe {
   taches?: Tache[];
 }
 
-const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300';
+const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]';
 
 // Charge les tâches depuis plan_taches ET taches_elevage pour un uid_employe
 async function fetchTachesPersonne(uid_employe: string, uid_eleveur: string): Promise<Tache[]> {
@@ -117,7 +118,7 @@ export default function EquipeWebPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold font-galey text-teal-800 mb-6">Équipe</h1>
+      <h1 className="text-2xl font-bold font-galey text-[#1F2A2E] mb-6">Équipe</h1>
       {profileLoaded && <EquipeUnifiee uid={uid} profileId={profileId} />}
     </div>
   );
@@ -270,22 +271,22 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
       <div key={m.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
           onClick={() => m.uid_employe && setExpanded(prev => ({ ...prev, [m.id]: !isOpen }))}>
-          <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
             {m.photo
               ? <Image src={m.photo} alt={displayName} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-              : <span className="font-bold font-galey text-sm text-teal-600">{displayName[0]?.toUpperCase() ?? '?'}</span>}
+              : <span className="font-bold font-galey text-sm text-[#0C5C6C]">{displayName[0]?.toUpperCase() ?? '?'}</span>}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-semibold font-galey text-gray-900 text-sm truncate">{displayName}</p>
               {/* Flag type */}
-              <span className={`text-xs px-2 py-0.5 rounded-full font-galey font-semibold ${m.type === 'benevole' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-teal-700'}`}>
-                {m.type === 'benevole' ? '🤝 Bénévole' : '👔 Employé'}
+              <span className={`text-xs px-2 py-0.5 rounded-full font-galey font-semibold ${m.type === 'benevole' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-[#0C5C6C]'}`}>
+                {m.type === 'benevole' ? 'Bénévole' : 'Employé'}
               </span>
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500 font-galey">
-              {m.email && <span>📧 {m.email}</span>}
-              {m.telephone && <span>📞 {m.telephone}</span>}
+              {m.email && <span>{m.email}</span>}
+              {m.telephone && <span>{m.telephone}</span>}
             </div>
             {m.uid_employe && (
               <p className="text-xs text-gray-400 font-galey mt-0.5">
@@ -296,18 +297,18 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
           {m.uid_employe && <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>}
           {m.uid_employe && (
             <button onClick={ev => { ev.stopPropagation(); setAssigning(m); }}
-              className="text-xs text-teal-600 hover:text-teal-800 font-galey px-2 py-1 rounded-lg hover:bg-teal-50 transition-colors">
+              className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
               + Tâche
             </button>
           )}
           <button onClick={ev => { ev.stopPropagation(); setCongeFor(m); }}
-            className="text-xs text-teal-600 hover:text-teal-800 font-galey px-2 py-1 rounded-lg hover:bg-teal-50 transition-colors">
-            🏖️ Congé
+            className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
+            Congé
           </button>
           <button onClick={ev => { ev.stopPropagation(); setEditing(m); }}
-            className="text-xs text-teal-500 hover:text-teal-700 px-1.5 py-1 rounded-lg hover:bg-teal-50 transition-colors">✏️</button>
+            className="text-gray-500 hover:text-[#0C5C6C] px-1.5 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors" aria-label="Modifier" title="Modifier"><Icone nom="crayon" taille={15} /></button>
           <button onClick={ev => { ev.stopPropagation(); handleDelete(m.id); }}
-            className="text-red-400 hover:text-red-600 text-sm px-1">🗑</button>
+            className="text-gray-400 hover:text-red-600 px-1" aria-label="Supprimer" title="Supprimer"><Icone nom="corbeille" taille={15} /></button>
         </div>
 
         {isOpen && m.uid_employe && (
@@ -321,13 +322,13 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
     );
   };
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-700" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
     <div className="space-y-4">
       {dbError && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-galey break-all">
-          ⚠️ {dbError} — uid: {uid || '(vide)'}
+          {dbError} — uid: {uid || '(vide)'}
         </div>
       )}
 
@@ -336,11 +337,11 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-galey font-semibold text-gray-400 uppercase tracking-wide w-full sm:w-auto">Employés</span>
           <button onClick={() => setShowAddEmploye(true)}
-            className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
-            🔍 Chercher sur PetsMatch
+            className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
+            Chercher sur PetsMatch
           </button>
           <button onClick={() => setShowFormEmploye(!showFormEmploye)}
-            className="border border-teal-400 text-teal-700 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-50 transition-colors">
+            className="border border-[#0C5C6C]/40 text-[#0C5C6C] px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#E8F4F6] transition-colors">
             + Ajouter manuellement
           </button>
         </div>
@@ -348,18 +349,18 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
           <span className="text-xs font-galey font-semibold text-gray-400 uppercase tracking-wide w-full sm:w-auto">Bénévoles</span>
           <button onClick={() => setShowAddBenevole(true)}
             className="bg-purple-600 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-700 transition-colors">
-            🔍 Chercher sur PetsMatch
+            Chercher sur PetsMatch
           </button>
           <button onClick={() => setShowFormBenevole(!showFormBenevole)}
-            className="border border-purple-400 text-purple-600 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-50 transition-colors">
+            className="border border-purple-400 text-purple-600 px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-purple-50 transition-colors">
             + Ajouter manuellement
           </button>
         </div>
       </div>
 
       {showFormEmploye && (
-        <form onSubmit={handleAddEmployeManuel} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
-          <h2 className="font-bold font-galey text-teal-800">Nouvel employé</h2>
+        <form onSubmit={handleAddEmployeManuel} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-[#0C5C6C]/20">
+          <h2 className="font-bold font-galey text-[#1F2A2E]">Nouvel employé</h2>
           <div className="grid grid-cols-2 gap-4">
             <input placeholder="Prénom *" required value={formEmploye.prenom} onChange={e => setFormEmploye({ ...formEmploye, prenom: e.target.value })} className={inp} />
             <input placeholder="Nom *" required value={formEmploye.nom} onChange={e => setFormEmploye({ ...formEmploye, nom: e.target.value })} className={inp} />
@@ -368,10 +369,10 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
           </div>
           <textarea placeholder="Notes" rows={2} value={formEmploye.notes} onChange={e => setFormEmploye({ ...formEmploye, notes: e.target.value })} className={inp + ' resize-none'} />
           <div className="flex gap-3">
-            <button type="submit" disabled={saving} className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+            <button type="submit" disabled={saving} className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
-            <button type="button" onClick={() => setShowFormEmploye(false)} className="text-gray-500 px-6 py-2 rounded-full text-sm font-galey border border-gray-200 hover:bg-gray-50">
+            <button type="button" onClick={() => setShowFormEmploye(false)} className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
               Annuler
             </button>
           </div>
@@ -392,7 +393,7 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
             <button type="submit" disabled={saving} className="bg-purple-600 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-700 disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
-            <button type="button" onClick={() => setShowFormBenevole(false)} className="text-gray-500 px-6 py-2 rounded-full text-sm font-galey border border-gray-200 hover:bg-gray-50">
+            <button type="button" onClick={() => setShowFormBenevole(false)} className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
               Annuler
             </button>
           </div>
@@ -402,7 +403,6 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
       {/* Liste actifs */}
       {actifs.length === 0 && inactifs.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">👥</p>
           <p className="font-galey">Aucun membre dans votre équipe</p>
         </div>
       ) : (
@@ -519,7 +519,7 @@ function CongeModal({ membre, myUid, onClose }: { membre: MembreEquipe; myUid: s
           <input type="date" value={debut} onChange={e => setDebut(e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs flex-1" />
           <span className="text-gray-400 text-xs">→</span>
           <input type="date" value={fin} onChange={e => setFin(e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs flex-1" />
-          <button onClick={ajouter} className="text-xs px-3 py-1.5 rounded-lg font-semibold text-white bg-teal-700 hover:bg-teal-800">
+          <button onClick={ajouter} className="text-xs px-3 py-1.5 rounded-lg font-semibold text-white bg-[#0C5C6C] hover:bg-[#094F5D]">
             Ajouter
           </button>
         </div>
@@ -540,7 +540,7 @@ function CongeModal({ membre, myUid, onClose }: { membre: MembreEquipe; myUid: s
                     <span>{fmtDateConge(c.date_debut)} → {fmtDateConge(c.date_fin)}</span>
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-0.5 rounded-full font-semibold ${style.bg} ${style.color}`}>{style.label}</span>
-                      <button onClick={() => supprimer(c.id)} className="text-gray-400 hover:text-red-500">✕</button>
+                      <button onClick={() => supprimer(c.id)} className="text-gray-400 hover:text-red-500">×</button>
                     </div>
                   </div>
                   {c.motif && <p className="text-gray-500 mt-1">{c.motif}</p>}
@@ -549,7 +549,7 @@ function CongeModal({ membre, myUid, onClose }: { membre: MembreEquipe; myUid: s
                       <button onClick={() => repondre(c, false)}
                         className="flex-1 py-1 rounded border border-red-300 text-red-600 font-semibold">Refuser</button>
                       <button onClick={() => repondre(c, true)}
-                        className="flex-1 py-1 rounded text-white font-semibold bg-teal-700">Approuver</button>
+                        className="flex-1 py-1 rounded text-white font-semibold bg-[#0C5C6C]">Approuver</button>
                     </div>
                   )}
                 </div>
@@ -619,13 +619,12 @@ function EmployesTab({ uid }: { uid: string }) {
     load();
   }
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-700" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
     <div className="space-y-3">
       {employes.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">👥</p>
           <p className="font-galey">Aucun employé dans votre équipe</p>
           <p className="text-sm mt-1">Invitez des utilisateurs PetsMatch pour leur assigner des tâches.</p>
         </div>
@@ -636,10 +635,10 @@ function EmployesTab({ uid }: { uid: string }) {
           <div key={e.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
               onClick={() => setExpanded(prev => ({ ...prev, [e.id]: !isOpen }))}>
-              <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
                 {e.photo
                   ? <Image src={e.photo} alt={e.nom} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-                  : <span className="text-teal-600 font-bold text-sm">{e.nom[0]?.toUpperCase()}</span>}
+                  : <span className="text-[#0C5C6C] font-bold text-sm">{e.nom[0]?.toUpperCase()}</span>}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold font-galey text-gray-800 text-sm truncate">{e.nom}</p>
@@ -649,12 +648,12 @@ function EmployesTab({ uid }: { uid: string }) {
               </div>
               <span className="text-gray-400 text-xs mr-1">{isOpen ? '▲' : '▼'}</span>
               <button onClick={ev => { ev.stopPropagation(); setAssigning(e); }}
-                className="text-xs text-teal-600 hover:text-teal-800 font-galey px-2 py-1 rounded-lg hover:bg-teal-50 transition-colors">
+                className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
                 + Tâche
               </button>
               <button onClick={ev => { ev.stopPropagation(); setEditing(e); }}
-                className="text-xs text-teal-600 hover:text-teal-800 font-galey px-2 py-1 rounded-lg hover:bg-teal-50 transition-colors">
-                ✏️
+                className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors" aria-label="Modifier" title="Modifier">
+                <Icone nom="crayon" taille={15} />
               </button>
               <button onClick={ev => { ev.stopPropagation(); revoquer(e); }}
                 className="text-xs text-red-400 hover:text-red-600 font-galey px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">
@@ -674,7 +673,7 @@ function EmployesTab({ uid }: { uid: string }) {
       })}
 
       <button onClick={() => setShowAdd(true)}
-        className="w-full flex items-center justify-center gap-2 bg-teal-700 text-white font-galey font-semibold py-3 rounded-xl hover:bg-teal-800 transition-colors text-sm">
+        className="w-full flex items-center justify-center gap-2 bg-[#0C5C6C] text-white font-galey font-semibold py-3 rounded-xl hover:bg-[#094F5D] transition-colors text-sm">
         + Inviter un employé
       </button>
 
@@ -795,24 +794,24 @@ function BenevolesTab({ uid }: { uid: string }) {
     <div className="space-y-4">
       {dbError && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-galey break-all">
-          ⚠️ {dbError}
+          {dbError}
           <br /><span className="text-red-400">uid: {uid || '(vide – non connecté?)'}</span>
         </div>
       )}
       <div className="flex gap-2 flex-wrap">
         <button onClick={() => setShowPetsMatch(true)}
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
-          🔍 Chercher sur PetsMatch
+          className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
+          Chercher sur PetsMatch
         </button>
         <button onClick={() => setShowForm(!showForm)}
-          className="border border-teal-700 text-teal-700 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-50 transition-colors">
+          className="border border-[#0C5C6C] text-[#0C5C6C] px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#E8F4F6] transition-colors">
           + Saisir manuellement
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleAdd} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
-          <h2 className="font-bold font-galey text-teal-800">Nouveau bénévole</h2>
+        <form onSubmit={handleAdd} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-[#0C5C6C]/20">
+          <h2 className="font-bold font-galey text-[#1F2A2E]">Nouveau bénévole</h2>
           <div className="grid grid-cols-2 gap-4">
             <input placeholder="Prénom *" required value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} />
             <input placeholder="Nom *" required value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} />
@@ -823,11 +822,11 @@ function BenevolesTab({ uid }: { uid: string }) {
             className={inp + ' w-full resize-none'} />
           <div className="flex gap-3">
             <button type="submit" disabled={saving}
-              className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+              className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
             <button type="button" onClick={() => setShowForm(false)}
-              className="text-gray-500 px-6 py-2 rounded-full text-sm font-galey border border-gray-200 hover:bg-gray-50">
+              className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
               Annuler
             </button>
           </div>
@@ -835,17 +834,16 @@ function BenevolesTab({ uid }: { uid: string }) {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-700" /></div>
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
       ) : benevoles.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">🤝</p>
           <p className="font-galey">Aucun bénévole enregistré</p>
         </div>
       ) : (
         <div className="space-y-4">
           {actifs.length > 0 && (
             <div>
-              <h2 className="font-bold font-galey text-teal-700 mb-3">Actifs ({actifs.length})</h2>
+              <h2 className="font-bold font-galey text-[#0C5C6C] mb-3">Actifs ({actifs.length})</h2>
               <div className="space-y-2">
                 {actifs.map(b => (
                   <BenevoleCard key={b.id} b={b} uid={uid}
@@ -893,19 +891,19 @@ function BenevolesTab({ uid }: { uid: string }) {
 // ── Ligne tâche ───────────────────────────────────────────────────────────────
 
 function TacheRow({ t }: { t: Tache }) {
-  const icon = t.statut === 'en_cours' ? '🔄' : t.statut === 'en_retard' ? '⚠️' : '📋';
+  const icon = <Icone nom={t.statut === 'en_cours' ? 'renouveler' : t.statut === 'en_retard' ? 'horloge' : 'presse'} taille={14} />;
   return (
     <div className="flex items-start gap-2 bg-white rounded-xl px-3 py-2 shadow-sm">
-      <span className="text-xs mt-0.5">{icon}</span>
+      <span className="mt-0.5 text-gray-500">{icon}</span>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-gray-700 font-galey truncate">{t.label}</p>
         <div className="flex items-center gap-2 mt-0.5">
           {t.date && (
             <span className="text-xs text-gray-400 font-galey">
-              📅 {new Date(t.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+              {new Date(t.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
             </span>
           )}
-          {t.animal_nom && <span className="text-xs text-teal-600 font-galey">🐾 {t.animal_nom}</span>}
+          {t.animal_nom && <span className="text-xs text-[#0C5C6C] font-galey">{t.animal_nom}</span>}
         </div>
       </div>
     </div>
@@ -924,19 +922,19 @@ function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, on
   return (
     <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${b.actif ? 'border-gray-100' : 'border-gray-100 opacity-60'}`}>
       <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors" onClick={onToggleOpen}>
-        <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+        <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
           {b.photo
             ? <Image src={b.photo} alt={displayName} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-            : <span className={`font-bold font-galey text-sm ${b.actif ? 'text-teal-600' : 'text-gray-400'}`}>{displayName[0]?.toUpperCase() ?? '?'}</span>}
+            : <span className={`font-bold font-galey text-sm ${b.actif ? 'text-[#0C5C6C]' : 'text-gray-400'}`}>{displayName[0]?.toUpperCase() ?? '?'}</span>}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-semibold font-galey text-gray-900 truncate text-sm">{displayName}</p>
-            {b.uid_employe && <span className="text-xs bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded font-galey">PetsMatch</span>}
+            {b.uid_employe && <span className="text-xs bg-[#E8F4F6] text-[#0C5C6C] px-1.5 py-0.5 rounded font-galey">PetsMatch</span>}
           </div>
           <div className="flex items-center gap-3 text-xs text-gray-500 font-galey">
-            {b.email && <span>📧 {b.email}</span>}
-            {b.telephone && <span>📞 {b.telephone}</span>}
+            {b.email && <span>{b.email}</span>}
+            {b.telephone && <span>{b.telephone}</span>}
           </div>
           {b.uid_employe && (
             <p className="text-xs text-gray-400 font-galey mt-0.5">
@@ -947,7 +945,7 @@ function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, on
         {b.uid_employe && <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>}
         {b.uid_employe && (
           <button onClick={ev => { ev.stopPropagation(); onAssign(); }}
-            className="text-xs text-teal-600 hover:text-teal-800 font-galey px-2 py-1 rounded-lg hover:bg-teal-50 transition-colors">
+            className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
             + Tâche
           </button>
         )}
@@ -955,8 +953,8 @@ function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, on
           className={`text-xs px-2 py-1 rounded-full font-galey font-semibold transition-colors ${b.actif ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
           {b.actif ? 'Actif' : 'Inactif'}
         </button>
-        <button onClick={ev => { ev.stopPropagation(); onEdit(); }} className="text-xs text-teal-500 hover:text-teal-700 px-1.5 py-1 rounded-lg hover:bg-teal-50 transition-colors">✏️</button>
-        <button onClick={ev => { ev.stopPropagation(); onDelete(); }} className="text-red-400 hover:text-red-600 text-sm px-1">🗑</button>
+        <button onClick={ev => { ev.stopPropagation(); onEdit(); }} className="text-gray-500 hover:text-[#0C5C6C] px-1.5 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors" aria-label="Modifier" title="Modifier"><Icone nom="crayon" taille={15} /></button>
+        <button onClick={ev => { ev.stopPropagation(); onDelete(); }} className="text-gray-400 hover:text-red-600 px-1" aria-label="Supprimer" title="Supprimer"><Icone nom="corbeille" taille={15} /></button>
       </div>
 
       {isOpen && b.uid_employe && (
@@ -1060,9 +1058,9 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
       <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h3 className="font-bold font-galey text-gray-800">Assigner une tâche</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">×</button>
         </div>
-        <p className="text-sm text-teal-700 font-galey font-semibold">→ {assigneeName}</p>
+        <p className="text-sm text-[#0C5C6C] font-galey font-semibold">→ {assigneeName}</p>
         <form onSubmit={save} className="space-y-3">
           <div>
             <label className="text-xs font-galey text-gray-500 mb-1 block">Titre *</label>
@@ -1081,8 +1079,8 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
               {(['aucun', 'animal', 'enclos'] as const).map(v => (
                 <button key={v} type="button"
                   onClick={() => setForm({ ...form, cible: v, animal_id: '', enclos_id: '' })}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-galey font-semibold border transition-colors ${form.cible === v ? 'bg-teal-700 text-white border-teal-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                  {v === 'aucun' ? 'Rien' : v === 'animal' ? '🐾 Animal' : '🏠 Box'}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-galey font-semibold border transition-colors ${form.cible === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {v === 'aucun' ? 'Rien' : v === 'animal' ? 'Animal' : 'Box'}
                 </button>
               ))}
             </div>
@@ -1124,7 +1122,7 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
 
           <div className="flex gap-3 pt-1">
             <button type="submit" disabled={saving}
-              className="flex-1 bg-teal-700 text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+              className="flex-1 bg-[#0C5C6C] text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Assigner'}
             </button>
             <button type="button" onClick={onClose}
@@ -1217,16 +1215,16 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
           <h3 className="font-bold font-galey text-gray-800">
             {type === 'benevole' ? 'Inviter un bénévole' : 'Inviter un employé'}
           </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
         <div className="p-4">
           <input type="text" placeholder="Rechercher par prénom ou nom…" value={query}
             onChange={e => search(e.target.value)} autoFocus
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
         </div>
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
           {loading ? (
-            <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-700" /></div>
+            <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#0C5C6C]" /></div>
           ) : query.length < 2 ? (
             <p className="text-sm text-gray-400 font-galey text-center py-4">Tapez au moins 2 lettres pour rechercher</p>
           ) : results.length === 0 ? (
@@ -1236,17 +1234,17 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
             const photo = photoUser(u);
             return (
               <button key={u.uid} onClick={() => ajouter(u)} disabled={adding === u.uid}
-                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-teal-50 transition-colors text-left disabled:opacity-50">
-                <div className="w-9 h-9 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[#E8F4F6] transition-colors text-left disabled:opacity-50">
+                <div className="w-9 h-9 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {photo
                     ? <Image src={photo} alt={nom} width={36} height={36} className="w-full h-full object-cover" unoptimized />
-                    : <span className="text-teal-600 font-bold text-sm">{nom[0]?.toUpperCase()}</span>}
+                    : <span className="text-[#0C5C6C] font-bold text-sm">{nom[0]?.toUpperCase()}</span>}
                 </div>
                 <div className="flex-1">
                   <p className="font-galey font-semibold text-sm text-gray-800">{nom}</p>
-                  {u.phone_number && <p className="text-xs text-gray-400 font-galey">📞 {u.phone_number}</p>}
+                  {u.phone_number && <p className="text-xs text-gray-400 font-galey">{u.phone_number}</p>}
                 </div>
-                <span className="text-teal-600 text-xl">{adding === u.uid ? '…' : '+'}</span>
+                <span className="text-[#0C5C6C] text-xl">{adding === u.uid ? '…' : '+'}</span>
               </button>
             );
           })}
@@ -1287,7 +1285,7 @@ function EditEmployeModal({ employe, onClose }: { employe: Employe; onClose: () 
             <textarea rows={4} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes visibles uniquement par vous…" className={inp + ' w-full resize-none'} />
           </div>
           <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="flex-1 bg-teal-700 text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+            <button type="submit" disabled={saving} className="flex-1 bg-[#0C5C6C] text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Enregistrer'}
             </button>
             <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm font-galey hover:bg-gray-50">
@@ -1355,7 +1353,7 @@ function EditBenevoleModal({ benevole, onClose }: { benevole: Benevole; onClose:
             <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className={inp + ' w-full resize-none'} />
           </div>
           <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="flex-1 bg-teal-700 text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+            <button type="submit" disabled={saving} className="flex-1 bg-[#0C5C6C] text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Enregistrer'}
             </button>
             <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm font-galey hover:bg-gray-50">

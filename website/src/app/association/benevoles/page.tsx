@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { Icone } from '@/components/dashboard/kit';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ interface UserProfile {
   profile_picture_url_elevage: string | null;
 }
 
-const inp = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300';
+const inp = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]';
 
 // ── Page principale ────────────────────────────────────────────────────────────
 
@@ -46,20 +47,20 @@ export default function BenevolesWebPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold font-galey text-teal-800">Équipe & Bénévoles</h1>
+      <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">Équipe & Bénévoles</h1>
 
       {/* Explication */}
-      <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3 text-sm font-galey text-teal-700">
+      <div className="bg-[#E8F4F6] border border-[#0C5C6C]/20 rounded-xl px-4 py-3 text-sm font-galey text-[#0C5C6C]">
         <p><strong>Employés</strong> : utilisateurs PetsMatch invités dans votre équipe — ils peuvent recevoir des tâches.</p>
         <p className="mt-1"><strong>Bénévoles</strong> : personnes sans compte PetsMatch, saisies manuellement.</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2">
-        {([['employes', '👥 Employés'], ['benevoles', '🤝 Bénévoles']] as const).map(([v, l]) => (
-          <button key={v} onClick={() => setTab(v)}
-            className={`px-4 py-2 rounded-full text-sm font-galey font-semibold transition-colors ${
-              tab === v ? 'bg-teal-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+      <div className="flex gap-6 border-b border-gray-200" role="tablist">
+        {([['employes', 'Employés'], ['benevoles', 'Bénévoles']] as const).map(([v, l]) => (
+          <button key={v} onClick={() => setTab(v)} role="tab" aria-selected={tab === v}
+            className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+              tab === v ? 'border-[#0C5C6C] text-[#0C5C6C]' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}>
             {l}
           </button>
@@ -126,22 +127,21 @@ function EmployesTab({ uid }: { uid: string }) {
     load();
   }
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-700" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
     <div className="space-y-3">
       {employes.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">👥</p>
           <p className="font-galey">Aucun employé dans votre équipe</p>
           <p className="text-sm mt-1">Invitez des utilisateurs PetsMatch pour leur assigner des tâches.</p>
         </div>
       ) : employes.map(e => (
         <div key={e.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
             {e.photo
               ? <Image src={e.photo} alt={e.nom} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-              : <span className="text-teal-600 font-bold text-sm">{e.nom[0]?.toUpperCase()}</span>}
+              : <span className="text-[#0C5C6C] font-bold text-sm">{e.nom[0]?.toUpperCase()}</span>}
           </div>
           <span className="flex-1 font-semibold font-galey text-gray-800 text-sm">{e.nom}</span>
           <button onClick={() => revoquer(e)}
@@ -152,7 +152,7 @@ function EmployesTab({ uid }: { uid: string }) {
       ))}
 
       <button onClick={() => setShowAdd(true)}
-        className="w-full flex items-center justify-center gap-2 bg-teal-700 text-white font-galey font-semibold py-3 rounded-xl hover:bg-teal-800 transition-colors text-sm">
+        className="w-full flex items-center justify-center gap-2 bg-[#0C5C6C] text-white font-galey font-semibold py-3 rounded-xl hover:bg-[#094F5D] transition-colors text-sm">
         + Inviter un employé
       </button>
 
@@ -242,18 +242,18 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
           <h3 className="font-bold font-galey text-gray-800">
             {type === 'benevole' ? 'Ajouter un bénévole PetsMatch' : 'Inviter un employé'}
           </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
         <div className="p-4">
           <input
             type="text" placeholder="Rechercher par prénom ou nom…" value={query}
             onChange={e => search(e.target.value)} autoFocus
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]"
           />
         </div>
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
           {loading ? (
-            <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-700" /></div>
+            <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#0C5C6C]" /></div>
           ) : query.length < 2 ? (
             <p className="text-sm text-gray-400 font-galey text-center py-4">Tapez au moins 2 lettres pour rechercher</p>
           ) : results.length === 0 ? (
@@ -263,14 +263,14 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
             const photo = photoUser(u);
             return (
               <button key={u.uid} onClick={() => ajouter(u)} disabled={adding === u.uid}
-                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-teal-50 transition-colors text-left disabled:opacity-50">
-                <div className="w-9 h-9 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[#E8F4F6] transition-colors text-left disabled:opacity-50">
+                <div className="w-9 h-9 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {photo
                     ? <Image src={photo} alt={nom} width={36} height={36} className="w-full h-full object-cover" unoptimized />
-                    : <span className="text-teal-600 font-bold text-sm">{nom[0]?.toUpperCase()}</span>}
+                    : <span className="text-[#0C5C6C] font-bold text-sm">{nom[0]?.toUpperCase()}</span>}
                 </div>
                 <span className="flex-1 font-galey font-semibold text-sm text-gray-800">{nom}</span>
-                <span className="text-teal-600 text-xl">{adding === u.uid ? '…' : '+'}</span>
+                <span className="text-[#0C5C6C] text-xl">{adding === u.uid ? '…' : '+'}</span>
               </button>
             );
           })}
@@ -338,18 +338,18 @@ function BenevolesTab({ uid }: { uid: string }) {
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
         <button onClick={() => setShowAdd(true)}
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
-          🔍 Chercher sur PetsMatch
+          className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
+          Chercher sur PetsMatch
         </button>
         <button onClick={() => setShowForm(!showForm)}
-          className="border border-teal-700 text-teal-700 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-50 transition-colors">
+          className="border border-[#0C5C6C] text-[#0C5C6C] px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#E8F4F6] transition-colors">
           + Saisir manuellement
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleAdd} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
-          <h2 className="font-bold font-galey text-teal-800">Nouveau bénévole</h2>
+        <form onSubmit={handleAdd} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-[#0C5C6C]/20">
+          <h2 className="font-bold font-galey text-[#1F2A2E]">Nouveau bénévole</h2>
           <div className="grid grid-cols-2 gap-4">
             <input placeholder="Prénom *" required value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} />
             <input placeholder="Nom *" required value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} />
@@ -360,11 +360,11 @@ function BenevolesTab({ uid }: { uid: string }) {
             className={inp + ' w-full resize-none'} />
           <div className="flex gap-3">
             <button type="submit" disabled={saving}
-              className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+              className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
             <button type="button" onClick={() => setShowForm(false)}
-              className="text-gray-500 px-6 py-2 rounded-full text-sm font-galey border border-gray-200 hover:bg-gray-50">
+              className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
               Annuler
             </button>
           </div>
@@ -372,17 +372,16 @@ function BenevolesTab({ uid }: { uid: string }) {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-700" /></div>
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
       ) : benevoles.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          <p className="text-4xl mb-3">🤝</p>
           <p className="font-galey">Aucun bénévole enregistré</p>
         </div>
       ) : (
         <div className="space-y-4">
           {actifs.length > 0 && (
             <div>
-              <h2 className="font-bold font-galey text-teal-700 mb-3">Actifs ({actifs.length})</h2>
+              <h2 className="font-bold font-galey text-[#0C5C6C] mb-3">Actifs ({actifs.length})</h2>
               <div className="space-y-2">
                 {actifs.map(b => <BenevoleCard key={b.id} b={b} onToggle={() => toggleActif(b.id, b.actif)} onDelete={() => handleDelete(b.id)} />)}
               </div>
@@ -413,14 +412,14 @@ function BenevolesTab({ uid }: { uid: string }) {
 function BenevoleCard({ b, onToggle, onDelete }: { b: Benevole; onToggle: () => void; onDelete: () => void }) {
   return (
     <div className={`bg-white rounded-xl shadow-sm p-4 flex items-center gap-4 border ${b.actif ? 'border-gray-100' : 'border-gray-100 opacity-60'}`}>
-      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold font-galey text-white ${b.actif ? 'bg-teal-700' : 'bg-gray-400'}`}>
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold font-galey text-white ${b.actif ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>
         {b.prenom[0]?.toUpperCase() ?? '?'}
       </div>
       <div className="flex-1 min-w-0">
         <p className="font-semibold font-galey text-gray-900">{b.prenom} {b.nom}</p>
         <div className="flex items-center gap-3 text-xs text-gray-500 font-galey">
-          {b.email && <span>📧 {b.email}</span>}
-          {b.telephone && <span>📞 {b.telephone}</span>}
+          {b.email && <span>{b.email}</span>}
+          {b.telephone && <span>{b.telephone}</span>}
         </div>
         {b.notes && <p className="text-xs text-gray-400 font-galey truncate mt-0.5">{b.notes}</p>}
       </div>
@@ -429,7 +428,7 @@ function BenevoleCard({ b, onToggle, onDelete }: { b: Benevole; onToggle: () => 
           className={`text-xs px-3 py-1 rounded-full font-galey font-semibold transition-colors ${b.actif ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
           {b.actif ? 'Actif' : 'Inactif'}
         </button>
-        <button onClick={onDelete} className="text-red-400 hover:text-red-600 text-sm">🗑</button>
+        <button onClick={onDelete} className="text-gray-400 hover:text-red-600" aria-label="Supprimer" title="Supprimer"><Icone nom="corbeille" taille={16} /></button>
       </div>
     </div>
   );

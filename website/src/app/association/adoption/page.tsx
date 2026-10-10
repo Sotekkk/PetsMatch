@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
+import { Icone } from '@/components/dashboard/kit';
 
 interface Annonce {
   id: string;
@@ -26,10 +27,6 @@ const ESPECES = ['tous', 'chien', 'chat', 'lapin', 'oiseau', 'cheval', 'nac', 'a
 const ESPECE_LABEL: Record<string, string> = {
   tous: 'Toutes', chien: 'Chiens', chat: 'Chats', lapin: 'Lapins',
   oiseau: 'Oiseaux', cheval: 'Chevaux', nac: 'NAC', autre: 'Autres',
-};
-const ESPECE_EMOJI: Record<string, string> = {
-  tous: '🐾', chien: '🐕', chat: '🐈', lapin: '🐇',
-  oiseau: '🦜', cheval: '🐴', nac: '🦎', autre: '🐾',
 };
 
 function ageLabel(dateStr?: string) {
@@ -122,43 +119,31 @@ export default function AdoptionFeedPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-galey text-teal-800">Fil d&apos;adoption</h1>
+        <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">Fil d&apos;adoption</h1>
         <span className="text-sm text-gray-400 font-galey">{items.length} animal{items.length !== 1 ? 'x' : ''}</span>
       </div>
 
-      {/* Recherche */}
-      <input
-        type="search"
-        placeholder="Rechercher un animal, une race, une asso…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-teal-400"
-      />
-
-      {/* Filtres espèce */}
-      <div className="flex gap-2 flex-wrap">
-        {ESPECES.map((e) => (
-          <button
-            key={e}
-            onClick={() => setEspece(e)}
-            className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-all ${
-              espece === e
-                ? 'bg-teal-700 text-white border-teal-700'
-                : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
-            }`}
-          >
-            {ESPECE_EMOJI[e]} {ESPECE_LABEL[e]}
-          </button>
-        ))}
+      {/* Recherche + espèce */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="search"
+          placeholder="Rechercher un animal, une race, une asso…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-[#0C5C6C]"
+        />
+        <select value={espece} aria-label="Espèce" onChange={e => setEspece(e.target.value)}
+          className="h-10 sm:w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]">
+          {ESPECES.map(e => <option key={e} value={e}>{e === 'tous' ? 'Toutes les espèces' : ESPECE_LABEL[e]}</option>)}
+        </select>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : items.length === 0 ? (
         <div className="text-center py-16 text-gray-400 font-galey">
-          <p className="text-4xl mb-3">🐾</p>
           <p>Aucun animal disponible à l&apos;adoption pour le moment.</p>
         </div>
       ) : (
@@ -167,7 +152,7 @@ export default function AdoptionFeedPage() {
             <Link
               key={`${item.annonceId}-${i}`}
               href={`/annonces/${item.annonceId}`}
-              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:border-teal-200 hover:shadow-md transition-all group"
+              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:border-[#0C5C6C]/30 hover:shadow-md transition-all group"
             >
               {/* Photo */}
               <div className="aspect-square bg-gray-100 relative overflow-hidden">
@@ -181,10 +166,10 @@ export default function AdoptionFeedPage() {
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-4xl">
-                    {ESPECE_EMOJI[item.espece ?? 'autre'] ?? '🐾'}
+                    <Icone nom="patte" taille={32} className="text-gray-300" />
                   </div>
                 )}
-                <div className="absolute top-2 left-2 bg-teal-700/90 text-white text-xs font-galey font-semibold px-2 py-0.5 rounded-full">
+                <div className="absolute top-2 left-2 bg-[#0C5C6C]/90 text-white text-xs font-galey font-semibold px-2 py-0.5 rounded-full">
                   Adoption
                 </div>
               </div>
@@ -196,14 +181,14 @@ export default function AdoptionFeedPage() {
                 )}
                 <div className="flex items-center justify-between mt-1.5">
                   {item.age ? (
-                    <span className="text-xs text-teal-700 font-galey">{item.age}</span>
+                    <span className="text-xs text-[#0C5C6C] font-galey">{item.age}</span>
                   ) : <span />}
                   {item.ville && (
-                    <span className="text-xs text-gray-400 font-galey truncate">📍 {item.ville}</span>
+                    <span className="text-xs text-gray-400 font-galey truncate">{item.ville}</span>
                   )}
                 </div>
                 {item.nomAsso && (
-                  <p className="text-xs text-gray-400 font-galey mt-1 truncate">🏠 {item.nomAsso}</p>
+                  <p className="text-xs text-gray-400 font-galey mt-1 truncate">{item.nomAsso}</p>
                 )}
               </div>
             </Link>

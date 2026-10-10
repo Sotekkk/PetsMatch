@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
+import { Icone } from '@/components/dashboard/kit';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -183,7 +184,7 @@ export default function NouvelAnimalAssoPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            🐾 Ajouter un animal
+            Ajouter un animal
           </h1>
           <p className="text-gray-400 text-sm">Nouvelle fiche pour l&apos;association</p>
         </div>
@@ -208,7 +209,7 @@ export default function NouvelAnimalAssoPage() {
                 <div className="w-6 h-6 border-2 border-[#6E9E57] border-t-transparent rounded-full animate-spin" />
               ) : (
                 <div className="text-center">
-                  <span className="text-3xl block">📷</span>
+                  <span className="block text-gray-400"><Icone nom="plus" taille={26} className="mx-auto" /></span>
                   <span className="text-xs text-[#6E9E57] font-medium mt-1 block">Photo</span>
                 </div>
               )}
@@ -229,7 +230,7 @@ export default function NouvelAnimalAssoPage() {
                     ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white'
                     : 'border-gray-200 text-gray-600 hover:border-[#0C5C6C]'
                 }`}>
-                {sp.emoji} {sp.label}
+                {sp.label}
               </button>
             ))}
           </div>
@@ -253,7 +254,7 @@ export default function NouvelAnimalAssoPage() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Sexe</label>
           <div className="flex gap-3">
-            {([['male', '♂ Mâle'], ['femelle', '♀ Femelle']] as const).map(([v, l]) => (
+            {([['male', 'Mâle'], ['femelle', 'Femelle']] as const).map(([v, l]) => (
               <button key={v} type="button" onClick={() => setSexe(v)}
                 className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-medium transition-colors ${
                   sexe === v

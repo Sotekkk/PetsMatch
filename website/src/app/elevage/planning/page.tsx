@@ -893,10 +893,11 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h2 className="text-lg font-bold text-gray-800">Mes protocoles</h2>
         <div className="flex gap-2">
-          {!isEmployeeMode && (
+          {/* Protocole chaleur : réservé à l'élevage (pas pour une association, comme dans l'appli) */}
+          {!isEmployeeMode && profilSource !== 'association' && (
             <a href="/elevage/protocole-chaleur"
               className="px-4 py-2 border border-[#6E9E57] text-[#6E9E57] rounded-xl text-sm font-semibold hover:bg-[#6E9E57]/10">
-              🌸 Protocole chaleur
+              Protocole chaleur
             </a>
           )}
           {canWrite && (

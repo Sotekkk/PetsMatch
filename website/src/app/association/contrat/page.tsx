@@ -14,6 +14,7 @@ import { sendNotification } from '@/lib/notifications';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { trouverUtilisateurParEmail } from '@/lib/user-lookup';
 import { rechercherUtilisateurs } from '@/lib/user-lookup';
+import { Icone } from '@/components/dashboard/kit';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -53,11 +54,11 @@ interface UserProfile {
 
 const STATUT_META: Record<string, { label: string; cls: string }> = {
   brouillon:           { label: 'Brouillon',        cls: 'bg-gray-100 text-gray-500' },
-  en_attente:          { label: '⏳ En attente',    cls: 'bg-amber-100 text-amber-700' },
-  partiellement_signe: { label: '✍️ Partiel',       cls: 'bg-blue-100 text-blue-700' },
-  signe:               { label: '✅ Signé',         cls: 'bg-green-100 text-green-700' },
+  en_attente:          { label: 'En attente',    cls: 'bg-amber-100 text-amber-700' },
+  partiellement_signe: { label: 'Partiel',       cls: 'bg-blue-100 text-blue-700' },
+  signe:               { label: 'Signé',         cls: 'bg-green-100 text-green-700' },
   archive:             { label: 'Archivé',           cls: 'bg-gray-100 text-gray-400' },
-  annule:              { label: '🚫 Annulé',         cls: 'bg-red-100 text-red-500' },
+  annule:              { label: 'Annulé',         cls: 'bg-red-100 text-red-500' },
 };
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -285,7 +286,7 @@ export default function ContratsAdoptionPage() {
         try {
           const adoptantUser = await trouverUtilisateurParEmail(acqEmail.trim());
           if (adoptantUser?.uid) {
-            await sendNotification({ uid: adoptantUser.uid, type: 'contrat_invite', title: '🏡 Contrat d\'adoption à signer', body: `Un contrat d'adoption pour ${selectedAnimal.nom} vous a été envoyé — vérifiez et signez`, data: { url } });
+            await sendNotification({ uid: adoptantUser.uid, type: 'contrat_invite', title: 'Contrat d\'adoption à signer', body: `Un contrat d'adoption pour ${selectedAnimal.nom} vous a été envoyé — vérifiez et signez`, data: { url } });
           }
         } catch { /* ignore */ }
       }
@@ -317,7 +318,7 @@ export default function ContratsAdoptionPage() {
         const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
         await sendNotification({
           uid: targetUser.uid, type: 'contrat_invite',
-          title: '📄 Contrat d\'adoption à signer',
+          title: 'Contrat d\'adoption à signer',
           body: `${assoNom} vous envoie "${doc.titre}" — vérifiez et signez`,
           data: { token, url: signingUrl },
         });
@@ -357,31 +358,30 @@ export default function ContratsAdoptionPage() {
     if (win) { win.document.write(html); win.document.close(); win.print(); }
   }
 
-  const inp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300";
+  const inp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]";
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold font-galey text-teal-800">Contrats d'adoption</h1>
+          <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">Contrats d'adoption</h1>
           <p className="text-sm text-gray-500 font-galey">Contrats d'adoption avec participation aux frais par espèce</p>
         </div>
         <button onClick={() => { resetForm(); setShowForm(true); }}
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
+          className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
           + Nouveau contrat
         </button>
       </div>
 
       {/* Tableau des contrats */}
       {fetching ? (
-        <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" /></div>
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
       ) : docs.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <p className="text-4xl mb-3">📋</p>
           <p className="font-galey font-semibold text-gray-600 mb-1">Aucun contrat d'adoption</p>
           <p className="text-sm mb-4">Créez vos contrats d'adoption avec participation aux frais.</p>
           <button onClick={() => { resetForm(); setShowForm(true); }}
-            className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800">
+            className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D]">
             Créer un contrat
           </button>
         </div>
@@ -393,18 +393,18 @@ export default function ContratsAdoptionPage() {
             const adoptantNom = `${m.acquereur_prenom ?? ''} ${m.acquereur_nom ?? ''}`.trim() || '—';
             const anim = animaux.find(a => a.id === doc.animal_id);
             return (
-              <div key={doc.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4 hover:border-teal-200 transition-all">
-                <div className="w-12 h-12 rounded-xl bg-teal-50 flex items-center justify-center text-2xl flex-shrink-0">📋</div>
+              <div key={doc.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-4 hover:border-[#0C5C6C]/30 transition-all">
+                <div className="w-12 h-12 rounded-xl bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0"><Icone nom="document" taille={22} /></div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-bold font-galey text-gray-900 truncate">{doc.titre}</p>
                     <span className={`text-xs font-galey font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${sm.cls}`}>{sm.label}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-gray-500 font-galey mt-0.5 flex-wrap">
-                    <span>🧑 {adoptantNom}</span>
-                    {anim && <span>🐾 {anim.nom} ({anim.espece})</span>}
-                    {m.participation && <span>💶 {m.participation} €</span>}
-                    <span>📅 {new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
+                    <span>{adoptantNom}</span>
+                    {anim && <span>{anim.nom} ({anim.espece})</span>}
+                    {m.participation && <span>{m.participation} €</span>}
+                    <span>{new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -413,16 +413,16 @@ export default function ContratsAdoptionPage() {
                     <button onClick={() => transmettreDoc(doc)} disabled={transmitting === doc.id}
                       className="text-xs font-galey font-semibold px-3 py-1.5 rounded-xl transition-colors disabled:opacity-40"
                       style={{ backgroundColor: '#0C5C6C', color: '#fff' }}>
-                      {transmitting === doc.id ? '…' : '📤 Transmettre'}
+                      {transmitting === doc.id ? '…' : 'Transmettre'}
                     </button>
                   )}
                   <button onClick={() => openDoc(doc)}
-                    className="text-xs font-galey font-semibold text-teal-700 border border-teal-200 px-3 py-1.5 rounded-xl hover:bg-teal-50 transition-colors">
-                    {doc.statut === 'brouillon' ? '👁 Aperçu' : '✍️ Signer'}
+                    className="text-xs font-galey font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-xl hover:bg-[#E8F4F6] transition-colors">
+                    {doc.statut === 'brouillon' ? 'Aperçu' : 'Signer'}
                   </button>
                   <button onClick={() => downloadPDF(doc)}
                     className="text-xs font-galey font-semibold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-colors">
-                    🖨️ PDF
+                    PDF
                   </button>
                   {deleteId === doc.id ? (
                     <div className="flex items-center gap-1">
@@ -430,7 +430,7 @@ export default function ContratsAdoptionPage() {
                       <button onClick={() => setDeleteId(null)} className="text-xs text-gray-400 px-2 py-1">Non</button>
                     </div>
                   ) : (
-                    <button onClick={() => setDeleteId(doc.id)} className="text-gray-300 hover:text-red-400 transition-colors text-sm px-1">🗑</button>
+                    <button onClick={() => setDeleteId(doc.id)} className="text-gray-400 hover:text-red-600 transition-colors px-1" aria-label="Supprimer" title="Supprimer"><Icone nom="corbeille" taille={16} /></button>
                   )}
                 </div>
               </div>
@@ -440,11 +440,11 @@ export default function ContratsAdoptionPage() {
       )}
 
       {/* Infos participations par défaut */}
-      <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4">
-        <p className="text-sm font-bold font-galey text-teal-800 mb-2">💶 Participations aux frais par défaut</p>
+      <div className="bg-[#E8F4F6] border border-[#0C5C6C]/20 rounded-2xl p-4">
+        <p className="text-sm font-bold font-galey text-[#1F2A2E] mb-2">Participations aux frais par défaut</p>
         <div className="flex flex-wrap gap-2">
           {Object.entries(PARTICIPATION_DEFAUT).map(([espece, montant]) => (
-            <span key={espece} className="bg-white border border-teal-200 text-teal-700 text-xs font-galey font-semibold px-3 py-1 rounded-full">
+            <span key={espece} className="bg-white border border-[#0C5C6C]/30 text-[#0C5C6C] text-xs font-galey font-semibold px-3 py-1 rounded-full">
               {espece.charAt(0).toUpperCase() + espece.slice(1)} : {montant} €
             </span>
           ))}
@@ -456,9 +456,9 @@ export default function ContratsAdoptionPage() {
       {showForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4 overflow-y-auto" onClick={() => setShowForm(false)}>
           <div className="bg-white rounded-2xl w-full max-w-xl my-4" onClick={e => e.stopPropagation()}>
-            <div className="bg-teal-700 text-white px-5 py-4 rounded-t-2xl flex items-center justify-between">
+            <div className="bg-[#0C5C6C] text-white px-5 py-4 rounded-t-2xl flex items-center justify-between">
               <h2 className="font-bold font-galey text-lg">Nouveau contrat d'adoption</h2>
-              <button onClick={() => setShowForm(false)} className="text-white/70 hover:text-white text-xl leading-none">✕</button>
+              <button onClick={() => setShowForm(false)} className="text-white/70 hover:text-white text-xl leading-none">×</button>
             </div>
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
 
@@ -472,9 +472,9 @@ export default function ContratsAdoptionPage() {
                   ))}
                 </select>
                 {selectedAnimal && (
-                  <div className="mt-2 bg-teal-50 rounded-xl px-3 py-2 text-xs text-teal-700 font-galey">
-                    🐾 {selectedAnimal.nom} · {selectedAnimal.espece} {selectedAnimal.race ? `· ${selectedAnimal.race}` : ''} · {selectedAnimal.sexe}
-                    {selectedAnimal.sterilise && ' · ✂️ Stérilisé'}
+                  <div className="mt-2 bg-[#E8F4F6] rounded-xl px-3 py-2 text-xs text-[#0C5C6C] font-galey">
+                    {selectedAnimal.nom} · {selectedAnimal.espece} {selectedAnimal.race ? `· ${selectedAnimal.race}` : ''} · {selectedAnimal.sexe}
+                    {selectedAnimal.sterilise && ' · Stérilisé'}
                   </div>
                 )}
               </div>
@@ -493,7 +493,7 @@ export default function ContratsAdoptionPage() {
 
               {selectedAnimal && !selectedAnimal.sterilise && (
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={avecSteril} onChange={e => setAvecSteril(e.target.checked)} className="w-4 h-4 rounded text-teal-600" />
+                  <input type="checkbox" checked={avecSteril} onChange={e => setAvecSteril(e.target.checked)} className="w-4 h-4 rounded text-[#0C5C6C]" />
                   <span className="text-sm font-galey text-gray-700">Inclure clause de stérilisation obligatoire</span>
                 </label>
               )}
@@ -506,9 +506,9 @@ export default function ContratsAdoptionPage() {
                   ['upload', 'J’ai déjà mon document', 'Importer un PDF déjà signé'],
                 ] as const).map(([mode, title, desc]) => (
                   <label key={mode}
-                    className={`flex items-start gap-2 cursor-pointer border rounded-xl p-3 ${certMode === mode ? 'bg-teal-50 border-teal-300' : 'border-gray-200'}`}>
+                    className={`flex items-start gap-2 cursor-pointer border rounded-xl p-3 ${certMode === mode ? 'bg-[#E8F4F6] border-[#0C5C6C]/40' : 'border-gray-200'}`}>
                     <input type="radio" name="certMode" checked={certMode === mode}
-                      onChange={() => setCertMode(mode)} className="w-4 h-4 text-teal-600 mt-0.5" />
+                      onChange={() => setCertMode(mode)} className="w-4 h-4 text-[#0C5C6C] mt-0.5" />
                     <span>
                       <span className="block text-sm font-galey font-semibold text-gray-700">{title}</span>
                       <span className="block text-xs font-galey text-gray-500">{desc}</span>
@@ -531,11 +531,11 @@ export default function ContratsAdoptionPage() {
                 <div className="relative">
                   <input value={userSearch} onChange={e => searchUser(e.target.value)} placeholder="Nom, prénom ou email…" className={inp} />
                   {userResults.length > 0 && (
-                    <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-teal-200 rounded-xl shadow-lg overflow-hidden">
+                    <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-[#0C5C6C]/30 rounded-xl shadow-lg overflow-hidden">
                       {userResults.map(u => (
                         <button key={u.uid} onClick={() => selectUser(u)}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-teal-50 text-left border-b border-gray-50 last:border-0">
-                          <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center text-xs font-bold text-teal-700 flex-shrink-0">
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#E8F4F6] text-left border-b border-gray-50 last:border-0">
+                          <div className="w-7 h-7 rounded-full bg-teal-100 flex items-center justify-center text-xs font-bold text-[#0C5C6C] flex-shrink-0">
                             {(u.firstname?.[0] ?? '?').toUpperCase()}
                           </div>
                           <div>
@@ -581,8 +581,8 @@ export default function ContratsAdoptionPage() {
 
             <div className="flex gap-3 px-5 pb-5 pt-3 border-t border-gray-100">
               <button onClick={openAndSign} disabled={saving || !selectedAnimal || !acqNom}
-                className="flex-1 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-galey font-semibold py-2.5 rounded-xl text-sm transition-colors">
-                {saving ? 'Création…' : '✍️ Créer et signer'}
+                className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-galey font-semibold py-2.5 rounded-xl text-sm transition-colors">
+                {saving ? 'Création…' : 'Créer et signer'}
               </button>
               <button onClick={() => setShowForm(false)}
                 className="flex-1 border border-gray-200 text-gray-600 font-galey font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">

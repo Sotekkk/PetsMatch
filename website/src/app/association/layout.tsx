@@ -42,7 +42,7 @@ export default function AssociationLayout({ children }: { children: React.ReactN
   if (loading || !profileLoaded || isAssociation === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+        <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -52,7 +52,7 @@ export default function AssociationLayout({ children }: { children: React.ReactN
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Accès réservé aux associations.</p>
-          <Link href="/" className="text-teal-700 underline">Retour à l&apos;accueil</Link>
+          <Link href="/" className="text-[#0C5C6C] underline">Retour à l&apos;accueil</Link>
         </div>
       </div>
     );
@@ -63,19 +63,8 @@ export default function AssociationLayout({ children }: { children: React.ReactN
   if (pathname === '/association') return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-gradient-to-r from-teal-800 to-green-600 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-3">
-          <span className="text-2xl">🐾</span>
-          <div>
-            <p className="text-xs text-white/70 leading-none">Espace Association</p>
-            <p className="font-bold font-galey text-lg leading-tight">{nomAsso || 'Mon Association'}</p>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="min-h-screen bg-[#F6F7F5]">
+      <div className="max-w-6xl mx-auto px-4 py-8">
         <main>{children}</main>
       </div>
     </div>

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
+import { Icone } from '@/components/dashboard/kit';
 
 interface Animal { id: string; nom: string; espece?: string; race?: string; statut?: string; photo_url?: string }
 
@@ -249,35 +250,35 @@ export default function FamillesAccueilWebPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-galey text-teal-800">Familles d&apos;accueil</h1>
+        <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">Familles d&apos;accueil</h1>
         <button onClick={openAdd}
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
+          className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
           + Ajouter une FA
         </button>
       </div>
 
       {/* Formulaire ajout/édition */}
       {showForm && (
-        <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
-          <h2 className="font-bold font-galey text-teal-800">
+        <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-[#0C5C6C]/20">
+          <h2 className="font-bold font-galey text-[#1F2A2E]">
             {editingFa ? `Modifier ${editingFa.prenom} ${editingFa.nom}` : 'Nouvelle famille d\'accueil'}
           </h2>
 
           {/* Recherche utilisateur PetsMatch */}
-          <div className="bg-teal-50 rounded-xl p-4 border border-teal-100 space-y-2">
-            <p className="text-xs font-semibold font-galey text-teal-700 flex items-center gap-1">
-              🔍 Lier un utilisateur PetsMatch (optionnel)
+          <div className="bg-[#E8F4F6] rounded-xl p-4 border border-[#0C5C6C]/20 space-y-2">
+            <p className="text-xs font-semibold font-galey text-[#0C5C6C] flex items-center gap-1">
+              Lier un utilisateur PetsMatch (optionnel)
             </p>
             <div className="relative">
               <input type="text" placeholder="Chercher par nom, prénom ou email…"
                 value={userSearch} onChange={e => handleUserSearch(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white" />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C] bg-white" />
               {userResults.length > 0 && (
                 <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-xl shadow-lg mt-1 overflow-hidden">
                   {userResults.map(u => (
                     <button key={u.uid} type="button" onClick={() => selectUser(u)}
-                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-teal-50 transition-colors text-left">
-                      <div className="w-8 h-8 rounded-full bg-teal-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#E8F4F6] transition-colors text-left">
+                      <div className="w-8 h-8 rounded-full bg-[#0C5C6C] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                         {(u.firstname?.[0] ?? u.email?.[0] ?? '?').toUpperCase()}
                       </div>
                       <div>
@@ -291,7 +292,7 @@ export default function FamillesAccueilWebPage() {
             </div>
             {linkedUid && (
               <div className="flex items-center justify-between">
-                <p className="text-xs text-teal-700 font-galey">✓ Compte PetsMatch lié</p>
+                <p className="text-xs text-[#0C5C6C] font-galey">Compte PetsMatch lié</p>
                 <button type="button" onClick={() => { setLinkedUid(null); setUserSearch(''); }}
                   className="text-xs text-gray-400 hover:text-gray-600 font-galey">Délier</button>
               </div>
@@ -302,47 +303,47 @@ export default function FamillesAccueilWebPage() {
           <div className="grid grid-cols-2 gap-3">
             <input placeholder="Prénom *" required value={form.prenom}
               onChange={e => setForm({ ...form, prenom: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
             <input placeholder="Nom *" required value={form.nom}
               onChange={e => setForm({ ...form, nom: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
             <input placeholder="Email" type="email" value={form.email}
               onChange={e => setForm({ ...form, email: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
             <input placeholder="Téléphone" value={form.telephone}
               onChange={e => setForm({ ...form, telephone: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
             <input placeholder="Adresse" value={form.adresse}
               onChange={e => setForm({ ...form, adresse: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300 col-span-2" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C] col-span-2" />
             <input placeholder="Ville" value={form.ville}
               onChange={e => setForm({ ...form, ville: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
             <input placeholder="Code postal" value={form.code_postal}
               onChange={e => setForm({ ...form, code_postal: e.target.value })}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
           </div>
 
           <div className="flex items-center gap-3">
             <label className="text-sm font-galey text-gray-700">Capacité max :</label>
             <button type="button" onClick={() => setForm(f => ({ ...f, capacite_max: Math.max(1, f.capacite_max - 1) }))}
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">−</button>
-            <span className="font-bold font-galey text-teal-800 w-6 text-center">{form.capacite_max}</span>
+            <span className="font-bold font-galey text-[#1F2A2E] w-6 text-center">{form.capacite_max}</span>
             <button type="button" onClick={() => setForm(f => ({ ...f, capacite_max: f.capacite_max + 1 }))}
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center font-bold">+</button>
           </div>
 
           <textarea placeholder="Notes (espèces acceptées, contraintes…)" rows={2} value={form.notes}
             onChange={e => setForm({ ...form, notes: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300" />
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]" />
 
           <div className="flex gap-3">
             <button type="submit" disabled={saving}
-              className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+              className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
               {saving ? 'Enregistrement…' : editingFa ? 'Enregistrer' : 'Ajouter'}
             </button>
             <button type="button" onClick={resetForm}
-              className="text-gray-500 px-6 py-2 rounded-full text-sm font-galey border border-gray-200 hover:bg-gray-50">
+              className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
               Annuler
             </button>
           </div>
@@ -355,33 +356,32 @@ export default function FamillesAccueilWebPage() {
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div>
-                <h3 className="font-bold font-galey text-teal-800">Placer un animal</h3>
+                <h3 className="font-bold font-galey text-[#1F2A2E]">Placer un animal</h3>
                 <p className="text-xs text-gray-500 font-galey">
                   chez {placingFa.prenom} {placingFa.nom}
                 </p>
               </div>
-              <button onClick={() => setPlacingFa(null)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              <button onClick={() => setPlacingFa(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
             <div className="overflow-y-auto flex-1 p-4">
               {loadingAnimaux ? (
                 <div className="flex justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-700" />
+                  <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
                 </div>
               ) : animauxDispo.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 font-galey">
-                  <p className="text-3xl mb-2">🐾</p>
                   <p>Aucun animal disponible à placer</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {animauxDispo.map(a => (
-                    <div key={a.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-teal-200 transition-colors">
+                    <div key={a.id} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-[#0C5C6C]/30 transition-colors">
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
                         {a.photo_url ? (
                           <Image src={a.photo_url} alt={a.nom} width={48} height={48}
                             className="w-full h-full object-cover" unoptimized />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xl">🐾</div>
+                          <div className="w-full h-full flex items-center justify-center text-gray-400"><Icone nom="patte" taille={18} /></div>
                         )}
                       </div>
                       <div className="flex-1">
@@ -391,7 +391,7 @@ export default function FamillesAccueilWebPage() {
                       <button
                         onClick={() => handlePlaceAnimal(a)}
                         disabled={placing === a.id}
-                        className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+                        className="bg-[#0C5C6C] text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
                         {placing === a.id ? '…' : 'Placer'}
                       </button>
                     </div>
@@ -406,14 +406,13 @@ export default function FamillesAccueilWebPage() {
       {/* Liste FA */}
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : fas.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <p className="text-4xl mb-3">🏡</p>
           <p className="font-galey">Aucune famille d&apos;accueil enregistrée</p>
           <button onClick={openAdd}
-            className="mt-4 bg-teal-700 text-white px-5 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800">
+            className="mt-4 bg-[#0C5C6C] text-white px-5 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D]">
             + Ajouter une FA
           </button>
         </div>
@@ -426,7 +425,7 @@ export default function FamillesAccueilWebPage() {
               <div key={fa.id} className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-teal-700 flex items-center justify-center font-bold font-galey text-white">
+                    <div className="w-10 h-10 rounded-full bg-[#0C5C6C] flex items-center justify-center font-bold font-galey text-white">
                       {fa.prenom[0]?.toUpperCase()}
                     </div>
                     <div>
@@ -434,7 +433,7 @@ export default function FamillesAccueilWebPage() {
                         <p className="font-bold font-galey text-gray-900">{fa.prenom} {fa.nom}</p>
                         {fa.fa_uid && (
                           <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full font-galey">
-                            🐾 PetsMatch
+                            PetsMatch
                           </span>
                         )}
                       </div>
@@ -453,21 +452,21 @@ export default function FamillesAccueilWebPage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 font-galey mb-3">
-                  {fa.email && <span>📧 {fa.email}</span>}
-                  {fa.telephone && <span>📞 {fa.telephone}</span>}
+                  {fa.email && <span>{fa.email}</span>}
+                  {fa.telephone && <span>{fa.telephone}</span>}
                 </div>
 
                 {/* Animaux en accueil */}
                 {fa.animaux && fa.animaux.length > 0 && (
                   <div className="mb-3">
-                    <p className="text-xs font-semibold font-galey text-teal-700 mb-1">En accueil :</p>
+                    <p className="text-xs font-semibold font-galey text-[#0C5C6C] mb-1">En accueil :</p>
                     <div className="flex flex-wrap gap-1">
                       {fa.animaux.map((a) => (
                         <button key={a.id}
                           onClick={() => handleRetirerAnimal(a, fa.id)}
                           title="Cliquer pour retirer"
-                          className="text-xs bg-teal-50 text-teal-800 px-2 py-0.5 rounded-full font-galey hover:bg-red-50 hover:text-red-600 transition-colors">
-                          {a.nom} ✕
+                          className="text-xs bg-[#E8F4F6] text-[#0C5C6C] px-2 py-0.5 rounded-full font-galey hover:bg-red-50 hover:text-red-600 transition-colors">
+                          {a.nom} ×
                         </button>
                       ))}
                     </div>
@@ -484,15 +483,15 @@ export default function FamillesAccueilWebPage() {
                     onClick={() => openPlaceAnimal(fa)}
                     disabled={dispo <= 0}
                     className="flex-1 text-xs border border-green-200 text-green-700 hover:bg-green-50 font-galey font-medium py-1.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                    🐾 Placer un animal
+                    Placer un animal
                   </button>
                   <button onClick={() => openEdit(fa)}
-                    className="text-xs border border-teal-200 text-teal-700 hover:bg-teal-50 font-galey font-medium py-1.5 px-4 rounded-xl transition-colors">
-                    ✏️ Modifier
+                    className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] hover:bg-[#E8F4F6] font-galey font-medium py-1.5 px-4 rounded-xl transition-colors">
+                    Modifier
                   </button>
                   <button onClick={() => handleDelete(fa.id)}
                     className="text-xs border border-red-100 text-red-400 hover:bg-red-50 font-galey py-1.5 px-3 rounded-xl transition-colors">
-                    🗑
+                    Supprimer
                   </button>
                 </div>
               </div>

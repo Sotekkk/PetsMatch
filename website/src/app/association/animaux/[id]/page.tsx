@@ -12,6 +12,7 @@ import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
 import LienDocument from '@/components/LienDocument';
 import { changerStatutAnimalAsso, confirmerSortie } from '@/lib/statut-animal-asso';
+import { Icone } from '@/components/dashboard/kit';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -30,7 +31,7 @@ const STATUTS: Record<string, { label: string; color: string }> = {
   en_soin:    { label: 'En soin',    color: 'bg-orange-100 text-orange-700' },
   disponible: { label: 'Disponible', color: 'bg-green-100 text-green-700' },
   en_fa:      { label: 'En FA',      color: 'bg-purple-100 text-purple-700' },
-  adopte:     { label: 'Adopté',     color: 'bg-teal-100 text-teal-700' },
+  adopte:     { label: 'Adopté',     color: 'bg-teal-100 text-[#0C5C6C]' },
   transfere:  { label: 'Transféré',  color: 'bg-blue-100 text-blue-700' },
   decede:     { label: 'Décédé',     color: 'bg-red-100 text-red-700' },
 };
@@ -292,7 +293,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
 
   if (crs.length === 0 && ordonnances.length === 0) return (
     <div className="flex flex-col items-center py-20 text-center text-gray-400">
-      <span className="text-6xl mb-4 opacity-20">🩺</span>
+      
       <p className="font-semibold text-base mb-2" style={{ fontFamily: 'Galey,sans-serif' }}>Aucune consultation enregistrée</p>
       <p className="text-sm">Les comptes rendus et ordonnances de votre vétérinaire apparaîtront ici.</p>
     </div>
@@ -312,7 +313,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
                 {!!r.doc_url && (
                   <LienDocument href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-[#0C5C6C] font-semibold hover:underline mt-1 inline-flex items-center gap-1">
-                    📎 Voir le document
+                    Voir le document
                   </LienDocument>
                 )}
               </div>
@@ -332,7 +333,7 @@ function ConsultationsTab({ animalId }: { animalId: string }) {
                 {!!r.doc_url && (
                   <LienDocument href={String(r.doc_url)} target="_blank" rel="noopener noreferrer"
                     className="text-xs text-[#0C5C6C] font-semibold hover:underline mt-1 inline-flex items-center gap-1">
-                    📎 Voir l'ordonnance
+                    Voir l'ordonnance
                   </LienDocument>
                 )}
               </div>
@@ -391,15 +392,14 @@ export default function AnimalAssoFichePage() {
 
   if (loading) return (
     <div className="flex justify-center py-20">
-      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+      <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   if (!animal) return (
     <div className="text-center py-20 text-gray-500">
-      <p className="text-4xl mb-3">🐾</p>
       <p className="font-galey mb-4">Animal introuvable</p>
-      <Link href="/association/animaux" className="text-teal-600 underline">Retour</Link>
+      <Link href="/association/animaux" className="text-[#0C5C6C] underline">Retour</Link>
     </div>
   );
 
@@ -412,7 +412,7 @@ export default function AnimalAssoFichePage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
-        <h1 className="text-2xl font-bold font-galey text-teal-800 flex-1">{animal.nom}</h1>
+        <h1 className="text-2xl font-bold font-galey text-[#1F2A2E] flex-1">{animal.nom}</h1>
         <span className={`text-xs font-galey font-bold px-3 py-1 rounded-full ${sc.color}`}>{sc.label}</span>
       </div>
 
@@ -421,9 +421,9 @@ export default function AnimalAssoFichePage() {
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 py-2 text-xs font-galey font-semibold rounded-xl transition-all ${
-              tab === t.key ? 'bg-white text-teal-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              tab === t.key ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}>
-            <span className="hidden sm:inline">{t.icon} </span>{t.label}
+            {t.label}
           </button>
         ))}
       </div>
@@ -437,7 +437,7 @@ export default function AnimalAssoFichePage() {
               {animal.photo_url ? (
                 <img src={animal.photo_url} alt={animal.nom} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-6xl text-gray-300">🐾</div>
+                <div className="w-full h-full flex items-center justify-center text-gray-300"><Icone nom="patte" taille={56} /></div>
               )}
             </div>
             <div className="p-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -457,7 +457,7 @@ export default function AnimalAssoFichePage() {
             </div>
             {animal.age_estime && (
               <p className="px-4 pb-3 text-xs text-amber-700 italic">
-                ⚠ Âge estimé — date de naissance exacte inconnue
+                Âge estimé — date de naissance exacte inconnue
               </p>
             )}
           </div>
@@ -475,7 +475,7 @@ export default function AnimalAssoFichePage() {
                 </button>
               ))}
             </div>
-            {savingStatut && <p className="text-xs text-teal-500 mt-2 font-galey">Enregistrement…</p>}
+            {savingStatut && <p className="text-xs text-gray-500 mt-2 font-galey">Enregistrement…</p>}
           </div>
 
           {/* Suivi santé rapide */}
@@ -490,7 +490,7 @@ export default function AnimalAssoFichePage() {
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-center gap-2">
                   <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${value ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
-                    {value ? '✓' : '✗'}
+                    {value ? 'Oui' : 'Non'}
                   </span>
                   <span className="text-sm font-galey text-gray-700">{label}</span>
                 </div>
@@ -510,13 +510,13 @@ export default function AnimalAssoFichePage() {
           <div className="space-y-3">
             {animal.statut === 'disponible' && (
               <Link href={`/association/annonces/creer?animalId=${id}`}
-                className="flex items-center justify-center gap-2 w-full bg-teal-700 text-white py-3.5 rounded-xl font-galey font-bold text-base hover:bg-teal-800 transition-colors">
-                💚 Mettre en adoption
+                className="flex items-center justify-center gap-2 w-full bg-[#0C5C6C] text-white py-3.5 rounded-xl font-galey font-bold text-base hover:bg-[#094F5D] transition-colors">
+                Mettre en adoption
               </Link>
             )}
             <Link href={`/association/animaux/${id}/modifier`}
-              className="flex items-center justify-center gap-2 w-full bg-white border border-teal-200 text-teal-700 py-3 rounded-xl font-galey font-semibold text-sm hover:bg-teal-50 transition-colors">
-              ✏️ Modifier la fiche
+              className="flex items-center justify-center gap-2 w-full bg-white border border-[#0C5C6C]/30 text-[#0C5C6C] py-3 rounded-xl font-galey font-semibold text-sm hover:bg-[#E8F4F6] transition-colors">
+              Modifier la fiche
             </Link>
             {!showDelete ? (
               <button onClick={() => setShowDelete(true)} className="w-full text-red-400 py-2 text-sm font-galey hover:text-red-600">

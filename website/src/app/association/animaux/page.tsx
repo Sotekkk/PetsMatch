@@ -32,7 +32,7 @@ const DETENUS_STATUTS = [
 
 const ANCIEN_STATUTS = [
   { key: 'tous',      label: 'Tous',        color: 'bg-gray-100 text-gray-700' },
-  { key: 'adopte',    label: 'Adopté',      color: 'bg-teal-100 text-teal-700' },
+  { key: 'adopte',    label: 'Adopté',      color: 'bg-teal-100 text-[#0C5C6C]' },
   { key: 'transfere', label: 'Transféré',   color: 'bg-blue-100 text-blue-700' },
   { key: 'sorti',     label: 'Cédé',        color: 'bg-amber-100 text-amber-700' },
   { key: 'decede',    label: 'Décédé',      color: 'bg-red-100 text-red-700' },
@@ -164,62 +164,60 @@ function AnimauxAssoPageInner() {
   };
 
   const statuts = tab === 'detenus' ? DETENUS_STATUTS : ANCIEN_STATUTS;
+  const nbDetenus = animaux.filter(a => !ANCIENS_VALUES.has(a.statut)).length;
+  const nbAnciens = animaux.length - nbDetenus;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-galey text-teal-800">Mes Animaux</h1>
+    <div className="max-w-5xl mx-auto" style={{ fontFamily: 'Galey, sans-serif' }}>
+      {/* En-tête */}
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-[#1F2A2E]">Mes animaux</h1>
+          <p className="text-gray-500 text-sm mt-1">{nbDetenus} protégé{nbDetenus !== 1 ? 's' : ''} · {animaux.length} animal{animaux.length !== 1 ? 'aux' : ''} au total</p>
+        </div>
         <Link href="/association/animaux/nouveau"
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
+          className="h-10 inline-flex items-center bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-4 rounded-lg transition-colors">
           + Ajouter
         </Link>
       </div>
 
       {/* Onglets */}
-      <div className="flex border-b border-gray-200">
+      <div className="flex gap-6 border-b border-gray-200 mb-4 overflow-x-auto" role="tablist">
         {(['detenus', 'ancien'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-galey font-semibold border-b-2 transition-colors ${
-              tab === t ? 'border-teal-700 text-teal-800' : 'border-transparent text-gray-400 hover:text-gray-600'
+          <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+            className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+              tab === t ? 'border-[#0C5C6C] text-[#0C5C6C]' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}>
-            {t === 'detenus' ? 'Nos protégés' : 'Ancien'}
+            {t === 'detenus' ? `Nos protégés · ${nbDetenus}` : `Anciens · ${nbAnciens}`}
           </button>
         ))}
       </div>
 
-      {/* Search */}
-      <input
-        type="text"
-        placeholder="Rechercher par nom, race ou n° de puce…"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300"
-      />
-
-      {/* Filtres statut */}
-      <div className="flex gap-2 flex-wrap">
-        {statuts.map(s => (
-          <button
-            key={s.key}
-            onClick={() => setFilterStatut(s.key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold transition-all ${
-              filterStatut === s.key ? s.color + ' ring-2 ring-offset-1 ring-current' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+      {/* Recherche + statut */}
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <label className="relative flex-1 min-w-0">
+          <span className="sr-only">Rechercher un animal</span>
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" d="M21 21l-5.2-5.2m0 0A7.5 7.5 0 105.2 5.2a7.5 7.5 0 0010.6 10.6z" />
+          </svg>
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher par nom, race ou n° de puce"
+            className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:border-[#0C5C6C]" />
+        </label>
+        <select value={filterStatut} aria-label="Statut" onChange={e => setFilterStatut(e.target.value)}
+          className="h-10 sm:w-56 rounded-lg border border-gray-300 bg-white px-3 text-sm text-[#1F2A2E] focus:outline-none focus:border-[#0C5C6C]">
+          {statuts.map(s => <option key={s.key} value={s.key}>{s.key === 'tous' ? 'Tous les statuts' : s.label}</option>)}
+        </select>
       </div>
 
       {/* Liste */}
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-4xl mb-3">🐾</p>
-          <p className="font-galey">Aucun animal trouvé</p>
+        <div className="text-center py-14 bg-white border border-gray-200 rounded-lg">
+          <p className="text-sm text-gray-500">Aucun animal trouvé.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -227,45 +225,47 @@ function AnimauxAssoPageInner() {
             const sc = STATUT_MAP[a.statut] ?? DETENUS_STATUTS[0];
             const isCession = !!myUid && a.uid_eleveur !== myUid;
             return (
-              <div key={a.id} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 hover:border-teal-200 hover:shadow-md transition-all">
+              <div key={a.id} className="bg-white rounded-lg overflow-hidden border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all flex flex-col">
                 <Link href={anciensIds.has(a.id) || isCession ? `/mes-animaux/${a.id}` : `/association/animaux/${a.id}`}>
-                  <div className="aspect-square bg-gray-100 relative overflow-hidden">
+                  <div className="aspect-square bg-[#F3F4F6] relative overflow-hidden">
                     {a.photo_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={a.photo_url} alt={a.nom} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-4xl text-gray-300">🐾</div>
+                      <div className="w-full h-full flex items-center justify-center text-gray-300">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" aria-hidden><ellipse cx="12" cy="16.5" rx="4.2" ry="3.4" /><circle cx="6.5" cy="10.5" r="1.8" /><circle cx="9.8" cy="6.5" r="1.8" /><circle cx="14.2" cy="6.5" r="1.8" /><circle cx="17.5" cy="10.5" r="1.8" /></svg>
+                      </div>
                     )}
-                    <span className={`absolute top-2 right-2 text-xs font-galey font-bold px-2 py-0.5 rounded-full ${sc.color}`}>
+                    <span className={`absolute top-2 right-2 text-xs font-semibold px-2 py-0.5 rounded-full ${sc.color}`}>
                       {sc.label}
                     </span>
                     {a.fa_id && (
-                      <span className="absolute top-2 left-2 text-xs font-galey font-bold px-2 py-0.5 rounded-full bg-purple-600 text-white">
-                        🏡 FA
+                      <span className="absolute top-2 left-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                        En FA
                       </span>
                     )}
                     {isCession && (
-                      <span className="absolute bottom-2 left-2 text-xs font-galey font-bold px-2 py-0.5 rounded-full bg-black/60 text-white">
-                        🤝 Cession
+                      <span className="absolute bottom-2 left-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-white/95 text-[#1F2A2E] border border-gray-200">
+                        Cession
                       </span>
                     )}
                   </div>
                   <div className="p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="font-bold font-galey text-sm text-gray-900 truncate">{a.nom}</p>
-                      {age(a.date_naissance, a.age_estime) && <span className="text-xs text-gray-400">{age(a.date_naissance, a.age_estime)}</span>}
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold text-sm text-[#1F2A2E] truncate">{a.nom}</p>
+                      {age(a.date_naissance, a.age_estime) && <span className="text-xs text-gray-500 flex-shrink-0">{age(a.date_naissance, a.age_estime)}</span>}
                     </div>
                     {(a.race || a.espece) && (
-                      <p className="text-xs text-gray-500 font-galey truncate">{a.race || a.espece}</p>
+                      <p className="text-xs text-gray-500 truncate capitalize">{a.race || a.espece}</p>
                     )}
                   </div>
                 </Link>
                 {/* Changer statut */}
-                <div className="px-3 pb-3 space-y-2">
+                <div className="px-3 pb-3 space-y-2 mt-auto">
                   <select
-                    value={a.statut}
+                    value={a.statut} aria-label="Changer le statut"
                     onChange={e => handleChangeStatut(a.id, e.target.value)}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1 font-galey focus:outline-none focus:ring-1 focus:ring-teal-400"
+                    className="w-full h-9 text-xs border border-gray-300 rounded-lg px-2 bg-white focus:outline-none focus:border-[#0C5C6C]"
                   >
                     {ASSIGNABLE_STATUTS.map(key => (
                       <option key={key} value={key}>{STATUT_MAP[key]?.label ?? key}</option>
@@ -274,9 +274,9 @@ function AnimauxAssoPageInner() {
                   {a.statut === 'disponible' && (
                     <button
                       onClick={() => router.push(`/association/annonces/creer?animalId=${a.id}`)}
-                      className="w-full text-xs bg-teal-50 text-teal-700 border border-teal-200 rounded-lg px-2 py-1.5 font-galey font-semibold hover:bg-teal-100 transition-colors"
+                      className="w-full h-9 text-xs bg-white text-[#0C5C6C] border border-[#0C5C6C]/40 rounded-lg px-2 font-semibold hover:bg-[#E8F4F6] transition-colors"
                     >
-                      💚 Mettre en adoption
+                      Mettre en adoption
                     </button>
                   )}
                 </div>

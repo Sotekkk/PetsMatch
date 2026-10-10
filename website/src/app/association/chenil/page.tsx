@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { Icone } from '@/components/dashboard/kit';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ const STATUT_COLORS: Record<string, string> = {
   en_soin: 'bg-orange-100 text-orange-700',
   disponible: 'bg-green-100 text-green-700',
   en_fa: 'bg-purple-100 text-purple-700',
-  adopte: 'bg-teal-100 text-teal-700',
+  adopte: 'bg-teal-100 text-[#0C5C6C]',
   transfere: 'bg-blue-100 text-blue-700',
   present: 'bg-gray-100 text-gray-600',
 };
@@ -93,16 +94,16 @@ function EnclosCard({
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       {/* Header */}
-      <div className="bg-teal-50 px-4 py-3 flex items-center justify-between border-b border-teal-100">
+      <div className="bg-[#E8F4F6] px-4 py-3 flex items-center justify-between border-b border-[#0C5C6C]/20">
         <div className="flex items-center gap-2">
-          <span className="text-xl">{TYPE_ICONS[enclos.type] ?? '🏠'}</span>
+          <span className="w-9 h-9 rounded-full bg-white text-[#0C5C6C] flex items-center justify-center border border-[#E5E8E6]"><Icone nom="logement" taille={18} /></span>
           <div>
-            <p className="font-bold font-galey text-teal-800 leading-tight">{enclos.nom}</p>
-            <p className="text-xs text-teal-600">{TYPE_LABELS[enclos.type] ?? enclos.type}</p>
+            <p className="font-bold font-galey text-[#1F2A2E] leading-tight">{enclos.nom}</p>
+            <p className="text-xs text-[#0C5C6C]">{TYPE_LABELS[enclos.type] ?? enclos.type}</p>
           </div>
         </div>
-        <button onClick={() => onEdit(enclos)} className="text-gray-400 hover:text-teal-700 text-sm px-2 py-1 rounded-lg hover:bg-white/60 transition-colors">
-          ✏️
+        <button onClick={() => onEdit(enclos)} className="text-gray-400 hover:text-[#0C5C6C] text-sm px-2 py-1 rounded-lg hover:bg-white/60 transition-colors" aria-label="Modifier" title="Modifier">
+          <Icone nom="crayon" taille={16} />
         </button>
       </div>
 
@@ -123,21 +124,21 @@ function EnclosCard({
         {/* Dernier nettoyage */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="text-sm">🧹</span>
+            <span className="text-xs text-gray-500">Nettoyage</span>
             <span className={`text-xs font-galey font-semibold px-2 py-0.5 rounded-full ${cleanBadge.cls}`}>
               {cleanBadge.label}
             </span>
           </div>
           <button
             onClick={() => onClean(enclos.id)}
-            className="text-xs font-galey font-semibold text-teal-700 border border-teal-200 px-2.5 py-1 rounded-full hover:bg-teal-50 transition-colors">
+            className="text-xs font-galey font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-2.5 py-1 rounded-full hover:bg-[#E8F4F6] transition-colors">
             Marquer propre
           </button>
         </div>
 
         {/* Notes */}
         {enclos.notes && (
-          <p className="text-xs text-gray-400 font-galey italic border-l-2 border-teal-100 pl-2">{enclos.notes}</p>
+          <p className="text-xs text-gray-400 font-galey italic border-l-2 border-[#0C5C6C]/20 pl-2">{enclos.notes}</p>
         )}
 
         {/* Occupants */}
@@ -149,10 +150,10 @@ function EnclosCard({
             {occupants.map(a => (
               <div key={a.id} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full overflow-hidden bg-teal-50 flex-shrink-0">
+                  <div className="w-7 h-7 rounded-full overflow-hidden bg-[#E8F4F6] flex-shrink-0">
                     {a.photo_url
                       ? <img src={a.photo_url} alt={a.nom} className="w-full h-full object-cover" />
-                      : <span className="w-full h-full flex items-center justify-center text-xs">🐾</span>}
+                      : <span className="w-full h-full flex items-center justify-center text-gray-400"><Icone nom="patte" taille={12} /></span>}
                   </div>
                   <span className="text-sm font-galey font-semibold text-gray-800">{a.nom}</span>
                   {a.statut && (
@@ -162,11 +163,11 @@ function EnclosCard({
                   )}
                 </div>
                 {/* Miroir de l'appli : changer d'enclos / retirer, explicites
-                    (avant : un ✕ seul, sans déplacement possible). */}
+                    (avant : un seul, sans déplacement possible). */}
                 <div className="flex items-center gap-1">
                   {autresEnclos.length > 0 && (
                     <select value="" onChange={ev => { if (ev.target.value) onAssign(ev.target.value, a.id, true); }}
-                      className="text-xs text-teal-700 border border-teal-200 rounded-lg px-1.5 py-0.5 bg-white font-galey">
+                      className="text-xs text-[#0C5C6C] border border-[#0C5C6C]/30 rounded-lg px-1.5 py-0.5 bg-white font-galey">
                       <option value="">Déplacer…</option>
                       {autresEnclos.map(o => <option key={o.id} value={o.id}>{o.nom}</option>)}
                     </select>
@@ -185,25 +186,25 @@ function EnclosCard({
         {dispo > 0 && (
           <button
             onClick={() => setShowAssign(v => !v)}
-            className="w-full text-xs font-galey font-semibold text-teal-700 border border-dashed border-teal-300 py-2 rounded-xl hover:bg-teal-50 transition-colors">
+            className="w-full text-xs font-galey font-semibold text-[#0C5C6C] border border-dashed border-[#0C5C6C]/40 py-2 rounded-xl hover:bg-[#E8F4F6] transition-colors">
             + Ajouter un animal
           </button>
         )}
 
         {/* Dropdown assignation */}
         {showAssign && (
-          <div className="border border-teal-100 rounded-xl overflow-hidden">
+          <div className="border border-[#0C5C6C]/20 rounded-xl overflow-hidden">
             {unassigned.filter(a => a.enclos_id !== enclos.id).length === 0 ? (
               <p className="text-xs text-gray-400 font-galey text-center py-3">Aucun animal disponible</p>
             ) : (
               unassigned.filter(a => a.enclos_id !== enclos.id).map(a => (
                 <button key={a.id}
                   onClick={() => { onAssign(enclos.id, a.id, true); setShowAssign(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-galey text-gray-700 hover:bg-teal-50 border-b border-gray-50 last:border-0 transition-colors text-left">
-                  <div className="w-6 h-6 rounded-full overflow-hidden bg-teal-50 flex-shrink-0">
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-galey text-gray-700 hover:bg-[#E8F4F6] border-b border-gray-50 last:border-0 transition-colors text-left">
+                  <div className="w-6 h-6 rounded-full overflow-hidden bg-[#E8F4F6] flex-shrink-0">
                     {a.photo_url
                       ? <img src={a.photo_url} alt={a.nom} className="w-full h-full object-cover" />
-                      : <span className="w-full h-full flex items-center justify-center text-[10px]">🐾</span>}
+                      : <span className="w-full h-full flex items-center justify-center text-gray-400"><Icone nom="patte" taille={10} /></span>}
                   </div>
                   <span>{a.nom}</span>
                   {a.espece && <span className="text-gray-400 text-xs">· {a.espece}</span>}
@@ -254,12 +255,12 @@ function EnclosModal({ enclos, uid, profileId, isAssociation, onClose, onSaved }
     setSaving(false);
   }
 
-  const inp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-300";
+  const inp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]";
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="bg-teal-700 text-white px-5 py-4 rounded-t-2xl">
+        <div className="bg-[#0C5C6C] text-white px-5 py-4 rounded-t-2xl">
           <h2 className="font-bold font-galey text-lg">{enclos ? 'Modifier l\'enclos' : 'Nouvel enclos'}</h2>
         </div>
         <form onSubmit={handleSave} className="p-5 space-y-4">
@@ -285,7 +286,7 @@ function EnclosModal({ enclos, uid, profileId, isAssociation, onClose, onSaved }
           </div>
           <div className="flex gap-3 pt-1">
             <button type="submit" disabled={saving || !nom.trim()}
-              className="flex-1 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-galey font-semibold py-2.5 rounded-xl text-sm transition-colors">
+              className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white font-galey font-semibold py-2.5 rounded-xl text-sm transition-colors">
               {saving ? 'Enregistrement…' : (enclos ? 'Modifier' : 'Créer')}
             </button>
             <button type="button" onClick={onClose}
@@ -403,27 +404,27 @@ export default function ChenilWebPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-galey text-teal-800">Affectation des hébergements</h1>
+        <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">Affectation des hébergements</h1>
         <button onClick={() => setEditEnclos('new')}
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
+          className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
           + Enclos
         </button>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-6 border-b border-gray-200" role="tablist">
         {(['enclos', 'week'] as const).map(t => (
-          <button key={t} onClick={() => setActiveTab(t)}
-            className={`px-4 py-2 rounded-full text-sm font-galey font-semibold transition-colors ${
-              activeTab === t ? 'bg-teal-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            {t === 'enclos' ? '🏠 Enclos' : '📅 Planning semaine'}
+          <button key={t} onClick={() => setActiveTab(t)} role="tab" aria-selected={activeTab === t}
+            className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
+              activeTab === t ? 'border-[#0C5C6C] text-[#0C5C6C]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t === 'enclos' ? 'Enclos' : 'Planning semaine'}
           </button>
         ))}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
+          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
       ) : activeTab === 'enclos' ? (
         <>
@@ -431,7 +432,7 @@ export default function ChenilWebPage() {
           {enclos.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
-                <p className="text-2xl font-bold font-galey text-teal-700">{occupes}/{totalPlaces}</p>
+                <p className="text-2xl font-bold font-galey text-[#0C5C6C]">{occupes}/{totalPlaces}</p>
                 <p className="text-xs text-gray-400 font-galey">Places occupées</p>
               </div>
               <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
@@ -448,11 +449,10 @@ export default function ChenilWebPage() {
           {/* Grille d'enclos */}
           {enclos.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
-              <p className="text-5xl mb-3">🏠</p>
               <p className="font-galey font-semibold text-gray-600 mb-1">Aucun enclos configuré</p>
               <p className="text-sm mb-4">Créez vos boxes, chatteries et enclos pour gérer l'hébergement.</p>
               <button onClick={() => setEditEnclos('new')}
-                className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800">
+                className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D]">
                 Créer un enclos
               </button>
             </div>
@@ -490,7 +490,7 @@ export default function ChenilWebPage() {
           {/* Animaux sans enclos */}
           {sansEnclos > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-              <p className="text-sm font-bold font-galey text-amber-700 mb-2">⚠️ Animaux sans enclos assigné ({sansEnclos})</p>
+              <p className="text-sm font-bold font-galey text-amber-700 mb-2">Animaux sans enclos assigné ({sansEnclos})</p>
               <div className="flex flex-wrap gap-2">
                 {animaux
                   .filter(a => !a.enclos_id && !a.fa_id && ['present', 'en_soin', 'disponible'].includes(a.statut ?? ''))
@@ -507,21 +507,21 @@ export default function ChenilWebPage() {
       ) : (
         /* ── Planning semaine ── */
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
-          <div className="flex items-center justify-between px-4 py-3 bg-teal-50 border-b border-teal-100">
+          <div className="flex items-center justify-between px-4 py-3 bg-[#E8F4F6] border-b border-[#0C5C6C]/20">
             <button onClick={() => setWeekStart(d => addDays(d, -7))}
-              className="text-teal-700 hover:text-teal-900 font-bold text-lg px-2">‹</button>
-            <p className="font-bold font-galey text-teal-800 text-sm">
+              className="text-[#0C5C6C] hover:text-[#094F5D] font-bold text-lg px-2">‹</button>
+            <p className="font-bold font-galey text-[#1F2A2E] text-sm">
               Semaine du {weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
             </p>
             <button onClick={() => setWeekStart(d => addDays(d, 7))}
-              className="text-teal-700 hover:text-teal-900 font-bold text-lg px-2">›</button>
+              className="text-[#0C5C6C] hover:text-[#094F5D] font-bold text-lg px-2">›</button>
           </div>
           <div className="flex border-b border-gray-100">
             <div className="w-28 flex-shrink-0" />
             {days.map((d, i) => {
               const isToday = d.getTime() === today.getTime();
               return (
-                <div key={i} className={`flex-1 text-center py-2 text-xs font-galey ${isToday ? 'bg-teal-50 text-teal-700 font-bold' : 'text-gray-500'}`}>
+                <div key={i} className={`flex-1 text-center py-2 text-xs font-galey ${isToday ? 'bg-[#E8F4F6] text-[#0C5C6C] font-bold' : 'text-gray-500'}`}>
                   <p>{JOURS[i]}</p>
                   <p className="font-bold">{d.getDate()}</p>
                 </div>
@@ -538,7 +538,7 @@ export default function ChenilWebPage() {
                 <div key={a.id} className="flex border-b border-gray-50 hover:bg-gray-50/50">
                   <div className="w-28 flex-shrink-0 flex flex-col justify-center px-3 py-2">
                     <span className="text-xs font-galey font-semibold text-gray-800 truncate">{a.nom}</span>
-                    {enclosNom && <span className="text-[10px] text-teal-600 truncate">{enclosNom}</span>}
+                    {enclosNom && <span className="text-[10px] text-[#0C5C6C] truncate">{enclosNom}</span>}
                   </div>
                   {days.map((d, i) => {
                     const present = isPresent(a as any, d);
