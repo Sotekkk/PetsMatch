@@ -281,82 +281,71 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   @override
   Widget build(BuildContext context) {
     final avatarUrl = _currentAvatar;
+    const dark = Color(0xFF1F2A2E);
+    final initiale = _currentName.trim().isNotEmpty ? _currentName.trim()[0].toUpperCase() : '?';
 
     return Container(
-      color: _teal,
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 12, 16),
-      child: Row(
-        children: [
-          // Avatar → édition du profil
+      color: Colors.white,
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 10, 8, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // Logo PetsMatch + fermer
+        Row(children: [
+          const Expanded(child: Text.rich(TextSpan(children: [
+            TextSpan(text: 'Pets', style: TextStyle(color: _teal)),
+            TextSpan(text: 'Match', style: TextStyle(color: dark)),
+          ]), style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 22))),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: dark, size: 24),
+            tooltip: 'Fermer',
+            onPressed: widget.onClose,
+          ),
+        ]),
+        const SizedBox(height: 8),
+        // Photo / logo du professionnel → édition du profil ; nom → changement de profil
+        Row(children: [
           GestureDetector(
             onTap: widget.onEditTap,
             child: CircleAvatar(
-              radius: 28,
-              backgroundColor: const Color(0xFFA7C79A),
+              radius: 26,
+              backgroundColor: const Color(0xFFE8F4F6),
               backgroundImage: avatarUrl.isNotEmpty
                   ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
                   : null,
               child: avatarUrl.isEmpty
-                  ? const Icon(Icons.pets, color: Colors.white, size: 28)
+                  ? Text(initiale, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _teal))
                   : null,
             ),
           ),
           const SizedBox(width: 14),
-
-          // Nom + rôle
           Expanded(
-            child: GestureDetector(
+            child: InkWell(
               onTap: _openSwitcherSheet,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _currentName,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(_currentName, maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: dark, fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, height: 1.25)),
                   const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(Icons.swap_horiz, color: Color(0xFFA7C79A), size: 13),
-                      const SizedBox(width: 4),
-                      Flexible(child: Text(
-                        _currentRoleLabel,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: const TextStyle(
-                          color: Color(0xFFEEF5EA),
-                          fontSize: 12,
-                          fontFamily: 'Galey',
-                        ),
-                      )),
-                    ],
-                  ),
-                ],
+                  Text(_currentRoleLabel, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.grey.shade600, fontSize: 13, fontFamily: 'Galey')),
+                ]),
               ),
             ),
           ),
-
-          // Switcher
           IconButton(
-            icon: const Icon(Icons.unfold_more, color: Colors.white, size: 22),
+            icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade600, size: 26),
             tooltip: 'Changer de profil',
             onPressed: _openSwitcherSheet,
           ),
-
-          // Fermer le drawer
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white, size: 20),
-            onPressed: widget.onClose,
-          ),
-        ],
-      ),
+        ]),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Divider(height: 1, thickness: 1, indent: 0, endIndent: 0, color: Colors.grey.shade200),
+        ),
+        const SizedBox(height: 6),
+      ]),
     );
   }
 }

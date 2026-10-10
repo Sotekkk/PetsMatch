@@ -89,6 +89,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/menu_pro.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -235,7 +236,9 @@ class _EleveurNavState extends State<EleveurNav> {
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.82,
       backgroundColor: Colors.white,
-      child: Column(
+      child: Theme(
+        data: themeMenuPro(context),
+        child: Column(
         children: [
           ProfileSwitcherHeader(
             onClose: () => drawerKey.currentState?.closeEndDrawer(),
@@ -255,6 +258,7 @@ class _EleveurNavState extends State<EleveurNav> {
                 _DrawerItem(
                   icon: Icons.home_outlined,
                   label: 'Accueil',
+                  active: _selectedIndex == 0,
                   onTap: () {
                     Navigator.pop(context);
                     setState(() => _selectedIndex = 0);
@@ -1855,22 +1859,11 @@ class _EleveurNavState extends State<EleveurNav> {
             ),
           ),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.gavel_outlined, color: Color(0xFF9CA3AF), size: 20),
-            title: const Text('CGU & Confidentialité',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF))),
-            onTap: () async {
+          MenuProLienDiscret(icon: Icons.gavel_outlined, label: 'CGU & Confidentialité', onTap: () async {
               await launchUrl(Uri.parse('https://www.petsmatchapp.com/cgu'), mode: LaunchMode.externalApplication);
-            },
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-          ),
+            }),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.redAccent, size: 22),
-            title: const Text('Déconnexion',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15, color: Colors.redAccent)),
-            onTap: () async {
+          MenuProDeconnexion(onTap: () async {
               await FirebaseAuth.instance.signOut();
               // Sur un profil secondaire, l'AuthWrapper racine a été détruit par
               // le pushAndRemoveUntil du switch de profil : signOut() seul ne
@@ -1879,12 +1872,10 @@ class _EleveurNavState extends State<EleveurNav> {
                 MaterialPageRoute(builder: (_) => AuthWrapper()),
                 (_) => false,
               );
-            },
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-          ),
-          const SizedBox(height: 8),
+            }),
+          SizedBox(height: 8 + MediaQuery.of(context).padding.bottom),
         ],
+      ),
       ),
     );
   }
@@ -1897,39 +1888,19 @@ class _DrawerItem extends StatelessWidget {
   final bool locked;
   final String badgeLabel;
   final bool showSocialDot;
+  final bool active;
 
   const _DrawerItem({
     required this.icon, required this.label, required this.onTap,
-    this.locked = false, this.badgeLabel = 'Pro', this.showSocialDot = false,
+    this.locked = false, this.badgeLabel = 'Pro', this.showSocialDot = false, this.active = false,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final iconWidget = Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF0C5C6C), size: 22);
-    return ListTile(
-      leading: showSocialDot ? _SocialNotifDot(child: iconWidget) : iconWidget,
-      title: Row(children: [
-        Flexible(child: Text(label,
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15,
-                color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E)))),
-        if (locked) ...[
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-                color: const Color(0xFFD97706).withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(8)),
-            child: Text(badgeLabel,
-                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
-                    fontFamily: 'Galey', color: Color(0xFFD97706))),
-          ),
-        ],
-      ]),
-      onTap: onTap,
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-    );
-  }
+  Widget build(BuildContext context) => MenuProItem(
+    icon: icon, label: label, onTap: onTap, active: active,
+    locked: locked, badgeLabel: badgeLabel,
+    enveloppeIcone: showSocialDot ? (i) => _SocialNotifDot(child: i) : null,
+  );
 }
 
 /// Petite pastille rouge (nouveauté Pets Social : likes/commentaires/abonnés/
@@ -1984,55 +1955,22 @@ class _SocialNotifDotState extends State<_SocialNotifDot> {
   }
 }
 
-class _DrawerSection extends StatefulWidget {
+class _DrawerSection extends StatelessWidget {
   final IconData icon;
   final String label;
   final List<Widget> children;
 
+
   const _DrawerSection({required this.icon, required this.label, required this.children});
 
   @override
-  State<_DrawerSection> createState() => _DrawerSectionState();
-}
-
-class _DrawerSectionState extends State<_DrawerSection> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          leading: Icon(widget.icon, color: const Color(0xFF0C5C6C), size: 22),
-          title: Text(widget.label,
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15)),
-          trailing: AnimatedRotation(
-            turns: _expanded ? 0.5 : 0,
-            duration: const Duration(milliseconds: 200),
-            child: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF0C5C6C)),
-          ),
-          onTap: () => setState(() => _expanded = !_expanded),
-          dense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-        ),
-        AnimatedCrossFade(
-          firstChild: const SizedBox.shrink(),
-          secondChild: Container(
-            color: const Color(0xFFF8F8F6),
-            child: Column(children: widget.children),
-          ),
-          crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-          duration: const Duration(milliseconds: 200),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => MenuProSection(
+    icon: icon, label: label, children: children);
 }
 
 class _DrawerSubItem extends StatelessWidget {
   final String label;
-  final IconData icon;
+  final IconData icon; // conservé (appels existants) — les sous-menus s'affichent en texte seul
   final VoidCallback onTap;
   final bool locked;
   final String badgeLabel;
@@ -2044,35 +1982,11 @@ class _DrawerSubItem extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final iconWidget = Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18);
-    return ListTile(
-      leading: const SizedBox(width: 22),
-      title: Row(
-        children: [
-          showSocialDot ? _SocialNotifDot(child: iconWidget) : iconWidget,
-          const SizedBox(width: 10),
-          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-              color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E))),
-          if (locked) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-              decoration: BoxDecoration(
-                  color: const Color(0xFFD97706).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8)),
-              child: Text(badgeLabel,
-                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700,
-                      fontFamily: 'Galey', color: Color(0xFFD97706))),
-            ),
-          ],
-        ],
-      ),
-      onTap: onTap,
-      dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-    );
-  }
+  Widget build(BuildContext context) => MenuProSubItem(
+    label: label, onTap: onTap,
+    locked: locked, badgeLabel: badgeLabel,
+    indicateur: showSocialDot ? const _SocialNotifDot(child: SizedBox(width: 6, height: 6)) : null,
+  );
 }
 
 class _NavItem extends StatelessWidget {

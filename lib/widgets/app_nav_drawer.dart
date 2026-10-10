@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/menu_pro.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:url_launcher/url_launcher.dart';
@@ -146,7 +147,9 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
     return Drawer(
       width: MediaQuery.of(context).size.width * 0.82,
       backgroundColor: Colors.white,
-      child: Column(
+      child: Theme(
+        data: themeMenuPro(context),
+        child: Column(
         children: [
           ProfileSwitcherHeader(
             onClose: () => Scaffold.of(context).closeEndDrawer(),
@@ -184,27 +187,12 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             ),
           ),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.gavel_outlined, color: Color(0xFF9CA3AF), size: 20),
-            title: const Text('CGU & Confidentialité',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF))),
-            onTap: () async {
+          MenuProLienDiscret(icon: Icons.gavel_outlined, label: 'CGU & Confidentialité', onTap: () async {
               await launchUrl(Uri.parse('https://www.petsmatchapp.com/cgu'),
                   mode: LaunchMode.externalApplication);
-            },
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-          ),
+            }),
           const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.redAccent, size: 22),
-            title: const Text('Déconnexion',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w500,
-                    fontSize: 15,
-                    color: Colors.redAccent)),
-            onTap: () async {
+          MenuProDeconnexion(onTap: () async {
               await FirebaseAuth.instance.signOut();
               // Après un switch de profil, `_switchToProfile` a fait un
               // pushAndRemoveUntil(BottomNav, (_) => false) qui a détruit
@@ -216,12 +204,10 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                 MaterialPageRoute(builder: (_) => AuthWrapper()),
                 (_) => false,
               );
-            },
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-          ),
-          const SizedBox(height: 8),
+            }),
+          SizedBox(height: 8 + MediaQuery.of(context).padding.bottom),
         ],
+      ),
       ),
     );
   }
@@ -663,123 +649,50 @@ class _DrawerItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _DrawerItem({required this.icon, required this.label, required this.onTap});
+  final bool active;
+
+  const _DrawerItem({
+    required this.icon, required this.label, required this.onTap, this.active = false,
+  });
 
   @override
-  Widget build(BuildContext context) => ListTile(
-        leading: Icon(icon, color: const Color(0xFF0C5C6C), size: 22),
-        title: Text(label,
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15)),
-        onTap: onTap,
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-      );
+  Widget build(BuildContext context) => MenuProItem(
+    icon: icon, label: label, onTap: onTap, active: active,
+    
+    
+  );
 }
 
-class _DrawerSection extends StatefulWidget {
+class _DrawerSection extends StatelessWidget {
   final IconData icon;
   final String label;
   final List<Widget> children;
   final bool initiallyExpanded;
 
-  const _DrawerSection({
-    required this.icon,
-    required this.label,
-    required this.children,
-    this.initiallyExpanded = false,
-  });
+  const _DrawerSection({required this.icon, required this.label, required this.children, this.initiallyExpanded = false});
 
   @override
-  State<_DrawerSection> createState() => _DrawerSectionState();
-}
-
-class _DrawerSectionState extends State<_DrawerSection> {
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _expanded = widget.initiallyExpanded;
-  }
-
-  @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          ListTile(
-            leading: Icon(widget.icon, color: const Color(0xFF0C5C6C), size: 22),
-            title: Text(widget.label,
-                style: const TextStyle(
-                    fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15)),
-            trailing: AnimatedRotation(
-              turns: _expanded ? 0.5 : 0,
-              duration: const Duration(milliseconds: 200),
-              child: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF0C5C6C)),
-            ),
-            onTap: () => setState(() => _expanded = !_expanded),
-            dense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox(width: double.infinity),
-            secondChild: Container(
-              color: const Color(0xFFF8F8F6),
-              child: Column(children: widget.children),
-            ),
-            crossFadeState: _expanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 200),
-          ),
-        ],
-      );
+  Widget build(BuildContext context) => MenuProSection(
+    icon: icon, label: label, children: children, initiallyExpanded: initiallyExpanded);
 }
 
 class _DrawerSubItem extends StatelessWidget {
   final String label;
-  final IconData icon;
+  final IconData icon; // conservé (appels existants) — les sous-menus s'affichent en texte seul
   final VoidCallback onTap;
   final bool locked;
   final String badgeLabel;
 
+
   const _DrawerSubItem({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.locked = false,
-    this.badgeLabel = 'Pro',
+    required this.label, required this.icon, required this.onTap,
+    this.locked = false, this.badgeLabel = 'Pro',
   });
 
   @override
-  Widget build(BuildContext context) => ListTile(
-        leading: const SizedBox(width: 22),
-        title: Row(
-          children: [
-            Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18),
-            const SizedBox(width: 10),
-            Expanded(child: Text(label,
-                maxLines: 2,
-                softWrap: true,
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontSize: 14,
-                    color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E)))),
-            if (locked) ...[
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                    color: const Color(0xFFD97706).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text(badgeLabel,
-                    style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Galey',
-                        color: Color(0xFFD97706))),
-              ),
-            ],
-          ],
-        ),
-        onTap: onTap,
-        dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
-      );
+  Widget build(BuildContext context) => MenuProSubItem(
+    label: label, onTap: onTap,
+    locked: locked, badgeLabel: badgeLabel,
+    
+  );
 }
