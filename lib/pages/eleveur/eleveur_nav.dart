@@ -1085,17 +1085,6 @@ class _EleveurNavState extends State<EleveurNav> {
                   ],
                 ),
 
-                if (!User_Info.isPro)
-                  _DrawerItem(
-                    icon: Icons.favorite_border,
-                    label: 'Favoris',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => LikesPage(),
-                      ));
-                    },
-                  ),
                 // Pension : "Annuaire professionnel" et "Communauté" sont
                 // regroupes plus bas sous "Annuaire & Communauté", comme sur
                 // le site, apres le bloc "Ma Pension".
@@ -1141,6 +1130,18 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                 ],
+                // Favoris sous Pets Social.
+                if (!User_Info.isPro)
+                  _DrawerItem(
+                    icon: Icons.favorite_border,
+                    label: 'Favoris',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => LikesPage(),
+                      ));
+                    },
+                  ),
                 if (User_Info.isPro && User_Info.catPro == 'restauration') ...[
                   const Divider(height: 24),
                   Padding(

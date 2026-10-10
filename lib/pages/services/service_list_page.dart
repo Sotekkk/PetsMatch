@@ -192,13 +192,7 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
   // ── Markers ────────────────────────────────────────────────────────────────
 
-  double _hueForCat(String cat) => switch (cat) {
-    'sante' || 'veterinaire' => BitmapDescriptor.hueAzure,
-    'education'              => BitmapDescriptor.hueOrange,
-    'garde'                  => BitmapDescriptor.hueGreen,
-    'referencement'          => BitmapDescriptor.hueYellow,
-    _                        => BitmapDescriptor.hueViolet,
-  };
+  double _hueForCat(String cat) => hueMarqueurPro(cat);
 
   Set<Marker> _buildMarkers() => _filtered
       .where((p) => p['lat'] != null && p['lng'] != null)
@@ -855,7 +849,7 @@ class _ProCard extends StatelessWidget {
                       color: accept ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(accept ? '✓ Dispo' : 'Complet',
+                    child: Text(accept ? 'Disponible' : 'Complet',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
                         color: accept ? const Color(0xFF388E3C) : const Color(0xFFF57C00))),
                   )),
@@ -955,3 +949,17 @@ class _ProCard extends StatelessWidget {
     child: Icon(Icons.store_outlined, size: 26, color: categoryColor),
   );
 }
+
+
+/// Teinte du marqueur d'un professionnel sur la carte de l'annuaire, selon
+/// son profile_type. Partagée avec la liste (repère coloré des fiches).
+double hueMarqueurPro(String cat) => switch (cat) {
+  'sante' || 'veterinaire' => BitmapDescriptor.hueAzure,
+  'education'              => BitmapDescriptor.hueOrange,
+  'garde'                  => BitmapDescriptor.hueGreen,
+  'referencement'          => BitmapDescriptor.hueYellow,
+  _                        => BitmapDescriptor.hueViolet,
+};
+
+/// Couleur affichée correspondant à [hueMarqueurPro] (même teinte).
+Color couleurMarqueurPro(String cat) => HSVColor.fromAHSV(1, hueMarqueurPro(cat), 0.8, 0.95).toColor();
