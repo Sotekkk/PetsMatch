@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -11,6 +11,7 @@ export default function AssociationLayout({ children }: { children: React.ReactN
   const { user, loading } = useAuth();
   const { id: activeProfileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
+  const pathname = usePathname();
   const [isAssociation, setIsAssociation] = useState<boolean | null>(null);
   const [nomAsso, setNomAsso] = useState('');
 
@@ -56,6 +57,10 @@ export default function AssociationLayout({ children }: { children: React.ReactN
       </div>
     );
   }
+
+  // Accueil : même présentation que l'accueil éleveur (identité dans la carte,
+  // fond et largeur identiques) — pas de bandeau ni de conteneur propre.
+  if (pathname === '/association') return <>{children}</>;
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -292,11 +292,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   // Photos
   const [avatarFile, setAvatarFile]         = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview]   = useState<string | null>(null);
-  const [bannerFile, setBannerFile]         = useState<File | null>(null);
-  const [bannerPreview, setBannerPreview]   = useState<string | null>(null);
-  const [currentBanner, setCurrentBanner]   = useState<string | null>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
-  const bannerRef = useRef<HTMLInputElement>(null);
 
   // Documents
   const [siretDocFile, setSiretDocFile]     = useState<File | null>(null);
@@ -362,7 +358,6 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         setStatutsDocUrl((r.statuts_url as string) ?? null);
         setArretePrefDocUrl((r.arrete_prefectoral_url as string) ?? null);
         setAvatarPreview((r.avatar_url as string) ?? null);
-        setCurrentBanner((r.banner_url as string) ?? null);
         setLoading(false);
       });
   }, [profileId]);
@@ -418,15 +413,6 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         if (up) {
           const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
           payload.avatar_url = pub.publicUrl;
-        }
-      }
-      if (bannerFile) {
-        const path = `profiles/${uid}/asso_${profileId}_banner.jpg`;
-        const { data: up } = await supabase.storage.from('petsmatch').upload(path, bannerFile, { upsert: true });
-        if (up) {
-          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
-          payload.banner_url = pub.publicUrl;
-          setCurrentBanner(pub.publicUrl);
         }
       }
       if (siretDocFile) {
@@ -490,33 +476,16 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   return (
     <div className="max-w-2xl mx-auto pb-20">
 
-      {/* ── Bannière + avatar ── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
-        <button type="button" onClick={() => bannerRef.current?.click()}
-          className="w-full h-44 bg-gradient-to-br from-[#0C5C6C] to-[#6E9E57] relative overflow-hidden block group">
-          {(bannerPreview ?? currentBanner) && (
-            <Image src={bannerPreview ?? currentBanner!} alt="Bannière" fill className="object-cover" />
-          )}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/35 transition-colors">
-            <div className="flex flex-col items-center gap-1 text-white">
-              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
-              <span className="text-xs font-medium">Modifier la bannière</span>
-            </div>
-          </div>
-        </button>
-        <input ref={bannerRef} type="file" accept="image/*" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) { setBannerFile(f); setBannerPreview(URL.createObjectURL(f)); } e.target.value = ''; }} />
+      {/* ── Logo (la bannière est la bannière officielle PetsMatch, non personnalisable) ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4 pt-5">
         <input ref={avatarRef} type="file" accept="image/*" className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) { setAvatarFile(f); setAvatarPreview(URL.createObjectURL(f)); } e.target.value = ''; }} />
-        <div className="px-5 -mt-10 mb-4 flex items-end gap-3 relative z-10">
+        <div className="px-5 mb-4 flex items-end gap-3 relative z-10">
           <div className="w-20 h-20 rounded-full overflow-hidden bg-[#E3F2FD] flex items-center justify-center flex-shrink-0 border-4 border-white shadow-md cursor-pointer relative group"
             onClick={() => avatarRef.current?.click()}>
             {avatarPreview
               ? <Image src={avatarPreview} alt="" width={80} height={80} className="object-cover w-full h-full" />
-              : <span className="text-2xl font-bold text-[#0C5C6C]">{(nomAsso[0] ?? '🤝').toUpperCase()}</span>
+              : <span className="text-2xl font-bold text-[#0C5C6C]">{(nomAsso[0] ?? 'A').toUpperCase()}</span>
             }
             <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -524,7 +493,7 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
           </div>
           <div className="pb-1">
             <p className="font-bold text-[#1F2A2E] text-sm">{nomAsso || 'Mon association'}</p>
-            <span className="text-xs bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">🤝 Association</span>
+            <span className="text-xs bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">Association</span>
           </div>
         </div>
       </div>
