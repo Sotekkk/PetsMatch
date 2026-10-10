@@ -1,29 +1,29 @@
-// Catégories des petites annonces « objets & matériel » liées aux animaux
-// (profil particulier). Aucune catégorie ne concerne un animal vivant.
+// Catégories des annonces « Matériel & équipements » (matériel destiné aux
+// animaux et aux activités professionnelles). Aucune catégorie ne concerne un animal vivant.
 // Doit rester aligné avec `lib/data/annonce_objet_categories.dart`.
 
 export interface AnnonceObjetCategorie {
   slug: string;
   label: string;
-  emoji: string;
   exemples: string;
 }
 
+// Slugs inchangés (données existantes) ; libellés « Matériel & équipements ».
 export const ANNONCE_OBJET_CATEGORIES: AnnonceObjetCategorie[] = [
-  { slug: 'habitat', label: 'Habitat & cage', emoji: '🏠',
-    exemples: 'Cage, clapier, volière, aquarium, terrarium, niche, box, abri' },
-  { slug: 'accessoires', label: 'Accessoires', emoji: '🦮',
-    exemples: 'Harnais, laisse, collier, gamelle, sac de transport, jouets, couchage' },
-  { slug: 'alimentation', label: 'Alimentation & fourrage', emoji: '🌾',
+  { slug: 'habitat', label: 'Couchage, habitat & parcs',
+    exemples: 'Paniers, niches, grilles de chenil, parcs, cages, volières, clapiers, aquariums' },
+  { slug: 'accessoires', label: 'Transport & accessoires',
+    exemples: 'Caisses de transport, harnais, laisses, colliers, gamelles' },
+  { slug: 'alimentation', label: 'Alimentation & fourrage',
     exemples: 'Foin, paille, granulés, litière, compléments' },
-  { slug: 'entretien', label: 'Entretien & soin', emoji: '✂️',
+  { slug: 'entretien', label: 'Entretien & soin',
     exemples: 'Matériel de toilettage, tondeuse, pharmacie, brosses' },
-  { slug: 'terrain', label: 'Terrain & pâture', emoji: '🌳',
-    exemples: 'Location de prairie, parcelle, pré, box en écurie, stabulation, pension' },
-  { slug: 'materiel_agricole', label: 'Matériel agricole', emoji: '🚜',
-    exemples: "Tracteur, remorque, clôture, abreuvoir, matériel d'élevage" },
-  { slug: 'autre', label: 'Autre (lié aux animaux)', emoji: '📦',
-    exemples: 'Tout autre objet ou service lié aux animaux (pas un animal)' },
+  { slug: 'terrain', label: 'Terrain & pâture',
+    exemples: 'Location de prairie, parcelle, pré, box en écurie, stabulation' },
+  { slug: 'materiel_agricole', label: 'Équipements d’élevage & agricoles',
+    exemples: 'Équipements de mise bas, couveuses, abreuvoirs, clôtures, remorque, tracteur' },
+  { slug: 'autre', label: 'Autre matériel',
+    exemples: 'Tout autre matériel ou équipement destiné aux animaux (jamais un animal)' },
 ];
 
 export const ANNONCE_OBJET_TRANSACTIONS: Record<string, string> = {
@@ -42,8 +42,4 @@ export const ANNONCE_OBJET_ETATS: Record<string, string> = {
 
 export function categorieLabel(slug?: string | null): string {
   return ANNONCE_OBJET_CATEGORIES.find(c => c.slug === slug)?.label ?? 'Autre';
-}
-
-export function categorieEmoji(slug?: string | null): string {
-  return ANNONCE_OBJET_CATEGORIES.find(c => c.slug === slug)?.emoji ?? '📦';
 }

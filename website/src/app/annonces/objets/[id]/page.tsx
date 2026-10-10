@@ -95,7 +95,7 @@ export default function AnnonceObjetDetailPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 pb-16">
-      <Link href="/annonces/objets" className="text-sm text-[#0C5C6C] hover:underline">← Petites annonces</Link>
+      <Link href="/annonces/objets" className="text-sm text-[#0C5C6C] hover:underline">← Matériel & équipements</Link>
 
       {photos.length > 0 && (
         <div className="mt-3">
@@ -135,8 +135,8 @@ export default function AnnonceObjetDetailPage() {
       {a.description && <p className="text-[#2C3A40] text-sm leading-relaxed whitespace-pre-line mt-4">{a.description}</p>}
 
       <div className="text-sm text-gray-500 mt-4 space-y-1">
-        {(a.ville || a.code_postal) && <p>📍 {[a.ville, a.code_postal].filter(Boolean).join(' · ')}</p>}
-        <p>👤 {a.nom_vendeur ?? 'Particulier'}{a.created_at ? ` · ${new Date(a.created_at).toLocaleDateString('fr-FR')}` : ''}</p>
+        {(a.ville || a.code_postal) && <p>{[a.ville, a.code_postal].filter(Boolean).join(' · ')}</p>}
+        <p>{a.nom_vendeur ?? 'Particulier'}{a.created_at ? ` · ${new Date(a.created_at).toLocaleDateString('fr-FR')}` : ''}</p>
       </div>
 
       {isOwner ? (
@@ -148,7 +148,7 @@ export default function AnnonceObjetDetailPage() {
         <button onClick={contact} disabled={sending || sent}
           className="w-full mt-6 py-3.5 rounded-2xl text-white font-bold disabled:opacity-60"
           style={{ background: '#0C5C6C', fontFamily: 'Galey, sans-serif' }}>
-          {sent ? '✓ Message envoyé' : sending ? 'Envoi…' : '💬 Contacter le vendeur'}
+          {sent ? 'Message envoyé' : sending ? 'Envoi…' : 'Contacter le vendeur'}
         </button>
       )}
     </div>

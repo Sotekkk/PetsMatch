@@ -16,6 +16,7 @@ import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT, useA
 import { compterFacturesNonVues, FACTURES_VUES_EVENT } from '@/lib/factures-non-vues';
 import { vetFormuleOk, VET_FORMULE_LABEL } from '@/lib/use-plan';
 import { apiFetch } from '@/lib/api-fetch';
+import { droitsAnnonces } from '@/lib/annonces-droits';
 
 interface Notif {
   id: string;
@@ -54,14 +55,14 @@ const NAV_GUEST_PRIMARY = [
   { href: '/tarifs',     label: 'Tarifs' },
 ];
 const NAV_GUEST_MORE = [
-  { href: '/annonces/objets', label: '📦 Matériel' },
+  { href: '/annonces/objets', label: 'Matériel & équipements' },
   { href: '/adoptions',      label: '💚 Adoptions' },
   { href: '/associations',   label: 'Associations' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
 ];
 const NAV_GUEST = [
   { href: '/annonces',       label: 'Annonces' },
-  { href: '/annonces/objets', label: '📦 Matériel' },
+  { href: '/annonces/objets', label: 'Matériel & équipements' },
   { href: '/adoptions',      label: '💚 Adoptions' },
   { href: '/elevages',       label: 'Élevages' },
   { href: '/associations',   label: 'Associations' },
@@ -73,7 +74,7 @@ const NAV_GUEST = [
 
 const NAV_ELEVEUR = [
   { href: '/mes-animaux',             label: 'Mes Animaux' },
-  { href: '/annonces/creer',          label: 'Déposer une annonce' },
+  { href: '/annonces/publier',        label: 'Publier une annonce' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
   { href: '/services',                label: 'Annuaire des professionnels' },
@@ -107,7 +108,7 @@ const NAV_PARTICULIER = [
   { href: '/',                     label: 'Accueil' },
   { href: '/mes-animaux',          label: 'Mes Animaux' },
   { href: '/annonces',             label: 'Annonces' },
-  { href: '/annonces/objets',      label: 'Matériel' },
+  { href: '/annonces/objets',      label: 'Matériel & équipements' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
   { href: '/communaute',           label: 'Communauté' },
   { href: '/services',             label: 'Annuaire des professionnels' },
@@ -676,9 +677,9 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/mes-factures': ['mes factures', 'factures recues', 'facture'],
   '/elevage/facturation': ['factures', 'devis', 'tva', 'comptabilite', 'facturation'],
   '/mes-annonces': ['mes annonces', 'portees', 'chiots a vendre'],
-  '/annonces/objets': ['materiel', 'objets', 'cage', 'harnais', 'foin', 'fourrage', 'tracteur', 'remorque', 'location prairie', 'parcelle', 'petites annonces', 'accessoires'],
-  '/mes-annonces-materiel': ['mes annonces materiel', 'mes objets', 'vendre du materiel'],
-  '/annonces/creer-objet': ['publier du materiel', 'vendre une cage', 'vendre un harnais', 'louer une prairie'],
+  '/annonces/objets': ['materiel', 'equipements', 'objets', 'panier', 'grille de chenil', 'parc', 'caisse de transport', 'mise bas', 'cage', 'harnais', 'foin', 'fourrage', 'tracteur', 'remorque', 'location prairie', 'parcelle', 'petites annonces', 'accessoires'],
+  '/annonces/publier': ['publier une annonce', 'deposer une annonce', 'nouvelle annonce', 'publier du materiel', 'vendre du materiel', 'vendre une cage', 'vendre un panier', 'nouvelle portee', 'vendre'],
+  '/mes-annonces': ['mes annonces', 'mes annonces materiel', 'mes objets'],
   '/annonces/creer': ['publier une annonce', 'deposer une annonce', 'nouvelle portee', 'vendre', 'nouvelle annonce'],
   '/annonces': ['trouver un chien', 'adopter', 'acheter', 'chiot', 'chaton', 'compagnon', 'annonces'],
   '/elevages': ['carte des elevages', 'eleveurs'],
@@ -992,7 +993,6 @@ export default function Header() {
   const [isFa, setIsFa] = useState(false);
   const [isEmploye, setIsEmploye] = useState(false);
   const [isBenevole, setIsBenevole] = useState(false);
-  const [hasParticulierAnnonce, setHasParticulierAnnonce] = useState(false);
   const activeProfileId = authActiveId;
   // Bulle rouge « nouvelle facture » (Administratif → Mes Factures) — même
   // profil que /mes-factures (useActiveProfile).
@@ -1099,9 +1099,6 @@ export default function Header() {
     if (isFa && sec.section === 'Mon Profil') {
       return { ...sec, items: [...sec.items, { href: '/mes-animaux-accueil', label: 'Animaux en accueil', icon: '🏡' }] };
     }
-    if (hasParticulierAnnonce && sec.section === 'Annonces') {
-      return { ...sec, items: [{ href: '/mes-annonces', label: 'Mes annonces (cheval)', icon: '📋' }, ...sec.items] };
-    }
     return sec;
   });
   const baseMenuSections = isEffectivelyPro
@@ -1178,9 +1175,6 @@ export default function Header() {
           ] }
         : sec)
     : withSanteContrats;
-  // Petites annonces « matériel & objets » liées aux animaux — accessible à
-  // tous les profils (particulier, éleveur, association, pro). Section propre
-  // pour éviter toute confusion avec les annonces d'animaux.
   // « Achats & crédits » : la page renvoie vers « Mon abonnement » du profil
   // (miroir de l'appli, MesAchatsPage(abonnement: …)). Pas d'abonnement pour
   // une association. Attention : effectiveIsEleveur inclut pension/garde.
@@ -1200,20 +1194,41 @@ export default function Header() {
       ? { ...it, href: `/mes-achats?abo=${encodeURIComponent(aboHrefAchats)}` }
       : it),
   }));
+  // Menu « Annonces » unique (animaux + matériel & équipements), pour tous
+  // les profils : il remplace l'ancienne section « Annonces » du profil et
+  // l'ancien bloc « Petites annonces (matériel) ». Les entrées propres à un
+  // profil qui n'en font pas partie (ex. Adoptions, Associations) sont
+  // conservées à la suite ; « Mes annonces » pointe vers la page du profil.
+  const droitsAnn = droitsAnnonces(effectiveType);
+  const itemsAnnonces = [
+    { href: droitsAnn.mesAnnonces, label: 'Mes annonces',           icon: '📋' },
+    { href: '/annonces/publier',   label: 'Publier une annonce',    icon: '➕' },
+    { href: '/annonces',           label: 'Trouver un compagnon',   icon: '❤️' },
+    { href: '/annonces/objets',    label: 'Matériel & équipements', icon: '📦' },
+    { href: '/elevages',           label: 'Carte des élevages',     icon: '🗺️' },
+  ];
+  const REMPLACES = new Set(['/mes-annonces', '/annonces/creer', '/annonces/creer-cheval', '/association/annonces', '/association/annonces/creer', '/mes-annonces-materiel', '/annonces/creer-objet']);
+  const ancienneAnnonces = withAchats.find(sec => sec.section === 'Annonces');
+  const sectionAnnonces = {
+    section: 'Annonces',
+    icon: '📢',
+    items: [
+      ...itemsAnnonces,
+      ...((ancienneAnnonces?.items ?? []) as { href: string }[])
+        .filter(it => !REMPLACES.has(it.href) && !itemsAnnonces.some(n => n.href === it.href)),
+    ],
+  };
+  const sansAnnonces = withAchats.filter(sec => sec.section !== 'Annonces');
+  const posAncienne = withAchats.findIndex(sec => sec.section === 'Annonces');
+  const posAnnuaire = sansAnnonces.findIndex(sec => sec.section === 'Annuaire & Communauté');
+  const posAnnonces = posAncienne >= 0 ? posAncienne : posAnnuaire >= 0 ? posAnnuaire : sansAnnonces.length;
   const menuSections = user
-    ? [
-        ...withAchats,
-        {
-          section: 'Petites annonces (matériel)',
-          icon: '📦',
-          items: [
-            { href: '/annonces/objets',        label: 'Parcourir le matériel', icon: '🔎' },
-            { href: '/mes-annonces-materiel',  label: 'Mes annonces matériel', icon: '📋' },
-            { href: '/annonces/creer-objet',   label: 'Publier du matériel',   icon: '➕' },
-          ],
-        },
-      ]
+    ? [...sansAnnonces.slice(0, posAnnonces), sectionAnnonces, ...sansAnnonces.slice(posAnnonces)]
     : withAchats;
+  // Entrée active = la plus précise (ex. /annonces/objets plutôt que /annonces).
+  const hrefsMenu = menuSections.flatMap(sec => (sec.items as { href: string }[]).map(i => i.href));
+  const actifMenu = (href: string) => isActive(href)
+    && !hrefsMenu.some(h => h !== href && h.length > href.length && h.startsWith(href) && isActive(h));
 
   // ── Index de recherche rapide (loupe) ────────────────────────────────────
   // À plat : tous les items du menu du profil actif + les liens de nav + les
@@ -1246,14 +1261,9 @@ export default function Header() {
 
   // ── Détection famille d'accueil & employé/bénévole ───────────────────────
   useEffect(() => {
-    if (!user) { setIsFa(false); setIsEmploye(false); setHasParticulierAnnonce(false); return; }
+    if (!user) { setIsFa(false); setIsEmploye(false); return; }
     supabase.from('familles_accueil').select('id').eq('fa_uid', user.uid).eq('actif', true).limit(1)
       .then(({ data }) => setIsFa((data ?? []).length > 0));
-    // « Mes annonces (cheval) » n'apparaît dans le menu particulier que si la
-    // personne a déjà au moins une annonce (création via la fiche du cheval).
-    supabase.from('annonces').select('id')
-      .eq('uid_eleveur', user.uid).eq('profil_source', 'particulier').limit(1)
-      .then(({ data }) => setHasParticulierAnnonce((data ?? []).length > 0));
     // Les relations employé/bénévole sont toujours rattachées au profil
     // particulier de la personne : on résout ce profile_id avant d'interroger
     // `employes`, pour éviter que le même employeur n'apparaisse dans tous
@@ -1508,7 +1518,7 @@ export default function Header() {
           {menuSections.map((sec) => {
             const items = sec.items as ItemMenu[];
             const ouvert = !!expandedSections[sec.section];
-            const contientActif = items.some(i => isActive(i.href));
+            const contientActif = items.some(i => actifMenu(i.href));
             return (
               <div key={sec.section}>
                 <button type="button" onClick={() => toggleSection(sec.section)} aria-expanded={ouvert}
@@ -1522,7 +1532,7 @@ export default function Header() {
                   <div className="ml-[22px] pl-[19px] border-l border-gray-200 my-1 space-y-0.5">
                     {items.map((it) => {
                       const { isLocked, badge, abonnementHrefFor } = etatItem(it);
-                      const actif = !isLocked && isActive(it.href);
+                      const actif = !isLocked && actifMenu(it.href);
                       return isLocked ? (
                         <Link key={it.href} href={abonnementHrefFor} onClick={onNavigate}
                           className="flex items-center gap-2 px-3 min-h-[40px] rounded-md text-sm text-gray-400 hover:bg-gray-50">

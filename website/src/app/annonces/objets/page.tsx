@@ -5,8 +5,11 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { REGIONS_BY_PAYS, departmentsInRegion, fromPostalCode } from '@/lib/french-geo';
 import {
-  ANNONCE_OBJET_CATEGORIES, ANNONCE_OBJET_TRANSACTIONS, categorieEmoji,
+  ANNONCE_OBJET_CATEGORIES, ANNONCE_OBJET_TRANSACTIONS, categorieLabel,
 } from '@/lib/annonce-objet-categories';
+import { Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
+
+const champ = 'border border-[#E5E8E6] rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]';
 
 interface AnnonceObjet {
   id: string;
@@ -127,76 +130,70 @@ export default function AnnoncesObjetsFeedPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-8" style={{ fontFamily: 'Galey, sans-serif' }}>
       <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
-        <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Petites annonces — matériel
-        </h1>
+        <h1 className="text-2xl font-bold text-[#1E2025]">Matériel & équipements</h1>
         <Link href="/annonces/creer-objet"
-          className="text-sm font-semibold bg-[#0C5C6C] text-white px-4 py-2 rounded-xl hover:bg-[#094F5D] transition-colors">
-          + Publier
+          className="text-sm font-semibold bg-[#0C5C6C] text-white px-4 py-2.5 rounded-full hover:bg-[#094F5D] transition-colors inline-flex items-center gap-2">
+          <Icone nom="plus" taille={16} /> Publier du matériel
         </Link>
       </div>
-      <p className="text-sm text-gray-500 mb-4">
-        Cage, harnais, foin, location de prairie ou de parcelle, matériel agricole…
-        Matériel lié aux animaux uniquement — jamais un animal.
+      <p className="text-sm text-gray-600 mb-4">
+        Matériel destiné aux animaux et aux activités professionnelles : paniers, grilles de chenil, parcs,
+        caisses de transport, équipements de mise bas… Jamais d’animal.
       </p>
 
       {/* Recherche */}
       <div className="relative mb-3">
         <input value={kwInput} onChange={e => setKwInput(e.target.value)}
-          placeholder="Rechercher (cage, foin, harnais, tracteur…)"
-          className="w-full border border-gray-200 rounded-full pl-11 pr-10 py-2.5 text-sm bg-[#F1F3F2] focus:outline-none focus:border-[#0C5C6C] focus:bg-white" />
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔎</span>
+          placeholder="Rechercher (panier, grille de chenil, caisse de transport…)"
+          className="w-full border border-[#E5E8E6] rounded-full pl-11 pr-20 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]" />
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"><Icone nom="recherche" taille={17} /></span>
         {kwInput && (
-          <button onClick={() => setKwInput('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">✕</button>
+          <button onClick={() => setKwInput('')} aria-label="Effacer" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm px-1">Effacer</button>
         )}
       </div>
 
-      {/* Catégories */}
-      <div className="flex gap-2 overflow-x-auto pb-3">
-        <Chip active={cat === 'tous'} onClick={() => setCat('tous')} label="🔎 Tout" />
-        {ANNONCE_OBJET_CATEGORIES.map(c => (
-          <Chip key={c.slug} active={cat === c.slug} onClick={() => setCat(c.slug)} label={`${c.emoji} ${c.label}`} />
-        ))}
-      </div>
-
-      {/* Filtres : code postal → commune */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+      {/* Catégorie + code postal → commune + tri (listes compactes) */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-2">
+        <select value={cat} onChange={e => setCat(e.target.value)} className={champ} aria-label="Catégorie">
+          <option value="tous">Toutes les catégories</option>
+          {ANNONCE_OBJET_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+        </select>
         <input value={cp} onChange={e => setCp(e.target.value.replace(/\D/g, '').slice(0, 5))}
           inputMode="numeric" placeholder="Code postal"
-          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+          className={champ} />
         {communes.length > 0 ? (
           <select value={ville} onChange={e => setVille(e.target.value)}
-            className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+            className={champ}>
             <option value="">Toutes les communes</option>
             {communes.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         ) : (
           <input value={ville} onChange={e => setVille(e.target.value)} placeholder="Commune"
-            className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+            className={champ} />
         )}
         <select value={tri} onChange={e => setTri(e.target.value)}
-          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+          className={champ}>
           {TRIS.map(t => <option key={t.k} value={t.k}>{t.label}</option>)}
         </select>
       </div>
       <div className="grid grid-cols-2 gap-2 mb-2">
         <select value={region} onChange={e => { setRegion(e.target.value); setDept(''); }}
-          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+          className={champ}>
           <option value="">Ou : toutes régions</option>
           {REGIONS_BY_PAYS.France.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
         <select value={dept} onChange={e => setDept(e.target.value)} disabled={!region}
-          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-[#0C5C6C]">
+          className={`${champ} disabled:bg-gray-50 disabled:text-gray-400`}>
           <option value="">Tous départements</option>
           {depts.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </div>
       <div className="flex items-center gap-3 mb-5 text-sm">
         <button onClick={autourDeMoi} disabled={locating}
-          className="inline-flex items-center gap-1.5 border border-[#0C5C6C] text-[#0C5C6C] px-3 py-1.5 rounded-full hover:bg-[#E8F4F6] transition-colors disabled:opacity-60">
-          📍 {locating ? 'Localisation…' : 'Autour de moi'}
+          className="inline-flex items-center gap-1.5 border border-[#0C5C6C]/40 text-[#0C5C6C] px-3 py-1.5 rounded-full hover:bg-[#E8F4F6] transition-colors disabled:opacity-60">
+          <Icone nom="pin" taille={15} /> {locating ? 'Localisation…' : 'Autour de moi'}
         </button>
         {activeFilters > 0 && (
           <button onClick={() => { setRegion(''); setDept(''); setVille(''); setCp(''); setCommunes([]); setTri('recent'); }}
@@ -212,24 +209,26 @@ export default function AnnoncesObjetsFeedPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {rows.map(a => (
             <Link key={a.id} href={`/annonces/objets/${a.id}`}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-              <div className="aspect-square bg-[#EEF3F0] relative">
+              className={`bg-white rounded-2xl overflow-hidden hover:shadow-md transition-shadow ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
+              <div className="aspect-square bg-[#E8F4F6] relative">
                 {a.photos?.[0]
+                  // eslint-disable-next-line @next/next/no-img-element
                   ? <img src={a.photos[0]} alt={a.titre} className="w-full h-full object-cover" />
-                  : <div className="w-full h-full flex items-center justify-center text-4xl">📦</div>}
+                  : <div className="w-full h-full flex items-center justify-center text-[#0C5C6C]"><Icone nom="caisse" taille={36} /></div>}
                 {boostActif(a.boost_until) && (
-                  <span className="absolute top-2 left-2 bg-[#FF8A00] text-white text-[11px] font-bold px-2 py-0.5 rounded-full">⚡ Boostée</span>
+                  <span className="absolute top-2 left-2 bg-white/95 text-[#B45309] border border-[#B45309]/20 text-[11px] font-semibold px-2 py-0.5 rounded-full">Boostée</span>
                 )}
-                <span className="absolute bottom-2 left-2 bg-black/55 text-white text-[11px] px-2 py-0.5 rounded-full">
-                  {categorieEmoji(a.categorie)} {ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}
+                <span className="absolute bottom-2 left-2 bg-white/95 text-[#1E2025] border border-[#E5E8E6] text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                  {ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}
                 </span>
               </div>
               <div className="p-3">
-                <p className="font-bold text-[#1F2A2E] text-sm line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{a.titre}</p>
+                <p className="font-bold text-[#1E2025] text-sm line-clamp-2">{a.titre}</p>
+                <p className="text-xs text-gray-500 truncate mt-0.5">{categorieLabel(a.categorie)}</p>
                 <p className="text-[#0C5C6C] font-bold text-sm mt-1">{prixLabel(a)}</p>
                 {(a.ville || a.departement) && (
-                  <p className="text-gray-400 text-xs mt-0.5 truncate">
-                    📍 {[a.ville, a.departement].filter(Boolean).join(', ')}
+                  <p className="text-gray-500 text-xs mt-0.5 truncate inline-flex items-center gap-1 max-w-full">
+                    <Icone nom="pin" taille={13} className="flex-shrink-0" /><span className="truncate">{[a.ville, a.departement].filter(Boolean).join(', ')}</span>
                   </p>
                 )}
               </div>
@@ -238,14 +237,5 @@ export default function AnnoncesObjetsFeedPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function Chip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button onClick={onClick}
-      className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${active ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'border-gray-200 text-gray-600 hover:border-[#0C5C6C]'}`}>
-      {label}
-    </button>
   );
 }

@@ -49,6 +49,17 @@ const TRACES: Record<string, React.ReactNode> = {
   seringue: <path d="M18 2l4 4M20 4l-9.5 9.5M15 5l4 4M8 12l4 4-4.5 4.5H4v-3.5zM6 18l-4 4" />,
   logement: <><path d="M3 21V9l9-6 9 6v12" /><path d="M8 21v-7h8v7M3 21h18" /></>,
   fleche: <path d="M9 6l6 6-6 6" />,
+  eclair: <path d="M13 3L5 13h6l-1 8 8-10h-6z" />,
+  barres: <path d="M5 20V12M10 20V6M15 20v-9M20 20V9" />,
+  pause: <path d="M9 6v12M15 6v12" />,
+  lecture: <path d="M8 5.5v13l10-6.5z" />,
+  renouveler: <><path d="M20 11a8 8 0 00-14.3-4.9L4 8" /><path d="M4 4v4h4M4 13a8 8 0 0014.3 4.9L20 16" /><path d="M20 20v-4h-4" /></>,
+  corbeille: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
+  caisse: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M3 11h18M9 7V5h6v2M7 15h2M15 15h2" /></>,
+  sac: <><path d="M6 8h12l-1 12H7z" /><path d="M9 8V6a3 3 0 016 0v2" /></>,
+  enveloppe: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></>,
+  personne: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0114 0" /></>,
 };
 
 export function Icone({ nom, taille = 20, className = '' }: { nom: keyof typeof TRACES | string; taille?: number; className?: string }) {

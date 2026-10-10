@@ -97,7 +97,7 @@ function CreerObjetInner() {
     if (!ville.trim()) { setErr('Sélectionnez votre commune.'); return; }
     const txt = `${titre} ${description}`.toLowerCase();
     if (INTERDITS.some(w => txt.includes(w))) {
-      setErr('Cette rubrique est réservée au matériel. Pour un animal, utilisez « Trouver un compagnon ».');
+      setErr('Cette rubrique est réservée au matériel et aux équipements. Pour un animal, choisissez « Animal » dans « Publier une annonce ».');
       return;
     }
     setSaving(true);
@@ -136,7 +136,7 @@ function CreerObjetInner() {
         const { error } = await supabase.from('annonces_objets').insert(payload);
         if (error) throw error;
       }
-      router.push('/mes-annonces-materiel');
+      router.push('/mes-annonces?type=materiel');
     } catch (e) {
       setSaving(false);
       setErr(e instanceof Error ? e.message : 'Erreur lors de l’enregistrement.');
@@ -147,13 +147,13 @@ function CreerObjetInner() {
 
   return (
     <div className="max-w-xl mx-auto px-4 py-8 pb-24">
-      <Link href="/mes-annonces-materiel" className="text-sm text-[#0C5C6C] hover:underline">← Mes annonces matériel</Link>
+      <Link href="/annonces/publier" className="text-sm text-[#0C5C6C] hover:underline">← Publier une annonce</Link>
       <h1 className="text-2xl font-bold text-[#1F2A2E] mt-2 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-        {editId ? 'Modifier l’annonce' : 'Publier une annonce'}
+        {editId ? 'Modifier l’annonce' : 'Matériel & équipements'}
       </h1>
       <p className="text-sm text-gray-500 mb-5">
-        Matériel lié aux animaux uniquement (cage, harnais, foin, location de prairie,
-        matériel agricole…). La vente d’un animal n’est pas autorisée ici.
+        Matériel destiné aux animaux et aux activités professionnelles : paniers, grilles de chenil,
+        parcs, caisses de transport, équipements de mise bas… La vente d’un animal n’est pas autorisée ici.
       </p>
 
       {/* Photos */}
@@ -190,7 +190,7 @@ function CreerObjetInner() {
       <Field label="Catégorie">
         <select value={categorie} onChange={e => setCategorie(e.target.value)}
           className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
-          {ANNONCE_OBJET_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.emoji} {c.label}</option>)}
+          {ANNONCE_OBJET_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
         </select>
         {cat && <p className="text-xs text-gray-400 mt-1">{cat.exemples}</p>}
       </Field>
@@ -236,7 +236,7 @@ function CreerObjetInner() {
           className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:border-[#0C5C6C]" />
       </Field>
 
-      <h2 className="text-sm font-bold text-[#0C5C6C] mt-2 mb-2">📍 Localisation</h2>
+      <h2 className="text-sm font-bold text-[#0C5C6C] mt-2 mb-2">Localisation</h2>
 
       <div className="grid grid-cols-3 gap-3">
         <Field label="Code postal">
@@ -253,7 +253,7 @@ function CreerObjetInner() {
                 {cp.length === 5 ? 'Aucune commune pour ce code postal.' : 'Saisissez d’abord le code postal.'}
               </p>
             ) : communes.length === 1 ? (
-              <div className="w-full border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-medium">📍 {communes[0]}</div>
+              <div className="w-full border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-medium">{communes[0]}</div>
             ) : (
               <select value={ville} onChange={e => setVille(e.target.value)}
                 className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">

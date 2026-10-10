@@ -9,6 +9,11 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import AnnonceStatsModal from '@/components/AnnonceStatsModal';
 import { apiFetch } from '@/lib/api-fetch';
+import { useTypeProfilActif } from '@/hooks/useTypeProfilActif';
+import { droitsAnnonces, lireFiltreType, type TypeAnnonceFiltre } from '@/lib/annonces-droits';
+import MesAnnoncesMateriel from '@/components/annonces/MesAnnoncesMateriel';
+import FiltresAnnonces from '@/components/annonces/FiltresAnnonces';
+import { Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
 
 interface Annonce {
   id: string;
@@ -55,7 +60,11 @@ const STATUT_COLOR: Record<string, string> = {
 type FilterKey = 'toutes' | 'disponible' | 'archivee' | 'pause';
 
 export default function MesAnnoncesPage() {
-  const { user, loading, userData, activeProfileId } = useAuth();
+  const { user, loading, activeProfileId } = useAuth();
+  const { type: typeProfil, pret: profilPret } = useTypeProfilActif();
+  const droits = droitsAnnonces(typeProfil);
+  const [typeFiltre, setTypeFiltre] = useState<TypeAnnonceFiltre>('toutes');
+  const [nbMateriel, setNbMateriel] = useState(0);
   const { plan, config: planConfig, activeAnnonces: activeCount } = usePlan();
   const router = useRouter();
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
@@ -65,7 +74,24 @@ export default function MesAnnoncesPage() {
   const [statsAnnonceId, setStatsAnnonceId] = useState<string | null>(null);
   const [statsAnnonceTitle, setStatsAnnonceTitle] = useState<string | undefined>();
   const isPremium = plan === 'premium';
-  const isParticulier = !userData?.isElevage;
+  const isParticulier = typeProfil === 'particulier';
+  const animauxAutorises = !!droits.animaux;
+
+  // Filtre de type lu dans l'URL (?type=animaux|materiel), anciens liens compris.
+  useEffect(() => {
+    setTypeFiltre(lireFiltreType(new URLSearchParams(window.location.search).get('type')));
+  }, []);
+  function choisirType(t: TypeAnnonceFiltre) {
+    setTypeFiltre(t);
+    const u = new URL(window.location.href);
+    if (t === 'toutes') u.searchParams.delete('type'); else u.searchParams.set('type', t);
+    window.history.replaceState({}, '', u.pathname + u.search);
+  }
+
+  // Profil association : ses annonces d'animaux vivent sous /association/annonces.
+  useEffect(() => {
+    if (profilPret && typeProfil === 'association') router.replace('/association/annonces' + window.location.search);
+  }, [profilPret, typeProfil, router]);
 
   useEffect(() => {
     if (loading) return;
@@ -73,7 +99,8 @@ export default function MesAnnoncesPage() {
   }, [loading, user, router]);
 
   useEffect(() => {
-    if (!user || loading) return;
+    if (!user || loading || !profilPret) return;
+    if (!animauxAutorises) { setAnnonces([]); setFetching(false); return; }
     const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at, paiement_statut, boost_until';
 
     async function load() {
@@ -131,7 +158,7 @@ export default function MesAnnoncesPage() {
     load().then(ch => { channelRef = ch; }).catch(() => setFetching(false));
 
     return () => { if (channelRef) supabase.removeChannel(channelRef); };
-  }, [user, loading, activeProfileId, isParticulier]);
+  }, [user, loading, activeProfileId, isParticulier, profilPret, animauxAutorises]);
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer définitivement cette annonce ?')) return;
@@ -185,7 +212,7 @@ export default function MesAnnoncesPage() {
   const [notice] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     const p = new URLSearchParams(window.location.search);
-    if (p.get('paye') === '1') return '✅ Paiement reçu — votre annonce est en cours de publication.';
+    if (p.get('paye') === '1') return 'Paiement reçu : votre annonce est en cours de publication.';
     if (p.get('paiement') === 'annule') return 'Paiement annulé — votre annonce reste en brouillon.';
     if (p.get('brouillon') === '1') return 'Brouillon enregistré. Reprenez-le quand vous voulez avec « Reprendre ».';
     return null;
@@ -193,7 +220,8 @@ export default function MesAnnoncesPage() {
   useEffect(() => {
     const s = window.location.search;
     if (s.includes('paye=') || s.includes('paiement=') || s.includes('brouillon=')) {
-      window.history.replaceState({}, '', '/mes-annonces');
+      const t = new URLSearchParams(s).get('type');
+      window.history.replaceState({}, '', t ? `/mes-annonces?type=${t}` : '/mes-annonces');
     }
   }, []);
 
@@ -214,49 +242,45 @@ export default function MesAnnoncesPage() {
   }
 
   const filtered = filter === 'toutes' ? annonces : annonces.filter(a => (a.statut ?? 'disponible') === filter);
-  const counts = {
-    toutes:    annonces.length,
-    disponible: annonces.filter(a => (a.statut ?? 'disponible') === 'disponible').length,
-    archivee:  annonces.filter(a => a.statut === 'archivee').length,
-    pause:     annonces.filter(a => a.statut === 'pause').length,
-  };
+  const voirAnimaux = typeFiltre === 'animaux' || (typeFiltre === 'toutes' && animauxAutorises);
+  const voirMateriel = typeFiltre !== 'animaux';
+  const total = (animauxAutorises ? annonces.length : 0) + nbMateriel;
+  const btnIcone = 'inline-flex items-center justify-center w-9 h-9 border rounded-xl transition-colors';
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-4xl mx-auto px-4 py-8" style={{ fontFamily: 'Galey, sans-serif' }}>
       {notice && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {notice}
         </div>
       )}
       {/* En-tête */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Mes annonces
-          </h1>
-          <p className="text-gray-500 text-sm">{annonces.length} annonce{annonces.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-2xl font-bold text-[#1E2025]">Mes annonces</h1>
+          <p className="text-gray-500 text-sm">{total} annonce{total !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/mes-achats"
-            className="border border-gray-200 hover:border-[#0C5C6C] text-gray-600 hover:text-[#0C5C6C] font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">
-            🧾 Mes achats
+            className="border border-[#E5E8E6] bg-white hover:border-[#0C5C6C] text-gray-700 hover:text-[#0C5C6C] font-semibold px-4 py-2.5 rounded-full transition-colors text-sm">
+            Mes achats
           </Link>
-          <Link href={isParticulier ? '/annonces/creer-cheval' : '/annonces/creer'}
-            className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
-            <span>+</span> {isParticulier ? 'Annonce cheval' : 'Nouvelle annonce'}
+          <Link href="/annonces/publier"
+            className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold px-5 py-2.5 rounded-full transition-colors text-sm inline-flex items-center gap-2">
+            <Icone nom="plus" taille={16} /> Publier une annonce
           </Link>
         </div>
       </div>
 
-      {/* Quota plan */}
-      {!isParticulier && <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-5 flex items-center gap-4">
+      {/* Quota plan (annonces d'animaux d'éleveur) */}
+      {animauxAutorises && !isParticulier && voirAnimaux && <div className={`bg-white rounded-2xl p-4 mb-5 flex items-center gap-4 ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-semibold text-gray-600">
-              {planConfig.badge} Plan {planConfig.label} — {planConfig.maxAnnonces === -1 ? 'Annonces illimitées' : `${activeCount} / ${planConfig.maxAnnonces} annonces actives`}
+              Plan {planConfig.label} — {planConfig.maxAnnonces === -1 ? 'Annonces illimitées' : `${activeCount} / ${planConfig.maxAnnonces} annonces actives`}
             </span>
             {planConfig.maxAnnonces !== -1 && activeCount >= planConfig.maxAnnonces && (
-              <span className="text-xs font-bold text-red-500">Limite atteinte</span>
+              <span className="text-xs font-bold text-red-600">Limite atteinte</span>
             )}
           </div>
           {planConfig.maxAnnonces !== -1 && (
@@ -270,214 +294,202 @@ export default function MesAnnoncesPage() {
         </div>
         {plan === 'free' && (
           <Link href="/abonnement"
-            className="flex-shrink-0 text-xs font-semibold border border-[#0C5C6C] text-[#0C5C6C] px-3 py-1.5 rounded-xl hover:bg-[#E8F4F6] transition-colors">
-            ⚡ Upgrader
+            className="flex-shrink-0 text-xs font-semibold border border-[#0C5C6C] text-[#0C5C6C] px-3 py-1.5 rounded-full hover:bg-[#E8F4F6] transition-colors">
+            Changer de formule
           </Link>
         )}
         {plan !== 'free' && (
           <Link href="/abonnement"
-            className="flex-shrink-0 text-xs text-gray-400 hover:text-[#0C5C6C]">
+            className="flex-shrink-0 text-xs text-gray-500 hover:text-[#0C5C6C]">
             Gérer →
           </Link>
         )}
       </div>}
 
-      {/* Filtres */}
-      <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
-        {(['toutes', 'disponible', 'archivee', 'pause'] as FilterKey[]).map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
-              filter === f ? 'bg-[#0C5C6C] text-white' : 'bg-white text-gray-600 border border-gray-200 hover:border-[#0C5C6C]/30'
-            }`}>
-            {f === 'toutes' ? 'Toutes' : STATUT_LABEL[f]}
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === f ? 'bg-white/20' : 'bg-gray-100 text-gray-500'}`}>
-              {counts[f]}
-            </span>
-          </button>
-        ))}
-      </div>
+      <FiltresAnnonces
+        type={typeFiltre} onType={choisirType}
+        statut={filter} onStatut={s => setFilter(s as FilterKey)}
+        statuts={(['toutes', 'disponible', 'archivee', 'pause'] as FilterKey[]).map(f => ({ k: f, label: f === 'toutes' ? 'Tous les statuts' : STATUT_LABEL[f] }))}
+      />
 
-      {fetching ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-2xl border border-gray-100">
-          <p className="text-5xl mb-4">📋</p>
-          <p className="text-gray-500 font-medium mb-2">
-            {filter === 'toutes' ? "Vous n'avez pas encore d'annonce." : `Aucune annonce ${STATUT_LABEL[filter]?.toLowerCase()}.`}
-          </p>
-          {filter === 'toutes' && (
-            <Link href={isParticulier ? '/annonces/creer-cheval' : '/annonces/creer'}
-              className="inline-block bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold px-6 py-3 rounded-xl transition-colors mt-2">
-              Créer ma première annonce
-            </Link>
+      {voirAnimaux && (
+        <section className="mb-8">
+          {typeFiltre === 'toutes' && <h2 className="text-lg font-bold text-[#1E2025] mb-3">Animaux</h2>}
+          {!animauxAutorises ? (
+            <div className={`bg-white rounded-2xl p-8 text-center text-sm text-gray-500 ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
+              Les annonces d’animaux ne sont pas proposées pour ce profil. Vous pouvez publier du matériel et des équipements.
+            </div>
+          ) : fetching ? (
+            <div className="flex justify-center py-16">
+              <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className={`text-center py-12 bg-white rounded-2xl ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
+              <span className="w-11 h-11 mx-auto mb-3 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="patte" /></span>
+              <p className="text-gray-500 text-sm mb-2">
+                {filter === 'toutes' ? 'Aucune annonce d’animal pour le moment.' : `Aucune annonce d’animal ${STATUT_LABEL[filter]?.toLowerCase()}.`}
+              </p>
+              {filter === 'toutes' && droits.animaux && (
+                <Link href={droits.animaux.creer}
+                  className="inline-block bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors mt-1">
+                  Publier une annonce d’animal
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map(a => {
+                const isSaillie = a.type_vente === 'saillie';
+                const isPortee = a.type === 'portee';
+                const statutBrut = a.statut ?? 'disponible';
+                // Brouillon d'éleveur (enregistré depuis Nouvelle annonce, sans paiement attendu)
+                // ≠ brouillon d'annonce cheval en attente de paiement (paiement_statut « attente »).
+                const statut = statutBrut === 'brouillon' && a.paiement_statut !== 'attente' ? 'brouillon_eleveur' : statutBrut;
+                const photos = (a.photos as unknown as string[]) ?? [];
+                const sailliePrixNum = a.saillie_prix != null ? Number(a.saillie_prix) : null;
+                const EQUIDE_FL: Record<string, string> = {
+                  location: 'Location', demi_pension: 'Demi-pension',
+                  pension_complete: 'Pension', valorisation: 'Valorisation',
+                };
+                const equideFl = EQUIDE_FL[a.type_vente ?? ''];
+                const cad = a.prix_unite === 'mois' ? '/mois' : a.prix_unite === 'semaine' ? '/sem.' : '';
+                const prix = equideFl
+                  ? (a.type_vente === 'valorisation'
+                      ? (a.prix != null && a.prix > 0 ? `${a.prix} €` : 'À convenir')
+                      : (a.prix != null && a.prix > 0 ? `${equideFl} · ${a.prix} €${cad}` : `${equideFl} · à convenir`))
+                  : isSaillie
+                  ? (sailliePrixNum != null && !isNaN(sailliePrixNum) ? `Saillie · ${Math.round(sailliePrixNum)} €` : 'Saillie')
+                  : isPortee
+                  ? (a.prix_min_portee != null || a.prix_max_portee != null
+                      ? [a.prix_min_portee, a.prix_max_portee].filter(v => v != null).join(' – ') + ' €'
+                      : null)
+                  : (a.prix != null ? `${a.prix} €` : null);
+                const booste = !!a.boost_until && new Date(a.boost_until) > new Date();
+
+                return (
+                  <div key={a.id} className={`bg-white rounded-2xl overflow-hidden flex flex-col ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
+                    <div className="aspect-[4/3] bg-[#E8F4F6] relative">
+                      {photos[0] ? (
+                        <Image src={photos[0]} alt={a.titre ?? ''} fill className="object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[#0C5C6C]"><Icone nom="patte" taille={40} /></div>
+                      )}
+                      <div className="absolute top-2 left-2">
+                        <span className="bg-white/95 text-[#1E2025] text-xs font-semibold px-2 py-0.5 rounded-full border border-[#E5E8E6]">
+                          {isSaillie ? 'Saillie' : equideFl ? equideFl : isPortee ? 'Portée' : 'Compagnon'}
+                        </span>
+                      </div>
+                      <div className="absolute top-2 right-2">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUT_COLOR[statut] ?? 'bg-gray-100 text-gray-500'}`}>
+                          {STATUT_LABEL[statut] ?? statut}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 flex-1 flex flex-col">
+                      <h3 className="font-bold text-[#1E2025] text-[15px] truncate capitalize">
+                        {a.titre ?? `${a.espece ?? ''} ${a.race ?? ''}`.trim()}
+                      </h3>
+                      <p className="text-gray-500 text-xs capitalize">{a.espece}{a.race ? ` · ${a.race}` : ''}</p>
+                      {a.ville_eleveur && <p className="text-gray-500 text-xs inline-flex items-center gap-1 mt-0.5"><Icone nom="pin" taille={13} />{a.ville_eleveur}</p>}
+                      {prix && <p className="text-[#0C5C6C] font-bold text-sm mt-1">{prix}</p>}
+
+                      <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 tabular-nums">
+                        {a.vues != null && <span className="inline-flex items-center gap-1"><Icone nom="oeil" taille={14} />{a.vues}</span>}
+                        {a.contacts != null && <span className="inline-flex items-center gap-1"><Icone nom="enveloppe" taille={14} />{a.contacts}</span>}
+                        {a.created_at && <span className="ml-auto">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>}
+                      </div>
+
+                      {statut === 'quota_depasse' ? (
+                        <div className="flex gap-1.5 mt-3 pt-3 border-t border-[#EEF0EE]">
+                          <Link href="/abonnement"
+                            className="flex-1 text-center text-xs bg-[#B45309] hover:bg-[#92400E] text-white font-semibold py-2 rounded-xl transition-colors">
+                            Passer à un plan payant pour republier
+                          </Link>
+                          <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} aria-label="Supprimer" title="Supprimer"
+                            className={`${btnIcone} border-red-100 hover:bg-red-50 text-red-500 disabled:opacity-50`}>
+                            <Icone nom="corbeille" taille={15} />
+                          </button>
+                        </div>
+                      ) : statut === 'brouillon_eleveur' ? (
+                        <div className="flex gap-1.5 mt-3 pt-3 border-t border-[#EEF0EE]">
+                          <Link href={`/annonces/creer?brouillon=${a.id}`}
+                            className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold py-2 rounded-xl transition-colors">
+                            Reprendre
+                          </Link>
+                          <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id}
+                            className="px-3 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-600 rounded-xl transition-colors disabled:opacity-50">
+                            {deleting === a.id ? '…' : 'Supprimer'}
+                          </button>
+                        </div>
+                      ) : statut === 'brouillon' ? (
+                        <div className="flex gap-1.5 mt-3 pt-3 border-t border-[#EEF0EE]">
+                          <button onClick={() => handlePayerPublier(a)} disabled={payingId === a.id}
+                            className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-2 rounded-xl transition-colors">
+                            {payingId === a.id ? 'Redirection…' : 'Payer et publier — 4,99 €'}
+                          </button>
+                          <Link href={`/annonces/creer-cheval?edit=${a.id}`}
+                            className="text-center text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] hover:bg-[#E8F4F6] font-semibold py-2 px-3 rounded-xl transition-colors">
+                            Modifier
+                          </Link>
+                          <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} aria-label="Supprimer" title="Supprimer"
+                            className={`${btnIcone} border-red-100 hover:bg-red-50 text-red-500 disabled:opacity-50`}>
+                            <Icone nom="corbeille" taille={15} />
+                          </button>
+                        </div>
+                      ) : (
+                      <div className="flex gap-1.5 mt-3 pt-3 border-t border-[#EEF0EE]">
+                        <Link href={`/annonces/${a.id}`}
+                          className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold py-2 rounded-xl transition-colors">
+                          Voir
+                        </Link>
+                        <Link href={isParticulier ? `/annonces/creer-cheval?edit=${a.id}` : `/annonces/${a.id}/modifier`}
+                          className="flex-1 text-center text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] hover:bg-[#E8F4F6] font-semibold py-2 rounded-xl transition-colors">
+                          Modifier
+                        </Link>
+                        <Link href={`/annonces/${a.id}`}
+                          title={booste ? 'Annonce boostée' : 'Booster cette annonce'} aria-label={booste ? 'Annonce boostée' : 'Booster cette annonce'}
+                          className={`${btnIcone} ${booste ? 'border-[#B45309] bg-[#FEF3C7] text-[#B45309]' : 'border-gray-200 text-gray-500 hover:border-[#B45309] hover:text-[#B45309]'}`}>
+                          <Icone nom="eclair" taille={15} />
+                        </Link>
+                        {!isParticulier && (
+                          <button onClick={() => { setStatsAnnonceId(a.id); setStatsAnnonceTitle(a.titre); }}
+                            title="Statistiques" aria-label="Statistiques"
+                            className={`${btnIcone} border-gray-200 text-[#0C5C6C] hover:bg-[#E8F4F6]`}>
+                            <Icone nom="barres" taille={15} />
+                          </button>
+                        )}
+                        <button onClick={() => handlePause(a)}
+                          title={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'} aria-label={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'}
+                          className={`${btnIcone} ${statut === 'pause' ? 'border-[#2F7D3A] text-[#2F7D3A] hover:bg-[#EAF5EC]' : 'border-gray-200 text-gray-500 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C]'}`}>
+                          <Icone nom={statut === 'pause' ? 'lecture' : 'pause'} taille={15} />
+                        </button>
+                        {(statut === 'expiree' || expiresWithinDays(a, 7)) && (
+                          <button onClick={() => handleRenew(a)} title="Renouveler pour 30 jours" aria-label="Renouveler pour 30 jours"
+                            className={`${btnIcone} border-orange-200 text-orange-700 hover:bg-orange-50`}>
+                            <Icone nom="renouveler" taille={15} />
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} aria-label="Supprimer" title="Supprimer"
+                          className={`${btnIcone} border-red-100 hover:bg-red-50 text-red-500 disabled:opacity-50`}>
+                          <Icone nom="corbeille" taille={15} />
+                        </button>
+                      </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(a => {
-            const isSaillie = a.type_vente === 'saillie';
-            const isPortee = a.type === 'portee';
-            const statutBrut = a.statut ?? 'disponible';
-            // Brouillon d'éleveur (enregistré depuis Nouvelle annonce, sans paiement attendu)
-            // ≠ brouillon d'annonce cheval en attente de paiement (paiement_statut « attente »).
-            const statut = statutBrut === 'brouillon' && a.paiement_statut !== 'attente' ? 'brouillon_eleveur' : statutBrut;
-            const photos = (a.photos as unknown as string[]) ?? [];
-            const sailliePrixNum = a.saillie_prix != null ? Number(a.saillie_prix) : null;
-            const EQUIDE_FL: Record<string, string> = {
-              location: 'Location', demi_pension: 'Demi-pension',
-              pension_complete: 'Pension', valorisation: 'Valorisation',
-            };
-            const equideFl = EQUIDE_FL[a.type_vente ?? ''];
-            const cad = a.prix_unite === 'mois' ? '/mois' : a.prix_unite === 'semaine' ? '/sem.' : '';
-            const prix = equideFl
-              ? (a.type_vente === 'valorisation'
-                  ? (a.prix != null && a.prix > 0 ? `${a.prix} €` : 'À convenir')
-                  : (a.prix != null && a.prix > 0 ? `${equideFl} · ${a.prix} €${cad}` : `${equideFl} · à convenir`))
-              : isSaillie
-              ? (sailliePrixNum != null && !isNaN(sailliePrixNum) ? `Saillie · ${Math.round(sailliePrixNum)} €` : 'Saillie')
-              : isPortee
-              ? (a.prix_min_portee != null || a.prix_max_portee != null
-                  ? [a.prix_min_portee, a.prix_max_portee].filter(v => v != null).join(' – ') + ' €'
-                  : null)
-              : (a.prix != null ? `${a.prix} €` : null);
+        </section>
+      )}
 
-            return (
-              <div key={a.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-                <div className="aspect-square bg-gray-100 relative">
-                  {photos[0] ? (
-                    <Image src={photos[0]} alt={a.titre ?? ''} fill className="object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-5xl">🐾</div>
-                  )}
-                  <div className="absolute top-2 left-2 flex gap-1.5">
-                    <span className={`text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : equideFl ? 'bg-[#0C5C6C]' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
-                      {isSaillie ? 'Saillie' : equideFl ? `🐴 ${equideFl}` : isPortee ? 'Portée' : 'Compagnon'}
-                    </span>
-                  </div>
-                  <div className="absolute top-2 right-2">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUT_COLOR[statut] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {STATUT_LABEL[statut] ?? statut}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 flex-1 flex flex-col">
-                  <h3 className="font-bold text-[#1F2A2E] text-sm truncate capitalize">
-                    {a.titre ?? `${a.espece ?? ''} ${a.race ?? ''}`.trim()}
-                  </h3>
-                  <p className="text-gray-500 text-xs capitalize">{a.espece}{a.race ? ` · ${a.race}` : ''}</p>
-                  {a.ville_eleveur && <p className="text-gray-400 text-xs">📍 {a.ville_eleveur}</p>}
-                  {prix && <p className="text-[#0C5C6C] font-bold text-sm mt-1">{prix}</p>}
-
-                  {(a.vues != null || a.contacts != null) && (
-                    <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                      {a.vues != null && <span>👁 {a.vues} vue{a.vues !== 1 ? 's' : ''}</span>}
-                      {a.contacts != null && <span>📞 {a.contacts} contact{a.contacts !== 1 ? 's' : ''}</span>}
-                    </div>
-                  )}
-                  {a.created_at && (
-                    <p className="text-gray-400 text-xs mt-0.5">
-                      {new Date(a.created_at).toLocaleDateString('fr-FR')}
-                    </p>
-                  )}
-
-                  {statut === 'quota_depasse' ? (
-                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
-                      <Link href="/abonnement"
-                        className="flex-1 text-center text-xs bg-[#D97706] hover:bg-[#B45309] text-white font-semibold py-2 rounded-xl transition-colors">
-                        Passer à un plan payant pour republier
-                      </Link>
-                      <button
-                        onClick={() => handleDelete(a.id)}
-                        disabled={deleting === a.id}
-                        className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
-                        {deleting === a.id ? '…' : '🗑'}
-                      </button>
-                    </div>
-                  ) : statut === 'brouillon_eleveur' ? (
-                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
-                      <Link href={`/annonces/creer?brouillon=${a.id}`}
-                        className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold py-2 rounded-lg transition-colors">
-                        Reprendre
-                      </Link>
-                      <button
-                        onClick={() => handleDelete(a.id)}
-                        disabled={deleting === a.id}
-                        className="px-3 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-500 rounded-lg transition-colors disabled:opacity-50">
-                        {deleting === a.id ? '…' : 'Supprimer'}
-                      </button>
-                    </div>
-                  ) : statut === 'brouillon' ? (
-                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
-                      <button
-                        onClick={() => handlePayerPublier(a)}
-                        disabled={payingId === a.id}
-                        className="flex-1 text-center text-xs bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-60 text-white font-semibold py-2 rounded-xl transition-colors">
-                        {payingId === a.id ? 'Redirection…' : 'Payer et publier — 4,99 €'}
-                      </button>
-                      <Link href={`/annonces/creer-cheval?edit=${a.id}`}
-                        className="text-center text-xs border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6] font-medium py-2 px-3 rounded-xl transition-colors">
-                        Modifier
-                      </Link>
-                      <button
-                        onClick={() => handleDelete(a.id)}
-                        disabled={deleting === a.id}
-                        className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
-                        {deleting === a.id ? '…' : '🗑'}
-                      </button>
-                    </div>
-                  ) : (
-                  <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
-                    <Link href={`/annonces/${a.id}`}
-                      className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
-                      Voir
-                    </Link>
-                    <Link href={`/annonces/${a.id}`}
-                      title={a.boost_until && new Date(a.boost_until) > new Date() ? 'Annonce boostée' : 'Booster cette annonce'}
-                      className={`px-2.5 py-2 text-xs border rounded-xl transition-colors ${a.boost_until && new Date(a.boost_until) > new Date() ? 'border-[#FF8A00] bg-[#FFF4E6] text-[#FF8A00]' : 'border-gray-200 text-gray-400 hover:border-[#FF8A00] hover:text-[#FF8A00]'}`}>
-                      ⚡
-                    </Link>
-                    <Link href={isParticulier ? `/annonces/creer-cheval?edit=${a.id}` : `/annonces/${a.id}/modifier`}
-                      className="flex-1 text-center text-xs border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6] font-medium py-2 rounded-xl transition-colors">
-                      Modifier
-                    </Link>
-                    {!isParticulier && (
-                      <button
-                        onClick={() => { setStatsAnnonceId(a.id); setStatsAnnonceTitle(a.titre); }}
-                        title="Statistiques"
-                        className="px-2.5 py-2 text-xs border border-[#0C5C6C]/20 text-[#0C5C6C] hover:bg-[#E8F4F6] rounded-xl transition-colors">
-                        📊
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handlePause(a)}
-                      title={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'}
-                      className={`px-2.5 py-2 text-xs border rounded-xl transition-colors ${statut === 'pause' ? 'border-[#6E9E57] text-[#6E9E57] hover:bg-[#EEF5EA]' : 'border-gray-200 text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C]'}`}>
-                      {statut === 'pause' ? '▶' : '⏸'}
-                    </button>
-                    {(statut === 'expiree' || expiresWithinDays(a, 7)) && (
-                      <button
-                        onClick={() => handleRenew(a)}
-                        title="Renouveler pour 30 jours"
-                        className="px-2.5 py-2 text-xs border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-xl transition-colors">
-                        🔄
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDelete(a.id)}
-                      disabled={deleting === a.id}
-                      className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
-                      {deleting === a.id ? '…' : '🗑'}
-                    </button>
-                  </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {voirMateriel && (
+        <section>
+          {typeFiltre === 'toutes' && voirAnimaux && <h2 className="text-lg font-bold text-[#1E2025] mb-3">Matériel & équipements</h2>}
+          <MesAnnoncesMateriel statut={filter} onCompte={setNbMateriel} />
+        </section>
       )}
 
       {statsAnnonceId && (
