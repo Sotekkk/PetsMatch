@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
-import 'package:PetsMatch/utils/image_pick.dart' show pickAndCropSquare, pickAndCropBanner;
+import 'package:PetsMatch/utils/image_pick.dart' show pickAndCropSquare;
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -41,12 +41,12 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
   final _capaciteCtrl    = TextEditingController();
 
   static const _especesOptions = [
-    ('chien',  '🐶 Chien'),
-    ('chat',   '🐱 Chat'),
-    ('cheval', '🐴 Cheval'),
-    ('lapin',  '🐰 Lapin'),
-    ('oiseau', '🦜 Oiseau'),
-    ('nac',    '🦎 NAC'),
+    ('chien',  'Chien'),
+    ('chat',   'Chat'),
+    ('cheval', 'Cheval'),
+    ('lapin',  'Lapin'),
+    ('oiseau', 'Oiseau'),
+    ('nac',    'NAC'),
   ];
   final Set<String> _especesAccueillies = {};
 
@@ -54,8 +54,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
   bool   _saving  = false;
   File?  _photoFile;
   String? _photoUrl;
-  File?  _bannerFile;
-  String? _bannerUrl;
   String? _secondaryProfileId;
 
   File?  _statutsFile;
@@ -139,7 +137,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
           _statutsUrl           = p['statuts_url']?.toString();
           _arretePrefUrl        = p['arrete_prefectoral_url']?.toString();
           _photoUrl             = p['avatar_url']?.toString();
-          _bannerUrl            = p['banner_url']?.toString();
           _loading = false;
         });
       } else {
@@ -169,7 +166,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
   }
 
   Future<void> _pickPhoto()   async { final f = await pickAndCropSquare();  if (f != null) setState(() => _photoFile = f); }
-  Future<void> _pickBanner()  async { final f = await pickAndCropBanner();  if (f != null) setState(() => _bannerFile = f); }
 
   Future<void> _pickStatuts() async {
     final result = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
@@ -201,10 +197,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
       String? photoUrl = _photoUrl;
       if (_photoFile != null) {
         photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/asso_photo.jpg');
-      }
-      String? bannerUrl = _bannerUrl;
-      if (_bannerFile != null) {
-        bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/asso_banner.jpg');
       }
       String? statutsUrl = _statutsUrl;
       if (_statutsFile != null) {
@@ -251,7 +243,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
         'capacite_accueil':     int.tryParse(_capaciteCtrl.text.trim()),
         'especes_accueil':  _especesAccueillies.toList(),
         if (photoUrl != null)  'avatar_url': photoUrl,
-        if (bannerUrl != null) 'banner_url': bannerUrl,
         if (statutsUrl != null) 'statuts_url': statutsUrl,
         if (arretePrefUrl != null) 'arrete_prefectoral_url': arretePrefUrl,
       };
@@ -306,75 +297,43 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
 
-                  // ── Bannière + photo ──────────────────────────────────────
-                  GestureDetector(
-                    onTap: _pickBanner,
-                    child: Stack(clipBehavior: Clip.none, children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          height: 130, width: double.infinity,
+                  // ── Logo (la bannière est la bannière officielle PetsMatch,
+                  // identique à l'accueil éleveur, non personnalisable) ──────
+                  Center(
+                    child: GestureDetector(
+                      onTap: _pickPhoto,
+                      child: Stack(children: [
+                        Container(
+                          width: 84, height: 84,
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
-                              begin: Alignment.topLeft, end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(16),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFFE5E8E6)),
+                            color: const Color(0xFFE8F4F6),
                           ),
-                          child: _bannerFile != null
-                              ? Image.file(_bannerFile!, fit: BoxFit.cover, width: double.infinity, height: 130)
-                              : (_bannerUrl?.isNotEmpty == true
-                                  ? CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover,
-                                      width: double.infinity, height: 130,
-                                      errorWidget: (_, __, ___) => const SizedBox())
-                                  : const Center(child: Icon(Icons.add_photo_alternate_outlined,
-                                      color: Colors.white54, size: 36))),
+                          child: ClipOval(
+                            child: _photoFile != null
+                                ? Image.file(_photoFile!, fit: BoxFit.cover)
+                                : (_photoUrl?.isNotEmpty == true
+                                    ? CachedNetworkImage(imageUrl: _photoUrl!, fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) => const Icon(Icons.pets_outlined, size: 30, color: Color(0xFF0C5C6C)))
+                                    : const Icon(Icons.pets_outlined, size: 30, color: Color(0xFF0C5C6C))),
+                          ),
                         ),
-                      ),
-                      Positioned(
-                        bottom: 8, right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(8)),
-                          child: const Text('Bannière (16:9)',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white)),
+                        Positioned(
+                          bottom: 0, right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(color: Color(0xFF0C5C6C), shape: BoxShape.circle),
+                            child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 13),
+                          ),
                         ),
-                      ),
-                      Positioned(
-                        bottom: -28, left: 16,
-                        child: GestureDetector(
-                          onTap: _pickPhoto,
-                          child: Stack(children: [
-                            Container(
-                              width: 70, height: 70,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 3),
-                                color: const Color(0xFFEEF5EA),
-                              ),
-                              child: ClipOval(
-                                child: _photoFile != null
-                                    ? Image.file(_photoFile!, fit: BoxFit.cover)
-                                    : (_photoUrl?.isNotEmpty == true
-                                        ? CachedNetworkImage(imageUrl: _photoUrl!, fit: BoxFit.cover,
-                                            errorWidget: (_, __, ___) => const Icon(Icons.favorite, size: 28, color: Color(0xFF0C5C6C)))
-                                        : const Icon(Icons.favorite, size: 28, color: Color(0xFF0C5C6C))),
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 0, right: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: const BoxDecoration(color: _green, shape: BoxShape.circle),
-                                child: const Icon(Icons.camera_alt, color: Colors.white, size: 12),
-                              ),
-                            ),
-                          ]),
-                        ),
-                      ),
-                    ]),
+                      ]),
+                    ),
                   ),
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 6),
+                  const Center(child: Text('Logo de l\'association',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF6B7280)))),
+                  const SizedBox(height: 20),
 
                   // ── Informations générales ────────────────────────────────
                   _section('Informations générales'),

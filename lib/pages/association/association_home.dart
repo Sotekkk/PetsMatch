@@ -2,6 +2,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
 import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
+import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -27,7 +28,6 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
   List<Map<String, dynamic>> _recentAnimaux = [];
   List<Map<String, dynamic>> _disponibles = [];
   List<Map<String, dynamic>> _annonces = [];
-  String? _bannerUrl;
   bool _loading = true;
 
   static const _green = Color(0xFF6E9E57);
@@ -115,19 +115,6 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         .limit(6)
         .catchError((_) => <dynamic>[]);
 
-    // Bannière association
-    String? bannerUrl;
-    try {
-      final profiles = await _supa
-          .from('user_profiles_complet')
-          .select('banner_url')
-          .eq('uid', uid)
-          .eq('profile_type', 'association')
-          .limit(1);
-      final pList = profiles as List;
-      if (pList.isNotEmpty) bannerUrl = pList.first['banner_url']?.toString();
-    } catch (_) {}
-
     final list = animauxRes as List;
     if (mounted) {
       setState(() {
@@ -140,7 +127,6 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         _recentAnimaux = List<Map<String, dynamic>>.from(recentRes as List);
         _disponibles  = List<Map<String, dynamic>>.from(disponiblesRes as List);
         _annonces     = List<Map<String, dynamic>>.from(annoncesRes as List);
-        _bannerUrl    = bannerUrl;
         _loading = false;
       });
     }
@@ -154,6 +140,11 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
     'transfere':  ('Transféré',  Color(0xFFE3F2FD), Color(0xFF1565C0)),
     'decede':     ('Décédé',     Color(0xFFFFEBEE), Color(0xFFC62828)),
   };
+
+  Future<void> _modifierProfil() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilAssociationEditPage()));
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -171,17 +162,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
             surfaceTintColor: _teal,
             actions: [QuickSearchButton()],
           ),
-          // Bannière de l'association si elle existe, sinon bannière PetsMatch d'origine.
-          SliverToBoxAdapter(
-            child: _bannerUrl != null && _bannerUrl!.isNotEmpty
-                ? SizedBox(
-                    height: (MediaQuery.of(context).size.width * 793 / 1983).clamp(0, 220).toDouble(),
-                    width: double.infinity,
-                    child: CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => const DashBanniere()),
-                  )
-                : const DashBanniere(),
-          ),
+          // Bannière officielle PetsMatch, comme l'accueil éleveur (non personnalisable).
+          const SliverToBoxAdapter(child: DashBanniere()),
           SliverPadding(
             padding: EdgeInsets.symmetric(horizontal: dashMargeLaterale(context), vertical: 16),
             sliver: SliverList(
@@ -189,7 +171,10 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                 DashEnteteAccueil(
                   nom: nom,
                   photoUrl: User_Info.profilePictureUrlElevage.isNotEmpty ? User_Info.profilePictureUrlElevage : null,
+                  onAvatarTap: _modifierProfil,
                   lignes: const ['Association / Refuge'],
+                  lieu: User_Info.ville.isNotEmpty ? User_Info.ville : User_Info.villeElevage,
+                  action: DashBoutonPilule(label: 'Modifier', icon: Icons.settings_outlined, onTap: _modifierProfil),
                 ),
                 const SizedBox(height: 16),
                 if (_loading)
@@ -235,11 +220,11 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       _StatCard('Total', _nbAnimaux, Icons.pets, _teal, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage()))),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       _StatCard('Disponibles', _nbDisponibles, Icons.favorite_border, _green, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'disponible')))),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       _StatCard('En soin', _nbEnSoin, Icons.medical_services_outlined, Colors.orange, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'en_soin')))),
@@ -251,11 +236,11 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       _StatCard('En FA', _nbEnFa, Icons.home_outlined, Colors.purple, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'en_fa')))),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       _StatCard('Adoptés', _nbAdoptes, Icons.celebration_outlined, const Color(0xFF00695C), onTap: () =>
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'adopte')))),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       _StatCard('Équipe', _nbBenevoles, Icons.volunteer_activism_outlined, _teal, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const EquipePage()))),
                     ],
@@ -279,55 +264,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: kDashBorder),
-                        boxShadow: kDashOmbre,
-                      ),
-                      child: Column(
-                        children: _recentAnimaux.asMap().entries.map((entry) {
-                          final i = entry.key;
-                          final a = entry.value;
-                          final cfg = _statutConfig[a['statut'] as String?] ??
-                              ('Inconnu', const Color(0xFFF5F5F5), Colors.grey);
-                          return Column(
-                            children: [
-                              ListTile(
-                                leading: CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: Colors.grey.shade100,
-                                  child: a['photo_url'] != null
-                                      ? ClipOval(child: CachedNetworkImage(
-                                          imageUrl: a['photo_url'] as String,
-                                          width: 40, height: 40, fit: BoxFit.cover,
-                                          errorWidget: (_, __, ___) => const Icon(Icons.pets, size: 18),
-                                        ))
-                                      : const Icon(Icons.pets, size: 18, color: Colors.grey),
-                                ),
-                                title: Text(a['nom'] as String? ?? '',
-                                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
-                                subtitle: Text(a['espece'] as String? ?? '',
-                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: cfg.$2,
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(cfg.$1,
-                                      style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                                          color: cfg.$3, fontWeight: FontWeight.w600)),
-                                ),
-                              ),
-                              if (i < _recentAnimaux.length - 1)
-                                Divider(height: 1, indent: 60, color: Colors.grey.shade200),
-                            ],
-                          );
-                        }).toList(),
-                      ),
-                    ),
+                    // Même présentation que « Dernières annonces » de l'accueil éleveur.
+                    for (final a in _recentAnimaux) _ligneAnimal(a),
                     const SizedBox(height: 20),
                   ],
 
@@ -478,6 +416,54 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _ligneAnimal(Map<String, dynamic> a) {
+    final cfg = _statutConfig[a['statut'] as String?];
+    final photo = (a['photo_url'] ?? '').toString();
+    final espece = (a['espece'] ?? '').toString();
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxAssoPage())),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kDashBorder),
+          boxShadow: kDashOmbre,
+        ),
+        child: Row(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(width: 56, height: 56,
+              child: photo.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(color: const Color(0xFFE8F4F6)),
+                      errorWidget: (_, __, ___) => Container(color: const Color(0xFFE8F4F6),
+                          child: const Icon(Icons.pets_outlined, color: _teal, size: 24)))
+                  : Container(color: const Color(0xFFE8F4F6),
+                      child: const Icon(Icons.pets_outlined, color: _teal, size: 24)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text((a['nom'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: kDashInk)),
+            const SizedBox(height: 6),
+            Row(children: [
+              if (cfg != null) DashPuce(cfg.$1, fg: cfg.$3, bg: cfg.$2, point: true),
+              if (espece.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Flexible(child: Text(espece[0].toUpperCase() + espece.substring(1), maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted))),
+              ],
+            ]),
+          ])),
+          const Icon(Icons.chevron_right, color: kDashMuted),
+        ]),
       ),
     );
   }
