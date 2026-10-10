@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import QuickSearchModal, { type QuickSearchItem } from '@/components/QuickSearchModal';
 import Image from 'next/image';
+import IconeMenu from '@/components/IconeMenu';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
@@ -1462,14 +1463,169 @@ export default function Header() {
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
 
+  // ── Menu professionnel : présentation commune (ordinateur + mobile) ───────
+  // Purement visuel : mêmes sections, entrées, ordre, destinations et droits.
+  type ItemMenu = { pro?: boolean; premium?: boolean; formule?: string; href: string; icon: string; label: string };
+  function etatItem(it: ItemMenu) {
+    const isProLocked = !!it.pro && (
+      effectiveIsPension ? pensionPlan === 'free'
+      : effectiveIsGarde ? gardePlan === 'free'
+      : effectiveType === 'eleveur' ? eleveurPlan === 'free'
+      : false
+    );
+    // Pension/garde : la facturation est incluse dès le premier plan payant ;
+    // éleveur et les autres métiers exigent leur palier le plus haut.
+    const isPremiumLocked = !!it.premium && (
+      effectiveIsPension ? pensionPlan === 'free'
+      : effectiveIsGarde ? gardePlan === 'free'
+      : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
+      : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
+      : false
+    );
+    const isFormuleLocked = !!it.formule && !vetFormuleOk(otherPlan, it.formule);
+    const isLocked = isProLocked || isPremiumLocked || isFormuleLocked;
+    const badge = isFormuleLocked ? VET_FORMULE_LABEL[it.formule!] : isPremiumLocked ? 'Premium' : 'Pro';
+    const abonnementHrefFor = effectiveIsPension ? '/pension/abonnement'
+      : effectiveIsGarde ? '/garde/abonnement'
+      : otherProfilType ? `/${otherProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : otherProfilType}/abonnement`
+      : '/abonnement';
+    return { isLocked, badge, abonnementHrefFor };
+  }
+
+  function MenuPro({ onNavigate }: { onNavigate: () => void }) {
+    const chevron = (ouvert: boolean) => (
+      <svg className={`w-4 h-4 text-gray-400 transition-transform ${ouvert ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+    const pastilleFactures = facturesNonVues > 0 && (
+      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
+    );
+    const ligne = 'flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-[15px] transition-colors';
+    return (
+      <nav aria-label="Menu" className="py-2">
+        <div className="px-2 space-y-0.5">
+          {menuSections.map((sec) => {
+            const items = sec.items as ItemMenu[];
+            const ouvert = !!expandedSections[sec.section];
+            const contientActif = items.some(i => isActive(i.href));
+            return (
+              <div key={sec.section}>
+                <button type="button" onClick={() => toggleSection(sec.section)} aria-expanded={ouvert}
+                  className={`w-full ${ligne} ${contientActif ? 'text-[#0C5C6C] font-semibold' : 'text-[#1F2A2E] font-medium'} hover:bg-gray-50`}>
+                  <span className="text-[#0C5C6C]"><IconeMenu code={sec.icon} /></span>
+                  <span className="flex-1 text-left">{sec.section}</span>
+                  {items.some(i => i.href === '/mes-factures') && pastilleFactures}
+                  {chevron(ouvert)}
+                </button>
+                {ouvert && (
+                  <div className="ml-[22px] pl-[19px] border-l border-gray-200 my-1 space-y-0.5">
+                    {items.map((it) => {
+                      const { isLocked, badge, abonnementHrefFor } = etatItem(it);
+                      const actif = !isLocked && isActive(it.href);
+                      return isLocked ? (
+                        <Link key={it.href} href={abonnementHrefFor} onClick={onNavigate}
+                          className="flex items-center gap-2 px-3 min-h-[40px] rounded-md text-sm text-gray-400 hover:bg-gray-50">
+                          <span className="flex-1">{it.label}</span>
+                          <span className="text-[10px] font-semibold text-[#B45309] border border-[#B45309]/30 rounded px-1.5 py-0.5">{badge}</span>
+                        </Link>
+                      ) : (
+                        <Link key={it.href} href={it.href} onClick={onNavigate} aria-current={actif ? 'page' : undefined}
+                          className={`flex items-center gap-2 px-3 min-h-[40px] rounded-md text-sm transition-colors ${
+                            actif ? 'bg-[#E8F4F6] text-[#0C5C6C] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
+                          <span className="flex-1">{it.label}</span>
+                          {it.href === '/mes-factures' && pastilleFactures}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="border-t border-gray-200 my-2 mx-4" />
+        <div className="px-2 space-y-0.5">
+          {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+            <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={onNavigate}
+              className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
+              <span className="text-[#0C5C6C]"><IconeMenu code="👤" /></span> Mon Profil
+            </Link>
+          )}
+          {!effectiveIsEleveur && (
+            <Link href="/mes-alertes" onClick={onNavigate} className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
+              <span className="text-[#0C5C6C]"><IconeMenu code="🔔" /></span> Mes Alertes perdus
+            </Link>
+          )}
+          <Link href="/favoris" onClick={onNavigate} className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
+            <span className="text-[#0C5C6C]"><IconeMenu code="❤️" /></span> Mes interactions
+          </Link>
+        </div>
+
+        <div className="border-t border-gray-200 my-2 mx-4" />
+        <div className="px-2">
+          <button type="button" onClick={handleSignOut} className={`w-full ${ligne} text-[#C0392B] font-medium hover:bg-red-50`}>
+            <IconeMenu code="🚪" /> Déconnexion
+          </button>
+        </div>
+      </nav>
+    );
+  }
+
+  /** Photo ou logo affiché en entier (jamais recadré), pastilles posées hors du cadre arrondi. */
+  function AvatarProfil({ url, nom, taille, pastilles }: { url?: string | null; nom: string; taille: number; pastilles?: React.ReactNode }) {
+    return (
+      <span className="relative inline-flex flex-shrink-0" style={{ width: taille, height: taille }}>
+        <span className="w-full h-full rounded-full overflow-hidden bg-white border border-gray-200 flex items-center justify-center">
+          {url ? (
+            <Image src={url} alt="" width={taille} height={taille} className="w-full h-full object-contain" />
+          ) : (
+            <span className="text-[#0C5C6C] font-bold" style={{ fontSize: Math.round(taille * 0.38) }}>{(nom[0] ?? '?').toUpperCase()}</span>
+          )}
+        </span>
+        {pastilles}
+      </span>
+    );
+  }
+
+  /** Compteur rouge lisible (largeur variable : « 9+ » jamais coupé). */
+  function Compteur({ n, className = '' }: { n: number; className?: string }) {
+    return (
+      <span className={`absolute min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none flex items-center justify-center ring-2 ring-white ${className}`}>
+        {n > 9 ? '9+' : n}
+      </span>
+    );
+  }
+
+  /** En-tête du menu : photo ou logo du professionnel, nom lisible, type, changement de profil. */
+  function EnteteMenu() {
+    return (
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-gray-200">
+        <AvatarProfil url={effectiveAvatar} nom={effectiveDisplayName} taille={48} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[#1F2A2E] font-bold text-[15px] leading-snug line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{effectiveDisplayName}</p>
+          <p className="text-gray-500 text-sm">{typeLabel(effectiveType)}</p>
+        </div>
+        <button type="button" onClick={() => setProfileSwitcherOpen(!profileSwitcherOpen)}
+          title="Changer de profil" aria-label="Changer de profil" aria-expanded={profileSwitcherOpen}
+          className="w-10 h-10 rounded-lg text-gray-500 hover:bg-gray-100 flex items-center justify-center flex-shrink-0">
+          <svg className={`w-5 h-5 transition-transform ${profileSwitcherOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
   // ── Profile switcher panel (shared desktop + mobile) ─────────────────────
   function ProfileSwitcherPanel({ onClose }: { onClose: () => void }) {
     return (
-      <div className="bg-[#F8F8F8] rounded-xl mx-2 mb-2 overflow-hidden">
-        <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-200">
-          <span className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide">Mes profils</span>
-          <button onClick={() => setProfileSwitcherOpen(false)} className="text-gray-400 hover:text-gray-600 text-sm">
-            ✕
+      <div className="py-2">
+        <div className="px-4 pt-1 pb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mes profils</span>
+          <button onClick={() => setProfileSwitcherOpen(false)} className="h-8 px-2 rounded-md text-sm font-semibold text-[#0C5C6C] hover:bg-[#E8F4F6]">
+            Retour au menu
           </button>
         </div>
 
@@ -1482,41 +1638,27 @@ export default function Header() {
             <button
               key={p.id}
               onClick={() => { switchProfile(p.id); onClose(); }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white transition-colors text-left ${isActive ? 'bg-white' : ''}`}>
-              <div className="w-8 h-8 rounded-full overflow-hidden bg-[#DCE8D5] flex items-center justify-center flex-shrink-0 relative">
-                {p.avatar_url ? (
-                  <Image src={p.avatar_url} alt="" width={32} height={32} className="object-cover w-full h-full" />
-                ) : (
-                  <span className="text-[#6E9E57] text-sm">{typeEmoji(p.profile_type)}</span>
-                )}
-                {isActive && (
-                  <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
-                    <span className="text-white text-[8px]">✓</span>
-                  </span>
-                )}
-                {unread > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 rounded-full border-[1.5px] border-white flex items-center justify-center">
-                    <span className="text-white text-[9px] font-bold leading-none">{unread > 9 ? '9+' : unread}</span>
-                  </span>
-                )}
-              </div>
+              aria-current={isActive ? 'true' : undefined}
+              className={`w-full flex items-center gap-3 px-4 min-h-[56px] py-2 transition-colors text-left ${isActive ? 'bg-[#E8F4F6]' : 'hover:bg-gray-50'}`}>
+              <AvatarProfil url={p.avatar_url} nom={displayName} taille={40}
+                pastilles={unread > 0 ? <Compteur n={unread} className="-top-1.5 -right-2" /> : undefined} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  <p className={`text-sm truncate ${isActive ? 'font-bold text-[#1F2A2E]' : 'font-medium text-gray-700'}`}>
+                  <p className={`text-sm truncate ${isActive ? 'font-bold text-[#0C5C6C]' : 'font-medium text-[#1F2A2E]'}`}>
                     {displayName}
                   </p>
                   {p.is_main && (
-                    <span className="text-[10px] bg-[#EEF5EA] text-[#6E9E57] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">
+                    <span className="text-[10px] text-[#4D7A3C] border border-[#4D7A3C]/30 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">
                       Principal
                     </span>
                   )}
                   {p._is_cogerance === true && (
-                    <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">
+                    <span className="text-[10px] text-[#0C5C6C] border border-[#0C5C6C]/30 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">
                       Cogérance
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400">{typeEmoji(p.profile_type)} {typeLabel(p.profile_type)}</p>
+                <p className="text-xs text-gray-500">{typeLabel(p.profile_type)}{isActive ? ' · profil actif' : ''}</p>
               </div>
             </button>
           );
@@ -1525,8 +1667,10 @@ export default function Header() {
         {/* Ajouter un profil */}
         <Link href="/profil/ajouter"
           onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}
-          className="flex items-center gap-3 px-4 py-2.5 border-t border-gray-200 text-[#6E9E57] hover:bg-[#EEF5EA] transition-colors">
-          <span className="w-8 h-8 rounded-full bg-[#EEF5EA] flex items-center justify-center text-sm flex-shrink-0">＋</span>
+          className="flex items-center gap-3 px-4 min-h-[52px] mt-1 border-t border-gray-200 text-[#0C5C6C] hover:bg-[#E8F4F6] transition-colors">
+          <span className="w-10 h-10 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M12 5v14m7-7H5" /></svg>
+          </span>
           <span className="text-sm font-semibold">Ajouter un profil</span>
         </Link>
       </div>
@@ -1622,7 +1766,7 @@ export default function Header() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
               </svg>
               {unreadMessages > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold leading-none rounded-full flex items-center justify-center ring-2 ring-[#0C5C6C]">
                   {unreadMessages > 9 ? '9+' : unreadMessages}
                 </span>
               )}
@@ -1637,7 +1781,7 @@ export default function Header() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
                 </svg>
                 {totalBell > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold leading-none rounded-full flex items-center justify-center ring-2 ring-[#0C5C6C]">
                     {totalBell > 9 ? '9+' : totalBell}
                   </span>
                 )}
@@ -1778,17 +1922,10 @@ export default function Header() {
               <button
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full pl-2 pr-3 py-1.5 transition-colors">
-                <div className="w-7 h-7 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0 relative">
-                  {effectiveAvatar ? (
-                    <Image src={effectiveAvatar} alt="" width={28} height={28} className="object-cover w-full h-full" />
-                  ) : (
-                    <span className="text-white text-xs font-bold">{(effectiveDisplayName[0] ?? '?').toUpperCase()}</span>
-                  )}
-                  {/* Indicateur profil secondaire actif */}
-                  {activeProfileId && (
-                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#6E9E57] rounded-full border border-white" />
-                  )}
-                </div>
+                <AvatarProfil url={effectiveAvatar} nom={effectiveDisplayName} taille={28}
+                  pastilles={activeProfileId
+                    ? <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#6E9E57] rounded-full ring-2 ring-[#0C5C6C]" aria-hidden />
+                    : undefined} />
                 <span className="text-white text-sm font-medium truncate max-w-[100px]">{effectiveDisplayName}</span>
                 <svg className={`w-4 h-4 text-white/70 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1796,132 +1933,12 @@ export default function Header() {
               </button>
 
               {dropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-                  {/* Header */}
-                  <div className="bg-[#0C5C6C] px-4 py-3 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0">
-                      {effectiveAvatar ? (
-                        <Image src={effectiveAvatar} alt="" width={40} height={40} className="object-cover w-full h-full" />
-                      ) : (
-                        <span className="text-white text-sm font-bold">{(effectiveDisplayName[0] ?? '?').toUpperCase()}</span>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-white font-semibold text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{effectiveDisplayName}</p>
-                      <p className="text-white/60 text-xs">{typeEmoji(effectiveType)} {typeLabel(effectiveType)}</p>
-                    </div>
-                    {/* Bouton changer de profil */}
-                    <button
-                      onClick={() => setProfileSwitcherOpen(!profileSwitcherOpen)}
-                      title="Changer de profil"
-                      className="text-white/70 hover:text-white text-xs font-medium bg-white/10 hover:bg-white/20 rounded-full px-2 py-1 transition-colors flex-shrink-0">
-                      ⇄
-                    </button>
-                  </div>
-
-                  {/* Panel sélecteur de profil */}
-                  {profileSwitcherOpen && (
-                    <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
-                  )}
-
-                  {/* Sections menu */}
-                  <div className="py-1 max-h-80 overflow-y-auto">
-                    {menuSections.map((sec) => (
-                      <div key={sec.section}>
-                        <button
-                          onClick={() => toggleSection(sec.section)}
-                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
-                          <span>{sec.icon}</span>
-                          <span className="flex-1 text-left">{sec.section}</span>
-                          {(sec.items as { href: string }[]).some(i => i.href === '/mes-factures') && facturesNonVues > 0 && (
-                            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
-                          )}
-                          <svg className={`w-4 h-4 text-gray-400 transition-transform ${expandedSections[sec.section] ? 'rotate-180' : ''}`}
-                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </button>
-                        {expandedSections[sec.section] && (
-                          <div className="bg-gray-50">
-                            {sec.items.map((item) => {
-                              const it = item as { pro?: boolean; premium?: boolean; formule?: string; href: string; icon: string; label: string };
-                              const isProLocked = !!it.pro && (
-                                effectiveIsPension ? pensionPlan === 'free'
-                                : effectiveIsGarde ? gardePlan === 'free'
-                                : effectiveType === 'eleveur' ? eleveurPlan === 'free'
-                                : false
-                              );
-                              // Pension/garde : la facturation est incluse dès le
-                              // premier plan payant (comme sur /elevage/facturation) ;
-                              // éleveur et les autres métiers exigent leur propre
-                              // palier le plus haut (PROFESSION_TOP_TIER).
-                              const isPremiumLocked = !!it.premium && (
-                                effectiveIsPension ? pensionPlan === 'free'
-                                : effectiveIsGarde ? gardePlan === 'free'
-                                : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
-                                : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
-                                : false
-                              );
-                              const isFormuleLocked = !!it.formule && !vetFormuleOk(otherPlan, it.formule);
-                              const isLocked = isProLocked || isPremiumLocked || isFormuleLocked;
-                              const badge = isFormuleLocked ? VET_FORMULE_LABEL[it.formule!] : isPremiumLocked ? 'Premium' : 'Pro';
-                              const badgeCls = isPremiumLocked
-                                ? 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1'
-                                : 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1';
-                              const abonnementHrefFor = effectiveIsPension ? '/pension/abonnement'
-                                : effectiveIsGarde ? '/garde/abonnement'
-                                : otherProfilType ? `/${otherProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : otherProfilType}/abonnement`
-                                : '/abonnement';
-                              return isLocked ? (
-                                <Link key={it.href} href={abonnementHrefFor}
-                                  onClick={() => setDropdownOpen(false)}
-                                  className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-400 hover:bg-gray-50 transition-colors">
-                                  <span className="text-base opacity-50">{it.icon}</span>
-                                  <span className="flex-1 opacity-60">{it.label}</span>
-                                  <span className={badgeCls}>{badge}</span>
-                                </Link>
-                              ) : (
-                                <Link key={it.href} href={it.href}
-                                  onClick={() => setDropdownOpen(false)}
-                                  className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-600 hover:bg-gray-100 transition-colors">
-                                  <span className="text-base">{it.icon}</span>
-                                  <span className="flex-1">{it.label}</span>
-                                  {it.href === '/mes-factures' && facturesNonVues > 0 && (
-                                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
-                                  )}
-                                </Link>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    <div className="border-t border-gray-100 mt-1">
-                      {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
-                        <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={() => setDropdownOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                          <span>⚙️</span> Mon Profil
-                        </Link>
-                      )}
-                      {!effectiveIsEleveur && (
-                        <Link href="/mes-alertes" onClick={() => setDropdownOpen(false)}
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                          <span>🔔</span> Mes Alertes perdus
-                        </Link>
-                      )}
-                      <Link href="/favoris" onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <span>❤️</span> Mes interactions
-                      </Link>
-                    </div>
-
-                    <div className="border-t border-gray-100">
-                      <button onClick={handleSignOut}
-                        className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
-                        <span>🚪</span> Déconnexion
-                      </button>
-                    </div>
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                  <EnteteMenu />
+                  <div className="max-h-[70vh] overflow-y-auto overscroll-contain">
+                    {profileSwitcherOpen
+                      ? <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
+                      : <MenuPro onNavigate={() => setDropdownOpen(false)} />}
                   </div>
                 </div>
               )}
@@ -1958,7 +1975,7 @@ export default function Header() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
               </svg>
               {totalBell > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold leading-none rounded-full flex items-center justify-center ring-2 ring-[#0C5C6C]">
                   {totalBell > 9 ? '9+' : totalBell}
                 </span>
               )}
@@ -1976,7 +1993,7 @@ export default function Header() {
 
       {/* Mobile menu */}
       {menuOpen && (
-        <div className="md:hidden bg-[#094F5D] px-4 pb-4 max-h-[80vh] overflow-y-auto">
+        <div className="md:hidden bg-[#094F5D] px-4 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {/* Nav links */}
           <div className="space-y-0.5 pt-2">
             {navLinks.map((l) => (
@@ -1990,112 +2007,11 @@ export default function Header() {
           </div>
 
           {!loading && user ? (
-            <div className="mt-3">
-              {/* Profile summary + switcher */}
-              <div className="bg-white/10 rounded-xl mb-3 overflow-hidden">
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <div className="w-9 h-9 rounded-full overflow-hidden bg-[#6E9E57] flex items-center justify-center flex-shrink-0">
-                    {effectiveAvatar ? (
-                      <Image src={effectiveAvatar} alt="" width={36} height={36} className="object-cover w-full h-full" />
-                    ) : (
-                      <span className="text-white text-xs font-bold">{(effectiveDisplayName[0] ?? '?').toUpperCase()}</span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-semibold truncate">{effectiveDisplayName}</p>
-                    <p className="text-white/50 text-xs">{typeEmoji(effectiveType)} {typeLabel(effectiveType)}</p>
-                  </div>
-                  <button
-                    onClick={() => setProfileSwitcherOpen(!profileSwitcherOpen)}
-                    className="text-white/70 hover:text-white text-xs font-bold bg-white/10 hover:bg-white/20 rounded-full px-2.5 py-1 transition-colors">
-                    ⇄
-                  </button>
-                </div>
-                {profileSwitcherOpen && (
-                  <div className="border-t border-white/10">
-                    <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
-                  </div>
-                )}
-              </div>
-
-              {/* Sections */}
-              {menuSections.map((sec) => (
-                <div key={sec.section}>
-                  <button
-                    onClick={() => toggleSection(sec.section)}
-                    className="w-full flex items-center gap-2 py-2 text-white/80 text-sm font-semibold">
-                    <span>{sec.icon}</span>
-                    <span className="flex-1 text-left">{sec.section}</span>
-                    {(sec.items as { href: string }[]).some(i => i.href === '/mes-factures') && facturesNonVues > 0 && (
-                      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
-                    )}
-                    <svg className={`w-4 h-4 text-white/40 transition-transform ${expandedSections[sec.section] ? 'rotate-180' : ''}`}
-                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  {expandedSections[sec.section] && (
-                    <div className="pl-6 space-y-0.5 mb-1">
-                      {sec.items.map((item) => {
-                        const it = item as { pro?: boolean; premium?: boolean; formule?: string; href: string; icon: string; label: string };
-                        const isProLocked = !!it.pro && (
-                          effectiveIsPension ? pensionPlan === 'free'
-                          : effectiveIsGarde ? gardePlan === 'free'
-                          : effectiveType === 'eleveur' ? eleveurPlan === 'free'
-                          : false
-                        );
-                        const isPremiumLocked = !!it.premium && (
-                          effectiveIsPension ? pensionPlan === 'free'
-                          : effectiveIsGarde ? gardePlan === 'free'
-                          : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
-                          : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
-                          : false
-                        );
-                        const isFormuleLocked = !!it.formule && !vetFormuleOk(otherPlan, it.formule);
-                              const isLocked = isProLocked || isPremiumLocked || isFormuleLocked;
-                        const badge = isFormuleLocked ? VET_FORMULE_LABEL[it.formule!] : isPremiumLocked ? 'Premium' : 'Pro';
-                        const abonnementHrefFor = effectiveIsPension ? '/pension/abonnement'
-                          : effectiveIsGarde ? '/garde/abonnement'
-                          : otherProfilType ? `/${otherProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : otherProfilType}/abonnement`
-                          : '/abonnement';
-                        return isLocked ? (
-                          <Link key={it.href} href={abonnementHrefFor} onClick={() => setMenuOpen(false)}
-                            className="flex items-center gap-2 py-2 text-white/40 text-sm">
-                            <span className="opacity-50">{it.icon}</span>
-                            <span className="flex-1 opacity-60">{it.label}</span>
-                            <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full">{badge}</span>
-                          </Link>
-                        ) : (
-                          <Link key={it.href} href={it.href} onClick={() => setMenuOpen(false)}
-                            className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                            <span>{it.icon}</span> <span className="flex-1">{it.label}</span>
-                            {it.href === '/mes-factures' && facturesNonVues > 0 && (
-                              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center mr-2">{facturesNonVues}</span>
-                            )}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <div className="border-t border-white/10 mt-2 pt-2 space-y-0.5">
-                {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
-                  <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={() => setMenuOpen(false)}
-                    className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                    ⚙️ Mon Profil
-                  </Link>
-                )}
-                <Link href="/favoris" onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                  ❤️ Mes interactions
-                </Link>
-                <button onClick={handleSignOut}
-                  className="flex items-center gap-2 py-2 text-red-300 hover:text-red-200 text-sm">
-                  🚪 Déconnexion
-                </button>
-              </div>
+            <div className="mt-3 -mx-4 bg-white">
+              <EnteteMenu />
+              {profileSwitcherOpen
+                ? <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
+                : <MenuPro onNavigate={() => setMenuOpen(false)} />}
             </div>
           ) : !loading && (
             <div className="pt-3 flex gap-3">
