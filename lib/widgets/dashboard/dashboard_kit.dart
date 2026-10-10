@@ -5,6 +5,7 @@
 // sante_dashboard.dart). Miroir site : website/src/components/dashboard/kit.tsx.
 
 import 'dart:math' as math;
+import 'dart:ui' show FontFeature;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +13,194 @@ import 'package:flutter/material.dart';
 const kDashTeal = Color(0xFF0C5C6C);
 const kDashInk = Color(0xFF1E2025);
 const kDashMuted = Color(0xFF6B7280);
-const kDashBorder = Color(0xFFE4E7E2);
+const kDashBorder = Color(0xFFE5E8E6);
+const kDashFond = Color(0xFFF6F7F5);
+
+/// Ombre discrète commune aux surfaces blanches de l'accueil.
+final kDashOmbre = [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 1))];
+
+/// Marge latérale de l'accueil : 16 sur téléphone, contenu centré (≤ 1000)
+/// sur tablette / grand écran.
+double dashMargeLaterale(BuildContext context) =>
+    math.max(16, (MediaQuery.of(context).size.width - 1000) / 2);
+
+/// Bannière PetsMatch d'origine (fichier existant), entière, hauteur plafonnée.
+class DashBanniere extends StatelessWidget {
+  const DashBanniere({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = MediaQuery.of(context).size.width;
+    return Container(
+      color: Colors.white,
+      height: math.min(l * 793 / 1983, 220),
+      width: double.infinity,
+      child: Image.asset('assets/Banniere_petsmatch.png', fit: BoxFit.contain),
+    );
+  }
+}
+
+/// Bloc professionnel de l'accueil : avatar rond, nom, lignes d'info, lieu,
+/// statut et bouton existant.
+class DashEnteteAccueil extends StatelessWidget {
+  final String nom;
+  final String? photoUrl;
+  final VoidCallback? onAvatarTap;
+  final List<String> lignes;
+  final String? lieu;
+  final Widget? statut;
+  final Widget? action;
+  const DashEnteteAccueil({super.key, required this.nom, this.photoUrl, this.onAvatarTap,
+      this.lignes = const [], this.lieu, this.statut, this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final avatar = Container(
+      width: 72, height: 72,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white, border: Border.all(color: kDashBorder)),
+      clipBehavior: Clip.antiAlias,
+      child: (photoUrl ?? '').isNotEmpty
+          ? CachedNetworkImage(imageUrl: photoUrl!, fit: BoxFit.contain,
+              errorWidget: (_, __, ___) => _initiale())
+          : _initiale(),
+    );
+    final large = MediaQuery.of(context).size.width >= 600;
+    final infos = Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      onAvatarTap != null ? GestureDetector(onTap: onAvatarTap, child: avatar) : avatar,
+      const SizedBox(width: 14),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Text(nom, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 19, fontWeight: FontWeight.w700, color: kDashInk, height: 1.2)),
+        for (final l in lignes) ...[
+          const SizedBox(height: 3),
+          Text(l, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted)),
+        ],
+        if ((lieu ?? '').isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Row(children: [
+            const Icon(Icons.location_on_outlined, size: 15, color: kDashTeal),
+            const SizedBox(width: 4),
+            Flexible(child: Text(lieu!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF4B5563)))),
+          ]),
+        ],
+        if (statut != null) ...[const SizedBox(height: 8), statut!],
+      ])),
+      if (large && action != null) ...[const SizedBox(width: 12), action!],
+    ]);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: kDashBorder), boxShadow: kDashOmbre),
+      child: large || action == null
+          ? infos
+          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              infos,
+              const SizedBox(height: 14),
+              Align(alignment: Alignment.centerLeft, child: action!),
+            ]),
+    );
+  }
+
+  Widget _initiale() => Container(
+        color: const Color(0xFFE8F4F6), alignment: Alignment.center,
+        child: Text(nom.isNotEmpty ? nom[0].toUpperCase() : '?',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 26, fontWeight: FontWeight.w700, color: kDashTeal)),
+      );
+}
+
+/// Bouton pilule teal (action existante de l'accueil).
+class DashBoutonPilule extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const DashBoutonPilule({super.key, required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: kDashTeal, borderRadius: BorderRadius.circular(24),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24), onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 16, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+            ]),
+          ),
+        ),
+      );
+}
+
+/// Pastille de statut (contour fin), avec point optionnel.
+class DashPuce extends StatelessWidget {
+  final String texte;
+  final Color fg, bg;
+  final bool point;
+  final IconData? icon;
+  const DashPuce(this.texte, {super.key, required this.fg, required this.bg, this.point = false, this.icon});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: fg.withValues(alpha: 0.15))),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (point) ...[
+            Container(width: 6, height: 6, decoration: BoxDecoration(color: fg, shape: BoxShape.circle)),
+            const SizedBox(width: 5),
+          ],
+          if (icon != null) ...[Icon(icon, size: 13, color: fg), const SizedBox(width: 4)],
+          Text(texte, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w600, color: fg)),
+        ]),
+      );
+}
+
+/// Carte de synthèse (3 par ligne) : icône dans un cercle teinté, valeur
+/// lisible, libellé. Dimensions identiques d'une carte à l'autre.
+class DashStat extends StatelessWidget {
+  final String valeur;
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+  final Color teinte;
+  const DashStat({super.key, required this.valeur, required this.label, required this.icon, this.onTap, this.teinte = kDashTeal});
+
+  @override
+  Widget build(BuildContext context) {
+    final nombre = int.tryParse(valeur) != null;
+    return Material(
+      color: Colors.white, borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16), onTap: onTap,
+        child: Container(
+          height: 118,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kDashBorder), boxShadow: kDashOmbre),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(color: teinte.withValues(alpha: 0.09), shape: BoxShape.circle),
+              child: Icon(icon, size: 19, color: teinte),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 26,
+              child: Center(child: Text(valeur, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: nombre ? 22 : 15, fontWeight: FontWeight.w700,
+                      color: kDashInk, fontFeatures: const [FontFeature.tabularFigures()]))),
+            ),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF4B5563))),
+          ]),
+        ),
+      ),
+    );
+  }
+}
 
 /// Palette catégorielle validée daltonisme (ordre fixe, jamais cyclée).
 const kDashPalette = <Color>[
@@ -29,7 +217,7 @@ class DashCarte extends StatelessWidget {
   Widget build(BuildContext context) => Container(
         padding: padding,
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: kDashBorder)),
+            border: Border.all(color: kDashBorder), boxShadow: kDashOmbre),
         child: child,
       );
 }
@@ -96,22 +284,18 @@ class DashKpi extends StatelessWidget {
           onTap: onTap,
           child: Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: kDashOmbre,
                 border: Border.all(color: actif ? teinte : kDashBorder, width: actif ? 1.5 : 1)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Row(children: [
-                Container(
-                  width: 34, height: 34,
-                  decoration: BoxDecoration(color: teinte.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-                  child: Icon(icon, size: 19, color: teinte),
-                ),
-                const Spacer(),
-                const Icon(Icons.chevron_right, size: 18, color: kDashMuted),
-              ]),
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(color: teinte.withValues(alpha: 0.09), shape: BoxShape.circle),
+                child: Icon(icon, size: 19, color: teinte),
+              ),
               Text('$valeur', style: const TextStyle(fontFamily: 'Galey', fontSize: 26,
-                  fontWeight: FontWeight.w800, color: kDashInk, height: 1.1)),
+                  fontWeight: FontWeight.w700, color: kDashInk, height: 1.1, fontFeatures: [FontFeature.tabularFigures()])),
               Text(label, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5,
-                  color: kDashMuted, height: 1.2)),
+                  fontWeight: FontWeight.w500, color: Color(0xFF4B5563), height: 1.2)),
             ]),
           ),
         ),

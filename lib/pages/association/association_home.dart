@@ -3,6 +3,7 @@ import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
 import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -161,85 +162,36 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         : '${User_Info.firstname} ${User_Info.lastname}'.trim();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: kDashFond,
       body: CustomScrollView(
         slivers: [
-          SliverAppBar(
-            expandedHeight: 200,
+          const SliverAppBar(
             pinned: true,
             backgroundColor: _teal,
-            actions: const [QuickSearchButton()],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Bannière ou dégradé
-                  if (_bannerUrl != null && _bannerUrl!.isNotEmpty)
-                    CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
-                              begin: Alignment.topLeft, end: Alignment.bottomRight,
-                            ),
-                          ),
-                        ))
-                  else
-                    Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)],
-                          begin: Alignment.topLeft, end: Alignment.bottomRight,
-                        ),
-                      ),
-                    ),
-                  // Overlay sombre pour lisibilité
-                  Container(color: Colors.black.withValues(alpha: 0.30)),
-                  // Contenu
-                  SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 30,
-                            backgroundImage: User_Info.profilePictureUrlElevage.isNotEmpty
-                                ? NetworkImage(User_Info.profilePictureUrlElevage)
-                                : null,
-                            backgroundColor: Colors.white24,
-                            child: User_Info.profilePictureUrlElevage.isEmpty
-                                ? const Icon(Icons.favorite, color: Colors.white, size: 28)
-                                : null,
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(nom,
-                                    style: const TextStyle(
-                                        fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                                        fontSize: 18, color: Colors.white),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                                const Text('Association / Refuge',
-                                    style: TextStyle(fontFamily: 'Galey',
-                                        fontSize: 12, color: Colors.white70)),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            surfaceTintColor: _teal,
+            actions: [QuickSearchButton()],
+          ),
+          // Bannière de l'association si elle existe, sinon bannière PetsMatch d'origine.
+          SliverToBoxAdapter(
+            child: _bannerUrl != null && _bannerUrl!.isNotEmpty
+                ? SizedBox(
+                    height: (MediaQuery.of(context).size.width * 793 / 1983).clamp(0, 220).toDouble(),
+                    width: double.infinity,
+                    child: CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const DashBanniere()),
+                  )
+                : const DashBanniere(),
           ),
           SliverPadding(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.symmetric(horizontal: dashMargeLaterale(context), vertical: 16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                DashEnteteAccueil(
+                  nom: nom,
+                  photoUrl: User_Info.profilePictureUrlElevage.isNotEmpty ? User_Info.profilePictureUrlElevage : null,
+                  lignes: const ['Association / Refuge'],
+                ),
+                const SizedBox(height: 16),
                 if (_loading)
                   const Center(child: CircularProgressIndicator())
                 else ...[
@@ -251,13 +203,14 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+                        border: Border.all(color: Colors.orange.shade200),
+                        boxShadow: kDashOmbre,
                       ),
                       child: Row(children: [
                         CircleAvatar(
-                          backgroundColor: Colors.orange.shade100,
+                          backgroundColor: Colors.orange.shade50,
                           child: Icon(Icons.hourglass_empty, color: Colors.orange.shade800, size: 20),
                         ),
                         const SizedBox(width: 14),
@@ -315,13 +268,13 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Animaux récents',
-                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                                fontSize: 16, color: _teal)),
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                fontSize: 17, color: kDashInk)),
                         TextButton(
                           onPressed: () => Navigator.push(context,
                               MaterialPageRoute(builder: (_) => const MesAnimauxAssoPage())),
                           child: Text('Voir tous →',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600, color: _teal)),
                         ),
                       ],
                     ),
@@ -330,7 +283,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                        border: Border.all(color: kDashBorder),
+                        boxShadow: kDashOmbre,
                       ),
                       child: Column(
                         children: _recentAnimaux.asMap().entries.map((entry) {
@@ -368,7 +322,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                                 ),
                               ),
                               if (i < _recentAnimaux.length - 1)
-                                const Divider(height: 1, indent: 60),
+                                Divider(height: 1, indent: 60, color: Colors.grey.shade200),
                             ],
                           );
                         }).toList(),
@@ -383,13 +337,13 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Disponibles à l\'adoption',
-                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                                fontSize: 16, color: _teal)),
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                fontSize: 17, color: kDashInk)),
                         TextButton(
                           onPressed: () => Navigator.push(context,
                               MaterialPageRoute(builder: (_) => const MesAnimauxAssoPage())),
                           child: Text('Voir tous →',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600, color: _teal)),
                         ),
                       ],
                     ),
@@ -410,8 +364,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(14),
-                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
-                                    blurRadius: 6, offset: const Offset(0, 2))],
+                                border: Border.all(color: kDashBorder),
+                                boxShadow: kDashOmbre,
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,13 +410,13 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('Mes annonces d\'adoption',
-                            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                                fontSize: 16, color: _teal)),
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                fontSize: 17, color: kDashInk)),
                         TextButton(
                           onPressed: () => Navigator.push(context,
                               MaterialPageRoute(builder: (_) => MesAnnoncesPage(isAssociation: true))),
                           child: Text('Voir toutes →',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600, color: _teal)),
                         ),
                       ],
                     ),
@@ -471,7 +425,8 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                        border: Border.all(color: kDashBorder),
+                        boxShadow: kDashOmbre,
                       ),
                       child: Column(
                         children: _annonces.asMap().entries.map((entry) {
@@ -511,7 +466,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                               ),
                             ),
                             if (i < _annonces.length - 1)
-                              const Divider(height: 1, indent: 60),
+                              Divider(height: 1, indent: 60, color: Colors.grey.shade200),
                           ]);
                         }).toList(),
                       ),
@@ -538,39 +493,6 @@ class _StatCard extends StatelessWidget {
   const _StatCard(this.label, this.value, this.icon, this.color, {this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 16),
-              ),
-              const SizedBox(height: 8),
-              Text('$value',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 20, color: color)),
-              Text(label,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      Expanded(child: DashStat(valeur: '$value', label: label, icon: icon, teinte: color, onTap: onTap));
 }

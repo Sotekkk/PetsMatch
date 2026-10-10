@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
@@ -107,22 +108,25 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        backgroundColor: Color(0xFFF8F8F6),
+        backgroundColor: kDashFond,
         body: Center(child: CircularProgressIndicator(color: _teal)),
       );
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: kDashFond,
       body: RefreshIndicator(
         onRefresh: () async { setState(() => _loading = true); await _load(); },
         child: CustomScrollView(
           slivers: [
             _buildHeader(),
+            SliverToBoxAdapter(child: _buildBanniere()),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                child: Column(children: [
+                padding: EdgeInsets.fromLTRB(dashMargeLaterale(context), 16, dashMargeLaterale(context), 32),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  _buildEntete(),
+                  const SizedBox(height: 16),
                   _buildValidationBanner(),
                   const SizedBox(height: 16),
                   _buildStats(),
@@ -142,50 +146,34 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
   }
 
   Widget _buildHeader() {
-    final label = _typeEtabl.isEmpty ? 'Hébergement / Restauration' : _labelType(_typeEtabl);
-    return SliverAppBar(
-      expandedHeight: 180,
+    return const SliverAppBar(
       pinned: true,
       backgroundColor: _teal,
+      surfaceTintColor: _teal,
       foregroundColor: Colors.white,
       automaticallyImplyLeading: false,
-      actions: const [QuickSearchButton()],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Stack(fit: StackFit.expand, children: [
-          if (_bannerUrl != null)
-            CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(color: const Color(0xFF094F5D)))
-          else
-            Container(color: const Color(0xFF094F5D)),
-          Container(color: Colors.black.withValues(alpha: 0.4)),
-          Positioned(
-            bottom: 16, left: 16,
-            child: Row(children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: Colors.white24,
-                backgroundImage: _profilePhotoUrl != null
-                    ? CachedNetworkImageProvider(_profilePhotoUrl!) : null,
-                child: _profilePhotoUrl == null
-                    ? const Text('🏡', style: TextStyle(fontSize: 24)) : null,
-              ),
-              const SizedBox(width: 12),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(
-                  _nomEtabl.isNotEmpty ? _nomEtabl : User_Info.firstname,
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 18, color: Colors.white),
-                ),
-                Text(label,
-                    style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                if (_villeEtabl.isNotEmpty)
-                  Text('📍 $_villeEtabl',
-                      style: const TextStyle(fontSize: 12, color: Colors.white70)),
-              ]),
-            ]),
-          ),
-        ]),
-      ),
+      actions: [QuickSearchButton()],
+    );
+  }
+
+  /// Bannière de l'établissement si elle existe, sinon bannière PetsMatch d'origine.
+  Widget _buildBanniere() {
+    if (_bannerUrl == null) return const DashBanniere();
+    return SizedBox(
+      height: (MediaQuery.of(context).size.width * 793 / 1983).clamp(0, 220).toDouble(),
+      width: double.infinity,
+      child: CachedNetworkImage(imageUrl: _bannerUrl!, fit: BoxFit.cover,
+          errorWidget: (_, __, ___) => const DashBanniere()),
+    );
+  }
+
+  Widget _buildEntete() {
+    final label = _typeEtabl.isEmpty ? 'Hébergement / Restauration' : _labelType(_typeEtabl);
+    return DashEnteteAccueil(
+      nom: _nomEtabl.isNotEmpty ? _nomEtabl : User_Info.firstname,
+      photoUrl: _profilePhotoUrl,
+      lignes: [label],
+      lieu: _villeEtabl,
     );
   }
 
@@ -220,12 +208,17 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: bg,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: text.withValues(alpha: 0.3)),
+          boxShadow: kDashOmbre,
         ),
         child: Row(children: [
-          Icon(ico, color: text, size: 28),
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            child: Icon(ico, color: text, size: 21),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -251,33 +244,14 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
       _stat(_vuesTotales.toString(), 'Vues', Icons.visibility_outlined),
       const SizedBox(width: 12),
       _stat(_nbAvis > 0
-          ? '${_noteMoyenne.toStringAsFixed(1)} ⭐'
+          ? _noteMoyenne.toStringAsFixed(1)
           : '–',
           '$_nbAvis avis', Icons.star_outline),
     ]);
   }
 
-  Widget _stat(String val, String label, IconData icon, {VoidCallback? onTap}) {
-    final card = Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Column(children: [
-        Icon(icon, color: _teal, size: 22),
-        const SizedBox(height: 4),
-        Text(val, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-            fontSize: 16, color: Color(0xFF1F2A2E))),
-        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B)),
-            textAlign: TextAlign.center),
-      ]),
-    );
-    return Expanded(
-      child: onTap != null ? GestureDetector(onTap: onTap, child: card) : card,
-    );
-  }
+  Widget _stat(String val, String label, IconData icon, {VoidCallback? onTap}) =>
+      Expanded(child: DashStat(valeur: val, label: label, icon: icon, onTap: onTap));
 
   Widget _buildQuickLinks() {
     final links = [
@@ -294,7 +268,7 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Accès rapide',
-          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: kDashInk)),
       const SizedBox(height: 12),
       GridView.count(
         crossAxisCount: 2,
@@ -307,13 +281,19 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
           onTap: l.onTap,
           child: Container(
             decoration: BoxDecoration(
-              color: l.bg,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: kDashBorder),
+              boxShadow: kDashOmbre,
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(children: [
-              Icon(l.icon, color: _teal, size: 20),
-              const SizedBox(width: 8),
+              Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(color: l.bg, shape: BoxShape.circle),
+                child: Icon(l.icon, color: _teal, size: 18),
+              ),
+              const SizedBox(width: 10),
               Flexible(child: Text(l.label,
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
                       fontSize: 13, color: Color(0xFF1F2A2E)),
@@ -328,7 +308,7 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
   Widget _buildRecentAvis() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('Avis récents',
-          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: kDashInk)),
       const SizedBox(height: 12),
       ...(_recentAvis.map((a) {
         final note = (a['note'] as num?)?.toDouble() ?? 0;
@@ -345,7 +325,8 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4)],
+            border: Border.all(color: kDashBorder),
+            boxShadow: kDashOmbre,
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [

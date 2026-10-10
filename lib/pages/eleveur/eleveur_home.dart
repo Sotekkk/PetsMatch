@@ -43,6 +43,7 @@ import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/vet_dashboard.dart';
 import 'package:PetsMatch/pages/pro/sante_dashboard.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
@@ -56,6 +57,8 @@ import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -88,7 +91,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
-  static const _bg = Color(0xFFF8F8F6);
+  static const _bg = kDashFond;
 
   @override
   void initState() {
@@ -351,10 +354,13 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
               child: CustomScrollView(
                 slivers: [
                   _buildSliverHeader(context),
+                  const SliverToBoxAdapter(child: DashBanniere()),
                   SliverPadding(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.symmetric(horizontal: dashMargeLaterale(context), vertical: 16),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
+                        _buildEnteteAccueil(context),
+                        const SizedBox(height: 16),
                         if (User_Info.catPro == 'veterinaire')
                           VetDashboard(key: ValueKey(_refreshTick), patientsCount: _patientCount,
                               raccourcis: _buildVetShortcuts(context))
@@ -415,6 +421,17 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   }
 
   Widget _buildSliverHeader(BuildContext context) {
+    return const SliverAppBar(
+      pinned: true,
+      backgroundColor: _teal,
+      surfaceTintColor: _teal,
+      automaticallyImplyLeading: false,
+      actions: [QuickSearchButton()],
+    );
+  }
+
+  /// Bloc professionnel : mêmes informations et même bouton qu'avant.
+  Widget _buildEnteteAccueil(BuildContext context) {
     final name = User_Info.nameElevage.isNotEmpty
         ? User_Info.nameElevage
         : '${User_Info.firstname} ${User_Info.lastname}'.trim();
@@ -423,102 +440,27 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         ? User_Info.profilePictureUrlElevage
         : (User_Info.profilePictureUrl.isNotEmpty ? User_Info.profilePictureUrl : null);
     final photoUrl = (rawPhoto?.isNotEmpty == true) ? rawPhoto : null;
+    void ouvrirProfil() => Navigator.push(context,
+        MaterialPageRoute(builder: (_) => User_Info.isPro
+            ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
+            : const ProfilEleveurEditPage()));
+    final santeVet = User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante';
 
-    return SliverAppBar(
-      expandedHeight: 180,
-      pinned: true,
-      backgroundColor: _teal,
-      automaticallyImplyLeading: false,
-      actions: const [QuickSearchButton()],
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF0C5C6C), Color(0xFF5F9EAA)],
-            ),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => User_Info.isPro
-    ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
-    : const ProfilEleveurEditPage())),
-                    child: CircleAvatar(
-                      radius: 38,
-                      backgroundColor: const Color(0xFFA7C79A),
-                      backgroundImage: photoUrl != null
-                          ? CachedNetworkImageProvider(photoUrl) : null,
-                      child: photoUrl == null
-                          ? const Icon(Icons.pets, color: Colors.white, size: 36) : null,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w700,
-                              fontSize: 20,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                        if (User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante') ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            [
-                              if (User_Info.catPro == 'veterinaire') '${User_Info.firstname} ${User_Info.lastname}'.trim(),
-                              User_Info.catPro == 'veterinaire' ? 'Vétérinaire · Gérant' : _metierSante(),
-                            ].where((t) => t.isNotEmpty).join(' — '),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 2),
-                          Text(_dateDuJour(),
-                              style: const TextStyle(color: Color(0xFFEEF5EA), fontSize: 12.5, fontFamily: 'Galey')),
-                        ] else if (city.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Row(children: [
-                            const Icon(Icons.location_on_outlined, color: Color(0xFFEEF5EA), size: 14),
-                            const SizedBox(width: 4),
-                            Text(city,
-                                style: const TextStyle(color: Color(0xFFEEF5EA), fontSize: 13, fontFamily: 'Galey')),
-                          ]),
-                        ],
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: () => Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => User_Info.isPro
-    ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
-    : const ProfilEleveurEditPage())),
-                          icon: const Icon(Icons.edit_outlined, size: 14, color: Colors.white),
-                          label: const Text('Modifier', style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Galey')),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.white54),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    return DashEnteteAccueil(
+      nom: name,
+      photoUrl: photoUrl,
+      onAvatarTap: ouvrirProfil,
+      lignes: santeVet
+          ? [
+              [
+                if (User_Info.catPro == 'veterinaire') '${User_Info.firstname} ${User_Info.lastname}'.trim(),
+                User_Info.catPro == 'veterinaire' ? 'Vétérinaire · Gérant' : _metierSante(),
+              ].where((t) => t.isNotEmpty).join(' — '),
+              _dateDuJour(),
+            ]
+          : const [],
+      lieu: santeVet ? null : city,
+      action: DashBoutonPilule(label: 'Modifier', icon: Icons.settings_outlined, onTap: ouvrirProfil),
     );
   }
 
@@ -558,10 +500,15 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+          border: Border.all(color: kDashBorder),
+          boxShadow: kDashOmbre,
         ),
         child: Row(children: [
-          Icon(Icons.home_work_outlined, color: color, size: 26),
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
+            child: Icon(Icons.home_work_outlined, color: color, size: 21),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -958,7 +905,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           fontFamily: 'Galey',
           fontWeight: FontWeight.w700,
           fontSize: 17,
-          color: Color(0xFF1F2A2E),
+          color: kDashInk,
         ));
   }
 
@@ -1023,7 +970,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
               decoration: BoxDecoration(
                   color: _teal.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(20)),
-              child: const Text('⚡ Pro',
+              child: const Text('Pro',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 12, color: Color(0xFF0C5C6C))),
             ),
@@ -1042,13 +989,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.orange.shade50,
+        color: Colors.white,
+        boxShadow: kDashOmbre,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+        border: Border.all(color: Colors.orange.shade200),
       ),
       child: Row(children: [
         CircleAvatar(
-          backgroundColor: Colors.orange.shade100,
+          backgroundColor: Colors.orange.shade50,
           child: Icon(Icons.hourglass_empty, color: Colors.orange.shade800, size: 20),
         ),
         const SizedBox(width: 14),
@@ -1081,13 +1029,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.amber.shade50,
+          color: Colors.white,
+          boxShadow: kDashOmbre,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.amber.shade400, width: 1.5),
+          border: Border.all(color: Colors.amber.shade300),
         ),
         child: Row(children: [
           CircleAvatar(
-            backgroundColor: Colors.amber.shade100,
+            backgroundColor: Colors.amber.shade50,
             child: Icon(Icons.person_outline, color: Colors.amber.shade800, size: 20),
           ),
           const SizedBox(width: 14),
@@ -1121,13 +1070,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.orange.shade50,
+          color: Colors.white,
+          boxShadow: kDashOmbre,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.orange.shade300, width: 1.5),
+          border: Border.all(color: Colors.orange.shade200),
         ),
         child: Row(children: [
           CircleAvatar(
-            backgroundColor: Colors.orange.shade100,
+            backgroundColor: Colors.orange.shade50,
             child: Icon(Icons.location_searching,
                 color: Colors.orange.shade700, size: 20),
           ),
@@ -1337,9 +1287,15 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: kDashBorder),
+          boxShadow: kDashOmbre,
         ),
         child: Column(children: [
-          Icon(Icons.campaign_outlined, size: 40, color: Colors.grey.shade300),
+          Container(
+            width: 48, height: 48,
+            decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
+            child: const Icon(Icons.description_outlined, size: 22, color: _teal),
+          ),
           const SizedBox(height: 8),
           Text('Aucune annonce publiée',
               style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey')),
@@ -1349,7 +1305,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                 MaterialPageRoute(builder: (_) => const CreateAnnoncePage()))
                 .then((_) { if (mounted) _loadData(); }),
             style: ElevatedButton.styleFrom(
-                backgroundColor: _teal, foregroundColor: Colors.white),
+                backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
             child: const Text('Créer une annonce',
                 style: TextStyle(fontFamily: 'Galey')),
           ),
@@ -1381,9 +1338,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 6, offset: const Offset(0, 2))],
+              border: Border.all(color: kDashBorder),
+              boxShadow: kDashOmbre,
             ),
             child: Row(children: [
               ClipRRect(
@@ -1404,30 +1360,28 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                 children: [
                   Text(displayTitle,
                       style: const TextStyle(fontFamily: 'Galey',
-                          fontWeight: FontWeight.w600, fontSize: 14),
+                          fontWeight: FontWeight.w600, fontSize: 15, color: kDashInk),
                       maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Row(children: [
-                    _Badge(
-                      statut == 'pause' ? 'En pause'
-                          : statut == 'reserve' ? 'Réservé' : 'En ligne',
-                      statut == 'pause' ? Colors.grey
-                          : statut == 'reserve' ? const Color(0xFFF59E0B)
-                          : _green),
-                    const SizedBox(width: 8),
-                    Icon(Icons.visibility_outlined, size: 12,
-                        color: Colors.grey.shade400),
-                    const SizedBox(width: 2),
+                    statut == 'pause'
+                        ? const DashPuce('En pause', fg: Color(0xFF6B7280), bg: Color(0xFFF3F4F6), point: true)
+                        : statut == 'reserve'
+                            ? const DashPuce('Réservé', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), point: true)
+                            : const DashPuce('En ligne', fg: Color(0xFF2F7D3A), bg: Color(0xFFEAF5EC), point: true),
+                    const SizedBox(width: 10),
+                    const Icon(Icons.visibility_outlined, size: 14, color: kDashMuted),
+                    const SizedBox(width: 3),
                     Text('$vues',
-                        style: TextStyle(fontFamily: 'Galey',
-                            fontSize: 11, color: Colors.grey.shade400)),
+                        style: const TextStyle(fontFamily: 'Galey',
+                            fontSize: 12, color: kDashMuted, fontFeatures: [FontFeature.tabularFigures()])),
                   ]),
                 ],
               )),
               if (createdAt != null)
                 Text(DateFormat('dd/MM').format(DateTime.parse(createdAt)),
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        color: Colors.grey.shade400)),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: kDashMuted, fontFeatures: [FontFeature.tabularFigures()])),
             ]),
           ),
         );
@@ -1445,32 +1399,8 @@ class _StatCard extends StatelessWidget {
   const _StatCard({required this.value, required this.label, required this.icon, this.onTap});
 
   @override
-  Widget build(BuildContext context) {
-    final card = Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: const Color(0xFF6E9E57), size: 22),
-          const SizedBox(height: 4),
-          // Tailles FIXES (identiques d'une carte à l'autre), 1 ligne.
-          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-        ],
-      ),
-    );
-    return Expanded(
-      child: onTap != null
-          ? GestureDetector(onTap: onTap, child: card)
-          : card,
-    );
-  }
+  Widget build(BuildContext context) =>
+      Expanded(child: DashStat(valeur: value, label: label, icon: icon, onTap: onTap));
 }
 
 class _QuickTile extends StatelessWidget {
@@ -1497,20 +1427,24 @@ class _QuickTile extends StatelessWidget {
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: (isLocked ? Colors.grey : color).withOpacity(0.35)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 1))],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: kDashBorder),
+            boxShadow: kDashOmbre,
           ),
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(icon, color: isLocked ? Colors.grey.shade400 : color, size: 20),
-            const SizedBox(height: 6),
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(color: (isLocked ? Colors.grey : color).withValues(alpha: 0.1), shape: BoxShape.circle),
+              child: Icon(icon, color: isLocked ? Colors.grey.shade400 : color, size: 19),
+            ),
+            const SizedBox(height: 7),
             Text(label.replaceAll('\n', ' ').replaceAll('- ', ''),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: isLocked ? Colors.grey.shade500 : const Color(0xFF1F2A2E),
+                  color: isLocked ? Colors.grey.shade500 : kDashInk,
                   fontFamily: 'Galey',
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
