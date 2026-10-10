@@ -285,7 +285,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
     final inactifs = _benevoles.where((b) => b['actif'] != true).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: const Color(0xFFF6F7F5),
       appBar: AppBar(
         backgroundColor: _teal,
         title: const Text('Bénévoles',
@@ -377,7 +377,8 @@ class _BenevoleTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+        border: Border.all(color: const Color(0xFFE5E8E6)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -544,7 +545,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
     if (mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_nomUser(user)} ajouté comme bénévole ✓')));
+          SnackBar(content: Text('${_nomUser(user)} ajouté comme bénévole')));
     }
   }
 

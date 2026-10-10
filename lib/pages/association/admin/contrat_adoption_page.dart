@@ -13,7 +13,7 @@ import 'package:PetsMatch/utils/user_lookup.dart';
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 const _dark  = Color(0xFF1F2A2E);
-const _bg    = Color(0xFFF8F8F6);
+const _bg    = Color(0xFFF6F7F5);
 
 /// Choix pour le certificat d'engagement (loi 2021-1539) — jamais imposé :
 /// l'association peut toujours passer l'étape ou apporter son propre document.
@@ -97,7 +97,7 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
         await _supa.from('notifications').insert({
           'uid':  acqUid,
           'type': 'contrat_invite',
-          'title': '📄 Contrat d\'adoption à signer',
+          'title': 'Contrat d\'adoption à signer',
           'body':  '${contrat['titre'] ?? 'Un contrat d\'adoption'} vous a été transmis — vérifiez et signez',
           if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data':  {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
@@ -214,10 +214,10 @@ class _ContratCard extends StatelessWidget {
   bool get _isBrouillon => (contrat['statut'] ?? 'brouillon') == 'brouillon';
 
   String get _statutLabel => switch (contrat['statut'] ?? 'brouillon') {
-    'signe'      => '✅ Signé',
-    'en_attente' => '⏳ En attente',
-    'partiellement_signe' => '✍️ Partiel',
-    'annule'     => '🚫 Annulé',
+    'signe'      => 'Signé',
+    'en_attente' => 'En attente',
+    'partiellement_signe' => 'Partiel',
+    'annule'     => 'Annulé',
     'en_cours'   => 'En cours',
     _            => 'Brouillon',
   };
@@ -240,7 +240,8 @@ class _ContratCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha:0.05), blurRadius: 6, offset: const Offset(0, 2))],
+        border: Border.all(color: const Color(0xFFE5E8E6)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -264,7 +265,7 @@ class _ContratCard extends StatelessWidget {
                   minimumSize: const Size(double.infinity, 38),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
               icon: const Icon(Icons.send_outlined, size: 15),
-              label: const Text('📤 Transmettre pour signature',
+              label: const Text('Transmettre pour signature',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
             )
           else
@@ -562,7 +563,7 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: _green.withValues(alpha:0.3))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('✅ Contrat créé !',
+                const Text('Contrat créé !',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF3D6B33))),
                 const SizedBox(height: 6),
                 const Text('Partagez ce lien à l\'adoptant pour signature :',
@@ -601,7 +602,7 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
                   const SizedBox(height: 14),
                   const Divider(height: 1),
                   const SizedBox(height: 10),
-                  const Text('📋 Certificat d\'engagement également créé :',
+                  const Text('Certificat d\'engagement également créé :',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF3D6B33))),
                   const SizedBox(height: 6),
                   Text('petsmatchapp.com/certificat/$_certToken',

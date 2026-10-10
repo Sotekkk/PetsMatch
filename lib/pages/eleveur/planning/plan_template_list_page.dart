@@ -194,7 +194,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                 onPressed: () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => const ProtocoleChaleurPage(),
                 )),
-                icon: const Text('🌸', style: TextStyle(fontSize: 16)),
+                icon: const Icon(Icons.event_repeat_outlined, size: 18),
                 label: const Text('Protocole chaleur (par race)',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5)),
                 style: OutlinedButton.styleFrom(

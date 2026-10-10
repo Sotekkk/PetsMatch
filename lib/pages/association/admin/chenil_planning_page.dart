@@ -288,7 +288,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: const Color(0xFFF6F7F5),
       appBar: AppBar(
         backgroundColor: _teal,
         title: const Text('Affectation des hébergements',
@@ -721,8 +721,8 @@ class _EnclosCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
-        border: Border.all(color: Colors.teal.shade50),
+        border: Border.all(color: const Color(0xFFE5E8E6)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // En-tête
@@ -762,7 +762,7 @@ class _EnclosCard extends StatelessWidget {
 
             // Nettoyage
             Row(children: [
-              const Text('🧹', style: TextStyle(fontSize: 13)),
+              const Text('Nettoyage', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6B7280))),
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1015,10 +1015,10 @@ class _AddEnclosSheetState extends State<_AddEnclosSheet> {
               value: _type,
               decoration: const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
               items: const [
-                DropdownMenuItem(value: 'box',       child: Text('🏠 Box')),
-                DropdownMenuItem(value: 'enclos',    child: Text('🌿 Enclos')),
-                DropdownMenuItem(value: 'chatterie', child: Text('🐈 Chatterie')),
-                DropdownMenuItem(value: 'cage',      child: Text('🔲 Cage')),
+                DropdownMenuItem(value: 'box',       child: Text('Box')),
+                DropdownMenuItem(value: 'enclos',    child: Text('Enclos')),
+                DropdownMenuItem(value: 'chatterie', child: Text('Chatterie')),
+                DropdownMenuItem(value: 'cage',      child: Text('Cage')),
               ],
               onChanged: (v) => setState(() => _type = v ?? 'box'),
             ),

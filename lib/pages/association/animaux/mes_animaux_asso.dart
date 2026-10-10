@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -247,10 +248,11 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
   Widget build(BuildContext context) {
     final statuts = _tabController.index == 0 ? _detenusStatuts : _anciensStatuts;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
-        title: const Text('Mes Animaux',
+        surfaceTintColor: _teal,
+        title: const Text('Mes animaux',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
         bottom: TabBar(
@@ -259,7 +261,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
-          tabs: const [Tab(text: 'Nos protégés'), Tab(text: 'Ancien')],
+          tabs: const [Tab(text: 'Nos protégés'), Tab(text: 'Anciens')],
         ),
         actions: [
           IconButton(
@@ -283,73 +285,67 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
       ),
       body: Column(
         children: [
-          // Search
+          // Recherche + statut (liste déroulante, comme l'éleveur)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: TextField(
-              onChanged: (v) => setState(() { _search = v; _applyFilters(); }),
-              decoration: InputDecoration(
-                hintText: 'Rechercher par nom, race ou n° de puce…',
-                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide.none,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Column(children: [
+              TextField(
+                onChanged: (v) => setState(() { _search = v; _applyFilters(); }),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14.5),
+                decoration: InputDecoration(
+                  hintText: 'Rechercher par nom, race ou n° de puce',
+                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontSize: 14),
+                  prefixIcon: Icon(Icons.search, color: Colors.grey.shade500, size: 20),
+                  isDense: true,
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kDashBorder)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kDashBorder)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _teal)),
                 ),
               ),
-            ),
-          ),
-          // Filtres statut (dépendent de l'onglet actif)
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: statuts.map((s) {
-                final active = _filterStatut == s.$1;
-                return GestureDetector(
-                  onTap: () => setState(() { _filterStatut = s.$1; _applyFilters(); }),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    margin: const EdgeInsets.only(right: 8, top: 6, bottom: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: active ? s.$3 : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: active ? s.$3 : Colors.grey.shade300),
-                    ),
-                    child: Center(
-                      child: Text(s.$2,
-                          style: TextStyle(
-                              fontFamily: 'Galey', fontSize: 12,
-                              fontWeight: active ? FontWeight.w700 : FontWeight.normal,
-                              color: active ? Colors.white : Colors.grey.shade600)),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                key: ValueKey('statut_${_tabController.index}'),
+                initialValue: statuts.any((s) => s.$1 == _filterStatut) ? _filterStatut : statuts.first.$1,
+                isExpanded: true,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14.5, color: kDashInk),
+                decoration: InputDecoration(
+                  labelText: 'Statut',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', color: kDashMuted),
+                  isDense: true, filled: true, fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kDashBorder)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kDashBorder)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _teal)),
+                ),
+                items: [
+                  for (final st in statuts)
+                    DropdownMenuItem(value: st.$1, child: Row(children: [
+                      if (st.$1 != 'tous') ...[
+                        Container(width: 8, height: 8, decoration: BoxDecoration(color: st.$3, shape: BoxShape.circle)),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(st.$1 == 'tous' ? 'Tous les statuts' : st.$2),
+                    ])),
+                ],
+                onChanged: (v) => setState(() { _filterStatut = v ?? 'tous'; _applyFilters(); }),
+              ),
+            ]),
           ),
           // Liste
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: CircularProgressIndicator(color: _teal))
                 : _filtered.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.pets, size: 60, color: Colors.grey.shade300),
-                            const SizedBox(height: 12),
-                            Text('Aucun animal',
-                                style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
-                          ],
-                        ),
+                    ? const Center(
+                        child: Text('Aucun animal trouvé.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 14.5, color: kDashMuted)),
                       )
                     : GridView.builder(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2,
                           crossAxisSpacing: 12,
@@ -523,15 +519,15 @@ class _AnimalCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 3))],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kDashBorder),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Photo carrée
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
               child: AspectRatio(
                 aspectRatio: 1.0,
                 child: Stack(
@@ -551,12 +547,16 @@ class _AnimalCard extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
-                          color: statutColor,
-                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: statutColor.withValues(alpha: 0.35)),
                         ),
-                        child: Text(statutLabel,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
-                                fontWeight: FontWeight.w700, color: Colors.white)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Container(width: 6, height: 6, decoration: BoxDecoration(color: statutColor, shape: BoxShape.circle)),
+                          const SizedBox(width: 4),
+                          Text(statutLabel, style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                              fontWeight: FontWeight.w600, color: statutColor)),
+                        ]),
                       ),
                     ),
                     // Badge En FA — indépendant du statut, un animal peut être
@@ -567,12 +567,13 @@ class _AnimalCard extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.purple,
-                            borderRadius: BorderRadius.circular(8),
+                            color: const Color(0xFFF3E8FF),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
                           ),
-                          child: const Text('🏡 FA',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 9,
-                                  fontWeight: FontWeight.w700, color: Colors.white)),
+                          child: const Text('En FA',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                                  fontWeight: FontWeight.w600, color: Color(0xFF7E22CE))),
                         ),
                       ),
                     if (isCession)
@@ -581,12 +582,13 @@ class _AnimalCard extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.white.withValues(alpha: 0.95),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: kDashBorder),
                           ),
-                          child: const Text('🤝 Cession',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 9,
-                                  fontWeight: FontWeight.w700, color: Colors.white)),
+                          child: const Text('Cession',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                                  fontWeight: FontWeight.w600, color: kDashInk)),
                         ),
                       ),
                   ],
@@ -610,7 +612,7 @@ class _AnimalCard extends StatelessWidget {
                   _Chip(speciesLabel(espece), specColor),
                   if (sexe.isNotEmpty) ...[
                     const SizedBox(width: 4),
-                    _Chip(sexe == 'male' ? '♂' : '♀', const Color(0xFF5F9EAA)),
+                    _Chip(sexe == 'male' ? 'Mâle' : 'Femelle', const Color(0xFF5F9EAA)),
                   ],
                   if (statut == 'disponible') ...[
                     const SizedBox(width: 4),

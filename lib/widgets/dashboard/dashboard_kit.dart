@@ -531,3 +531,37 @@ class _DashBarresSemaineState extends State<DashBarresSemaine> {
     ]);
   }
 }
+
+/// Liste déroulante sobre (filtres et formulaires), style validé éleveur :
+/// fond blanc, bordure fine, libellé au-dessus du champ.
+class DashListeDeroulante<T> extends StatelessWidget {
+  final String? libelle;
+  final T valeur;
+  final List<(T, String)> options;
+  final ValueChanged<T?>? onChanged;
+  const DashListeDeroulante({super.key, this.libelle, required this.valeur, required this.options, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final existe = options.any((o) => o.$1 == valeur);
+    OutlineInputBorder bord(Color c, [double w = 1]) =>
+        OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c, width: w));
+    return DropdownButtonFormField<T>(
+      key: ValueKey('${libelle}_${options.length}_$valeur'),
+      initialValue: existe ? valeur : options.first.$1,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: kDashMuted),
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 14.5, color: kDashInk),
+      decoration: InputDecoration(
+        labelText: libelle,
+        labelStyle: const TextStyle(fontFamily: 'Galey', color: kDashMuted),
+        isDense: true, filled: true, fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: bord(kDashBorder), enabledBorder: bord(kDashBorder), disabledBorder: bord(kDashBorder),
+        focusedBorder: bord(kDashTeal, 1.5),
+      ),
+      items: [for (final o in options) DropdownMenuItem<T>(value: o.$1, child: Text(o.$2, overflow: TextOverflow.ellipsis))],
+      onChanged: onChanged,
+    );
+  }
+}

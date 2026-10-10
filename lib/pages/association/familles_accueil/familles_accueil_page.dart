@@ -141,7 +141,7 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: const Color(0xFFF6F7F5),
       appBar: AppBar(
         backgroundColor: _teal,
         title: const Text('Familles d\'accueil',
@@ -216,7 +216,7 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
                                         color: Colors.purple.shade50,
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: const Text('🐾 PetsMatch',
+                                      child: const Text('PetsMatch',
                                           style: TextStyle(fontFamily: 'Galey', fontSize: 10,
                                               color: Colors.purple)),
                                     ),
@@ -271,8 +271,12 @@ class _FamillesAccueilPageState extends State<FamillesAccueilPage> {
                               children: animaux.map((a) => GestureDetector(
                                 onTap: () => _retirerAnimal(a),
                                 child: Chip(
-                                  label: Text('${a['nom'] ?? '?'} ✕',
-                                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                                  label: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Text('${a['nom'] ?? '?'}',
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.close_rounded, size: 13, color: Color(0xFF6B7280)),
+                                  ]),
                                   padding: EdgeInsets.zero,
                                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                   backgroundColor: _teal.withValues(alpha: 0.08),
@@ -697,7 +701,7 @@ class _FaSheetState extends State<_FaSheet> {
                 color: Colors.white,
                 border: Border.all(color: Colors.grey.shade200),
                 borderRadius: BorderRadius.circular(8),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4)],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,

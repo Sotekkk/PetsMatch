@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
@@ -168,7 +169,7 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
+      backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
@@ -214,65 +215,27 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
           final filtered = assoc.where(_matches).toList();
 
           return Column(children: [
-            // Filtre espèce
-            SizedBox(
-              height: 44,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                children: _especeOptions.map((e) {
-                  final active = _espece == e.$1;
-                  return GestureDetector(
-                    onTap: () => setState(() { _espece = e.$1; _race = 'toutes'; }),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: active ? _teal : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: active ? _teal : Colors.grey.shade300),
-                      ),
-                      child: Center(child: Text(e.$2,
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                              fontWeight: active ? FontWeight.w700 : FontWeight.normal,
-                              color: active ? Colors.white : Colors.grey.shade700))),
-                    ),
-                  );
-                }).toList(),
-              ),
+            // Filtres espèce / race (listes déroulantes sobres)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(children: [
+                Expanded(child: DashListeDeroulante<String>(
+                  libelle: 'Espèce',
+                  valeur: _espece,
+                  options: [for (final e in _especeOptions) (e.$1, e.$2)],
+                  onChanged: (v) => setState(() { _espece = v ?? _espece; _race = 'toutes'; }),
+                )),
+                if (races.length > 1) ...[
+                  const SizedBox(width: 8),
+                  Expanded(child: DashListeDeroulante<String>(
+                    libelle: 'Race',
+                    valeur: _race,
+                    options: [for (final r in races) (r, r == 'toutes' ? 'Toutes races' : r)],
+                    onChanged: (v) => setState(() => _race = v ?? 'toutes'),
+                  )),
+                ],
+              ]),
             ),
-
-            // Filtre race (si espèce sélectionnée avec des races)
-            if (races.length > 1)
-              SizedBox(
-                height: 36,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  children: races.toList().map((r) {
-                    final active = _race == r;
-                    final label = r == 'toutes' ? 'Toutes races' : r;
-                    return GestureDetector(
-                      onTap: () => setState(() => _race = r),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: active ? _green.withValues(alpha: 0.12) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: active ? _green : Colors.grey.shade200),
-                        ),
-                        child: Center(child: Text(label,
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                                color: active ? _green : Colors.grey.shade600,
-                                fontWeight: active ? FontWeight.w700 : FontWeight.normal))),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
 
             // Grille
             Expanded(

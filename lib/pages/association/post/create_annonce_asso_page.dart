@@ -7,6 +7,7 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -363,7 +364,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
@@ -405,20 +406,10 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
           // Espèce
           _Section(
             title: 'Espèce',
-            child: Wrap(
-              spacing: 8, runSpacing: 8,
-              children: _especes.map((e) {
-                final active = _espece == e.$1;
-                return ChoiceChip(
-                  label: Text(e.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-                  selected: active,
-                  onSelected: (_) => setState(() => _espece = e.$1),
-                  selectedColor: _teal,
-                  labelStyle: TextStyle(color: active ? Colors.white : Colors.black87),
-                  backgroundColor: Colors.white,
-                  side: BorderSide(color: active ? _teal : Colors.grey.shade300),
-                );
-              }).toList(),
+            child: DashListeDeroulante<String>(
+              valeur: _espece,
+              options: [for (final e in _especes) (e.$1, e.$2)],
+              onChanged: (v) { if (v != null) setState(() => _espece = v); },
             ),
           ),
 
