@@ -8,7 +8,7 @@ import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import {
-  ANNONCE_OBJET_TRANSACTIONS, ANNONCE_OBJET_ETATS, categorieEmoji, categorieLabel,
+  ANNONCE_OBJET_TRANSACTIONS, ANNONCE_OBJET_ETATS, categorieLabel,
 } from '@/lib/annonce-objet-categories';
 
 interface AnnonceObjet {
@@ -117,7 +117,7 @@ export default function AnnonceObjetDetailPage() {
 
       <div className="flex flex-wrap gap-2 mt-4">
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C]">
-          {categorieEmoji(a.categorie)} {categorieLabel(a.categorie)}
+          {categorieLabel(a.categorie)}
         </span>
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#6E9E57]/10 text-[#6E9E57]">
           {ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}

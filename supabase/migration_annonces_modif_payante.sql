@@ -2,6 +2,7 @@
 -- Annonces publiées : modification et renouvellement PAYANTS (4,99 €)
 -- ───────────────────────────────────────────────────────────────────────────
 -- Annonces animaux (éleveur, cheval particulier…) ET matériel (annonces_objets).
+-- Associations exemptées (adoption, sans abonnement).
 --   • Gratuit : photos, statut (disponible / réservé / vendu / pause), statut et
 --     photos des chiots d'une portée.
 --   • Verrouillé après publication (annonces) : espèce, race, sexe, type,
@@ -69,6 +70,8 @@ DECLARE
 BEGIN
   IF (auth.jwt() ->> 'sub') IS NULL THEN RETURN NEW; END IF;
   IF coalesce(OLD.statut, '') = 'brouillon' THEN RETURN NEW; END IF;
+  -- Associations (adoption, sans abonnement) : modification et renouvellement gratuits.
+  IF (o ->> 'profil_source') = 'association' THEN RETURN NEW; END IF;
 
   IF n ? 'animaux_portee' AND n -> 'animaux_portee' IS DISTINCT FROM o -> 'animaux_portee'
      AND public.pm_portee_sans_libres(n -> 'animaux_portee')
