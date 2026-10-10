@@ -640,7 +640,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
             await _supa.from('notifications').insert({
               'uid': p['uid_proprio'],
               'type': 'alerte_perdu_copro',
-              'title': '🚨 ${_nomCtrl.text.trim()} est déclaré(e) perdu(e)',
+              'title': '${_nomCtrl.text.trim()} est déclaré(e) perdu(e)',
               'body': 'Alerte N° $_numeroAlerte — retrouvez-la dans Mes alertes.',
               if (p['profile_id_proprio'] != null) 'profile_id': p['profile_id_proprio'],
               'data': {'alerteId': newAlertId, 'animalId': animalId},
@@ -667,7 +667,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(_isEdit ? 'Alerte mise à jour ✓' : 'Alerte publiée ✓'),
+            content: Text(_isEdit ? 'Alerte mise à jour.' : 'Alerte publiée.'),
             backgroundColor: const Color(0xFF6E9E57)));
         Navigator.pop(context, true);
       }

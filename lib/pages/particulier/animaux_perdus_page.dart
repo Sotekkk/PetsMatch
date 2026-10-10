@@ -42,16 +42,26 @@ const _especeBorder = {
   'ovin':   Color(0xFFFDE68A), 'caprin': Color(0xFFD9F99D),
   'porcin': Color(0xFFFECDD3), 'autre':  Color(0xFFE5E7EB),
 };
-const _especeEmoji = {
-  'chien': '🐕', 'chat': '🐈', 'cheval': '🐴', 'lapin': '🐇',
-  'oiseau': '🦜', 'nac': '🦎', 'ovin': '🐑', 'caprin': '🐐',
-  'porcin': '🐷', 'autre': '🐾',
-};
+/// Nom affiché d'une espèce (sans émoji).
+String _nomEspece(String e) {
+  if (e.isEmpty) return 'Animal';
+  if (e == 'nac') return 'NAC';
+  return e[0].toUpperCase() + e.substring(1);
+}
 const _especeHue = {
   'chien':  240.0, 'chat':   300.0, 'cheval': 120.0, 'lapin':  330.0,
   'oiseau': 180.0, 'nac':    270.0, 'ovin':    60.0, 'caprin':  90.0,
   'porcin':   0.0, 'autre':   30.0,
 };
+
+/// Couleur affichée dans la légende pour une teinte de marqueur Google
+/// (même teinte que [BitmapDescriptor.defaultMarkerWithHue], aucune
+/// réattribution).
+Color _couleurTeinte(double hue) => HSVColor.fromAHSV(1, hue, 0.8, 0.95).toColor();
+
+const _petrole = Color(0xFF0C5C6C);
+const _bordure = Color(0xFFE5E8E6);
+const _encre = Color(0xFF1E2025);
 const _breedFiles = {
   'chien': 'dog_breeds', 'chat': 'cat_breeds', 'cheval': 'horse_breeds',
   'lapin': 'rabbit_breeds', 'oiseau': 'bird_breeds', 'nac': 'nac_breeds',
@@ -623,13 +633,13 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
 
     const url = 'https://www.petsmatchapp.com/animaux-perdus';
     final text = [
-      '🚨 ANIMAL PERDU — $nom ($espece)${numero.isNotEmpty ? ' [N° $numero]' : ''}',
-      if (lieu.isNotEmpty) '📍 Dernière localisation : $lieu',
-      if (date.isNotEmpty) '📅 Disparu le $date',
+      'ANIMAL PERDU — $nom ($espece)${numero.isNotEmpty ? ' [N° $numero]' : ''}',
+      if (lieu.isNotEmpty) 'Dernière localisation : $lieu',
+      if (date.isNotEmpty) 'Disparu le $date',
       if (desc.isNotEmpty) desc,
-      if (contact.isNotEmpty) '📞 Contact : $contact',
+      if (contact.isNotEmpty) 'Contact : $contact',
       '',
-      'Si vous l\'avez vu, contactez le propriétaire ou signalez sur PetsMatch 🐾\n$url',
+      'Si vous l\'avez vu, contactez le propriétaire ou signalez sur PetsMatch.\n$url',
     ].join('\n');
 
     showModalBottomSheet(
@@ -654,12 +664,12 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     final nom = '${espece[0].toUpperCase()}${espece.substring(1)}'
         '${race.isNotEmpty ? ' ($race)' : ''}';
     final text = [
-      '🐾 ANIMAL TROUVÉ — $nom',
-      if (lieu.isNotEmpty) '📍 Trouvé à : $lieu',
-      if (date.isNotEmpty) '📅 Trouvé le $date',
+      'ANIMAL TROUVÉ — $nom',
+      if (lieu.isNotEmpty) 'Trouvé à : $lieu',
+      if (date.isNotEmpty) 'Trouvé le $date',
       if (desc.isNotEmpty) desc,
       '',
-      'Cet animal cherche son propriétaire ! Contactez le déclarant sur PetsMatch 🐾\n$url',
+      'Cet animal cherche son propriétaire. Contactez le déclarant sur PetsMatch.\n$url',
     ].join('\n');
 
     showModalBottomSheet(
@@ -835,161 +845,162 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
       builder: (_) => StatefulBuilder(
         builder: (ctx, setSheet) {
           void applyFilter(VoidCallback fn) { setState(fn); setSheet(() {}); }
+          final regions = _filterPays.isNotEmpty ? (_regionsByPaysList[_filterPays] ?? <String>[]) : <String>[];
+          final depts = _filterRegion.isNotEmpty ? FrenchGeo.departmentsInRegion(_filterRegion) : <String>[];
           return DraggableScrollableSheet(
             expand: false,
-            initialChildSize: 0.75,
+            initialChildSize: 0.85,
+            minChildSize: 0.5,
             maxChildSize: 0.95,
-            builder: (_, ctrl) => SingleChildScrollView(
-              controller: ctrl,
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Handle
-                Center(child: Container(width: 40, height: 4,
-                    decoration: BoxDecoration(color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2)))),
-                const SizedBox(height: 16),
+            // Champs défilants + boutons toujours visibles en bas du panneau.
+            builder: (_, ctrl) => Column(children: [
+              Expanded(
+                child: ListView(
+                  controller: ctrl,
+                  padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+                  children: [
+                    Center(child: Container(width: 40, height: 4,
+                        decoration: BoxDecoration(color: Colors.grey.shade300,
+                            borderRadius: BorderRadius.circular(2)))),
+                    const SizedBox(height: 14),
+                    const Text('Filtres', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: _encre)),
+                    const SizedBox(height: 14),
 
-                // Type
-                const Text('Type', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                const SizedBox(height: 8),
-                Row(children: [
-                  for (final entry in [('perdu', '🚨 Perdus'), ('trouve', '🐾 Trouvés'), ('tous', 'Tous')])
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: GestureDetector(
-                        onTap: () => applyFilter(() => _filterType = entry.$1),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _filterType == entry.$1 ? _accentColor : Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(20),
+                    _ChampFiltre(
+                      libelle: 'Statut',
+                      child: _ListeFiltre<String>(
+                        valeur: _filterType,
+                        options: const [('tous', 'Tous'), ('perdu', 'Perdus'), ('trouve', 'Trouvés')],
+                        onChanged: (v) => applyFilter(() => _filterType = v ?? 'tous'),
+                      ),
+                    ),
+                    _ChampFiltre(
+                      libelle: 'Espèce',
+                      child: _ListeFiltre<String>(
+                        valeur: _filterEspece ?? 'tous',
+                        options: [for (final e in _especes) (e, e == 'tous' ? 'Toutes les espèces' : _nomEspece(e))],
+                        onChanged: (v) => applyFilter(() {
+                          final e = v ?? 'tous';
+                          _filterEspece = e == 'tous' ? null : e;
+                          if (e != 'tous') _loadBreeds(e);
+                        }),
+                      ),
+                    ),
+                    _ChampFiltre(
+                      libelle: 'Race',
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        TextField(
+                          controller: _raceCtrl,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: _encre),
+                          decoration: _decorationFiltre('Toutes les races'),
+                          onChanged: (v) { _onRaceInput(v); setSheet(() {}); },
+                        ),
+                        if (_showRaceSugg && _raceSuggestions.isNotEmpty)
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: _bordure)),
+                            child: Column(children: [
+                              for (final b in _raceSuggestions)
+                                InkWell(
+                                  onTap: () => applyFilter(() {
+                                    _filterRace = b; _raceCtrl.text = b; _showRaceSugg = false;
+                                  }),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    child: Text(b, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _encre)),
+                                  ),
+                                ),
+                            ]),
                           ),
-                          child: Text(entry.$2,
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-                                  color: _filterType == entry.$1 ? Colors.white : Colors.black87)),
+                      ]),
+                    ),
+                    _ChampFiltre(
+                      libelle: 'Lieu',
+                      child: TextField(
+                        controller: _lieuCtrl,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: _encre),
+                        decoration: _decorationFiltre('Ville, région, lieu…').copyWith(
+                          suffixIcon: _searchLieu.isNotEmpty
+                              ? IconButton(icon: const Icon(Icons.clear, size: 18), tooltip: 'Effacer',
+                                  onPressed: () => applyFilter(() { _lieuCtrl.clear(); _searchLieu = ''; _filterRegion = ''; _filterPays = ''; }))
+                              : null,
+                        ),
+                        onChanged: (v) => applyFilter(() => _searchLieu = v),
+                      ),
+                    ),
+                    _ChampFiltre(
+                      libelle: 'Pays',
+                      child: _ListeFiltre<String>(
+                        valeur: _filterPays,
+                        options: const [('', 'Tous les pays'), ('France', 'France'), ('Belgique', 'Belgique'), ('Suisse', 'Suisse'), ('Luxembourg', 'Luxembourg')],
+                        onChanged: (v) => applyFilter(() { _filterPays = v ?? ''; _filterRegion = ''; _filterDept = ''; }),
+                      ),
+                    ),
+                    _ChampFiltre(
+                      libelle: 'Région',
+                      child: _ListeFiltre<String>(
+                        valeur: _filterRegion,
+                        options: [('', _filterPays.isEmpty ? 'Choisir un pays d\'abord' : 'Toutes les régions'), for (final r in regions) (r, r)],
+                        onChanged: regions.isEmpty ? null : (v) => applyFilter(() { _filterRegion = v ?? ''; _filterDept = ''; }),
+                      ),
+                    ),
+                    _ChampFiltre(
+                      libelle: 'Département',
+                      child: _ListeFiltre<String>(
+                        valeur: _filterDept,
+                        options: [('', _filterRegion.isEmpty ? 'Choisir une région d\'abord' : 'Tous les départements'), for (final d in depts) (d, d)],
+                        onChanged: depts.isEmpty ? null : (v) => applyFilter(() => _filterDept = v ?? ''),
+                      ),
+                    ),
+                    // Rayon : disponible seulement quand la position est connue.
+                    if (_userLat != null)
+                      _ChampFiltre(
+                        libelle: 'Rayon',
+                        child: _ListeFiltre<int?>(
+                          valeur: _filterDistanceKm,
+                          options: const [(null, 'Tous'), (5, '5 km'), (10, '10 km'), (25, '25 km'), (50, '50 km'), (100, '100 km')],
+                          onChanged: (v) => applyFilter(() => _filterDistanceKm = v),
                         ),
                       ),
-                    ),
-                ]),
-                const SizedBox(height: 16),
-
-                // Espèce
-                const Text('Espèce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: _especes.map((e) {
-                  final isAll = e == 'tous';
-                  final selected = isAll ? (_filterEspece == null || _filterEspece == 'tous') : _filterEspece == e;
-                  return GestureDetector(
-                    onTap: () => applyFilter(() { _filterEspece = isAll ? null : e; if (!isAll) _loadBreeds(e); }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: selected ? (_especeText[e] ?? _accentColor) : Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        isAll ? 'Toutes' : '${_especeEmoji[e] ?? ''} ${e[0].toUpperCase()}${e.substring(1)}',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                            color: selected ? Colors.white : Colors.black87),
-                      ),
-                    ),
-                  );
-                }).toList()),
-                const SizedBox(height: 16),
-
-                // Lieu
-                const Text('Lieu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _lieuCtrl,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Ville, région, lieu…',
-                    hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-                    prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Colors.grey),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _accentColor)),
-                    filled: true, fillColor: const Color(0xFFF8F8F8),
-                    suffixIcon: _searchLieu.isNotEmpty
-                        ? IconButton(icon: const Icon(Icons.clear, size: 16), onPressed: () => applyFilter(() { _lieuCtrl.clear(); _searchLieu = ''; _filterRegion = ''; _filterPays = ''; }))
-                        : null,
-                  ),
-                  onChanged: (v) => applyFilter(() => _searchLieu = v),
+                  ],
                 ),
-                const SizedBox(height: 12),
-
-                // Geo dropdowns
-                Row(children: [
-                  Expanded(child: _GeoDropdown(
-                    value: _filterPays.isEmpty ? null : _filterPays,
-                    hint: 'Pays',
-                    items: const ['France', 'Belgique', 'Suisse', 'Luxembourg'],
-                    onChanged: (v) => applyFilter(() { _filterPays = v ?? ''; _filterRegion = ''; _filterDept = ''; }),
-                  )),
-                  const SizedBox(width: 8),
-                  Expanded(child: _GeoDropdown(
-                    value: _filterRegion.isEmpty ? null : _filterRegion,
-                    hint: 'Région',
-                    items: _filterPays.isNotEmpty ? (_regionsByPaysList[_filterPays] ?? []) : [],
-                    onChanged: (v) => applyFilter(() { _filterRegion = v ?? ''; _filterDept = ''; }),
-                  )),
-                  const SizedBox(width: 8),
-                  Expanded(child: _GeoDropdown(
-                    value: _filterDept.isEmpty ? null : _filterDept,
-                    hint: 'Dép.',
-                    items: _filterRegion.isNotEmpty ? FrenchGeo.departmentsInRegion(_filterRegion) : [],
-                    onChanged: (v) => applyFilter(() => _filterDept = v ?? ''),
-                  )),
-                ]),
-
-                // Distance
-                if (_userLat != null) ...[
-                  const SizedBox(height: 12),
-                  const Text('Rayon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  Wrap(spacing: 8, children: [null, 5, 10, 25, 50, 100].map((d) {
-                    final selected = _filterDistanceKm == d;
-                    return GestureDetector(
-                      onTap: () => applyFilter(() => _filterDistanceKm = d),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: selected ? _accentColor : Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(d == null ? 'Tous' : '$d km',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                                color: selected ? Colors.white : Colors.black87)),
-                      ),
-                    );
-                  }).toList()),
-                ],
-
-                const SizedBox(height: 24),
-                Row(children: [
+              ),
+              Container(
+                decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: _bordure))),
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 12 + MediaQuery.of(ctx).padding.bottom),
+                child: Row(children: [
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () => applyFilter(() {
                         _filterType = 'tous'; _filterEspece = null; _filterRace = ''; _raceCtrl.clear();
                         _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = 'France'; _filterDept = ''; _filterDistanceKm = null;
                       }),
-                      style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.grey.shade300), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        foregroundColor: _petrole,
+                        side: const BorderSide(color: _petrole),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () => Navigator.pop(ctx),
-                      style: ElevatedButton.styleFrom(backgroundColor: _accentColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      child: const Text('Appliquer', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        backgroundColor: _petrole, foregroundColor: Colors.white, elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Appliquer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                     ),
                   ),
                 ]),
-              ]),
-            ),
+              ),
+            ]),
           );
         },
       ),
@@ -1005,12 +1016,12 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         child: Row(children: [
           if (_filterType != 'tous')
             _ActiveFilterChip(
-              label: _filterType == 'perdu' ? '🚨 Perdus' : '🐾 Trouvés',
+              label: _filterType == 'perdu' ? 'Perdus' : 'Trouvés',
               onRemove: () => setState(() => _filterType = 'tous'),
             ),
           if (_filterEspece != null && _filterEspece != 'tous')
             _ActiveFilterChip(
-              label: '${_especeEmoji[_filterEspece] ?? ''} ${_filterEspece![0].toUpperCase()}${_filterEspece!.substring(1)}',
+              label: _nomEspece(_filterEspece!),
               onRemove: () => setState(() => _filterEspece = null),
             ),
           if (_filterRace.isNotEmpty)
@@ -1020,7 +1031,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
             ),
           if (_searchLieu.isNotEmpty)
             _ActiveFilterChip(
-              label: '📍 $_searchLieu',
+              label: 'Lieu : $_searchLieu',
               onRemove: () => setState(() { _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = ''; }),
             ),
           if (_filterDistanceKm != null)
@@ -1039,17 +1050,24 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
       if (_activeFilterCount > 0) _buildActiveFilterChips(),
       Expanded(
         child: list.isEmpty
-            ? Center(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.search_off, size: 60, color: Colors.grey.shade300),
-                  const SizedBox(height: 12),
-                  Text('Aucun résultat',
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 16,
-                          color: Colors.grey.shade500)),
-                ]),
-              )
+            ? ListView(padding: const EdgeInsets.all(24), children: [
+                const SizedBox(height: 40),
+                const Text('Aucun résultat pour ces filtres.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: _encre)),
+                if (_activeFilterCount > 0) ...[
+                  const SizedBox(height: 8),
+                  Center(child: TextButton(
+                    onPressed: () => setState(() {
+                      _filterType = 'tous'; _filterEspece = null; _filterRace = ''; _raceCtrl.clear();
+                      _searchLieu = ''; _lieuCtrl.clear(); _filterRegion = ''; _filterPays = 'France'; _filterDept = ''; _filterDistanceKm = null;
+                    }),
+                    child: const Text('Réinitialiser les filtres',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _petrole,
+                            decoration: TextDecoration.underline)),
+                  )),
+                ],
+              ])
             : ListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
                 itemCount: list.length,
@@ -1102,14 +1120,14 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         // Type toggle: Perdus | Trouvés | Tous
         Row(children: [
           _TypeChip(
-              label: '🚨 Perdus',
+              label: 'Perdus',
               value: 'perdu',
               current: _filterType,
               color: _orange,
               onTap: () => setState(() => _filterType = 'perdu')),
           const SizedBox(width: 6),
           _TypeChip(
-              label: '🐾 Trouvés',
+              label: 'Trouvés',
               value: 'trouve',
               current: _filterType,
               color: _teal,
@@ -1220,7 +1238,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
                   decoration: BoxDecoration(
                       color: chipBg, borderRadius: BorderRadius.circular(20)),
                   child: Text(
-                    '${_especeEmoji[e] ?? ''}  ${e[0].toUpperCase()}${e.substring(1)}',
+                    _nomEspece(e),
                     style: TextStyle(
                         fontFamily: 'Galey',
                         fontSize: 12,
@@ -1440,10 +1458,9 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
       final hue = type == 'trouve'
           ? BitmapDescriptor.hueGreen
           : (_especeHue[espece] ?? BitmapDescriptor.hueOrange);
-      final emoji = _especeEmoji[espece] ?? '🐾';
       final nom = type == 'perdu'
           ? (a['nom_animal'] as String? ?? '')
-          : '$emoji ${espece.isNotEmpty ? espece[0].toUpperCase() + espece.substring(1) : 'Animal'}';
+          : _nomEspece(espece);
       final snippetLoc = type == 'perdu'
           ? (a['derniere_localisation'] as String? ?? '')
           : (a['ville'] as String? ?? '');
@@ -1452,11 +1469,11 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         position: LatLng(lat, lng),
         icon: BitmapDescriptor.defaultMarkerWithHue(hue),
         infoWindow: InfoWindow(
-          title: '${type == 'perdu' ? '🚨' : '🐾'} $nom',
+          title: '${type == 'perdu' ? 'Perdu' : 'Trouvé'} · $nom',
           snippet: [
             espece,
             if ((a['race'] as String?)?.isNotEmpty == true) a['race'] as String,
-            if (snippetLoc.isNotEmpty) '📍 $snippetLoc',
+            if (snippetLoc.isNotEmpty) snippetLoc,
           ].join(' · '),
         ),
         onTap: () =>
@@ -1491,27 +1508,32 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         ),
       ),
 
-      // ── Légende ──────────────────────────────────────────────────────────
+      // ── Légende des espèces (teintes des marqueurs « Perdu ») ─────────────
+      const Positioned(left: 12, top: 12, child: _LegendeEspeces()),
+
+      // ── Légende des statuts ──────────────────────────────────────────────
       Positioned(
-        left: 12, bottom: 16,
+        right: 12, top: 12,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _bordure),
             boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFFE65100), shape: BoxShape.circle)),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey.shade500, width: 2))),
               const SizedBox(width: 6),
-              const Text('Perdu', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+              const Text('Perdu (couleur de l\'espèce)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _encre)),
             ]),
-            const SizedBox(height: 4),
-            Row(children: [
-              Container(width: 10, height: 10, decoration: const BoxDecoration(color: Color(0xFF22C55E), shape: BoxShape.circle)),
+            const SizedBox(height: 5),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(color: _couleurTeinte(BitmapDescriptor.hueGreen), shape: BoxShape.circle)),
               const SizedBox(width: 6),
-              const Text('Trouvé', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+              const Text('Trouvé', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _encre)),
             ]),
           ]),
         ),
@@ -1519,7 +1541,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
 
       if (markers.isEmpty && list.isNotEmpty)
         Positioned(
-          bottom: 16, left: 80, right: 16,
+          bottom: 16, left: 16, right: 70,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
@@ -1755,21 +1777,19 @@ class _AlertCard extends StatelessWidget {
         : '';
     final desc = alerte['description'] as String?;
 
-    final cardBorder = isPerdu
-        ? (_especeBorder[espece] ?? Colors.orange.shade200)
-        : const Color(0xFF89CDD8);
     final cardText = isPerdu
         ? (_especeText[espece] ?? const Color(0xFFE65100))
         : _teal;
     final cardBg = _especeBg[espece] ?? Colors.white;
-    final emoji = _especeEmoji[espece] ?? '🐾';
-    final badge = isPerdu ? '$emoji PERDU' : '$emoji TROUVÉ';
+    final badge = isPerdu ? 'Perdu' : 'Trouvé';
+    final badgeFg = isPerdu ? const Color(0xFFC2410C) : _teal;
+    final badgeBg = isPerdu ? const Color(0xFFFFEDD5) : const Color(0xFFE8F4F6);
     final statut = isPerdu ? null : (alerte['statut'] as String?) ?? 'trouve';
     final statutLabel = statut != null && statut != 'trouve'
         ? const {
             'pris_en_charge':        'Pris en charge',
             'proprietaire_contacte': 'Propriétaire contacté',
-            'restitue':              'Restitué ✓',
+            'restitue':              'Restitué',
             'cloture':               'Clôturé',
           }[statut]
         : null;
@@ -1793,13 +1813,8 @@ class _AlertCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: cardBorder, width: 1.2),
-          boxShadow: [
-            BoxShadow(
-                color: cardBorder.withOpacity(0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 3))
-          ],
+          border: Border.all(color: _bordure),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 1))],
         ),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -1815,10 +1830,10 @@ class _AlertCard extends StatelessWidget {
                         imageUrl: photoUrl,
                         fit: BoxFit.cover,
                         placeholder: (_, __) =>
-                            _placeholder(cardBg, cardText, emoji),
+                            _placeholder(cardBg, cardText),
                         errorWidget: (_, __, ___) =>
-                            _placeholder(cardBg, cardText, emoji))
-                    : _placeholder(cardBg, cardText, emoji),
+                            _placeholder(cardBg, cardText))
+                    : _placeholder(cardBg, cardText),
               ),
             ),
             const SizedBox(width: 12),
@@ -1831,14 +1846,15 @@ class _AlertCard extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                        color: cardText,
-                        borderRadius: BorderRadius.circular(20)),
+                        color: badgeBg,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: badgeFg.withValues(alpha: 0.2))),
                     child: Text(badge,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontFamily: 'Galey',
-                            fontSize: 10,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700)),
+                            fontSize: 11,
+                            color: badgeFg,
+                            fontWeight: FontWeight.w600)),
                   ),
                   if (statutLabel != null && statutColor != null) ...[
                     const SizedBox(width: 5),
@@ -1869,21 +1885,26 @@ class _AlertCard extends StatelessWidget {
                   ),
                 ]),
                 const SizedBox(height: 3),
-                Text(
-                  [
-                    espece,
-                    if (race.isNotEmpty) race,
-                    if (sexe.isNotEmpty) sexe
-                  ].join(' · '),
-                  style: const TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 12,
-                      color: Color(0xFF6F767B)),
-                ),
+                Row(children: [
+                  Container(width: 8, height: 8, decoration: BoxDecoration(color: cardText, shape: BoxShape.circle)),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(
+                    [
+                      _nomEspece(espece),
+                      if (race.isNotEmpty) race,
+                      if (sexe.isNotEmpty) sexe
+                    ].join(' · '),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 12.5,
+                        color: Color(0xFF4B5563)),
+                  )),
+                ]),
                 if (lieu.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Row(children: [
-                    Icon(Icons.location_on_outlined, size: 12, color: cardText),
+                    const Icon(Icons.location_on_outlined, size: 13, color: Color(0xFF6B7280)),
                     const SizedBox(width: 3),
                     Expanded(
                       child: Text(lieu,
@@ -1900,10 +1921,10 @@ class _AlertCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${isPerdu ? 'Disparu' : 'Trouvé'} le $date',
-                    style: TextStyle(
+                    style: const TextStyle(
                         fontFamily: 'Galey',
-                        fontSize: 11,
-                        color: cardText),
+                        fontSize: 11.5,
+                        color: Color(0xFF6B7280)),
                   ),
                 ],
                 if (desc != null && desc.isNotEmpty) ...[
@@ -1940,9 +1961,8 @@ class _AlertCard extends StatelessWidget {
                       label: const Text('Partager',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: isPerdu ? Colors.orange.shade700 : _teal,
-                        side: BorderSide(
-                            color: isPerdu ? Colors.orange.shade300 : const Color(0xFF9ECFDA)),
+                        foregroundColor: const Color(0xFF4B5563),
+                        side: const BorderSide(color: _bordure),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
                         minimumSize: Size.zero,
@@ -1959,9 +1979,9 @@ class _AlertCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(Color bg, Color iconColor, String emoji) => Container(
+  Widget _placeholder(Color bg, Color iconColor) => Container(
       color: bg,
-      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 30))));
+      child: Center(child: Icon(Icons.pets_outlined, size: 28, color: iconColor.withValues(alpha: 0.7))));
 }
 
 // ── Alert Detail Sheet (perdus) ───────────────────────────────────────────────
@@ -1993,7 +2013,6 @@ class _AlertDetailSheet extends StatelessWidget {
         : '';
     final cardText = _especeText[espece] ?? const Color(0xFFE65100);
     final cardBg   = _especeBg[espece]   ?? const Color(0xFFFFF7ED);
-    final emoji    = _especeEmoji[espece] ?? '🐾';
 
     return Container(
       decoration: const BoxDecoration(
@@ -2031,8 +2050,7 @@ class _AlertDetailSheet extends StatelessWidget {
                     : Container(
                         color: cardBg,
                         child: Center(
-                            child: Text(emoji,
-                                style: const TextStyle(fontSize: 40)))),
+                            child: Icon(Icons.pets_outlined, size: 36, color: cardText))),
               ),
             ),
             const SizedBox(width: 14),
@@ -2045,14 +2063,15 @@ class _AlertDetailSheet extends StatelessWidget {
                       padding:
                           const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                          color: cardText,
-                          borderRadius: BorderRadius.circular(20)),
-                      child: Text('$emoji PERDU',
-                          style: const TextStyle(
+                          color: const Color(0xFFFFEDD5),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0x33C2410C))),
+                      child: const Text('Perdu',
+                          style: TextStyle(
                               fontFamily: 'Galey',
-                              fontSize: 11,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700)),
+                              fontSize: 11.5,
+                              color: Color(0xFFC2410C),
+                              fontWeight: FontWeight.w600)),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -2209,7 +2228,6 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
     final photos = photosRaw is List
         ? List<String>.from(photosRaw.map((e) => e.toString()))
         : <String>[];
-    final emoji = _especeEmoji[espece] ?? '🐾';
     final cardBg = _especeBg[espece] ?? const Color(0xFFE8F4F6);
 
     return Container(
@@ -2286,9 +2304,8 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
                   height: 80,
                   decoration: BoxDecoration(
                       color: cardBg, borderRadius: BorderRadius.circular(16)),
-                  child: Center(
-                      child: Text(emoji,
-                          style: const TextStyle(fontSize: 40))),
+                  child: const Center(
+                      child: Icon(Icons.pets_outlined, size: 36, color: _teal)),
                 ),
               ),
               const SizedBox(height: 14),
@@ -2299,14 +2316,15 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                    color: _teal,
-                    borderRadius: BorderRadius.circular(20)),
-                child: Text('$emoji TROUVÉ',
-                    style: const TextStyle(
+                    color: const Color(0xFFE8F4F6),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0x330C5C6C))),
+                child: const Text('Trouvé',
+                    style: TextStyle(
                         fontFamily: 'Galey',
-                        fontSize: 11,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700)),
+                        fontSize: 11.5,
+                        color: _teal,
+                        fontWeight: FontWeight.w600)),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2913,7 +2931,7 @@ class _ChipResultCard extends StatelessWidget {
     final type = result['__type'] as String;
     final accent = type == 'perdu' ? _orange : type == 'trouve' ? _teal : _green;
     final showBadge = type != 'elevage';
-    final badge = type == 'perdu' ? '🚨 PERDU' : '🐾 TROUVÉ';
+    final badge = type == 'perdu' ? 'Perdu' : 'Trouvé';
 
     String title, subtitle;
     String? photoUrl, chipNum;
@@ -2987,7 +3005,7 @@ class _ChipResultCard extends StatelessWidget {
                         color: Colors.grey.shade500),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
               if (chipNum != null && chipNum.isNotEmpty)
-                Text('🔖 $chipNum',
+                Text('Puce : $chipNum',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
                         color: _teal)),
             ])),
@@ -3080,6 +3098,117 @@ class _GeoDropdown extends StatelessWidget {
                 overflow: TextOverflow.ellipsis))),
       ],
       onChanged: items.isEmpty ? null : onChanged,
+    );
+  }
+}
+
+
+// ── Panneau de filtres : champ libellé + liste déroulante sobre ─────────────
+
+InputDecoration _decorationFiltre(String hint) => InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Color(0xFF9CA3AF)),
+      isDense: true,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _bordure)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _bordure)),
+      disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _bordure)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _petrole, width: 1.5)),
+    );
+
+class _ChampFiltre extends StatelessWidget {
+  final String libelle;
+  final Widget child;
+  const _ChampFiltre({required this.libelle, required this.child});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(libelle, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+          const SizedBox(height: 6),
+          child,
+        ]),
+      );
+}
+
+class _ListeFiltre<T> extends StatelessWidget {
+  final T valeur;
+  final List<(T, String)> options;
+  final ValueChanged<T?>? onChanged;
+  const _ListeFiltre({required this.valeur, required this.options, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final existe = options.any((o) => o.$1 == valeur);
+    return DropdownButtonFormField<T>(
+      key: ValueKey('${options.length}_$valeur'),
+      initialValue: existe ? valeur : options.first.$1,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF6B7280)),
+      style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: _encre),
+      decoration: _decorationFiltre(''),
+      items: [
+        for (final o in options)
+          DropdownMenuItem<T>(value: o.$1, child: Text(o.$2, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
+/// Légende des espèces de la carte, repliable : pastille de la teinte du
+/// marqueur « Perdu » de chaque espèce + nom (sans émoji).
+class _LegendeEspeces extends StatefulWidget {
+  const _LegendeEspeces();
+  @override
+  State<_LegendeEspeces> createState() => _LegendeEspecesState();
+}
+
+class _LegendeEspecesState extends State<_LegendeEspeces> {
+  bool _ouverte = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 190),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _bordure),
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => setState(() => _ouverte = !_ouverte),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Text('Légende des espèces', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: _petrole)),
+              const SizedBox(width: 4),
+              Icon(_ouverte ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 18, color: _petrole),
+            ]),
+          ),
+        ),
+        if (_ouverte)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              for (final e in _especeHue.entries)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(width: 10, height: 10, decoration: BoxDecoration(color: _couleurTeinte(e.value), shape: BoxShape.circle)),
+                    const SizedBox(width: 8),
+                    Text(_nomEspece(e.key), style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _encre)),
+                  ]),
+                ),
+            ]),
+          ),
+      ]),
     );
   }
 }

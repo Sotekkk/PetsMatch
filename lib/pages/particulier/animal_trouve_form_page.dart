@@ -425,7 +425,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(widget.existing != null ? 'Déclaration mise à jour ✓' : 'Déclaration publiée ✓'),
+            content: Text(widget.existing != null ? 'Déclaration mise à jour.' : 'Déclaration publiée.'),
             backgroundColor: const Color(0xFF6E9E57)));
         Navigator.pop(context, true);
       }
