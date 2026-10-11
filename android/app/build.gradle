@@ -52,7 +52,7 @@ android {
         applicationId "com.application.petsmatchapp"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion 36
-        versionCode 34
+        versionCode 35
         versionName "1.9.99"
     }
 

@@ -96,13 +96,18 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
       });
       return;
     }
-    // Position "toujours" (nécessaire écran verrouillé) demandée à part, ici,
-    // au moment où l'utilisateur comprend pourquoi — jamais au lancement de
-    // l'appli. Pas bloquant si refusée : la balade se trace quand même tant
-    // que l'appli reste au premier plan.
-    try {
-      await Permission.locationAlways.request();
-    } catch (_) {}
+    // iOS : position "toujours" demandée à part, ici, au moment où
+    // l'utilisateur comprend pourquoi — jamais au lancement de l'appli. Pas
+    // bloquant si refusée : la balade se trace quand même tant que l'appli
+    // reste au premier plan.
+    // Android : jamais demandée — le service de premier plan (notification
+    // « Balade en cours ») suffit à tracer écran verrouillé, et
+    // ACCESS_BACKGROUND_LOCATION est retirée du manifeste (règle Google Play).
+    if (Platform.isIOS) {
+      try {
+        await Permission.locationAlways.request();
+      } catch (_) {}
+    }
     if (mounted) setState(() => _checkingPermission = false);
   }
 
