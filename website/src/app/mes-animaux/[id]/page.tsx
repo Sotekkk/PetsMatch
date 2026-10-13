@@ -1,5 +1,6 @@
 'use client';
 
+import { miseBasDeReference } from '@/lib/chaleurs-etat';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -1687,11 +1688,10 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
   // la gestation, largement dépassée.
   const lastMiseBas = (() => {
     let latest: Date | null = null;
+    // Gestation confirmée sans mise bas saisie : date estimée (miseBasDeReference).
     for (const g of gestations) {
-      const raw = g.date_naissance as string | undefined;
-      if (!raw) continue;
-      const d = new Date(raw);
-      if (!isNaN(d.getTime()) && (!latest || d.getTime() > latest.getTime())) latest = d;
+      const d = miseBasDeReference(g as Parameters<typeof miseBasDeReference>[0]);
+      if (d && (!latest || d.getTime() > latest.getTime())) latest = d;
     }
     return latest;
   })();

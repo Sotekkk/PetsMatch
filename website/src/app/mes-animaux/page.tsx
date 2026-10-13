@@ -1,5 +1,6 @@
 'use client';
 
+import { miseBasDeReference, FILTRE_GESTATIONS_MISE_BAS, COLONNES_GESTATIONS_MISE_BAS } from '@/lib/chaleurs-etat';
 import { estEnChaleurs, chaleursAVerifier } from '@/lib/chaleurs-etat';
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
@@ -542,7 +543,8 @@ function MesAnimauxPageInner() {
       const [{ data: chaleurs }, { data: gests }, { data: naissances }, { data: protocoles }] = await Promise.all([
         supabase.from('chaleurs').select('animal_id, date, date_fin, duree').in('animal_id', femIds).order('date', { ascending: false }),
         supabase.from('gestations').select('animal_id').in('animal_id', femIds).eq('gestation_confirmee', true).is('date_naissance', null),
-        supabase.from('gestations').select('animal_id, date_naissance').in('animal_id', femIds).not('date_naissance', 'is', null).order('date_naissance', { ascending: false }),
+        // Mise bas saisie, ou gestation confirmée (date estimée) — miseBasDeReference.
+        supabase.from('gestations').select(COLONNES_GESTATIONS_MISE_BAS).in('animal_id', femIds).or(FILTRE_GESTATIONS_MISE_BAS),
         eleveurUids.length
           ? supabase.from('protocoles_chaleur_race').select('uid_eleveur, espece, race, intervalle_jours').in('uid_eleveur', eleveurUids)
           : Promise.resolve({ data: [] as { uid_eleveur: string; espece: string; race: string; intervalle_jours: number }[] }),
@@ -561,7 +563,8 @@ function MesAnimauxPageInner() {
       const lastMiseBas: Record<string, Date> = {};
       for (const n of (naissances ?? [])) {
         const aid = n.animal_id as string;
-        if (!lastMiseBas[aid]) { const d = new Date(n.date_naissance as string); if (!isNaN(d.getTime())) lastMiseBas[aid] = d; }
+        const d = miseBasDeReference(n);
+        if (d && (!lastMiseBas[aid] || d > lastMiseBas[aid])) lastMiseBas[aid] = d;
       }
 
       // Correspondance souple (sous-chaîne dans les deux sens) : la race

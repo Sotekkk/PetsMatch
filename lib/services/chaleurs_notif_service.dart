@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/chaleurs_etat.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -87,20 +88,15 @@ class ChaleursNotifService {
     }
 
     // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement.
-    final Map<String, DateTime> lastMiseBas = {};
+    // Gestation confirmée sans mise bas saisie : date estimée (miseBasDeReference).
+    Map<String, DateTime> lastMiseBas = {};
     try {
       final gestations = await supa
           .from('gestations')
-          .select('animal_id, date_naissance')
+          .select(colonnesGestationsMiseBas)
           .inFilter('animal_id', femIds)
-          .not('date_naissance', 'is', null)
-          .order('date_naissance', ascending: false);
-      for (final g in gestations) {
-        final aid = (g as Map)['animal_id'] as String? ?? '';
-        if (lastMiseBas.containsKey(aid)) continue;
-        final d = DateTime.tryParse(g['date_naissance'] as String? ?? '');
-        if (d != null) lastMiseBas[aid] = d;
-      }
+          .or(filtreGestationsMiseBas);
+      lastMiseBas = dernieresMisesBas(gestations as List);
     } catch (_) {}
 
     // Protocoles chaleur par race (configurés par l'éleveur) — priment sur

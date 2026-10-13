@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/chaleurs_etat.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8824,14 +8825,12 @@ class _ChaleursTabState extends State<_ChaleursTab> {
           .order('date', ascending: false);
       DateTime? lastMiseBas;
       try {
-        final gest = await _supa.from('gestations')
-            .select('date_naissance')
+        // Mise bas saisie, sinon date estimée d'une gestation confirmée.
+        final gests = await _supa.from('gestations')
+            .select(colonnesGestationsMiseBas)
             .eq('animal_id', widget.animalId)
-            .not('date_naissance', 'is', null)
-            .order('date_naissance', ascending: false)
-            .limit(1)
-            .maybeSingle();
-        if (gest != null) lastMiseBas = DateTime.tryParse(gest['date_naissance'] ?? '');
+            .or(filtreGestationsMiseBas);
+        lastMiseBas = dernieresMisesBas(gests as List)[widget.animalId];
       } catch (_) {}
       final raceIntervals = await ChaleurIntervalService.loadRaceIntervals(widget.uidEleveur ?? '');
       if (mounted) setState(() {
@@ -8947,7 +8946,9 @@ class _ChaleursTabState extends State<_ChaleursTab> {
           else if (_enLactation)
             _CycleSuspenduBanner(
                 icon: Icons.child_friendly_outlined,
-                label: 'Mise-bas récente — cycle suspendu pendant l\'allaitement.')
+                label: _lastMiseBas!.isAfter(DateTime.now())
+                    ? 'Gestation confirmée — cycle suspendu jusqu\'à la mise-bas puis pendant l\'allaitement.'
+                    : 'Mise-bas récente — cycle suspendu pendant l\'allaitement.')
           else if (nextHeat != null)
             _NextHeatBanner(
               nextHeat: nextHeat, espece: widget.espece, race: widget.race,

@@ -187,14 +187,20 @@ exports.sendChaleursNotifications = functions
         }
 
         // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement.
+        // Gestation confirmée sans mise bas saisie : date estimée (date_prevue,
+        // sinon fin de fenêtre) ; future = gestante, cycle suspendu aussi.
+        // Miroir appli/site : miseBasDeReference (chaleurs_etat).
         const gestationsRaw = await supabaseSelect("gestations",
-            `animal_id=in.(${femIds.join(",")})&date_naissance=not.is.null&order=date_naissance.desc`);
+            `animal_id=in.(${femIds.join(",")})` +
+            "&or=(date_naissance.not.is.null,gestation_confirmee.eq.true)");
         const lastMiseBas = {};
         for (const g of gestationsRaw) {
-            if (!lastMiseBas[g.animal_id]) {
-                const d = g.date_naissance ? new Date(g.date_naissance) : null;
-                if (d && !isNaN(d.getTime())) lastMiseBas[g.animal_id] = d;
-            }
+            const brut = g.date_naissance ||
+                (g.gestation_confirmee ? (g.date_prevue || g.date_prevue_fin) : null);
+            const d = brut ? new Date(brut) : null;
+            if (!d || isNaN(d.getTime())) continue;
+            const prev = lastMiseBas[g.animal_id];
+            if (!prev || d.getTime() > prev.getTime()) lastMiseBas[g.animal_id] = d;
         }
 
         // 3. Process each animal

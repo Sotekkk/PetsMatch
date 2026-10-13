@@ -268,19 +268,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
         // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement
         // (ex. Ana ne doit pas être signalée « en chaleurs » juste après avoir mis bas).
-        final Map<String, DateTime> lastMiseBas = {};
+        // Gestation confirmée sans mise bas saisie : date estimée (miseBasDeReference).
+        Map<String, DateTime> lastMiseBas = {};
         try {
           final naissances = await supa.from('gestations')
-              .select('animal_id, date_naissance')
+              .select(colonnesGestationsMiseBas)
               .inFilter('animal_id', femIds)
-              .not('date_naissance', 'is', null)
-              .order('date_naissance', ascending: false);
-          for (final n in naissances) {
-            final aid = n['animal_id']?.toString() ?? '';
-            if (lastMiseBas.containsKey(aid)) continue;
-            final d = DateTime.tryParse(n['date_naissance'] ?? '');
-            if (d != null) lastMiseBas[aid] = d;
-          }
+              .or(filtreGestationsMiseBas);
+          lastMiseBas = dernieresMisesBas(naissances as List);
         } catch (_) {}
 
         final now = DateTime.now();

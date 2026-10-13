@@ -25,3 +25,17 @@ export function chaleursAVerifier(derniere: Date | null, intervalle: number, now
   const ecart = Math.floor((derniere.getTime() + intervalle * 86400000 - now.getTime()) / 86400000);
   return ecart <= 7 && ecart >= -RETARD_MAX_JOURS;
 }
+
+type GestationMiseBas = { date_naissance?: string | null; gestation_confirmee?: boolean | null; date_prevue?: string | null; date_prevue_fin?: string | null };
+
+/** Mise bas de référence : saisie, sinon date estimée d'une gestation confirmée
+ *  (future = gestante, cycle suspendu). Miroir appli : miseBasDeReference. */
+export function miseBasDeReference(g: GestationMiseBas): Date | null {
+  const brut = g.date_naissance || (g.gestation_confirmee ? (g.date_prevue || g.date_prevue_fin) : null);
+  if (!brut) return null;
+  const d = new Date(brut);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export const FILTRE_GESTATIONS_MISE_BAS = 'date_naissance.not.is.null,gestation_confirmee.eq.true';
+export const COLONNES_GESTATIONS_MISE_BAS = 'animal_id, date_naissance, gestation_confirmee, date_prevue, date_prevue_fin';
