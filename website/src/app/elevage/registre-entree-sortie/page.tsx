@@ -257,7 +257,7 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         <div>
           <Link href={isAssociation ? '/association/animaux' : '/mes-animaux'} className="text-sm text-[#0C5C6C] hover:underline print:hidden">← Mes animaux</Link>
           <h1 className="text-2xl font-bold text-[#1F2A2E] mt-1">Registre entrées / sorties</h1>
-          <p className="text-gray-500 text-sm">{animaux.length} animal{animaux.length !== 1 ? 'x' : ''}</p>
+          <p className="text-gray-500 text-sm">{animaux.length} {animaux.length !== 1 ? 'animaux' : 'animal'}</p>
         </div>
         <div className="flex gap-2 print:hidden">
           <button onClick={exportCSV}

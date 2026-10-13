@@ -166,7 +166,7 @@ export default function AdoptionsPage() {
       ) : (
         <>
           <p className="text-sm text-gray-400 font-galey">
-            {filtered.length} animal{filtered.length !== 1 ? 'x' : ''} disponible{filtered.length !== 1 ? 's' : ''}
+            {filtered.length} {filtered.length !== 1 ? 'animaux' : 'animal'} disponible{filtered.length !== 1 ? 's' : ''}
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filtered.map((a) => (

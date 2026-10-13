@@ -535,7 +535,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         title: const Text('Regrouper en portée ?',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         content: Text(
-          '$n animal${n > 1 ? 'aux' : ''} seront liés dans la même portée.',
+          '$n ${n > 1 ? 'animaux' : 'animal'} seront liés dans la même portée.',
           style: const TextStyle(fontFamily: 'Galey'),
         ),
         actions: [

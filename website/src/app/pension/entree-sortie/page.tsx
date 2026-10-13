@@ -145,7 +145,7 @@ export default function PensionEntreeSortiePage() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold font-galey text-teal-800">Entrée - Sortie</h1>
-          <p className="text-gray-500 text-sm font-galey">{filtered.length} animal{filtered.length !== 1 ? 'x' : ''}</p>
+          <p className="text-gray-500 text-sm font-galey">{filtered.length} {filtered.length !== 1 ? 'animaux' : 'animal'}</p>
         </div>
         <button onClick={exportCSV}
           className="border border-gray-200 hover:border-teal-700 text-gray-600 hover:text-teal-700 font-galey font-medium px-4 py-2 rounded-full transition-colors text-sm">

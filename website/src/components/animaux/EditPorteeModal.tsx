@@ -139,7 +139,7 @@ export default function EditPorteeModal({ pid, members, uid, activeProfileId, on
             <div className="w-10 h-10 rounded-xl bg-[#0C5C6C0D] flex items-center justify-center text-xl">✏️</div>
             <div className="flex-1">
               <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Modifier la portée</p>
-              <p className="text-xs text-gray-400">{members.length} animal{members.length > 1 ? 'aux' : ''} concerné{members.length > 1 ? 's' : ''}</p>
+              <p className="text-xs text-gray-400">{members.length} {members.length > 1 ? 'animaux' : 'animal'} concerné{members.length > 1 ? 's' : ''}</p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
           </div>

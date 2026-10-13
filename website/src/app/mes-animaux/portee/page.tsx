@@ -648,7 +648,7 @@ export default function PorteePage() {
         {/* ── Enregistrer ── */}
         <button type="button" onClick={handleSave} disabled={saving}
           className="w-full py-3 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold rounded-xl transition-colors text-sm">
-          {saving ? 'Création en cours…' : `Créer ${animaux.length} animal${animaux.length > 1 ? 'aux' : ''}`}
+          {saving ? 'Création en cours…' : `Créer ${animaux.length} ${animaux.length > 1 ? 'animaux' : 'animal'}`}
         </button>
 
       </div>

@@ -1453,7 +1453,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                 <button type="button" onClick={() => setShowAnimalPicker(v => !v)}
                   className={`${champCls} flex items-center justify-between text-left`}>
                   <span className={selectedAnimaux.length ? 'text-[#1F2A2E]' : 'text-gray-400'}>
-                    {selectedAnimaux.length ? `${selectedAnimaux.length} animal${selectedAnimaux.length > 1 ? 'x' : ''} sélectionné${selectedAnimaux.length > 1 ? 's' : ''}` : 'Choisir au moment d’appliquer'}
+                    {selectedAnimaux.length ? `${selectedAnimaux.length} ${selectedAnimaux.length > 1 ? 'animaux' : 'animal'} sélectionné${selectedAnimaux.length > 1 ? 's' : ''}` : 'Choisir au moment d’appliquer'}
                   </span>
                   <span className="text-gray-400 text-xs">▼</span>
                 </button>

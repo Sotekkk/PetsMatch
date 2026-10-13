@@ -753,7 +753,7 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, sel
                     <p className={`text-sm font-semibold ${allDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                       {g.label}
                     </p>
-                    <p className="text-xs text-gray-400">{done}/{total} animal{total > 1 ? 'x' : ''}</p>
+                    <p className="text-xs text-gray-400">{done}/{total} {total > 1 ? 'animaux' : 'animal'}</p>
                   </div>
                   {!allDone && (
                     <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-xs font-bold text-teal-600 border border-teal-200 flex-shrink-0">
@@ -1393,7 +1393,7 @@ export default function AgendaElevagePage() {
                 ✓ Effectué
               </span>
             ) : (
-              <p className="text-xs text-gray-400 mt-0.5">Protocole · {total} animal{total > 1 ? 'x' : ''}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Protocole · {total} {total > 1 ? 'animaux' : 'animal'}</p>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">

@@ -144,7 +144,7 @@ function EnclosCard({
         {/* Occupants */}
         <div>
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 font-galey">
-            {occupants.length === 0 ? 'Aucun animal' : `${occupants.length} animal${occupants.length > 1 ? 'x' : ''}`}
+            {occupants.length === 0 ? 'Aucun animal' : `${occupants.length} ${occupants.length > 1 ? 'animaux' : 'animal'}`}
           </p>
           <div className="space-y-1.5">
             {occupants.map(a => (

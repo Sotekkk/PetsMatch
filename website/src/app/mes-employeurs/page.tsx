@@ -530,7 +530,7 @@ export default function MesEmployeursPage() {
                     </p>
                     <div className="flex gap-3 mt-0.5">
                       <span className="text-xs text-gray-400">
-                        {emp.animaux.length} animal{emp.animaux.length !== 1 ? 'aux' : ''}
+                        {emp.animaux.length} {emp.animaux.length !== 1 ? 'animaux' : 'animal'}
                       </span>
                       {tachesEnCours.length > 0 && (
                         <span className="text-xs text-[#0C5C6C] font-semibold">

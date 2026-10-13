@@ -322,7 +322,7 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
                 if (_selectedIds.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text('${_selectedIds.length} animal${_selectedIds.length > 1 ? 'aux' : ''} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
+                    child: Text('${_selectedIds.length} ${_selectedIds.length > 1 ? 'animaux' : 'animal'} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
                   ),
                 const SizedBox(height: 14),

@@ -294,7 +294,7 @@ export default function MesPatientsPage() {
           </button>
           <div>
             <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{clientsPageTitle(catPro)}</h1>
-            <p className="text-white/60 text-xs">{grants.length} animal{grants.length !== 1 ? 'aux' : ''} avec accès accordé</p>
+            <p className="text-white/60 text-xs">{grants.length} {grants.length !== 1 ? 'animaux' : 'animal'} avec accès accordé</p>
           </div>
           {catPro === 'veterinaire' && activeProfileId && (
             <button onClick={() => setNouveauPatient(true)}

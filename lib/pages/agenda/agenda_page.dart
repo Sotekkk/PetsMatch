@@ -3989,7 +3989,7 @@ class AddTacheSheetState extends State<AddTacheSheet> {
                   : n == 0
                       ? (_rattachement == 'animal' ? 'Choisir des animaux…' : 'Choisir des portées…')
                       : _rattachement == 'animal'
-                          ? '$n animal${n > 1 ? 'x' : ''} sélectionné${n > 1 ? 's' : ''}'
+                          ? '$n ${n > 1 ? 'animaux' : 'animal'} sélectionné${n > 1 ? 's' : ''}'
                           : '$n portée${n > 1 ? 's' : ''} sélectionnée${n > 1 ? 's' : ''}',
               style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: n > 0 ? const Color(0xFF1E2025) : Colors.grey.shade500),
             )),

@@ -173,7 +173,7 @@ function AnimauxAssoPageInner() {
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>
           <h1 className="text-2xl font-bold text-[#1F2A2E]">Mes animaux</h1>
-          <p className="text-gray-500 text-sm mt-1">{nbDetenus} protégé{nbDetenus !== 1 ? 's' : ''} · {animaux.length} animal{animaux.length !== 1 ? 'aux' : ''} au total</p>
+          <p className="text-gray-500 text-sm mt-1">{nbDetenus} protégé{nbDetenus !== 1 ? 's' : ''} · {animaux.length} {animaux.length !== 1 ? 'animaux' : 'animal'} au total</p>
         </div>
         <Link href="/association/animaux/nouveau"
           className="h-10 inline-flex items-center bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-4 rounded-lg transition-colors">

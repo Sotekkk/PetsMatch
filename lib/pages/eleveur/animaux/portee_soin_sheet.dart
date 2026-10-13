@@ -196,7 +196,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Soin pour la portée', style: TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-                Text('${_selectedIds.length}/${widget.animals.length} animal${widget.animals.length > 1 ? 'aux' : ''} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
+                Text('${_selectedIds.length}/${widget.animals.length} ${widget.animals.length > 1 ? 'animaux' : 'animal'} sélectionné${_selectedIds.length > 1 ? 's' : ''}',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57))),
               ]),
             ),
@@ -446,7 +446,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.check_circle_outline, size: 18),
               label: Text(
-                _saving ? 'Enregistrement…' : 'Enregistrer pour ${_selectedIds.length} animal${_selectedIds.length > 1 ? 'aux' : ''}',
+                _saving ? 'Enregistrement…' : 'Enregistrer pour ${_selectedIds.length} ${_selectedIds.length > 1 ? 'animaux' : 'animal'}',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14),
               ),
               style: ElevatedButton.styleFrom(

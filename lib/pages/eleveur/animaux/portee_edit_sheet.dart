@@ -232,7 +232,7 @@ class _PorteeEditSheetState extends State<PorteeEditSheet> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Modifier la portée', style: TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-                Text('${widget.animals.length} animal${widget.animals.length > 1 ? 'aux' : ''} concerné${widget.animals.length > 1 ? 's' : ''}',
+                Text('${widget.animals.length} ${widget.animals.length > 1 ? 'animaux' : 'animal'} concerné${widget.animals.length > 1 ? 's' : ''}',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green)),
               ]),
             ),

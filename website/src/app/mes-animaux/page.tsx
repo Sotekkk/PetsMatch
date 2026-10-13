@@ -824,7 +824,7 @@ function MesAnimauxPageInner() {
             Mes animaux
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} animal{animaux.length !== 1 ? 'aux' : ''} au total
+            {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} {animaux.length !== 1 ? 'animaux' : 'animal'} au total
           </p>
         </div>
         <div className="relative" ref={addMenuRef}>

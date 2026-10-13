@@ -594,7 +594,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     Icons.pets,
     [
       Row(children: [
-        Expanded(child: Text('${_animaux.length} animal${_animaux.length > 1 ? 'aux' : ''}',
+        Expanded(child: Text('${_animaux.length} ${_animaux.length > 1 ? 'animaux' : 'animal'}',
             style: TextStyle(fontFamily: 'Galey', fontSize: 13,
                 color: Colors.grey.shade500))),
       ]),

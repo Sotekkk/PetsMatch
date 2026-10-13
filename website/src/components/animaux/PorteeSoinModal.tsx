@@ -131,7 +131,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             <div className="w-10 h-10 rounded-xl bg-[#FFF8E1] flex items-center justify-center text-xl">💊</div>
             <div className="flex-1">
               <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Soin pour la portée</p>
-              <p className="text-xs text-[#6E9E57]">{selectedIds.size}/{animals.length} animal{animals.length > 1 ? 'aux' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}</p>
+              <p className="text-xs text-[#6E9E57]">{selectedIds.size}/{animals.length} {animals.length > 1 ? 'animaux' : 'animal'} sélectionné{selectedIds.size > 1 ? 's' : ''}</p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
           </div>
@@ -225,7 +225,7 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
             <button onClick={handleSave} disabled={saving || saved || selectedIds.size === 0}
               className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors"
               style={{ fontFamily: 'Galey, sans-serif' }}>
-              {saving ? 'Enregistrement…' : `Enregistrer pour ${selectedIds.size} animal${selectedIds.size > 1 ? 'aux' : ''}`}
+              {saving ? 'Enregistrement…' : `Enregistrer pour ${selectedIds.size} ${selectedIds.size > 1 ? 'animaux' : 'animal'}`}
             </button>
           </div>
         </div>

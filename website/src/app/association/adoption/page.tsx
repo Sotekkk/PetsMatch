@@ -120,7 +120,7 @@ export default function AdoptionFeedPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">Fil d&apos;adoption</h1>
-        <span className="text-sm text-gray-400 font-galey">{items.length} animal{items.length !== 1 ? 'x' : ''}</span>
+        <span className="text-sm text-gray-400 font-galey">{items.length} {items.length !== 1 ? 'animaux' : 'animal'}</span>
       </div>
 
       {/* Recherche + espèce */}
