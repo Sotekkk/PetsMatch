@@ -24,7 +24,7 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
 
   const [loading, setLoading] = useState(true);
   const [suivi, setSuivi] = useState<SuiviRow | null>(null);
-  const [animal, setAnimal] = useState<{ nom?: string; espece?: string; race?: string }>({});
+  const [animal, setAnimal] = useState<{ nom?: string; espece?: string; race?: string; sexe?: string; date_naissance?: string; identification?: string }>({});
   const [pro, setPro] = useState<{ nom?: string; profession?: string; adresse?: string; tel?: string; email?: string }>({});
   const [photos, setPhotos] = useState<{ vue: string; url: string }[]>([]);
   const [videos, setVideos] = useState<{ activite: string; commentaire: string | null; url: string }[]>([]);
@@ -88,7 +88,7 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
       setExercices((ex ?? []) as ExerciceSeance[]);
 
       if (s.animal_id) {
-        const { data: a } = await supabase.from('animaux').select('nom, espece, race').eq('id', s.animal_id).maybeSingle();
+        const { data: a } = await supabase.from('animaux').select('nom, espece, race, sexe, date_naissance, identification').eq('id', s.animal_id).maybeSingle();
         setAnimal(a ?? { nom: (s.animal_nom_libre as string) ?? 'Animal', espece: (s.espece_libre as string) ?? undefined });
       } else {
         setAnimal({ nom: (s.animal_nom_libre as string) ?? 'Animal', espece: (s.espece_libre as string) ?? undefined });
@@ -103,20 +103,27 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
     })();
   }, [id, authLoading, user, isSante]);
 
+  /** Télécharge le PDF unique de la séance ; renvoie le nom du fichier. */
+  async function telechargerPdf(): Promise<string | null> {
+    if (!suivi) return null;
+    const blob = await morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements, exercices });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const nomAnimal = (animal.nom || 'animal').replace(/\s+/g, '_');
+    const nomPraticien = pro.nom?.trim() ? pro.nom.replace(/\s+/g, '_') : null;
+    const dateStr = String(suivi.date ?? '').slice(0, 10);
+    a.href = url;
+    a.download = [suivi.source === 'professionnel' ? 'compte_rendu' : 'suivi_morpho', nomAnimal, nomPraticien, dateStr].filter(Boolean).join('_') + '.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    return a.download;
+  }
+
   async function handleExport() {
     if (!suivi) return;
     setExporting(true);
     try {
-      const blob = await morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const nomAnimal = (animal.nom || 'animal').replace(/\s+/g, '_');
-      const nomPraticien = pro.nom?.trim() ? pro.nom.replace(/\s+/g, '_') : null;
-      const dateStr = String(suivi.date ?? '').slice(0, 10);
-      a.href = url;
-      a.download = ['suivi_morpho', nomAnimal, nomPraticien, dateStr].filter(Boolean).join('_') + '.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
+      await telechargerPdf();
     } catch (e) {
       alert(`Erreur export : ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -146,6 +153,37 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
       }
     } catch (e) {
       alert(`Erreur : ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSendingNotif(false);
+    }
+  }
+
+  // Client sans application : PDF téléchargé + message prérempli (e-mail si
+  // le contact en est un), puis compte rendu marqué « envoyé ». Miroir de
+  // _envoyerHorsAppli (appli, menu de partage du téléphone).
+  async function handleEnvoyerHorsAppli() {
+    if (!suivi) return;
+    setSendingNotif(true);
+    try {
+      const fichier = await telechargerPdf();
+      const contact = String(suivi.client_contact_libre ?? '').trim();
+      const nomAnimal = animal.nom || 'votre animal';
+      const sujet = `${titreCompteRendu(suivi.type_suivi as string)} — ${nomAnimal}`;
+      const corps = `Bonjour,
+
+Vous trouverez ci-joint le compte rendu de la séance de ${nomAnimal}${fichier ? ` (${fichier})` : ''}.${pro.nom ? `
+
+${pro.nom}` : ''}`;
+      if (contact.includes('@')) {
+        window.location.href = `mailto:${encodeURIComponent(contact)}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
+      } else {
+        alert('PDF téléchargé : joignez-le à votre message au client (e-mail, WhatsApp…).');
+      }
+      const now = new Date().toISOString();
+      await supabase.from('suivis_morpho').update({ notifie_a: now }).eq('id', id);
+      setSuivi(prev => (prev ? { ...prev, notifie_a: now } : prev));
+    } catch (e) {
+      alert(`Envoi impossible : ${e instanceof Error ? e.message : e}`);
     } finally {
       setSendingNotif(false);
     }
@@ -264,6 +302,25 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
           <button disabled={finalisant} onClick={handleFinaliser}
             className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold disabled:opacity-50 flex-shrink-0" style={{ background: TEAL }}>
             {finalisant ? 'Finalisation…' : 'Finaliser'}
+          </button>
+        </div>
+      )}
+
+      {isSante && !brouillon && !suivi.animal_id && (
+        <div className="rounded-2xl p-4 bg-white border border-gray-100 shadow-sm flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold font-galey text-gray-800">
+              {suivi.notifie_a
+                ? `Envoyé au client le ${new Date(suivi.notifie_a as string).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                : 'Client sans application'}
+            </p>
+            {(suivi.client_nom_libre || suivi.client_contact_libre) ? (
+              <p className="text-xs font-galey text-gray-500 truncate">{[suivi.client_nom_libre, suivi.client_contact_libre].filter(Boolean).join('  ·  ') as string}</p>
+            ) : null}
+          </div>
+          <button disabled={sendingNotif} onClick={handleEnvoyerHorsAppli}
+            className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold disabled:opacity-50 flex-shrink-0" style={{ background: TEAL }}>
+            {sendingNotif ? 'Envoi…' : suivi.notifie_a ? 'Renvoyer le compte rendu' : 'Envoyer le compte rendu'}
           </button>
         </div>
       )}

@@ -86,6 +86,7 @@ Future<Uint8List> morphoSuiviPdfBytes({
   required List<Map<String, dynamic>> points,
   required List<Map<String, dynamic>> observations,
   required List<Map<String, dynamic>> mouvements,
+  List<Map<String, dynamic>> exercices = const [],
 }) async {
   final pdf = pw.Document(theme: await _pdfTheme());
   final espece = morphoSpeciesKey(animal['espece']?.toString()) ?? 'chien';
@@ -94,13 +95,28 @@ Future<Uint8List> morphoSuiviPdfBytes({
 
   // Photos de référence (4 vues + extra) — téléchargées depuis Supabase Storage.
   final photosByVue = <String, pw.MemoryImage>{};
+  final photosExtra = <pw.MemoryImage>[];
   for (final p in photos) {
     final vue = p['vue']?.toString() ?? '';
     if (kVuesPhotos.any((v) => v.$1 == vue)) {
       final img = await _fetchNetworkImage(p['url'] as String);
       if (img != null) photosByVue[vue] = img;
+    } else if (vue == 'autre') {
+      final img = await _fetchNetworkImage(p['url'] as String);
+      if (img != null) photosExtra.add(img);
     }
   }
+  // Illustrations des exercices (facultatives)
+  final photosExercices = <int, pw.MemoryImage>{};
+  for (final (i, e) in exercices.indexed) {
+    final url = e['photo_url']?.toString();
+    if (url != null && url.isNotEmpty) {
+      final img = await _fetchNetworkImage(url);
+      if (img != null) photosExercices[i] = img;
+    }
+  }
+  // Bilan anatomique facultatif : désactivé → aucune silhouette dans le PDF.
+  if (suivi['avec_anatomie'] == false) points = const [];
 
   // Silhouette(s) avec points — image d'assets + pastilles superposées,
   // une page par vue effectivement pointée.
@@ -145,10 +161,20 @@ Future<Uint8List> morphoSuiviPdfBytes({
         pw.SizedBox(height: 14),
       ],
 
-      pw.Center(child: pw.Text('SUIVI MORPHOLOGIQUE & BIEN-ÊTRE',
+      // Séance d'un professionnel : titre d'après le type de prestation
+      // (Compte rendu ostéopathique…) ; suivi saisi par le propriétaire :
+      // titre historique.
+      pw.Center(child: pw.Text(
+          (source == 'professionnel' ? titreCompteRendu(suivi['type_suivi']?.toString()) : 'Suivi morphologique & bien-être').toUpperCase(),
           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
       pw.SizedBox(height: 4),
-      pw.Center(child: pw.Text(labelTypeSuivi(suivi['type_suivi']?.toString()), style: _small())),
+      pw.Center(child: pw.Text(
+          [
+            if (_txt(suivi['intitule']) != null) _txt(suivi['intitule'])!,
+            if (source != 'professionnel') labelTypeSuivi(suivi['type_suivi']?.toString()),
+            if (suivi['statut'] == 'brouillon') 'Brouillon — document de travail',
+          ].join('  ·  '),
+          style: _small())),
       pw.SizedBox(height: 18),
 
       pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -167,18 +193,21 @@ Future<Uint8List> morphoSuiviPdfBytes({
         ])),
         pw.SizedBox(width: 20),
         pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Text('Suivi', style: _artTitle()),
+          pw.Text(source == 'professionnel' ? 'Séance' : 'Suivi', style: _artTitle()),
           pw.SizedBox(height: 4),
           _line('Date', date != null ? _fmt(date) : null),
+          if (suivi['lieu'] == 'cabinet' || suivi['lieu'] == 'exterieur')
+            _line('Lieu', suivi['lieu'] == 'cabinet' ? 'Cabinet' : 'Intervention extérieure'),
           // Profil pro identifié : le bloc « Réalisé par » fait foi.
           if ((pro['nom'] as String?)?.trim().isNotEmpty != true && (suivi['professionnel_nom'] as String?)?.isNotEmpty == true)
             _line('Professionnel', suivi['professionnel_nom'] as String?),
-          _line('Motif', suivi['motif'] as String?),
-          // Profil pro connu : son nom plutôt que « Réalisé par un professionnel ».
           if ((pro['nom'] as String?)?.trim().isNotEmpty == true)
-            _line('Réalisé par', pro['nom'] as String)
+            _line('Réalisé par', [pro['nom'], pro['profession']].where((e) => '${e ?? ''}'.trim().isNotEmpty).join(' — '))
           else
             _line('Source', kSourceLabels[source]),
+          if (suivi['niveau_activite'] != null && suivi['niveau_activite'] != 'non_evalue')
+            _line('Niveau d\'activité', kNiveauxActivite.firstWhere((n) => n.$1 == suivi['niveau_activite'], orElse: () => ('', '')).$2),
+          if (_txt(suivi['activite_sportive']) != null) _line('Activité sportive', _txt(suivi['activite_sportive'])),
         ])),
       ]),
 
@@ -190,17 +219,92 @@ Future<Uint8List> morphoSuiviPdfBytes({
           if ('${proprietaire[e.$2] ?? ''}'.trim().isNotEmpty) _line(e.$1, proprietaire[e.$2].toString()),
       ],
 
-      if ((suivi['commentaires'] as String?)?.isNotEmpty == true) ...[
+      ..._sectionTexte('Motif de consultation', suivi['motif']),
+
+      // Observations et bilan : texte + posture + mouvement (chacun facultatif)
+      ..._sectionTexte('Observations et bilan', suivi['observations_bilan']),
+      if (observations.isNotEmpty) ...[
         pw.SizedBox(height: 10),
-        pw.Text('Commentaires généraux', style: _artTitle()),
-        pw.SizedBox(height: 3),
-        pw.Text(suivi['commentaires'], style: _body(), textAlign: pw.TextAlign.justify),
+        _titreAvec(_txt(suivi['observations_bilan']) == null ? 'Observations et bilan — posture' : 'Posture',
+            pw.SizedBox(height: 2)),
+        pw.Table(
+          border: pw.TableBorder(horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.5)),
+          columnWidths: const {0: pw.FlexColumnWidth(2), 1: pw.FlexColumnWidth(1.4), 2: pw.FlexColumnWidth(2.5)},
+          children: [
+            for (final o in observations)
+              pw.TableRow(children: [
+                pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                    child: pw.Text(kCategoriesObservationStatique.firstWhere((c) => c.$1 == o['categorie'], orElse: () => ('', o['categorie'].toString())).$2, style: _bold())),
+                pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                    child: pw.Text(labelsValeurObservation(o['categorie'].toString())[o['valeur']] ?? '', style: _body())),
+                pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3),
+                    child: pw.Text((o['commentaire'] as String?) ?? '', style: _body())),
+              ]),
+          ],
+        ),
+      ],
+      if (mouvements.isNotEmpty) ...[
+        pw.SizedBox(height: 10),
+        _titreAvec('En mouvement', pw.SizedBox(height: 2)),
+        for (final m in mouvements)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 4),
+            child: _line(labelActivite(m['activite']?.toString()),
+                [m['observation'], m['gene_observee'] == true ? 'Gêne observée' : null, m['commentaire']]
+                    .where((e) => e != null && '$e'.trim().isNotEmpty).join(' — ')),
+          ),
       ],
 
-      if (photosByVue.isNotEmpty) ...[
+      ..._sectionTexte('Intervention réalisée', suivi['intervention']),
+
+      // Conseils et exercices — un bloc insécable par élément (jamais coupé)
+      if (exercices.isNotEmpty) ...[
+        pw.SizedBox(height: 14),
+        for (final (i, e) in exercices.indexed)
+          pw.Container(
+            width: double.infinity,
+            margin: const pw.EdgeInsets.only(bottom: 8),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              if (i == 0) ...[pw.Text('Conseils et exercices', style: _artTitle()), pw.SizedBox(height: 6)],
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(8),
+                decoration: pw.BoxDecoration(color: PdfColor.fromInt(0xFFF7FAFA), border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+                    borderRadius: pw.BorderRadius.circular(4)),
+                child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                  pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                    pw.Text('${i + 1}. ${e['nom'] ?? ''}', style: _bold()),
+                    if (_txt(e['description']) != null) ...[pw.SizedBox(height: 2), pw.Text(_txt(e['description'])!, style: _body())],
+                    pw.SizedBox(height: 2),
+                    _line('Consignes', _txt(e['consignes'])),
+                    _line('Fréquence', _txt(e['frequence'])),
+                    _line('Durée', _txt(e['duree'])),
+                    _line('Précautions', _txt(e['precautions'])),
+                  ])),
+                  if (photosExercices[i] != null) ...[
+                    pw.SizedBox(width: 8),
+                    pw.Container(width: 80, height: 80, child: pw.Image(photosExercices[i]!, fit: pw.BoxFit.cover)),
+                  ],
+                ]),
+              ),
+            ]),
+          ),
+        pw.Text('Ces recommandations ne constituent pas une prescription vétérinaire.', style: _small()),
+      ],
+
+      // Suivi recommandé
+      if (_txt(suivi['suivi_recommande']) != null || suivi['orientation_veto'] == true
+          || DateTime.tryParse(suivi['prochain_controle']?.toString() ?? '') != null) ...[
+        ..._sectionTexte('Suivi recommandé', suivi['suivi_recommande'] ?? '',
+            toujours: true),
+        if (suivi['orientation_veto'] == true) _line('Orientation', 'consultation vétérinaire conseillée'),
+        if (DateTime.tryParse(suivi['prochain_controle']?.toString() ?? '') != null)
+          _line('Contrôle conseillé', _fmt(DateTime.parse(suivi['prochain_controle'].toString()))),
+      ],
+
+      if (photosByVue.isNotEmpty || photosExtra.isNotEmpty) ...[
         pw.SizedBox(height: 16),
-        pw.Text('Photos de référence', style: _artTitle()),
-        pw.SizedBox(height: 6),
+        _titreAvec('Photos', pw.SizedBox(height: 4)),
         pw.Wrap(spacing: 10, runSpacing: 10, children: [
           for (final v in kVuesPhotos)
             if (photosByVue[v.$1] != null)
@@ -213,6 +317,10 @@ Future<Uint8List> morphoSuiviPdfBytes({
                 pw.SizedBox(height: 2),
                 pw.Text(v.$2, style: _small()),
               ]),
+          for (final img in photosExtra)
+            pw.Container(width: 130, height: 130,
+                decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300)),
+                child: pw.Image(img, fit: pw.BoxFit.cover)),
         ]),
       ],
 
@@ -227,7 +335,7 @@ Future<Uint8List> morphoSuiviPdfBytes({
             margin: const pw.EdgeInsets.only(bottom: 12),
             child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
               if (i == 0) ...[
-                pw.Text('Silhouette — points relevés', style: _artTitle()),
+                pw.Text('Bilan anatomique — points relevés', style: _artTitle()),
                 pw.SizedBox(height: 6),
               ],
               pw.Center(child: pw.Text(
@@ -282,38 +390,21 @@ Future<Uint8List> morphoSuiviPdfBytes({
           ),
       ],
 
-      if (observations.isNotEmpty) ...[
-        pw.SizedBox(height: 16),
-        pw.Text('Observation statique', style: _artTitle()),
-        pw.SizedBox(height: 4),
-        pw.Table(
-          border: pw.TableBorder(horizontalInside: pw.BorderSide(color: PdfColors.grey300, width: 0.5)),
-          columnWidths: const {0: pw.FlexColumnWidth(2), 1: pw.FlexColumnWidth(1.4), 2: pw.FlexColumnWidth(2.5)},
-          children: [
-            for (final o in observations)
-              pw.TableRow(children: [
-                pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3),
-                    child: pw.Text(kCategoriesObservationStatique.firstWhere((c) => c.$1 == o['categorie'], orElse: () => ('', o['categorie'].toString())).$2, style: _bold())),
-                pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3),
-                    child: pw.Text(labelsValeurObservation(o['categorie'].toString())[o['valeur']] ?? '', style: _body())),
-                pw.Padding(padding: const pw.EdgeInsets.symmetric(vertical: 3),
-                    child: pw.Text((o['commentaire'] as String?) ?? '', style: _body())),
-              ]),
-          ],
-        ),
-      ],
+      ..._sectionTexte('Notes complémentaires', suivi['commentaires']),
 
-      if (mouvements.isNotEmpty) ...[
+      // Auteur du compte rendu (identification + finalisation)
+      if (source == 'professionnel' && ((pro['nom'] as String?)?.trim().isNotEmpty == true
+          || _txt(suivi['professionnel_nom']) != null)) ...[
         pw.SizedBox(height: 16),
-        pw.Text('Observation en mouvement', style: _artTitle()),
-        pw.SizedBox(height: 4),
-        for (final m in mouvements)
-          pw.Padding(
-            padding: const pw.EdgeInsets.only(bottom: 4),
-            child: _line(labelActivite(m['activite']?.toString()),
-                [m['observation'], m['gene_observee'] == true ? 'Gêne observée' : null, m['commentaire']]
-                    .where((e) => e != null && '$e'.trim().isNotEmpty).join(' — ')),
-          ),
+        pw.Text(
+          [
+            'Compte rendu rédigé par ${(pro['nom'] as String?)?.trim().isNotEmpty == true ? pro['nom'] : suivi['professionnel_nom']}',
+            if (DateTime.tryParse(suivi['finalise_a']?.toString() ?? '') != null)
+              'finalisé le ${_fmt(DateTime.parse(suivi['finalise_a'].toString()).toLocal())}',
+            if ((suivi['version'] as num?) != null && (suivi['version'] as num) > 1) 'version ${suivi['version']}',
+          ].join(' — '),
+          style: _small(),
+        ),
       ],
 
       pw.SizedBox(height: 20),
@@ -329,6 +420,40 @@ Future<Uint8List> morphoSuiviPdfBytes({
 }
 
 String _fmt(DateTime d) => DateFormat('d MMMM yyyy', 'fr_FR').format(d);
+
+String? _txt(dynamic v) {
+  final t = v?.toString().trim() ?? '';
+  return t.isEmpty ? null : t;
+}
+
+/// Titre + premier élément dans un bloc insécable : jamais de titre isolé
+/// en bas de page.
+pw.Widget _titreAvec(String titre, pw.Widget premier) => pw.Container(
+      width: double.infinity,
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Text(titre, style: _artTitle()),
+        pw.SizedBox(height: 3),
+        premier,
+      ]),
+    );
+
+/// Section de texte libre : rien si vide ; le titre reste avec le premier
+/// paragraphe, la suite s'écoule sur les pages suivantes (jamais tronquée).
+List<pw.Widget> _sectionTexte(String titre, dynamic texte, {bool toujours = false}) {
+  final t = _txt(texte);
+  if (t == null && !toujours) return const [];
+  final paras = (t ?? '').split(RegExp(r'\n+')).map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
+  // Premier paragraphe très long : il ne peut pas rester dans un bloc
+  // insécable (plus haut qu'une page) — il s'écoule alors normalement.
+  final premierCourt = paras.isNotEmpty && paras.first.length <= 700;
+  return [
+    pw.SizedBox(height: 12),
+    _titreAvec(titre, premierCourt ? pw.Text(paras.first, style: _body(), textAlign: pw.TextAlign.justify) : pw.SizedBox()),
+    for (final para in paras.skip(premierCourt ? 1 : 0))
+      pw.Padding(padding: const pw.EdgeInsets.only(top: 3),
+          child: pw.Paragraph(text: para, style: _body(), textAlign: pw.TextAlign.justify, margin: pw.EdgeInsets.zero)),
+  ];
+}
 
 /// kCategoriesOsteo utilise Color (Material) — converti en PdfColor pour
 /// les widgets `pdf`.

@@ -169,13 +169,15 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       final bytes = await morphoSuiviPdfBytes(
         suivi: widget.suivi, animal: _animal, pro: _pro, proprietaire: _proprio,
         photos: _photos, points: _points, observations: _observations, mouvements: _mouvements,
+        exercices: _exercices,
       );
       final nomAnimal = (_animal['nom'] as String?)?.replaceAll(' ', '_') ?? 'animal';
       final nomPraticien = ((_pro['nom'] as String?)?.trim().isNotEmpty == true)
           ? (_pro['nom'] as String).replaceAll(' ', '_') : null;
       final dateStr = (widget.suivi['date']?.toString() ?? '').split('T').first;
       final filename = [
-        'suivi_morpho', nomAnimal, if (nomPraticien != null) nomPraticien, dateStr,
+        widget.suivi['source'] == 'professionnel' ? 'compte_rendu' : 'suivi_morpho',
+        nomAnimal, if (nomPraticien != null) nomPraticien, dateStr,
       ].join('_');
       await sharemorphoSuiviPdf(bytes, filename: '$filename.pdf');
     } catch (e) {
@@ -214,14 +216,15 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       final bytes = await morphoSuiviPdfBytes(
         suivi: widget.suivi, animal: _animal, pro: _pro, proprietaire: _proprio,
         photos: _photos, points: _points, observations: _observations, mouvements: _mouvements,
+        exercices: _exercices,
       );
       final nomAnimal = (_animal['nom'] as String?)?.trim().isNotEmpty == true ? _animal['nom'] as String : 'votre animal';
       final signature = (_pro['nom'] as String?)?.trim().isNotEmpty == true ? '\n\n${_pro['nom']}' : '';
       final res = await Share.shareXFiles(
         [XFile.fromData(bytes, mimeType: 'application/pdf',
-            name: 'bilan_${nomAnimal.replaceAll(' ', '_')}_${(widget.suivi['date']?.toString() ?? '').split('T').first}.pdf')],
-        subject: 'Bilan de suivi — $nomAnimal',
-        text: 'Bonjour,\n\nVous trouverez ci-joint le bilan de suivi de $nomAnimal.$signature',
+            name: 'compte_rendu_${nomAnimal.replaceAll(' ', '_')}_${(widget.suivi['date']?.toString() ?? '').split('T').first}.pdf')],
+        subject: '${titreCompteRendu(widget.suivi['type_suivi']?.toString())} — $nomAnimal',
+        text: 'Bonjour,\n\nVous trouverez ci-joint le compte rendu de la séance de $nomAnimal.$signature',
       );
       if (res.status == ShareResultStatus.dismissed) return;
       final now = DateTime.now();
@@ -534,7 +537,7 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                       icon: _sendingNotif
                           ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                           : const Icon(Icons.share, size: 16),
-                      label: Text(_notifieA != null ? 'Renvoyer le bilan (WhatsApp, e-mail…)' : 'Envoyer le bilan (WhatsApp, e-mail…)',
+                      label: Text(_notifieA != null ? 'Renvoyer le compte rendu (WhatsApp, e-mail…)' : 'Envoyer le compte rendu (WhatsApp, e-mail…)',
                           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
                       style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 11),
