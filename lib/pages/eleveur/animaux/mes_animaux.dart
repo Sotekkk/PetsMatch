@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/chaleurs_etat.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
@@ -81,6 +82,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   bool _filterRepro    = false;
   bool _filterGestante = false;
   bool _filterChaleur  = false;
+  bool _filterChaleurAVerifier = false;
   // Réservation (statut commercial) — distincte de la présence à l'élevage
   String _filterReservation = 'tous';
   bool   _selectMode    = false;
@@ -111,6 +113,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   Set<String> _formerOwnerIds     = {};   // date_fin NOT NULL → ancien propriétaire
   Set<String> _cessionEnAttenteIds = {};  // fallback : animaux 'sorti' avec contrat en attente
   Map<String, bool> _chaleurFlags  = {};
+  /// Chaleurs prévues (≤ 7 j) ou dépassées sans nouvelle chaleur notée.
+  Map<String, bool> _chaleurAVerifierFlags = {};
   Map<String, bool> _gestanteFlags = {};
   bool _loading = true;
 
@@ -236,6 +240,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           .toList();
 
       Map<String, bool> cFlags = {};
+      Map<String, bool> vFlags = {};
       Map<String, bool> gFlags = {};
 
       if (femIds.isNotEmpty) {
@@ -246,15 +251,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
         // Dernières chaleurs
         final chaleurs = await supa.from('chaleurs')
-            .select('animal_id, date')
+            .select('animal_id, date, date_fin, duree')
             .inFilter('animal_id', femIds)
             .order('date', ascending: false);
 
         final Map<String, DateTime> lastChaleur = {};
+        final Map<String, Map<String, dynamic>> lastChaleurRow = {};
         for (final c in chaleurs) {
           final aid = c['animal_id']?.toString() ?? '';
           final d = DateTime.tryParse(c['date'] ?? '');
-          if (d != null && !lastChaleur.containsKey(aid)) lastChaleur[aid] = d;
+          if (d != null && !lastChaleur.containsKey(aid)) {
+            lastChaleur[aid] = d;
+            lastChaleurRow[aid] = Map<String, dynamic>.from(c as Map);
+          }
         }
 
         // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement
@@ -284,6 +293,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           final interval = ChaleurIntervalService.resolve(
             raceIntervals: raceIntervals, espece: espece, race: race, animalOverride: customInterval,
           );
+          // En chaleurs : chaleur notée en cours (date de fin, durée saisie ou
+          // durée habituelle) — un fait observé, prioritaire sur les prévisions.
+          final cr = lastChaleurRow[id];
+          if (cr != null && estEnChaleurs(
+              debut: lastChaleur[id], fin: DateTime.tryParse(cr['date_fin']?.toString() ?? ''),
+              dureeTexte: cr['duree']?.toString(), espece: espece, maintenant: now)) {
+            cFlags[id] = true;
+            continue;
+          }
           if (interval == 0) continue;
 
           // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.
@@ -305,8 +323,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           final effectiveLast = (miseBas != null && (last == null || miseBas.isAfter(last)))
               ? miseBas : last;
           if (effectiveLast == null) continue;
-          final diff = effectiveLast.add(Duration(days: interval)).difference(now).inDays;
-          if (diff <= 7) cFlags[id] = true;
+          if (chaleursAVerifier(derniere: effectiveLast, intervalle: interval, maintenant: now)) vFlags[id] = true;
         }
 
         // Gestantes confirmées sans date_naissance
@@ -372,6 +389,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         _animauxData          = animaux;
         _cessionEnAttenteIds  = pendingIds;
         _chaleurFlags         = cFlags;
+        _chaleurAVerifierFlags = vFlags;
         _gestanteFlags        = gFlags;
         _loading              = false;
         // (currentOwnerIds et formerOwnerIds déjà mis à jour avant le setState)
@@ -584,6 +602,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_filterRetraite) c++;
     if (_filterGestante) c++;
     if (_filterChaleur)  c++;
+    if (_filterChaleurAVerifier) c++;
     if (_filterReservation != 'tous') c++;
     return c;
   }
@@ -632,6 +651,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     bool tmpRepro     = _filterRepro;
     bool tmpGestante  = _filterGestante;
     bool tmpChaleur   = _filterChaleur;
+    bool tmpChaleurAVerifier = _filterChaleurAVerifier;
     String tmpReservation = _filterReservation;
 
     await showModalBottomSheet(
@@ -642,7 +662,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         builder: (ctx, setSheet) {
           void apply({String? espece, String? sexe, String? race,
                      bool toggleRetraite = false, bool toggleRepro = false,
-                     bool toggleGestante = false, bool toggleChaleur = false,
+                     bool toggleGestante = false, bool toggleChaleur = false, bool toggleChaleurAVerifier = false,
                      String? reservation}) {
             setSheet(() {
               if (espece != null) {
@@ -656,6 +676,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               if (toggleRepro)    tmpRepro    = !tmpRepro;
               if (toggleGestante) tmpGestante = !tmpGestante;
               if (toggleChaleur)  tmpChaleur  = !tmpChaleur;
+              if (toggleChaleurAVerifier) tmpChaleurAVerifier = !tmpChaleurAVerifier;
               if (reservation != null) tmpReservation = reservation;
             });
             setState(() {
@@ -666,6 +687,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               _filterRepro    = tmpRepro;
               _filterGestante = tmpGestante;
               _filterChaleur  = tmpChaleur;
+              _filterChaleurAVerifier = tmpChaleurAVerifier;
               _filterReservation = tmpReservation;
             });
           }
@@ -698,7 +720,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                         tmpRetraite = false; tmpRepro = false; tmpGestante = false; tmpChaleur = false;
                         tmpReservation = 'tous'; });
                       setState(() { _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = '';
-                        _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
+                        _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false; _filterChaleurAVerifier = false;
                         _filterReservation = 'tous'; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
@@ -792,6 +814,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                   ('Retraités',   tmpRetraite, const Color(0xFFB45309), () => apply(toggleRetraite: true)),
                   ('Gestantes',   tmpGestante, _green,                  () => apply(toggleGestante: true)),
                   ('En chaleur',  tmpChaleur,  const Color(0xFFDB2777), () => apply(toggleChaleur: true)),
+                  ('Chaleurs à vérifier', tmpChaleurAVerifier, const Color(0xFFD97706), () => apply(toggleChaleurAVerifier: true)),
                 ] as List<(String, bool, Color, VoidCallback)>)
                   GestureDetector(
                     onTap: item.$4,
@@ -1206,6 +1229,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     final aid = d['id'] as String? ?? '';
     if (_filterGestante && !(_gestanteFlags[aid] ?? false)) return false;
     if (_filterChaleur  && !(_chaleurFlags[aid]  ?? false)) return false;
+    if (_filterChaleurAVerifier && !(_chaleurAVerifierFlags[aid] ?? false)) return false;
     if (_search.isNotEmpty) {
       final nom  = (d['nom']            ?? '').toString().toLowerCase();
       final puce = (d['identification'] ?? '').toString().toLowerCase();
@@ -1325,7 +1349,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   void _resetPresents() => setState(() {
     _searchController.clear(); _search = '';
     _filterEspece = 'tous'; _filterSexe = 'tous'; _filterRace = ''; _filterReservation = 'tous';
-    _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false;
+    _filterRetraite = false; _filterRepro = false; _filterGestante = false; _filterChaleur = false; _filterChaleurAVerifier = false;
   });
 
   /// Carte d'un animal présent (actions selon les droits).
@@ -1340,6 +1364,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       reproducteur: data['reproducteur'] == true,
       isRetraite: data['is_retraite'] == true,
       chaleurFlag:  _chaleurFlags[id]  ?? false,
+      chaleurAVerifierFlag: _chaleurAVerifierFlags[id] ?? false,
       gestanteFlag: _gestanteFlags[id] ?? false,
       selectMode: _selectMode,
       selected: _selectedIds.contains(id),
@@ -1993,6 +2018,7 @@ class _AnimalCard extends StatelessWidget {
   final bool reproPublic;
   final bool isRetraite;
   final bool chaleurFlag;
+  final bool chaleurAVerifierFlag;
   final bool gestanteFlag;
   final bool selectMode;
   final bool selected;
@@ -2011,6 +2037,7 @@ class _AnimalCard extends StatelessWidget {
     this.reproPublic = false,
     this.isRetraite = false,
     this.chaleurFlag = false,
+    this.chaleurAVerifierFlag = false,
     this.gestanteFlag = false,
     this.selectMode = false,
     this.selected = false,
@@ -2122,6 +2149,7 @@ class _AnimalCard extends StatelessWidget {
       if (isRetraite) ('Retraité', const Color(0xFFB45309)),
       if (gestanteFlag) ('Gestante', const Color(0xFF6E9E57)),
       if (chaleurFlag) ('En chaleur', const Color(0xFFDB2777)),
+      if (chaleurAVerifierFlag) ('Chaleurs à vérifier', const Color(0xFFD97706)),
     ];
 
     final infos = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [

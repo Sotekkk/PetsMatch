@@ -1,5 +1,6 @@
 'use client';
 
+import { estEnChaleurs, chaleursAVerifier } from '@/lib/chaleurs-etat';
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -109,11 +110,11 @@ function PhotoAnimal({ src, alt, ajouterHref }: { src?: string; alt: string; ajo
   );
 }
 
-function AnimalCard({ a, tab, isBebe = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, peutModifier = false, onOuvrir, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
+function AnimalCard({ a, tab, isBebe = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, chaleurAVerifierFlag = false, gestanteFlag = false, selectMode = false, selected = false, peutModifier = false, onOuvrir, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
   a: Animal; tab: 'presents' | 'anciens' | 'decedes';
   /** Chiot d'une portée (vue Bébés) : statut « Disponible » au lieu de « Présent ». */
   isBebe?: boolean;
-  reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
+  reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; chaleurAVerifierFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
   /** Ajout de photo / modifications autorisés (éleveur propriétaire, animal non cédé). */
   peutModifier?: boolean;
@@ -145,6 +146,7 @@ function AnimalCard({ a, tab, isBebe = false, reproducteur = false, reproPublic 
     isRetraite && { t: 'Retraité', c: '#B45309' },
     gestanteFlag && { t: 'Gestante', c: '#6E9E57' },
     chaleurFlag && { t: 'En chaleur', c: '#DB2777' },
+    chaleurAVerifierFlag && { t: 'Chaleurs à vérifier', c: '#D97706' },
   ].filter(Boolean) as { t: string; c: string }[];
 
   const actions: { label: string; onClick: () => void; danger?: boolean }[] = [];
@@ -292,6 +294,8 @@ function MesAnimauxPageInner() {
   const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
   const [fetching, setFetching] = useState(true);
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
+  // Chaleurs prévues (≤ 7 j) ou dépassées sans nouvelle chaleur notée.
+  const [chaleurAVerifierFlags, setChaleurAVerifierFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<'presents' | 'anciens' | 'suivi' | 'decedes'>(initialTab);
   const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
@@ -335,6 +339,7 @@ function MesAnimauxPageInner() {
   const [filtreRepro, setFiltreRepro] = useState(false);
   const [filtreGestante, setFiltreGestante] = useState(false);
   const [filtreChaleur, setFiltreChaleur] = useState(false);
+  const [filtreChaleurAVerifier, setFiltreChaleurAVerifier] = useState(false);
   // Réservation (statut commercial) — distincte de la présence à l'élevage
   const [filtreReservation, setFiltreReservation] = useState<'tous' | 'disponible' | 'reserve'>('tous');
 
@@ -379,7 +384,7 @@ function MesAnimauxPageInner() {
         const e = JSON.parse(raw);
         setSearch(e.search ?? ''); setFiltreEspece(e.espece ?? 'tous'); setFiltreSexe(e.sexe ?? 'tous');
         setFiltreRace(e.race ?? ''); setFiltreRetraite(!!e.retraite); setFiltreGestante(!!e.gestante);
-        setFiltreChaleur(!!e.chaleur); setFiltreReservation(e.reservation ?? 'tous');
+        setFiltreChaleur(!!e.chaleur); setFiltreChaleurAVerifier(!!e.chaleurAVerifier); setFiltreReservation(e.reservation ?? 'tous');
         setAnciensEspece(e.anciensEspece ?? 'tous'); setDecedesEspece(e.decedesEspece ?? 'tous');
         if (typeof e.scrollY === 'number') scrollARestaurer.current = e.scrollY;
       }
@@ -391,10 +396,10 @@ function MesAnimauxPageInner() {
     try {
       const prev = JSON.parse(sessionStorage.getItem(CLE_ETAT) ?? '{}');
       sessionStorage.setItem(CLE_ETAT, JSON.stringify({ ...prev, search, espece: filtreEspece, sexe: filtreSexe, race: filtreRace,
-        retraite: filtreRetraite, gestante: filtreGestante, chaleur: filtreChaleur, reservation: filtreReservation,
+        retraite: filtreRetraite, gestante: filtreGestante, chaleur: filtreChaleur, chaleurAVerifier: filtreChaleurAVerifier, reservation: filtreReservation,
         anciensEspece, decedesEspece }));
     } catch { /* */ }
-  }, [search, filtreEspece, filtreSexe, filtreRace, filtreRetraite, filtreGestante, filtreChaleur, filtreReservation, anciensEspece, decedesEspece]);
+  }, [search, filtreEspece, filtreSexe, filtreRace, filtreRetraite, filtreGestante, filtreChaleur, filtreChaleurAVerifier, filtreReservation, anciensEspece, decedesEspece]);
   function memoriserPosition() {
     try {
       const prev = JSON.parse(sessionStorage.getItem(CLE_ETAT) ?? '{}');
@@ -535,7 +540,7 @@ function MesAnimauxPageInner() {
 
       const eleveurUids = [...new Set(merged.map((a) => a.uid_eleveur).filter((u): u is string => !!u))];
       const [{ data: chaleurs }, { data: gests }, { data: naissances }, { data: protocoles }] = await Promise.all([
-        supabase.from('chaleurs').select('animal_id, date').in('animal_id', femIds).order('date', { ascending: false }),
+        supabase.from('chaleurs').select('animal_id, date, date_fin, duree').in('animal_id', femIds).order('date', { ascending: false }),
         supabase.from('gestations').select('animal_id').in('animal_id', femIds).eq('gestation_confirmee', true).is('date_naissance', null),
         supabase.from('gestations').select('animal_id, date_naissance').in('animal_id', femIds).not('date_naissance', 'is', null).order('date_naissance', { ascending: false }),
         eleveurUids.length
@@ -544,9 +549,13 @@ function MesAnimauxPageInner() {
       ]);
 
       const lastChaleur: Record<string, Date> = {};
+      const lastChaleurRow: Record<string, { date_fin?: string | null; duree?: string | null }> = {};
       for (const c of (chaleurs ?? [])) {
         const aid = c.animal_id as string;
-        if (!lastChaleur[aid]) { const d = new Date(c.date as string); if (!isNaN(d.getTime())) lastChaleur[aid] = d; }
+        if (!lastChaleur[aid]) {
+          const d = new Date(c.date as string);
+          if (!isNaN(d.getTime())) { lastChaleur[aid] = d; lastChaleurRow[aid] = c as { date_fin?: string | null; duree?: string | null }; }
+        }
       }
 
       const lastMiseBas: Record<string, Date> = {};
@@ -575,8 +584,15 @@ function MesAnimauxPageInner() {
 
       const JOURS_LACTATION = 56;
       const cFlags: Record<string, boolean> = {};
+      const vFlags: Record<string, boolean> = {};
       const now = new Date();
       for (const a of merged) {
+        // En chaleurs : chaleur notée en cours (fait observé, prioritaire).
+        const cr = lastChaleurRow[a.id];
+        if (cr && estEnChaleurs(lastChaleur[a.id] ?? null, cr.date_fin ? new Date(cr.date_fin) : null, cr.duree, a.espece ?? '', now)) {
+          cFlags[a.id] = true;
+          continue;
+        }
         const miseBas = lastMiseBas[a.id];
         // Mise-bas récente : cycle suspendu pendant l'allaitement.
         if (miseBas && (now.getTime() - miseBas.getTime()) / 86400000 < JOURS_LACTATION) continue;
@@ -592,8 +608,7 @@ function MesAnimauxPageInner() {
         const effectiveLast = (miseBas && (!last || miseBas.getTime() > last.getTime())) ? miseBas : last;
         if (!effectiveLast) continue;
 
-        const next = new Date(effectiveLast.getTime() + interval * 86400000);
-        if ((next.getTime() - now.getTime()) / 86400000 <= 7) cFlags[a.id] = true;
+        if (chaleursAVerifier(effectiveLast, interval, now)) vFlags[a.id] = true;
       }
 
       const gFlags: Record<string, boolean> = {};
@@ -601,6 +616,7 @@ function MesAnimauxPageInner() {
 
       if (cancelled) return;
       setChaleurFlags(cFlags);
+      setChaleurAVerifierFlags(vFlags);
       setGestanteFlags(gFlags);
     }
 
@@ -694,6 +710,7 @@ function MesAnimauxPageInner() {
     if (filtreRepro && !a.reproducteur) return false;
     if (filtreGestante && !gestanteFlags[a.id]) return false;
     if (filtreChaleur && !chaleurFlags[a.id]) return false;
+    if (filtreChaleurAVerifier && !chaleurAVerifierFlags[a.id]) return false;
     if (filtreReservation === 'reserve' && a.statut !== 'reserve') return false;
     if (filtreReservation === 'disponible' && a.statut === 'reserve') return false;
     if (searchLower) {
@@ -728,7 +745,7 @@ function MesAnimauxPageInner() {
 
   const activeFilterCount = tab === 'presents'
     ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0) +
-      (filtreRetraite ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0) +
+      (filtreRetraite ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0) + (filtreChaleurAVerifier ? 1 : 0) +
       (filtreReservation !== 'tous' ? 1 : 0)
     : tab === 'decedes'
     ? (decedesEspece !== 'tous' ? 1 : 0)
@@ -758,6 +775,7 @@ function MesAnimauxPageInner() {
     if (filtreReservation === 'disponible' && a.statut === 'reserve') return false;
     if (filtreGestante && !gestanteFlags[a.id]) return false;
     if (filtreChaleur && !chaleurFlags[a.id]) return false;
+    if (filtreChaleurAVerifier && !chaleurAVerifierFlags[a.id]) return false;
     if (searchLower) {
       const nom  = (a.nom            ?? '').toLowerCase();
       const puce = (a.identification ?? '').toLowerCase();
@@ -805,7 +823,7 @@ function MesAnimauxPageInner() {
   function resetFilters() {
     if (tab === 'presents') {
       setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
-      setFiltreRetraite(false); setFiltreRepro(false); setFiltreGestante(false); setFiltreChaleur(false);
+      setFiltreRetraite(false); setFiltreRepro(false); setFiltreGestante(false); setFiltreChaleur(false); setFiltreChaleurAVerifier(false);
       setFiltreReservation('tous');
     } else if (tab === 'decedes') {
       setDecedesEspece('tous');
@@ -1000,6 +1018,7 @@ function MesAnimauxPageInner() {
               )}
               <label className="flex items-center gap-2"><input type="checkbox" checked={filtreGestante} onChange={e => setFiltreGestante(e.target.checked)} className="accent-[#0C5C6C] w-4 h-4" />Gestantes</label>
               <label className="flex items-center gap-2"><input type="checkbox" checked={filtreChaleur} onChange={e => setFiltreChaleur(e.target.checked)} className="accent-[#0C5C6C] w-4 h-4" />En chaleur</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={filtreChaleurAVerifier} onChange={e => setFiltreChaleurAVerifier(e.target.checked)} className="accent-[#0C5C6C] w-4 h-4" />Chaleurs à vérifier</label>
             </div>
           )}
           {activeFilterCount > 0 && (
@@ -1073,7 +1092,7 @@ function MesAnimauxPageInner() {
                     const cede = a.statut === 'sorti';
                     return <AnimalCard key={a.id} a={a} tab={tab} isBebe={!a.reproducteur}
                       reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
-                      chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
+                      chaleurFlag={!!chaleurFlags[a.id]} chaleurAVerifierFlag={!!chaleurAVerifierFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
                       selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
                       peutModifier={isEleveur && !cede} onOuvrir={memoriserPosition}
                       onDelete={selectMode || cede ? undefined : () => deleteAnimal(a.id)}
@@ -1093,7 +1112,7 @@ function MesAnimauxPageInner() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab}
             reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
-            chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
+            chaleurFlag={!!chaleurFlags[a.id]} chaleurAVerifierFlag={!!chaleurAVerifierFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
             peutModifier={tab === 'presents'} onOuvrir={memoriserPosition}
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
