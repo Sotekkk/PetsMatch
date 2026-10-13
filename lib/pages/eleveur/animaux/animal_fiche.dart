@@ -140,6 +140,10 @@ class AnimalFichePage extends StatefulWidget {
   final String? eleveurUidOverride;
   final String? rdvId;
   final Set<String>? employePerms;
+  /// Profil (user_profiles.id) propriétaire à utiliser à la création — vue
+  /// employé : l'animal appartient à l'élevage de l'employeur, pas au profil
+  /// actif de l'employé.
+  final String? proprioProfileIdOverride;
 
   const AnimalFichePage({
     super.key,
@@ -155,6 +159,7 @@ class AnimalFichePage extends StatefulWidget {
     this.eleveurUidOverride,
     this.rdvId,
     this.employePerms,
+    this.proprioProfileIdOverride,
   });
 
   @override
@@ -299,6 +304,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.employePerms == null) return false;
     return !widget.employePerms!.contains(perm);
   }
+
+  /// Vue employé (Mes employeurs) : droits pilotés par employePerms.
+  bool get _estEmploye => widget.employePerms != null;
+  /// Identité / alimentation / registre : « Modifier les animaux ».
+  bool get _identiteLectureSeule => _tabReadOnly('write_animaux');
 
   // Consultations (CR/ordonnances/radios/actes) est réservé aux professions de
   // santé — un pet-sitter, toiletteur, éducateur… n'y a pas accès du tout
@@ -1237,7 +1247,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
       final uid = widget.eleveurUidOverride ?? FirebaseAuth.instance.currentUser!.uid;
       final id = widget.animalId ?? DateTime.now().millisecondsSinceEpoch.toString();
-      final activeProfileId = User_Info.activeProfileId;
+      final activeProfileId = widget.proprioProfileIdOverride ?? User_Info.activeProfileId;
       final data = {
         'id':                  id,
         'uid_eleveur':         uid,
@@ -2274,7 +2284,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (widget.readOnly)
+          if (_identiteLectureSeule)
             const Padding(
               padding: EdgeInsets.only(right: 16),
               child: Center(child: Text('Lecture seule',
@@ -2408,7 +2418,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                           ]
                         : [
                             _IdentiteTab(this),
-                            _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
+                            _CarnetSanteTab(animalId: widget.animalId, espece: _espece, canWrite: !_tabReadOnly('write_sante')),
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
@@ -2466,7 +2476,7 @@ class _IdentiteTab extends StatelessWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: AbsorbPointer(
-        absorbing: s.widget.readOnly,
+        absorbing: s._identiteLectureSeule,
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3975,7 +3985,7 @@ class _IdentiteTab extends StatelessWidget {
                       ('decede',  'Décédé',  Colors.redAccent),
                     ])
                 GestureDetector(
-                  onTap: () => s.setState(() => s._statut = e.$1),
+                  onTap: s._estEmploye ? null : () => s.setState(() => s._statut = e.$1),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -10921,7 +10931,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
       // AbsorbPointer DANS le ScrollView (pas autour) : posé à l'extérieur,
       // il bloquait aussi le geste de scroll lui-même.
-      child: AbsorbPointer(absorbing: widget.s.widget.readOnly,
+      child: AbsorbPointer(absorbing: widget.s._identiteLectureSeule,
       child: Center(child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -11338,7 +11348,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: AbsorbPointer(absorbing: widget.s.widget.readOnly,
+      child: AbsorbPointer(absorbing: widget.s._identiteLectureSeule,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
         if (_existing != null) ...[

@@ -1,5 +1,6 @@
 'use client';
 
+import { resoudreEmployeur } from '@/lib/employeur-contexte';
 import { miseBasDeReference } from '@/lib/chaleurs-etat';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
@@ -2510,35 +2511,22 @@ function AnimalFichePageInner() {
           setEstAncienProprio(l.length > 0 && l.every(r => r.date_fin != null));
         });
       if (data.uid_eleveur && data.uid_eleveur !== user.uid) {
-        // Cherche la relation employé en essayant d'abord par uid, puis par profile_id
-        let empRow: { id: string; eleveur_profile_id: string | null } | null = null;
-
-        const { data: r1 } = await supabase.from('employes')
-          .select('id, eleveur_profile_id')
-          .eq('uid_eleveur', data.uid_eleveur).eq('uid_employe', user.uid).eq('actif', true).maybeSingle();
-        empRow = r1 ?? null;
-
-        // Fallback : vérification par employe_profile_id (pour les lignes sans uid_employe)
-        if (!empRow && activeProfileId) {
-          const { data: allEmpRows } = await supabase.from('employes')
-            .select('id, eleveur_profile_id, uid_eleveur')
-            .eq('employe_profile_id', activeProfileId)
-            .eq('actif', true);
-          const matched = (allEmpRows ?? []).find(
-            (r: { uid_eleveur: string; eleveur_profile_id: string | null }) => r.uid_eleveur === data.uid_eleveur
-          );
-          empRow = matched ?? null;
-        }
-
-        if (empRow) {
+        // Employé : relation résolue par le PROFIL propriétaire de l'animal
+        // (animaux_proprietes.profile_id_proprio, sinon animaux.profile_id) —
+        // jamais par le seul uid de l'employeur, qui peut avoir plusieurs
+        // profils (élevage, pension, association…) avec des droits différents.
+        // Les relations employé sont portées par le profil particulier de
+        // l'employé (resoudreEmployeur), quel que soit son profil actif.
+        const { data: propRow } = await supabase.from('animaux_proprietes')
+          .select('profile_id_proprio')
+          .eq('animal_id', data.id).eq('uid_proprio', data.uid_eleveur).is('date_fin', null)
+          .not('profile_id_proprio', 'is', null)
+          .limit(1).maybeSingle();
+        const profilProprio = (propRow?.profile_id_proprio as string | undefined) ?? (data.profile_id as string | undefined) ?? '';
+        const ctx = profilProprio ? await resoudreEmployeur(profilProprio, user.uid) : null;
+        if (ctx) {
           setIsEmployeOfOwner(true);
-          if (empRow.eleveur_profile_id && activeProfileId) {
-            const { data: permsRows } = await supabase.from('employe_permissions')
-              .select('permission')
-              .eq('eleveur_profile_id', empRow.eleveur_profile_id)
-              .eq('employe_profile_id', activeProfileId);
-            setEmployePerms((permsRows ?? []).map((r: { permission: string }) => r.permission));
-          }
+          setEmployePerms(ctx.perms);
         }
       }
     }

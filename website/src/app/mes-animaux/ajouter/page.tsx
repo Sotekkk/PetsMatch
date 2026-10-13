@@ -1,5 +1,6 @@
 'use client';
 
+import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -32,7 +33,21 @@ export default function AjouterAnimalPage() {
   const { user, userData, activeProfileId } = useAuth();
   const router = useRouter();
 
-  const isEleveur = userData?.isElevage === true;
+  // Vue employé : ?employeur=<eleveur_profile_id> — l'animal est créé pour le
+  // profil élevage de l'employeur (uid + profile_id), avec « Modifier les
+  // animaux ». Lu via window (pas de useSearchParams : page sans Suspense).
+  const [employeurParam, setEmployeurParam] = useState('');
+  const [employeur, setEmployeur] = useState<EmployeurContexte | null>(null);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get('employeur') ?? '';
+    if (!p || !user) return;
+    let annule = false;
+    resoudreEmployeur(p, user.uid).then(c => { if (!annule) { setEmployeurParam(p); setEmployeur(c); } });
+    return () => { annule = true; };
+  }, [user]);
+  const retour = employeurParam ? `/mes-animaux?employeur=${encodeURIComponent(employeurParam)}` : '/mes-animaux';
+
+  const isEleveur = !!employeurParam || userData?.isElevage === true;
 
   const [espece,        setEspece]        = useState('chien');
   const [especeAutre,   setEspeceAutre]   = useState('');
@@ -88,9 +103,16 @@ export default function AjouterAnimalPage() {
   async function handleSave() {
     if (!user) return;
     setError('');
+    if (employeurParam && !employeur?.perms.includes('write_animaux')) {
+      setError("Vous n'avez pas l'autorisation d'ajouter des animaux pour cet élevage.");
+      return;
+    }
+    // Propriétaire : élevage de l'employeur (vue employé) ou profil actif.
+    const proprioUid = employeur?.uid ?? user.uid;
+    const proprioProfileId = employeur ? employeur.profileId : activeProfileId;
     setSaving(true);
     try {
-      const id = `animal_${user.uid}_${Date.now()}`;
+      const id = `animal_${proprioUid}_${Date.now()}`;
       const row: Record<string, unknown> = {
         id,
         espece,
@@ -114,9 +136,9 @@ export default function AjouterAnimalPage() {
       };
 
       if (isEleveur) {
-        row.uid_eleveur = user.uid;
+        row.uid_eleveur = proprioUid;
         row.provenance_qualite = 'naissance';
-        row.provenance_nom = userData?.nameElevage ?? null;
+        row.provenance_nom = employeur ? employeur.nom : (userData?.nameElevage ?? null);
       } else {
         // uid_eleveur est aussi renseigné pour satisfaire la politique RLS INSERT
         row.uid_eleveur      = user.uid;
@@ -126,7 +148,7 @@ export default function AjouterAnimalPage() {
       // profile_id sur l'animal lui-même (cohérent avec les animaux éleveur) —
       // sinon les écrans qui ne filtrent que animaux.profile_id ne le voient
       // jamais, cf. EducationReservationModal.
-      if (activeProfileId) row.profile_id = activeProfileId;
+      if (proprioProfileId) row.profile_id = proprioProfileId;
 
       const { error: err } = await supabase.from('animaux').insert([row]);
       if (err) throw err;
@@ -137,22 +159,22 @@ export default function AjouterAnimalPage() {
       try {
         await supabase.from('animaux_proprietes').upsert({
           animal_id:   id,
-          uid_proprio: user.uid,
+          uid_proprio: proprioUid,
           date_debut:  dateNaissance || new Date().toISOString().slice(0, 10),
-          ...(activeProfileId ? { profile_id_proprio: activeProfileId } : {}),
+          ...(proprioProfileId ? { profile_id_proprio: proprioProfileId } : {}),
         }, { onConflict: 'animal_id,uid_proprio' });
       } catch { /* ignore */ }
 
       // Protocoles automatiques pour un nouvel animal entrant (éleveurs uniquement)
       if (isEleveur) {
         triggerAutoProtocoles({
-          uid: user.uid, declencheur: 'entree',
+          uid: proprioUid, declencheur: 'entree',
           animalId: id,
           dateEvenement: new Date(), espece,
         }).catch(() => {});
       }
 
-      router.push('/mes-animaux?added=1');
+      router.push(`${retour}${retour.includes('?') ? '&' : '?'}added=1`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde');
     } finally {

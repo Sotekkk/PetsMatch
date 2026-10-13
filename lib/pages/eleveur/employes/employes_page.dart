@@ -40,7 +40,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
-    show speciesColor, speciesIcon, speciesLabel, kSpeciesData;
+    show speciesLabel, kSpeciesData, MesAnimauxPage, EmployeurAnimauxContexte;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
@@ -3876,10 +3876,12 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                           onAnimalTap: (animal) => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => AnimalFichePage(
                               animalId: animal['id'] as String?,
-                              readOnly: !perms.contains('write_animaux'),
+                              // Droits par onglet via employePerms (identité :
+                              // write_animaux, carnet : write_sante, repro : write_repro).
                               eleveurUidOverride: uid,
                               showReproTab: true,
                               employePerms: perms,
+                              proprioProfileIdOverride: (eleveurProfileId ?? '').isEmpty ? null : eleveurProfileId,
                             ),
                           )),
                           onPlanningTap: () => Navigator.push(context, MaterialPageRoute(
@@ -5017,10 +5019,16 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         controller: _tab,
         children: [
           _buildTachesTab(),
-          _AnimauxEmployeTab(
-            eleveurUid: widget.eleveurUid,
-            canEditAnimaux: widget.perms.contains('write_animaux'),
-            perms: widget.perms,
+          // Même vue que « Mes animaux » de l'éleveur, scopée sur le profil
+          // élevage de CETTE relation (eleveur_profile_id), actions selon
+          // les autorisations de l'employé.
+          MesAnimauxPage(
+            embedded: true,
+            employeur: EmployeurAnimauxContexte(
+              uid: widget.eleveurUid,
+              profileId: (widget.eleveurProfileId ?? '').isEmpty ? null : widget.eleveurProfileId,
+              perms: widget.perms,
+            ),
           ),
           _InventaireEmployeTab(
             eleveurProfileId: widget.eleveurProfileId ?? '',
@@ -5316,328 +5324,6 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
 
 }
 
-// ─── Tab animaux employé (Reproducteurs / Bébés / Tous + filtres) ─────────────
-
-class _AnimauxEmployeTab extends StatefulWidget {
-  final String eleveurUid;
-  final bool canEditAnimaux;
-  final Set<String> perms;
-  const _AnimauxEmployeTab({required this.eleveurUid, this.canEditAnimaux = false, this.perms = const {}});
-  @override
-  State<_AnimauxEmployeTab> createState() => _AnimauxEmployeTabState();
-}
-
-class _AnimauxEmployeTabState extends State<_AnimauxEmployeTab> {
-  static const _teal = Color(0xFF0C5C6C);
-
-  final _supa       = Supabase.instance.client;
-  final _searchCtrl = TextEditingController();
-
-  bool _loading = true;
-  List<Map<String, dynamic>> _all = [];
-
-  int _subTab = 0; // 0=Tous, 1=Reproducteurs, 2=Bébés
-
-  String? _filterEspece;
-  String? _filterSexe;
-  String? _filterRace;
-  String _search = '';
-
-  @override
-  void initState() { super.initState(); _load(); }
-
-  @override
-  void dispose() { _searchCtrl.dispose(); super.dispose(); }
-
-  Future<void> _load() async {
-    if (!mounted) return;
-    setState(() => _loading = true);
-    try {
-      final rows = await _supa
-          .from('animaux')
-          .select('id, nom, espece, race, sexe, photo_url, identification, reproducteur, portee_id, date_naissance')
-          .eq('uid_eleveur', widget.eleveurUid)
-          .not('statut', 'in', '(sorti,decede)')
-          .order('nom');
-      if (mounted) setState(() { _all = List<Map<String, dynamic>>.from(rows); _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  List<Map<String, dynamic>> get _filtered {
-    var list = _all;
-    if (_subTab == 1) {
-      list = list.where((a) => a['reproducteur'] == true).toList();
-    } else if (_subTab == 2) {
-      list = list.where((a) {
-        final p = a['portee_id'] as String? ?? '';
-        return p.isNotEmpty && a['reproducteur'] != true;
-      }).toList();
-    }
-    if (_filterEspece != null) {
-      list = list.where((a) => (a['espece'] as String? ?? '') == _filterEspece).toList();
-    }
-    if (_filterSexe != null) {
-      list = list.where((a) => (a['sexe'] as String? ?? '') == _filterSexe).toList();
-    }
-    if (_filterRace != null) {
-      list = list.where((a) => (a['race'] as String? ?? '') == _filterRace).toList();
-    }
-    if (_search.isNotEmpty) {
-      final q = _search.toLowerCase();
-      list = list.where((a) {
-        final nom  = (a['nom'] as String? ?? '').toLowerCase();
-        final puce = (a['identification'] as String? ?? '').toLowerCase();
-        return nom.contains(q) || puce.contains(q);
-      }).toList();
-    }
-    return list;
-  }
-
-  int get _activeFilterCount {
-    int n = 0;
-    if (_filterEspece != null) n++;
-    if (_filterSexe   != null) n++;
-    if (_filterRace   != null) n++;
-    return n;
-  }
-
-  List<String> get _availableRaces => _all
-      .where((a) => _filterEspece == null || (a['espece'] as String? ?? '') == _filterEspece)
-      .map((a) => a['race'] as String? ?? '')
-      .where((r) => r.isNotEmpty)
-      .toSet()
-      .toList()
-    ..sort();
-
-  Widget _buildPorteeGroupedView(List<Map<String, dynamic>> docs) {
-    final fmt = DateFormat('dd/MM/yyyy', 'fr_FR');
-    final Map<String, List<Map<String, dynamic>>> groups = {};
-    for (final d in docs) {
-      final pid = (d['portee_id'] as String?) ?? '';
-      if (pid.isEmpty) continue;
-      groups.putIfAbsent(pid, () => []).add(d);
-    }
-    final sortedKeys = groups.keys.toList()
-      ..sort((a, b) {
-        final da = DateTime.tryParse(groups[a]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
-        final db = DateTime.tryParse(groups[b]!.first['date_naissance'] as String? ?? '') ?? DateTime(0);
-        return db.compareTo(da);
-      });
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      itemCount: sortedKeys.length,
-      itemBuilder: (_, gi) {
-        final pid     = sortedKeys[gi];
-        final members = groups[pid]!;
-        final first   = members.first;
-        final dn      = DateTime.tryParse(first['date_naissance'] as String? ?? '');
-        final race    = (first['race']   as String?) ?? '';
-        final espece  = (first['espece'] as String?) ?? '';
-
-        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (gi > 0) const SizedBox(height: 20),
-          // Header portée
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: _teal.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _teal.withOpacity(0.2)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.diversity_3, size: 18, color: _teal),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    ['Portée', if (race.isNotEmpty) race, if (espece.isNotEmpty) '· ${speciesLabel(espece)}'].join(' '),
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal),
-                  ),
-                  if (dn != null)
-                    Text('Nés le ${fmt.format(dn)}',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF5F9EAA))),
-                ]),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _teal.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text('${members.length}',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
-              ),
-            ]),
-          ),
-          // Grille bébés
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.68,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: members.length,
-            itemBuilder: (_, i) => _EmployeAnimalCard(
-              data: members[i],
-              eleveurUid: widget.eleveurUid,
-              canEdit: widget.canEditAnimaux,
-              perms: widget.perms,
-            ),
-          ),
-        ]);
-      },
-    );
-  }
-
-  void _openFilterSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _FilterSheetE(
-        filterEspece: _filterEspece,
-        filterSexe:   _filterSexe,
-        filterRace:   _filterRace,
-        availableRaces: _availableRaces,
-        onApply: (espece, sexe, race) => setState(() {
-          _filterEspece = espece;
-          _filterSexe   = sexe;
-          _filterRace   = race;
-        }),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final filtered       = _filtered;
-    final hasFilter      = _activeFilterCount > 0;
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      color: _teal,
-      child: Column(children: [
-        // ── Recherche + filtre ──
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(children: [
-            Expanded(
-              child: TextField(
-                controller: _searchCtrl,
-                onChanged: (v) => setState(() => _search = v.trim()),
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Nom ou numéro de puce…',
-                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF9CA3AF)),
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  filled: true, fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  isDense: true,
-                  suffixIcon: _search.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.close, size: 16),
-                          onPressed: () { _searchCtrl.clear(); setState(() => _search = ''); },
-                        )
-                      : null,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.tune_rounded, color: hasFilter ? _teal : Colors.grey.shade600),
-                  onPressed: _openFilterSheet,
-                ),
-                if (hasFilter)
-                  Positioned(
-                    top: 6, right: 6,
-                    child: Container(
-                      width: 8, height: 8,
-                      decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle),
-                    ),
-                  ),
-              ],
-            ),
-          ]),
-        ),
-        // ── Sub-tabs ──
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              _SubTabChip(label: 'Tous', active: _subTab == 0,
-                  onTap: () => setState(() => _subTab = 0)),
-              const SizedBox(width: 8),
-              _SubTabChip(label: '⭐ Reproducteurs', active: _subTab == 1,
-                  onTap: () => setState(() => _subTab = 1)),
-              const SizedBox(width: 8),
-              _SubTabChip(label: '🐣 Bébés', active: _subTab == 2,
-                  onTap: () => setState(() => _subTab = 2)),
-            ]),
-          ),
-        ),
-        // ── Chips filtres actifs ──
-        if (hasFilter)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Wrap(spacing: 6, runSpacing: 4, children: [
-              if (_filterEspece != null)
-                _ActiveFilterChipE(
-                  label: speciesLabel(_filterEspece!),
-                  onRemove: () => setState(() { _filterEspece = null; _filterRace = null; }),
-                ),
-              if (_filterSexe != null)
-                _ActiveFilterChipE(
-                  label: _filterSexe == 'male' ? '♂ Mâle' : '♀ Femelle',
-                  onRemove: () => setState(() => _filterSexe = null),
-                ),
-              if (_filterRace != null)
-                _ActiveFilterChipE(
-                  label: _filterRace!,
-                  onRemove: () => setState(() => _filterRace = null),
-                ),
-            ]),
-          ),
-        // ── Grille / portées ──
-        Expanded(
-          child: filtered.isEmpty
-              ? _empty(_subTab == 2 ? 'Aucun bébé dans une portée' : 'Aucun animal', '')
-              : _subTab == 2
-                  ? _buildPorteeGroupedView(filtered)
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 0.68,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) => _EmployeAnimalCard(
-                        data: filtered[i],
-                        eleveurUid: widget.eleveurUid,
-                        canEdit: widget.canEditAnimaux,
-                        perms: widget.perms,
-                      ),
-                    ),
-        ),
-      ]),
-    );
-  }
-}
-
 // ─── Onglet inventaire (vue employé) ─────────────────────────────────────────
 
 class _InventaireEmployeTab extends StatefulWidget {
@@ -5859,52 +5545,6 @@ class _FilterSheetEState extends State<_FilterSheetE> {
       ),
     );
   }
-}
-
-class _SubTabChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _SubTabChip({required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFF0C5C6C) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
-      ),
-      child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-          color: active ? Colors.white : Colors.grey)),
-    ),
-  );
-}
-
-class _ActiveFilterChipE extends StatelessWidget {
-  final String label;
-  final VoidCallback onRemove;
-  const _ActiveFilterChipE({required this.label, required this.onRemove});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: const Color(0xFF0C5C6C).withOpacity(0.1),
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
-          color: Color(0xFF0C5C6C), fontWeight: FontWeight.w600)),
-      const SizedBox(width: 4),
-      GestureDetector(
-        onTap: onRemove,
-        child: const Icon(Icons.close, size: 14, color: Color(0xFF0C5C6C)),
-      ),
-    ]),
-  );
 }
 
 class _SexeChipE extends StatelessWidget {
@@ -6227,129 +5867,6 @@ class _CommentBubble extends StatelessWidget {
       ),
     );
   }
-}
-
-// ─── Card animal employé (grille, lecture seule) ──────────────────────────────
-
-class _EmployeAnimalCard extends StatelessWidget {
-  final Map<String, dynamic> data;
-  final String eleveurUid;
-  final bool canEdit;
-  final Set<String> perms;
-  const _EmployeAnimalCard({required this.data, required this.eleveurUid, this.canEdit = false, this.perms = const {}});
-
-  @override
-  Widget build(BuildContext context) {
-    final photoUrl  = data['photo_url']  as String?;
-    final nom       = data['nom']        as String? ?? 'Sans nom';
-    final espece    = data['espece']     as String? ?? '';
-    final race      = data['race']       as String? ?? '';
-    final sexe      = data['sexe']       as String? ?? '';
-    final color     = speciesColor(espece);
-    final isRepro   = data['reproducteur'] == true;
-    final hasPortee = (data['portee_id']  as String? ?? '').isNotEmpty;
-    final animalId  = data['id']?.toString();
-
-    return GestureDetector(
-      onTap: animalId == null ? null : () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => AnimalFichePage(
-          animalId: animalId,
-          readOnly: !canEdit,
-          eleveurUidOverride: canEdit ? eleveurUid : null,
-          showReproTab: true,
-          employePerms: perms.isNotEmpty ? perms : null,
-        ),
-      )),
-      child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 3))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          child: AspectRatio(
-            aspectRatio: 1.0,
-            child: Stack(children: [
-              Positioned.fill(
-                child: photoUrl != null
-                    ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover)
-                    : Container(
-                        color: color.withOpacity(0.12),
-                        child: Center(child: speciesIcon(espece, 44, color)),
-                      ),
-              ),
-              if (isRepro)
-                Positioned(
-                  top: 6, right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(color: Color(0xFFFFA000), shape: BoxShape.circle),
-                    child: const Icon(Icons.star, color: Colors.white, size: 11),
-                  ),
-                ),
-              if (hasPortee)
-                Positioned(
-                  top: 6, left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0C5C6C),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('Portée',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 8,
-                            color: Colors.white, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-            ]),
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(nom,
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 13, color: Color(0xFF1F2A2E)),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-              if (race.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(race,
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              ],
-              const Spacer(),
-              Wrap(spacing: 4, runSpacing: 4, children: [
-                _AnimalBadge(text: speciesLabel(espece), color: color),
-                if (sexe == 'male')    _AnimalBadge(text: '♂', color: const Color(0xFF1D4ED8)),
-                if (sexe == 'femelle') _AnimalBadge(text: '♀', color: Colors.pinkAccent),
-              ]),
-            ]),
-          ),
-        ),
-      ]),
-      ),
-    );
-  }
-}
-
-class _AnimalBadge extends StatelessWidget {
-  final String text;
-  final Color color;
-  const _AnimalBadge({required this.text, required this.color});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-    decoration: BoxDecoration(
-      color: color.withOpacity(0.12),
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: Text(text, style: TextStyle(fontFamily: 'Galey', fontSize: 9,
-        color: color, fontWeight: FontWeight.w700)),
-  );
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────

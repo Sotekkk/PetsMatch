@@ -57,10 +57,25 @@ Widget speciesIcon(String espece, double size, Color color) {
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
+/// Vue employé (Mes employeurs) : les animaux de l'élevage de l'employeur,
+/// même page que l'éleveur, actions limitées par les autorisations.
+/// Céder, déclarer un décès, supprimer, annonces, profil public : jamais.
+class EmployeurAnimauxContexte {
+  final String uid;
+  final String? profileId;
+  final Set<String> perms;
+  const EmployeurAnimauxContexte({required this.uid, this.profileId, this.perms = const {}});
+}
+
 class MesAnimauxPage extends StatefulWidget {
   /// 0 = Présents, 1 = Cédés, 2 = Suivi cessions, 3 = Décédés
+  /// (vue employé : 0 = Présents, 1 = Cédés, 2 = Décédés — pas de Suivi).
   final int initialTab;
-  const MesAnimauxPage({super.key, this.initialTab = 0});
+  final EmployeurAnimauxContexte? employeur;
+  /// Intégrée dans une autre page (onglet « Animaux » de Mes employeurs) :
+  /// barre d'outils claire au lieu de l'AppBar principale.
+  final bool embedded;
+  const MesAnimauxPage({super.key, this.initialTab = 0, this.employeur, this.embedded = false});
   @override
   State<MesAnimauxPage> createState() => _MesAnimauxPageState();
 }
@@ -121,11 +136,17 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   static const _green = Color(0xFF6E9E57);
   static const _teal  = Color(0xFF0C5C6C);
 
+  EmployeurAnimauxContexte? get _emp => widget.employeur;
+  bool get _estEmploye => _emp != null;
+  /// Autorisation employé (toujours vrai pour l'éleveur lui-même).
+  bool _peut(String perm) => _emp == null || _emp!.perms.contains(perm);
+  int get _idxDecedes => _estEmploye ? 2 : 3;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this,
-        initialIndex: widget.initialTab.clamp(0, 3));
+    _tabController = TabController(length: _estEmploye ? 3 : 4, vsync: this,
+        initialIndex: widget.initialTab.clamp(0, _estEmploye ? 2 : 3));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() { _selectMode = false; _selectedIds.clear(); });
@@ -164,15 +185,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_animauxData.isEmpty) setState(() => _loading = true);
     try {
       final supa = Supabase.instance.client;
-      final activeProfileId = User_Info.activeProfileId;
+      final activeProfileId = _emp != null ? (_emp!.profileId ?? '') : User_Info.activeProfileId;
 
       // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
       // _uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
       // mais la ligne user_profiles du profil emprunté (activeProfileId)
       // reste celle du gérant. Sans ça, "Mes Animaux" resterait scopé sur
       // le compte personnel du cogérant (0 animal trouvé).
-      String ownerUid = _uid!;
-      if (activeProfileId.isNotEmpty) {
+      String ownerUid = _emp?.uid ?? _uid!;
+      if (_emp == null && activeProfileId.isNotEmpty) {
         final ownerRow = await supa.from('user_profiles_complet').select('uid').eq('id', activeProfileId).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? _uid!;
       }
@@ -181,7 +202,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       // Vérifie si la migration V2.05 a été jouée (au moins une ligne avec profile_id_proprio)
       // → si oui, on filtre par profil ; si non, on retombe sur uid_proprio (rétrocompat)
       List ownRows;
-      if (activeProfileId.isNotEmpty) {
+      if (_estEmploye) {
+        // Vue employé : STRICTEMENT le profil de l'élevage employeur
+        // (profile_id_proprio) — jamais tout le compte, qui peut porter
+        // d'autres profils (particulier, pension, autre élevage…).
+        ownRows = activeProfileId.isEmpty ? [] : await supa.from('animaux_proprietes')
+            .select('animal_id, date_fin, role_proprio')
+            .eq('uid_proprio', ownerUid)
+            .eq('profile_id_proprio', activeProfileId)
+            .eq('statut', 'actif');
+      } else if (activeProfileId.isNotEmpty) {
         final check = await supa.from('animaux_proprietes')
             .select('animal_id')
             .eq('uid_proprio', ownerUid)
@@ -336,8 +366,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       // Animaux passés par le registre mouvements (re-cédés — ne sont plus uid_eleveur ni uid_acquereur)
       final existingIds = animaux.map((a) => a['id'] as String? ?? '').toSet();
       try {
-        final mvts = await supa.from('registre_mouvements')
+        var qMvts = supa.from('registre_mouvements')
             .select('animal_id').eq('uid_eleveur', ownerUid);
+        // Vue employé : registre du seul profil élevage de l'employeur.
+        if (_estEmploye) qMvts = qMvts.eq('eleveur_profile_id', activeProfileId);
+        final mvts = await qMvts;
         final mvtIds = (mvts as List)
             .map((m) => m['animal_id'] as String? ?? '')
             .where((id) => id.isNotEmpty && !existingIds.contains(id))
@@ -1017,15 +1050,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   }
 
   Future<void> _openFilterSheet() async {
-    switch (_tabController.index) {
-      case 0:
-        await _openPresentsFilterSheet();
-        break;
-      case 3:
-        await _openDecedesFilterSheet();
-        break;
-      default:
-        await _openAnciensFilterSheet();
+    final i = _tabController.index;
+    if (i == 0) {
+      await _openPresentsFilterSheet();
+    } else if (i == _idxDecedes) {
+      await _openDecedesFilterSheet();
+    } else {
+      await _openAnciensFilterSheet();
     }
   }
 
@@ -1045,26 +1076,34 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     final isPresents = _tabController.index == 0;
     final nbPresents = _nbPresents;
 
+    final integree = widget.embedded;
+    final fg = integree ? _teal : Colors.white;
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7F7),
       appBar: AppBar(
         titleSpacing: 16,
+        automaticallyImplyLeading: !integree,
+        toolbarHeight: integree ? 48 : null,
         title: _selectMode
             ? Text('${_selectedIds.length} sélectionné${_selectedIds.length != 1 ? 's' : ''}',
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))
-            : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                const Text('Mes animaux', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-                if (!_loading)
-                  Text('$nbPresents présent${nbPresents > 1 ? 's' : ''} · ${_animauxData.length} au total',
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
-              ]),
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: integree ? 15 : null))
+            : integree
+                ? Text(_loading ? '' : '$nbPresents présent${nbPresents > 1 ? 's' : ''} · ${_animauxData.length} au total',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)))
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Mes animaux', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+                    if (!_loading)
+                      Text('$nbPresents présent${nbPresents > 1 ? 's' : ''} · ${_animauxData.length} au total',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
+                  ]),
+        backgroundColor: integree ? Colors.white : _teal,
+        foregroundColor: fg,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         actions: _selectMode ? [
           IconButton(
             icon: Icon(Icons.group_work_outlined,
-                color: _selectedIds.isNotEmpty ? Colors.white : Colors.white38),
+                color: _selectedIds.isNotEmpty ? fg : fg.withValues(alpha: 0.38)),
             onPressed: _selectedIds.isNotEmpty ? _regrouperEnPortee : null,
             tooltip: 'Regrouper en portée',
           ),
@@ -1074,24 +1113,26 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             tooltip: 'Annuler',
           ),
         ] : [
-          if (isPresents)
+          if (isPresents && _peut('write_animaux'))
             IconButton(
               icon: const Icon(Icons.checklist_outlined),
               onPressed: () => setState(() { _selectMode = true; _selectedIds.clear(); }),
               tooltip: 'Sélectionner',
             ),
-          if (_uid != null)
+          // Scanner : ouvre la fiche avec les droits de l'éleveur → pas en vue employé.
+          if (_uid != null && !_estEmploye)
             IconButton(
               icon: const Icon(Icons.sensors_rounded),
               onPressed: () => ChipScannerService.scanFromElevage(context, _ownerUid ?? _uid),
               tooltip: 'Scanner une puce',
             ),
+          if (_peut('write_animaux'))
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: TextButton(
               onPressed: () => _showAddSheet(context),
-              style: TextButton.styleFrom(foregroundColor: Colors.white,
-                  backgroundColor: Colors.white.withValues(alpha: 0.14),
+              style: TextButton.styleFrom(foregroundColor: fg,
+                  backgroundColor: fg.withValues(alpha: integree ? 0.08 : 0.14),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
               child: const Text('+ Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
@@ -1110,7 +1151,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             tabs: [
               Tab(text: _loading ? 'Présents' : 'Présents · $nbPresents'),
               Tab(text: _loading ? 'Cédés' : 'Cédés · $_nbCedes'),
-              const Tab(text: 'Suivi'),
+              if (!_estEmploye) const Tab(text: 'Suivi'),
               Tab(text: _loading ? 'Décédés' : 'Décédés · $_nbDecedes'),
             ],
             indicatorColor: _teal,
@@ -1127,7 +1168,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           children: [
             _buildPresentsTab(),
             _buildAnciensTab(),
-            SuiviCessionsTab(
+            if (!_estEmploye) SuiviCessionsTab(
               uid: _ownerUid ?? _uid,
               myUid: _uid,
               animaux: _animauxData,
@@ -1369,11 +1410,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               if (_selectedIds.contains(id)) { _selectedIds.remove(id); } else { _selectedIds.add(id); }
             })
           : () => _openFiche(context, id, data: data),
-      onDelete: cede || id.isEmpty ? null : () => _deleteAnimal(id),
-      onToggleReproducteur: cede || id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
-      onToggleRetraite: cede || id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
+      onDelete: cede || id.isEmpty || _estEmploye ? null : () => _deleteAnimal(id),
+      onToggleReproducteur: cede || id.isEmpty || !_peut('write_animaux') ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
+      onToggleRetraite: cede || id.isEmpty || !_peut('write_animaux') ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
       reproPublic: data['reproducteur_public'] == true,
-      onToggleReproPublic: cede || id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
+      onToggleReproPublic: cede || id.isEmpty || _estEmploye ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
     );
   }
 
@@ -1419,8 +1460,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           ? _etatVide('Aucun reproducteur', 'Ouvrez le menu d’un animal pour le marquer comme reproducteur.')
           : bebes
               ? _etatVide('Aucun bébé présent', 'Les portées déjà parties se retrouvent dans Cédés › Bébés.')
-              : _etatVide('Aucun animal présent', 'Ajoutez votre premier animal.',
-                  onReset: () => _showAddSheet(context), resetLabel: 'Ajouter un animal');
+              : _peut('write_animaux')
+                  ? _etatVide('Aucun animal présent', 'Ajoutez votre premier animal.',
+                      onReset: () => _showAddSheet(context), resetLabel: 'Ajouter un animal')
+                  : _etatVide('Aucun animal présent', '');
     }
 
     if (bebes) {
@@ -1507,10 +1550,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                       }
                     },
                     itemBuilder: (_) => [
-                      if (!cedes) const PopupMenuItem(value: 'modifier', child: Text('Modifier les informations de la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!cedes && _peut('write_repro')) const PopupMenuItem(value: 'modifier', child: Text('Modifier les informations de la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
                       const PopupMenuItem(value: 'poids', child: Text('Courbes de poids', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
-                      if (!cedes) const PopupMenuItem(value: 'soin', child: Text('Soin pour toute la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
-                      if (!cedes) const PopupMenuItem(value: 'annonce', child: Text('Créer une annonce', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!cedes && _peut('write_sante')) const PopupMenuItem(value: 'soin', child: Text('Soin pour toute la portée', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      if (!cedes && !_estEmploye) const PopupMenuItem(value: 'annonce', child: Text('Créer une annonce', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
                     ],
                   ),
                 ]),
@@ -1650,7 +1693,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             data: data,
             vertical: vertical,
             onTap: () => _openFiche(context, data['id'] as String?, data: data),
-            onDelete: (data['id'] as String? ?? '').isEmpty ? null : () => _deleteAnimal(data['id'] as String),
+            onDelete: (data['id'] as String? ?? '').isEmpty || _estEmploye ? null : () => _deleteAnimal(data['id'] as String),
           ),
       ]),
     );
@@ -1731,7 +1774,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             data: data,
             vertical: vertical,
             onTap: () => _openFiche(context, data['id'] as String?, data: data),
-            onDelete: (data['id'] as String? ?? '').isEmpty ? null : () => _deleteAnimal(data['id'] as String),
+            onDelete: (data['id'] as String? ?? '').isEmpty || _estEmploye ? null : () => _deleteAnimal(data['id'] as String),
           ),
       ]),
     );
@@ -1940,6 +1983,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         // lieu de celui de l'élevage (animaux_proprietes.profile_id_proprio
         // reste, lui, déjà correct — c'est activeProfileId directement).
         eleveurUidOverride: _ownerUid,
+        // Vue employé : onglets en écriture selon ses autorisations,
+        // création rattachée au profil de l'élevage de l'employeur.
+        employePerms: _emp?.perms,
+        proprioProfileIdOverride: _emp?.profileId,
+        showReproTab: _estEmploye,
       ),
     )).then((_) => _loadAnimaux());
   }
@@ -1982,7 +2030,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             onTap: () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(
-                builder: (_) => const PorteeFormPage(),
+                builder: (_) => PorteeFormPage(eleveurUidOverride: _emp?.uid, profileIdOverride: _emp?.profileId),
               )).then((created) {
                 if (created == true) _loadAnimaux();
               });

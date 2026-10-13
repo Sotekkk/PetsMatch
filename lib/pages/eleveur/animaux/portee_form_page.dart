@@ -41,7 +41,11 @@ const _kTypesPoil = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras']
 // ─── Page formulaire portée ───────────────────────────────────────────────────
 
 class PorteeFormPage extends StatefulWidget {
-  const PorteeFormPage({super.key});
+  /// Vue employé (Mes employeurs) : la portée est créée pour l'élevage de
+  /// l'employeur (uid + profil), pas pour le profil actif de l'employé.
+  final String? eleveurUidOverride;
+  final String? profileIdOverride;
+  const PorteeFormPage({super.key, this.eleveurUidOverride, this.profileIdOverride});
   @override
   State<PorteeFormPage> createState() => _PorteeFormPageState();
 }
@@ -102,7 +106,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
   }
 
   Future<void> _load() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = widget.eleveurUidOverride ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _loading = false); return; }
 
     // Races
@@ -148,7 +152,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
 
     // Animaux existants de l'éleveur
     try {
-      final pid = User_Info.activeProfileId;
+      final pid = widget.profileIdOverride ?? User_Info.activeProfileId;
       var q = _supa
           .from('animaux')
           .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
@@ -314,8 +318,8 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       // uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
       // mais la ligne user_profiles du profil emprunté (activeProfileId)
       // reste celle du gérant.
-      String ownerUid = uid;
-      if (User_Info.activeProfileId.isNotEmpty) {
+      String ownerUid = widget.eleveurUidOverride ?? uid;
+      if (widget.eleveurUidOverride == null && User_Info.activeProfileId.isNotEmpty) {
         final ownerRow = await _supa.from('user_profiles_complet')
             .select('uid').eq('id', User_Info.activeProfileId).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? uid;
@@ -337,7 +341,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       }
       if (mounted) setState(() => _uploadingPhotoIdx = null);
 
-      final activeProfileId = User_Info.activeProfileId;
+      final activeProfileId = widget.profileIdOverride ?? User_Info.activeProfileId;
       final rows = _animaux.asMap().entries.map((e) => {
         'id':                  '${porteeId}_${e.key}',
         'uid_eleveur':         ownerUid,
@@ -398,7 +402,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       try {
         for (final entry in _animaux.asMap().entries) {
           await PlanningService.triggerAutoProtocoles(
-            uid: uid,
+            uid: ownerUid,
             declencheur: 'naissance',
             animalId: '${porteeId}_${entry.key}',
             dateEvenement: _dateNaissance!,

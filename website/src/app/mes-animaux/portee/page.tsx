@@ -1,5 +1,6 @@
 'use client';
 
+import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -73,6 +74,22 @@ export default function PorteePage() {
   const activeProfileId = useActiveProfile();
   const router   = useRouter();
 
+  // Vue employé : ?employeur=<eleveur_profile_id> — portée créée pour le
+  // profil élevage de l'employeur (uid + profile_id), avec « Modifier les
+  // animaux ». Lu via window (pas de useSearchParams : page sans Suspense).
+  const [employeurParam, setEmployeurParam] = useState('');
+  const [employeur, setEmployeur] = useState<EmployeurContexte | null>(null);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get('employeur') ?? '';
+    if (!p || !user) return;
+    let annule = false;
+    resoudreEmployeur(p, user.uid).then(c => { if (!annule) { setEmployeurParam(p); setEmployeur(c); } });
+    return () => { annule = true; };
+  }, [user]);
+  /** Propriétaire : élevage de l'employeur (vue employé) ou profil actif. */
+  const proprioUid = employeur?.uid ?? user?.uid ?? '';
+  const proprioProfileId = employeur ? employeur.profileId : activeProfileId;
+
   // Champs communs
   const [espece,        setEspece]        = useState('chien');
   const [race,          setRace]          = useState('');
@@ -129,11 +146,11 @@ export default function PorteePage() {
     setLoadingMales(true);
     let qm = supabase.from('animaux')
       .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
-      .eq('uid_eleveur', user.uid)
+      .eq('uid_eleveur', proprioUid)
       .eq('espece', espece)
       .eq('sexe', 'male').eq('reproducteur', true)
       .or('statut.is.null,statut.eq.present');
-    if (activeProfileId) qm = qm.eq('profile_id', activeProfileId) as typeof qm;
+    if (proprioProfileId) qm = qm.eq('profile_id', proprioProfileId) as typeof qm;
     const { data } = await qm.order('nom');
     // Reproducteurs actifs uniquement (lib/reproducteurs) — un parent extérieur se saisit
     setMyMales(((data ?? []) as (ExistingAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
@@ -145,11 +162,11 @@ export default function PorteePage() {
     setLoadingFemelles(true);
     let qf = supabase.from('animaux')
       .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
-      .eq('uid_eleveur', user.uid)
+      .eq('uid_eleveur', proprioUid)
       .eq('espece', espece)
       .eq('sexe', 'femelle').eq('reproducteur', true)
       .or('statut.is.null,statut.eq.present');
-    if (activeProfileId) qf = qf.eq('profile_id', activeProfileId) as typeof qf;
+    if (proprioProfileId) qf = qf.eq('profile_id', proprioProfileId) as typeof qf;
     const { data } = await qf.order('nom');
     setMyFemelles(((data ?? []) as (ExistingAnimal & Parameters<typeof estReproducteurEligible>[0])[]).filter(estReproducteurEligible));
     setLoadingFemelles(false);
@@ -221,12 +238,17 @@ export default function PorteePage() {
     if (!dateNaissance) { setError('La date de naissance est obligatoire'); return; }
     if (!user) return;
     setError('');
+    if (employeurParam && !employeur?.perms.includes('write_animaux')) {
+      setError("Vous n'avez pas l'autorisation d'ajouter des animaux pour cet élevage.");
+      return;
+    }
     setSaving(true);
     try {
       const porteeId = `portee_${Date.now()}`;
       const rows = animaux.map((a, i) => ({
         id:                  `${porteeId}_${i}`,
-        uid_eleveur:         user.uid,
+        uid_eleveur:         proprioUid,
+        ...(proprioProfileId ? { profile_id: proprioProfileId } : {}),
         portee_id:           porteeId,
         espece,
         race,
@@ -245,8 +267,8 @@ export default function PorteePage() {
         date_naissance:      dateNaissance                  || null,
         date_entree:         dateNaissance            || null,
         provenance_qualite:  'naissance',
-        provenance_nom:      userData?.nameElevage    || null,
-        provenance_adresse:  [userData?.rueElevage, userData?.villeElevage].filter(Boolean).join(', ') || null,
+        provenance_nom:      employeur ? employeur.nom : (userData?.nameElevage || null),
+        provenance_adresse:  employeur ? null : ([userData?.rueElevage, userData?.villeElevage].filter(Boolean).join(', ') || null),
         statut:              'present',
         description:         description.trim()      || null,
         pedigree,
@@ -264,17 +286,29 @@ export default function PorteePage() {
       const { error: err } = await supabase.from('animaux').upsert(rows);
       if (err) throw err;
 
+      // Ligne de propriété (profil élevage) — sans elle la portée n'apparaît
+      // pas dans « Mes animaux », filtré par animaux_proprietes.profile_id_proprio
+      // (même pattern que mes-animaux/ajouter et l'appli portee_form_page).
+      try {
+        await supabase.from('animaux_proprietes').upsert(rows.map(r => ({
+          animal_id:   r.id,
+          uid_proprio: proprioUid,
+          date_debut:  dateNaissance || new Date().toISOString().slice(0, 10),
+          ...(proprioProfileId ? { profile_id_proprio: proprioProfileId } : {}),
+        })), { onConflict: 'animal_id,uid_proprio' });
+      } catch { /* ignore */ }
+
       // Protocoles automatiques pour chaque nouveau-né
       const dateNaissanceDate = new Date(dateNaissance);
       for (let i = 0; i < animaux.length; i++) {
         triggerAutoProtocoles({
-          uid: user.uid, declencheur: 'naissance',
+          uid: proprioUid, declencheur: 'naissance',
           animalId: `${porteeId}_${i}`,
           dateEvenement: dateNaissanceDate, espece,
         }).catch(() => {});
       }
 
-      router.push('/mes-animaux?portee=1');
+      router.push(employeurParam ? `/mes-animaux?employeur=${encodeURIComponent(employeurParam)}&portee=1` : '/mes-animaux?portee=1');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde');
     } finally {

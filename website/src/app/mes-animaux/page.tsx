@@ -1,5 +1,6 @@
 'use client';
 
+import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { miseBasDeReference, FILTRE_GESTATIONS_MISE_BAS, COLONNES_GESTATIONS_MISE_BAS } from '@/lib/chaleurs-etat';
 import { estEnChaleurs, chaleursAVerifier } from '@/lib/chaleurs-etat';
 import { Suspense, useEffect, useRef, useState, useCallback } from 'react';
@@ -275,14 +276,35 @@ function MesAnimauxPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const isEleveur = userData?.isElevage === true;
+  // Vue employé (Mes employeurs) : /mes-animaux?employeur=<eleveur_profile_id>.
+  // Animaux du SEUL profil élevage de l'employeur (profile_id_proprio), actions
+  // selon les autorisations ; céder, supprimer, annonces, profil public : jamais.
+  // Miroir appli : MesAnimauxPage(employeur: EmployeurAnimauxContexte).
+  const employeurParam = searchParams.get('employeur') ?? '';
+  const estEmploye = !!employeurParam;
+  const [employeur, setEmployeur] = useState<EmployeurContexte | null>(null);
+  const [employeurPret, setEmployeurPret] = useState(!employeurParam);
+  useEffect(() => {
+    if (!employeurParam || !user) return;
+    let annule = false;
+    resoudreEmployeur(employeurParam, user.uid)
+      .then(c => { if (!annule) { setEmployeur(c); setEmployeurPret(true); } })
+      .catch(() => { if (!annule) setEmployeurPret(true); });
+    return () => { annule = true; };
+  }, [employeurParam, user]);
+  const peut = (perm: string) => !estEmploye || !!employeur?.perms.includes(perm);
+  /** Profil propriétaire affiché : profil actif, ou profil élevage de l'employeur. */
+  const profilProprio: string | null = estEmploye ? (employeur?.profileId ?? null) : (activeProfileId ?? null);
+  const qsEmployeur = estEmploye ? `?employeur=${encodeURIComponent(employeurParam)}` : '';
+
+  const isEleveur = estEmploye || userData?.isElevage === true;
 
   // Filtre restauré depuis l'URL (?tab=&sub=) pour que la flèche "retour" depuis
   // la fiche d'un animal retrouve le même filtre au lieu de repartir à zéro.
   const tabParam = searchParams.get('tab');
   const initialTab: 'presents' | 'anciens' | 'suivi' | 'decedes' =
     tabParam === 'anciens' ? 'anciens'
-      : tabParam === 'suivi' ? 'suivi'
+      : tabParam === 'suivi' && !searchParams.get('employeur') ? 'suivi'
       : tabParam === 'decedes' ? 'decedes'
       : 'presents';
   const initialSub = searchParams.get('sub');
@@ -317,13 +339,14 @@ function MesAnimauxPageInner() {
   // animal restaure le bon filtre.
   useEffect(() => {
     const params = new URLSearchParams();
+    if (employeurParam) params.set('employeur', employeurParam);
     if (tab !== 'presents') params.set('tab', tab);
     if (presentsSubTab !== 'tous') params.set('sub', presentsSubTab);
     if (vueBebes && selectedPortee) params.set('portee', selectedPortee);
     if (tab === 'anciens' && cedesSubTab === 'bebes') params.set('cedes', 'bebes');
     const qs = params.toString();
     router.replace(qs ? `/mes-animaux?${qs}` : '/mes-animaux', { scroll: false });
-  }, [tab, presentsSubTab, selectedPortee, cedesSubTab, vueBebes, router]);
+  }, [tab, presentsSubTab, selectedPortee, cedesSubTab, vueBebes, router, employeurParam]);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -361,6 +384,7 @@ function MesAnimauxPageInner() {
   const [ownerUid, setOwnerUid] = useState<string | null>(null);
   useEffect(() => {
     if (!user) { setOwnerUid(null); return; }
+    if (estEmploye) { setOwnerUid(employeur?.uid ?? null); return; }
     let cancelled = false;
     (async () => {
       let resolved = user.uid;
@@ -371,7 +395,7 @@ function MesAnimauxPageInner() {
       if (!cancelled) setOwnerUid(resolved);
     })();
     return () => { cancelled = true; };
-  }, [user, activeProfileId]);
+  }, [user, activeProfileId, estEmploye, employeur]);
 
   // Filtres et position conservés au retour depuis une fiche (onglet, catégorie
   // et portée sont déjà dans l'URL ; le reste dans la session du navigateur).
@@ -429,7 +453,7 @@ function MesAnimauxPageInner() {
 
   // Invitations de co-propriété reçues (statut='invite')
   useEffect(() => {
-    if (!user) return;
+    if (!user || estEmploye) return;
     let cancelled = false;
     (async () => {
       const { data } = await supabase.from('animaux_proprietes')
@@ -440,7 +464,7 @@ function MesAnimauxPageInner() {
       if (!cancelled) setInvitesCopro((an ?? []).map(a => ({ animal_id: a.id as string, nom: (a.nom as string) || 'un animal' })));
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, estEmploye]);
 
   useEffect(() => {
     if (!user || !isEleveur || !ownerUid) return;
@@ -456,17 +480,25 @@ function MesAnimauxPageInner() {
 
   useEffect(() => {
     // Attendre que l'auth ET le profil actif soient chargés avant de requêter
-    if (!user || loading) return;
+    if (!user || loading || !employeurPret) return;
     setFetching(true);
     let cancelled = false;
 
     async function loadAll() {
       const uid = user!.uid;
 
+      // Vue employé : uniquement le profil élevage de l'employeur.
+      if (estEmploye && !employeur) {
+        if (!cancelled) { setAnimaux([]); setCessionEnAttente(new Set()); setFetching(false); }
+        return;
+      }
+
       // uid réel du propriétaire du profil actif (résolu localement, sans
       // dépendre du state `ownerUid` pour éviter tout décalage de timing).
       let resolvedOwnerUid = uid;
-      if (activeProfileId) {
+      if (employeur) {
+        resolvedOwnerUid = employeur.uid;
+      } else if (activeProfileId) {
         const { data: ownerRow } = await supabase.from('user_profiles_complet')
           .select('uid').eq('id', activeProfileId).maybeSingle();
         resolvedOwnerUid = (ownerRow?.uid as string | undefined) ?? uid;
@@ -475,7 +507,16 @@ function MesAnimauxPageInner() {
       // Source : animaux_proprietes — filtré par profile_id_proprio (post-migration V2.05)
       // Vérifie d'abord si la migration a été jouée, sinon retombe sur uid_proprio
       let ownRows: { animal_id: string; date_fin: string | null; role_proprio?: string | null }[] = [];
-      if (activeProfileId) {
+      if (employeur) {
+        // Strict : profile_id_proprio de l'élevage employeur, jamais tout le compte.
+        const { data: byProfile } = await supabase
+          .from('animaux_proprietes')
+          .select('animal_id, date_fin, role_proprio')
+          .eq('uid_proprio', resolvedOwnerUid)
+          .eq('profile_id_proprio', employeur.profileId)
+          .eq('statut', 'actif');
+        ownRows = (byProfile ?? []) as typeof ownRows;
+      } else if (activeProfileId) {
         const { data: check } = await supabase
           .from('animaux_proprietes')
           .select('animal_id')
@@ -625,7 +666,7 @@ function MesAnimauxPageInner() {
 
     loadAll().catch(() => { if (!cancelled) setFetching(false); });
     return () => { cancelled = true; };
-  }, [user, loading, isEleveur, activeProfileId]);
+  }, [user, loading, isEleveur, activeProfileId, estEmploye, employeur, employeurPret]);
 
   useEffect(() => {
     if (fetching || scrollARestaurer.current == null) return;
@@ -841,15 +882,21 @@ function MesAnimauxPageInner() {
       {/* En-tête */}
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>
+          {estEmploye && (
+            <Link href="/mes-employeurs" className="text-sm text-[#0C5C6C] font-semibold hover:underline">← Mes employeurs</Link>
+          )}
           <h1 className="text-2xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Mes animaux
+            {estEmploye ? `Animaux — ${employeur?.nom ?? ''}` : 'Mes animaux'}
           </h1>
+          {estEmploye && employeurPret && !employeur && (
+            <p className="text-sm text-red-600 mt-1">Vous n&apos;êtes pas (ou plus) employé de cet élevage.</p>
+          )}
           <p className="text-gray-500 text-sm mt-1">
             {presents.length} présent{presents.length !== 1 ? 's' : ''} · {animaux.length} {animaux.length !== 1 ? 'animaux' : 'animal'} au total
           </p>
         </div>
         <div className="relative" ref={addMenuRef}>
-          {isEleveur ? (
+          {!peut('write_animaux') ? null : isEleveur ? (
             <>
               <button
                 onClick={() => setAddMenuOpen(v => !v)} aria-expanded={addMenuOpen}
@@ -861,11 +908,11 @@ function MesAnimauxPageInner() {
               </button>
               {addMenuOpen && (
                 <div className="absolute right-0 top-full mt-2 w-60 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-20 py-1">
-                  <Link href="/mes-animaux/ajouter" onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50">
+                  <Link href={`/mes-animaux/ajouter${qsEmployeur}`} onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50">
                     <p className="text-sm font-semibold text-[#1F2A2E]">Ajouter un animal</p>
                     <p className="text-xs text-gray-500">Fiche individuelle</p>
                   </Link>
-                  <Link href="/mes-animaux/portee" onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50 border-t border-gray-100">
+                  <Link href={`/mes-animaux/portee${qsEmployeur}`} onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50 border-t border-gray-100">
                     <p className="text-sm font-semibold text-[#1F2A2E]">Charger une portée</p>
                     <p className="text-xs text-gray-500">Plusieurs animaux d&apos;un coup</p>
                   </Link>
@@ -897,7 +944,7 @@ function MesAnimauxPageInner() {
       {/* Onglets (éleveur uniquement) */}
       {isEleveur && (
         <div className="flex gap-6 border-b border-gray-200 mb-4 overflow-x-auto" role="tablist">
-          {(['presents', 'anciens', 'suivi', 'decedes'] as const).map((t) => (
+          {(['presents', 'anciens', 'suivi', 'decedes'] as const).filter(t => !(estEmploye && t === 'suivi')).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t}
               onClick={() => { setTab(t); setFilterOpen(false); setSelectMode(false); setSelectedIds(new Set()); }}
               className={`py-3 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors ${
@@ -912,7 +959,7 @@ function MesAnimauxPageInner() {
         </div>
       )}
 
-      {tab === 'suivi' && isEleveur && user && (
+      {tab === 'suivi' && isEleveur && !estEmploye && user && (
         <SuiviCessionsTab
           animaux={animaux}
           uid={ownerUid ?? user.uid}
@@ -969,7 +1016,7 @@ function MesAnimauxPageInner() {
               activeFilterCount > 0 ? 'border-[#0C5C6C] text-[#0C5C6C] bg-[#E8F4F6]' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`}>
             Filtres{activeFilterCount > 0 && <span className="text-xs bg-[#0C5C6C] text-white rounded px-1.5">{activeFilterCount}</span>}
           </button>
-          {tab === 'presents' && (
+          {tab === 'presents' && peut('write_animaux') && (
             <button type="button" onClick={() => { setSelectMode(m => !m); setSelectedIds(new Set()); }}
               className="h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50">
               {selectMode ? 'Annuler la sélection' : 'Sélectionner'}
@@ -1079,10 +1126,10 @@ function MesAnimauxPageInner() {
                     )}
                     {isEleveur && !cedes && (
                       <MenuPortee actions={[
-                        { label: 'Modifier les informations de la portée', onClick: () => setEditPorteeGroup({ pid, members }) },
+                        ...(peut('write_repro') ? [{ label: 'Modifier les informations de la portée', onClick: () => setEditPorteeGroup({ pid, members }) }] : []),
                         { label: 'Courbes de poids', onClick: () => setPoidsPortee({ animals: animaux.filter(x => x.portee_id === pid), dn: first.date_naissance ?? null }) },
-                        { label: 'Soin pour toute la portée', onClick: () => setSoinPorteeAnimals(members) },
-                        { label: 'Créer une annonce', href: `/annonces/creer?portee_id=${pid}` },
+                        ...(peut('write_sante') ? [{ label: 'Soin pour toute la portée', onClick: () => setSoinPorteeAnimals(members) }] : []),
+                        ...(!estEmploye ? [{ label: 'Créer une annonce', href: `/annonces/creer?portee_id=${pid}` }] : []),
                       ]} />
                     )}
                     {cedes && (
@@ -1097,11 +1144,11 @@ function MesAnimauxPageInner() {
                       reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
                       chaleurFlag={!!chaleurFlags[a.id]} chaleurAVerifierFlag={!!chaleurAVerifierFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
                       selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
-                      peutModifier={isEleveur && !cede} onOuvrir={memoriserPosition}
-                      onDelete={selectMode || cede ? undefined : () => deleteAnimal(a.id)}
-                      onToggleReproducteur={isEleveur && !selectMode && !cede ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
-                      onToggleReproPublic={isEleveur && !selectMode && !cede ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
-                      onToggleRetraite={isEleveur && !selectMode && !cede ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />;
+                      peutModifier={isEleveur && !cede && peut('write_animaux')} onOuvrir={memoriserPosition}
+                      onDelete={selectMode || cede || estEmploye ? undefined : () => deleteAnimal(a.id)}
+                      onToggleReproducteur={isEleveur && !selectMode && !cede && peut('write_animaux') ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+                      onToggleReproPublic={isEleveur && !selectMode && !cede && !estEmploye ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
+                      onToggleRetraite={isEleveur && !selectMode && !cede && peut('write_animaux') ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />;
                   })}
                 </div>
               </section>
@@ -1117,13 +1164,13 @@ function MesAnimauxPageInner() {
             reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
             chaleurFlag={!!chaleurFlags[a.id]} chaleurAVerifierFlag={!!chaleurAVerifierFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
-            peutModifier={tab === 'presents'} onOuvrir={memoriserPosition}
-            onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
-            onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
-            onToggleReproPublic={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
-            onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
-            onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === (ownerUid ?? user?.uid) ? () => setCederAnimal(a) : undefined}
-            onTransferer={tab === 'presents' && !selectMode && a.uid_eleveur !== (ownerUid ?? user?.uid) && a.uid_acquereur === (ownerUid ?? user?.uid) ? () => setCederAnimal(a) : undefined} />)}
+            peutModifier={tab === 'presents' && peut('write_animaux')} onOuvrir={memoriserPosition}
+            onDelete={selectMode || estEmploye ? undefined : () => deleteAnimal(a.id)}
+            onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode && peut('write_animaux') ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+            onToggleReproPublic={isEleveur && tab === 'presents' && !selectMode && !estEmploye ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
+            onToggleRetraite={isEleveur && tab === 'presents' && !selectMode && peut('write_animaux') ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
+            onCeder={isEleveur && tab === 'presents' && !selectMode && !estEmploye && a.uid_eleveur === (ownerUid ?? user?.uid) ? () => setCederAnimal(a) : undefined}
+            onTransferer={tab === 'presents' && !selectMode && !estEmploye && a.uid_eleveur !== (ownerUid ?? user?.uid) && a.uid_acquereur === (ownerUid ?? user?.uid) ? () => setCederAnimal(a) : undefined} />)}
         </div>
       )}
       </>
@@ -1145,7 +1192,7 @@ function MesAnimauxPageInner() {
       )}
 
       {/* Liens admin éleveur */}
-      {isEleveur && (
+      {isEleveur && !estEmploye && (
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
           {([
             ['/elevage/registre-sanitaire', 'Registre sanitaire', 'Actes vétérinaires'],
@@ -1172,7 +1219,7 @@ function MesAnimauxPageInner() {
       <PorteeSoinModal
         animals={soinPorteeAnimals}
         uid={ownerUid ?? user?.uid ?? ''}
-        activeProfileId={activeProfileId ?? null}
+        activeProfileId={profilProprio}
         onClose={() => setSoinPorteeAnimals(null)}
       />
     )}
@@ -1192,7 +1239,7 @@ function MesAnimauxPageInner() {
         pid={editPorteeGroup.pid}
         members={editPorteeGroup.members}
         uid={ownerUid ?? user?.uid ?? ''}
-        activeProfileId={activeProfileId ?? null}
+        activeProfileId={profilProprio}
         onClose={() => setEditPorteeGroup(null)}
         onSaved={(fields) => {
           setAnimaux(prev => prev.map(a => a.portee_id === editPorteeGroup.pid ? { ...a, ...fields } as Animal : a));
