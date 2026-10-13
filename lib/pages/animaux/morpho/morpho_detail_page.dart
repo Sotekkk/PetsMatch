@@ -34,6 +34,10 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
   List<Map<String, dynamic>> _points = [];
   List<Map<String, dynamic>> _observations = [];
   List<Map<String, dynamic>> _mouvements = [];
+  List<Map<String, dynamic>> _exercices = [];
+  /// null = ancien suivi ; brouillon | finalise (Soins & Rééducation).
+  late String? _statut = widget.suivi['statut']?.toString();
+  bool _finalisant = false;
   late String _vue = vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien').first.$1;
   Map<String, dynamic> _animal = {};
   Map<String, dynamic> _pro = {};
@@ -68,6 +72,10 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
         _mouvements = List<Map<String, dynamic>>.from(results[4] as List);
         _loading = false;
       });
+      try {
+        final ex = await _supa.from('suivis_morpho_exercices').select().eq('suivi_id', _suiviId).order('ordre');
+        if (mounted) setState(() => _exercices = List<Map<String, dynamic>>.from(ex as List));
+      } catch (_) {} // migration_soins_reeducation.sql pas encore passée
       unawaited(_loadAnimalEtPro());
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -254,6 +262,41 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
     }
   }
 
+  /// Brouillon : rien n'est visible du propriétaire ni envoyable avant
+  /// finalisation (le PDF reste consultable par le pro en aperçu).
+  bool get _brouillon => _statut == 'brouillon';
+  bool get _sansAnatomie => widget.suivi['avec_anatomie'] == false;
+
+  Future<void> _finaliser() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Finaliser le compte rendu ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Il pourra ensuite être partagé. Une correction restera possible : la version précédente sera conservée.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Finaliser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: kMorphoTeal))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _finalisant = true);
+    try {
+      await _supa.from('suivis_morpho').update({
+        'statut': 'finalise', 'finalise_a': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', _suiviId);
+      widget.suivi['statut'] = 'finalise';
+      if (mounted) setState(() { _statut = 'finalise'; _finalisant = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _finalisant = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+  }
+
   Future<void> _supprimer() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -306,7 +349,7 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       backgroundColor: kMorphoBg,
       appBar: AppBar(
         backgroundColor: kMorphoTeal, foregroundColor: Colors.white, elevation: 0,
-        title: Text(labelTypeSuivi(s['type_suivi']?.toString()),
+        title: Text(source == 'professionnel' ? titreCompteRendu(s['type_suivi']?.toString()) : labelTypeSuivi(s['type_suivi']?.toString()),
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
         actions: [
           if (!_loading)
@@ -321,9 +364,10 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
               onSelected: (v) { if (v == 'modifier') _modifier(); if (v == 'supprimer') _supprimer(); },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'modifier', child: Text('Modifier', style: TextStyle(fontFamily: 'Galey'))),
-                PopupMenuItem(value: 'supprimer', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+              itemBuilder: (_) => [
+                PopupMenuItem(value: 'modifier', child: Text(_statut == 'finalise' ? 'Corriger' : 'Modifier', style: const TextStyle(fontFamily: 'Galey'))),
+                if (_statut != 'finalise')
+                  const PopupMenuItem(value: 'supprimer', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
               ],
             ),
         ],
@@ -354,6 +398,9 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                 // libre pouvait contenir un autre nom, ex. le profil élevage).
                 if ((s['professionnel_nom'] as String?)?.isNotEmpty == true && (_pro['nom'] as String?)?.isNotEmpty != true)
                   _infoLine('Professionnel', s['professionnel_nom']),
+                if ((s['intitule'] as String?)?.isNotEmpty == true) _infoLine('Intitulé', s['intitule']),
+                if (s['lieu'] == 'cabinet' || s['lieu'] == 'exterieur')
+                  _infoLine('Lieu', s['lieu'] == 'cabinet' ? 'Cabinet' : 'Intervention extérieure'),
                 if ((s['motif'] as String?)?.isNotEmpty == true) _infoLine('Motif', s['motif']),
                 if (s['poids'] != null) _infoLine('Poids', '${s['poids']} kg'),
                 if (s['taille'] != null) _infoLine('Taille', '${s['taille']} cm'),
@@ -397,7 +444,29 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                   ),
               ])),
 
-              if (!widget.readOnly && s['animal_id'] != null) ...[
+              if (!widget.readOnly && _brouillon) ...[
+                const SizedBox(height: 10),
+                _card(child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Brouillon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: kMorphoDark)),
+                    const SizedBox(height: 2),
+                    Text('Non visible du client. Finalisez-le pour pouvoir le partager.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                  ])),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _finalisant ? null : _finaliser,
+                    style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    child: _finalisant
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Finaliser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+                  ),
+                ])),
+              ],
+
+              if (!widget.readOnly && !_brouillon && s['animal_id'] != null) ...[
                 const SizedBox(height: 10),
                 _card(child: _notifieA != null
                     ? Row(children: [
@@ -428,7 +497,7 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
               ],
 
               // Client hors application (suivi libre) : envoi WhatsApp / e-mail.
-              if (!widget.readOnly && s['animal_id'] == null) ...[
+              if (!widget.readOnly && !_brouillon && s['animal_id'] == null) ...[
                 const SizedBox(height: 10),
                 _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
@@ -475,6 +544,32 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                 ])),
               ],
 
+              ..._sectionsTexte(s),
+
+              if (_exercices.isNotEmpty) ...[
+                _sectionTitle('Conseils et exercices'),
+                for (final e in _exercices)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _card(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(e['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
+                        for (final champ in [('description', ''), ('consignes', 'Consignes'), ('frequence', 'Fréquence'), ('duree', 'Durée'), ('precautions', 'Précautions')])
+                          if ((e[champ.$1] as String?)?.trim().isNotEmpty == true)
+                            Padding(padding: const EdgeInsets.only(top: 3),
+                                child: champ.$2.isEmpty
+                                    ? Text(e[champ.$1], style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: kMorphoDark))
+                                    : _infoLine(champ.$2, e[champ.$1])),
+                      ])),
+                      if ((e['photo_url'] as String?)?.isNotEmpty == true) ...[
+                        const SizedBox(width: 10),
+                        ClipRRect(borderRadius: BorderRadius.circular(10),
+                            child: Image.network(e['photo_url'], width: 70, height: 70, fit: BoxFit.cover)),
+                      ],
+                    ])),
+                  ),
+              ],
+
               if (kVuesPhotos.any((v) => _photoForVue(v.$1) != null)) ...[
                 _sectionTitle('Photos de référence'),
                 _card(child: Wrap(spacing: 10, runSpacing: 10, children: [
@@ -508,8 +603,8 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                   ),
               ],
 
-              if (_points.isNotEmpty) ...[
-                _sectionTitle('Silhouette'),
+              if (_points.isNotEmpty && !_sansAnatomie) ...[
+                _sectionTitle('Bilan anatomique'),
                 _card(child: Column(children: [
                   Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                     for (final v in vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien'))
@@ -574,6 +669,33 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
               ],
             ]),
     );
+  }
+
+  /// Sections rédigées du compte rendu de séance (vides : non affichées).
+  List<Widget> _sectionsTexte(Map<String, dynamic> s) {
+    Widget bloc(String titre, String? texte) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _sectionTitle(titre),
+          _card(child: Text(texte!.trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kMorphoDark, height: 1.4))),
+        ]);
+    bool rempli(dynamic v) => (v as String?)?.trim().isNotEmpty == true;
+    final controle = DateTime.tryParse(s['prochain_controle']?.toString() ?? '');
+    return [
+      if (rempli(s['observations_bilan'])) bloc('Observations et bilan', s['observations_bilan']),
+      if (rempli(s['intervention'])) bloc('Intervention réalisée', s['intervention']),
+      if (rempli(s['suivi_recommande']) || s['orientation_veto'] == true || controle != null) ...[
+        _sectionTitle('Suivi recommandé'),
+        _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (rempli(s['suivi_recommande']))
+            Text(s['suivi_recommande'].toString().trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kMorphoDark, height: 1.4)),
+          if (s['orientation_veto'] == true)
+            Padding(padding: const EdgeInsets.only(top: 6),
+                child: _infoLine('Orientation', 'consultation vétérinaire conseillée')),
+          if (controle != null)
+            Padding(padding: const EdgeInsets.only(top: 6),
+                child: _infoLine('Contrôle conseillé', DateFormat('d MMMM yyyy', 'fr_FR').format(controle))),
+        ])),
+      ],
+    ];
   }
 
   void _showPointInfo(BuildContext context, String pointId) {

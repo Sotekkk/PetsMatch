@@ -80,8 +80,25 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   late String _vueSilhouette = vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien').first.$1;
   bool _loadingExisting = false;
 
+  // ── Compte rendu de séance (professionnel) — Soins & Rééducation ──────────
+  final _intituleCtrl = TextEditingController();
+  final _observationsBilanCtrl = TextEditingController();
+  final _interventionCtrl = TextEditingController();
+  final _suiviRecommandeCtrl = TextEditingController();
+  bool _orientationVeto = false;
+  String? _lieu; // cabinet | exterieur
+  /// « Ajouter un bilan anatomique » — facultatif. Désactivé : les points
+  /// déjà posés sont conservés mais n'apparaissent plus dans le compte rendu.
+  bool _avecAnatomie = false;
+  final List<_Exercice> _exercices = [];
+  /// null = ancien suivi / nouveau ; brouillon | finalise.
+  String? _statut;
+
   bool get _saisieLibre => widget.animalId == null;
   bool get _isEditing => widget.existingSuivi != null;
+  /// Séance d'un professionnel : formulaire de compte rendu complet.
+  bool get _modePro => widget.proProfileId != null;
+  bool get _dejaFinalise => _statut == 'finalise';
 
   @override
   void initState() {
@@ -90,7 +107,8 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       _prefillFromExisting();
     } else {
       if (widget.proNom != null) _professionnelCtrl.text = widget.proNom!;
-      if (widget.proNom == null && widget.proProfileId != null) _prefillPro();
+      if (_modePro) _typeSuivi = 'autre';
+      if (widget.proProfileId != null) _prefillPro();
       if (widget.animalId != null) _prefillAnimal();
     }
   }
@@ -100,12 +118,14 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   Future<void> _prefillPro() async {
     try {
       final p = await _supa.from('user_profiles_complet')
-          .select('nom, firstname, lastname').eq('id', widget.proProfileId!).maybeSingle();
+          .select('nom, firstname, lastname, profession_pro').eq('id', widget.proProfileId!).maybeSingle();
       final nom = (p?['nom'] ?? '').toString().trim();
       final complet = nom.isNotEmpty ? nom : '${p?['firstname'] ?? ''} ${p?['lastname'] ?? ''}'.trim();
-      if (mounted && complet.isNotEmpty && _professionnelCtrl.text.trim().isEmpty) {
-        setState(() => _professionnelCtrl.text = complet);
-      }
+      if (!mounted) return;
+      setState(() {
+        if (complet.isNotEmpty && _professionnelCtrl.text.trim().isEmpty) _professionnelCtrl.text = complet;
+        if (!_isEditing) _typeSuivi = typeSeanceParDefaut(p?['profession_pro']?.toString());
+      });
     } catch (_) {}
   }
 
@@ -127,6 +147,14 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     _animalNomCtrl.text = s['animal_nom_libre']?.toString() ?? _animalNomCtrl.text;
     _clientNomCtrl.text = s['client_nom_libre']?.toString() ?? _clientNomCtrl.text;
     _clientContactCtrl.text = s['client_contact_libre']?.toString() ?? '';
+    _intituleCtrl.text = s['intitule']?.toString() ?? '';
+    _observationsBilanCtrl.text = s['observations_bilan']?.toString() ?? '';
+    _interventionCtrl.text = s['intervention']?.toString() ?? '';
+    _suiviRecommandeCtrl.text = s['suivi_recommande']?.toString() ?? '';
+    _orientationVeto = s['orientation_veto'] == true;
+    _lieu = s['lieu']?.toString();
+    // Ancien suivi déjà envoyé au client : traité comme finalisé (corrections tracées).
+    _statut = s['statut']?.toString() ?? (s['notifie_a'] != null ? 'finalise' : null);
 
     try {
       final results = await Future.wait([
@@ -141,6 +169,14 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       final points = List<Map<String, dynamic>>.from(results[2] as List);
       final observations = List<Map<String, dynamic>>.from(results[3] as List);
       final mouvements = List<Map<String, dynamic>>.from(results[4] as List);
+      // Ancien suivi (avec_anatomie NULL) : anatomie affichée s'il a des points.
+      _avecAnatomie = s['avec_anatomie'] == true || (s['avec_anatomie'] == null && points.isNotEmpty);
+      try {
+        final ex = await _supa.from('suivis_morpho_exercices').select().eq('suivi_id', suiviId).order('ordre');
+        for (final e in ex as List) {
+          _exercices.add(_Exercice.fromRow(Map<String, dynamic>.from(e as Map)));
+        }
+      } catch (_) {} // migration_soins_reeducation.sql pas encore passée
 
       for (final p in photos) {
         final vue = p['vue']?.toString() ?? '';
@@ -218,6 +254,10 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     _animalNomCtrl.dispose();
     _clientNomCtrl.dispose();
     _clientContactCtrl.dispose();
+    _intituleCtrl.dispose();
+    _observationsBilanCtrl.dispose();
+    _interventionCtrl.dispose();
+    _suiviRecommandeCtrl.dispose();
     super.dispose();
   }
 
@@ -292,7 +332,45 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     if (result != null) setState(() => _mouvements.add(result));
   }
 
-  Future<void> _enregistrer() async {
+  Future<void> _ajouterExercice([_Exercice? initial]) async {
+    final result = await showModalBottomSheet<_Exercice>(
+      context: context, backgroundColor: Colors.white, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ExerciceSheet(initial: initial),
+    );
+    if (result == null) return;
+    setState(() {
+      if (initial == null) {
+        _exercices.add(result);
+      } else {
+        final i = _exercices.indexOf(initial);
+        if (result.supprime) { _exercices.removeAt(i); } else { _exercices[i] = result; }
+      }
+    });
+  }
+
+  /// Finaliser : le compte rendu devient le document de la séance (partageable,
+  /// PDF) ; toute correction ultérieure archive la version précédente.
+  Future<void> _finaliser() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Finaliser le compte rendu ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text(
+            'Il pourra ensuite être partagé avec le propriétaire ou envoyé au client. '
+            'Une correction restera possible : la version précédente sera conservée.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Finaliser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: kMorphoTeal))),
+        ],
+      ),
+    );
+    if (ok == true) await _enregistrer(finaliser: true);
+  }
+
+  Future<void> _enregistrer({bool finaliser = false}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     setState(() => _saving = true);
@@ -313,6 +391,22 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         'niveau_activite': _niveauActivite,
         'activite_sportive': _activiteSportiveCtrl.text.trim().isEmpty ? null : _activiteSportiveCtrl.text.trim(),
         'checkpoint_age': _checkpointCtrl.text.trim().isEmpty ? null : _checkpointCtrl.text.trim(),
+        // Compte rendu de séance (pro) — colonnes de migration_soins_reeducation.sql,
+        // jamais envoyées pour un suivi saisi par le propriétaire.
+        if (_modePro) ...{
+          'intitule': _txt(_intituleCtrl),
+          'observations_bilan': _txt(_observationsBilanCtrl),
+          'intervention': _txt(_interventionCtrl),
+          'suivi_recommande': _txt(_suiviRecommandeCtrl),
+          'orientation_veto': _orientationVeto,
+          'lieu': _lieu,
+          'avec_anatomie': _avecAnatomie,
+          'statut': (finaliser || _dejaFinalise) ? 'finalise' : 'brouillon',
+          if (finaliser && !_dejaFinalise) 'finalise_a': DateTime.now().toUtc().toIso8601String(),
+          // Correction d'un compte rendu finalisé : updated_at change toujours →
+          // le trigger archive la version précédente (exercices compris).
+          if (_dejaFinalise) 'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
         if (_saisieLibre) ...{
           'animal_nom_libre': _animalNomCtrl.text.trim().isEmpty ? null : _animalNomCtrl.text.trim(),
           'espece_libre': morphoSpeciesKey(widget.espece) ?? widget.espece,
@@ -335,6 +429,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           _supa.from('suivis_morpho_points').delete().eq('suivi_id', suiviId),
           _supa.from('suivis_morpho_observations').delete().eq('suivi_id', suiviId),
           _supa.from('suivis_morpho_mouvements').delete().eq('suivi_id', suiviId),
+          if (_modePro) _supa.from('suivis_morpho_exercices').delete().eq('suivi_id', suiviId),
         ]);
       } else {
         final inserted = await _supa.from('suivis_morpho').insert({
@@ -428,6 +523,25 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         });
       }
 
+      // Conseils et exercices (même compte rendu, même PDF)
+      if (_modePro) {
+        for (var i = 0; i < _exercices.length; i++) {
+          final e = _exercices[i];
+          final photoUrl = e.photo != null
+              ? await storage.uploadPhoto(e.photo!, '$base/exercice_${i}_$stamp.jpg')
+              : e.photoUrl;
+          await _supa.from('suivis_morpho_exercices').insert({
+            'suivi_id': suiviId, 'ordre': i, 'nom': e.nom,
+            if (e.description.trim().isNotEmpty) 'description': e.description.trim(),
+            if (e.consignes.trim().isNotEmpty) 'consignes': e.consignes.trim(),
+            if (e.frequence.trim().isNotEmpty) 'frequence': e.frequence.trim(),
+            if (e.duree.trim().isNotEmpty) 'duree': e.duree.trim(),
+            if (e.precautions.trim().isNotEmpty) 'precautions': e.precautions.trim(),
+            if (photoUrl != null) 'photo_url': photoUrl,
+          });
+        }
+      }
+
       // Pas de notification automatique ici : le pro décide lui-même quand
       // le suivi est prêt à être transmis, via le bouton "Envoyer au
       // client" sur la fiche du suivi (morpho_detail_page.dart).
@@ -462,7 +576,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       ),
       body: _loadingExisting
           ? const Center(child: CircularProgressIndicator(color: kMorphoTeal))
-          : ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100), children: [
+          : _modePro ? _formulaireSeance() : ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100), children: [
         _sectionTitle('Informations générales'),
         _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _dateField(),
@@ -642,7 +756,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           ),
         ])),
       ]),
-      bottomNavigationBar: SafeArea(
+      bottomNavigationBar: _modePro ? _barreSeance() : SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: SizedBox(
@@ -660,6 +774,246 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  String? _txt(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
+
+  /// Compte rendu de séance (ostéo, physio, rééducation…) : sections dans
+  /// l'ordre du PDF, repliables, toutes facultatives sauf la séance.
+  Widget _formulaireSeance() {
+    final especeKey = morphoSpeciesKey(widget.espece) ?? 'chien';
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 110), children: [
+      if (_dejaFinalise)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: const Color(0xFFF1F5F4), borderRadius: BorderRadius.circular(10)),
+          child: Row(children: [
+            const Icon(Icons.history, size: 16, color: kMorphoTeal),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Compte rendu finalisé : la correction sera enregistrée comme nouvelle version, la précédente est conservée.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700))),
+          ]),
+        ),
+      _Bloc(titre: 'Séance', ouvert: true, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _dateField(),
+        const SizedBox(height: 12),
+        _dropdown('Type de séance', kTypesSeancePro.any((t) => t.$1 == _typeSuivi) ? _typeSuivi : 'autre',
+            kTypesSeancePro, (v) => setState(() => _typeSuivi = v)),
+        const SizedBox(height: 12),
+        Text('Lieu', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, children: [
+          _segButton('Cabinet', _lieu == 'cabinet', () => setState(() => _lieu = _lieu == 'cabinet' ? null : 'cabinet')),
+          _segButton('Intervention extérieure', _lieu == 'exterieur', () => setState(() => _lieu = _lieu == 'exterieur' ? null : 'exterieur')),
+        ]),
+        const SizedBox(height: 12),
+        _textField('Intitulé court (facultatif)', _intituleCtrl),
+        const SizedBox(height: 12),
+        _textField('Professionnel', _professionnelCtrl),
+      ])),
+      if (_saisieLibre)
+        _Bloc(titre: 'Client sans application', ouvert: true, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Animal sans fiche dans PetsMatch : le compte rendu PDF pourra être envoyé au client (e-mail, WhatsApp…).',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+          const SizedBox(height: 10),
+          _textField('Nom de l\'animal', _animalNomCtrl),
+          const SizedBox(height: 12),
+          _textField('Nom du client (facultatif)', _clientNomCtrl),
+          const SizedBox(height: 12),
+          _textField('Contact — téléphone ou e-mail (facultatif)', _clientContactCtrl),
+        ])),
+      _Bloc(titre: 'Motif de consultation', ouvert: true, child:
+          _textField('Motif, demande du propriétaire, contexte, informations utiles', _motifCtrl, maxLines: 4)),
+      _Bloc(titre: 'Observations et bilan', child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _textField('Observations générales, posture, mobilité, locomotion, zones évaluées…', _observationsBilanCtrl, maxLines: 6),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: _textField('Poids (kg)', _poidsCtrl, keyboardType: TextInputType.number)),
+          const SizedBox(width: 12),
+          Expanded(child: _textField('Taille (cm)', _tailleCtrl, keyboardType: TextInputType.number)),
+        ]),
+        const SizedBox(height: 12),
+        _dropdown('Niveau d\'activité', _niveauActivite, kNiveauxActivite, (v) => setState(() => _niveauActivite = v)),
+        const SizedBox(height: 12),
+        _textField('Activité sportive éventuelle', _activiteSportiveCtrl),
+        const SizedBox(height: 16),
+        _sousTitre('Posture (facultatif)'),
+        for (final c in kCategoriesObservationStatique)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _ObservationStatiqueRow(categorie: c.$1, label: c.$2, state: _observations[c.$1]!, onChanged: () => setState(() {})),
+          ),
+        _sousTitre('En mouvement (facultatif)'),
+        for (final m in _mouvements)
+          Row(children: [
+            Icon(kActivitesMouvement.firstWhere((a) => a.$1 == m.activite, orElse: () => ('', '', Icons.circle)).$3, color: kMorphoTeal, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(labelActivite(m.activite), style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+            if (m.geneObservee == true) const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 18),
+            IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: () => setState(() => _mouvements.remove(m))),
+          ]),
+        TextButton.icon(
+          onPressed: _ajouterMouvement,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Ajouter une observation en mouvement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: TextButton.styleFrom(foregroundColor: kMorphoTeal),
+        ),
+      ])),
+      _Bloc(titre: 'Intervention réalisée', child:
+          _textField('Zones travaillées, techniques utilisées, déroulement, observations après la séance, précautions…', _interventionCtrl, maxLines: 6)),
+      _Bloc(titre: 'Conseils et exercices', compteur: _exercices.length, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Recommandations à réaliser par le propriétaire (ce ne sont pas des ordonnances).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+        const SizedBox(height: 8),
+        for (final e in _exercices)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(color: const Color(0xFFF7F9F9), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)),
+            child: ListTile(
+              dense: true,
+              title: Text(e.nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
+              subtitle: [e.frequence, e.duree].where((x) => x.trim().isNotEmpty).isEmpty ? null
+                  : Text([e.frequence, e.duree].where((x) => x.trim().isNotEmpty).join(' · '),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              trailing: const Icon(Icons.edit_outlined, size: 18, color: kMorphoTeal),
+              onTap: () => _ajouterExercice(e),
+            ),
+          ),
+        TextButton.icon(
+          onPressed: () => _ajouterExercice(),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Ajouter un conseil ou un exercice', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: TextButton.styleFrom(foregroundColor: kMorphoTeal),
+        ),
+      ])),
+      _Bloc(titre: 'Suivi recommandé', child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _textField('Évolution à surveiller, recommandations complémentaires…', _suiviRecommandeCtrl, maxLines: 4),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          activeThumbColor: kMorphoTeal,
+          value: _orientationVeto,
+          onChanged: (v) => setState(() => _orientationVeto = v),
+          title: const Text('Orientation vers un vétérinaire conseillée', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+        ),
+        _prochainControleField(),
+      ])),
+      _Bloc(titre: 'Bilan anatomique', child: Column(children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          activeThumbColor: kMorphoTeal,
+          value: _avecAnatomie,
+          onChanged: (v) => setState(() => _avecAnatomie = v),
+          title: const Text('Ajouter un bilan anatomique', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+          subtitle: Text('Silhouettes et points de repérage, intégrés au compte rendu.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500)),
+        ),
+        if (_avecAnatomie) ...[
+          Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+            for (final v in vuesDisponibles(especeKey))
+              _segButton(v.$2, _vueSilhouette == v.$1, () => setState(() => _vueSilhouette = v.$1)),
+          ]),
+          const SizedBox(height: 12),
+          MorphoSilhouette(
+            espece: especeKey,
+            vue: _vueSilhouette,
+            points: _displayedPoints(),
+            onTapEmpty: _ajouterPoint,
+            onTapPoint: (mp) => _editerPoint(_points[int.parse(mp.id!)]),
+            refreshPoints: _displayedPoints,
+            onVueChanged: (v) => setState(() => _vueSilhouette = v),
+          ),
+          const SizedBox(height: 8),
+          const MorphoLegende(),
+          const SizedBox(height: 6),
+          Text('Touchez la silhouette pour poser un point', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        ] else if (_points.isNotEmpty)
+          Text('${_points.length} point${_points.length > 1 ? 's' : ''} déjà posé${_points.length > 1 ? 's' : ''}, conservé${_points.length > 1 ? 's' : ''} mais absent${_points.length > 1 ? 's' : ''} du compte rendu.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+      ])),
+      _Bloc(titre: 'Photos et vidéos', compteur: _photosVues.length + _photosVuesExistantes.length + _photosExtra.length + _photosExtraExistantes.length + _videos.length,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Facultatif : posture, démarche, positionnement…', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+        const SizedBox(height: 10),
+        _PhotoGrid(photos: _photosVues, existingUrls: _photosVuesExistantes, onPickGallery: _pickVuePhoto, onPickCamera: _pickVuePhotoCamera),
+        const SizedBox(height: 12),
+        _sousTitre('Autres photos'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final url in _photosExtraExistantes)
+            _miniature(Image.network(url, width: 70, height: 70, fit: BoxFit.cover), () => setState(() => _photosExtraExistantes.remove(url))),
+          for (final f in _photosExtra)
+            _miniature(Image.file(f, width: 70, height: 70, fit: BoxFit.cover), () => setState(() => _photosExtra.remove(f))),
+          InkWell(
+            onTap: _ajouterPhotoExtra,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(width: 70, height: 70,
+                decoration: BoxDecoration(color: const Color(0xFFF1F5F4), borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.add, color: kMorphoTeal)),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        _sousTitre('Vidéos'),
+        for (final v in _videos)
+          Row(children: [
+            const Icon(Icons.videocam_outlined, color: kMorphoTeal, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(labelActivite(v.activite), style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+            IconButton(icon: const Icon(Icons.close, size: 18, color: Colors.grey), onPressed: () => setState(() => _videos.remove(v))),
+          ]),
+        TextButton.icon(
+          onPressed: _ajouterVideo,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Prendre ou ajouter une vidéo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: TextButton.styleFrom(foregroundColor: kMorphoTeal),
+        ),
+      ])),
+      _Bloc(titre: 'Notes complémentaires', child: _textField('Commentaires généraux', _commentairesCtrl, maxLines: 3)),
+    ]);
+  }
+
+  Widget _sousTitre(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 4),
+        child: Text(t, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12.5, color: Colors.grey.shade700)),
+      );
+
+  Widget _miniature(Widget image, VoidCallback onRemove) => Stack(children: [
+        ClipRRect(borderRadius: BorderRadius.circular(10), child: image),
+        Positioned(top: 2, right: 2, child: InkWell(onTap: onRemove,
+            child: const CircleAvatar(radius: 9, backgroundColor: Colors.black54, child: Icon(Icons.close, color: Colors.white, size: 12)))),
+      ]);
+
+  /// Brouillon / Finaliser (ou correction d'un compte rendu finalisé).
+  Widget _barreSeance() {
+    final enCours = _saving
+        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+        : null;
+    final style = ElevatedButton.styleFrom(
+      backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: _dejaFinalise
+            ? ElevatedButton(onPressed: _saving ? null : () => _enregistrer(), style: style,
+                child: enCours ?? const Text('Enregistrer la correction', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)))
+            : Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: _saving ? null : () => _enregistrer(),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: kMorphoTeal, side: const BorderSide(color: kMorphoTeal),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Enregistrer le brouillon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                )),
+                const SizedBox(width: 10),
+                Expanded(child: ElevatedButton(onPressed: _saving ? null : _finaliser, style: style,
+                    child: enCours ?? const Text('Finaliser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)))),
+              ]),
       ),
     );
   }
@@ -720,6 +1074,156 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
 }
 
 // ── Widgets/petites classes internes ────────────────────────────────────────
+
+/// Section repliable du compte rendu de séance.
+class _Bloc extends StatelessWidget {
+  final String titre;
+  final Widget child;
+  final bool ouvert;
+  final int compteur;
+  const _Bloc({required this.titre, required this.child, this.ouvert = false, this.compteur = 0});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.grey.shade200)),
+        clipBehavior: Clip.antiAlias,
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            initiallyExpanded: ouvert,
+            maintainState: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+            childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            iconColor: kMorphoTeal, collapsedIconColor: Colors.grey,
+            title: Row(children: [
+              Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: kMorphoDark)),
+              if (compteur > 0) ...[
+                const SizedBox(width: 8),
+                Text('$compteur', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: kMorphoTeal)),
+              ],
+            ]),
+            children: [child],
+          ),
+        ),
+      );
+}
+
+/// Conseil / exercice d'un compte rendu (suivis_morpho_exercices).
+class _Exercice {
+  String nom, description, consignes, frequence, duree, precautions;
+  String? photoUrl;
+  File? photo;
+  bool supprime = false;
+  _Exercice({this.nom = '', this.description = '', this.consignes = '', this.frequence = '',
+      this.duree = '', this.precautions = '', this.photoUrl, this.photo});
+  factory _Exercice.fromRow(Map<String, dynamic> r) => _Exercice(
+        nom: r['nom']?.toString() ?? '',
+        description: r['description']?.toString() ?? '',
+        consignes: r['consignes']?.toString() ?? '',
+        frequence: r['frequence']?.toString() ?? '',
+        duree: r['duree']?.toString() ?? '',
+        precautions: r['precautions']?.toString() ?? '',
+        photoUrl: r['photo_url']?.toString(),
+      );
+}
+
+class _ExerciceSheet extends StatefulWidget {
+  final _Exercice? initial;
+  const _ExerciceSheet({this.initial});
+  @override
+  State<_ExerciceSheet> createState() => _ExerciceSheetState();
+}
+
+class _ExerciceSheetState extends State<_ExerciceSheet> {
+  late final _nom = TextEditingController(text: widget.initial?.nom ?? '');
+  late final _description = TextEditingController(text: widget.initial?.description ?? '');
+  late final _consignes = TextEditingController(text: widget.initial?.consignes ?? '');
+  late final _frequence = TextEditingController(text: widget.initial?.frequence ?? '');
+  late final _duree = TextEditingController(text: widget.initial?.duree ?? '');
+  late final _precautions = TextEditingController(text: widget.initial?.precautions ?? '');
+  late String? _photoUrl = widget.initial?.photoUrl;
+  late File? _photo = widget.initial?.photo;
+  bool _erreurNom = false;
+
+  @override
+  void dispose() {
+    for (final c in [_nom, _description, _consignes, _frequence, _duree, _precautions]) { c.dispose(); }
+    super.dispose();
+  }
+
+  Future<void> _choisirPhoto(ImageSource source) async {
+    final f = await ImagePicker().pickImage(source: source, imageQuality: 85);
+    if (f != null) setState(() { _photo = File(f.path); _photoUrl = null; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(widget.initial == null ? 'Conseil ou exercice' : 'Modifier le conseil ou l\'exercice',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 14),
+          TextField(controller: _nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: _decoration('Nom *').copyWith(errorText: _erreurNom ? 'Indiquez un nom' : null)),
+          const SizedBox(height: 10),
+          _textField('Description', _description, maxLines: 3),
+          const SizedBox(height: 10),
+          _textField('Consignes de réalisation', _consignes, maxLines: 3),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: _textField('Fréquence', _frequence)),
+            const SizedBox(width: 10),
+            Expanded(child: _textField('Durée', _duree)),
+          ]),
+          const SizedBox(height: 10),
+          _textField('Précautions particulières', _precautions, maxLines: 2),
+          const SizedBox(height: 12),
+          Row(children: [
+            if (_photo != null || _photoUrl != null) ...[
+              ClipRRect(borderRadius: BorderRadius.circular(10), child: _photo != null
+                  ? Image.file(_photo!, width: 64, height: 64, fit: BoxFit.cover)
+                  : Image.network(_photoUrl!, width: 64, height: 64, fit: BoxFit.cover)),
+              IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() { _photo = null; _photoUrl = null; })),
+            ],
+            TextButton.icon(onPressed: () => _choisirPhoto(ImageSource.camera),
+                icon: const Icon(Icons.camera_alt_outlined, size: 18), label: const Text('Photo', style: TextStyle(fontFamily: 'Galey')),
+                style: TextButton.styleFrom(foregroundColor: kMorphoTeal)),
+            TextButton.icon(onPressed: () => _choisirPhoto(ImageSource.gallery),
+                icon: const Icon(Icons.photo_library_outlined, size: 18), label: const Text('Galerie', style: TextStyle(fontFamily: 'Galey')),
+                style: TextButton.styleFrom(foregroundColor: kMorphoTeal)),
+          ]),
+          const SizedBox(height: 14),
+          Row(children: [
+            if (widget.initial != null)
+              TextButton(
+                onPressed: () => Navigator.pop(context, widget.initial!..supprime = true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              ),
+            const Spacer(),
+            ElevatedButton(
+              onPressed: () {
+                if (_nom.text.trim().isEmpty) { setState(() => _erreurNom = true); return; }
+                Navigator.pop(context, _Exercice(
+                  nom: _nom.text.trim(), description: _description.text, consignes: _consignes.text,
+                  frequence: _frequence.text, duree: _duree.text, precautions: _precautions.text,
+                  photoUrl: _photoUrl, photo: _photo,
+                ));
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: const Text('Valider', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
 
 InputDecoration _decoration(String label) => InputDecoration(
       labelText: label,

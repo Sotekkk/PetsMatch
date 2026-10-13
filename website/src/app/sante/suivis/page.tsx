@@ -6,10 +6,11 @@ import { supabase } from '@/lib/supabase';
 import { useSanteAccess } from '@/hooks/useSanteAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
-import { labelTypeSuivi, morphoSpeciesSupported, TEAL } from '@/lib/morpho';
+import { labelTypeSuivi, labelStatutCr, morphoSpeciesSupported, TEAL } from '@/lib/morpho';
 
 interface SuiviRow {
   id: string; date: string; type_suivi: string; animal_id: string | null;
+  statut?: string | null;
   animal_nom_libre: string | null; espece_libre: string | null;
   _animal_nom?: string; _animal_espece?: string;
 }
@@ -46,7 +47,7 @@ export default function SanteSuivisPage() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    let q = supabase.from('suivis_morpho').select('id, date, type_suivi, animal_id, animal_nom_libre, espece_libre').eq('uid_auteur', user.uid);
+    let q = supabase.from('suivis_morpho').select('*').eq('uid_auteur', user.uid);
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
     const { data } = await q.order('date', { ascending: false });
     const rows = (data ?? []) as SuiviRow[];
@@ -146,7 +147,10 @@ export default function SanteSuivisPage() {
             <a key={s.id} href={`/sante/suivis/${s.id}`}
               className="block bg-white rounded-2xl shadow-sm p-4 border border-gray-100 hover:border-teal-200 transition-colors">
               <p className="font-bold font-galey text-gray-900">{s._animal_nom} — {labelTypeSuivi(s.type_suivi)}</p>
-              <p className="text-xs text-gray-500 font-galey mt-1">{new Date(s.date).toLocaleDateString('fr-FR')}</p>
+              <p className="text-xs text-gray-500 font-galey mt-1">
+                {new Date(s.date).toLocaleDateString('fr-FR')}
+                {labelStatutCr(s.statut) && <span className={s.statut === 'brouillon' ? 'text-[#B45309] font-semibold' : ''}> · {labelStatutCr(s.statut)}</span>}
+              </p>
             </a>
           ))}
         </div>

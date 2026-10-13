@@ -8,7 +8,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { uploadPhoto, uploadRawFile } from '@/lib/upload-media';
 import MorphoSilhouette, { MorphoLegende } from '@/components/morpho/MorphoSilhouette';
 import {
-  TEAL, TYPES_SUIVI, NIVEAUX_ACTIVITE, VUES_PHOTOS, ACTIVITES_MOUVEMENT,
+  TEAL, TYPES_SEANCE_PRO, typeSeanceParDefaut, type ExerciceSeance, NIVEAUX_ACTIVITE, VUES_PHOTOS, ACTIVITES_MOUVEMENT,
   CATEGORIES_OBSERVATION_STATIQUE, labelsValeurObservation, colorValeurObservation,
   CATEGORIES_OSTEO, colorCategoriePoint, PALETTE_COULEURS_POINTS, morphoSpeciesKey, vuesDisponibles, labelActivite,
   type MorphoPoint,
@@ -19,6 +19,8 @@ const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 interface VideoEntree { file?: File; existingUrl?: string; activite: string; commentaire: string }
 interface Mouvement { activite: string; observation: string; geneObservee: boolean | null; commentaire: string }
 interface ObsStatique { valeur: string; commentaire: string }
+interface ExerciceEntree extends ExerciceSeance { photoFile?: File | null }
+const EXERCICE_VIDE: ExerciceEntree = { nom: '', description: '', consignes: '', frequence: '', duree: '', precautions: '', photo_url: null };
 
 function NouveauSuiviContent() {
   const { user, userData, isSante, loading: authLoading } = useSanteAccess();
@@ -31,10 +33,12 @@ function NouveauSuiviContent() {
   const saisieLibre = !animalId;
   const suiviIdParam = params.get('suiviId');
   const isEditing = !!suiviIdParam;
+  /** RDV de la séance (agenda → « Rédiger le compte rendu »). */
+  const rdvIdParam = params.get('rdvId');
 
   const [saving, setSaving] = useState(false);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [typeSuivi, setTypeSuivi] = useState('bilan_morphologique');
+  const [typeSuivi, setTypeSuivi] = useState('autre');
   const [professionnel, setProfessionnel] = useState('');
   const [motif, setMotif] = useState('');
   const [commentaires, setCommentaires] = useState('');
@@ -48,6 +52,21 @@ function NouveauSuiviContent() {
   const [animalNom, setAnimalNom] = useState('');
   const [clientNom, setClientNom] = useState('');
   const [clientContact, setClientContact] = useState('');
+  // ── Compte rendu de séance — Soins & Rééducation (miroir appli) ──────────
+  const [intitule, setIntitule] = useState('');
+  const [observationsBilan, setObservationsBilan] = useState('');
+  const [intervention, setIntervention] = useState('');
+  const [suiviRecommande, setSuiviRecommande] = useState('');
+  const [orientationVeto, setOrientationVeto] = useState(false);
+  const [lieu, setLieu] = useState<'' | 'cabinet' | 'exterieur'>('');
+  /** « Ajouter un bilan anatomique » — facultatif ; désactivé, les points
+   *  déjà posés sont conservés mais absents du compte rendu. */
+  const [avecAnatomie, setAvecAnatomie] = useState(false);
+  const [exercices, setExercices] = useState<ExerciceEntree[]>([]);
+  const [exerciceEdit, setExerciceEdit] = useState<{ index: number | null; ex: ExerciceEntree } | null>(null);
+  /** null = nouveau / ancien suivi ; brouillon | finalise */
+  const [statut, setStatut] = useState<string | null>(null);
+  const dejaFinalise = statut === 'finalise';
 
   const [photosVues, setPhotosVues] = useState<Record<string, File>>({});
   const [photosVuesExistantes, setPhotosVuesExistantes] = useState<Record<string, string>>({});
@@ -70,6 +89,17 @@ function NouveauSuiviContent() {
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isSante) { router.push('/'); return; }
   }, [user, userData, isSante, authLoading, router]);
+
+  useEffect(() => {
+    if (isEditing || !activeProfileId) return;
+    supabase.from('user_profiles_complet').select('nom, firstname, lastname, profession_pro').eq('id', activeProfileId).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        setTypeSuivi(typeSeanceParDefaut(data.profession_pro as string | null));
+        const nom = ((data.nom as string | null) ?? '').trim() || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim();
+        if (nom) setProfessionnel(p => p || nom);
+      });
+  }, [activeProfileId, isEditing]);
 
   useEffect(() => {
     if (!animalId || isEditing) return;
@@ -103,6 +133,14 @@ function NouveauSuiviContent() {
       setAnimalNom((s.animal_nom_libre as string) ?? '');
       setClientNom((s.client_nom_libre as string) ?? '');
       setClientContact((s.client_contact_libre as string) ?? '');
+      setIntitule((s.intitule as string) ?? '');
+      setObservationsBilan((s.observations_bilan as string) ?? '');
+      setIntervention((s.intervention as string) ?? '');
+      setSuiviRecommande((s.suivi_recommande as string) ?? '');
+      setOrientationVeto(s.orientation_veto === true);
+      setLieu(s.lieu === 'cabinet' || s.lieu === 'exterieur' ? s.lieu : '');
+      // Ancien suivi déjà envoyé au client : traité comme finalisé (corrections tracées).
+      setStatut((s.statut as string | null) ?? (s.notifie_a ? 'finalise' : null));
 
       const [ph, vi, pt, ob, mv] = await Promise.all([
         supabase.from('suivis_morpho_photos').select('vue, url').eq('suivi_id', suiviIdParam),
@@ -124,6 +162,13 @@ function NouveauSuiviContent() {
       const videoRows = (vi.data ?? []) as { id: string; activite: string; commentaire: string | null; url: string }[];
       setVideos(videoRows.map(v => ({ existingUrl: v.url, activite: v.activite, commentaire: v.commentaire ?? '' })));
 
+      const nbPoints = (pt.data ?? []).length;
+      setAvecAnatomie(s.avec_anatomie === true || (s.avec_anatomie == null && nbPoints > 0));
+      const { data: ex } = await supabase.from('suivis_morpho_exercices').select('*').eq('suivi_id', suiviIdParam).order('ordre');
+      setExercices(((ex ?? []) as ExerciceSeance[]).map(e => ({
+        nom: e.nom ?? '', description: e.description ?? '', consignes: e.consignes ?? '', frequence: e.frequence ?? '',
+        duree: e.duree ?? '', precautions: e.precautions ?? '', photo_url: e.photo_url ?? null,
+      })));
       setPoints(((pt.data ?? []) as { id: string; vue: string; x_pct: number; y_pct: number; categorie: string; note: string | null; couleur: string | null }[])
         .map(p => ({ id: String(p.id), vue: p.vue, x_pct: p.x_pct, y_pct: p.y_pct, categorie: p.categorie, note: p.note ?? '', couleur: p.couleur })));
 
@@ -155,8 +200,9 @@ function NouveauSuiviContent() {
     setPointSheet(null);
   }
 
-  async function handleSave() {
+  async function handleSave(finaliser = false) {
     if (!user) return;
+    if (finaliser && !dejaFinalise && !confirm('Finaliser le compte rendu ? Il pourra ensuite être partagé. Une correction restera possible : la version précédente sera conservée.')) return;
     setSaving(true);
     try {
       const source = activeProfileId ? 'professionnel' : 'proprietaire';
@@ -176,6 +222,23 @@ function NouveauSuiviContent() {
       headerRow.poids = isNaN(poidsN) ? null : poidsN;
       const tailleN = parseFloat(taille.replace(',', '.'));
       headerRow.taille = isNaN(tailleN) ? null : tailleN;
+      if (activeProfileId) {
+        // Compte rendu de séance (colonnes migration_soins_reeducation.sql).
+        Object.assign(headerRow, {
+          intitule: intitule.trim() || null,
+          observations_bilan: observationsBilan.trim() || null,
+          intervention: intervention.trim() || null,
+          suivi_recommande: suiviRecommande.trim() || null,
+          orientation_veto: orientationVeto,
+          lieu: lieu || null,
+          avec_anatomie: avecAnatomie,
+          statut: finaliser || dejaFinalise ? 'finalise' : 'brouillon',
+          ...(finaliser && !dejaFinalise ? { finalise_a: new Date().toISOString() } : {}),
+          // Correction d'un CR finalisé : updated_at change toujours → le
+          // trigger archive la version précédente (exercices compris).
+          ...(dejaFinalise ? { updated_at: new Date().toISOString() } : {}),
+        });
+      }
       if (saisieLibre) {
         headerRow.animal_nom_libre = animalNom.trim() || null;
         headerRow.espece_libre = espece;
@@ -198,11 +261,13 @@ function NouveauSuiviContent() {
           supabase.from('suivis_morpho_points').delete().eq('suivi_id', suiviId),
           supabase.from('suivis_morpho_observations').delete().eq('suivi_id', suiviId),
           supabase.from('suivis_morpho_mouvements').delete().eq('suivi_id', suiviId),
+          ...(activeProfileId ? [supabase.from('suivis_morpho_exercices').delete().eq('suivi_id', suiviId)] : []),
         ]);
       } else {
         const insertRow: Record<string, unknown> = { uid_auteur: user.uid, source, ...headerRow };
         if (animalId) insertRow.animal_id = animalId;
         if (activeProfileId) insertRow.pro_profile_id = activeProfileId;
+        if (rdvIdParam) insertRow.rdv_id = rdvIdParam;
         const { data: inserted, error } = await supabase.from('suivis_morpho').insert(insertRow).select('id').single();
         if (error || !inserted) throw error ?? new Error('Échec de la création');
         suiviId = inserted.id as string;
@@ -260,6 +325,22 @@ function NouveauSuiviContent() {
         });
       }
 
+      // Conseils et exercices (même compte rendu, même PDF)
+      if (activeProfileId) {
+        const stamp = Date.now();
+        for (let i = 0; i < exercices.length; i++) {
+          const e = exercices[i];
+          const photoUrl = e.photoFile ? await uploadPhoto(e.photoFile, `${base}/exercice_${i}_${stamp}.jpg`) : (e.photo_url ?? null);
+          const row: Record<string, unknown> = { suivi_id: suiviId, ordre: i, nom: e.nom.trim() };
+          for (const k of ['description', 'consignes', 'frequence', 'duree', 'precautions'] as const) {
+            if (e[k].trim()) row[k] = e[k].trim();
+          }
+          if (photoUrl) row.photo_url = photoUrl;
+          const { error: errEx } = await supabase.from('suivis_morpho_exercices').insert(row);
+          if (errEx) throw errEx;
+        }
+      }
+
       // Pas de notification automatique ici : le pro décide lui-même quand
       // le suivi est prêt à être transmis, via le bouton "Envoyer au
       // client" sur la fiche du suivi (/sante/suivis/[id]).
@@ -284,130 +365,239 @@ function NouveauSuiviContent() {
     );
   }
 
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-8 space-y-6 pb-24">
-      <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>{isEditing ? 'Modifier la consultation' : 'Nouvelle consultation'}</h1>
+  const sections: [string, string][] = [
+    ['seance', 'Séance'], ...(saisieLibre ? [['client', 'Client'] as [string, string]] : []),
+    ['motif', 'Motif'], ['observations', 'Observations et bilan'], ['intervention', 'Intervention'],
+    ['exercices', 'Conseils et exercices'], ['suivi', 'Suivi recommandé'], ['anatomie', 'Bilan anatomique'],
+    ['medias', 'Photos et vidéos'], ['notes', 'Notes'],
+  ];
 
-      {saisieLibre && (
-        <Card title="Client">
-          <p className="text-xs text-gray-400 mb-3">Client occasionnel, sans fiche existante dans l&apos;application.</p>
-          <Field label="Nom de l'animal"><input className={inputCls} value={animalNom} onChange={e => setAnimalNom(e.target.value)} /></Field>
-          <Field label="Nom du client (facultatif)"><input className={inputCls} value={clientNom} onChange={e => setClientNom(e.target.value)} /></Field>
-          <Field label="Contact — téléphone ou email (facultatif)"><input className={inputCls} value={clientContact} onChange={e => setClientContact(e.target.value)} /></Field>
-        </Card>
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-8 pb-28">
+      <h1 className="text-2xl font-bold font-galey mb-1" style={{ color: TEAL }}>{isEditing ? 'Modifier la consultation' : 'Nouvelle consultation'}</h1>
+      <p className="text-sm text-gray-500 mb-6">Un compte rendu unique par séance ; toutes les sections sont facultatives.</p>
+      {dejaFinalise && (
+        <p className="mb-5 rounded-xl bg-[#F1F5F4] px-4 py-3 text-sm text-gray-700">
+          Compte rendu finalisé : la correction sera enregistrée comme nouvelle version, la précédente est conservée.
+        </p>
       )}
 
-      <Card title="Informations générales">
-        <Field label="Date"><input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} /></Field>
-        <Field label="Type de suivi">
-          <select className={inputCls} value={typeSuivi} onChange={e => setTypeSuivi(e.target.value)}>
-            {TYPES_SUIVI.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Professionnel (si applicable)"><input className={inputCls} value={professionnel} onChange={e => setProfessionnel(e.target.value)} /></Field>
-        <Field label="Motif / raison du suivi"><textarea rows={2} className={inputCls} value={motif} onChange={e => setMotif(e.target.value)} /></Field>
-        <Field label="Commentaires généraux"><textarea rows={3} className={inputCls} value={commentaires} onChange={e => setCommentaires(e.target.value)} /></Field>
-        {activeProfileId && (
-          <Field label="Prochain contrôle conseillé (optionnel)">
-            <input type="date" className={inputCls} value={prochainControle} onChange={e => setProchainControle(e.target.value)} />
-          </Field>
-        )}
-      </Card>
+      <div className="lg:grid lg:grid-cols-[190px_1fr] lg:gap-8">
+        {/* Navigation entre les sections (grand écran) */}
+        <nav className="hidden lg:block">
+          <ul className="sticky top-24 space-y-1 text-sm">
+            {sections.map(([id, label]) => (
+              <li key={id}><a href={`#${id}`} className="block rounded-lg px-3 py-1.5 text-gray-600 hover:bg-gray-100 hover:text-gray-900">{label}</a></li>
+            ))}
+          </ul>
+        </nav>
 
-      <Card title="Données de l'animal">
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <Field label="Poids (kg)"><input className={inputCls} value={poids} onChange={e => setPoids(e.target.value)} /></Field>
-          <Field label="Taille (cm)"><input className={inputCls} value={taille} onChange={e => setTaille(e.target.value)} /></Field>
-        </div>
-        <Field label="Niveau d'activité">
-          <select className={inputCls} value={niveauActivite} onChange={e => setNiveauActivite(e.target.value)}>
-            {NIVEAUX_ACTIVITE.map(n => <option key={n.key} value={n.key}>{n.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Activité sportive éventuelle"><input className={inputCls} value={activiteSportive} onChange={e => setActiviteSportive(e.target.value)} /></Field>
-        <Field label='Étape (éleveur, optionnel — ex. "8 semaines")'><input className={inputCls} value={checkpoint} onChange={e => setCheckpoint(e.target.value)} /></Field>
-      </Card>
-
-      <Card title="Photos de référence">
-        <PhotoGrid photos={photosVues} existingUrls={photosVuesExistantes}
-          onChange={setPhotosVues} onReplaceExisting={vue => setPhotosVuesExistantes(p => { const n = { ...p }; delete n[vue]; return n; })} />
-        <p className="text-xs font-semibold text-gray-600 mt-4 mb-2">Photos supplémentaires</p>
-        <div className="flex flex-wrap gap-2">
-          {photosExtraExistantes.map((url, i) => (
-            <div key={`existing-${i}`} className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover" />
-              <button onClick={() => setPhotosExtraExistantes(p => p.filter((_, j) => j !== i))}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center">✕</button>
+        <div className="space-y-6 min-w-0">
+          <Card id="seance" title="Séance">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Date"><input type="date" className={inputCls} value={date} onChange={e => setDate(e.target.value)} /></Field>
+              <Field label="Type de séance">
+                <select className={inputCls} value={TYPES_SEANCE_PRO.some(t => t.key === typeSuivi) ? typeSuivi : 'autre'} onChange={e => setTypeSuivi(e.target.value)}>
+                  {TYPES_SEANCE_PRO.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </Field>
             </div>
-          ))}
-          {photosExtra.map((f, i) => (
-            <div key={i} className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={URL.createObjectURL(f)} alt="" className="w-16 h-16 rounded-lg object-cover" />
-              <button onClick={() => setPhotosExtra(p => p.filter((_, j) => j !== i))}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center">✕</button>
+            <Field label="Lieu">
+              <div className="flex flex-wrap gap-2">
+                {([['cabinet', 'Cabinet'], ['exterieur', 'Intervention extérieure']] as const).map(([k, l]) => (
+                  <button key={k} type="button" onClick={() => setLieu(v => v === k ? '' : k)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={lieu === k ? { background: TEAL, color: 'white' } : { background: '#F1F5F4', color: '#374151' }}>{l}</button>
+                ))}
+              </div>
+            </Field>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Intitulé court (facultatif)"><input className={inputCls} value={intitule} onChange={e => setIntitule(e.target.value)} /></Field>
+              <Field label="Professionnel"><input className={inputCls} value={professionnel} onChange={e => setProfessionnel(e.target.value)} /></Field>
             </div>
-          ))}
-          <label className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center cursor-pointer text-2xl text-gray-400" style={{ color: TEAL }}>
-            +
-            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setPhotosExtra(p => [...p, f]); }} />
-          </label>
-        </div>
-      </Card>
+          </Card>
 
-      <Card title="Vidéos">
-        {videos.map((v, i) => (
-          <div key={i} className="flex items-center gap-2 mb-2 text-sm font-galey">
-            <span>🎥</span>
-            <span className="flex-1">{labelActivite(v.activite)}</span>
-            <button onClick={() => setVideos(vs => vs.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">✕</button>
-          </div>
-        ))}
-        <button onClick={() => setVideoSheetOpen(true)} className="text-sm font-galey font-semibold" style={{ color: TEAL }}>+ Ajouter une vidéo</button>
-      </Card>
+          {saisieLibre && (
+            <Card id="client" title="Client sans application">
+              <p className="text-xs text-gray-400">Animal sans fiche dans PetsMatch : le compte rendu PDF pourra être envoyé au client.</p>
+              <Field label="Nom de l'animal"><input className={inputCls} value={animalNom} onChange={e => setAnimalNom(e.target.value)} /></Field>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Field label="Nom du client (facultatif)"><input className={inputCls} value={clientNom} onChange={e => setClientNom(e.target.value)} /></Field>
+                <Field label="Contact — téléphone ou e-mail (facultatif)"><input className={inputCls} value={clientContact} onChange={e => setClientContact(e.target.value)} /></Field>
+              </div>
+            </Card>
+          )}
 
-      <Card title="Silhouette anatomique">
-        <div className="flex flex-wrap gap-2 justify-center mb-3">
-          {vuesDisponibles(espece).map(v => (
-            <button key={v.key} onClick={() => setVueSilhouette(v.key)}
-              className="px-3 py-1.5 rounded-full text-xs font-galey font-semibold"
-              style={vueSilhouette === v.key ? { background: TEAL, color: 'white' } : { background: '#F1F5F4', color: '#374151' }}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-        <MorphoSilhouette espece={espece} vue={vueSilhouette} points={points} onTapEmpty={addPointAt} onTapPoint={editPoint} onVueChange={setVueSilhouette} />
-        <div className="mt-3"><MorphoLegende /></div>
-        <p className="text-xs text-gray-400 mt-2 text-center">Cliquez sur la silhouette pour poser un point</p>
-      </Card>
+          <Card id="motif" title="Motif de consultation">
+            <textarea rows={4} className={inputCls} placeholder="Motif, demande du propriétaire, contexte, informations utiles"
+              value={motif} onChange={e => setMotif(e.target.value)} />
+          </Card>
 
-      <Card title="Observation statique (posture)">
-        {CATEGORIES_OBSERVATION_STATIQUE.map(c => (
-          <ObservationRow key={c.key} categorie={c.key} label={c.label} state={observations[c.key]}
-            onChange={(o) => setObservations(prev => ({ ...prev, [c.key]: o }))} inputCls={inputCls} />
-        ))}
-      </Card>
+          <Card id="observations" title="Observations et bilan">
+            <textarea rows={6} className={inputCls} placeholder="Observations générales, posture, mobilité, locomotion, zones évaluées…"
+              value={observationsBilan} onChange={e => setObservationsBilan(e.target.value)} />
+            <div className="grid sm:grid-cols-4 gap-3">
+              <Field label="Poids (kg)"><input className={inputCls} value={poids} onChange={e => setPoids(e.target.value)} /></Field>
+              <Field label="Taille (cm)"><input className={inputCls} value={taille} onChange={e => setTaille(e.target.value)} /></Field>
+              <Field label="Niveau d'activité">
+                <select className={inputCls} value={niveauActivite} onChange={e => setNiveauActivite(e.target.value)}>
+                  {NIVEAUX_ACTIVITE.map(n => <option key={n.key} value={n.key}>{n.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Activité sportive"><input className={inputCls} value={activiteSportive} onChange={e => setActiviteSportive(e.target.value)} /></Field>
+            </div>
+            <details className="rounded-xl border border-gray-100 px-3 py-2">
+              <summary className="cursor-pointer text-sm font-semibold text-gray-700">Posture (facultatif)</summary>
+              <div className="space-y-3 mt-3">
+                {CATEGORIES_OBSERVATION_STATIQUE.map(c => (
+                  <ObservationRow key={c.key} categorie={c.key} label={c.label} state={observations[c.key]}
+                    onChange={(o) => setObservations(prev => ({ ...prev, [c.key]: o }))} inputCls={inputCls} />
+                ))}
+              </div>
+            </details>
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">En mouvement (facultatif)</p>
+              {mouvements.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 mb-2 text-sm">
+                  <span className="flex-1">{labelActivite(m.activite)}{m.geneObservee ? ' — gêne observée' : ''}</span>
+                  <button onClick={() => setMouvements(ms => ms.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500" aria-label="Retirer">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setMouvementSheetOpen(true)} className="text-sm font-semibold" style={{ color: TEAL }}>+ Ajouter une observation en mouvement</button>
+            </div>
+          </Card>
 
-      <Card title="Observation en mouvement">
-        {mouvements.map((m, i) => (
-          <div key={i} className="flex items-center gap-2 mb-2 text-sm font-galey">
-            <span className="flex-1">{labelActivite(m.activite)}{m.geneObservee ? ' ⚠️' : ''}</span>
-            <button onClick={() => setMouvements(ms => ms.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">✕</button>
-          </div>
-        ))}
-        <button onClick={() => setMouvementSheetOpen(true)} className="text-sm font-galey font-semibold" style={{ color: TEAL }}>+ Ajouter une observation</button>
-      </Card>
+          <Card id="intervention" title="Intervention réalisée">
+            <textarea rows={6} className={inputCls} placeholder="Zones travaillées, techniques utilisées, déroulement, observations après la séance, précautions…"
+              value={intervention} onChange={e => setIntervention(e.target.value)} />
+          </Card>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4">
-        <div className="max-w-2xl mx-auto">
-          <button disabled={saving} onClick={handleSave}
-            className="w-full py-3 rounded-xl text-sm font-galey font-bold text-white disabled:opacity-50" style={{ background: TEAL }}>
-            {saving ? 'Enregistrement…' : isEditing ? 'Enregistrer les modifications' : 'Enregistrer le suivi'}
-          </button>
+          <Card id="exercices" title={`Conseils et exercices${exercices.length ? ` (${exercices.length})` : ''}`}>
+            <p className="text-xs text-gray-400">Recommandations à réaliser par le propriétaire (ce ne sont pas des ordonnances).</p>
+            {exercices.map((e, i) => (
+              <button key={i} type="button" onClick={() => setExerciceEdit({ index: i, ex: e })}
+                className="w-full text-left rounded-xl border border-gray-200 bg-[#F7F9F9] px-4 py-3 hover:border-gray-300">
+                <span className="block text-sm font-semibold text-gray-900">{e.nom}</span>
+                {(e.frequence || e.duree) && <span className="block text-xs text-gray-500">{[e.frequence, e.duree].filter(Boolean).join(' · ')}</span>}
+              </button>
+            ))}
+            <button onClick={() => setExerciceEdit({ index: null, ex: { ...EXERCICE_VIDE } })} className="text-sm font-semibold" style={{ color: TEAL }}>+ Ajouter un conseil ou un exercice</button>
+          </Card>
+
+          <Card id="suivi" title="Suivi recommandé">
+            <textarea rows={4} className={inputCls} placeholder="Évolution à surveiller, recommandations complémentaires…"
+              value={suiviRecommande} onChange={e => setSuiviRecommande(e.target.value)} />
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={orientationVeto} onChange={e => setOrientationVeto(e.target.checked)} className="w-4 h-4" style={{ accentColor: TEAL }} />
+              Orientation vers un vétérinaire conseillée
+            </label>
+            <Field label="Contrôle conseillé (facultatif)">
+              <input type="date" className={`${inputCls} sm:max-w-xs`} value={prochainControle} onChange={e => setProchainControle(e.target.value)} />
+            </Field>
+          </Card>
+
+          <Card id="anatomie" title="Bilan anatomique">
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+              <input type="checkbox" checked={avecAnatomie} onChange={e => setAvecAnatomie(e.target.checked)} className="w-4 h-4" style={{ accentColor: TEAL }} />
+              Ajouter un bilan anatomique
+            </label>
+            {avecAnatomie ? (
+              <>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {vuesDisponibles(espece).map(v => (
+                    <button key={v.key} onClick={() => setVueSilhouette(v.key)}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={vueSilhouette === v.key ? { background: TEAL, color: 'white' } : { background: '#F1F5F4', color: '#374151' }}>
+                      {v.label}
+                    </button>
+                  ))}
+                </div>
+                <MorphoSilhouette espece={espece} vue={vueSilhouette} points={points} onTapEmpty={addPointAt} onTapPoint={editPoint} onVueChange={setVueSilhouette} />
+                <MorphoLegende />
+                <p className="text-xs text-gray-400 text-center">Cliquez sur la silhouette pour poser un point</p>
+              </>
+            ) : points.length > 0 ? (
+              <p className="text-xs text-gray-400">{points.length} point{points.length > 1 ? 's' : ''} déjà posé{points.length > 1 ? 's' : ''}, conservé{points.length > 1 ? 's' : ''} mais absent{points.length > 1 ? 's' : ''} du compte rendu.</p>
+            ) : (
+              <p className="text-xs text-gray-400">Silhouettes et points de repérage, intégrés au compte rendu.</p>
+            )}
+          </Card>
+
+          <Card id="medias" title="Photos et vidéos">
+            <p className="text-xs text-gray-400">Facultatif : posture, démarche, positionnement…</p>
+            <PhotoGrid photos={photosVues} existingUrls={photosVuesExistantes}
+              onChange={setPhotosVues} onReplaceExisting={vue => setPhotosVuesExistantes(p => { const n = { ...p }; delete n[vue]; return n; })} />
+            <p className="text-xs font-semibold text-gray-600 mt-2">Autres photos</p>
+            <div className="flex flex-wrap gap-2">
+              {photosExtraExistantes.map((url, i) => (
+                <div key={`existing-${i}`} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                  <button onClick={() => setPhotosExtraExistantes(p => p.filter((_, j) => j !== i))}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center" aria-label="Retirer">✕</button>
+                </div>
+              ))}
+              {photosExtra.map((f, i) => (
+                <div key={i} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={URL.createObjectURL(f)} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                  <button onClick={() => setPhotosExtra(p => p.filter((_, j) => j !== i))}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center" aria-label="Retirer">✕</button>
+                </div>
+              ))}
+              <label className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center cursor-pointer text-2xl" style={{ color: TEAL }}>
+                +
+                <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setPhotosExtra(p => [...p, f]); }} />
+              </label>
+            </div>
+            <p className="text-xs font-semibold text-gray-600 mt-2">Vidéos</p>
+            {videos.map((v, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span className="flex-1">Vidéo — {labelActivite(v.activite)}</span>
+                <button onClick={() => setVideos(vs => vs.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500" aria-label="Retirer">✕</button>
+              </div>
+            ))}
+            <button onClick={() => setVideoSheetOpen(true)} className="text-sm font-semibold" style={{ color: TEAL }}>+ Ajouter une vidéo</button>
+          </Card>
+
+          <Card id="notes" title="Notes complémentaires">
+            <textarea rows={3} className={inputCls} placeholder="Commentaires généraux" value={commentaires} onChange={e => setCommentaires(e.target.value)} />
+          </Card>
         </div>
       </div>
 
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 z-30">
+        <div className="max-w-5xl mx-auto flex gap-3 justify-end">
+          {dejaFinalise ? (
+            <button disabled={saving} onClick={() => handleSave()}
+              className="px-6 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: TEAL }}>
+              {saving ? 'Enregistrement…' : 'Enregistrer la correction'}
+            </button>
+          ) : (
+            <>
+              <button disabled={saving} onClick={() => handleSave()}
+                className="px-6 py-3 rounded-xl text-sm font-bold border disabled:opacity-50" style={{ borderColor: TEAL, color: TEAL }}>
+                Enregistrer le brouillon
+              </button>
+              <button disabled={saving} onClick={() => handleSave(true)}
+                className="px-6 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: TEAL }}>
+                {saving ? 'Enregistrement…' : 'Finaliser'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {exerciceEdit && (
+        <ExerciceSheet initial={exerciceEdit.ex} allowDelete={exerciceEdit.index !== null}
+          onClose={() => setExerciceEdit(null)}
+          onDelete={() => { const i = exerciceEdit.index; setExercices(l => l.filter((_, j) => j !== i)); setExerciceEdit(null); }}
+          onSave={(ex) => {
+            const i = exerciceEdit.index;
+            setExercices(l => i === null ? [...l, ex] : l.map((x, j) => (j === i ? ex : x)));
+            setExerciceEdit(null);
+          }} />
+      )}
       {pointSheet && (
         <PointSheet point={pointSheet.point} allowDelete={!pointSheet.isNew}
           onSave={(p) => savePoint(p, false)} onDelete={() => savePoint(pointSheet.point, true)} onClose={() => setPointSheet(null)} />
@@ -422,9 +612,9 @@ function NouveauSuiviContent() {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div id={id} className="scroll-mt-24">
       <h2 className="text-sm font-bold font-galey text-gray-800 mb-2">{title}</h2>
       <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">{children}</div>
     </div>
@@ -577,6 +767,51 @@ function VideoSheet({ onClose, onSave }: { onClose: () => void; onSave: (v: Vide
         className="w-full mt-4 py-2.5 rounded-xl text-sm font-galey font-bold text-white disabled:opacity-40" style={{ background: TEAL }}>
         Ajouter
       </button>
+    </SheetShell>
+  );
+}
+
+function ExerciceSheet({ initial, allowDelete, onSave, onDelete, onClose }: {
+  initial: ExerciceEntree; allowDelete: boolean; onSave: (e: ExerciceEntree) => void; onDelete: () => void; onClose: () => void;
+}) {
+  const [e, setE] = useState<ExerciceEntree>(initial);
+  const [erreurNom, setErreurNom] = useState(false);
+  const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey';
+  const champ = (k: 'description' | 'consignes' | 'frequence' | 'duree' | 'precautions') =>
+    (v: string) => setE(x => ({ ...x, [k]: v }));
+  const apercu = e.photoFile ? URL.createObjectURL(e.photoFile) : e.photo_url;
+  return (
+    <SheetShell title={allowDelete ? "Modifier le conseil ou l'exercice" : 'Conseil ou exercice'} onClose={onClose}>
+      <div className="space-y-2.5 max-h-[70vh] overflow-y-auto">
+        <input className={inputCls} placeholder="Nom *" value={e.nom}
+          onChange={ev => { setE(x => ({ ...x, nom: ev.target.value })); setErreurNom(false); }} />
+        {erreurNom && <p className="text-xs text-red-600">Indiquez un nom</p>}
+        <textarea rows={2} className={inputCls} placeholder="Description" value={e.description} onChange={ev => champ('description')(ev.target.value)} />
+        <textarea rows={2} className={inputCls} placeholder="Consignes de réalisation" value={e.consignes} onChange={ev => champ('consignes')(ev.target.value)} />
+        <div className="grid grid-cols-2 gap-2">
+          <input className={inputCls} placeholder="Fréquence" value={e.frequence} onChange={ev => champ('frequence')(ev.target.value)} />
+          <input className={inputCls} placeholder="Durée" value={e.duree} onChange={ev => champ('duree')(ev.target.value)} />
+        </div>
+        <textarea rows={2} className={inputCls} placeholder="Précautions particulières" value={e.precautions} onChange={ev => champ('precautions')(ev.target.value)} />
+        <div className="flex items-center gap-3">
+          {apercu && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={apercu} alt="" className="w-14 h-14 rounded-lg object-cover" />
+          )}
+          <label className="text-sm font-semibold cursor-pointer" style={{ color: TEAL }}>
+            {apercu ? 'Changer la photo' : '+ Photo ou illustration'}
+            <input type="file" accept="image/*" className="hidden" onChange={ev => { const f = ev.target.files?.[0]; if (f) setE(x => ({ ...x, photoFile: f })); }} />
+          </label>
+          {apercu && <button type="button" onClick={() => setE(x => ({ ...x, photoFile: null, photo_url: null }))} className="text-xs text-gray-400">Retirer</button>}
+        </div>
+      </div>
+      <div className="flex gap-2 mt-4">
+        {allowDelete && <button onClick={onDelete} className="text-red-500 text-sm font-galey font-semibold px-3">Supprimer</button>}
+        <button onClick={() => { if (!e.nom.trim()) { setErreurNom(true); return; } onSave({ ...e, nom: e.nom.trim() }); }}
+          className="flex-1 py-2.5 rounded-xl text-sm font-galey font-bold text-white" style={{ background: TEAL }}>
+          Valider
+        </button>
+      </div>
     </SheetShell>
   );
 }

@@ -19,6 +19,8 @@ export const TYPES_SUIVI: { key: string; label: string }[] = [
   { key: 'bilan_posture', label: 'Bilan de posture' },
   { key: 'osteopathie', label: 'Ostéopathie' },
   { key: 'physiotherapie', label: 'Physiothérapie' },
+  { key: 'reeducation', label: 'Rééducation' },
+  { key: 'suivi_fonctionnel', label: 'Suivi fonctionnel' },
   { key: 'suivi_veterinaire', label: 'Suivi vétérinaire' },
   { key: 'suivi_sportif', label: 'Suivi sportif' },
   { key: 'suivi_post_operatoire', label: 'Suivi post-opératoire' },
@@ -27,6 +29,71 @@ export const TYPES_SUIVI: { key: string; label: string }[] = [
   { key: 'autre', label: 'Autre' },
 ];
 export function labelTypeSuivi(v?: string | null) { return TYPES_SUIVI.find(t => t.key === v)?.label ?? 'Suivi'; }
+
+// ── Soins & Rééducation (séances des professionnels) ─────────────────────────
+// Une séance = un suivis_morpho = un PDF. Miroir appli : morpho_constants.dart.
+
+/** Types proposés à un professionnel (ostéo, physio, rééducation…). */
+export const TYPES_SEANCE_PRO: { key: string; label: string }[] = [
+  { key: 'osteopathie', label: 'Ostéopathie' },
+  { key: 'physiotherapie', label: 'Physiothérapie' },
+  { key: 'reeducation', label: 'Rééducation' },
+  { key: 'bilan_morphologique', label: 'Bilan morphologique' },
+  { key: 'suivi_fonctionnel', label: 'Suivi fonctionnel' },
+  { key: 'bilan_posture', label: 'Bilan de posture' },
+  { key: 'suivi_sportif', label: 'Suivi sportif' },
+  { key: 'suivi_post_operatoire', label: 'Suivi post-opératoire' },
+  { key: 'autre', label: 'Autre séance' },
+];
+
+/** Titre du compte rendu (PDF, en-têtes) d'après le type de séance. */
+export function titreCompteRendu(type?: string | null): string {
+  switch (type) {
+    case 'osteopathie': return 'Compte rendu ostéopathique';
+    case 'physiotherapie': return 'Compte rendu de physiothérapie';
+    case 'reeducation': return 'Compte rendu de rééducation';
+    case 'bilan_morphologique': return 'Bilan morphologique';
+    case 'bilan_posture': return 'Bilan de posture';
+    case 'suivi_fonctionnel': return 'Compte rendu de suivi fonctionnel';
+    default: return 'Compte rendu de séance';
+  }
+}
+
+/** Type de séance par défaut d'après la profession du professionnel. */
+export function typeSeanceParDefaut(profession?: string | null): string {
+  const p = (profession ?? '').toLowerCase();
+  if (p.includes('osteo') || p.includes('ostéo')) return 'osteopathie';
+  if (p.includes('kine') || p.includes('kiné') || p.includes('physio')) return 'physiotherapie';
+  if (p.includes('reeduc') || p.includes('rééduc')) return 'reeducation';
+  return 'autre';
+}
+
+/** Filtre « Soins & Rééducation » du carnet (propriétaire / fiche patient). */
+export function familleSeance(type?: string | null): 'osteopathie' | 'reeducation' | 'bilan' | 'autre' {
+  switch (type) {
+    case 'osteopathie': return 'osteopathie';
+    case 'physiotherapie': case 'reeducation': case 'suivi_fonctionnel': case 'suivi_post_operatoire': case 'suivi_sportif': return 'reeducation';
+    case 'bilan_morphologique': case 'bilan_posture': return 'bilan';
+    default: return 'autre';
+  }
+}
+export const FAMILLES_SEANCE: { key: string; label: string }[] = [
+  { key: 'osteopathie', label: 'Ostéopathie' },
+  { key: 'reeducation', label: 'Physiothérapie / Rééducation' },
+  { key: 'bilan', label: 'Bilans morphologiques' },
+  { key: 'autre', label: 'Autres' },
+];
+
+/** Statut d'un compte rendu : null = ancien suivi (avant la refonte). */
+export function labelStatutCr(statut?: string | null): string {
+  return statut === 'brouillon' ? 'Brouillon' : statut === 'finalise' ? 'Finalisé' : '';
+}
+
+/** Conseil / exercice d'un compte rendu (suivis_morpho_exercices). */
+export interface ExerciceSeance {
+  nom: string; description: string; consignes: string; frequence: string; duree: string; precautions: string;
+  photo_url?: string | null;
+}
 
 export const NIVEAUX_ACTIVITE: { key: string; label: string }[] = [
   { key: 'faible', label: 'Faible' },

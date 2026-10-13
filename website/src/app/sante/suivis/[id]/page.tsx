@@ -8,7 +8,7 @@ import { functions } from '@/lib/firebase';
 import { useSanteAccess } from '@/hooks/useSanteAccess';
 import MorphoSilhouette from '@/components/morpho/MorphoSilhouette';
 import {
-  TEAL, labelTypeSuivi, labelActivite, labelCategoriePoint, colorPointEffectif,
+  TEAL, labelTypeSuivi, titreCompteRendu, labelActivite, type ExerciceSeance, labelCategoriePoint, colorPointEffectif,
   CATEGORIES_OBSERVATION_STATIQUE, labelsValeurObservation, colorValeurObservation,
   SOURCE_LABELS, MORPHO_AVERTISSEMENT, VUES_PHOTOS, NIVEAUX_ACTIVITE,
   morphoSpeciesKey, vuesDisponibles, type MorphoPoint,
@@ -31,6 +31,8 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
   const [points, setPoints] = useState<MorphoPoint[]>([]);
   const [observations, setObservations] = useState<{ categorie: string; valeur: string; commentaire: string | null }[]>([]);
   const [mouvements, setMouvements] = useState<{ activite: string; observation: string | null; gene_observee: boolean | null; commentaire: string | null }[]>([]);
+  const [exercices, setExercices] = useState<ExerciceSeance[]>([]);
+  const [finalisant, setFinalisant] = useState(false);
   const [vue, setVue] = useState('profil_d');
   const [exporting, setExporting] = useState(false);
   const [sendingNotif, setSendingNotif] = useState(false);
@@ -81,6 +83,9 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
         .map(p => ({ ...p, id: String(p.id) })));
       setObservations((ob.data ?? []) as { categorie: string; valeur: string; commentaire: string | null }[]);
       setMouvements((mv.data ?? []) as { activite: string; observation: string | null; gene_observee: boolean | null; commentaire: string | null }[]);
+      // Conseils et exercices (migration_soins_reeducation.sql ; absente → liste vide)
+      const { data: ex } = await supabase.from('suivis_morpho_exercices').select('*').eq('suivi_id', id).order('ordre');
+      setExercices((ex ?? []) as ExerciceSeance[]);
 
       if (s.animal_id) {
         const { data: a } = await supabase.from('animaux').select('nom, espece, race').eq('id', s.animal_id).maybeSingle();
@@ -146,6 +151,18 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
     }
   }
 
+  // Brouillon → finalisé : partageable ensuite ; corrections tracées (versions).
+  async function handleFinaliser() {
+    if (!suivi) return;
+    if (!confirm('Finaliser le compte rendu ? Il pourra ensuite être partagé. Une correction restera possible : la version précédente sera conservée.')) return;
+    setFinalisant(true);
+    const finalise_a = new Date().toISOString();
+    const { error } = await supabase.from('suivis_morpho').update({ statut: 'finalise', finalise_a }).eq('id', id);
+    setFinalisant(false);
+    if (error) { alert(`Erreur : ${error.message}`); return; }
+    setSuivi(prev => (prev ? { ...prev, statut: 'finalise', finalise_a } : prev));
+  }
+
   async function handleDelete() {
     if (!suivi) return;
     if (!confirm('Supprimer ce suivi ? Cette action est définitive et supprime aussi ses photos, vidéos et points.')) return;
@@ -163,27 +180,39 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
   const extra = photos.filter(p => p.vue === 'autre');
   const pointsForVue = points.filter(p => p.vue === vue);
   const source = (suivi.source as string) ?? 'proprietaire';
+  const statut = (suivi.statut as string | null) ?? null;
+  const brouillon = statut === 'brouillon';
+  const sansAnatomie = suivi.avec_anatomie === false;
+  const texte = (k: string) => (typeof suivi[k] === 'string' && (suivi[k] as string).trim() ? (suivi[k] as string).trim() : null);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold font-galey" style={{ color: TEAL }}>{labelTypeSuivi(suivi.type_suivi as string)}</h1>
+        <div>
+          <h1 className="text-xl font-bold font-galey" style={{ color: TEAL }}>
+            {source === 'professionnel' ? titreCompteRendu(suivi.type_suivi as string) : labelTypeSuivi(suivi.type_suivi as string)}
+          </h1>
+          {brouillon && <p className="text-xs font-semibold text-[#B45309]">Brouillon — non visible du client</p>}
+        </div>
         <div className="flex items-center gap-2">
           {isSante && (
             <>
               <button onClick={() => router.push(`/sante/suivis/nouveau?suiviId=${id}${suivi.animal_id ? `&animalId=${suivi.animal_id}` : ''}&espece=${encodeURIComponent(espece)}`)}
                 className="px-3 py-2 rounded-full text-sm font-galey font-semibold border" style={{ borderColor: TEAL, color: TEAL }}>
-                Modifier
+                {statut === 'finalise' ? 'Corriger' : 'Modifier'}
               </button>
-              <button onClick={handleDelete}
-                className="px-3 py-2 rounded-full text-sm font-galey font-semibold border border-red-200 text-red-600">
-                Supprimer
-              </button>
+              {/* Un compte rendu finalisé reste tracé : pas de suppression. */}
+              {statut !== 'finalise' && (
+                <button onClick={handleDelete}
+                  className="px-3 py-2 rounded-full text-sm font-galey font-semibold border border-red-200 text-red-600">
+                  Supprimer
+                </button>
+              )}
             </>
           )}
           <button disabled={exporting} onClick={handleExport}
             className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold disabled:opacity-50" style={{ background: TEAL }}>
-            {exporting ? 'Export…' : '⬆ Exporter PDF'}
+            {exporting ? 'Export…' : brouillon ? 'Aperçu PDF' : 'Exporter PDF'}
           </button>
         </div>
       </div>
@@ -199,6 +228,9 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
         {suivi.client_nom_libre ? <Line label="Client" value={suivi.client_nom_libre as string} /> : null}
         {suivi.client_contact_libre ? <Line label="Contact" value={suivi.client_contact_libre as string} /> : null}
         {suivi.professionnel_nom ? <Line label="Professionnel" value={suivi.professionnel_nom as string} /> : null}
+        {texte('intitule') ? <Line label="Intitulé" value={texte('intitule')!} /> : null}
+        {suivi.lieu === 'cabinet' || suivi.lieu === 'exterieur'
+          ? <Line label="Lieu" value={suivi.lieu === 'cabinet' ? 'Cabinet' : 'Intervention extérieure'} /> : null}
         {suivi.motif ? <Line label="Motif" value={suivi.motif as string} /> : null}
         {suivi.poids ? <Line label="Poids" value={`${suivi.poids} kg`} /> : null}
         {suivi.taille ? <Line label="Taille" value={`${suivi.taille} cm`} /> : null}
@@ -223,7 +255,20 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
         )}
       </Card>
 
-      {isSante && !!suivi.animal_id && (
+      {isSante && brouillon && (
+        <div className="rounded-2xl p-4 bg-white border border-gray-100 shadow-sm flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold font-galey text-gray-800">Brouillon</p>
+            <p className="text-xs font-galey text-gray-400">Non visible du client. Finalisez-le pour pouvoir le partager.</p>
+          </div>
+          <button disabled={finalisant} onClick={handleFinaliser}
+            className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold disabled:opacity-50 flex-shrink-0" style={{ background: TEAL }}>
+            {finalisant ? 'Finalisation…' : 'Finaliser'}
+          </button>
+        </div>
+      )}
+
+      {isSante && !brouillon && !!suivi.animal_id && (
         <div className="rounded-2xl p-4 bg-white border border-gray-100 shadow-sm">
           {suivi.notifie_a ? (
             <div className="flex items-center gap-2">
@@ -244,6 +289,48 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {texte('observations_bilan') && <Section titre="Observations et bilan" texte={texte('observations_bilan')!} />}
+      {texte('intervention') && <Section titre="Intervention réalisée" texte={texte('intervention')!} />}
+
+      {exercices.length > 0 && (
+        <div>
+          <h2 className="text-sm font-bold font-galey text-gray-800 mb-2">Conseils et exercices</h2>
+          <div className="space-y-2">
+            {exercices.map((e, i) => (
+              <Card key={i}>
+                <div className="flex gap-3">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="text-sm font-bold font-galey text-gray-800">{e.nom}</p>
+                    {e.description && <p className="text-sm text-gray-700 whitespace-pre-line">{e.description}</p>}
+                    {e.consignes && <Line label="Consignes" value={e.consignes} />}
+                    {e.frequence && <Line label="Fréquence" value={e.frequence} />}
+                    {e.duree && <Line label="Durée" value={e.duree} />}
+                    {e.precautions && <Line label="Précautions" value={e.precautions} />}
+                  </div>
+                  {e.photo_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={e.photo_url} alt="" className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(!!texte('suivi_recommande') || suivi.orientation_veto === true || !!suivi.prochain_controle) && (
+        <div>
+          <h2 className="text-sm font-bold font-galey text-gray-800 mb-2">Suivi recommandé</h2>
+          <Card>
+            {texte('suivi_recommande') && <p className="text-sm text-gray-700 whitespace-pre-line">{texte('suivi_recommande')}</p>}
+            {suivi.orientation_veto === true && <Line label="Orientation" value="consultation vétérinaire conseillée" />}
+            {suivi.prochain_controle
+              ? <Line label="Contrôle conseillé" value={new Date(suivi.prochain_controle as string).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} />
+              : null}
+          </Card>
         </div>
       )}
 
@@ -289,9 +376,9 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      {points.length > 0 && (
+      {points.length > 0 && !sansAnatomie && (
         <div>
-          <h2 className="text-sm font-bold font-galey text-gray-800 mb-2">Silhouette</h2>
+          <h2 className="text-sm font-bold font-galey text-gray-800 mb-2">Bilan anatomique</h2>
           <Card>
             <div className="flex flex-wrap gap-2 justify-center mb-3">
               {vuesDisponibles(espece).map(v => (
@@ -360,6 +447,14 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
 
 function Card({ children }: { children: React.ReactNode }) {
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">{children}</div>;
+}
+function Section({ titre, texte }: { titre: string; texte: string }) {
+  return (
+    <div>
+      <h2 className="text-sm font-bold font-galey text-gray-800 mb-2">{titre}</h2>
+      <Card><p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{texte}</p></Card>
+    </div>
+  );
 }
 function Line({ label, value }: { label: string; value: string }) {
   return <p className="text-sm font-galey text-gray-700"><span className="font-bold">{label} :</span> {value}</p>;

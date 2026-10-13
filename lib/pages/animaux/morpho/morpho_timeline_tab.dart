@@ -272,6 +272,7 @@ class _SuiviCard extends StatelessWidget {
                 if (date != null) DateFormat('d MMM yyyy', 'fr_FR').format(date),
                 if (suivi['checkpoint_age'] != null && (suivi['checkpoint_age'] as String).isNotEmpty) suivi['checkpoint_age'],
                 kSourceLabels[source] ?? '',
+                labelStatutCr(suivi['statut']?.toString()),
               ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
             ]),

@@ -101,9 +101,12 @@ BEGIN
   IF OLD.statut IS DISTINCT FROM 'finalise' THEN
     RETURN NEW;
   END IF;
-  -- Partage seul (notifie_a) ou horodatage : pas une correction du contenu.
-  IF (to_jsonb(NEW) - 'notifie_a' - 'updated_at' - 'version')
-     = (to_jsonb(OLD) - 'notifie_a' - 'updated_at' - 'version') THEN
+  -- Partage seul (notifie_a) : pas une correction du contenu. L'appli
+  -- renseigne updated_at à CHAQUE enregistrement d'un compte rendu finalisé
+  -- (y compris quand seuls les exercices, table rattachée, changent) : la
+  -- version précédente est alors toujours archivée.
+  IF (to_jsonb(NEW) - 'notifie_a' - 'version')
+     = (to_jsonb(OLD) - 'notifie_a' - 'version') THEN
     RETURN NEW;
   END IF;
   INSERT INTO suivis_morpho_versions (suivi_id, version, snapshot, modifie_par)

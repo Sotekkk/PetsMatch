@@ -28,6 +28,8 @@ const List<(String, String)> kTypesSuivi = [
   ('bilan_posture', 'Bilan de posture'),
   ('osteopathie', 'Ostéopathie'),
   ('physiotherapie', 'Physiothérapie'),
+  ('reeducation', 'Rééducation'),
+  ('suivi_fonctionnel', 'Suivi fonctionnel'),
   ('suivi_veterinaire', 'Suivi vétérinaire'),
   ('suivi_sportif', 'Suivi sportif'),
   ('suivi_post_operatoire', 'Suivi post-opératoire'),
@@ -38,6 +40,64 @@ const List<(String, String)> kTypesSuivi = [
 
 String labelTypeSuivi(String? v) =>
     kTypesSuivi.firstWhere((t) => t.$1 == v, orElse: () => ('', 'Suivi')).$2;
+
+// ── Soins & Rééducation (séances des professionnels) ─────────────────────────
+// Une séance = un suivis_morpho = un PDF. Les anciens types restent valides
+// (anciens bilans affichés tels quels). Miroir site : lib/morpho.ts.
+
+/// Types proposés à un professionnel (ostéo, physio, rééducation…).
+const List<(String, String)> kTypesSeancePro = [
+  ('osteopathie', 'Ostéopathie'),
+  ('physiotherapie', 'Physiothérapie'),
+  ('reeducation', 'Rééducation'),
+  ('bilan_morphologique', 'Bilan morphologique'),
+  ('suivi_fonctionnel', 'Suivi fonctionnel'),
+  ('bilan_posture', 'Bilan de posture'),
+  ('suivi_sportif', 'Suivi sportif'),
+  ('suivi_post_operatoire', 'Suivi post-opératoire'),
+  ('autre', 'Autre séance'),
+];
+
+/// Titre du compte rendu (PDF, en-têtes) d'après le type de séance.
+String titreCompteRendu(String? type) => switch (type) {
+      'osteopathie' => 'Compte rendu ostéopathique',
+      'physiotherapie' => 'Compte rendu de physiothérapie',
+      'reeducation' => 'Compte rendu de rééducation',
+      'bilan_morphologique' => 'Bilan morphologique',
+      'bilan_posture' => 'Bilan de posture',
+      'suivi_fonctionnel' => 'Compte rendu de suivi fonctionnel',
+      _ => 'Compte rendu de séance',
+    };
+
+/// Type de séance par défaut d'après la profession du professionnel.
+String typeSeanceParDefaut(String? profession) {
+  final p = (profession ?? '').toLowerCase();
+  if (p.contains('osteo') || p.contains('ostéo')) return 'osteopathie';
+  if (p.contains('kine') || p.contains('kiné') || p.contains('physio')) return 'physiotherapie';
+  if (p.contains('reeduc') || p.contains('rééduc')) return 'reeducation';
+  return 'autre';
+}
+
+/// Filtre « Soins & Rééducation » du carnet (propriétaire / fiche patient).
+String familleSeance(String? type) => switch (type) {
+      'osteopathie' => 'osteopathie',
+      'physiotherapie' || 'reeducation' || 'suivi_fonctionnel' || 'suivi_post_operatoire' || 'suivi_sportif' => 'reeducation',
+      'bilan_morphologique' || 'bilan_posture' => 'bilan',
+      _ => 'autre',
+    };
+const List<(String, String)> kFamillesSeance = [
+  ('osteopathie', 'Ostéopathie'),
+  ('reeducation', 'Physiothérapie / Rééducation'),
+  ('bilan', 'Bilans morphologiques'),
+  ('autre', 'Autres'),
+];
+
+/// Statut d'un compte rendu : null = ancien suivi (avant la refonte).
+String labelStatutCr(String? statut) => switch (statut) {
+      'brouillon' => 'Brouillon',
+      'finalise' => 'Finalisé',
+      _ => '',
+    };
 
 const List<(String, String)> kNiveauxActivite = [
   ('faible', 'Faible'),

@@ -322,9 +322,13 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
                                 Text('${s['_animal_nom'] ?? 'Animal'} — ${labelTypeSuivi(s['type_suivi']?.toString())}',
                                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: kMorphoDark)),
                                 const SizedBox(height: 2),
-                                if (date != null)
-                                  Text(DateFormat('d MMM yyyy', 'fr_FR').format(date),
-                                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                                if (date != null || labelStatutCr(s['statut']?.toString()).isNotEmpty)
+                                  Text([
+                                    if (date != null) DateFormat('d MMM yyyy', 'fr_FR').format(date),
+                                    labelStatutCr(s['statut']?.toString()),
+                                  ].where((x) => x.isNotEmpty).join(' · '),
+                                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                          color: s['statut'] == 'brouillon' ? const Color(0xFFB45309) : Colors.grey.shade500)),
                               ]),
                             ),
                             const Icon(Icons.chevron_right, color: Colors.grey),
