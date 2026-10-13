@@ -94,6 +94,9 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   const [titre, setTitre] = useState('');
   const [date, setDate] = useState(selectedDate ?? today);
   const [heure, setHeure] = useState('');
+  // Sur plusieurs jours : une tâche par jour (miroir appli : _plusieursJours).
+  const [plusieursJours, setPlusieursJours] = useState(false);
+  const [dateFin, setDateFin] = useState('');
   const [assigneUid, setAssigneUid] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -144,11 +147,12 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
     const lignes: (string | null)[] = idsCibles.length > 0 ? idsCibles : [null];
     let error: { message: string } | null = null;
     const insertedByAnimal: { animalId: string | null; tacheId: string }[] = [];
-    for (const animalId of lignes) {
+    for (const jour of jours) for (const animalId of lignes) {
+      if (error) break;
       const { data: inserted, error: insertError } = await supabase.from('taches_elevage').insert({
         uid_eleveur: uid,
         titre: titre.trim(),
-        date, heure: heure || null,
+        date: jour, heure: heure || null,
         notes: notes.trim() || null,
         statut: 'a_faire',
         profil_source: profilSource,
@@ -181,6 +185,11 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
         } else if (noms.length > 1) {
           suffix = ` — ${noms.length} animaux (${noms.length > 4 ? `${noms.slice(0, 4).join(', ')}…` : noms.join(', ')})`;
         }
+        if (jours.length > 1) {
+          const f = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+          const periode = `du ${f(jours[0])} au ${f(jours[jours.length - 1])} (${jours.length} jours)`;
+          suffix = suffix ? `${suffix} · ${periode}` : ` — ${periode}`;
+        }
         const tacheIds = insertedByAnimal.map(x => x.tacheId);
         const data = { tacheId: tacheIds[0], tacheIds };
         await Promise.all([
@@ -212,6 +221,18 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400';
   const libelle = 'text-xs font-semibold text-gray-500 mb-1 block';
   const nbCibles = idsCibles.length;
+  const jours: string[] = (() => {
+    if (!plusieursJours || !dateFin || dateFin < date) return [date];
+    const out: string[] = [];
+    const cur = new Date(`${date}T12:00:00`);
+    const fin = new Date(`${dateFin}T12:00:00`);
+    while (cur <= fin && out.length < 366) {
+      out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  })();
+  const nbTaches = Math.max(nbCibles, 1) * jours.length;
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
@@ -232,7 +253,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={libelle}>Date *</label>
+              <label className={libelle}>{plusieursJours ? 'Du *' : 'Date *'}</label>
               <input type="date" className={champ} value={date} onChange={e => setDate(e.target.value)} />
             </div>
             <div>
@@ -240,6 +261,19 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
               <input type="time" className={champ} value={heure} onChange={e => setHeure(e.target.value)} />
             </div>
           </div>
+          {plusieursJours && (
+            <div>
+              <label className={libelle}>Au</label>
+              <div className="flex items-center gap-3">
+                <input type="date" className={champ} value={dateFin} min={date} onChange={e => setDateFin(e.target.value)} />
+                {jours.length > 1 && <span className="text-[11px] font-bold text-teal-700 whitespace-nowrap">{jours.length} jours</span>}
+              </div>
+            </div>
+          )}
+          <button type="button" onClick={() => { setPlusieursJours(v => !v); if (plusieursJours) setDateFin(''); }}
+            className="-mt-2 text-xs font-semibold text-teal-700 hover:text-teal-800">
+            {plusieursJours ? 'Un seul jour' : '+ Sur plusieurs jours'}
+          </button>
 
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -328,7 +362,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
           </button>
           <button onClick={save} disabled={!titre.trim() || !date || saving}
             className="flex-[1.4] py-2.5 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
-            {saving ? 'Création…' : nbCibles > 1 ? `Créer la tâche (×${nbCibles})` : 'Créer la tâche'}
+            {saving ? 'Création…' : nbTaches > 1 ? `Créer la tâche (×${nbTaches})` : 'Créer la tâche'}
           </button>
         </div>
       </div>
