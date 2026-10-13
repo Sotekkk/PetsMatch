@@ -125,10 +125,10 @@ export default function SanteSuivisPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>Mes suivis</h1>
+        <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>Mes consultations</h1>
         <button onClick={ouvrirChoixPatient}
           className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold" style={{ background: TEAL }}>
-          + Nouveau suivi
+          + Nouvelle consultation
         </button>
       </div>
       <p className="text-sm text-gray-500 font-galey">Suivi morphologique &amp; bien-être — tous patients confondus.</p>
@@ -156,7 +156,7 @@ export default function SanteSuivisPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setPicker('closed')}>
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-bold font-galey text-gray-900">Nouveau suivi</h3>
+              <h3 className="font-bold font-galey text-gray-900">Nouvelle consultation</h3>
               <button onClick={() => setPicker('closed')} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <button onClick={() => setPicker('libre')}

@@ -146,7 +146,7 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
               Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Align(alignment: Alignment.centerLeft, child: Text('Nouveau suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
+                child: Align(alignment: Alignment.centerLeft, child: Text('Nouvelle consultation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
               ),
               const SizedBox(height: 12),
               ListTile(
@@ -268,13 +268,13 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
       backgroundColor: kMorphoBg,
       appBar: AppBar(
         backgroundColor: kMorphoTeal, foregroundColor: Colors.white, elevation: 0,
-        title: const Text('Mes suivis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        title: const Text('Mes consultations', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _nouveauSuivi,
         backgroundColor: kMorphoTeal,
         icon: const Icon(Icons.add),
-        label: const Text('Nouveau suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        label: const Text('Nouvelle consultation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: kMorphoTeal))

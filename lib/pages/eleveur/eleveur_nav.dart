@@ -282,7 +282,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Mes suivis',
+                        label: 'Mes consultations',
                         icon: Icons.accessibility_new,
                         onTap: () {
                           Navigator.pop(context);

@@ -9,6 +9,7 @@
 // d'intervention (rdv.lieu, sans salle) ou des coordonnées (lieu_lat) — même
 // règle que l'agenda. L'adresse du propriétaire n'est jamais supposée.
 
+import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -19,7 +20,6 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart' show labelTypeSuivi;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/message.dart';
-import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/sante_suivis_morpho_page.dart';
@@ -331,7 +331,13 @@ class _SanteDashboardState extends State<SanteDashboard> {
       ),
     );
     if (choisi != null && mounted) {
-      _go(CompteRenduPage(animalId: choisi['id']?.toString(), clientName: choisi['nom']?.toString() ?? '', categoryColor: _teal));
+      // Ostéo / physio : compte rendu de SÉANCE (Soins & Rééducation) — le
+      // compte rendu vétérinaire (CompteRenduPage) reste réservé aux vétos.
+      _go(MorphoFormPage(
+        animalId: choisi['id']?.toString(),
+        espece: choisi['espece']?.toString() ?? 'chien',
+        proProfileId: _pid.isNotEmpty ? _pid : null,
+      ));
     }
   }
 
@@ -793,7 +799,7 @@ class _SanteDashboardState extends State<SanteDashboard> {
           children: [
             tuile(Icons.add_circle_outline, 'Nouveau RDV', () => _go(const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true))),
             tuile(Icons.search, 'Rechercher un patient', () => _go(const ProClientsPage())),
-            tuile(Icons.event_repeat_outlined, 'Créer un suivi', () => _go(const SanteSuivisMorphoPage())),
+            tuile(Icons.event_repeat_outlined, 'Mes consultations', () => _go(const SanteSuivisMorphoPage())),
             tuile(Icons.edit_note, 'Rédiger un compte rendu', _choisirPatientCr),
             tuile(Icons.directions_outlined, 'Itinéraire du prochain déplacement',
                 deplacement.isEmpty ? null : () => _itineraire(deplacement.first)),

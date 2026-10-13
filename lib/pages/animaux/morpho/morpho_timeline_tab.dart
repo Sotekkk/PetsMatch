@@ -203,7 +203,7 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
             child: ElevatedButton.icon(
               onPressed: _nouveauSuivi,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Nouveau suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              label: Text(_modePro ? 'Nouvelle consultation' : 'Nouveau suivi', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 13),

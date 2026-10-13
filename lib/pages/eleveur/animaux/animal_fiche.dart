@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'package:PetsMatch/utils/chaleurs_etat.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -2320,11 +2321,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   // Anatomie a fusionné dans Morphologie pour santé (pointage
                   // libre + compte-rendu structuré) — maréchal-ferrant garde
                   // l'ancien onglet Anatomie séparé, hors périmètre ici.
-                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')]
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Soins & Rééducation')]
                   : User_Info.catPro == 'marechal_ferrant'
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
                   : User_Info.catPro == 'veterinaire'
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Soins & Rééducation')]
                       // Pet-sitter : pas de Consultations (domaine santé réservé
                       // aux pros de santé) mais Alimentation (essentiel pour
                       // nourrir l'animal pendant la garde).
@@ -2371,7 +2372,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: true, sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 if (_isHealthPro)
-                  _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
+                  _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId, espece: _espece),
                 // Maréchal-ferrant garde l'ancien onglet Anatomie séparé
                 // (pointage libre, hors périmètre de la fusion Morphologie) ;
                 // santé a fusionné dans Morphologie ci-dessous.
@@ -5294,7 +5295,7 @@ class _ComptesRendusMorphoTile extends StatelessWidget {
                   const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 15, color: Color(0xFF1F2A2E))),
                   const SizedBox(height: 2),
-                  Text('Morphologie · $n enregistrement${n > 1 ? 's' : ''}',
+                  Text('Soins & Rééducation · $n compte${n > 1 ? 's' : ''} rendu${n > 1 ? 's' : ''}',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
                 ])),
                 SizedBox(width: 40, height: 44,
@@ -12755,7 +12756,8 @@ class _ConsultationsVetTab extends StatefulWidget {
   final String? ownerUid;
   final String animalNom;
   final String? rdvId;
-  const _ConsultationsVetTab({required this.animalId, required this.ownerUid, required this.animalNom, this.rdvId});
+  final String espece;
+  const _ConsultationsVetTab({required this.animalId, required this.ownerUid, required this.animalNom, this.rdvId, this.espece = 'chien'});
 
   @override
   State<_ConsultationsVetTab> createState() => _ConsultationsVetTabState();
@@ -12831,6 +12833,19 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
   }
 
   void _openCrPage() {
+    // Ostéo / physio : compte rendu de séance (Soins & Rééducation), pas le
+    // compte rendu vétérinaire.
+    if (User_Info.catPro == 'sante') {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => MorphoFormPage(
+          animalId: widget.animalId,
+          espece: widget.espece,
+          proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+          rdvId: widget.rdvId,
+        ),
+      )).then((_) => _load());
+      return;
+    }
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => CompteRenduPage(
         animalId: widget.animalId,

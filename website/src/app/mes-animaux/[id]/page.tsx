@@ -4874,7 +4874,7 @@ function AnimalFichePageInner() {
                 className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50">
                 <span className="min-w-0">
                   <span className="block text-sm font-semibold text-[#1F2A2E]">{labelTypeSuivi(m.type_suivi)}</span>
-                  <span className="block text-xs text-gray-500">Morphologie · {new Date(m.date).toLocaleDateString('fr-FR')}</span>
+                  <span className="block text-xs text-gray-500">Soins & Rééducation · {new Date(m.date).toLocaleDateString('fr-FR')}</span>
                 </span>
                 <span className="text-gray-400" aria-hidden>›</span>
               </a>

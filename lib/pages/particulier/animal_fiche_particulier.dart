@@ -3256,7 +3256,7 @@ class _ComptesRendusMorphoTile extends StatelessWidget {
                   const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 15, color: Color(0xFF1F2A2E))),
                   const SizedBox(height: 2),
-                  Text('Morphologie · $n enregistrement${n > 1 ? 's' : ''}',
+                  Text('Soins & Rééducation · $n compte${n > 1 ? 's' : ''} rendu${n > 1 ? 's' : ''}',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
                 ])),
                 SizedBox(width: 40, height: 44,

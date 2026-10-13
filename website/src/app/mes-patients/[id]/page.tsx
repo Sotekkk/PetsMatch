@@ -677,7 +677,7 @@ function PatientDetailPageInner() {
     : isVet
       ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations',
           ...(hasAnatomie ? ['Anatomie'] : []),
-          ...(hasMorpho ? ['Morphologie'] : [])]
+          ...(hasMorpho ? ['Soins & Rééducation'] : [])]
       : isEducation
         ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
         // Pet-sitter / toilettage / photographe / taxi animalier… : Consultations
@@ -2528,7 +2528,9 @@ function PatientDetailPageInner() {
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
-              onNouveauCr={() => setAddingType('cr')}
+              onNouveauCr={() => catPro === 'sante' && animal
+                ? router.push(`/sante/suivis/nouveau?animalId=${encodeURIComponent(String(animal.id))}&espece=${encodeURIComponent(animal.espece ?? 'chien')}`)
+                : setAddingType('cr')}
               onHistorique={() => setHistoriqueOuvert(true)}
               onValider={async (cr) => {
                 const { error } = await supabase.from('comptes_rendus').update({
@@ -2553,7 +2555,7 @@ function PatientDetailPageInner() {
           <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} profilType={catPro} />
         )}
 
-        {tab === 'Morphologie' && animal && (
+        {tab === 'Soins & Rééducation' && animal && (
           <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} />
         )}
       </div>

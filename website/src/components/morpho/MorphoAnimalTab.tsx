@@ -36,7 +36,7 @@ export default function MorphoAnimalTab({ animalId, espece, canWrite = true, pro
         {canWrite && (
           <a href={`/sante/suivis/nouveau?animalId=${animalId}&espece=${encodeURIComponent(espece)}`}
             className="text-white px-3 py-1.5 rounded-full text-xs font-galey font-semibold" style={{ background: TEAL }}>
-            + Nouveau suivi
+            + Nouvelle consultation
           </a>
         )}
       </div>

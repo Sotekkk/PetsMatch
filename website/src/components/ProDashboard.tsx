@@ -354,7 +354,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                 <Tuile href="/mes-patients" icone="patte" label="Mes patients" />
                 {catPro === 'sante' && (
                   <>
-                    <Tuile href="/sante/suivis" icone="suivi" label="Mes suivis" />
+                    <Tuile href="/sante/suivis" icone="suivi" label="Mes consultations" />
                     <Tuile href="/sante/contrat" icone="document" label="Mes contrats" />
                   </>
                 )}

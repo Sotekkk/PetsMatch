@@ -24,7 +24,7 @@ export default function TuilesSanteVet({ catPro, uid, profileId, abonnementHref 
     ? [
         { label: 'Mes patients', icone: 'stetho', couleur: '#0C5C6C', href: '/mes-patients' },
         { label: 'Agenda RDV', icone: 'calendrier', couleur: '#5F9EAA', href: '/agenda' },
-        { label: 'Mes suivis', icone: 'suivi', couleur: '#7B5EA7', href: '/sante/suivis' },
+        { label: 'Mes consultations', icone: 'suivi', couleur: '#7B5EA7', href: '/sante/suivis' },
         { label: 'Mes contrats', icone: 'document', couleur: '#B8860B', href: '/sante/contrat' },
         { label: 'Facturation', icone: 'facture', couleur: '#6E9E57', href: '/elevage/facturation' },
         { label: 'Mon abonnement', icone: 'etoile', couleur: '#D97706', href: abonnementHref },

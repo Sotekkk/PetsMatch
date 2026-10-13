@@ -41,7 +41,7 @@ interface Suivi {
   id: string; animal_id: string | null; animal_nom_libre: string | null; type_suivi: string | null;
   date: string | null; prochain_controle: string | null; motif: string | null;
 }
-interface Animal { id: string; nom: string | null; photo_url: string | null }
+interface Animal { id: string; nom: string | null; photo_url: string | null; espece?: string | null }
 
 export const estExterieur = (r: Rdv) => (!!r.lieu?.trim() && !r.salle_id) || r.lieu_lat != null;
 const debutDe = (r: Rdv) => new Date(r.date_heure);
@@ -221,7 +221,7 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
     const { data: g } = await supabase.from('animal_access').select('animal_id').eq('pro_profile_id', pid).in('statut', ['active', 'active_write']);
     for (const x of (g ?? []) as { animal_id: string }[]) if (x.animal_id) ids.add(String(x.animal_id));
     if (!ids.size) { setChoixCr([]); return; }
-    const { data } = await supabase.from('animaux').select('id, nom, photo_url').in('id', [...ids]).order('nom');
+    const { data } = await supabase.from('animaux').select('id, nom, photo_url, espece').in('id', [...ids]).order('nom');
     setChoixCr((data ?? []) as Animal[]);
   }
 
@@ -388,7 +388,7 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                 {[
                   { l: 'Nouveau RDV', href: '/mes-rdv?onglet=a_venir&nouveau=1' },
                   { l: 'Rechercher un patient', href: '/mes-patients' },
-                  { l: 'Créer un suivi', href: '/sante/suivis/nouveau' },
+                  { l: 'Mes consultations', href: '/sante/suivis' },
                   { l: 'Rédiger un compte rendu', onClick: choisirPatientCr },
                   { l: 'Itinéraire du prochain déplacement', itineraire: deplacement[0] && (deplacement[0].lieu?.trim() || deplacement[0].lieu_lat != null) ? deplacement[0] : undefined },
                   { l: 'Envoyer un message', href: '/messages' },
@@ -416,7 +416,9 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
             <h3 className="font-bold text-[#1E2025] mb-3">Compte rendu — choisir le patient</h3>
             {choixCr.length === 0 ? <p className="text-sm text-gray-500">Aucun patient pour l&apos;instant : un compte rendu se rédige pour un animal suivi.</p>
               : choixCr.map(a => (
-                <button key={a.id} onClick={() => router.push(`/mes-patients/${a.id}`)} className="w-full flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg text-left">
+                // Ostéo / physio : compte rendu de SÉANCE (Soins & Rééducation),
+                // jamais le compte rendu vétérinaire — miroir appli.
+                <button key={a.id} onClick={() => router.push(`/sante/suivis/nouveau?animalId=${encodeURIComponent(a.id)}&espece=${encodeURIComponent(a.espece ?? 'chien')}`)} className="w-full flex items-center gap-3 py-2 hover:bg-gray-50 rounded-lg text-left">
                   <PhotoAnimal url={a.photo_url} taille={34} />
                   <span className="text-sm font-semibold text-[#1E2025]">{a.nom ?? 'Animal'}</span>
                 </button>

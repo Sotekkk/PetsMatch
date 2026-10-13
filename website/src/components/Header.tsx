@@ -1143,7 +1143,7 @@ export default function Header() {
   // dans "Mon Activité" comme côté appli, pas verrouillé par plan).
   const withSuivisAvantAbo = (effectiveSubCatPro === 'sante')
     ? withEmployeurs.map((sec, i) => i === 0
-        ? { ...sec, items: [...sec.items, { href: '/sante/suivis', label: 'Mes suivis', icon: '🦴' }] }
+        ? { ...sec, items: [...sec.items, { href: '/sante/suivis', label: 'Mes consultations', icon: '🦴' }] }
         : sec)
     : withEmployeurs;
   const withAbonnement = (isEffectivelyPro && !effectiveIsPension && !effectiveIsEducation && !effectiveIsGarde && abonnementHref)

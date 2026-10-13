@@ -286,7 +286,7 @@ function NouveauSuiviContent() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6 pb-24">
-      <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>{isEditing ? 'Modifier le suivi' : 'Nouveau suivi'}</h1>
+      <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>{isEditing ? 'Modifier la consultation' : 'Nouvelle consultation'}</h1>
 
       {saisieLibre && (
         <Card title="Client">

@@ -454,7 +454,11 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       backgroundColor: kMorphoBg,
       appBar: AppBar(
         backgroundColor: kMorphoTeal, foregroundColor: Colors.white, elevation: 0,
-        title: Text(_isEditing ? 'Modifier le suivi' : 'Nouveau suivi', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Text(
+            widget.proProfileId != null
+                ? (_isEditing ? 'Modifier la consultation' : 'Nouvelle consultation')
+                : (_isEditing ? 'Modifier le suivi' : 'Nouveau suivi'),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
       ),
       body: _loadingExisting
           ? const Center(child: CircularProgressIndicator(color: kMorphoTeal))

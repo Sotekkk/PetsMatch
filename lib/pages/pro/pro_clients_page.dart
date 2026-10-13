@@ -456,6 +456,18 @@ class _ProClientsPageState extends State<ProClientsPage>
     final animalId = animal['id']?.toString() ?? '';
     final ownerUidRaw = animal['_owner_uid']?.toString() ?? '';
     final ownerUid = ownerUidRaw.isEmpty ? null : ownerUidRaw;
+    // Ostéo / physio : compte rendu de séance (Soins & Rééducation), jamais
+    // le compte rendu vétérinaire.
+    if (User_Info.catPro == 'sante') {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => MorphoFormPage(
+          animalId: animalId,
+          espece: animal['espece']?.toString() ?? 'chien',
+          proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        ),
+      ));
+      return;
+    }
     // Pet-sitter : pas de compte rendu médical → journal de garde.
     if (User_Info.catPro == 'garde') {
       Navigator.push(context, MaterialPageRoute(

@@ -4656,7 +4656,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // CR / Ordonnance est un flux médical (vétérinaire, pension, santé…) —
           // sans objet pour l'éducateur (rapport de séance dédié) ni pour le
           // pet-sitter (pas d'ordonnance → « Envoyer des nouvelles », ci-dessous).
-          onCompteRendu: (showProTools && AgendaContexte.catPro != 'education' && AgendaContexte.catPro != 'garde')
+          // Ostéo / physio (sante) : pas de CR vétérinaire — leur compte rendu
+          // de séance passe par onSuiviMorpho (Soins & Rééducation).
+          onCompteRendu: (showProTools && AgendaContexte.catPro != 'education' && AgendaContexte.catPro != 'garde' && AgendaContexte.catPro != 'sante')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
@@ -5124,7 +5126,7 @@ class _RdvCard extends StatelessWidget {
                 IconButton(
                   onPressed: onSuiviMorpho,
                   icon: const Icon(Icons.accessibility_new, size: 20, color: Color(0xFF6E9E57)),
-                  tooltip: 'Compte-rendu morpho',
+                  tooltip: 'Rédiger le compte rendu',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
