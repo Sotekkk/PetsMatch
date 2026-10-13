@@ -1,5 +1,6 @@
 'use client';
 
+import { especesEleveesPourBdd } from '@/lib/especes-elevees';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -300,7 +301,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.siret            = siret.trim();
         data.acaced_numero    = acaced.trim();
         data.acaced_date_obtention = acacedDateObtention;
-        data.especes_elevees  = Array.from(especesEleveesSet);
+        data.especes_elevees  = especesEleveesPourBdd(especesEleveesSet);
 
         // Upload KBIS
         if (siretDocFile) {

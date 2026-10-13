@@ -1,5 +1,6 @@
 'use client';
 
+import { especesEleveesDepuis } from '@/lib/especes-elevees';
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -96,14 +97,7 @@ function fromFirestore(uid: string, d: Record<string, unknown>): EleveurData {
 }
 
 function fromSupabase(uid: string, d: Record<string, unknown>): EleveurData {
-  const especesElevees = d['especes_elevees'];
-  let especesList: { espece: string; races: string[] }[] = [];
-  if (Array.isArray(especesElevees) && especesElevees.length > 0) {
-    especesList = especesElevees.map((e: { espece?: string; races?: string[] }) => ({
-      espece: e.espece ?? '',
-      races: e.races ?? [],
-    }));
-  }
+  const especesList = especesEleveesDepuis(d['especes_elevees']);
   return {
     uid,
     name: (d['nom'] as string)?.trim() || `${d['firstname'] ?? ''} ${d['lastname'] ?? ''}`.trim() || 'Éleveur',
@@ -183,11 +177,7 @@ export default function EleveurProfilePage() {
           if (!p) { setNotFound(true); setLoading(false); return; }
           const pr = p as Record<string, unknown>;
           const firebaseUid = pr['uid'] as string;
-          let especes: { espece: string; races: string[] }[] = [];
-          const rawEsp = pr['especes_elevees'];
-          if (typeof rawEsp === 'string') {
-            try { especes = JSON.parse(rawEsp); } catch { especes = []; }
-          } else if (Array.isArray(rawEsp)) { especes = rawEsp; }
+          const especes = especesEleveesDepuis(pr['especes_elevees']);
           setEleveur({
             uid: firebaseUid,
             name: (pr['nom'] as string | null)?.trim()

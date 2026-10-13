@@ -1,5 +1,6 @@
 'use client';
 
+import { especesEleveesDepuis } from '@/lib/especes-elevees';
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -61,13 +62,7 @@ export default function ElevagesPage() {
       .then(({ data: profiles }) => {
         const list: Eleveur[] = (profiles ?? []).map(p => {
           const pr = p as Record<string, unknown>;
-          let especes: { espece: string; races?: string[] }[] = [];
-          const rawEsp = pr['especes_elevees'];
-          if (typeof rawEsp === 'string') {
-            try { especes = JSON.parse(rawEsp); } catch { especes = []; }
-          } else if (Array.isArray(rawEsp)) {
-            especes = rawEsp as { espece: string; races?: string[] }[];
-          }
+          const especes = especesEleveesDepuis(pr['especes_elevees']);
           return {
             id:        pr['id']  as string,
             uid:       pr['uid'] as string,

@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -159,9 +160,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // ── Espèces de l'éleveur ──────────────────────────────────────────────────────
   List<String> get _breederSpecies {
-    final es = User_Info.especesElevees;
-    if (es.isEmpty) return kSpeciesData.where((s) => s.value != 'tous').map((s) => s.value).toList();
-    return es;
+    // Espèces déclarées et connues ; aucune → toutes (jamais une liste vide,
+    // qui bloquerait le choix de l'espèce et donc des races).
+    final toutes = kSpeciesData.where((s) => s.value != 'tous').map((s) => s.value).toList();
+    final es = especesEleveesDepuis(User_Info.especesElevees).where(toutes.contains).toList();
+    return es.isEmpty ? toutes : es;
   }
 
   List<String> get _breederBreeds {

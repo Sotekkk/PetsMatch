@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'dart:io';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -492,7 +493,7 @@ class User_Info {
     isCat = data['isCat'] ?? isCat;
     dogBreeds = _safeStringList(data['dogBreeds'], dogBreeds);
     catBreeds = _safeStringList(data['catBreeds'], catBreeds);
-    especesElevees = _safeStringList(data['especesElevees'], especesElevees);
+    if (data['especesElevees'] is List) especesElevees = especesEleveesDepuis(data['especesElevees']);
     bannerUrl = data['bannerUrl'] ?? bannerUrl;
 
     // Champs pro avancés (S01) — parsing défensif
@@ -609,7 +610,7 @@ class User_Info {
             : p['profile_label']?.toString() ?? '';
     numeroElevage  = p['numero_elevage']?.toString() ?? '0000000000';
     acacedNumero   = p['acaced_numero']?.toString() ?? '';
-    especesElevees = _safeStringList(p['especes_elevees'], []);
+    especesElevees = especesEleveesDepuis(p['especes_elevees']);
 
     // Pro avancé — écrasement inconditionnel : un changement de profil
     // actif doit refléter fidèlement le nouveau profil, y compris vide,

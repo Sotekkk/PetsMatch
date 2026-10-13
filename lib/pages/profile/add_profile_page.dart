@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -400,7 +401,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['numero_elevage']  = _numElevageCtrl.text.trim();
       data['is_elevage']      = true;
       data['acaced_numero']   = _acacedCtrl.text.trim();
-      data['especes_elevees'] = _especesElevees.toList();
+      data['especes_elevees'] = especesEleveesPourBdd(_especesElevees);
     }
     if (_isProType) {
       data['cat_pro']            = type;
