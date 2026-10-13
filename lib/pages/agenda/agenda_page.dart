@@ -146,6 +146,30 @@ Color _colorFor(Map<String, dynamic> e) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+
+/// Résumé d'une assignation (plusieurs jours / plusieurs animaux) pour UNE
+/// seule notification — sinon un push par jour et par animal.
+/// Miroir site : components/agenda/AddTacheModal.tsx (resumeAssignation).
+String resumeAssignation({List<Map<String, dynamic>?> animaux = const [], List<DateTime> jours = const []}) {
+  final noms = <String>[];
+  for (final a in animaux) {
+    final n = a?['nom']?.toString();
+    if (n != null && n.isNotEmpty && !noms.contains(n)) noms.add(n);
+  }
+  final parts = <String>[];
+  if (noms.length == 1) {
+    final a = animaux.firstWhere((x) => x?['nom']?.toString() == noms.first, orElse: () => null);
+    final mere = a?['nom_mere']?.toString();
+    parts.add(mere != null && mere.isNotEmpty ? '${noms.first} (Portée de $mere)' : noms.first);
+  } else if (noms.length > 1) {
+    parts.add('${noms.length} animaux (${noms.length > 4 ? '${noms.take(4).join(', ')}…' : noms.join(', ')})');
+  }
+  final js = {for (final j in jours) DateTime(j.year, j.month, j.day)}.toList()..sort();
+  String f(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+  if (js.length > 1) parts.add('du ${f(js.first)} au ${f(js.last)} (${js.length} jours)');
+  return parts.isEmpty ? '' : ' — ${parts.join(' · ')}';
+}
+
 class AgendaPage extends StatefulWidget {
   final VoidCallback? onBack;
   final bool isAssociation;
@@ -3502,26 +3526,25 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
           (e) => e['uid'] == _selectedEmployeUid,
           orElse: () => const {},
         )['nom'] as String? ?? 'un employé';
-        for (final (animal, tacheId) in insertedPairs) {
-          final nomChiot = animal?['nom']?.toString();
-          final nomMere = animal?['nom_mere']?.toString();
-          final portee = (nomMere != null && nomMere.isNotEmpty) ? 'Portée de $nomMere' : null;
-          final suffix = nomChiot != null ? ' — $nomChiot${portee != null ? ' ($portee)' : ''}' : '';
+        // UNE notification (+ copie éleveur) pour toute l'assignation.
+        if (insertedPairs.isNotEmpty) {
+          final suffix = resumeAssignation(animaux: [for (final p in insertedPairs) p.$1]);
+          final ids = [for (final p in insertedPairs) p.$2];
+          final data = <String, dynamic>{'tacheId': ids.first, 'tacheIds': ids};
           await supa.from('notifications').insert({
             'uid': _selectedEmployeUid, 'type': 'tache_assignee',
             'title': 'Nouveau protocole assigné 📋',
             'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}$suffix',
             if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
-            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+            'data': data, 'read': false,
           });
-          // Copie à l'éleveur (créateur) pour qu'il puisse suivre quel chiot
-          // est assigné à qui sans se connecter sur le compte de l'employé.
+          // Copie à l'éleveur (créateur) pour suivre qui fait quoi.
           await supa.from('notifications').insert({
             'uid': widget.uid, 'type': 'tache_assignee',
             'title': 'Protocole assigné 📋',
             'body': 'Assigné à $nomEmploye : ${_labelCtrl.text.trim()}$suffix',
             if (profileId.isNotEmpty) 'profile_id': profileId,
-            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+            'data': data, 'read': false,
           });
         }
       } catch (_) {}
@@ -3869,24 +3892,25 @@ class AddTacheSheetState extends State<AddTacheSheet> {
             (e) => e['uid'] == _selectedEmployeUid,
             orElse: () => const {},
           )['nom'] as String? ?? 'un employé';
-          for (final (animal, tacheId) in insertedPairs) {
-            final nomChiot = animal?['nom']?.toString();
-            final nomMere = animal?['nom_mere']?.toString();
-            final portee = (nomMere != null && nomMere.isNotEmpty) ? 'Portée de $nomMere' : null;
-            final suffix = nomChiot != null ? ' — $nomChiot${portee != null ? ' ($portee)' : ''}' : '';
+          // UNE notification (+ copie éleveur) pour tous les jours et animaux
+          // — avant : un push par jour et par animal.
+          if (insertedPairs.isNotEmpty) {
+            final suffix = resumeAssignation(animaux: [for (final p in insertedPairs) p.$1], jours: _jours);
+            final ids = [for (final p in insertedPairs) p.$2];
+            final data = <String, dynamic>{'tacheId': ids.first, 'tacheIds': ids};
             await supa.from('notifications').insert({
               'uid': _selectedEmployeUid, 'type': 'tache_assignee',
               'title': 'Nouvelle tâche assignée 📋',
               'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}$suffix',
               if ((assigneProfileId ?? '').isNotEmpty) 'profile_id': assigneProfileId,
-              'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+              'data': data, 'read': false,
             });
             await supa.from('notifications').insert({
               'uid': widget.uid, 'type': 'tache_assignee',
               'title': 'Tâche assignée 📋',
               'body': 'Assigné à $nomEmploye : ${_titreCtrl.text.trim()}$suffix',
               if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
-              'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+              'data': data, 'read': false,
             });
           }
         } catch (_) {}

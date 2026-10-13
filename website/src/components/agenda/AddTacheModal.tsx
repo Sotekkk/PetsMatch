@@ -164,34 +164,43 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
       if (tacheId) insertedByAnimal.push({ animalId, tacheId });
     }
 
-    // Une notification par animal (portée entière = 1 tâche + 1 notif par chiot),
-    // avec le nom du chiot et sa portée dans le corps, + copie à l'éleveur.
-    if (!error && assigneUid && !isSelf) {
+    // UNE notification (+ copie à l'éleveur) pour toute l'assignation —
+    // avant : une par animal (portée entière = un push par chiot).
+    // Miroir appli : resumeAssignation (agenda_page.dart).
+    if (!error && assigneUid && !isSelf && insertedByAnimal.length > 0) {
       try {
         const nomEmploye = membres.find(m => m.uid === assigneUid)?.nom ?? 'un employé';
-        await Promise.all(insertedByAnimal.map(({ animalId, tacheId }) => {
-          const animal = animalId ? animauxDispo.find(a => a.id === animalId) : undefined;
-          const groupe = animal?.portee_id ? portees.find(p => p.id === animal.portee_id) : undefined;
-          const suffix = animal ? ` — ${animal.nom}${groupe ? ` (${groupe.label})` : ''}` : '';
-          return Promise.all([
-            supabase.from('notifications').insert({
-              uid: assigneUid, type: 'tache_assignee',
-              title: 'Nouvelle tâche assignée 📋',
-              body: `${titre.trim()}${suffix}`,
-              data: { tacheId },
-              read: false,
-              ...(assigneProfileId ? { profile_id: assigneProfileId } : {}),
-            }),
-            supabase.from('notifications').insert({
-              uid, type: 'tache_assignee',
-              title: 'Tâche assignée 📋',
-              body: `Assigné à ${nomEmploye} : ${titre.trim()}${suffix}`,
-              data: { tacheId },
-              read: false,
-              ...(profileId ? { profile_id: profileId } : {}),
-            }),
-          ]);
-        }));
+        const animaux = insertedByAnimal
+          .map(({ animalId }) => (animalId ? animauxDispo.find(a => a.id === animalId) : undefined))
+          .filter((a): a is NonNullable<typeof a> => !!a);
+        const noms = [...new Set(animaux.map(a => a.nom).filter(Boolean))];
+        let suffix = '';
+        if (noms.length === 1) {
+          const groupe = animaux[0]?.portee_id ? portees.find(p => p.id === animaux[0].portee_id) : undefined;
+          suffix = ` — ${noms[0]}${groupe ? ` (${groupe.label})` : ''}`;
+        } else if (noms.length > 1) {
+          suffix = ` — ${noms.length} animaux (${noms.length > 4 ? `${noms.slice(0, 4).join(', ')}…` : noms.join(', ')})`;
+        }
+        const tacheIds = insertedByAnimal.map(x => x.tacheId);
+        const data = { tacheId: tacheIds[0], tacheIds };
+        await Promise.all([
+          supabase.from('notifications').insert({
+            uid: assigneUid, type: 'tache_assignee',
+            title: 'Nouvelle tâche assignée 📋',
+            body: `${titre.trim()}${suffix}`,
+            data,
+            read: false,
+            ...(assigneProfileId ? { profile_id: assigneProfileId } : {}),
+          }),
+          supabase.from('notifications').insert({
+            uid, type: 'tache_assignee',
+            title: 'Tâche assignée 📋',
+            body: `Assigné à ${nomEmploye} : ${titre.trim()}${suffix}`,
+            data,
+            read: false,
+            ...(profileId ? { profile_id: profileId } : {}),
+          }),
+        ]);
       } catch (_) {}
     }
 
