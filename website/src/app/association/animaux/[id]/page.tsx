@@ -1,5 +1,6 @@
 'use client';
 
+import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -73,7 +74,7 @@ const HEALTH_SECTIONS = [
   { table: 'vaccinations',     label: 'Vaccinations',       icon: '💉', color: SANTE_COULEURS.vaccinations,
     fields: [{ key: 'vaccin', label: 'Vaccin', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'lot', label: 'N° lot' }, { key: 'notes', label: 'Notes' }] },
   { table: 'vermifuges',       label: 'Vermifuges',         icon: '🪱', color: SANTE_COULEURS.vermifuges,
-    fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'dose', label: 'Dose' }, { key: 'notes', label: 'Notes' }] },
+    fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'dosage', label: 'Dosage' }, { key: 'notes', label: 'Notes' }] },
   { table: 'antiparasitaires', label: 'Antiparasitaires',   icon: '🦟', color: SANTE_COULEURS.antiparasitaires,
     fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'traitements',      label: 'Traitements',        icon: '💊', color: SANTE_COULEURS.traitements,
@@ -96,9 +97,11 @@ const HEALTH_SECTIONS = [
     fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
 ];
 
-function AddForm({ fields, onSave, onCancel, saving }:
+function AddForm({ fields, onSave, onCancel, saving, extra }:
   { fields: { key: string; label: string; type?: string; required?: boolean }[];
-    onSave: (d: Record<string, string>) => Promise<void>; onCancel: () => void; saving: boolean }) {
+    onSave: (d: Record<string, string>) => Promise<void>; onCancel: () => void; saving: boolean;
+    /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
+    extra?: React.ReactNode }) {
   const [form, setForm] = useState<Record<string, string>>({});
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
   return (
@@ -117,6 +120,7 @@ function AddForm({ fields, onSave, onCancel, saving }:
           )}
         </div>
       ))}
+      {extra}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
         <button onClick={() => onSave(form)} disabled={saving}
@@ -225,10 +229,20 @@ function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
       });
   }, [animalId]);
 
+  // Vermifuge : durée / rappels de prise + plusieurs animaux d'un coup.
+  const [optsVermifuge, setOptsVermifuge] = useState<OptionsVermifuge>(optionsVermifugeVides());
   const handleAdd = async (table: string, data: Record<string, string>) => {
+    if (table === 'vermifuges' && optsVermifuge.rappel && optsVermifuge.heures.length === 0) {
+      alert('Ajoutez au moins une heure de rappel.'); return;
+    }
     setSaving(true);
-    const { data: row } = await supabase.from(table).insert({ ...data, animal_id: animalId }).select().single();
-    if (row) setHealth(prev => ({ ...prev, [table]: [row as HealthRecord, ...(prev[table] ?? [])] }));
+    const cibles = table === 'vermifuges' ? [animalId, ...optsVermifuge.autres] : [animalId];
+    for (const cible of cibles) {
+      const extraCols = table === 'vermifuges' ? colonnesPrises(optsVermifuge, data.date) : {};
+      const { data: row } = await supabase.from(table).insert({ ...data, ...extraCols, animal_id: cible }).select().single();
+      if (row && cible === animalId) setHealth(prev => ({ ...prev, [table]: [row as HealthRecord, ...(prev[table] ?? [])] }));
+    }
+    if (table === 'vermifuges') setOptsVermifuge(optionsVermifugeVides());
     setAddOpen(null);
     setSaving(false);
   };
@@ -255,7 +269,9 @@ function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
               ) : (
                 <AddForm fields={s.fields} saving={saving}
                   onCancel={() => setAddOpen(null)}
-                  onSave={d => handleAdd(s.table, d)} />
+                  onSave={d => handleAdd(s.table, d)}
+                  extra={s.table === 'vermifuges'
+                    ? <VermifugeOptions animalId={animalId} value={optsVermifuge} onChange={setOptsVermifuge} /> : undefined} />
               )
             ) : undefined}>
             {records.map(r => (

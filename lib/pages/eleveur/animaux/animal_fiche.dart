@@ -29,6 +29,7 @@ import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTa
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
+import 'package:PetsMatch/widgets/carnet/vermifuge_options.dart';
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/widgets/vet/consultation_widgets.dart';
 import 'package:PetsMatch/pages/pro/historique_patient_page.dart';
@@ -7606,6 +7607,8 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
   final _notes   = TextEditingController();
   late String _frequenceUnite = widget.prefillFrequenceUnite ?? 'mois';
   DateTime? _date, _dateRappel;
+  /// Durée / rappels de prise + autres animaux (widgets/carnet/vermifuge_options.dart).
+  final _options = OptionsVermifuge();
 
   String? get _frequenceLabel {
     final n = int.tryParse(_frequenceValeur.text.trim());
@@ -7651,34 +7654,48 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
     ])),
+    _DCustom(PrisesVermifugeSection(options: _options)),
+    // Saisie groupée : réservée au propriétaire (pas au vétérinaire).
+    if (widget.vetId == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
     _DD('Prochain rappel', _dateRappel, (d) => setState(() => _dateRappel = d)),
     _DF('Notes', _notes, maxLines: 2),
   ], onSave: () async {
     if (_produit.text.isEmpty || _date == null) return false;
-    final id = DateTime.now().microsecondsSinceEpoch.toString();
-    await Supabase.instance.client.from('vermifuges').insert({
-      'id': id, 'animal_id': widget.animalId,
-      'produit': _produit.text.trim(), 'dosage': _dosage.text.trim(),
-      'date': _date!.toIso8601String(),
-      'date_rappel': _dateRappel?.toIso8601String(),
-      if (_frequenceLabel != null) 'frequence': _frequenceLabel,
-      'notes': _notes.text.trim(),
-      'source': widget.source,
-      if (widget.vetId != null) 'vet_id': widget.vetId,
-    });
+    if (_options.erreur != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_options.erreur!)));
+      return false;
+    }
+    final cibles = [widget.animalId, ..._options.autresAnimaux];
+    final base = DateTime.now().microsecondsSinceEpoch;
+    for (var i = 0; i < cibles.length; i++) {
+      final id = '${base + i}';
+      await Supabase.instance.client.from('vermifuges').insert({
+        'id': id, 'animal_id': cibles[i],
+        'produit': _produit.text.trim(), 'dosage': _dosage.text.trim(),
+        'date': _date!.toIso8601String(),
+        'date_rappel': _dateRappel?.toIso8601String(),
+        if (_frequenceLabel != null) 'frequence': _frequenceLabel,
+        'notes': _notes.text.trim(),
+        'source': widget.source,
+        if (widget.vetId != null) 'vet_id': widget.vetId,
+        ..._options.colonnes(_date!),
+      });
+      RegistreHelper.writeActe(
+        animalId: cibles[i], typeActe: 'vermifuge', dateActe: _date!,
+        intervenant: widget.vetName ?? '',
+        description: '${_produit.text.trim()}${_dosage.text.trim().isNotEmpty ? ' — ${_dosage.text.trim()}' : ''}',
+        sourceTable: 'vermifuges', sourceId: id,
+      );
+    }
+    // Prochain rappel : un seul événement d'agenda pour tous les animaux.
     if (_dateRappel != null) {
       await _scheduleRappelAgenda(
         animalId: widget.animalId,
         dateRappel: _dateRappel!,
         titre: 'Rappel vermifuge — ${_produit.text.trim()}',
+        autres: _options.autresAnimaux.toList(),
       );
     }
-    RegistreHelper.writeActe(
-      animalId: widget.animalId, typeActe: 'vermifuge', dateActe: _date!,
-      intervenant: widget.vetName ?? '',
-      description: '${_produit.text.trim()}${_dosage.text.trim().isNotEmpty ? ' — ${_dosage.text.trim()}' : ''}',
-      sourceTable: 'vermifuges', sourceId: id,
-    );
     if (widget.vetId != null) {
       try {
         await FirebaseFunctions.instanceFor(region: 'europe-west1')
@@ -9105,16 +9122,20 @@ Future<void> _scheduleRappelAgenda({
   required String animalId,
   required DateTime dateRappel,
   required String titre,
+  /// Autres animaux traités en même temps : un seul rappel pour le groupe.
+  List<String> autres = const [],
 }) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return;
   try {
     String finalTitre = titre;
     try {
-      final a = await Supabase.instance.client
-          .from('animaux').select('nom').eq('id', animalId).maybeSingle();
-      final nom = a?['nom'] as String?;
-      if (nom != null && nom.isNotEmpty) finalTitre = '$titre ($nom)';
+      final rows = await Supabase.instance.client
+          .from('animaux').select('nom').inFilter('id', [animalId, ...autres]);
+      final noms = [for (final a in rows as List) if ((a['nom'] as String?)?.isNotEmpty == true) a['nom'] as String];
+      if (noms.isNotEmpty) {
+        finalTitre = noms.length > 4 ? '$titre (${noms.take(4).join(', ')} +${noms.length - 4})' : '$titre (${noms.join(', ')})';
+      }
     } catch (_) {}
     // Stocke à 08h00 UTC pour affichage correct en France (évite minuit UTC = 02h00 local)
     final dateAt8 = DateTime(dateRappel.year, dateRappel.month, dateRappel.day, 8, 0).toUtc();

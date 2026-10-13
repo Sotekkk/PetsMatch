@@ -1,5 +1,6 @@
 'use client';
 
+import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -252,10 +253,12 @@ function SelectField({ label, value, onChange, options }:
 // Types de vaccins par espèce : voir @/lib/vaccinTypes (partagé avec
 // association/animaux/[id]/page.tsx pour ne jamais diverger entre profils).
 
-function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories }:
+function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories, extra }:
   { fields: { key:string; label:string; type?:string; required?:boolean; options?:{value:string;label:string}[] }[];
     onSave:(data:Record<string,string>)=>Promise<void>;
-    onCancel:()=>void; saving:boolean; initial?: Record<string,string>; espece?: string; existingCategories?: string[] }) {
+    onCancel:()=>void; saving:boolean; initial?: Record<string,string>; espece?: string; existingCategories?: string[];
+    /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
+    extra?: React.ReactNode }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
@@ -342,6 +345,7 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
             return next;
           })} />
       ))}
+      {extra}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
         <button onClick={() => onSave(form)} disabled={saving}
@@ -2434,6 +2438,7 @@ function AnimalFichePageInner() {
   });
   const [addOpen, setAddOpen] = useState<string|null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
+  const [optsVermifuge, setOptsVermifuge] = useState<OptionsVermifuge>(optionsVermifugeVides());
   const [editPoids, setEditPoids] = useState<string|null>(null);
   // "+ Rappel" sur un vaccin : pré-remplit le formulaire d'ajout avec le
   // même vaccin/vétérinaire, il ne reste qu'à changer date et lot.
@@ -3110,21 +3115,24 @@ function AnimalFichePageInner() {
         return '';
     }
   }
-  async function writeRegistreActe(table: string, recordId: string, data: Record<string,unknown>) {
+  /** autre : un autre animal que celui de la page (saisie groupée). */
+  async function writeRegistreActe(table: string, recordId: string, data: Record<string,unknown>,
+    autre?: { id: string; nom?: string | null; espece?: string | null; date_naissance?: string | null; identification?: string | null; sexe?: string | null }) {
     const typeActe = REGISTRE_TYPE_ACTE[table];
     if (!typeActe || !user || !id) return;
+    const cible = autre ?? { id, nom: animal.nom, espece: animal.espece, date_naissance: animal.date_naissance, identification: animal.identification, sexe: animal.sexe };
     const dateActe = String(data.date ?? '');
     if (!dateActe) return;
     try {
       await supabase.from('registre_sanitaire').upsert({
         uid_eleveur: animal.uid_eleveur ?? ownerUid ?? user.uid,
         ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
-        animal_id: id,
-        animal_nom: animal.nom ?? '',
-        espece: animal.espece ?? '',
-        date_naissance: animal.date_naissance ?? null,
-        identification: animal.identification ?? '',
-        sexe: animal.sexe ?? '',
+        animal_id: cible.id,
+        animal_nom: cible.nom ?? '',
+        espece: cible.espece ?? '',
+        date_naissance: cible.date_naissance ?? null,
+        identification: cible.identification ?? '',
+        sexe: cible.sexe ?? '',
         date_acte: dateActe,
         type_acte: typeActe,
         intervenant: String(data.veterinaire ?? ''),
@@ -3141,6 +3149,30 @@ function AnimalFichePageInner() {
     try {
       await supabase.from('registre_sanitaire').delete().eq('source_table', table).eq('source_id', recordId);
     } catch {}
+  }
+
+  // Vermifuge : durée / rappels de prise + plusieurs animaux d'un coup
+  // (components/animaux/VermifugeOptions.tsx).
+  async function saveVermifuge(data: Record<string,string>) {
+    if (!id) return;
+    if (optsVermifuge.rappel && optsVermifuge.heures.length === 0) { alert('Ajoutez au moins une heure de rappel.'); return; }
+    setSavingHealth(true);
+    for (const animalId of [id, ...optsVermifuge.autres]) {
+      const recordId = crypto.randomUUID();
+      const ligne = { ...data, animal_id: animalId, id: recordId, ...colonnesPrises(optsVermifuge, data.date) };
+      await supabase.from('vermifuges').insert(ligne);
+      if (animalId === id) {
+        await writeRegistreActe('vermifuges', recordId, data);
+      } else {
+        const { data: autre } = await supabase.from('animaux')
+          .select('id, nom, espece, date_naissance, identification, sexe').eq('id', animalId).maybeSingle();
+        if (autre) await writeRegistreActe('vermifuges', recordId, data, autre as { id: string });
+      }
+    }
+    setOptsVermifuge(optionsVermifugeVides());
+    await loadHealth();
+    setAddOpen(null);
+    setSavingHealth(false);
   }
 
   async function saveHealthRecord(table: string, data: Record<string,string>) {
@@ -4644,8 +4676,9 @@ function AnimalFichePageInner() {
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vermifuges'?null:'vermifuges'); } : undefined}
             addFormOpen={addOpen==='vermifuges'}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
-              onSave={async d=>{ await saveHealthRecord('vermifuges',d); setRappelPrefill(null); }}
+              onSave={async d=>{ await saveVermifuge(d); setRappelPrefill(null); }}
               initial={rappelPrefill ?? undefined}
+              extra={id ? <VermifugeOptions animalId={id} value={optsVermifuge} onChange={setOptsVermifuge} /> : null}
               fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>}>
             {health.vermifuges.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vermifuges',r.id)}

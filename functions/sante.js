@@ -274,13 +274,19 @@ exports.sendSanteReminders = functions
                 );
                 if (!Array.isArray(rows) || rows.length === 0) continue;
 
+                // 1) Rappels à envoyer (après dédup), 2) regroupés par
+                // propriétaire + produit : plusieurs animaux vermifugés
+                // ensemble = UNE notification et UNE tâche listant les animaux.
+                const groupes = new Map();
                 for (const row of rows) {
                     const animal = row.animaux;
                     const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
                     if (!animal || !uid) continue;
-                    const nomAnimal = animal.nom || "Votre animal";
-                    const produit = row[nomField] || label;
                     const dedupKey = `sante_${table}_${palierKey}_${row.id}`;
+                    const existing = await supabaseGet(
+                        `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
+                    );
+                    if (Array.isArray(existing) && existing.length > 0) continue;
 
                     // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
                     // fiable — voir migration_fix_animaux_proprietes_unique_constraint.sql)
@@ -293,34 +299,35 @@ exports.sendSanteReminders = functions
                         if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
                     } catch (_) {/* pas bloquant */}
 
-                    // Dédup
-                    const existing = await supabaseGet(
-                        `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
-                    );
-                    if (Array.isArray(existing) && existing.length > 0) continue;
+                    const produit = row[nomField] || label;
+                    const cle = `${uid}|${profileId || ""}|${String(produit).trim().toLowerCase()}`;
+                    if (!groupes.has(cle)) groupes.set(cle, {uid, profileId, produit, animal, items: []});
+                    groupes.get(cle).items.push({row, dedupKey, nomAnimal: animal.nom || "Votre animal"});
+                }
 
-                    const title = `${emoji} ${label} — ${nomAnimal}`;
-                    const body = `Rappel ${phrase} : ${produit} pour ${nomAnimal}.`;
+                for (const g of groupes.values()) {
+                    const {uid, profileId, produit, animal, items} = g;
+                    const noms = items.map((i) => i.nomAnimal);
+                    const plusieurs = items.length > 1;
+                    const listeNoms = noms.length > 4 ?
+                        `${noms.slice(0, 4).join(", ")} +${noms.length - 4}` : noms.join(", ");
+                    const animalIds = items.map((i) => String(i.row.animal_id));
+                    const premier = animalIds[0];
+                    const title = plusieurs ?
+                        `${emoji} ${label} — ${items.length} animaux` :
+                        `${emoji} ${label} — ${noms[0]}`;
+                    const body = `Rappel ${phrase} : ${produit} pour ${listeNoms}.`;
+                    const data = {animalId: premier, animalIds, table, palier: palierKey};
 
-                    digest.add(uid, title, body, {
-                        type: "sante",
-                        animalId: String(row.animal_id),
-                        table,
-                    }, {profileId});
+                    digest.add(uid, title, body, {type: "sante", animalId: premier, table}, {profileId});
 
-                    // Notification en base
                     try {
                         await supabaseInsert("notifications", [{
-                            uid,
-                            type: "sante",
-                            title,
-                            body,
-                            data: {animalId: String(row.animal_id), table, palier: palierKey},
-                            read: false,
+                            uid, type: "sante", title, body, data, read: false,
                             ...(profileId ? {profile_id: profileId} : {}),
                         }]);
                     } catch (e) {
-                        console.error(`notifications insert error (${table} ${row.id}):`, e.message);
+                        console.error(`notifications insert error (${table} ${premier}):`, e.message);
                     }
 
                     // Employés abonnés à la catégorie (notif_vaccins/…) — seulement
@@ -332,16 +339,19 @@ exports.sendSanteReminders = functions
                             permission: NOTIF_PERM_BY_TABLE[table], cache: empCache,
                         }), {
                             type: "sante", title, body,
-                            pushData: {animalId: String(row.animal_id), table},
-                            notifData: {animalId: String(row.animal_id), table, palier: palierKey},
+                            pushData: {animalId: premier, table},
+                            notifData: data,
                             digest,
                         });
                     }
 
-                    // Tâche agenda à 8h le jour J uniquement
+                    // Tâche agenda à 8h le jour J uniquement (une pour le groupe)
                     if (palierKey === "j0") {
                         try {
-                            const notes = produit !== label ? produit : null;
+                            const notes = [
+                                produit !== label ? produit : null,
+                                plusieurs ? `Animaux : ${noms.join(", ")}` : null,
+                            ].filter(Boolean).join(" — ") || null;
                             const inserted = await supabaseInsertReturning("taches_elevage", [{
                                 uid_eleveur: uid,
                                 titre: title,
@@ -350,31 +360,32 @@ exports.sendSanteReminders = functions
                                 notes,
                                 statut: "a_faire",
                                 profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
-                                animal_id: row.animal_id,
-                                animal_nom: nomAnimal,
+                                animal_id: plusieurs ? null : premier,
+                                animal_nom: plusieurs ? listeNoms : noms[0],
                                 ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                             }]);
                             const tacheId = Array.isArray(inserted) && inserted[0] ? inserted[0].id : null;
                             if (tacheId) {
-                                await notifyAndMirrorPension({
-                                    animalId: row.animal_id, ownerUid: uid, ownerProfileId: profileId,
-                                    title, body, tacheOriginaleId: tacheId,
-                                    tacheDate: targetDate, tacheHeure: "08:00", tacheNotes: notes, animalNom: nomAnimal,
-                                });
+                                for (const it of items) {
+                                    await notifyAndMirrorPension({
+                                        animalId: it.row.animal_id, ownerUid: uid, ownerProfileId: profileId,
+                                        title, body, tacheOriginaleId: tacheId,
+                                        tacheDate: targetDate, tacheHeure: "08:00", tacheNotes: notes,
+                                        animalNom: it.nomAnimal,
+                                    });
+                                }
                             }
                         } catch (e) {
-                            console.error(`taches_elevage insert error (${table} ${row.id}):`, e.message);
+                            console.error(`taches_elevage insert error (${table} ${premier}):`, e.message);
                         }
                     }
 
-                    // Dédup insert
                     try {
-                        await supabaseInsert("notifs_sent", [{
-                            key: dedupKey,
-                            sent_at: new Date().toISOString(),
-                        }]);
+                        await supabaseInsert("notifs_sent", items.map((i) => ({
+                            key: i.dedupKey, sent_at: new Date().toISOString(),
+                        })));
                     } catch (e) {
-                        console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+                        console.error(`notifs_sent insert error (${table} ${premier}):`, e.message);
                     }
                 }
             }
@@ -572,13 +583,34 @@ exports.sendTraitementReminders = functions
         const bucketStart = paris.getHours() * 60 +
             Math.floor(paris.getMinutes() / 15) * 15;
 
-        const rows = await supabaseGet(
-            "traitements?rappel_actif=eq.true" +
-            `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
-            "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)",
-        );
-        if (!Array.isArray(rows) || rows.length === 0) return null;
+        // Traitements ET vermifuges sur plusieurs jours (même colonnes de
+        // rappel) — un vermifuge se lit comme un traitement (nom = produit,
+        // posologie = dosage).
+        const rows = [];
+        for (const table of ["traitements", "vermifuges"]) {
+            try {
+                const r = await supabaseGet(
+                    `${table}?rappel_actif=eq.true` +
+                    `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
+                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)",
+                );
+                if (Array.isArray(r)) {
+                    for (const x of r) {
+                        rows.push(table === "vermifuges" ?
+                            {...x, _table: table, nom: `Vermifuge ${x.produit || ""}`.trim(), posologie: x.dosage} :
+                            {...x, _table: table});
+                    }
+                }
+            } catch (e) {
+                // Colonnes de rappel absentes (migration non passée) : on ignore la table.
+                console.error(`sendTraitementReminders ${table}:`, e.message);
+            }
+        }
+        if (rows.length === 0) return null;
 
+        // Plusieurs animaux, même produit à la même heure (ex. 5 chiens
+        // vermifugés ensemble) : UNE notification et UNE tâche.
+        const groupes = new Map();
         for (const row of rows) {
             const animal = row.animaux;
             const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
@@ -598,8 +630,8 @@ exports.sendTraitementReminders = functions
             });
             if (!heureDue) continue;
 
-            const nomAnimal = animal.nom || "Votre animal";
-            const dedupKey = `traitement_${row.id}_${todayStr}_${heureDue}`;
+            const prefixe = row._table === "vermifuges" ? "vermifuge" : "traitement";
+            const dedupKey = `${prefixe}_${row.id}_${todayStr}_${heureDue}`;
             const existing = await supabaseGet(
                 `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
             );
@@ -614,67 +646,81 @@ exports.sendTraitementReminders = functions
                 if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
             } catch (_) {/* pas bloquant */}
 
-            const title = `💊 Dans ${PREAVIS_MIN} min — ${nomAnimal}`;
-            const body = `${row.nom || "Traitement"} à ${heureDue} pour ${nomAnimal}` +
-                (row.posologie ? ` — ${row.posologie}` : "");
+            const nomSoin = row.nom || "Traitement";
+            const cle = [uid, profileId || "", row._table, nomSoin.toLowerCase(), row.posologie || "", heureDue]
+                .join("|");
+            if (!groupes.has(cle)) {
+                groupes.set(cle, {
+                    uid, profileId, animal, nomSoin, posologie: row.posologie, heureDue, table: row._table, items: [],
+                });
+            }
+            groupes.get(cle).items.push({row, dedupKey, nomAnimal: animal.nom || "Votre animal"});
+        }
 
-            const pushed = await sendPush(uid, title, body, {
-                type: "sante",
-                animalId: String(row.animal_id),
-                table: "traitements",
-            }, {profileId});
+        for (const g of groupes.values()) {
+            const {uid, profileId, animal, nomSoin, posologie, heureDue, table, items} = g;
+            const noms = items.map((i) => i.nomAnimal);
+            const plusieurs = items.length > 1;
+            const listeNoms = noms.length > 4 ?
+                `${noms.slice(0, 4).join(", ")} +${noms.length - 4}` : noms.join(", ");
+            const premier = String(items[0].row.animal_id);
+            const title = `💊 Dans ${PREAVIS_MIN} min — ${plusieurs ? `${items.length} animaux` : noms[0]}`;
+            const body = `${nomSoin} à ${heureDue} pour ${listeNoms}` + (posologie ? ` — ${posologie}` : "");
+
+            const pushed = await sendPush(uid, title, body, {type: "sante", animalId: premier, table}, {profileId});
             if (pushed) sent++;
 
             try {
                 await supabaseInsert("notifications", [{
-                    uid,
-                    type: "sante",
-                    title,
-                    body,
-                    data: {animalId: String(row.animal_id), table: "traitements", heure: heureDue},
+                    uid, type: "sante", title, body,
+                    data: {
+                        animalId: premier, animalIds: items.map((i) => String(i.row.animal_id)), table, heure: heureDue,
+                    },
                     read: false,
                     ...(profileId ? {profile_id: profileId} : {}),
                 }]);
             } catch (e) {
-                console.error(`notifications insert error (traitement ${row.id}):`, e.message);
+                console.error(`notifications insert error (${table} ${premier}):`, e.message);
             }
 
-            // Tâche agenda cochable — sans elle, le rappel n'était qu'un push
-            // qui disparaissait sans laisser de trace validable/visible.
+            // Tâche agenda cochable (une pour le groupe).
             try {
-                const traitementTitre = `💊 ${row.nom || "Traitement"} — ${nomAnimal}`;
+                const titre = `💊 ${nomSoin} — ${plusieurs ? listeNoms : noms[0]}`;
+                const notes = [posologie || null, plusieurs ? `Animaux : ${noms.join(", ")}` : null]
+                    .filter(Boolean).join(" — ") || null;
                 const inserted = await supabaseInsertReturning("taches_elevage", [{
                     uid_eleveur: uid,
-                    titre: traitementTitre,
+                    titre,
                     date: todayStr,
                     heure: heureDue,
-                    notes: row.posologie || null,
+                    notes,
                     statut: "a_faire",
                     profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
-                    animal_id: row.animal_id,
-                    animal_nom: nomAnimal,
+                    animal_id: plusieurs ? null : premier,
+                    animal_nom: plusieurs ? listeNoms : noms[0],
                     ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                 }]);
                 const tacheId = Array.isArray(inserted) && inserted[0] ? inserted[0].id : null;
                 if (tacheId) {
-                    await notifyAndMirrorPension({
-                        animalId: row.animal_id, ownerUid: uid, ownerProfileId: profileId,
-                        title: traitementTitre, body, tacheOriginaleId: tacheId,
-                        tacheDate: todayStr, tacheHeure: heureDue,
-                        tacheNotes: row.posologie || null, animalNom: nomAnimal,
-                    });
+                    for (const it of items) {
+                        await notifyAndMirrorPension({
+                            animalId: it.row.animal_id, ownerUid: uid, ownerProfileId: profileId,
+                            title: titre, body, tacheOriginaleId: tacheId,
+                            tacheDate: todayStr, tacheHeure: heureDue,
+                            tacheNotes: notes, animalNom: it.nomAnimal,
+                        });
+                    }
                 }
             } catch (e) {
-                console.error(`taches_elevage insert error (traitement ${row.id}):`, e.message);
+                console.error(`taches_elevage insert error (${table} ${premier}):`, e.message);
             }
 
             try {
-                await supabaseInsert("notifs_sent", [{
-                    key: dedupKey,
-                    sent_at: new Date().toISOString(),
-                }]);
+                await supabaseInsert("notifs_sent", items.map((i) => ({
+                    key: i.dedupKey, sent_at: new Date().toISOString(),
+                })));
             } catch (e) {
-                console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+                console.error(`notifs_sent insert error (${table} ${premier}):`, e.message);
             }
         }
 

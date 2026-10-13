@@ -1,5 +1,6 @@
 'use client';
 
+import { ACTES_CARNET, inscrireTacheAuCarnet } from '@/lib/carnet-depuis-tache';
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -53,6 +54,8 @@ interface Template {
 interface Tache {
   id: string;
   label: string;
+  animal_id?: string | null;
+  uid_eleveur?: string | null;
   animal_nom?: string | null;
   animaux?: { nom?: string } | null;
   date_prevue: string;
@@ -2039,6 +2042,9 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
   );
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  // Soin sanitaire : inscription au carnet de chaque animal + registre (comme l'appli).
+  const sanitaire = ACTES_CARNET.includes(taches[0]?.type_acte ?? '');
+  const [inscrire, setInscrire] = useState(false);
 
   const allChecked = Object.values(selected).every(Boolean);
   const someChecked = Object.values(selected).some(Boolean);
@@ -2054,6 +2060,7 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
         valide_at: new Date().toISOString(),
         notes_validation: notes.trim() || null,
       }).eq('id', t.id);
+      if (sanitaire && inscrire) await inscrireTacheAuCarnet(t, t.uid_eleveur ?? uid, profileId);
     }
     onValidated();
   };
@@ -2091,6 +2098,12 @@ function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
           className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500 resize-none"
           placeholder="Notes (optionnel)" />
+        {sanitaire && (
+          <label className="flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={inscrire} onChange={e => setInscrire(e.target.checked)} className="mt-0.5 accent-green-600 w-4 h-4" />
+            <span>Inscrire dans le carnet de santé et le registre sanitaire</span>
+          </label>
+        )}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50">
             Annuler

@@ -1,3 +1,4 @@
+import 'package:PetsMatch/widgets/carnet/vermifuge_options.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -2612,6 +2613,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     DateTime? date = prefillDates ? DateTime.tryParse(prefill?['date'] ?? '') : null;
     DateTime? dateRappel = prefillDates ? DateTime.tryParse(prefill?['date_rappel'] ?? '') : null;
     String frequenceUnite = parsedFreq?.$2 ?? 'mois';
+    // Durée / rappels de prise + autres animaux (widgets/carnet/vermifuge_options.dart).
+    final options = OptionsVermifuge();
 
     void recomputeRappel(StateSetter ss) {
       if (date == null) return;
@@ -2628,28 +2631,46 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFreq(valeurCtrl: frequenceValeur, unite: frequenceUnite,
         onValeurChanged: () => recomputeRappel(ss),
         onUniteChanged: (v) { ss(() => frequenceUnite = v); recomputeRappel(ss); }),
+      PrisesVermifugeSection(options: options),
+      const SizedBox(height: 10),
+      AutresAnimauxSection(animalId: _animalId!, options: options),
+      const SizedBox(height: 10),
       _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
+      if (options.erreur != null) throw Exception(options.erreur);
       final n = int.tryParse(frequenceValeur.text.trim());
       final freqLabel = (n != null && n > 0)
           ? '$n ${frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}' : frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois'}'
           : null;
-      await _supa.from('vermifuges').insert({
-        'id': '${DateTime.now().millisecondsSinceEpoch}',
-        'animal_id': _animalId!,
-        'produit': produit.text.trim(),
-        'dosage': dosage.text.trim().isEmpty ? null : dosage.text.trim(),
-        'date': date?.toIso8601String().substring(0, 10),
-        'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
-        if (freqLabel != null) 'frequence': freqLabel,
-        'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      final cibles = [_animalId!, ...options.autresAnimaux];
+      final base = DateTime.now().millisecondsSinceEpoch;
+      for (var i = 0; i < cibles.length; i++) {
+        await _supa.from('vermifuges').insert({
+          'id': '${base + i}',
+          'animal_id': cibles[i],
+          'produit': produit.text.trim(),
+          'dosage': dosage.text.trim().isEmpty ? null : dosage.text.trim(),
+          'date': date?.toIso8601String().substring(0, 10),
+          'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
+          if (freqLabel != null) 'frequence': freqLabel,
+          'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
+          'created_at': DateTime.now().toIso8601String(),
+          if (date != null) ...options.colonnes(date!),
+        });
+      }
+      // Prochain rappel : un seul événement pour tous les animaux.
       if (dateRappel != null) {
+        var noms = _nomCtrl.text;
+        if (options.autresAnimaux.isNotEmpty) {
+          try {
+            final rows = await _supa.from('animaux').select('nom').inFilter('id', cibles);
+            noms = [for (final r in rows as List) r['nom']?.toString() ?? ''].where((x) => x.isNotEmpty).join(', ');
+          } catch (_) {}
+        }
         await _scheduleRappelAgenda(
           dateRappel: dateRappel!,
-          titre: 'Rappel vermifuge — ${produit.text.trim()} (${_nomCtrl.text})',
+          titre: 'Rappel vermifuge — ${produit.text.trim()} ($noms)',
         );
       }
       await _loadHealthRecords();

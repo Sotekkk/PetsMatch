@@ -719,8 +719,61 @@ class PlanningService {
           description: tacheData['label'] ?? '',
           intervenant: '',
         );
+        // … et au carnet de santé de l'animal (la case l'annonçait, seul le
+        // registre était rempli). Miroir site : lib/carnet-depuis-tache.ts.
+        await inscrireTacheAuCarnet(tacheData);
       }
     }
+  }
+
+  /// Inscrit une tâche sanitaire validée (vermifuge, antiparasitaire,
+  /// vaccination, traitement) au carnet de l'animal : une seule entrée par
+  /// traitement (date de début), même s'il dure plusieurs jours.
+  static Future<void> inscrireTacheAuCarnet(Map<String, dynamic> t) async {
+    final animalId = t['animal_id']?.toString() ?? '';
+    final typeActe = t['type_acte']?.toString() ?? '';
+    const tables = {
+      'vermifuge': ('vermifuges', 'produit', 'dosage'),
+      'antiparasitaire': ('antiparasitaires', 'produit', null),
+      'vaccination': ('vaccinations', 'vaccin', null),
+      'traitement': ('traitements', 'nom', 'posologie'),
+    };
+    final cible = tables[typeActe];
+    if (animalId.isEmpty || cible == null) return;
+    try {
+      String produit = '', dosage = '';
+      final etapeId = t['etape_id']?.toString();
+      if (etapeId != null && etapeId.isNotEmpty) {
+        final e = await _supa.from('plan_template_etapes').select('produit, dosage').eq('id', etapeId).maybeSingle();
+        produit = (e?['produit'] as String? ?? '').trim();
+        dosage = (e?['dosage'] as String? ?? '').trim();
+      }
+      if (produit.isEmpty) produit = (t['label']?.toString() ?? '').split(' — ').first.trim();
+      final prevue = DateTime.tryParse(t['date_prevue']?.toString() ?? '') ?? DateTime.now();
+      final jour = (t['jour_traitement'] as num?)?.toInt() ?? 1;
+      final total = (t['total_jours'] as num?)?.toInt() ?? 1;
+      final debut = prevue.subtract(Duration(days: jour - 1));
+      final dateDebut = '${debut.year}-${debut.month.toString().padLeft(2, '0')}-${debut.day.toString().padLeft(2, '0')}';
+      // Déjà inscrit (autre jour du même traitement) → rien.
+      final deja = await _supa.from(cible.$1).select('id').eq('animal_id', animalId)
+          .eq('date', dateDebut).ilike(cible.$2, produit).limit(1);
+      if ((deja as List).isNotEmpty) return;
+      final ligne = <String, dynamic>{
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'animal_id': animalId,
+        cible.$2: produit,
+        if (cible.$3 != null && dosage.isNotEmpty) cible.$3!: dosage,
+        'date': dateDebut,
+        if (typeActe == 'traitement' && total > 1)
+          'date_fin': debut.add(Duration(days: total - 1)).toIso8601String().substring(0, 10),
+        'notes': 'Protocole${total > 1 ? ' — $total jours' : ''}',
+      };
+      try {
+        await _supa.from(cible.$1).insert({...ligne, if (typeActe == 'vermifuge' && total > 1) 'duree_jours': total});
+      } catch (_) {
+        await _supa.from(cible.$1).insert(ligne); // colonne duree_jours absente (migration)
+      }
+    } catch (_) {}
   }
 
   // ── Supprimer (cette occurrence / suivantes / toutes) ───────────────────────
