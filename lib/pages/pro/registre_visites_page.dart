@@ -306,7 +306,13 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
   Future<void> _marquerTermine(Map<String, dynamic> rdv) async {
     try {
-      await _supa.from('rdv').update({'statut': 'termine'}).eq('id', rdv['id']);
+      await _supa.from('rdv').update({
+        'statut': 'termine',
+        // Visite / promenade : fin effective (l'heure prévue ne change pas).
+        if (!estGardeJournee(rdv) && rdv['depart_valide_le'] == null)
+          'depart_valide_le': DateTime.now().toUtc().toIso8601String(),
+        'termine_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', rdv['id']);
       await _load();
     } catch (e) {
       if (mounted) {
@@ -657,6 +663,11 @@ class _VisiteCard extends StatelessWidget {
     final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     final dateStr = dh != null ? DateFormat('EEE d MMM · HH:mm', 'fr_FR').format(dh) : '';
     final isTermine = rdv['statut'] == 'termine';
+    // Heures réelles (début / fin effectifs) — l'heure prévue reste dateStr.
+    final debutReel = DateTime.tryParse(rdv['arrivee_validee_le']?.toString() ?? '')?.toLocal();
+    final finReelle = DateTime.tryParse(rdv['depart_valide_le']?.toString() ?? '')?.toLocal()
+        ?? DateTime.tryParse(rdv['termine_at']?.toString() ?? '')?.toLocal();
+    final hm = DateFormat('HH:mm');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -674,7 +685,12 @@ class _VisiteCard extends StatelessWidget {
                 Text('🚶 ${gardeMotifLabel(gardePrestationKey(rdv['motif']?.toString()), rdv['_animal_espece']?.toString())} · animal chez son propriétaire',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
                 const SizedBox(height: 2),
-                Text(dateStr, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                Text('Prévu : $dateStr', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                if (debutReel != null || finReelle != null)
+                  Text([
+                    if (debutReel != null) 'Début réel ${hm.format(debutReel)}',
+                    if (finReelle != null) 'fin réelle ${hm.format(finReelle)}',
+                  ].join(' · '), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600)),
               ]),
             ),
             Container(

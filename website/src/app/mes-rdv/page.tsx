@@ -16,6 +16,7 @@ import { trouverUtilisateurParEmail, type UtilisateurTrouve } from '@/lib/user-l
 import { apiFetch } from '@/lib/api-fetch';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
+import { familleGarde, FAMILLES_GARDE } from '@/lib/compte-rendu-garde';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -1402,6 +1403,7 @@ export default function MesRdvPage() {
   const activeProfileId = useActiveProfile();
 
   const [activeTab, setActiveTab] = useState<TabKey>('demandes');
+  const [filtrePrestation, setFiltrePrestation] = useState('tous');
   const [rdvs, setRdvs]           = useState<Rdv[]>([]);
   const [fetching, setFetching]   = useState(true);
   const [catPro, setCatPro]       = useState('');
@@ -1646,7 +1648,11 @@ export default function MesRdvPage() {
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
   ];
 
-  const currentList = activeTab === 'demandes' ? demandes : activeTab === 'a_venir' ? aVenir : historique;
+  const listeOnglet = activeTab === 'demandes' ? demandes : activeTab === 'a_venir' ? aVenir : historique;
+  // Pet-sitter : filtre par famille de prestation (présentes seulement) — miroir appli.
+  const famillesPresentes = catPro === 'garde' ? FAMILLES_GARDE.filter(f => rdvs.some(r => familleGarde(r.motif) === f.key)) : [];
+  const currentList = filtrePrestation === 'tous' || catPro !== 'garde'
+    ? listeOnglet : listeOnglet.filter(r => familleGarde(r.motif) === filtrePrestation);
 
   const pageTitle = PRO_TITLE[catPro] ?? 'Mes rendez-vous';
 
@@ -1750,6 +1756,18 @@ export default function MesRdvPage() {
               else if (r.statut === 'confirme') setModalModifier(r);
             }} />
           </FormuleVetRequise>
+        )}
+
+        {activeTab !== 'creneaux' && activeTab !== 'planning' && famillesPresentes.length > 1 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {[{ key: 'tous', label: 'Toutes les prestations' }, ...famillesPresentes].map(f => (
+              <button key={f.key} type="button" onClick={() => setFiltrePrestation(f.key)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold border"
+                style={filtrePrestation === f.key ? { background: '#0C5C6C', borderColor: '#0C5C6C', color: 'white' } : { borderColor: '#E4E7E2', color: '#1E2025', background: 'white' }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Onglets RDV */}

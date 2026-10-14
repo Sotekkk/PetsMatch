@@ -6,6 +6,7 @@ import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionJournal } from '@/components/PensionJournal';
+import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
 import { GardeFacturationModal } from '@/components/GardeFacturationModal';
 import { groupeGardeSejours, estGardeJournee, type GardeRdvRow, type GardeSejour } from '@/lib/garde-sejours';
 
@@ -46,6 +47,8 @@ export default function RegistreVisitesPage() {
   const [visites, setVisites] = useState<Rdv[]>([]);
   const [loading, setLoading] = useState(true);
   const [journalFor, setJournalFor] = useState<Rdv | null>(null);
+  // Visite / promenade : compte rendu express (le journal reste pour les gardes).
+  const [compteRenduFor, setCompteRenduFor] = useState<Rdv | null>(null);
   const [facturingSejour, setFacturingSejour] = useState<GardeSejour | null>(null);
 
   useEffect(() => {
@@ -115,7 +118,12 @@ export default function RegistreVisitesPage() {
   useEffect(() => { load(); }, [load]);
 
   async function marquerTermine(rdv: Rdv) {
-    await supabase.from('rdv').update({ statut: 'termine' }).eq('id', rdv.id);
+    // Fin effective (l'heure prévue, date_heure, ne change pas).
+    const t = new Date().toISOString();
+    await supabase.from('rdv').update({
+      statut: 'termine', termine_at: t,
+      ...(!estGardeJournee(rdv) && !rdv.depart_valide_le ? { depart_valide_le: t } : {}),
+    }).eq('id', rdv.id);
     load();
   }
 
@@ -281,9 +289,19 @@ export default function RegistreVisitesPage() {
               onValiderArrivee={() => validerArrivee(item)} onValiderDepart={() => validerDepart(item)}
               onFacturer={() => setFacturingSejour(item)} />
           ) : (
-            <VisiteCard key={item.id} rdv={item} onTerminer={() => marquerTermine(item)} onRapport={() => setJournalFor(item)} />
+            <VisiteCard key={item.id} rdv={item} onTerminer={() => marquerTermine(item)} onRapport={() => setCompteRenduFor(item)} />
           ))}
         </div>
+      )}
+
+      {compteRenduFor && user && (
+        <CompteRenduExpressModal
+          rdv={{ ...compteRenduFor, client_profile_id: compteRenduFor.client_profile_id ?? null }}
+          animalNom={compteRenduFor._animal_nom || ''}
+          proUid={user.uid}
+          proNom={(userData?.nameElevage as string | undefined) || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim()}
+          onClose={() => setCompteRenduFor(null)}
+        />
       )}
 
       {journalFor && (
@@ -319,7 +337,14 @@ function VisiteCard({ rdv, onTerminer, onRapport }: { rdv: Rdv; onTerminer: () =
         <div>
           <p className="font-bold font-galey text-sm text-[#1F2A2E]">{rdv._animal_nom} — {rdv._client_nom}</p>
           <p className="text-xs text-gray-400 font-galey">🚶 Visite / promenade · animal chez son propriétaire</p>
-          <p className="text-xs text-gray-400 font-galey">{fmtDate(rdv.date_heure)}</p>
+          <p className="text-xs text-gray-400 font-galey">Prévu : {fmtDate(rdv.date_heure)}</p>
+          {(rdv.arrivee_validee_le || rdv.depart_valide_le) && (
+            <p className="text-xs font-semibold font-galey text-[#0C5C6C]">
+              {[rdv.arrivee_validee_le && `Début réel ${new Date(rdv.arrivee_validee_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+                rdv.depart_valide_le && `fin réelle ${new Date(rdv.depart_valide_le).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`]
+                .filter(Boolean).join(' · ')}
+            </p>
+          )}
         </div>
         <span className={`text-xs font-semibold font-galey px-2 py-1 rounded-full ${isTermine ? 'bg-[#EEF5EA] text-[#6E9E57]' : 'bg-[#E8F4F6] text-[#0C5C6C]'}`}>
           {isTermine ? 'Terminée' : 'Confirmée'}

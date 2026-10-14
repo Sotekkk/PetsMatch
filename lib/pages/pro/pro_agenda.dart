@@ -115,6 +115,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Clinique vétérinaire : filtre par praticien (null = tous, '' = titulaire
   // du compte, sinon employe_profile_id du praticien).
   String? _filtrePraticien;
+  /// Pet-sitter : filtre par famille de prestation (garde, promenade, visite…).
+  String _filtrePrestation = 'tous';
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
   /// Tous les pros (véto, ostéo, pet-sitter, éducateur…) : un RDV confirmé
   /// reste « À venir » tant qu'il n'est pas marqué terminé (badge « À
@@ -197,9 +199,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   List<Map<String, dynamic>> get _rdvsFiltres {
     final f = _filtrePraticien;
-    if (f == null) return _rdvs;
+    final base = _filtrePrestation == 'tous' || AgendaContexte.catPro != 'garde'
+        ? _rdvs : _rdvs.where((r) => familleGarde(r) == _filtrePrestation).toList();
+    if (f == null) return base;
     // « Peu importe » non encore validé : visible chez tous les praticiens.
-    return _rdvs.where((r) => (r['instructeur_profile_id']?.toString() ?? '') == f
+    return base.where((r) => (r['instructeur_profile_id']?.toString() ?? '') == f
         || (r['praticien_indifferent'] == true && r['statut'] == 'demande')).toList();
   }
 
@@ -933,6 +937,29 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ),
       Expanded(child: _buildList(rdvs, showActions: showActions, showCancel: showCancel, showDelete: showDelete)),
     ]);
+  }
+
+  Widget _filtresPrestation() {
+    final presentes = [for (final f in kFamillesGarde) if (_rdvs.any((r) => familleGarde(r) == f.$1)) f];
+    if (presentes.length < 2) return const SizedBox.shrink();
+    Widget puce(String id, String label) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                color: _filtrePrestation == id ? Colors.white : const Color(0xFF1F2A2E))),
+            selected: _filtrePrestation == id, showCheckmark: false,
+            selectedColor: _teal, backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+            visualDensity: VisualDensity.compact,
+            onSelected: (_) => setState(() => _filtrePrestation = id),
+          ),
+        );
+    return SizedBox(
+      height: 46,
+      child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), children: [
+        puce('tous', 'Toutes les prestations'),
+        for (final f in presentes) puce(f.$1, f.$2),
+      ]),
+    );
   }
 
   List<Map<String, dynamic>> get _demandes => _rdvsFiltres.where((r) =>
@@ -3401,6 +3428,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           : Column(children: [
               // Vétérinaire : la journée est déjà dans « À venir » (encadré trop haut si beaucoup de RDV).
               if (_aujourdhui.isNotEmpty && !_estClinique) _buildAujourdhuiCard(),
+              // Pet-sitter : filtres selon les prestations réellement présentes.
+              if (AgendaContexte.catPro == 'garde') _filtresPrestation(),
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () async { await Future.wait([_loadRdvs(), _loadAujourdhui(), _loadCoursCollectifs()]); },

@@ -64,17 +64,36 @@ class _TourneePageState extends State<TourneePage> {
       // (pas marquées terminées) : elles restent à clôturer, comme dans
       // l'agenda, au lieu de disparaître de la tournée. 30 jours en arrière.
       final depuis = startOfDay.subtract(const Duration(days: 30));
+      // Visites terminées du jour gardées aussi (terminées / restantes).
       final rows = await _supa.from('rdv').select()
           .eq('pro_uid', uid).eq('pro_profile_id', pid)
-          .eq('statut', 'confirme')
+          .inFilter('statut', ['confirme', 'termine'])
           .gte('date_heure', depuis.toIso8601String())
           .lte('date_heure', endOfDay.toIso8601String())
           .order('date_heure');
-      final list = List<Map<String, dynamic>>.from(rows as List);
+      final list = List<Map<String, dynamic>>.from(rows as List).where((r) {
+        final d = DateTime.tryParse(r['date_heure']?.toString() ?? '');
+        return r['statut'] == 'confirme' || (d != null && !d.isBefore(startOfDay));
+      }).toList();
       for (final r in list) {
         final d = DateTime.tryParse(r['date_heure']?.toString() ?? '');
-        r['_a_cloturer'] = d != null && d.isBefore(startOfDay);
+        r['_a_cloturer'] = r['statut'] == 'confirme' && d != null && d.isBefore(startOfDay);
+        r['_termine'] = r['statut'] == 'termine';
       }
+      // Clés en ma possession (gestion des clés existante) — jamais de code affiché.
+      try {
+        final cles = await _supa.from('cles_clients').select('animal_id, owner_uid, description')
+            .eq('pro_profile_id', pid).eq('statut', 'en_possession');
+        for (final r in list) {
+          for (final c in cles as List) {
+            if ((c['animal_id'] != null && c['animal_id'].toString() == r['animal_id']?.toString()) ||
+                (c['owner_uid'] != null && c['owner_uid'].toString() == r['client_uid']?.toString())) {
+              r['_cle'] = c['description']?.toString() ?? 'Clé';
+              break;
+            }
+          }
+        }
+      } catch (_) {}
 
       final clientUids = list.map((r) => r['client_uid'] as String?).whereType<String>().toSet().toList();
       final animalIds = list.map((r) => r['animal_id']?.toString()).whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
@@ -104,9 +123,12 @@ class _TourneePageState extends State<TourneePage> {
       }
 
       list.sort((a, b) {
-        // Visites à clôturer (jours précédents) en tête, puis l'ordre du jour.
+        // Visites à clôturer (jours précédents) en tête, puis l'ordre du jour,
+        // les visites déjà terminées en fin de liste.
         final ca = a['_a_cloturer'] == true, cb = b['_a_cloturer'] == true;
         if (ca != cb) return ca ? -1 : 1;
+        final ta = a['_termine'] == true, tb = b['_termine'] == true;
+        if (ta != tb) return ta ? 1 : -1;
         final oa = a['ordre_visite'] as int?;
         final ob = b['ordre_visite'] as int?;
         if (oa != null && ob != null) return oa.compareTo(ob);
@@ -136,7 +158,12 @@ class _TourneePageState extends State<TourneePage> {
 
   Future<void> _valider(Map<String, dynamic> rdv) async {
     try {
-      await _supa.from('rdv').update({'statut': 'termine'}).eq('id', rdv['id']);
+      await _supa.from('rdv').update({
+        'statut': 'termine',
+        // Fin effective (rdv.date_heure, l'heure prévue, n'est pas modifiée).
+        'depart_valide_le': DateTime.now().toUtc().toIso8601String(),
+        'termine_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', rdv['id']);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Visite marquée terminée.', style: TextStyle(fontFamily: 'Galey')),
@@ -347,6 +374,8 @@ class _VisiteTile extends StatelessWidget {
     final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     // Visite d'un jour précédent non clôturée : date + « À clôturer ».
     final aCloturer = rdv['_a_cloturer'] == true;
+    final termine = rdv['_termine'] == true;
+    final consignes = (rdv['notes_client']?.toString() ?? '').trim();
     final heure = dh == null ? '' : aCloturer
         ? '${DateFormat('d MMM · HH:mm', 'fr_FR').format(dh)} — à clôturer'
         : DateFormat('HH:mm').format(dh);
@@ -372,8 +401,17 @@ class _VisiteTile extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${rdv['_animal_nom']} — ${rdv['_client_nom']}',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                Row(children: [
+                  Flexible(child: Text('${rdv['_animal_nom']} — ${rdv['_client_nom']}',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14,
+                          color: termine ? Colors.grey : null,
+                          decoration: termine ? TextDecoration.lineThrough : null))),
+                  if (rdv['_cle'] != null) ...[
+                    const SizedBox(width: 6),
+                    Tooltip(message: 'Clé en ma possession : ${rdv['_cle']}',
+                        child: const Icon(Icons.vpn_key_outlined, size: 15, color: Color(0xFFB8860B))),
+                  ],
+                ]),
                 const SizedBox(height: 2),
                 Row(children: [
                   Text(heure, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
@@ -406,6 +444,12 @@ class _VisiteTile extends StatelessWidget {
                               decoration: TextDecoration.underline)),
                     ),
                 ]),
+                if (consignes.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('Consignes : $consignes', maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+                  ),
               ]),
             ),
             IconButton(
@@ -414,12 +458,17 @@ class _VisiteTile extends StatelessWidget {
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.photo_camera_outlined, color: _teal),
             ),
-            IconButton(
-              onPressed: onValider,
-              tooltip: 'Marquer terminée',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.check_circle_outline, color: Color(0xFF6E9E57)),
-            ),
+            termine
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Tooltip(message: 'Terminée', child: Icon(Icons.check_circle, color: Color(0xFF6E9E57))),
+                  )
+                : IconButton(
+                    onPressed: onValider,
+                    tooltip: 'Marquer terminée',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.check_circle_outline, color: Color(0xFF6E9E57)),
+                  ),
             ReorderableDragStartListener(
               index: index,
               child: const Padding(

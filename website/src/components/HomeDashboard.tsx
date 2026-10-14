@@ -1,5 +1,6 @@
 'use client';
 
+import GardeDashboard from '@/components/dashboard/GardeDashboard';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -178,6 +179,11 @@ export default function HomeDashboard() {
     return <SanteDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon cabinet'}
       avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
   }
+  // Pet-sitting / garde : tableau de bord dédié (miroir appli GardeDashboard).
+  if (activeProfile?.profile_type === 'garde' || activeProfile?.cat_pro === 'garde') {
+    return <GardeDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
+      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+  }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
@@ -194,6 +200,9 @@ export default function HomeDashboard() {
     }
     if (primaryProProfile.profile_type === 'veterinaire') {
       return <VetDashboard nom={primaryProProfile.nom || 'Ma clinique'} avatar={primaryProProfile.avatar_url} />;
+    }
+    if (primaryProProfile.profile_type === 'garde') {
+      return <GardeDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
     }
     return <ProDashboard profile={primaryProProfile} profileId="" />;
   }

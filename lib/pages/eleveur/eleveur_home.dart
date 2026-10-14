@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/garde_dashboard.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -27,9 +28,7 @@ import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
-import 'package:PetsMatch/pages/pro/tournee_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
-import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
@@ -367,15 +366,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         // Ostéopathe / santé : tableau de bord (remplace les raccourcis).
                         else if (User_Info.catPro == 'sante')
                           SanteDashboard(key: ValueKey(_refreshTick), patientsCount: _patientCount)
+                        // Pet-sitting / garde : tableau de bord (remplace compteurs + tuiles).
+                        else if (User_Info.catPro == 'garde')
+                          GardeDashboard(key: ValueKey(_refreshTick))
                         else
                           _buildStatsRow(),
                         if (User_Info.catPro == 'education') ...[
                           const SizedBox(height: 12),
                           _buildEducationShortcuts(context),
-                        ],
-                        if (User_Info.catPro == 'garde') ...[
-                          const SizedBox(height: 12),
-                          _buildGardeShortcuts(context),
                         ],
                         if (User_Info.catPro == 'photographe') ...[
                           const SizedBox(height: 12),
@@ -664,33 +662,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage()))),
         _QuickTile(icon: Icons.fitness_center_outlined, label: 'Bibliothèque\nd\'exercices', color: const Color(0xFFEF6C00),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EducationBibliothequePage()))),
-      ],
-    );
-  }
-
-  Widget _buildGardeShortcuts(BuildContext context) {
-    void go(Widget page) =>
-        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.0,
-      children: [
-        _QuickTile(icon: Icons.checklist_outlined, label: 'Registre\nvisites', color: _teal,
-            onTap: () => go(const RegistreVisitesPage())),
-        _QuickTile(icon: Icons.route_outlined, label: 'Ma\ntournée', color: const Color(0xFF5F9EAA),
-            onTap: () => go(const TourneePage())),
-        _QuickTile(icon: Icons.calendar_month_outlined, label: 'Mon\nagenda', color: _teal,
-            onTap: () => go(AgendaPage(initialViewMode: 1, onBack: () => Navigator.pop(context)))),
-        _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
-            onTap: () => go(const DevisPage())),
-        _QuickTile(icon: Icons.vpn_key_outlined, label: 'Gestion\ndes clés', color: const Color(0xFFB8860B),
-            onTap: () => go(const ClesClientsPage())),
-        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
-            onTap: () => go(const FacturationPage())),
       ],
     );
   }

@@ -23,6 +23,20 @@ String gardePrestationKey(String? motif) {
   return 'autre';
 }
 
+/// Filtres agenda / tableau de bord.
+/// Famille de prestation d'après la clé de tarif (motif du RDV) — mêmes
+/// prestations que celles configurées dans les tarifs du profil.
+String familleGarde(Map<String, dynamic> r) {
+  final k = gardePrestationKey(r['motif']?.toString());
+  if (k == 'garde_journee') return 'garde';
+  if (k.startsWith('promenade')) return 'promenade';
+  if (k == 'visite') return 'visite';
+  return 'autre';
+}
+const kFamillesGarde = <(String, String)>[
+  ('garde', 'Gardes'), ('promenade', 'Promenades'), ('visite', 'Visites à domicile'), ('autre', 'Autres'),
+];
+
 /// Désignation de la ligne de facture (« motif — Animal »).
 String gardeDesignation(Map<String, dynamic> rdv) {
   final motif = (rdv['motif'] ?? '').toString().trim();
