@@ -55,7 +55,7 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
   const [loading, setLoading] = useState(true);
   const [rdvs, setRdvs] = useState<Rdv[]>([]);
   // Demandes de réservation à traiter (comme les tableaux véto / ostéo).
-  const [demandes, setDemandes] = useState<(Rdv & { created_at?: string | null })[]>([]);
+  const [demandes, setDemandes] = useState<(Rdv & { created_at?: string | null; _nb?: number })[]>([]);
   const [cles, setCles] = useState<Cle[]>([]);
   const [animaux, setAnimaux] = useState<Record<string, Animal>>({});
   const [intervenants, setIntervenants] = useState<Record<string, string>>({});
@@ -79,7 +79,13 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
     const { data: dem } = await supabase.from('rdv').select('*')
       .eq('pro_profile_id', pid).in('statut', ['demande', 'contre_proposition'])
       .order('created_at', { ascending: false });
-    const lesDemandes = (dem ?? []) as (Rdv & { created_at?: string | null })[];
+    // Série pet-sitting (rdv.serie_id) : une seule ligne, avec le nombre de passages.
+    const toutes = (dem ?? []) as (Rdv & { created_at?: string | null; serie_id?: string | null; _nb?: number })[];
+    const nbSerie: Record<string, number> = {};
+    for (const r of toutes) if (r.serie_id) nbSerie[r.serie_id] = (nbSerie[r.serie_id] ?? 0) + 1;
+    const vusSerie = new Set<string>();
+    const lesDemandes = toutes.filter(r => !r.serie_id || (!vusSerie.has(r.serie_id) && !!vusSerie.add(r.serie_id)))
+      .map(r => (r.serie_id ? { ...r, _nb: nbSerie[r.serie_id] } : r));
     const { data: c } = await supabase.from('cles_clients').select('id, animal_id, owner_uid, description')
       .eq('pro_profile_id', pid).eq('statut', 'en_possession');
     const lesCles = (c ?? []) as Cle[];
@@ -268,7 +274,7 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
                             <PhotoAnimal url={r.animal_id ? animaux[r.animal_id]?.photo_url : null} taille={32} />
                             <span className="flex-1 min-w-0">
                               <span className="block text-sm font-bold text-[#1E2025] truncate">{r._animal_nom} · {r._client_nom}</span>
-                              <span className="block text-xs text-gray-500 truncate">{prestation(r)} · pour le {jm(debut(r))} {hm(debut(r))}{exterieur(r) ? ` · ${lieu(r)}` : ''}</span>
+                              <span className="block text-xs text-gray-500 truncate">{prestation(r)}{(r._nb ?? 1) > 1 ? ` · ${r._nb} passages dès le` : ' · pour le'} {jm(debut(r))} {hm(debut(r))}{exterieur(r) ? ` · ${lieu(r)}` : ''}</span>
                             </span>
                             {j != null && <span className="text-xs font-semibold text-red-600 flex-shrink-0">{j === 0 ? "Aujourd'hui" : j === 1 ? 'Hier' : jm(c!)}</span>}
                           </Link>

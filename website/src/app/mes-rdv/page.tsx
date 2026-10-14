@@ -79,6 +79,12 @@ interface Rdv {
   salle_id?: string | null;
   animal_nom_manuel?: string | null;
   termine_at?: string | null;
+  /** Pet-sitting : série de passages d'une même demande (migration_garde_demande_serie.sql). */
+  serie_id?: string | null;
+  animaux_ids?: unknown[] | null;
+  acces_logement?: string | null;
+  /** Demandes : tous les passages de la série (affichée en une carte). */
+  serie?: Rdv[];
   /** Retard estimé en cascade (minutes), calculé à l'affichage. */
   retardMin?: number;
   clientName?: string;
@@ -799,6 +805,99 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   );
 }
 
+// ── Série pet-sitting (rdv.serie_id) — miroir appli _accepterSerie / _refuserSerie ──
+
+function resumeSerie(serie: Rdv[]): string {
+  const dates = serie.map(r => new Date(r.date_heure)).sort((a, b) => a.getTime() - b.getTime());
+  if (!dates.length) return `${serie.length} passages`;
+  const jj = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const noms = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  const jours = [...new Set(dates.map(d => d.getDay()))].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+  const heures = [...new Set(dates.map(d => `${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`))].sort();
+  return [
+    `${serie.length} passages`, `du ${jj(dates[0])} au ${jj(dates[dates.length - 1])}`,
+    jours.length < 7 ? jours.map(j => noms[j]).join(', ') : 'tous les jours', heures.join(' et '),
+  ].join(' · ');
+}
+
+function SerieModal({ serie, mode, proName, onClose, onDone }: {
+  serie: Rdv[]; mode: 'accepter' | 'refuser'; proName: string; onClose: () => void; onDone: () => void;
+}) {
+  const [motif, setMotif] = useState('');
+  const [saving, setSaving] = useState(false);
+  const first = serie[0];
+
+  async function valider() {
+    setSaving(true);
+    try {
+      if (mode === 'accepter') {
+        for (const r of serie) {
+          const duree = dureeImposeeGarde(r.motif) ?? r.duree_minutes ?? 30;
+          await supabase.from('rdv').update({ statut: 'confirme', duree_minutes: duree }).eq('id', r.id);
+          await supabase.from('agenda_events').upsert({
+            uid: r.client_uid, titre: `RDV${r.animalNom ? ` — ${r.animalNom}` : ''}`,
+            type: typeFromMotif(r.motif), date_debut: r.date_heure, duree_minutes: duree, rdv_id: r.id,
+            animal_id: r.animal_id ?? null, pro_profile_id: r.client_profile_id ?? null,
+          }, { onConflict: 'rdv_id' });
+          await supabase.from('agenda_events').delete().eq('uid', r.pro_uid).eq('couleur', `rdv:${r.id}`);
+          await supabase.from('agenda_events').insert({
+            uid: r.pro_uid, titre: `RDV avec ${r.clientName ?? 'Client'}`,
+            type: typeFromMotif(r.motif), date_debut: r.date_heure, duree_minutes: duree, couleur: `rdv:${r.id}`,
+            animal_id: r.animal_id ?? null, pro_profile_id: r.pro_profile_id ?? null,
+          });
+        }
+        await supabase.from('notifications').insert({
+          uid: first.client_uid, type: 'rdv_confirme',
+          title: `Série confirmée par ${proName}`,
+          body: `${first.motif ?? 'Prestation'} : ${resumeSerie(serie)}.`,
+          ...(first.client_profile_id ? { profile_id: first.client_profile_id } : {}),
+          data: { rdv_id: first.id, serie_id: first.serie_id }, read: false,
+        });
+      } else {
+        await supabase.from('rdv').update({ statut: 'annule', notes_annulation: motif || null }).in('id', serie.map(r => r.id));
+        await supabase.from('notifications').insert({
+          uid: first.client_uid, type: 'rdv_refuse', title: 'Demande refusée',
+          body: `${proName} a refusé votre demande (${resumeSerie(serie)})${motif ? ` — Motif : ${motif}` : ''}`,
+          ...(first.client_profile_id ? { profile_id: first.client_profile_id } : {}),
+          data: { rdv_id: first.id, serie_id: first.serie_id }, read: false,
+        });
+      }
+      onDone();
+    } catch (e) {
+      alert(`Erreur : ${e instanceof Error ? e.message : String(e)}`);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4" onClick={onClose}>
+      <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}
+        style={{ fontFamily: 'Galey, sans-serif' }}>
+        <h2 className="font-bold text-lg text-[#1E2025]">{mode === 'accepter' ? 'Accepter la série' : 'Refuser la série'}</h2>
+        <div className="bg-gray-50 rounded-xl p-3 text-sm">
+          <p className="font-semibold">{first.clientName ?? '—'}{first.animalNom ? ` · ${first.animalNom}` : ''}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{first.motif}</p>
+          <p className="text-xs mt-1" style={{ color: TEAL }}>{resumeSerie(serie)}</p>
+        </div>
+        {mode === 'accepter' ? (
+          <p className="text-xs text-gray-500">Tous les passages seront confirmés aux horaires demandés. Vous pourrez modifier un passage ensuite depuis « À venir ».</p>
+        ) : (
+          <textarea value={motif} onChange={e => setMotif(e.target.value)} rows={3} placeholder="Motif (optionnel)…"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none" />
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">Retour</button>
+          <button onClick={valider} disabled={saving}
+            className={`flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50 ${mode === 'accepter' ? '' : 'bg-red-500 hover:bg-red-600'}`}
+            style={mode === 'accepter' ? { background: TEAL } : undefined}>
+            {saving ? '…' : mode === 'accepter' ? 'Tout accepter' : 'Refuser'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal Refuser / Annuler ────────────────────────────────────────────────────
 
 function RefuserModal({ rdv, label, type, onClose, onDone }: {
@@ -906,6 +1005,11 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <p className="text-xs text-gray-400">⏱ {rdv.duree_minutes} min</p>
           )}
           {rdv.motif && <p className="text-xs text-gray-400 mt-0.5 truncate">Motif : {rdv.motif}</p>}
+          {rdv.serie && (
+            <p className="text-xs font-semibold mt-1 px-2.5 py-1.5 rounded-lg" style={{ background: '#E8F3F1', color: TEAL }}>
+              🔁 Série : {resumeSerie(rdv.serie)}
+            </p>
+          )}
           {rdv.praticien_indifferent && rdv.statut === 'demande' && (
             <p className="text-xs font-semibold mt-0.5" style={{ color: '#2E7D5E' }}>🩺 Vétérinaire au choix — à attribuer</p>
           )}
@@ -1413,6 +1517,7 @@ export default function MesRdvPage() {
 
   const [modalAccepter, setModalAccepter] = useState<Rdv | null>(null);
   const [modalRefuser, setModalRefuser]   = useState<Rdv | null>(null);
+  const [modalSerie, setModalSerie]       = useState<{ serie: Rdv[]; mode: 'accepter' | 'refuser' } | null>(null);
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
@@ -1486,7 +1591,7 @@ export default function MesRdvPage() {
     try {
       const { data } = await supabase
         .from('rdv')
-        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, notes_client, client_nom_manuel, client_telephone_manuel, duree_minutes, premiere_visite, lieu, lieu_lat, lieu_lng, instructeur_profile_id, praticien_indifferent, salle_id, animal_nom_manuel, termine_at')
+        .select('*')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });
@@ -1536,7 +1641,9 @@ export default function MesRdvPage() {
         ...r,
         clientName: (r.client_profile_id ? profilesMap[r.client_profile_id] : undefined) ?? usersMap[r.client_uid] ?? undefined,
         // Nom figé à la réservation (animal_nom_manuel) si la fiche n'est pas lisible.
-        animalNom:  (r.animal_id ? animauxMap[String(r.animal_id)] : undefined) || r.animal_nom_manuel || undefined,
+        // Plusieurs animaux : noms figés « Luna + Rex ».
+        animalNom:  (Array.isArray(r.animaux_ids) && r.animaux_ids.length > 1 && r.animal_nom_manuel)
+          || (r.animal_id ? animauxMap[String(r.animal_id)] : undefined) || r.animal_nom_manuel || undefined,
         visitCount: visitCounts[r.client_uid] ?? 0,
       })));
     } catch { /* ignore */ } finally { setFetching(false); }
@@ -1651,7 +1758,20 @@ export default function MesRdvPage() {
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
   ];
 
-  const listeOnglet = activeTab === 'demandes' ? demandes : activeTab === 'a_venir' ? aVenir : historique;
+  // Pet-sitting : une demande en série = une seule carte (acceptée / refusée en une fois).
+  const demandesGroupees: Rdv[] = (() => {
+    const parSerie: Record<string, Rdv[]> = {};
+    for (const r of demandes) if (r.serie_id) (parSerie[r.serie_id] ??= []).push(r);
+    const vus = new Set<string>();
+    const res: Rdv[] = [];
+    for (const r of demandes) {
+      const g = r.serie_id ? parSerie[r.serie_id] : null;
+      if (!g || g.length < 2) res.push(r);
+      else if (!vus.has(r.serie_id!)) { vus.add(r.serie_id!); res.push({ ...r, serie: g }); }
+    }
+    return res;
+  })();
+  const listeOnglet = activeTab === 'demandes' ? demandesGroupees : activeTab === 'a_venir' ? aVenir : historique;
   // Pet-sitter : filtre par famille de prestation (présentes seulement) — miroir appli.
   const famillesPresentes = catPro === 'garde' ? FAMILLES_GARDE.filter(f => rdvs.some(r => familleGarde(r.motif) === f.key)) : [];
   const currentList = filtrePrestation === 'tous' || catPro !== 'garde'
@@ -1796,8 +1916,8 @@ export default function MesRdvPage() {
                   className={rdvFocus === rdv.id ? 'rounded-2xl ring-2 ring-[#0C5C6C] ring-offset-2' : undefined}>
                 <RdvCard rdv={rdv} tab={activeTab as 'demandes' | 'a_venir' | 'historique'}
                   myUid={user?.uid ?? ''} myProfileId={activeProfileId || null}
-                  onAccepter={() => setModalAccepter(rdv)}
-                  onRefuser={() => setModalRefuser(rdv)}
+                  onAccepter={() => rdv.serie ? setModalSerie({ serie: rdv.serie, mode: 'accepter' }) : setModalAccepter(rdv)}
+                  onRefuser={() => rdv.serie ? setModalSerie({ serie: rdv.serie, mode: 'refuser' }) : setModalRefuser(rdv)}
                   onAnnuler={() => setModalAnnuler(rdv)}
                   onTerminer={() => marquerTermine(rdv)}
                   onDelete={() => deleteRdv(rdv.id)}
@@ -1823,6 +1943,11 @@ export default function MesRdvPage() {
         <NouveauRdvModal proUid={user.uid} profileId={activeProfileId} proName={proName} catPro={catPro}
           initial={modalNouveau} onClose={() => setModalNouveau(null)}
           onDone={() => { setModalNouveau(null); fetchRdvs(); }} />
+      )}
+      {modalSerie && (
+        <SerieModal serie={modalSerie.serie} mode={modalSerie.mode} proName={proName}
+          onClose={() => setModalSerie(null)}
+          onDone={() => { setModalSerie(null); fetchRdvs(); }} />
       )}
       {modalAccepter && (
         <AccepterModal rdv={modalAccepter} proName={proName}

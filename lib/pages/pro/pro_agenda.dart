@@ -792,7 +792,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       ? (clientNames[cUid] ?? 'Client')
                       : (clientNomManuel?.isNotEmpty == true ? clientNomManuel! : 'Client'),
               // Nom figé à la réservation si la fiche n'est pas lisible.
-              '_animal_nom': (aId != null ? animalNames[aId] : null)?.isNotEmpty == true
+              '_animal_nom': (r['animaux_ids'] is List && (r['animaux_ids'] as List).length > 1 &&
+                      (r['animal_nom_manuel'] as String?)?.isNotEmpty == true)
+                  ? r['animal_nom_manuel'] as String
+                  : (aId != null ? animalNames[aId] : null)?.isNotEmpty == true
                   ? animalNames[aId]!
                   : ((r['animal_nom_manuel'] as String?) ?? ''),
               '_visit_count': cUid != null ? (visitCounts[cUid] ?? 0) : 0,
@@ -1481,7 +1484,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
-  Future<void> _updateStatutWithPreciseTime(String rdvId, DateTime preciseDh, int dureeMinutes) async {
+  Future<void> _updateStatutWithPreciseTime(String rdvId, DateTime preciseDh, int dureeMinutes,
+      {bool notifier = true, bool recharger = true}) async {
     try {
       final supa = Supabase.instance.client;
       await _updateConfirmation(rdvId, {
@@ -1523,7 +1527,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'pro_profile_id': rdv['client_profile_id'],
         }, onConflict: 'rdv_id');
         // Notify client
-        await supa.from('notifications').insert({
+        if (notifier) await supa.from('notifications').insert({
           'uid':   clientUid,
           'type':  'rdv_confirme',
           'title': estGardeJournee ? 'Garde confirmée par $proName' : 'RDV confirmé par $proName',
@@ -1553,7 +1557,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       }
       // A60 — accès carnet santé automatique
       await _autoGrantAccess(rdv);
-      await _loadRdvs();
+      if (recharger) await _loadRdvs();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1563,6 +1567,121 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ));
       }
     }
+  }
+
+  // ── Série pet-sitting (rdv.serie_id) : acceptée / refusée en une fois ──────
+
+  String _jjmm(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+  /// « 12 passages · du 14/10 au 08/11 · Lun, Mer, Ven · 09h00 et 18h00 »
+  String _resumeSerie(List<Map<String, dynamic>> serie) {
+    final dates = [for (final r in serie) DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal()]
+        .whereType<DateTime>().toList()..sort();
+    if (dates.isEmpty) return '${serie.length} passages';
+    const noms = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    final jours = {for (final d in dates) d.weekday}.toList()..sort();
+    final heures = {for (final d in dates) '${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}'}.toList()..sort();
+    return [
+      '${serie.length} passages',
+      'du ${_jjmm(dates.first)} au ${_jjmm(dates.last)}',
+      if (jours.length < 7) jours.map((j) => noms[j - 1]).join(', ') else 'tous les jours',
+      heures.join(' et '),
+    ].join(' · ');
+  }
+
+  Future<void> _accepterSerie(List<Map<String, dynamic>> serie) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Accepter la série', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text('${_resumeSerie(serie)}\n\nTous les passages seront confirmés aux horaires demandés. '
+            'Vous pourrez modifier un passage ensuite depuis « À venir ».',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Tout accepter', style: TextStyle(fontWeight: FontWeight.w700, color: _teal))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    for (final r in serie) {
+      final dh = DateTime.tryParse(r['date_heure']?.toString() ?? '');
+      if (dh == null) continue;
+      final duree = dureeImposeeGarde(r['motif']?.toString()) ?? (r['duree_minutes'] as num?)?.toInt() ?? 30;
+      await _updateStatutWithPreciseTime(r['id'].toString(), dh.toUtc(), duree, notifier: false, recharger: false);
+    }
+    final first = serie.first;
+    final clientUid = first['client_uid'] as String?;
+    if (clientUid != null) {
+      final names = await _rdvEventNames(first);
+      try {
+        await Supabase.instance.client.from('notifications').insert({
+          'uid': clientUid,
+          'type': 'rdv_confirme',
+          'title': 'Série confirmée par ${names.proName}',
+          'body': '${first['motif'] ?? 'Prestation'} : ${_resumeSerie(serie)}.',
+          if ((first['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': first['client_profile_id'],
+          'data': {'rdv_id': first['id'], 'serie_id': first['serie_id']},
+          'read': false,
+        });
+      } catch (_) {}
+    }
+    await _loadRdvs();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${serie.length} passages confirmés', style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: _teal, behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  Future<void> _refuserSerie(List<Map<String, dynamic>> serie) async {
+    final ctrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Refuser la série', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_resumeSerie(serie), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 10),
+          TextField(controller: ctrl, maxLines: 2,
+              decoration: const InputDecoration(hintText: 'Motif (facultatif)', border: OutlineInputBorder())),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Refuser', style: TextStyle(color: Colors.red.shade600, fontWeight: FontWeight.w700))),
+        ],
+      ),
+    );
+    final motif = ctrl.text.trim();
+    ctrl.dispose();
+    if (ok != true || !mounted) return;
+    final supa = Supabase.instance.client;
+    await supa.from('rdv').update({
+      'statut': 'annule',
+      if (motif.isNotEmpty) 'notes_annulation': motif,
+    }).inFilter('id', [for (final r in serie) r['id']]);
+    final first = serie.first;
+    final clientUid = first['client_uid'] as String?;
+    if (clientUid != null) {
+      final proName = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'Le pet-sitter';
+      try {
+        await supa.from('notifications').insert({
+          'uid': clientUid,
+          'type': 'rdv_refuse',
+          'title': 'Demande refusée',
+          'body': '$proName a refusé votre demande (${_resumeSerie(serie)})${motif.isNotEmpty ? ' — Motif : $motif' : ''}',
+          if ((first['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': first['client_profile_id'],
+          'data': {'rdv_id': first['id'], 'serie_id': first['serie_id']},
+          'read': false,
+        });
+      } catch (_) {}
+    }
+    await _loadRdvs();
   }
 
   Future<void> _showModifierDialog(Map<String, dynamic> rdv) async {
@@ -4627,11 +4746,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ),
       ]);
     }
+    // Demandes pet-sitting en série : une seule carte par série.
+    if (showActions) {
+      final series = <String, List<Map<String, dynamic>>>{};
+      for (final r in rdvs) {
+        final sid = r['serie_id']?.toString();
+        if (sid != null && sid.isNotEmpty) (series[sid] ??= []).add(r);
+      }
+      if (series.isNotEmpty) {
+        final vus = <String>{};
+        rdvs = [
+          for (final r in rdvs)
+            if ((r['serie_id']?.toString() ?? '').isEmpty || (series[r['serie_id'].toString()]!.length < 2))
+              r
+            else if (vus.add(r['serie_id'].toString()))
+              {...r, '_serie': series[r['serie_id'].toString()]!, '_serie_resume': _resumeSerie(series[r['serie_id'].toString()]!)},
+        ];
+      }
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: rdvs.length,
       itemBuilder: (_, i) {
         final rdv = rdvs[i];
+        final serie = rdv['_serie'] is List ? List<Map<String, dynamic>>.from(rdv['_serie'] as List) : null;
         final animalId = rdv['animal_id']?.toString();
         final hasAnimal = animalId != null && animalId.isNotEmpty;
         final showProTools = !showActions; // confirme + historique uniquement
@@ -4645,8 +4783,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           gardeBadge: _nomPraticien(rdv) ?? _gardeBadge(rdv),
           showActions: showActions,
           showCancel: showCancel || aCloturer,
-          onAccept:  () => _showAcceptDialog(rdv),
-          onDecline: () => _showCancelDialog(rdv, isRefus: true),
+          onAccept:  () => serie != null ? _accepterSerie(serie) : _showAcceptDialog(rdv),
+          onDecline: () => serie != null ? _refuserSerie(serie) : _showCancelDialog(rdv, isRefus: true),
           onCancel:  () => _showCancelDialog(rdv),
           onContact: showCancel ? () => _contactClient(rdv) : null,
           onModifier: showCancel ? () => _showModifierDialog(rdv) : null,
@@ -4995,6 +5133,19 @@ class _RdvCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(gardeBadge!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
                     fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+              ],
+              if (rdv['_serie_resume'] != null) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: const Color(0xFFE8F3F1), borderRadius: BorderRadius.circular(10)),
+                  child: Row(children: [
+                    const Icon(Icons.repeat, size: 14, color: Color(0xFF0C5C6C)),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text('Série : ${rdv['_serie_resume']}', style: const TextStyle(fontFamily: 'Galey',
+                        fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C)))),
+                  ]),
+                ),
               ],
               if (lieu.isNotEmpty) ...[
                 const SizedBox(height: 4),

@@ -102,7 +102,19 @@ class _GardeDashboardState extends State<GardeDashboard> {
       final rows = await _supa.from('rdv').select()
           .eq('pro_profile_id', pid).inFilter('statut', ['demande', 'contre_proposition'])
           .order('created_at', ascending: false);
-      _demandes = List<Map<String, dynamic>>.from((rows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      final toutes = List<Map<String, dynamic>>.from((rows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      // Série pet-sitting (rdv.serie_id) : une seule ligne, avec le nombre de passages.
+      final parSerie = <String, int>{};
+      for (final r in toutes) {
+        final sid = r['serie_id']?.toString() ?? '';
+        if (sid.isNotEmpty) parSerie[sid] = (parSerie[sid] ?? 0) + 1;
+      }
+      final vus = <String>{};
+      _demandes = [
+        for (final r in toutes)
+          if ((r['serie_id']?.toString() ?? '').isEmpty) r
+          else if (vus.add(r['serie_id'].toString())) {...r, '_nb_passages': parSerie[r['serie_id'].toString()]},
+      ];
     } catch (_) { _demandes = []; }
     try {
       final rows = await _supa.from('cles_clients').select()
@@ -576,7 +588,7 @@ class _GardeDashboardState extends State<GardeDashboard> {
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('${_nomAnimal(r)} · ${_nomClient(r)}', maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _ink)),
-                  Text('${_prestation(r)} · pour le ${_jm(_debut(r))} ${_hm(_debut(r))}${_exterieur(r) ? ' · ${_lieu(r)}' : ''}',
+                  Text('${_prestation(r)}${((r['_nb_passages'] as int?) ?? 1) > 1 ? ' · ${r['_nb_passages']} passages dès le' : ' · pour le'} ${_jm(_debut(r))} ${_hm(_debut(r))}${_exterieur(r) ? ' · ${_lieu(r)}' : ''}',
                       maxLines: 2, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
                 ])),

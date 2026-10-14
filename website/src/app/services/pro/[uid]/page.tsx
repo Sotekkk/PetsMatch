@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import { PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY } from '@/lib/pension-especes';
-import { gardeMotifLabel } from '@/lib/garde-labels';
+import { gardeMotifLabel, ACCES_LOGEMENT, accesLogementLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 import AvisPro from '@/components/AvisPro';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
@@ -318,7 +318,17 @@ function ProDetailContent() {
   // Garde uniquement : RDV récurrent (visites/promenades hebdomadaires)
   const [recurrent, setRecurrent] = useState(false);
   const [occurrences, setOccurrences] = useState(4);
-  const OCCURRENCE_CHOICES = [4, 8, 12];
+  // Pet-sitting — fréquence (une fois / chaque semaine / certains jours / tous
+  // les jours), autres horaires du jour, plusieurs animaux, accès au logement,
+  // forfait. Les passages forment une série (rdv.serie_id). Miroir appli
+  // rdv_booking_page.dart (_gardeOccurrences, _buildFrequenceGardeSection).
+  const [gardeFrequence, setGardeFrequence] = useState<'une_fois' | 'hebdo' | 'jours' | 'quotidien'>('une_fois');
+  const [gardeJours, setGardeJours] = useState<number[]>([]);
+  const [horairesSupp, setHorairesSupp] = useState<string[]>([]);
+  const [animauxGarde, setAnimauxGarde] = useState<(number | string)[]>([]);
+  const [accesLogement, setAccesLogement] = useState<string | null>(null);
+  const [forfaitsGarde, setForfaitsGarde] = useState<{ id: string; nom: string; nb_visites: number; prix: number }[]>([]);
+  const [forfaitId, setForfaitId] = useState<string | null>(null);
 
   // Cours collectifs (éducateur/comportementaliste)
   const [coursCollectifs, setCoursCollectifs] = useState<CoursCollectif[]>([]);
@@ -442,6 +452,12 @@ function ProDetailContent() {
       }
       if (proRow && (proRow.cat_pro === 'photographe' || proRow.cat_pro === 'toilettage')) {
         await loadPrestations(proRow.uid, proRow.cat_pro);
+      }
+      if (proRow && proRow.cat_pro === 'garde' && profileTableId) {
+        const { data: fg } = await supabase.from('forfaits_garde').select('*')
+          .eq('pro_profile_id', profileTableId).eq('actif', true).order('nb_visites');
+        setForfaitsGarde(((fg ?? []) as { id: string; nom: string; nb_visites: number; prix: number; affiche_public?: boolean }[])
+          .filter(f => f.affiche_public !== false));
       }
     } finally {
       setLoading(false);
@@ -776,7 +792,35 @@ function ProDetailContent() {
   // encore comme disponible dans les données déjà chargées.
   function occurrenceSlots(): Slot[] {
     if (!selectedSlot) return [];
-    if (pro?.cat_pro !== 'garde' || !recurrent) return [selectedSlot];
+    if (pro?.cat_pro === 'garde') {
+      // Passages selon la fréquence ; seuls les créneaux libres du pet-sitter sont gardés.
+      const hhmm = (h: string) => h.slice(0, 5);
+      const heures = [hhmm(selectedSlot.heureDebut), ...horairesSupp.filter(h => h !== hhmm(selectedSlot.heureDebut))];
+      const [y, mo, d0] = selectedSlot.date.split('-').map(Number);
+      const jourIso = (d: Date) => ((d.getDay() + 6) % 7) + 1;
+      const base = new Date(y, mo - 1, d0);
+      const jours: string[] = [selectedSlot.date];
+      if (gardeFrequence !== 'une_fois') {
+        for (let i = 1; i < 7 * occurrences; i++) {
+          const d = new Date(y, mo - 1, d0 + i);
+          const ok = gardeFrequence === 'hebdo' ? jourIso(d) === jourIso(base)
+            : gardeFrequence === 'jours' ? (gardeJours.includes(jourIso(d)) || jourIso(d) === jourIso(base))
+            : true;
+          if (ok) jours.push(toDateStr(d));
+        }
+      }
+      const res: Slot[] = [];
+      for (const date of jours) {
+        for (const h of heures) {
+          if (date === selectedSlot.date && h === hhmm(selectedSlot.heureDebut)) { res.push(selectedSlot); continue; }
+          const m = slots.find(x => x.date === date && hhmm(x.heureDebut) === h && slotForPrestation(x));
+          if (m && (chevauchementOk || !estOccupe(m))) res.push(m);
+          if (res.length >= 120) return res;
+        }
+      }
+      return res;
+    }
+    if (!recurrent) return [selectedSlot];
     const result: Slot[] = [selectedSlot];
     const base = new Date(`${selectedSlot.date}T00:00:00`);
     for (let i = 1; i < occurrences; i++) {
@@ -837,6 +881,10 @@ function ProDetailContent() {
       alert(gardePromenade && !gardeRecupDomicile ? 'Veuillez indiquer le lieu de rendez-vous.' : "Veuillez indiquer l'adresse où récupérer l'animal.");
       return;
     }
+    if (gardeAvecAdresse && gardeChezClient && !accesLogement) {
+      alert('Indiquez comment le pet-sitter accède au logement.');
+      return;
+    }
     let gardeGeo = domicileLatLng;
     if (gardeAvecAdresse && !gardeGeo) gardeGeo = await geocodeAddress(adresseDomicile.trim());
     const notesGarde = [gardeAvecAdresse ? gardeLieuNote : '', notes.trim()].filter(Boolean).join('\n');
@@ -880,6 +928,14 @@ function ProDetailContent() {
       const slotRef = selectedSlot;
       const targetSlots = occurrenceSlots();
       const skipReserve = pro.cat_pro === 'garde' && pro.garde_chevauchement_ok !== false;
+      const serieId = pro.cat_pro === 'garde' && targetSlots.length > 1 ? crypto.randomUUID() : null;
+      const animauxSel = pro.cat_pro === 'garde' && animauxGarde.length > 0
+        ? animauxGarde.map(id => animaux.find(a => a.id === id)).filter(Boolean) as typeof animaux : null;
+      const extraGarde: Record<string, unknown> = pro.cat_pro === 'garde' ? {
+        ...(serieId ? { serie_id: serieId } : {}),
+        ...(gardeAvecAdresse && gardeChezClient && accesLogement ? { acces_logement: accesLogement } : {}),
+        ...(forfaitId ? { forfait_id: forfaitId } : {}),
+      } : {};
 
       for (const slot of targetSlots) {
         const dateDebut = new Date(`${slot.date}T${slot.heureDebut}`);
@@ -890,7 +946,7 @@ function ProDetailContent() {
           ? (dureeImposeeGarde(motifKey) ?? (Number(dureesMotifsPro[motifKey]) || ((MOTIFS_BY_CAT.garde ?? []).find(m => m.key === motifKey)?.duree ?? null)))
           : null;
         const dureeMinutes = dureeGarde ?? Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
-        const { error: rdvErr } = await supabase.from('rdv').insert({
+        const ligneRdv = {
           ...(pro.cat_pro === 'veterinaire' && slot.praticien ? { instructeur_profile_id: slot.praticien } : {}),
           // « Peu importe » : posé sur le premier praticien libre, visible dans
           // l'agenda de tous jusqu'à validation (migration_rdv_praticien_indifferent.sql).
@@ -923,7 +979,17 @@ function ProDetailContent() {
             lieu: adresseDomicile.trim(),
             ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
           } : {}),
-        });
+          ...(animauxSel ? {
+            animal_nom_manuel: animauxSel.map(a => a.nom).filter(Boolean).join(' + '),
+            animaux_ids: animauxSel.map(a => a.id),
+          } : {}),
+        };
+        let { error: rdvErr } = await supabase.from('rdv').insert({ ...ligneRdv, ...extraGarde });
+        // migration_garde_demande_serie.sql pas encore passée : demande envoyée
+        // sans les nouvelles colonnes (l'accès reste dans les consignes).
+        if (rdvErr && Object.keys(extraGarde).length > 0 && (rdvErr.code === 'PGRST204' || rdvErr.message.includes('column'))) {
+          ({ error: rdvErr } = await supabase.from('rdv').insert(ligneRdv));
+        }
         if (rdvErr) {
           // Contrôle en base (clinique) : créneau pris entre-temps.
           alert(rdvErr.message.includes("vient d'être pris") || rdvErr.message.includes('Plus de salle')
@@ -1210,12 +1276,17 @@ function ProDetailContent() {
   // Pet-sitting (promenade / visite) : adresse de prise en charge de l'animal.
   const gardeAvecAdresse = pro?.cat_pro === 'garde' && !!motifKey && !isGardeJournee;
   const gardePromenade = motifKey.startsWith('promenade');
-  const gardeLieuNote = !gardePromenade ? ''
-    : gardeRecupDomicile ? "Récupération de l'animal à domicile." : 'Rendez-vous au lieu indiqué.';
+  // Le pet-sitter vient chez le client (visite, ou promenade avec récupération).
+  const gardeChezClient = !gardePromenade || gardeRecupDomicile;
+  const gardeLieuNote = [
+    gardePromenade ? (gardeRecupDomicile ? "Récupération de l'animal à domicile." : 'Rendez-vous au lieu indiqué.') : '',
+    gardeChezClient && accesLogement ? `Accès : ${accesLogementLabel(accesLogement)}.` : '',
+  ].filter(Boolean).join(' ');
   const canConfirm = !!motifKey &&
     (isGardeJournee ? gardeJourOkDays.length > 0 : !!selectedSlot) &&
     (!premiereRequise || premiereVisite !== null) &&
     (!gardeAvecAdresse || !!adresseDomicile.trim()) &&
+    (!gardeAvecAdresse || !gardeChezClient || !!accesLogement) &&
     (!isTaxi || (!!adresseDepart.trim() && !!adresseArrivee.trim() && animauxTaxiIds.length > 0));
 
   if (loading) return (
@@ -2068,6 +2139,26 @@ function ProDetailContent() {
                         {chezMoi && clientAdresseConnue && adresseDomicile.trim() === clientAdresseConnue && (
                           <p className="text-xs text-gray-400 mt-1">Adresse enregistrée sur votre profil — modifiable ci-dessus.</p>
                         )}
+                        {chezMoi && (
+                          <div className="mt-4">
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+                              Accès au logement *
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {ACCES_LOGEMENT.map(a => (
+                                <button key={a.key} type="button" onClick={() => setAccesLogement(a.key)}
+                                  className="px-3 py-1.5 rounded-full text-sm font-semibold border"
+                                  style={{ fontFamily: 'Galey, sans-serif', borderColor: catColor,
+                                    backgroundColor: accesLogement === a.key ? catColor : 'white', color: accesLogement === a.key ? 'white' : catColor }}>
+                                  {a.label}
+                                </button>
+                              ))}
+                            </div>
+                            {accesLogement === 'boite_cles' && (
+                              <p className="text-xs text-gray-500 mt-1.5">Ne notez pas le code ici : vous le transmettrez au pet-sitter une fois la demande acceptée.</p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -2115,6 +2206,28 @@ function ProDetailContent() {
                           style={{ color: catColor, fontFamily: 'Galey, sans-serif' }}>
                           Ajouter un animal
                         </Link>
+                      </div>
+                    ) : pro.cat_pro === 'garde' ? (
+                      <div className="flex flex-wrap gap-2">
+                        {animaux.map(a => {
+                          const sel = animauxGarde.includes(a.id);
+                          return (
+                            <button key={String(a.id)} type="button"
+                              onClick={() => {
+                                const next = sel ? animauxGarde.filter(x => x !== a.id) : [...animauxGarde, a.id];
+                                setAnimauxGarde(next);
+                                setSelectedAnimalId((next[0] ?? null) as number | null);
+                              }}
+                              className="px-3 py-1.5 rounded-full text-sm font-semibold border"
+                              style={{ fontFamily: 'Galey, sans-serif', borderColor: catColor,
+                                backgroundColor: sel ? catColor : 'white', color: sel ? 'white' : catColor }}>
+                              {a.nom}
+                            </button>
+                          );
+                        })}
+                        {animauxGarde.length > 1 && (
+                          <p className="w-full text-xs" style={{ color: catColor }}>{animauxGarde.length} animaux pour cette prestation.</p>
+                        )}
                       </div>
                     ) : (
                       <AnimalPickerField
@@ -2217,43 +2330,73 @@ function ProDetailContent() {
                     </>
                   )}
 
-                  {/* Récurrence (garde uniquement) */}
-                  {pro.cat_pro === 'garde' && selectedSlot && (
-                    <div className="border border-gray-200 rounded-2xl p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          🔁 Répéter ce RDV chaque semaine
-                        </p>
-                        <button type="button" onClick={() => setRecurrent(v => !v)}
-                          className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                          style={{ backgroundColor: recurrent ? catColor : '#D1D5DB' }}>
-                          <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
-                            style={{ transform: recurrent ? 'translateX(20px)' : 'translateX(0)' }} />
-                        </button>
-                      </div>
-                      {recurrent && (
-                        <>
-                          <p className="text-xs text-gray-400 mt-1.5 mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
-                            Idéal pour une promenade ou une visite régulière.
-                          </p>
-                          <div className="flex gap-2">
-                            {OCCURRENCE_CHOICES.map(n => (
-                              <button key={n} onClick={() => setOccurrences(n)}
-                                className="flex-1 py-2 rounded-xl text-xs font-semibold border transition-all"
-                                style={{
-                                  fontFamily: 'Galey, sans-serif',
-                                  borderColor: occurrences === n ? catColor : '#E5E7EB',
-                                  backgroundColor: occurrences === n ? `${catColor}15` : 'white',
-                                  color: occurrences === n ? catColor : '#6B7280',
-                                }}>
-                                {n} semaines
-                              </button>
-                            ))}
+                  {/* Fréquence / horaires / forfait (garde) — miroir appli _buildFrequenceGardeSection */}
+                  {pro.cat_pro === 'garde' && selectedSlot && !isGardeJournee && (() => {
+                    const puce = (sel: boolean) => ({
+                      className: 'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                      style: { fontFamily: 'Galey, sans-serif', borderColor: sel ? catColor : '#E5E7EB',
+                        backgroundColor: sel ? catColor : 'white', color: sel ? 'white' : '#4B5563' },
+                    });
+                    const [y, mo, d] = selectedSlot.date.split('-').map(Number);
+                    const jourBase = ((new Date(y, mo - 1, d).getDay() + 6) % 7) + 1;
+                    const autresHeures = [...new Set((slotsByDate[selectedSlot.date] ?? [])
+                      .map(x => x.heureDebut.slice(0, 5)).filter(h => h !== selectedSlot.heureDebut.slice(0, 5)))].sort();
+                    const nb = occurrenceSlots().length;
+                    return (
+                      <div className="border border-gray-200 rounded-2xl p-4 space-y-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        <p className="text-sm font-semibold" style={{ color: catColor }}>🔁 Fréquence</p>
+                        <div className="flex flex-wrap gap-2">
+                          {([['une_fois', 'Une fois'], ['hebdo', 'Chaque semaine'], ['jours', 'Certains jours'], ['quotidien', 'Tous les jours']] as const).map(([k, l]) => (
+                            <button key={k} type="button" onClick={() => setGardeFrequence(k)} {...puce(gardeFrequence === k)}>{l}</button>
+                          ))}
+                        </div>
+                        {gardeFrequence === 'jours' && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((n, i) => {
+                              const j = i + 1; const sel = j === jourBase || gardeJours.includes(j);
+                              return <button key={n} type="button" disabled={j === jourBase}
+                                onClick={() => setGardeJours(g => g.includes(j) ? g.filter(x => x !== j) : [...g, j])} {...puce(sel)}>{n}</button>;
+                            })}
                           </div>
-                        </>
-                      )}
-                    </div>
-                  )}
+                        )}
+                        {gardeFrequence !== 'une_fois' && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1.5">Pendant</p>
+                            <div className="flex flex-wrap gap-2">
+                              {[1, 2, 4, 8, 12].map(n => (
+                                <button key={n} type="button" onClick={() => setOccurrences(n)} {...puce(occurrences === n)}>{n === 1 ? '1 semaine' : `${n} semaines`}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {autresHeures.length > 0 && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1.5">Autres horaires dans la journée (ex. le soir)</p>
+                            <div className="flex flex-wrap gap-2">
+                              {autresHeures.map(h => (
+                                <button key={h} type="button" {...puce(horairesSupp.includes(h))}
+                                  onClick={() => setHorairesSupp(v => v.includes(h) ? v.filter(x => x !== h) : [...v, h])}>{h.replace(':', 'h')}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {forfaitsGarde.length > 0 && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-1.5">Forfait</p>
+                            <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => setForfaitId(null)} {...puce(forfaitId === null)}>Sans forfait</button>
+                              {forfaitsGarde.map(f => (
+                                <button key={f.id} type="button" onClick={() => setForfaitId(f.id)} {...puce(forfaitId === f.id)}>
+                                  {f.nom} — {Number(f.prix).toFixed(0)} €
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {nb > 1 && <p className="text-xs font-semibold" style={{ color: catColor }}>{nb} passages prévus</p>}
+                      </div>
+                    );
+                  })()}
 
                   {/* Notes */}
                   <div>
@@ -2280,7 +2423,7 @@ function ProDetailContent() {
                         📋 {motifLabelFor(motifKey, motifs.find(m => m.key === motifKey)?.label ?? '')}
                         {premiereVisite === true ? ' — 1ère visite' : ''}
                       </p>
-                      {selectedAnimalId && !isTaxi && (
+                      {selectedAnimalId && !isTaxi && pro.cat_pro !== 'garde' && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {animaux.find(a => a.id === selectedAnimalId)?.nom}
                         </p>
@@ -2290,9 +2433,15 @@ function ProDetailContent() {
                           🐾 {animauxTaxiIds.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(', ')}
                         </p>
                       )}
-                      {pro.cat_pro === 'garde' && recurrent && (
+                      {pro.cat_pro === 'garde' && occurrenceSlots().length > 1 && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          🔁 {occurrenceSlots().length}/{occurrences} semaines disponibles
+                          🔁 {occurrenceSlots().length} passages
+                          {forfaitId ? ` · forfait de ${forfaitsGarde.find(f => f.id === forfaitId)?.nb_visites ?? '?'}` : ''}
+                        </p>
+                      )}
+                      {pro.cat_pro === 'garde' && animauxGarde.length > 0 && (
+                        <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          🐾 {animauxGarde.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
                         </p>
                       )}
                     </div>

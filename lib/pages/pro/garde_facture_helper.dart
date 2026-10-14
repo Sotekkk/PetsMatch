@@ -36,6 +36,17 @@ int? dureeImposeeGarde(String? motif) => switch (gardePrestationKey(motif)) {
       _ => null,
     };
 
+/// Accès au logement choisi par le client (rdv.acces_logement) — miroir site
+/// ACCES_LOGEMENT (lib/garde-labels.ts). Jamais de code de boîte à clés ici.
+const kAccesLogement = <(String, String)>[
+  ('present', 'Je serai présent·e'),
+  ('remise_cles', 'Remise des clés au pet-sitter'),
+  ('boite_cles', 'Boîte à clés'),
+  ('cles_detenues', 'Le pet-sitter a déjà mes clés'),
+];
+String accesLogementLabel(String? k) =>
+    kAccesLogement.where((e) => e.$1 == k).map((e) => e.$2).firstOrNull ?? '';
+
 String familleGarde(Map<String, dynamic> r) {
   final k = gardePrestationKey(r['motif']?.toString());
   if (k == 'garde_journee') return 'garde';

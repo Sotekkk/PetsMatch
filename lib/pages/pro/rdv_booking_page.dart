@@ -8,7 +8,8 @@ import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
-import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel, dureeImposeeGarde;
+import 'dart:math' show Random;
+import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel, dureeImposeeGarde, kAccesLogement, accesLogementLabel;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/widgets/rdv/rdv_form_widgets.dart';
 
@@ -89,7 +90,20 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // Garde : RDV récurrent (visites/promenades hebdomadaires)
   bool _recurrent = false;
   int _occurrences = 4;
-  static const _occurrenceChoices = [4, 8, 12];
+  // Pet-sitting — fréquence de la demande : une fois / chaque semaine /
+  // certains jours / tous les jours, pendant _occurrences semaines, avec
+  // éventuellement d'autres horaires dans la journée. Les passages forment
+  // une série (rdv.serie_id) acceptée en une fois par le pet-sitter.
+  String _gardeFrequence = 'une_fois';
+  final Set<int> _gardeJours = {};
+  final List<TimeOfDay> _gardeHorairesSupp = [];
+  // Plusieurs animaux (rdv.animaux_ids) — _selectedAnimal = le premier.
+  List<Map<String, dynamic>> _animauxGarde = [];
+  // Accès au logement (rdv.acces_logement) — jamais de code ici.
+  String? _accesLogement;
+  // Forfait choisi (rdv.forfait_id).
+  List<Map<String, dynamic>> _forfaitsGarde = [];
+  String? _forfaitId;
   // Pension-specific
   String? _selectedMotif;
   bool? _premiereVisite;
@@ -174,8 +188,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   bool get _gardeAvecAdresse => widget.isGarde && _selectedMotifKey != null && !_isGardeJournee;
   bool get _gardePromenade => _selectedMotifKey?.startsWith('promenade') == true;
   bool _gardeRecupDomicile = true;
-  String get _gardeLieuNote => !_gardePromenade ? ''
-      : _gardeRecupDomicile ? "Récupération de l'animal à domicile." : "Rendez-vous au lieu indiqué.";
+  // Le pet-sitter vient chez le client (visite, ou promenade avec récupération).
+  bool get _gardeChezClient => !_gardePromenade || _gardeRecupDomicile;
+  String get _gardeLieuNote => [
+        if (_gardePromenade)
+          _gardeRecupDomicile ? "Récupération de l'animal à domicile." : 'Rendez-vous au lieu indiqué.',
+        if (_gardeChezClient && _accesLogement != null) 'Accès : ${accesLogementLabel(_accesLogement)}.',
+      ].join(' ');
 
   // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
   // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
@@ -374,6 +393,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (widget.isPhotographe || widget.isToilettage) _loadPrestations(),
       if (widget.isToilettage) _loadEmployesToilettage(),
       _loadClientAdresse(),
+      if (widget.isGarde) _loadForfaitsGarde(),
     ]);
     if (mounted) setState(() => _loadingData = false);
   }
@@ -393,6 +413,65 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // donc les colonnes génériques en priorité, et on ne bascule sur
   // *_elevage (géocodées à la volée, pas de lat_elevage/lng_elevage) que si
   // les génériques sont vides.
+  Future<void> _loadForfaitsGarde() async {
+    final pid = widget.proProfileId ?? '';
+    if (pid.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client.from('forfaits_garde').select()
+          .eq('pro_profile_id', pid).eq('actif', true).order('nb_visites');
+      _forfaitsGarde = [
+        for (final r in rows as List)
+          if ((r as Map)['affiche_public'] != false) Map<String, dynamic>.from(r),
+      ];
+    } catch (_) {}
+  }
+
+  static String _uuidV4() {
+    final r = Random.secure();
+    final b = List<int>.generate(16, (_) => r.nextInt(256));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+    return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20)}';
+  }
+
+  /// Passages (date + heure) de la demande pet-sitting selon la fréquence.
+  /// Le premier est le créneau choisi ; les autres ne sont gardés que s'ils
+  /// sont disponibles chez le pet-sitter.
+  List<DateTime> _gardeOccurrences(DateTime slotDate, String heureDebut, int duree) {
+    final hp = heureDebut.split(':');
+    final heures = <TimeOfDay>[
+      TimeOfDay(hour: int.parse(hp[0]), minute: int.parse(hp[1])),
+      ..._gardeHorairesSupp,
+    ];
+    final jours = <DateTime>[slotDate];
+    if (_gardeFrequence != 'une_fois') {
+      // DateTime(y, m, j + i) : pas de décalage au changement d'heure.
+      for (var i = 1; i < 7 * _occurrences; i++) {
+        final d = DateTime(slotDate.year, slotDate.month, slotDate.day + i);
+        final ok = switch (_gardeFrequence) {
+          'hebdo' => d.weekday == slotDate.weekday,
+          'jours' => _gardeJours.contains(d.weekday) || d.weekday == slotDate.weekday,
+          _ => true,
+        };
+        if (ok) jours.add(d);
+      }
+    }
+    final res = <DateTime>[];
+    for (final d in jours) {
+      for (var i = 0; i < heures.length; i++) {
+        final t = heures[i];
+        final hhmm = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+        final premier = d == slotDate && i == 0;
+        if (premier || _isDateSlotAvailable(d, hhmm, duree)) {
+          res.add(DateTime(d.year, d.month, d.day, t.hour, t.minute));
+        }
+        if (res.length >= 120) return res;
+      }
+    }
+    return res;
+  }
+
   Future<void> _loadClientAdresse() async {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1007,6 +1086,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           ? 'Veuillez indiquer le lieu de rendez-vous'
           : "Veuillez indiquer l'adresse où récupérer l'animal", color: Colors.orange); return;
     }
+    if (_gardeAvecAdresse && _gardeChezClient && _accesLogement == null) {
+      _snack("Indiquez comment le pet-sitter accède au logement", color: Colors.orange); return;
+    }
     if (_gardeAvecAdresse && _domicileLat == null) {
       final geo = await GeocodingHelper.geocode(_adresseDomicileCtrl.text.trim());
       _domicileLat = geo?.lat; _domicileLng = geo?.lng;
@@ -1112,7 +1194,16 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // créneau choisi, en ne retenant que les dates réellement disponibles
       // (créneaux du pro + absence de conflit avec un RDV existant).
       final occurrenceDates = <DateTime>[slotDate];
-      if (widget.isGarde && _recurrent) {
+      // Pet-sitting : fréquence + horaires (heure portée par chaque passage).
+      final gardePassages = widget.isGarde
+          ? _gardeOccurrences(slotDate, _selectedSlot!['heure_debut'] as String, dureeToSend)
+          : const <DateTime>[];
+      final serieId = gardePassages.length > 1 ? _uuidV4() : null;
+      if (widget.isGarde) {
+        occurrenceDates
+          ..clear()
+          ..addAll(gardePassages);
+      } else if (widget.isGarde && _recurrent) {
         for (var i = 1; i < _occurrences; i++) {
           final d = slotDate.add(Duration(days: 7 * i));
           if (_isDateSlotAvailable(d, (_selectedSlot!['heure_debut'] as String), dureeToSend)) {
@@ -1122,9 +1213,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }
 
       final heureDebutStr = _selectedSlot!['heure_debut'] as String;
+      final animauxGarde = widget.isGarde && _animauxGarde.isNotEmpty ? _animauxGarde : null;
       final rows = occurrenceDates.map((d) {
         final hp = heureDebutStr.split(':');
-        final dh = DateTime(d.year, d.month, d.day, int.parse(hp[0]), int.parse(hp[1])).toUtc();
+        final dh = widget.isGarde
+            ? d.toUtc()
+            : DateTime(d.year, d.month, d.day, int.parse(hp[0]), int.parse(hp[1])).toUtc();
         return {
           'pro_uid':        widget.proUid,
           if ((widget.proProfileId ?? '').isNotEmpty) 'pro_profile_id': widget.proProfileId,
@@ -1132,7 +1226,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           if (_resolveClientProfileId() != null) 'client_profile_id': _resolveClientProfileId(),
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
           // Nom figé : le pro le voit même sans accès à la fiche de l'animal.
-          if (!widget.isTaxi && _selectedAnimal?['nom'] != null) 'animal_nom_manuel': _selectedAnimal!['nom'].toString(),
+          if (animauxGarde != null) ...{
+            'animal_nom_manuel': animauxGarde.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + '),
+            'animaux_ids': animauxGarde.map((a) => a['id']?.toString()).toList(),
+          } else if (!widget.isTaxi && _selectedAnimal?['nom'] != null) 'animal_nom_manuel': _selectedAnimal!['nom'].toString(),
+          if (widget.isGarde) ...{
+            if (serieId != null) 'serie_id': serieId,
+            if (_gardeAvecAdresse && _gardeChezClient && _accesLogement != null) 'acces_logement': _accesLogement,
+            if (_forfaitId != null) 'forfait_id': _forfaitId,
+          },
           'date_heure': dh.toIso8601String(),
           'motif':      motif,
           if (widget.isTaxi) ...{
@@ -1178,7 +1280,16 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         };
       }).toList();
 
-      await Supabase.instance.client.from('rdv').insert(rows);
+      try {
+        await Supabase.instance.client.from('rdv').insert(rows);
+      } on PostgrestException catch (e) {
+        // migration_garde_demande_serie.sql pas encore passée : on envoie la
+        // demande sans les nouvelles colonnes (l'accès reste dans les consignes).
+        if (!widget.isGarde || !(e.code == 'PGRST204' || e.message.contains('column'))) rethrow;
+        await Supabase.instance.client.from('rdv').insert([
+          for (final r in rows) Map<String, dynamic>.from(r)..remove('serie_id')..remove('acces_logement')..remove('forfait_id'),
+        ]);
+      }
 
       // Partage du carnet de santé avec le cabinet (consentement du
       // propriétaire, donné ici) — le pro retrouve l'animal dans « Mes patients ».
@@ -1236,7 +1347,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       } catch (_) {}
 
       if (mounted) {
-        if (widget.isGarde && _recurrent && rows.length < _occurrences) {
+        if (widget.isGarde && rows.length > 1) {
+          _snack('Demande envoyée : ${rows.length} passages.', color: widget.categoryColor);
+        } else if (widget.isGarde && _recurrent && rows.length < _occurrences) {
           _snack('${rows.length}/$_occurrences RDV créés — certaines dates n\'étaient pas disponibles.',
               color: widget.categoryColor);
         } else if (rows.length > 1) {
@@ -1397,6 +1510,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   if (_gardeAvecAdresse) ...[
                     _buildGardeAdresseSection(),
                     const SizedBox(height: 20),
+                    if (_gardeChezClient) ...[
+                      _buildAccesLogementSection(),
+                      const SizedBox(height: 20),
+                    ],
                   ],
                   if (_isGardeJournee)
                     ..._buildGardeJourneeDates()
@@ -1404,7 +1521,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     ..._buildSlotPicker(),
                     if (widget.isGarde && _selectedSlot != null) ...[
                       const SizedBox(height: 20),
-                      _buildRecurrenceSection(),
+                      _buildFrequenceGardeSection(),
                     ],
                   ],
                   const SizedBox(height: 20),
@@ -2305,44 +2422,142 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   // ── Récurrence (garde uniquement) ────────────────────────────────────────────
 
-  Widget _buildRecurrenceSection() {
+  Widget _chip(String label, bool sel, VoidCallback onTap) {
     final color = widget.categoryColor;
+    return ChoiceChip(
+      label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+          color: sel ? Colors.white : color)),
+      selected: sel, onSelected: (_) => onTap(),
+      selectedColor: color, backgroundColor: color.withValues(alpha: 0.08), showCheckmark: false,
+      side: BorderSide.none,
+    );
+  }
+
+  // Pet-sitting : plusieurs animaux possibles.
+  Widget _buildAnimauxGardeSection() {
+    final color = widget.categoryColor;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionTitle('Pour quel(s) animal(aux) ?'),
+      const SizedBox(height: 8),
+      if (_animaux.isEmpty)
+        Text('Aucun animal enregistré dans votre profil.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
+      else ...[
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final a in _animaux)
+            _chip(a['nom']?.toString() ?? 'Animal', _animauxGarde.any((x) => x['id'] == a['id']), () => setState(() {
+              if (_animauxGarde.any((x) => x['id'] == a['id'])) {
+                _animauxGarde = _animauxGarde.where((x) => x['id'] != a['id']).toList();
+              } else {
+                _animauxGarde = [..._animauxGarde, a];
+              }
+              _selectedAnimal = _animauxGarde.isEmpty ? null : _animauxGarde.first;
+            })),
+        ]),
+        if (_animauxGarde.length > 1) ...[
+          const SizedBox(height: 6),
+          Text('${_animauxGarde.length} animaux pour cette prestation.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+        ],
+      ],
+    ]);
+  }
+
+  // Pet-sitting : accès au logement (visite, ou promenade avec récupération).
+  Widget _buildAccesLogementSection() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _sectionTitle('Accès au logement *'),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final a in kAccesLogement) _chip(a.$2, _accesLogement == a.$1, () => setState(() => _accesLogement = a.$1)),
+        ]),
+        if (_accesLogement == 'boite_cles') ...[
+          const SizedBox(height: 6),
+          Text('Ne notez pas le code ici : vous le transmettrez au pet-sitter une fois la demande acceptée.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        ],
+      ]);
+
+  // Pet-sitting : fréquence, horaires, forfait.
+  Widget _buildFrequenceGardeSection() {
+    final color = widget.categoryColor;
+    const nomsJours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    final slotDate = DateTime.tryParse(_selectedSlot?['date']?.toString() ?? '');
+    final heure = _selectedSlot?['heure_debut']?.toString() ?? '';
+    final passages = slotDate == null || heure.isEmpty
+        ? 0 : _gardeOccurrences(slotDate, heure, _selectedDuration).length;
+    final forfait = _forfaitsGarde.where((f) => f['id']?.toString() == _forfaitId).firstOrNull;
+    String hm(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}h${t.minute.toString().padLeft(2, '0')}';
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(12),
-        color: Colors.white,
-      ),
+      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(12), color: Colors.white),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Icon(Icons.repeat, size: 18, color: color),
           const SizedBox(width: 8),
-          Expanded(child: Text('Répéter ce RDV chaque semaine',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color))),
-          Switch(
-            value: _recurrent,
-            activeThumbColor: color,
-            onChanged: (v) => setState(() => _recurrent = v),
+          Text('Fréquence', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: color)),
+        ]),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final f in const [('une_fois', 'Une fois'), ('hebdo', 'Chaque semaine'),
+              ('jours', 'Certains jours'), ('quotidien', 'Tous les jours')])
+            _chip(f.$2, _gardeFrequence == f.$1, () => setState(() => _gardeFrequence = f.$1)),
+        ]),
+        if (_gardeFrequence == 'jours') ...[
+          const SizedBox(height: 10),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (var j = 1; j <= 7; j++)
+              _chip(nomsJours[j - 1], _gardeJours.contains(j) || slotDate?.weekday == j, () => setState(() {
+                if (slotDate?.weekday == j) return; // jour du créneau choisi : toujours inclus
+                _gardeJours.contains(j) ? _gardeJours.remove(j) : _gardeJours.add(j);
+              })),
+          ]),
+        ],
+        if (_gardeFrequence != 'une_fois') ...[
+          const SizedBox(height: 10),
+          Text('Pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, children: [
+            for (final n in const [1, 2, 4, 8, 12])
+              _chip(n == 1 ? '1 semaine' : '$n semaines', _occurrences == n, () => setState(() => _occurrences = n)),
+          ]),
+        ],
+        const SizedBox(height: 12),
+        Text('Horaires dans la journée', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          if (heure.isNotEmpty) _chip(heure.substring(0, 5).replaceAll(':', 'h'), true, () {}),
+          for (final t in _gardeHorairesSupp)
+            InputChip(
+              label: Text(hm(t), style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+              onDeleted: () => setState(() => _gardeHorairesSupp.remove(t)),
+            ),
+          TextButton.icon(
+            onPressed: () async {
+              final t = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 18, minute: 0));
+              if (t != null && mounted && !_gardeHorairesSupp.contains(t)) setState(() => _gardeHorairesSupp.add(t));
+            },
+            icon: Icon(Icons.add, size: 16, color: color),
+            label: Text('Autre horaire (ex. le soir)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: color)),
           ),
         ]),
-        if (_recurrent) ...[
-          const SizedBox(height: 4),
-          Text('Idéal pour une promenade ou une visite régulière avec le même client.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        if (_forfaitsGarde.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Forfait', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _chip('Sans forfait', _forfaitId == null, () => setState(() => _forfaitId = null)),
+            for (final f in _forfaitsGarde)
+              _chip('${f['nom']} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? '?'} €',
+                  _forfaitId == f['id']?.toString(), () => setState(() => _forfaitId = f['id']?.toString())),
+          ]),
+        ],
+        if (passages > 1 || forfait != null) ...[
           const SizedBox(height: 10),
-          Wrap(spacing: 8, children: _occurrenceChoices.map((n) {
-            final selected = _occurrences == n;
-            return ChoiceChip(
-              label: Text('$n semaines', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                  color: selected ? Colors.white : color)),
-              selected: selected,
-              onSelected: (_) => setState(() => _occurrences = n),
-              selectedColor: color,
-              backgroundColor: color.withValues(alpha: 0.08),
-              showCheckmark: false,
-            );
-          }).toList()),
+          Text([
+            '$passages passage${passages > 1 ? 's' : ''} prévu${passages > 1 ? 's' : ''}',
+            if (forfait != null) 'forfait de ${forfait['nb_visites']}',
+          ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color)),
         ],
       ]),
     );
@@ -2398,6 +2613,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         ],
       );
     }
+    if (widget.isGarde) return _buildAnimauxGardeSection();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
