@@ -1,3 +1,5 @@
+import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'package:PetsMatch/utils/chaleurs_etat.dart';
 import 'dart:async';
@@ -328,7 +330,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   int get _tabCount {
     if (widget.vetMode) {
-      if (User_Info.catPro == 'sante') return 6;
+      if (User_Info.catPro == 'sante') return 5;
       if (User_Info.catPro == 'marechal_ferrant') return 6;
       if (User_Info.catPro == 'veterinaire') return 6;
       if (User_Info.catPro == 'garde') return 5; // + Alimentation (essentiel pour un pet-sitter)
@@ -2321,11 +2323,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   // Anatomie a fusionné dans Morphologie pour santé (pointage
                   // libre + compte-rendu structuré) — maréchal-ferrant garde
                   // l'ancien onglet Anatomie séparé, hors périmètre ici.
-                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Soins & Rééducation')]
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
                   : User_Info.catPro == 'marechal_ferrant'
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
                   : User_Info.catPro == 'veterinaire'
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Soins & Rééducation')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Ostéo / Kiné')]
                       // Pet-sitter : pas de Consultations (domaine santé réservé
                       // aux pros de santé) mais Alimentation (essentiel pour
                       // nourrir l'animal pendant la garde).
@@ -2336,13 +2338,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Suivi vétérinaire'), Tab(text: 'Administratif')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Administratif')]
                       : (_statut == 'sorti' && !_isNewOwner
                           ? const [Tab(text: 'Identité'), Tab(text: 'Administratif')]
                           : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
-                              ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Suivi vétérinaire'), Tab(text: 'Administratif')]
+                              ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Administratif')]
                               // Repro reste à l'index 2 (liens directs : agenda chaleurs, notifications)
-                              : const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Suivi repro'), Tab(text: 'Alimentation'), Tab(text: 'Suivi vétérinaire'), Tab(text: 'Administratif')])),
+                              : const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Suivi repro'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Administratif')])),
             ),
           ]),
         ),
@@ -2371,7 +2373,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 // saillies et gestations est réservé à l'éleveur.
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: true, sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
-                if (_isHealthPro)
+                // Ostéo / kiné : leurs comptes rendus de séance (onglet unique
+                // « Consultations » ci-dessous), pas le circuit vétérinaire.
+                if (_isHealthPro && User_Info.catPro != 'sante')
                   _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId, espece: _espece),
                 // Maréchal-ferrant garde l'ancien onglet Anatomie séparé
                 // (pointage libre, hors périmètre de la fusion Morphologie) ;
@@ -2399,7 +2403,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _IdentiteTab(this),
                     _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _AlimentationTab(this),
-                    _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
+                    ConsultationsProprietaireTab(animalId: widget.animalId, espece: _espece),
                     // Contrats (réservation, adoption, cession) + certificats
                     // d'engagement.
                     _DocumentsTab(animalId: widget.animalId ?? ''),
@@ -2414,7 +2418,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _IdentiteTab(this),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
-                            _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
+                            ConsultationsProprietaireTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ]
                         : [
@@ -2422,7 +2426,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece, canWrite: !_tabReadOnly('write_sante')),
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _AlimentationTab(this),
-                            _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
+                            ConsultationsProprietaireTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ])),
       ),
@@ -5250,61 +5254,8 @@ class _CarnetSanteTab extends StatelessWidget {
       children: [
         panneau([
           for (var i = 0; i < _cats.length; i++) ligne(i),
-          // Comptes rendus morphologiques (saisis par les pros santé/véto,
-          // ex-onglet Morphologie) — consultation en lecture seule.
-          if (!vetMode) _ComptesRendusMorphoTile(animalId: animalId!, espece: espece),
         ]),
       ],
-    );
-  }
-}
-
-class _ComptesRendusMorphoTile extends StatelessWidget {
-  final String animalId;
-  final String espece;
-  const _ComptesRendusMorphoTile({required this.animalId, required this.espece});
-
-  static const _couleur = Color(0xFF5F9EAA);
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Supabase.instance.client
-          .from('suivis_morpho').stream(primaryKey: ['id']).eq('animal_id', animalId),
-      builder: (context, snap) {
-        final n = snap.data?.length ?? 0;
-        return InkWell(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
-            backgroundColor: const Color(0xFFF7F7F5),
-            appBar: AppBar(
-              backgroundColor: const Color(0xFF0C5C6C),
-              foregroundColor: Colors.white,
-              title: const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            ),
-            body: MorphoTimelineTab(animalId: animalId, espece: espece, canWrite: false),
-          ))),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 64),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-              child: Row(children: [
-                Container(width: 12, height: 12,
-                    decoration: const BoxDecoration(color: _couleur, shape: BoxShape.circle)),
-                const SizedBox(width: 14),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 15, color: Color(0xFF1F2A2E))),
-                  const SizedBox(height: 2),
-                  Text('Soins & Rééducation · $n compte${n > 1 ? 's' : ''} rendu${n > 1 ? 's' : ''}',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
-                ])),
-                SizedBox(width: 40, height: 44,
-                    child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500, size: 22)),
-              ]),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -13294,16 +13245,20 @@ class _EducationTabState extends State<_EducationTab> {
   }
 }
 
-class _ConsultationsOwnerTab extends StatefulWidget {
+/// Onglet « Consultations » du propriétaire : TOUS les comptes rendus de
+/// l'animal, rangés par catégorie — vétérinaire (comptes rendus, ordonnances)
+/// et séances partagées par les ostéopathes, kinés… (suivis_morpho envoyés).
+/// Utilisé aussi par la fiche particulier (animal_fiche_particulier.dart).
+class ConsultationsProprietaireTab extends StatefulWidget {
   final String? animalId;
   final String espece;
-  const _ConsultationsOwnerTab({required this.animalId, required this.espece});
+  const ConsultationsProprietaireTab({super.key, required this.animalId, required this.espece});
 
   @override
-  State<_ConsultationsOwnerTab> createState() => _ConsultationsOwnerTabState();
+  State<ConsultationsProprietaireTab> createState() => _ConsultationsProprietaireTabState();
 }
 
-class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
+class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaireTab> {
   static const _teal = Color(0xFF0C5C6C);
   final _supa = Supabase.instance.client;
 
@@ -13312,6 +13267,11 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
   List<Map<String, dynamic>> _ordos = [];
   int _seancesOsteoCount = 0;
   Map<String, String> _vetNames = {};
+  /// Comptes rendus de séance partagés (ostéo, kiné, rééducation, bilans).
+  List<Map<String, dynamic>> _seances = [];
+  /// tous | osteopathie | kine | veterinaire | autre — d'après le métier de
+  /// l'auteur (categorieConsultation), pas le type de séance.
+  String _categorie = 'tous';
 
   @override
   void initState() {
@@ -13343,21 +13303,58 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
       final vetNames = <String, String>{};
       if (proUids.isNotEmpty) {
         try {
-          final users = await _supa.from('users_complet')
-              .select('uid, firstname, lastname').inFilter('uid', proUids);
-          for (final u in users as List) {
-            final uid = u['uid']?.toString() ?? '';
-            final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-            vetNames[uid] = nom.isNotEmpty ? 'Dr. $nom' : 'Vétérinaire';
+          // Pro émetteur (clinique, pension…) : nom de structure du profil
+          // pro, sinon prénom + nom.
+          final profs = await _supa.from('user_profiles_complet')
+              .select('uid, nom, firstname, lastname, profile_type').inFilter('uid', proUids);
+          for (final p in profs as List) {
+            final uid = p['uid']?.toString() ?? '';
+            final nom = (p['nom'] as String?)?.trim() ?? '';
+            final full = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+            final isPro = (p['profile_type'] as String?)?.isNotEmpty == true && p['profile_type'] != 'particulier';
+            final label = isPro && nom.isNotEmpty ? nom : (full.isNotEmpty ? full : nom);
+            if (label.isNotEmpty && (isPro || !vetNames.containsKey(uid))) vetNames[uid] = label;
           }
         } catch (_) {}
       }
+
+      // Séances des pros (bilan d'un pro visible une fois envoyé — RLS +
+      // filtre pour un même compte propriétaire / pro).
+      var seances = <Map<String, dynamic>>[];
+      try {
+        final rows = await _supa.from('suivis_morpho').select()
+            .eq('animal_id', widget.animalId!).order('date', ascending: false);
+        seances = List<Map<String, dynamic>>.from(rows as List)
+            .where((x) => x['source'] != 'professionnel' || x['notifie_a'] != null).toList();
+        final pids = seances.map((x) => x['pro_profile_id']?.toString()).whereType<String>().toSet().toList();
+        if (pids.isNotEmpty) {
+          final pros = await _supa.from('user_profiles_complet')
+              .select('id, nom, firstname, lastname, profession_pro, cat_pro').inFilter('id', pids);
+          final noms = <String, String>{};
+          final metiers = <String, (String?, String?)>{};
+          for (final r in pros as List) {
+            final nom = (r['nom'] ?? '').toString().trim().isNotEmpty
+                ? r['nom'].toString().trim() : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+            noms[r['id'].toString()] = [nom, (r['profession_pro'] ?? '').toString().trim()].where((x) => x.isNotEmpty).join(' — ');
+            metiers[r['id'].toString()] = (r['profession_pro']?.toString(), r['cat_pro']?.toString());
+          }
+          for (final x in seances) {
+            x['_pro'] = noms[x['pro_profile_id']?.toString()] ?? x['professionnel_nom'];
+            final m = metiers[x['pro_profile_id']?.toString()];
+            x['_categorie'] = categorieConsultation(type: x['type_suivi']?.toString(), profession: m?.$1, catPro: m?.$2);
+          }
+        }
+        for (final x in seances) {
+          x['_categorie'] ??= categorieConsultation(type: x['type_suivi']?.toString());
+        }
+      } catch (_) {}
 
       if (mounted) setState(() {
         _crs      = allCrs;
         _ordos    = allOrdos;
         _vetNames = vetNames;
         _seancesOsteoCount = seancesOsteoCount;
+        _seances  = seances;
         _loading  = false;
       });
     } catch (_) {
@@ -13375,7 +13372,17 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _seancesOsteoCount == 0;
+    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty;
+    // Catégories présentes seulement (pas de filtre vide).
+    // Ordre : Ostéopathie, Kiné, Vétérinaire, Autres — catégories présentes seulement.
+    final presentes = <String>[
+      for (final c in kCategoriesConsultation)
+        if (_seances.any((x) => x['_categorie'] == c.$1)
+            || (c.$1 == 'veterinaire' && (_crs.isNotEmpty || _ordos.isNotEmpty))
+            || (c.$1 == 'osteopathie' && _seancesOsteoCount > 0)) c.$1,
+    ];
+    bool voir(String c) => _categorie == 'tous' || _categorie == c;
+    final seancesVues = _seances.where((x) => voir(x['_categorie']?.toString() ?? 'autre')).toList();
     return RefreshIndicator(
       onRefresh: _load,
       color: _teal,
@@ -13391,7 +13398,7 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                           fontSize: 16, color: Color(0xFF1F2A2E))),
                   const SizedBox(height: 8),
-                  Text('Les comptes rendus et ordonnances\nrédigés par votre vétérinaire apparaîtront ici.',
+                  Text('Les comptes rendus de vos vétérinaires,\nostéopathes, kinés… apparaîtront ici.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontFamily: 'Galey', fontSize: 13,
                           color: Colors.grey.shade500, height: 1.5)),
@@ -13402,25 +13409,56 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                if (_crs.isNotEmpty) ...[
+                // Filtres dès qu'il y a un compte rendu : le métier se lit
+                // d'un coup d'œil (catégories vides jamais affichées).
+                if (presentes.isNotEmpty) ...[
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      for (final c in ['tous', ...presentes])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(c == 'tous' ? 'Tous' : kCategoriesConsultation.firstWhere((k) => k.$1 == c).$2, style: TextStyle(
+                                fontFamily: 'Galey', fontSize: 12.5, color: _categorie == c ? Colors.white : const Color(0xFF1F2A2E))),
+                            selected: _categorie == c,
+                            showCheckmark: false,
+                            selectedColor: _teal,
+                            backgroundColor: Colors.white,
+                            side: BorderSide(color: _categorie == c ? _teal : Colors.grey.shade300),
+                            onSelected: (_) => setState(() => _categorie = c),
+                          ),
+                        ),
+                    ]),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                if (voir('veterinaire') && _crs.isNotEmpty) ...[
                   _VetConsultSectionHeader(label: 'Comptes rendus', count: _crs.length,
                       icon: Icons.assignment_outlined, color: _teal),
                   const SizedBox(height: 10),
                   ..._crs.map((cr) => _OwnerConsultCrCard(cr: cr, color: _teal,
-                      vetName: _vetNames[cr['pro_uid']?.toString()] ?? 'Vétérinaire',
+                      vetName: _vetNames[cr['pro_uid']?.toString()] ?? 'Professionnel',
                       fmtDate: _fmtDate)),
                   const SizedBox(height: 20),
                 ],
-                if (_ordos.isNotEmpty) ...[
+                if (voir('veterinaire') && _ordos.isNotEmpty) ...[
                   _VetConsultSectionHeader(label: 'Ordonnances', count: _ordos.length,
                       icon: Icons.description_outlined, color: _teal),
                   const SizedBox(height: 10),
                   ..._ordos.map((o) => _OwnerConsultOrdoCard(ordo: o, color: _teal,
-                      vetName: _vetNames[o['pro_uid']?.toString()] ?? 'Vétérinaire',
+                      vetName: _vetNames[o['pro_uid']?.toString()] ?? 'Professionnel',
                       fmtDate: _fmtDate)),
                   const SizedBox(height: 20),
                 ],
-                if (_seancesOsteoCount > 0)
+                if (seancesVues.isNotEmpty) ...[
+                  _VetConsultSectionHeader(label: 'Comptes rendus de séance', count: seancesVues.length,
+                      icon: Icons.description_outlined, color: _teal),
+                  const SizedBox(height: 10),
+                  for (final x in seancesVues) _SeanceProprietaireCard(seance: x, espece: widget.espece),
+                  const SizedBox(height: 20),
+                ],
+                if (voir('osteopathie') && _seancesOsteoCount > 0)
                   AnatomieOwnerSection(animalId: widget.animalId ?? '', espece: widget.espece),
               ]),
             ),
@@ -13429,6 +13467,40 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
 }
 
 // ─── Widgets helpers consultations ───────────────────────────────────────────
+
+/// Carte compacte d'un compte rendu de séance (ostéo, kiné…) côté
+/// propriétaire : type, date, professionnel et spécialité ; ouvre le compte
+/// rendu (lecture seule, PDF).
+class _SeanceProprietaireCard extends StatelessWidget {
+  final Map<String, dynamic> seance;
+  final String espece;
+  const _SeanceProprietaireCard({required this.seance, required this.espece});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateTime.tryParse(seance['date']?.toString() ?? '');
+    final pro = seance['source'] == 'professionnel';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))]),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        title: Text(pro ? titreCompteRendu(seance['type_suivi']?.toString()) : labelTypeSuivi(seance['type_suivi']?.toString()),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+        subtitle: Text([
+          if (date != null) DateFormat('d MMMM yyyy', 'fr_FR').format(date),
+          if ((seance['_pro'] as String?)?.trim().isNotEmpty == true) seance['_pro'] as String,
+          if ((seance['intitule'] as String?)?.trim().isNotEmpty == true) seance['intitule'].toString().trim(),
+        ].join(' — '), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+        onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => MorphoDetailPage(suivi: seance, espece: espece, readOnly: true),
+        )),
+      ),
+    );
+  }
+}
 
 class _VetConsultSectionHeader extends StatelessWidget {
   final String label; final int count; final IconData icon; final Color color;

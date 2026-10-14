@@ -29,8 +29,6 @@ import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTa
 import 'package:PetsMatch/pages/particulier/balades/mes_balades_page.dart';
 import 'package:PetsMatch/services/gamification_service.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
-import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
-import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
@@ -160,7 +158,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _editing = widget.animalId == null; // nouveau animal → direct en édition
     _fillFromData(widget.initialData);
     // La morphologie n'est plus un onglet : carnet de santé › Comptes rendus.
-    const initialLength = 4;
+    const initialLength = 5;
     _tabs = TabController(length: initialLength, vsync: this,
         initialIndex: widget.initialTab.clamp(0, initialLength - 1));
     _loadBreeds();
@@ -510,10 +508,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   // Garde n'apparaissent que si l'animal a un suivi correspondant.
   bool get _showEducationTab => _hasEducationRapports || _hasDevis;
   bool get _showPensionTab => _hasPensionUpdates;
-  bool get _showMorphoTab => morphoSpeciesSupported(_espece);
 
   void _syncTabs() {
-    final n = 4 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0);
+    final n = 5 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0);
     if (_tabs.length == n) return;
     final prev = _tabs.index;
     _tabs.dispose();
@@ -953,6 +950,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             const Tab(text: 'Identité'),
             const Tab(text: 'Carnet de santé'),
             const Tab(text: 'Alimentation'),
+            const Tab(text: 'Consultations'),
             const Tab(text: 'Administratif'),
             if (_showEducationTab) const Tab(text: 'Éducation'),
             if (_showPensionTab) const Tab(text: 'Pension & Garde'),
@@ -970,6 +968,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 _buildIdentiteTab(),
                 _buildSanteTab(),
                 _buildAlimentationTab(),
+                // Tous les comptes rendus : vétérinaire, ostéo, kiné… (catégories)
+                ConsultationsProprietaireTab(animalId: _animalId, espece: _espece),
                 _buildDocumentsTab(),
                 if (_showEducationTab) _buildEducationTab(),
                 if (_showPensionTab) _buildPensionTab(),
@@ -1393,7 +1393,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   // ── Navigation entre onglets ──────────────────────────────────────────────
   List<String> get _tabLabelList => [
-        'Identité', 'Carnet de santé', 'Alimentation', 'Documents',
+        'Identité', 'Carnet de santé', 'Alimentation', 'Consultations', 'Documents',
         if (_showEducationTab) 'Éducation',
         if (_showPensionTab) 'Pension & Garde',
       ];
@@ -2217,9 +2217,6 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                   ]),
                 ),
               ),
-            // Comptes rendus morphologiques (ex-onglet Morphologie), lecture seule
-            if (_showMorphoTab && _animalId != null)
-              _ComptesRendusMorphoTile(animalId: _animalId!, espece: _espece),
           ]),
         ],
       ),
@@ -3218,57 +3215,6 @@ class _AiScanCard extends StatelessWidget {
 }
 
 // ── Health section widget ─────────────────────────────────────────────────────
-
-/// Comptes rendus morphologiques (saisis par les pros santé/véto) : ligne du carnet.
-class _ComptesRendusMorphoTile extends StatelessWidget {
-  final String animalId;
-  final String espece;
-  const _ComptesRendusMorphoTile({required this.animalId, required this.espece});
-
-  static const _couleur = Color(0xFF5F9EAA);
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Supabase.instance.client
-          .from('suivis_morpho').stream(primaryKey: ['id']).eq('animal_id', animalId),
-      builder: (context, snap) {
-        final n = snap.data?.length ?? 0;
-        return InkWell(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
-            backgroundColor: const Color(0xFFF7F7F5),
-            appBar: AppBar(
-              backgroundColor: const Color(0xFF0C5C6C),
-              foregroundColor: Colors.white,
-              title: const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            ),
-            body: MorphoTimelineTab(animalId: animalId, espece: espece, canWrite: false),
-          ))),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 64),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-              child: Row(children: [
-                Container(width: 12, height: 12,
-                    decoration: const BoxDecoration(color: _couleur, shape: BoxShape.circle)),
-                const SizedBox(width: 14),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  const Text('Comptes rendus', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                      fontSize: 15, color: Color(0xFF1F2A2E))),
-                  const SizedBox(height: 2),
-                  Text('Soins & Rééducation · $n compte${n > 1 ? 's' : ''} rendu${n > 1 ? 's' : ''}',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
-                ])),
-                SizedBox(width: 40, height: 44,
-                    child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500, size: 22)),
-              ]),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
 
 /// Panneau blanc unique du carnet : lignes séparées par des traits gris fins.
 class _PanneauSante extends StatelessWidget {
@@ -6845,9 +6791,6 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _officiels = [];
   List<Map<String, dynamic>> _certs = [];
-  List<Map<String, dynamic>> _crs = [];       // comptes rendus (véto / pension…)
-  List<Map<String, dynamic>> _ordos = [];     // ordonnances
-  Map<String, String> _proNames = {};         // uid → nom du pro
   bool _loading = true;
   bool _uploading = false;
 
@@ -6865,42 +6808,11 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
         _supa.from('certificats_engagement')
             .select('id, statut, date_remise, token_signature, date_signature_acquereur')
             .eq('animal_id', widget.animalId).order('date_remise', ascending: false),
-        _supa.from('comptes_rendus').select('*')
-            .eq('animal_id', widget.animalId).order('created_at', ascending: false),
-        _supa.from('ordonnances').select('*')
-            .eq('animal_id', widget.animalId).order('created_at', ascending: false),
       ]);
-      final crs   = List<Map<String, dynamic>>.from(results[2]);
-      final ordos = List<Map<String, dynamic>>.from(results[3]);
-
-      // Noms des pros émetteurs.
-      final proUids = {
-        for (final r in [...crs, ...ordos])
-          if ((r['pro_uid']?.toString() ?? '').isNotEmpty) r['pro_uid'].toString(),
-      }.toList();
-      final proNames = <String, String>{};
-      if (proUids.isNotEmpty) {
-        try {
-          final profs = await _supa.from('user_profiles_complet')
-              .select('uid, nom, firstname, lastname, profile_type')
-              .inFilter('uid', proUids);
-          for (final p in profs as List) {
-            final nom = (p['nom'] as String?)?.trim() ?? '';
-            final full = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-            final isPro = (p['profile_type'] as String?)?.isNotEmpty == true
-                && p['profile_type'] != 'particulier';
-            final label = isPro && nom.isNotEmpty ? nom : (full.isNotEmpty ? full : nom);
-            if (label.isNotEmpty) proNames[p['uid'] as String] = label;
-          }
-        } catch (_) {}
-      }
 
       if (mounted) setState(() {
         _officiels = List<Map<String, dynamic>>.from(results[0]);
         _certs = List<Map<String, dynamic>>.from(results[1]);
-        _crs = crs;
-        _ordos = ordos;
-        _proNames = proNames;
         _loading = false;
       });
     } catch (_) {
@@ -7159,15 +7071,10 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
               ..._certs.map(_certCard),
               const SizedBox(height: 16),
             ],
-            if (_crs.isNotEmpty || _ordos.isNotEmpty) ...[
-              _sectionTitle('Comptes rendus & ordonnances'),
-              ..._crs.map((c) => _consultCard(c, isOrdo: false)),
-              ..._ordos.map((o) => _consultCard(o, isOrdo: true)),
-            ],
+            // Comptes rendus & ordonnances : onglet « Consultations ».
           ],
 
-          if (libres.isEmpty && _officiels.isEmpty && _certs.isEmpty &&
-              _crs.isEmpty && _ordos.isEmpty && !_loading)
+          if (libres.isEmpty && _officiels.isEmpty && _certs.isEmpty && !_loading)
             const Padding(
               padding: EdgeInsets.only(top: 40),
               child: _TabEmptyState(
@@ -7320,61 +7227,6 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
           const SizedBox(width: 8),
           _statutBadge(signe ? 'signe' : 'en_attente'),
         ]),
-      ),
-    );
-  }
-
-  /// Compte rendu ou ordonnance rédigé par un pro (véto, pension, ostéo…).
-  Widget _consultCard(Map<String, dynamic> rec, {required bool isOrdo}) {
-    final proUid = rec['pro_uid']?.toString() ?? '';
-    final proNom = _proNames[proUid] ?? 'Professionnel';
-    final rawDate = (rec['date'] ?? rec['date_emit'] ?? rec['created_at'])?.toString();
-    final dt = rawDate != null ? DateTime.tryParse(rawDate) : null;
-    final dateStr = dt != null ? DateFormat('dd/MM/yyyy').format(dt.toLocal()) : '';
-    final contenu = (rec['contenu'] ?? rec['notes'] ?? '').toString().trim();
-    final docUrl = rec['doc_url']?.toString() ?? '';
-    final titre = isOrdo ? 'Ordonnance' : 'Compte rendu';
-    final sousTitre = [proNom, if (dateStr.isNotEmpty) dateStr].join(' · ');
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-          leading: CircleAvatar(
-            backgroundColor: _kTealDoc.withValues(alpha: 0.1),
-            child: Icon(isOrdo ? Icons.medication_outlined : Icons.description_outlined,
-                color: _kTealDoc, size: 20),
-          ),
-          title: Text(titre,
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
-          subtitle: Text(sousTitre,
-              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-          children: [
-            if (contenu.isNotEmpty)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
-              ),
-            if (docUrl.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: () => DocumentViewerPage.open(context, docUrl, title: '$titre — $proNom'),
-                  icon: const Icon(Icons.visibility_outlined, size: 16),
-                  label: const Text('Lire le document', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  style: OutlinedButton.styleFrom(foregroundColor: _kTealDoc, side: const BorderSide(color: _kTealDoc)),
-                ),
-              ),
-            ],
-            if (contenu.isEmpty && docUrl.isEmpty)
-              const Align(alignment: Alignment.centerLeft,
-                  child: Text('Aucun détail', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey))),
-          ],
-        ),
       ),
     );
   }

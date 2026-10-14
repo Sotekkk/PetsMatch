@@ -369,6 +369,14 @@ export default function MesPatientsPage() {
                     {!g.id.startsWith('rdv-') && <span className="w-7" />}
                     <span className="text-gray-300 text-lg">›</span>
                   </Link>
+                  {/* Ostéo / kiné : une seule action, comme dans l'appli */}
+                  {catPro === 'sante' && (
+                    <Link href={`/sante/suivis/nouveau?animalId=${encodeURIComponent(String(a.id))}&espece=${encodeURIComponent(a.espece ?? 'chien')}`}
+                      className="absolute top-1/2 -translate-y-1/2 right-16 text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"
+                      style={{ borderColor: '#0C5C6C', color: '#0C5C6C' }}>
+                      Nouvelle consultation
+                    </Link>
+                  )}
                   {catPro === 'veterinaire' && (
                     <button type="button" onClick={() => setHistorique({ id: String(a.id), nom: a.nom })} title="Historique"
                       className="absolute top-1/2 -translate-y-1/2 right-9 text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-white"

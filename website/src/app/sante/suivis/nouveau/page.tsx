@@ -90,6 +90,24 @@ function NouveauSuiviContent() {
     if (userData && !isSante) { router.push('/'); return; }
   }, [user, userData, isSante, authLoading, router]);
 
+  // Depuis un rendez-vous : rouvre le compte rendu déjà rédigé pour ce RDV
+  // (pas de doublon), sinon préremplit la date et le lieu de la séance.
+  useEffect(() => {
+    if (!rdvIdParam || isEditing) return;
+    (async () => {
+      const { data: existant } = await supabase.from('suivis_morpho').select('id').eq('rdv_id', rdvIdParam).limit(1).maybeSingle();
+      if (existant) { router.replace(`/sante/suivis/${existant.id}`); return; }
+      const { data: r } = await supabase.from('rdv').select('date_heure, lieu, salle_id, lieu_lat').eq('id', rdvIdParam).maybeSingle();
+      if (!r) return;
+      if (r.date_heure) {
+        const d = new Date(r.date_heure as string);
+        setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+      }
+      const exterieur = (!!(r.lieu as string | null)?.trim() && !r.salle_id) || r.lieu_lat != null;
+      setLieu(l => l || (exterieur ? 'exterieur' : 'cabinet'));
+    })();
+  }, [rdvIdParam, isEditing, router]);
+
   useEffect(() => {
     if (isEditing || !activeProfileId) return;
     supabase.from('user_profiles_complet').select('nom, firstname, lastname, profession_pro').eq('id', activeProfileId).maybeSingle()

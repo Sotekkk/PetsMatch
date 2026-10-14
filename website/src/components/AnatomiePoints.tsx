@@ -196,9 +196,6 @@ export function AnatomieSeances({ animalId, espece, profilType }: { animalId: st
           {seances.map(s => (
             <button key={s.id} onClick={() => setOpenSeance(s)}
               className="w-full text-left bg-white border border-gray-100 rounded-xl p-3.5 flex items-center gap-3 hover:bg-gray-50 transition-colors">
-              <div className="w-10 h-10 rounded-full bg-[#0C5C6C]/8 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg">🦴</span>
-              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{fmtDate(s.date_seance)}</p>
                 <p className="text-xs text-gray-500">
@@ -243,7 +240,7 @@ export function AnatomieOwnerSection({ animalId, espece }: { animalId: string; e
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
       <h3 className="font-bold text-sm text-[#1F2A2E] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
-        🦴 Séances d&apos;ostéopathie / kiné
+        Séances d&apos;ostéopathie / kiné
       </h3>
       <div className="space-y-2">
         {seances.map(s => (

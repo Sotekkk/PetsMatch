@@ -34,6 +34,75 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
   /// `User_Info.activeProfileId` vide fait échouer la résolution des vrais
   /// patients (animal_access est scopé par profil). Même pattern que
   /// pro_clients_page.dart.
+  // ── Filtres de « Mes consultations » ──────────────────────────────────────
+  String _recherche = '';
+  String _filtreType = 'tous';    // tous | osteopathie | reeducation | bilan | autre
+  String _filtreStatut = 'tous';  // tous | brouillon | finalise | envoye
+  String _periode = 'tout';       // tout | 30 | 90 | 365 (jours)
+
+  List<Map<String, dynamic>> get _filtres {
+    final q = _recherche.trim().toLowerCase();
+    final limite = _periode == 'tout' ? null : DateTime.now().subtract(Duration(days: int.parse(_periode)));
+    return _suivis.where((s) {
+      if (q.isNotEmpty && !(s['_animal_nom']?.toString().toLowerCase().contains(q) ?? false)
+          && !(s['client_nom_libre']?.toString().toLowerCase().contains(q) ?? false)) { return false; }
+      if (_filtreType != 'tous' && familleSeance(s['type_suivi']?.toString()) != _filtreType) return false;
+      switch (_filtreStatut) {
+        case 'brouillon': if (s['statut'] != 'brouillon') return false;
+        case 'finalise': if (s['statut'] == 'brouillon' || s['notifie_a'] != null) return false;
+        case 'envoye': if (s['notifie_a'] == null) return false;
+      }
+      if (limite != null) {
+        final d = DateTime.tryParse(s['date']?.toString() ?? '');
+        if (d == null || d.isBefore(limite)) return false;
+      }
+      return true;
+    }).toList();
+  }
+
+  Widget _menuFiltre(String valeur, List<(String, String)> options, void Function(String) onChanged) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: valeur, isDense: true,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kMorphoDark),
+            items: [for (final o in options) DropdownMenuItem(value: o.$1, child: Text(o.$2))],
+            onChanged: (v) { if (v != null) setState(() => onChanged(v)); },
+          ),
+        ),
+      );
+
+  Widget _barreFiltres() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(
+            onChanged: (v) => setState(() => _recherche = v),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Rechercher un animal ou un client',
+              hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Colors.grey.shade500),
+              prefixIcon: const Icon(Icons.search, size: 20),
+              isDense: true, filled: true, fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              _menuFiltre(_filtreType, [('tous', 'Tous types'), ...kFamillesSeance], (v) => _filtreType = v),
+              const SizedBox(width: 8),
+              _menuFiltre(_filtreStatut, const [('tous', 'Tous statuts'), ('brouillon', 'Brouillons'), ('finalise', 'Finalisés non envoyés'), ('envoye', 'Envoyés')], (v) => _filtreStatut = v),
+              const SizedBox(width: 8),
+              _menuFiltre(_periode, const [('tout', 'Toutes dates'), ('30', '30 derniers jours'), ('90', '3 derniers mois'), ('365', '12 derniers mois')], (v) => _periode = v),
+            ]),
+          ),
+        ]),
+      );
+
   String _resolveProProfileId() {
     if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
     if (User_Info.availableProfiles.isEmpty) return '';
@@ -283,18 +352,26 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.accessibility_new, size: 56, color: Colors.grey.shade300),
                     const SizedBox(height: 12),
-                    Text('Aucun suivi pour l\'instant', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
+                    Text('Aucune consultation pour l\'instant', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
                   ]),
                 )
-              : RefreshIndicator(
+              : Column(children: [
+                  _barreFiltres(),
+                  Expanded(child: RefreshIndicator(
                   onRefresh: _load,
                   color: kMorphoTeal,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                    itemCount: _suivis.length,
+                  child: _filtres.isEmpty
+                      ? ListView(children: [
+                          Padding(padding: const EdgeInsets.all(32),
+                              child: Center(child: Text('Aucune consultation pour ces critères',
+                                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)))),
+                        ])
+                      : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 90),
+                    itemCount: _filtres.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (_, i) {
-                      final s = _suivis[i];
+                      final s = _filtres[i];
                       final date = DateTime.tryParse(s['date']?.toString() ?? '');
                       return InkWell(
                         onTap: () async {
@@ -319,13 +396,13 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text('${s['_animal_nom'] ?? 'Animal'} — ${labelTypeSuivi(s['type_suivi']?.toString())}',
+                                Text('${s['_animal_nom'] ?? 'Animal'} — ${s['source'] == 'professionnel' ? titreCompteRendu(s['type_suivi']?.toString()) : labelTypeSuivi(s['type_suivi']?.toString())}',
                                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: kMorphoDark)),
                                 const SizedBox(height: 2),
                                 if (date != null || labelStatutCr(s['statut']?.toString()).isNotEmpty)
                                   Text([
                                     if (date != null) DateFormat('d MMM yyyy', 'fr_FR').format(date),
-                                    labelStatutCr(s['statut']?.toString()),
+                                    s['notifie_a'] != null ? 'Envoyé' : labelStatutCr(s['statut']?.toString()),
                                   ].where((x) => x.isNotEmpty).join(' · '),
                                       style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                                           color: s['statut'] == 'brouillon' ? const Color(0xFFB45309) : Colors.grey.shade500)),
@@ -337,7 +414,8 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
                       );
                     },
                   ),
-                ),
+                )),
+                ]),
     );
   }
 }

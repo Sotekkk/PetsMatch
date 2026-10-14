@@ -682,7 +682,7 @@ class _AnatomieOwnerSectionState extends State<AnatomieOwnerSection> {
       children: [
         const Padding(
           padding: EdgeInsets.only(bottom: 10),
-          child: Text('🦴 Séances d\'ostéopathie / kiné',
+          child: Text('Séances d\'ostéopathie / kiné',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
         ),
         ..._seances.map((s) => _SeanceCard(

@@ -20,7 +20,7 @@ import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
-import { labelTypeSuivi } from '@/lib/morpho';
+import { labelTypeSuivi, titreCompteRendu, categorieConsultation, CATEGORIES_CONSULTATION } from '@/lib/morpho';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
@@ -2450,7 +2450,9 @@ function AnimalFichePageInner() {
   const [radios, setRadios] = useState<HealthRecord[]>([]);
   const [crs, setCrs] = useState<HealthRecord[]>([]);
   // Bilans morphologiques (ex-onglet Morphologie) : carnet › Comptes rendus
-  const [morphos, setMorphos] = useState<{ id: string; date: string; type_suivi: string }[]>([]);
+  // Soins & Rééducation (comptes rendus de séance partagés) — cartes + filtres
+  const [morphos, setMorphos] = useState<{ id: string; date: string; type_suivi: string; source?: string | null; intitule?: string | null; _pro?: string; _categorie?: string }[]>([]);
+  const [filtreSoins, setFiltreSoins] = useState('tous');
   const [addDocOpen, setAddDocOpen] = useState<string|null>(null);
   const [savingDoc, setSavingDoc] = useState(false);
   const [vetNames, setVetNames] = useState<Record<string,string>>({});
@@ -2570,11 +2572,33 @@ function AnimalFichePageInner() {
       supabase.from('radios').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('comptes_rendus').select('*').eq('animal_id', id).order('date', { ascending: false }),
       supabase.from('animal_access').select('id, pro_profile_id, statut, granted_at').eq('animal_id', id).neq('statut', 'revoked'),
-      supabase.from('suivis_morpho').select('id, date, type_suivi, source, notifie_a').eq('animal_id', id).order('date', { ascending: false }),
+      // '*' : intitule / pro_profile_id selon les migrations passées
+      supabase.from('suivis_morpho').select('*').eq('animal_id', id).order('date', { ascending: false }),
     ]);
     // Bilan d'un pro non encore envoyé : pas visible côté propriétaire
-    setMorphos(((mo.data ?? []) as { id: string; date: string; type_suivi: string; source?: string | null; notifie_a?: string | null }[])
-      .filter(m => m.source !== 'professionnel' || !!m.notifie_a));
+    type MorphoRow = { id: string; date: string; type_suivi: string; source?: string | null; notifie_a?: string | null;
+      intitule?: string | null; pro_profile_id?: string | null; professionnel_nom?: string | null };
+    const morphoRows = ((mo.data ?? []) as MorphoRow[]).filter(m => m.source !== 'professionnel' || !!m.notifie_a);
+    const proIds = [...new Set(morphoRows.map(m => m.pro_profile_id).filter((x): x is string => !!x))];
+    const proNoms: Record<string, string> = {};
+    const metiers: Record<string, { profession?: string | null; cat_pro?: string | null }> = {};
+    if (proIds.length) {
+      const { data: pros } = await supabase.from('user_profiles_complet').select('id, nom, firstname, lastname, profession_pro, cat_pro').in('id', proIds);
+      for (const pr of (pros ?? []) as { id: string; nom?: string | null; firstname?: string | null; lastname?: string | null; profession_pro?: string | null; cat_pro?: string | null }[]) {
+        const nom = (pr.nom ?? '').trim() || `${pr.firstname ?? ''} ${pr.lastname ?? ''}`.trim();
+        proNoms[pr.id] = [nom, (pr.profession_pro ?? '').trim()].filter(Boolean).join(' — ');
+        metiers[pr.id] = { profession: pr.profession_pro, cat_pro: pr.cat_pro };
+      }
+    }
+    // Catégorie d'après le métier de l'auteur (bilan d'un ostéo → Ostéopathie).
+    setMorphos(morphoRows.map(m => {
+      const mt = m.pro_profile_id ? metiers[m.pro_profile_id] : undefined;
+      return {
+        ...m,
+        _pro: (m.pro_profile_id && proNoms[m.pro_profile_id]) || m.professionnel_nom || '',
+        _categorie: categorieConsultation(m.type_suivi, mt?.profession, mt?.cat_pro),
+      };
+    }));
     const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
     setRadios((rad.data ?? []) as HealthRecord[]);
@@ -3556,12 +3580,12 @@ function AnimalFichePageInner() {
   const tabs = ((isCede && isOriginalBreeder && !isAcquereur) || isAncienProprio)
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Administratif' }]
     : (isEleveur || isEmployeOfOwner)
-    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'repro', label:'Suivi repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Suivi vétérinaire' }, { key:'documents', label:'Administratif' }]
+    ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'repro', label:'Suivi repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations' }, { key:'documents', label:'Administratif' }]
     : [
         { key:'identite', label:'Identité' },
         { key:'sante', label:'Carnet de santé' },
         { key:'alimentation', label:'Alimentation' },
-        { key:'consultations', label:'Suivi vétérinaire' },
+        { key:'consultations', label:'Consultations' },
         { key:'documents', label:'Administratif' },
         ...(hasEducationRapports ? [{ key:'education', label:'Éducation' }] : []),
         ...(hasPensionUpdates ? [{ key:'pension', label:'Pension & Garde' }] : []),
@@ -4861,7 +4885,7 @@ function AnimalFichePageInner() {
           </HealthSection>
 
           {/* Comptes rendus */}
-          <HealthSection title="Comptes rendus" icon="📄" color="#5F9EAA" count={crs.length + morphos.length}
+          <HealthSection title="Comptes rendus" icon="📄" color="#5F9EAA" count={crs.length}
             onAdd={()=>setAddDocOpen(addDocOpen==='comptes_rendus'?null:'comptes_rendus')}
             addFormOpen={addDocOpen==='comptes_rendus'}
             addForm={<DocUploadForm saving={savingDoc} onCancel={()=>setAddDocOpen(null)}
@@ -4869,18 +4893,9 @@ function AnimalFichePageInner() {
             {crs.map(r=>(
               <DocCard key={r.id} record={r} onDelete={()=>deleteDocRecord('comptes_rendus',r.id as string)}/>
             ))}
-            {morphos.map(m=>(
-              <a key={m.id} href={`/sante/suivis/${m.id}`}
-                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50">
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[#1F2A2E]">{labelTypeSuivi(m.type_suivi)}</span>
-                  <span className="block text-xs text-gray-500">Soins & Rééducation · {new Date(m.date).toLocaleDateString('fr-FR')}</span>
-                </span>
-                <span className="text-gray-400" aria-hidden>›</span>
-              </a>
-            ))}
-            {crs.length===0 && morphos.length===0 && <p className="p-4 text-sm text-gray-400">Aucun compte rendu</p>}
+            {crs.length===0 && <p className="p-4 text-sm text-gray-400">Aucun compte rendu</p>}
           </HealthSection>
+
           </HealthPanel>
         </div>
       )}
@@ -4916,12 +4931,54 @@ function AnimalFichePageInner() {
       )}
 
       {/* ── TAB CONSULTATIONS VÉTÉRINAIRES ───────────────────────────────── */}
-      {tab === 'consultations' && !isNew && (
-        <div className="space-y-4">
-          <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />
-          <AnatomieOwnerSection animalId={id ?? ''} espece={animal.espece ?? ''} />
-        </div>
-      )}
+      {/* Consultations : TOUS les comptes rendus, rangés par catégorie —
+          vétérinaire, ostéopathie, kiné / rééducation, bilans (miroir appli). */}
+      {tab === 'consultations' && !isNew && (() => {
+        // Ostéopathie, Kiné, Vétérinaire, Autres — présentes seulement.
+        const presentes = CATEGORIES_CONSULTATION.map(c => c.key).filter(k =>
+          morphos.some(m => m._categorie === k) || (k === 'veterinaire' && (crs.length > 0 || ordonnances.length > 0)));
+        const libelle = (k: string) => CATEGORIES_CONSULTATION.find(c => c.key === k)?.label ?? k;
+        const voir = (c: string) => filtreSoins === 'tous' || filtreSoins === c;
+        const seances = morphos.filter(m => voir(m._categorie ?? 'autre'));
+        return (
+          <div className="space-y-4">
+            {/* Filtres dès qu'il y a un compte rendu (catégories vides masquées) */}
+            {presentes.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {['tous', ...presentes].map(c => (
+                  <button key={c} type="button" onClick={() => setFiltreSoins(c)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                    style={filtreSoins === c ? { background: '#0C5C6C', borderColor: '#0C5C6C', color: 'white' } : { borderColor: '#D1D5DB', color: '#374151', background: 'white' }}>
+                    {c === 'tous' ? 'Tous' : libelle(c)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {voir('veterinaire') && <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />}
+            {seances.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <p className="px-4 pt-3 pb-1 text-sm font-bold text-[#0C5C6C]">Comptes rendus de séance</p>
+                {seances.map(m => (
+                  <a key={m.id} href={`/sante/suivis/${m.id}`}
+                    className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50 border-t border-gray-50">
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-[#1F2A2E]">
+                        {m.source === 'professionnel' ? titreCompteRendu(m.type_suivi) : labelTypeSuivi(m.type_suivi)}
+                      </span>
+                      <span className="block text-xs text-gray-500">
+                        {[new Date(m.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }), m._pro].filter(Boolean).join(' — ')}
+                      </span>
+                      {m.intitule?.trim() && <span className="block text-xs text-gray-400 truncate">{m.intitule}</span>}
+                    </span>
+                    <span className="text-xs font-semibold text-[#0C5C6C] flex-shrink-0">Consulter le compte rendu ›</span>
+                  </a>
+                ))}
+              </div>
+            )}
+            {voir('osteopathie') && <AnatomieOwnerSection animalId={id ?? ''} espece={animal.espece ?? ''} />}
+          </div>
+        );
+      })()}
 
       {tab === 'alimentation' && !isNew && (
         <AlimentationTab

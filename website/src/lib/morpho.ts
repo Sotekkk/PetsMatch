@@ -84,6 +84,28 @@ export const FAMILLES_SEANCE: { key: string; label: string }[] = [
   { key: 'autre', label: 'Autres' },
 ];
 
+/** Catégorie d'un compte rendu dans l'onglet « Consultations » : d'après le
+ *  MÉTIER du professionnel auteur (bilan morphologique fait par un ostéo →
+ *  Ostéopathie), à défaut d'après le type. Miroir appli : categorieConsultation. */
+export function categorieConsultation(type?: string | null, profession?: string | null, catPro?: string | null): string {
+  const p = (profession ?? '').toLowerCase();
+  if (catPro === 'veterinaire' || p.includes('vétérin') || p.includes('veterin')) return 'veterinaire';
+  if (p.includes('ostéo') || p.includes('osteo')) return 'osteopathie';
+  if (p.includes('kiné') || p.includes('kine') || p.includes('physio') || p.includes('rééduc') || p.includes('reeduc')) return 'kine';
+  switch (type) {
+    case 'osteopathie': return 'osteopathie';
+    case 'physiotherapie': case 'reeducation': case 'suivi_fonctionnel': return 'kine';
+    case 'suivi_veterinaire': return 'veterinaire';
+    default: return 'autre';
+  }
+}
+export const CATEGORIES_CONSULTATION: { key: string; label: string }[] = [
+  { key: 'osteopathie', label: 'Ostéopathie' },
+  { key: 'kine', label: 'Kiné · Physio' },
+  { key: 'veterinaire', label: 'Vétérinaire' },
+  { key: 'autre', label: 'Autres' },
+];
+
 /** Statut d'un compte rendu : null = ancien suivi (avant la refonte). */
 export function labelStatutCr(statut?: string | null): string {
   return statut === 'brouillon' ? 'Brouillon' : statut === 'finalise' ? 'Finalisé' : '';

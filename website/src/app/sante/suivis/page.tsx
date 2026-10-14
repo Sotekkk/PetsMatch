@@ -6,11 +6,11 @@ import { supabase } from '@/lib/supabase';
 import { useSanteAccess } from '@/hooks/useSanteAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
-import { labelTypeSuivi, labelStatutCr, morphoSpeciesSupported, TEAL } from '@/lib/morpho';
+import { labelTypeSuivi, labelStatutCr, titreCompteRendu, familleSeance, FAMILLES_SEANCE, morphoSpeciesSupported, TEAL } from '@/lib/morpho';
 
 interface SuiviRow {
   id: string; date: string; type_suivi: string; animal_id: string | null;
-  statut?: string | null;
+  statut?: string | null; notifie_a?: string | null; source?: string | null; client_nom_libre?: string | null;
   animal_nom_libre: string | null; espece_libre: string | null;
   _animal_nom?: string; _animal_espece?: string;
 }
@@ -32,6 +32,12 @@ export default function SanteSuivisPage() {
     || availableProfiles[0]?.id
     || '';
   const [suivis, setSuivis] = useState<SuiviRow[]>([]);
+  // Filtres (miroir appli) : recherche animal / client, type, statut, période
+  const [recherche, setRecherche] = useState('');
+  const [filtreType, setFiltreType] = useState('tous');
+  const [filtreStatut, setFiltreStatut] = useState('tous');
+  const [periode, setPeriode] = useState('tout');
+  const [maintenant] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [picker, setPicker] = useState<'closed' | 'choix' | 'libre'>('closed');
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -132,29 +138,65 @@ export default function SanteSuivisPage() {
           + Nouvelle consultation
         </button>
       </div>
-      <p className="text-sm text-gray-500 font-galey">Suivi morphologique &amp; bien-être — tous patients confondus.</p>
+      <p className="text-sm text-gray-500 font-galey">Comptes rendus de séance — tous patients confondus.</p>
 
       {loading ? (
         <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: TEAL }} /></div>
       ) : suivis.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <p className="text-4xl mb-3">🦴</p>
-          <p className="font-galey">Aucun suivi pour l&apos;instant</p>
+          <p className="font-galey">Aucune consultation pour l&apos;instant</p>
         </div>
-      ) : (
+      ) : (() => {
+        const q = recherche.trim().toLowerCase();
+        const limite = periode === 'tout' ? null : maintenant - Number(periode) * 86400000;
+        const liste = suivis.filter(s => {
+          if (q && !(s._animal_nom ?? '').toLowerCase().includes(q) && !(s.client_nom_libre ?? '').toLowerCase().includes(q)) return false;
+          if (filtreType !== 'tous' && familleSeance(s.type_suivi) !== filtreType) return false;
+          if (filtreStatut === 'brouillon' && s.statut !== 'brouillon') return false;
+          if (filtreStatut === 'finalise' && (s.statut === 'brouillon' || s.notifie_a)) return false;
+          if (filtreStatut === 'envoye' && !s.notifie_a) return false;
+          if (limite !== null && new Date(s.date).getTime() < limite) return false;
+          return true;
+        });
+        const sel = 'border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white';
+        return (
         <div className="space-y-3">
-          {suivis.map(s => (
+          <div className="flex flex-wrap gap-2">
+            <input value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Rechercher un animal ou un client"
+              className={`${sel} flex-1 min-w-[200px]`} />
+            <select className={sel} value={filtreType} onChange={e => setFiltreType(e.target.value)}>
+              <option value="tous">Tous types</option>
+              {FAMILLES_SEANCE.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+            </select>
+            <select className={sel} value={filtreStatut} onChange={e => setFiltreStatut(e.target.value)}>
+              <option value="tous">Tous statuts</option>
+              <option value="brouillon">Brouillons</option>
+              <option value="finalise">Finalisés non envoyés</option>
+              <option value="envoye">Envoyés</option>
+            </select>
+            <select className={sel} value={periode} onChange={e => setPeriode(e.target.value)}>
+              <option value="tout">Toutes dates</option>
+              <option value="30">30 derniers jours</option>
+              <option value="90">3 derniers mois</option>
+              <option value="365">12 derniers mois</option>
+            </select>
+          </div>
+          {liste.length === 0 && <p className="text-center text-sm text-gray-400 py-8">Aucune consultation pour ces critères</p>}
+          {liste.map(s => (
             <a key={s.id} href={`/sante/suivis/${s.id}`}
               className="block bg-white rounded-2xl shadow-sm p-4 border border-gray-100 hover:border-teal-200 transition-colors">
-              <p className="font-bold font-galey text-gray-900">{s._animal_nom} — {labelTypeSuivi(s.type_suivi)}</p>
+              <p className="font-bold font-galey text-gray-900">{s._animal_nom} — {s.source === 'professionnel' ? titreCompteRendu(s.type_suivi) : labelTypeSuivi(s.type_suivi)}</p>
               <p className="text-xs text-gray-500 font-galey mt-1">
                 {new Date(s.date).toLocaleDateString('fr-FR')}
-                {labelStatutCr(s.statut) && <span className={s.statut === 'brouillon' ? 'text-[#B45309] font-semibold' : ''}> · {labelStatutCr(s.statut)}</span>}
+                {(s.notifie_a || labelStatutCr(s.statut)) && (
+                  <span className={s.statut === 'brouillon' ? 'text-[#B45309] font-semibold' : ''}> · {s.notifie_a ? 'Envoyé' : labelStatutCr(s.statut)}</span>
+                )}
               </p>
             </a>
           ))}
         </div>
-      )}
+        );
+      })()}
 
       {picker === 'choix' && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setPicker('closed')}>

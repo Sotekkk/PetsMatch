@@ -8,7 +8,6 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
-import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
@@ -405,9 +404,7 @@ class _ProClientsPageState extends State<ProClientsPage>
                     onProgression: User_Info.catPro == 'education'
                         ? () => _openSuivi(filtered[i])
                         : null,
-                    onMorpho: User_Info.catPro == 'sante'
-                        ? () => _openMorpho(filtered[i])
-                        : null,
+                    onMorpho: null,
                     onRevoke: filtered[i]['_grant_id'] != null
                         ? () => _revoquerAnimal(filtered[i])
                         : null,
@@ -490,30 +487,6 @@ class _ProClientsPageState extends State<ProClientsPage>
         categoryColor: _color,
       ),
     ));
-  }
-
-  /// Accès rapide au compte-rendu morpho du patient (ostéo/kiné) — rouvre le
-  /// dernier suivi existant, sinon propose d'en créer un.
-  Future<void> _openMorpho(Map<String, dynamic> animal) async {
-    final animalId = animal['id']?.toString() ?? '';
-    final espece = animal['espece']?.toString() ?? '';
-    final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
-    Map<String, dynamic>? latest;
-    try {
-      var q = Supabase.instance.client.from('suivis_morpho').select().eq('animal_id', animalId);
-      if (pid != null) q = q.eq('pro_profile_id', pid);
-      latest = await q.order('date', ascending: false).limit(1).maybeSingle();
-    } catch (_) {}
-    if (!mounted) return;
-    if (latest != null) {
-      await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => MorphoDetailPage(suivi: latest!, espece: espece, readOnly: false),
-      ));
-    } else {
-      await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => MorphoFormPage(animalId: animalId, espece: espece, proProfileId: pid),
-      ));
-    }
   }
 
   Future<void> _openSuivi(Map<String, dynamic> animal) async {
@@ -694,6 +667,27 @@ class _AnimalCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis)),
               ]),
             ])),
+            // Ostéo / kiné : une seule action, « Nouvelle consultation » (la
+            // fiche s'ouvre en touchant la carte ; le reste y est accessible).
+            if (catPro == 'sante')
+              Column(mainAxisSize: MainAxisSize.min, children: [
+                OutlinedButton(
+                  onPressed: onCompteRendu,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: color, side: BorderSide(color: color),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    minimumSize: const Size(0, 34),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Nouvelle\nconsultation', textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w700, height: 1.15)),
+                ),
+                if (onRevoke != null) ...[
+                  const SizedBox(height: 6),
+                  _ActionBtn(icon: Icons.person_remove_outlined, color: Colors.red.shade400, tooltip: 'Me retirer', onTap: onRevoke!),
+                ],
+              ])
+            else
             // Actions
             Column(mainAxisSize: MainAxisSize.min, children: [
               if (catPro == 'education' || catPro == 'garde') ...[

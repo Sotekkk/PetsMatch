@@ -141,6 +141,28 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
           s['source'] != 'professionnel' ||
           s['notifie_a'] != null ||
           (pid != null && s['pro_profile_id']?.toString() == pid)).toList();
+      // Professionnel auteur (nom + spécialité) pour les cartes.
+      final pids = visibles.map((s) => s['pro_profile_id']?.toString()).whereType<String>().toSet().toList();
+      final pros = <String, String>{};
+      final metiers = <String, (String?, String?)>{};
+      if (pids.isNotEmpty) {
+        try {
+          final rows = await _supa.from('user_profiles_complet')
+              .select('id, nom, firstname, lastname, profession_pro, cat_pro').inFilter('id', pids);
+          for (final r in rows as List) {
+            final nom = (r['nom'] ?? '').toString().trim().isNotEmpty
+                ? r['nom'].toString().trim() : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+            final metier = (r['profession_pro'] ?? '').toString().trim();
+            pros[r['id'].toString()] = [nom, metier].where((x) => x.isNotEmpty).join(' — ');
+            metiers[r['id'].toString()] = (r['profession_pro']?.toString(), r['cat_pro']?.toString());
+          }
+        } catch (_) {}
+      }
+      for (final s in visibles) {
+        s['_pro'] = pros[s['pro_profile_id']?.toString()] ?? s['professionnel_nom'];
+        final m = metiers[s['pro_profile_id']?.toString()];
+        s['_categorie'] = categorieConsultation(type: s['type_suivi']?.toString(), profession: m?.$1, catPro: m?.$2);
+      }
       if (mounted) setState(() { _suivis = visibles; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -166,18 +188,18 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
     _load();
   }
 
+  /// Filtre par famille de séance (n'affiche que les catégories présentes).
+  String _famille = 'tous';
+
   @override
   Widget build(BuildContext context) {
-    if (!morphoSpeciesSupported(widget.espece)) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text('Le suivi morphologique est disponible pour le chien, le chat et le cheval pour le moment.',
-              textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
-        ),
-      );
-    }
+    // Toutes espèces : seul le bilan anatomique (silhouettes) est limité au
+    // chien, au chat et au cheval — il reste facultatif.
     if (_loading) return const Center(child: CircularProgressIndicator(color: kMorphoTeal));
+    // Catégories d'après le métier de l'auteur (présentes seulement).
+    final presentes = [for (final f in kCategoriesConsultation) if (_suivis.any((s) => s['_categorie'] == f.$1)) f];
+    final liste = _famille == 'tous' ? _suivis
+        : _suivis.where((s) => s['_categorie'] == _famille).toList();
 
     return Column(children: [
       Container(
@@ -214,13 +236,33 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
         )
       else
         const SizedBox(height: 12),
+      if (presentes.isNotEmpty)
+        SizedBox(
+          height: 40,
+          child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+            for (final f in [('tous', 'Tous'), ...presentes])
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(f.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                      color: _famille == f.$1 ? Colors.white : kMorphoDark)),
+                  selected: _famille == f.$1,
+                  showCheckmark: false,
+                  selectedColor: kMorphoTeal,
+                  backgroundColor: Colors.white,
+                  side: BorderSide(color: _famille == f.$1 ? kMorphoTeal : Colors.grey.shade300),
+                  onSelected: (_) => setState(() => _famille = f.$1),
+                ),
+              ),
+          ]),
+        ),
       Expanded(
-        child: _suivis.isEmpty
+        child: liste.isEmpty
             ? Center(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.accessibility_new, size: 56, color: Colors.grey.shade300),
                   const SizedBox(height: 12),
-                  Text('Aucun suivi pour l\'instant', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
+                  Text(_modePro ? 'Aucune consultation pour l\'instant' : 'Aucun compte rendu pour l\'instant', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
                 ]),
               )
             : RefreshIndicator(
@@ -228,9 +270,9 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
                 color: kMorphoTeal,
                 child: ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: _suivis.length,
+                  itemCount: liste.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _SuiviCard(suivi: _suivis[i], onTap: () => _ouvrir(_suivis[i])),
+                  itemBuilder: (_, i) => _SuiviCard(suivi: liste[i], afficherStatut: _modePro, onTap: () => _ouvrir(liste[i])),
                 ),
               ),
       ),
@@ -238,10 +280,13 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
   }
 }
 
+/// Carte compacte d'un compte rendu : type de séance, date, professionnel
+/// (nom + spécialité), intitulé éventuel ; ouvre le compte rendu (PDF).
 class _SuiviCard extends StatelessWidget {
   final Map<String, dynamic> suivi;
   final VoidCallback onTap;
-  const _SuiviCard({required this.suivi, required this.onTap});
+  final bool afficherStatut;
+  const _SuiviCard({required this.suivi, required this.onTap, this.afficherStatut = false});
 
   @override
   Widget build(BuildContext context) {
@@ -260,21 +305,25 @@ class _SuiviCard extends StatelessWidget {
           Container(
             width: 44, height: 44,
             decoration: BoxDecoration(color: const Color(0xFFE0F2F1), borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.accessibility_new, color: kMorphoTeal),
+            child: const Icon(Icons.description_outlined, color: kMorphoTeal),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(labelTypeSuivi(suivi['type_suivi']?.toString()),
+              Text(source == 'professionnel' ? titreCompteRendu(suivi['type_suivi']?.toString()) : labelTypeSuivi(suivi['type_suivi']?.toString()),
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: kMorphoDark)),
               const SizedBox(height: 2),
               Text([
-                if (date != null) DateFormat('d MMM yyyy', 'fr_FR').format(date),
+                if (date != null) DateFormat('d MMMM yyyy', 'fr_FR').format(date),
+                if ((suivi['_pro'] as String?)?.trim().isNotEmpty == true) suivi['_pro'] as String
+                else kSourceLabels[source] ?? '',
                 if (suivi['checkpoint_age'] != null && (suivi['checkpoint_age'] as String).isNotEmpty) suivi['checkpoint_age'],
-                kSourceLabels[source] ?? '',
-                labelStatutCr(suivi['statut']?.toString()),
+                if (afficherStatut) labelStatutCr(suivi['statut']?.toString()),
               ].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              if ((suivi['intitule'] as String?)?.trim().isNotEmpty == true)
+                Text(suivi['intitule'].toString().trim(), maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
             ]),
           ),
           const Icon(Icons.chevron_right, color: Colors.grey),

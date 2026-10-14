@@ -158,7 +158,7 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
     const ids = [...new Set([...liste.map(r => r.animal_id), ...aPrevoir.map(s => s.animal_id)].filter(Boolean).map(String))];
     const [profRes, animRes] = await Promise.all([
       profils.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').in('id', profils) : Promise.resolve({ data: [] }),
-      ids.length ? supabase.from('animaux').select('id, nom, photo_url').in('id', ids) : Promise.resolve({ data: [] }),
+      ids.length ? supabase.from('animaux').select('id, nom, photo_url, espece').in('id', ids) : Promise.resolve({ data: [] }),
     ]);
     const c: Record<string, string> = {};
     for (const p of (profRes.data ?? []) as { id: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]) {
@@ -283,7 +283,8 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                         const annuleRdv = st.label === 'Annulé';
                         const ext = estExterieur(r);
                         return (
-                          <Link key={r.id} href={lienRdv(r)} className="flex items-center gap-3 border border-[#EEF0EE] rounded-xl px-3 py-2.5 hover:bg-gray-50">
+                          <div key={r.id} className="flex items-stretch gap-2">
+                          <Link href={lienRdv(r)} className="flex-1 min-w-0 flex items-center gap-3 border border-[#EEF0EE] rounded-xl px-3 py-2.5 hover:bg-gray-50">
                             <div className="w-12 flex-shrink-0">
                               <p className={`text-sm font-bold ${annuleRdv ? 'text-gray-400 line-through' : 'text-[#1E2025]'}`}>{hm(debutDe(r))}</p>
                               <p className="text-[11px] text-gray-500">{r.duree_minutes ?? 45} min</p>
@@ -304,6 +305,16 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
                             </span>
                             <span className="text-gray-400">›</span>
                           </Link>
+                          {/* Séance réalisée : compte rendu prérempli depuis le RDV
+                              (animal, date, lieu) — rouvre celui déjà rédigé. */}
+                          {r.animal_id && (r.statut === 'confirme' || r.statut === 'termine') && (
+                            <Link href={`/sante/suivis/nouveau?animalId=${encodeURIComponent(String(r.animal_id))}&espece=${encodeURIComponent(animaux[String(r.animal_id)]?.espece ?? 'chien')}&rdvId=${encodeURIComponent(r.id)}`}
+                              title="Rédiger le compte rendu"
+                              className="flex-shrink-0 flex items-center px-3 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-xs font-bold hover:bg-[#E8F4F6]">
+                              Compte rendu
+                            </Link>
+                          )}
+                          </div>
                         );
                       })}
                     </div>

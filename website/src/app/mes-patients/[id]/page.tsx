@@ -675,9 +675,13 @@ function PatientDetailPageInner() {
   const TABS: string[] = isPensionType
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
     : isVet
-      ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations',
+      // Ostéo / kiné (sante) : UN onglet « Consultations » = ses comptes
+      // rendus de séance ; vétérinaire : ses consultations + « Ostéo / Kiné ».
+      ? catPro === 'sante'
+        ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations']
+        : ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations',
           ...(hasAnatomie ? ['Anatomie'] : []),
-          ...(hasMorpho ? ['Soins & Rééducation'] : [])]
+          ...(hasMorpho ? ['Ostéo / Kiné'] : [])]
       : isEducation
         ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
         // Pet-sitter / toilettage / photographe / taxi animalier… : Consultations
@@ -2510,7 +2514,7 @@ function PatientDetailPageInner() {
 
         {/* ── Consultations : suivi des consultations (CR + ordonnances) ; le
              carnet de santé reste dans l'onglet Santé ── */}
-        {tab === 'Consultations' && isVet && (
+        {tab === 'Consultations' && isVet && catPro !== 'sante' && (
           <>
             {!hasWriteAccess && !writeRequested && (
               <p className="text-xs text-[#8A5A00] bg-[#FFF8EA] border border-[#F3E2BD] rounded-lg px-3 py-2">
@@ -2528,9 +2532,7 @@ function PatientDetailPageInner() {
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
-              onNouveauCr={() => catPro === 'sante' && animal
-                ? router.push(`/sante/suivis/nouveau?animalId=${encodeURIComponent(String(animal.id))}&espece=${encodeURIComponent(animal.espece ?? 'chien')}`)
-                : setAddingType('cr')}
+              onNouveauCr={() => setAddingType('cr')}
               onHistorique={() => setHistoriqueOuvert(true)}
               onValider={async (cr) => {
                 const { error } = await supabase.from('comptes_rendus').update({
@@ -2555,7 +2557,7 @@ function PatientDetailPageInner() {
           <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} profilType={catPro} />
         )}
 
-        {tab === 'Soins & Rééducation' && animal && (
+        {((tab === 'Ostéo / Kiné') || (tab === 'Consultations' && catPro === 'sante')) && animal && (
           <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} />
         )}
       </div>

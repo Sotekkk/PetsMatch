@@ -92,6 +92,29 @@ const List<(String, String)> kFamillesSeance = [
   ('autre', 'Autres'),
 ];
 
+/// Catégorie d'un compte rendu dans l'onglet « Consultations » : d'après le
+/// MÉTIER du professionnel auteur (un bilan morphologique fait par un ostéo
+/// est rangé en Ostéopathie), à défaut d'après le type de séance.
+/// Miroir site : categorieConsultation (lib/morpho.ts).
+String categorieConsultation({String? type, String? profession, String? catPro}) {
+  final p = (profession ?? '').toLowerCase();
+  if (catPro == 'veterinaire' || p.contains('vétérin') || p.contains('veterin')) return 'veterinaire';
+  if (p.contains('ostéo') || p.contains('osteo')) return 'osteopathie';
+  if (p.contains('kiné') || p.contains('kine') || p.contains('physio') || p.contains('rééduc') || p.contains('reeduc')) return 'kine';
+  return switch (type) {
+    'osteopathie' => 'osteopathie',
+    'physiotherapie' || 'reeducation' || 'suivi_fonctionnel' => 'kine',
+    'suivi_veterinaire' => 'veterinaire',
+    _ => 'autre',
+  };
+}
+const List<(String, String)> kCategoriesConsultation = [
+  ('osteopathie', 'Ostéopathie'),
+  ('kine', 'Kiné · Physio'),
+  ('veterinaire', 'Vétérinaire'),
+  ('autre', 'Autres'),
+];
+
 /// Statut d'un compte rendu : null = ancien suivi (avant la refonte).
 String labelStatutCr(String? statut) => switch (statut) {
       'brouillon' => 'Brouillon',

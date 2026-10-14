@@ -110,7 +110,24 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       if (_modePro) _typeSuivi = 'autre';
       if (widget.proProfileId != null) _prefillPro();
       if (widget.animalId != null) _prefillAnimal();
+      if (widget.rdvId != null) _prefillRdv();
     }
+  }
+
+  /// Compte rendu rédigé depuis un rendez-vous : date (et lieu) de la séance.
+  Future<void> _prefillRdv() async {
+    try {
+      final r = await _supa.from('rdv').select('date_heure, lieu, salle_id, lieu_lat')
+          .eq('id', widget.rdvId!).maybeSingle();
+      final d = DateTime.tryParse(r?['date_heure']?.toString() ?? '');
+      if (!mounted || r == null) return;
+      // Même règle que estExterieur (tableau de bord) : adresse saisie hors salle.
+      final exterieur = ((r['lieu']?.toString().trim() ?? '').isNotEmpty && r['salle_id'] == null) || r['lieu_lat'] != null;
+      setState(() {
+        if (d != null) _date = d.toLocal();
+        _lieu ??= exterieur ? 'exterieur' : 'cabinet';
+      });
+    } catch (_) {}
   }
 
   /// Nom du profil pro ACTIF (jamais is_main : « Pomsky de la Luna » sortait
@@ -900,6 +917,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         ),
         _prochainControleField(),
       ])),
+      if (morphoSpeciesSupported(widget.espece) || _points.isNotEmpty)
       _Bloc(titre: 'Bilan anatomique', child: Column(children: [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
