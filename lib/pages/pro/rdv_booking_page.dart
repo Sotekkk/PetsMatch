@@ -2443,17 +2443,52 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         Text('Aucun animal enregistré dans votre profil.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
       else ...[
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final a in _animaux)
-            _chip(a['nom']?.toString() ?? 'Animal', _animauxGarde.any((x) => x['id'] == a['id']), () => setState(() {
-              if (_animauxGarde.any((x) => x['id'] == a['id'])) {
-                _animauxGarde = _animauxGarde.where((x) => x['id'] != a['id']).toList();
-              } else {
-                _animauxGarde = [..._animauxGarde, a];
-              }
-              _selectedAnimal = _animauxGarde.isEmpty ? null : _animauxGarde.first;
-            })),
-        ]),
+        // Menu déroulant avec photos, sélection multiple (AnimalPickerSheet.pickMany).
+        GestureDetector(
+          onTap: () async {
+            final res = await AnimalPickerSheet.pickMany(context,
+                preloaded: _animaux, current: _animauxGarde, accentColor: color, showPortees: false);
+            if (res != null && mounted) {
+              setState(() {
+                _animauxGarde = res;
+                _selectedAnimal = res.isEmpty ? null : res.first;
+              });
+            }
+          },
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(12), color: Colors.white),
+            child: Row(children: [
+              if (_animauxGarde.isEmpty) ...[
+                Icon(Icons.pets_outlined, color: Colors.grey.shade400, size: 20),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Choisir un ou plusieurs animaux…',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500))),
+              ] else ...[
+                SizedBox(
+                  width: 24.0 * (_animauxGarde.length.clamp(1, 4) - 1) + 32,
+                  height: 32,
+                  child: Stack(children: [
+                    for (var i = 0; i < _animauxGarde.length && i < 4; i++)
+                      Positioned(left: 24.0 * i, child: Container(
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(9),
+                            border: Border.all(color: Colors.white, width: 2)),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(8), child: _miniPhoto(_animauxGarde[i])),
+                      )),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  _animauxGarde.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + '),
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: color))),
+              ],
+              Icon(Icons.expand_more, color: Colors.grey.shade500, size: 20),
+            ]),
+          ),
+        ),
         if (_animauxGarde.length > 1) ...[
           const SizedBox(height: 6),
           Text('${_animauxGarde.length} animaux pour cette prestation.',
@@ -2461,6 +2496,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         ],
       ],
     ]);
+  }
+
+  Widget _miniPhoto(Map<String, dynamic> a) {
+    final url = a['photo_url']?.toString() ?? '';
+    return Container(
+      width: 28, height: 28, color: const Color(0xFFEEF5EA),
+      child: url.isNotEmpty
+          ? Image.network(url, width: 28, height: 28, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Center(child: Text('🐾', style: TextStyle(fontSize: 12))))
+          : const Center(child: Text('🐾', style: TextStyle(fontSize: 12))),
+    );
   }
 
   // Pet-sitting : accès au logement (visite, ou promenade avec récupération).

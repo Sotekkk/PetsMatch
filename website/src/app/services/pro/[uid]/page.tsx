@@ -16,7 +16,7 @@ import EducationReservationModal from '@/components/education/EducationReservati
 import AvisPro from '@/components/AvisPro';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
-import { AnimalPickerField } from '@/components/AnimalPickerField';
+import { AnimalPickerField, AnimalMultiPickerField } from '@/components/AnimalPickerField';
 import { CATEGORIES_ANNUAIRE } from '@/lib/annuaire-filtres';
 import { RdvSection, RdvChoiceGrid, RdvSegmented, RdvIntervenantList, RdvDateStrip, RdvTimeGrid,
   RdvTextArea, RdvRecap, RdvPrimaryButton, RdvVide, type RdvIconName } from '@/components/rdv/RdvForm';
@@ -2208,25 +2208,11 @@ function ProDetailContent() {
                         </Link>
                       </div>
                     ) : pro.cat_pro === 'garde' ? (
-                      <div className="flex flex-wrap gap-2">
-                        {animaux.map(a => {
-                          const sel = animauxGarde.includes(a.id);
-                          return (
-                            <button key={String(a.id)} type="button"
-                              onClick={() => {
-                                const next = sel ? animauxGarde.filter(x => x !== a.id) : [...animauxGarde, a.id];
-                                setAnimauxGarde(next);
-                                setSelectedAnimalId((next[0] ?? null) as number | null);
-                              }}
-                              className="px-3 py-1.5 rounded-full text-sm font-semibold border"
-                              style={{ fontFamily: 'Galey, sans-serif', borderColor: catColor,
-                                backgroundColor: sel ? catColor : 'white', color: sel ? 'white' : catColor }}>
-                              {a.nom}
-                            </button>
-                          );
-                        })}
+                      <div>
+                        <AnimalMultiPickerField animaux={animaux} selectedIds={animauxGarde} accentColor={catColor}
+                          onChange={ids => { setAnimauxGarde(ids); setSelectedAnimalId((ids[0] ?? null) as number | null); }} />
                         {animauxGarde.length > 1 && (
-                          <p className="w-full text-xs" style={{ color: catColor }}>{animauxGarde.length} animaux pour cette prestation.</p>
+                          <p className="text-xs mt-1.5" style={{ color: catColor }}>{animauxGarde.length} animaux pour cette prestation.</p>
                         )}
                       </div>
                     ) : (
