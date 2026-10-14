@@ -270,8 +270,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final declencheurs = <(String, String)>[
       ('', 'Manuel uniquement'),
       if (!_isPension && !_isGarde) ('naissance', 'À la naissance'),
-      if (!_isAssociation) ('chaleurs', 'Aux chaleurs'),
-      if (!_isAssociation) ('gestation', 'Gestation confirmée'),
+      // Chaleurs / gestation : élevage seulement (comme sur le site).
+      if (!_isAssociation && !_isPension && !_isGarde) ('chaleurs', 'Aux chaleurs'),
+      if (!_isAssociation && !_isPension && !_isGarde) ('gestation', 'Gestation confirmée'),
       if (!_isGarde) ('entree', 'À l’entrée d’un animal'),
     ];
 
@@ -352,6 +353,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           _bloc(3, 'Étapes du protocole', [
             for (var i = 0; i < _etapes.length; i++)
               _EtapeCard(
+                profilSource: _profilSource,
                 key: ObjectKey(_etapes[i]),
                 index: i,
                 total: _etapes.length,
@@ -412,6 +414,8 @@ class _EtapeCard extends StatefulWidget {
   final _EtapeCtrl ctrl;
   final String refEvent;
   final bool usesAge;
+  /// Profil du protocole (garde : actions de visite à domicile proposées).
+  final String profilSource;
   final VoidCallback onChanged;
   final ValueChanged<int> onMove;
   final VoidCallback onDuplicate;
@@ -419,7 +423,7 @@ class _EtapeCard extends StatefulWidget {
 
   const _EtapeCard({
     super.key, required this.index, required this.total, required this.ctrl, required this.refEvent,
-    required this.usesAge, required this.onChanged, required this.onMove, required this.onDuplicate, this.onRemove,
+    required this.usesAge, this.profilSource = '', required this.onChanged, required this.onMove, required this.onDuplicate, this.onRemove,
   });
 
   @override
@@ -475,7 +479,7 @@ class _EtapeCardState extends State<_EtapeCard> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Autocomplete<String>(
               initialValue: TextEditingValue(text: c.actionCtrl.text),
-              optionsBuilder: (v) => kActesSuggeres.map((a) => a.$2)
+              optionsBuilder: (v) => actesSuggeresPour(widget.profilSource).map((a) => a.$2)
                   .where((l) => v.text.isEmpty || l.toLowerCase().contains(v.text.toLowerCase())),
               onSelected: (v) => maj(() => c.actionCtrl.text = v),
               fieldViewBuilder: (ctx, ctrl, focus, _) => TextFormField(

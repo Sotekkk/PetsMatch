@@ -116,6 +116,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // du compte, sinon employe_profile_id du praticien).
   String? _filtrePraticien;
   bool get _estClinique => AgendaContexte.catPro == 'veterinaire';
+  /// Tous les pros (véto, ostéo, pet-sitter, éducateur…) : un RDV confirmé
+  /// reste « À venir » tant qu'il n'est pas marqué terminé (badge « À
+  /// clôturer » une fois l'heure passée) — jamais basculé seul en Historique.
+  bool get _clotureManuelle => true;
   /// Formule véto de la clinique (titulaire) : planning par praticien et
   /// salles réservés à la formule Clinique.
   VetPlanConfig _vetCfg = PlanService.getVetConfig('free');
@@ -951,7 +955,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ? retardsEnCascade(_rdvs, cabinet: _cabinet, avecTrajets: true) : const <String, int>{};
     return [
       for (final r in _rdvsFiltres)
-        if (r['statut'] == 'confirme' && (DateTime.tryParse(r['date_heure'] ?? '')?.isAfter(now) ?? false))
+        if (r['statut'] == 'confirme' && (_clotureManuelle || (DateTime.tryParse(r['date_heure'] ?? '')?.isAfter(now) ?? false)))
           {...r, if (retards[r['id'].toString()] != null) '_retard_min': retards[r['id'].toString()]},
     ];
   }
@@ -961,7 +965,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (r['statut'] == 'demande') return false;
       if (r['statut'] == 'contre_proposition') return false;
       if (r['statut'] == 'confirme') {
-        if (_estClinique) return false;
+        if (_clotureManuelle) return false;
         final dh = DateTime.tryParse(r['date_heure'] ?? '');
         return dh != null && dh.isBefore(now);
       }
@@ -4600,11 +4604,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final animalId = rdv['animal_id']?.toString();
         final hasAnimal = animalId != null && animalId.isNotEmpty;
         final showProTools = !showActions; // confirme + historique uniquement
+        // Séance confirmée dont l'heure est passée : elle bascule dans
+        // l'Historique avec le badge « À clôturer » — il lui faut le bouton
+        // « Terminé » (avant : visible seulement dans « À venir »).
+        final aCloturer = rdv['statut'] == 'confirme'
+            && (DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.isBefore(DateTime.now()) ?? false);
         return _RdvCard(
           rdv: rdv,
           gardeBadge: _nomPraticien(rdv) ?? _gardeBadge(rdv),
           showActions: showActions,
-          showCancel: showCancel,
+          showCancel: showCancel || aCloturer,
           onAccept:  () => _showAcceptDialog(rdv),
           onDecline: () => _showCancelDialog(rdv, isRefus: true),
           onCancel:  () => _showCancelDialog(rdv),

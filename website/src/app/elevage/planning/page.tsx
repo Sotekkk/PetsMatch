@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
-  PERIMETRES, CATEGORIES, REF_EVENTS, ACTES_SUGGERES, TRANCHES_LABELS,
+  PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
   perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, type Perimetre,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
@@ -896,8 +896,8 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <h2 className="text-lg font-bold text-gray-800">Mes protocoles</h2>
         <div className="flex gap-2">
-          {/* Protocole chaleur : réservé à l'élevage (pas pour une association, comme dans l'appli) */}
-          {!isEmployeeMode && profilSource !== 'association' && (
+          {/* Protocole chaleur : réservé à l'élevage (pas association, pension ni pet-sitter, comme dans l'appli) */}
+          {!isEmployeeMode && profilSource !== 'association' && profilSource !== 'pension' && profilSource !== 'garde' && (
             <a href="/elevage/protocole-chaleur"
               className="px-4 py-2 border border-[#6E9E57] text-[#6E9E57] rounded-xl text-sm font-semibold hover:bg-[#6E9E57]/10">
               Protocole chaleur
@@ -920,7 +920,12 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
       {templates.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📋</div>
-          <p className="text-gray-500 mb-4">Aucun protocole créé</p>
+          <p className="text-gray-500 mb-1">Aucun protocole créé</p>
+          <p className="text-sm text-gray-400 mb-4">
+            {profilSource === 'garde'
+              ? 'Créez des protocoles réutilisables pour vos visites : promenade, repas, litière, nettoyage des locaux…'
+              : 'Créez des protocoles réutilisables pour vos soins, nettoyages et rondes.'}
+          </p>
           {canWrite && (
             <button onClick={onNew} className="px-5 py-2 bg-[#6E9E57] text-white rounded-xl text-sm font-semibold hover:bg-[#5d8a48]">Créer mon premier protocole</button>
           )}
@@ -1514,7 +1519,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
           </BlocNumerote>
 
           <BlocNumerote n={3} titre="Étapes du protocole">
-            <datalist id="actes-protocole">{ACTES_SUGGERES.map(a => <option key={a.value} value={a.label} />)}</datalist>
+            <datalist id="actes-protocole">{actesSuggeresPour(profilSource).map(a => <option key={a.value} value={a.label} />)}</datalist>
             <div className="space-y-3">
               {etapes.map((e, i) => (
                 <EtapeForm key={e.id ?? `n${i}`} index={i} total={etapes.length} etape={e}

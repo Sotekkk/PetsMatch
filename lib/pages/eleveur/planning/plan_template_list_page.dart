@@ -185,7 +185,10 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
         )).then((_) => _load()),
       ),
       body: Column(children: [
-        if (!widget.isAssociation && widget.employerUid == null)
+        // Protocole chaleur : élevage uniquement (pas association, pension
+        // ni pet-sitter).
+        if (!widget.isAssociation && widget.employerUid == null
+            && widget.profilSource != 'garde' && widget.profilSource != 'pension')
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: SizedBox(
@@ -283,7 +286,9 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
             style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Colors.grey.shade500)),
         const SizedBox(height: 8),
         Text(
-          'Créez des protocoles réutilisables\npour vos soins, nettoyages et rondes',
+          widget.profilSource == 'garde'
+              ? 'Créez des protocoles réutilisables\npour vos visites : promenade, repas,\nlitière, nettoyage des locaux…'
+              : 'Créez des protocoles réutilisables\npour vos soins, nettoyages et rondes',
           textAlign: TextAlign.center,
           style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
         ),

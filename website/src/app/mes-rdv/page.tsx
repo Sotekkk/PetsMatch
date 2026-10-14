@@ -887,7 +887,7 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             new Date(new Date(rdv.date_heure).getTime() + (rdv.duree_minutes ?? 30) * 60000) < new Date() || (rdv.retardMin ?? 0) >= 5
           ) && (
             <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {new Date(new Date(rdv.date_heure).getTime() + (rdv.duree_minutes ?? 30) * 60000) < new Date() && tab === 'a_venir' && (
+              {new Date(new Date(rdv.date_heure).getTime() + (rdv.duree_minutes ?? 30) * 60000) < new Date() && (tab === 'a_venir' || tab === 'historique') && (
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: '#FFF4DC', color: '#8A5A00' }}>⏳ À clôturer — marquez-le terminé</span>
               )}
               {(rdv.retardMin ?? 0) >= 5 && (
@@ -997,6 +997,15 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
               Annuler
             </button>
           </>
+        )}
+        {/* Séance confirmée passée (ostéo…) : elle est dans l'Historique avec
+            le badge « À clôturer » — il lui faut le bouton « Terminé ». */}
+        {tab === 'historique' && rdv.statut === 'confirme' && (
+          <button onClick={onTerminer}
+            className="flex-1 min-w-[80px] text-xs font-semibold px-3 py-2 rounded-xl text-white"
+            style={{ background: GREEN, fontFamily: 'Galey, sans-serif' }}>
+            ✓ Terminé
+          </button>
         )}
         {tab === 'historique' && (
           <>
@@ -1617,12 +1626,15 @@ export default function MesRdvPage() {
   // Ostéo / santé : retard estimé en cascade, trajets compris.
   const retards = estVeto ? retardsEnCascade(rdvs)
     : catPro === 'sante' ? retardsEnCascade(rdvs, now, { avecTrajets: true, cabinet }) : {};
-  const aVenir     = estVeto
+  // Tous les pros : un RDV confirmé reste « À venir » jusqu'à « Terminé »
+  // (badge « À clôturer » une fois passé) — miroir appli _clotureManuelle.
+  const clotureManuelle = true;
+  const aVenir     = clotureManuelle
     ? rdvs.filter(r => r.statut === 'confirme').map(r => ({ ...r, retardMin: retards[r.id] }))
     : rdvs.filter(r => r.statut === 'confirme' && new Date(r.date_heure) > now).map(r => ({ ...r, retardMin: retards[r.id] }));
   const historique = rdvs.filter(r =>
     r.statut !== 'demande' && r.statut !== 'contre_proposition' &&
-    !(r.statut === 'confirme' && (estVeto || new Date(r.date_heure) > now))
+    !(r.statut === 'confirme' && (clotureManuelle || new Date(r.date_heure) > now))
   );
 
   const TABS: { key: TabKey; label: string; badge: number }[] = [

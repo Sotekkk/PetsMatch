@@ -60,12 +60,21 @@ class _TourneePageState extends State<TourneePage> {
       final startOfDay = DateTime(now.year, now.month, now.day).toUtc();
       final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59).toUtc();
 
+      // Visites du jour + visites des jours précédents encore « confirmées »
+      // (pas marquées terminées) : elles restent à clôturer, comme dans
+      // l'agenda, au lieu de disparaître de la tournée. 30 jours en arrière.
+      final depuis = startOfDay.subtract(const Duration(days: 30));
       final rows = await _supa.from('rdv').select()
           .eq('pro_uid', uid).eq('pro_profile_id', pid)
           .eq('statut', 'confirme')
-          .gte('date_heure', startOfDay.toIso8601String())
-          .lte('date_heure', endOfDay.toIso8601String());
+          .gte('date_heure', depuis.toIso8601String())
+          .lte('date_heure', endOfDay.toIso8601String())
+          .order('date_heure');
       final list = List<Map<String, dynamic>>.from(rows as List);
+      for (final r in list) {
+        final d = DateTime.tryParse(r['date_heure']?.toString() ?? '');
+        r['_a_cloturer'] = d != null && d.isBefore(startOfDay);
+      }
 
       final clientUids = list.map((r) => r['client_uid'] as String?).whereType<String>().toSet().toList();
       final animalIds = list.map((r) => r['animal_id']?.toString()).whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
@@ -95,6 +104,9 @@ class _TourneePageState extends State<TourneePage> {
       }
 
       list.sort((a, b) {
+        // Visites à clôturer (jours précédents) en tête, puis l'ordre du jour.
+        final ca = a['_a_cloturer'] == true, cb = b['_a_cloturer'] == true;
+        if (ca != cb) return ca ? -1 : 1;
         final oa = a['ordre_visite'] as int?;
         final ob = b['ordre_visite'] as int?;
         if (oa != null && ob != null) return oa.compareTo(ob);
@@ -333,7 +345,11 @@ class _VisiteTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
-    final heure = dh != null ? DateFormat('HH:mm').format(dh) : '';
+    // Visite d'un jour précédent non clôturée : date + « À clôturer ».
+    final aCloturer = rdv['_a_cloturer'] == true;
+    final heure = dh == null ? '' : aCloturer
+        ? '${DateFormat('d MMM · HH:mm', 'fr_FR').format(dh)} — à clôturer'
+        : DateFormat('HH:mm').format(dh);
     final lieu = rdv['lieu']?.toString() ?? '';
     final geocoded = rdv['lieu_lat'] != null && rdv['lieu_lng'] != null;
 
@@ -360,7 +376,9 @@ class _VisiteTile extends StatelessWidget {
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 const SizedBox(height: 2),
                 Row(children: [
-                  Text(heure, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  Text(heure, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: aCloturer ? const Color(0xFFB45309) : Colors.grey,
+                      fontWeight: aCloturer ? FontWeight.w700 : FontWeight.normal)),
                   const SizedBox(width: 8),
                   if (lieu.isNotEmpty)
                     Expanded(

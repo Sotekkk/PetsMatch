@@ -121,17 +121,40 @@ export const ACTES_SUGGERES: { value: string; label: string }[] = [
 ];
 
 /** Libellé lisible d'une action (code connu ou texte libre saisi). */
+/** Pet-sitter (garde) : actions d'une visite à domicile — miroir appli kActesSuggeresGarde. */
+export const ACTES_SUGGERES_GARDE: { value: string; label: string }[] = [
+  { value: 'promenade',  label: 'Promenade' },
+  { value: 'repas',      label: 'Repas' },
+  { value: 'eau',        label: 'Eau fraîche' },
+  { value: 'medicament', label: 'Donner le traitement' },
+  { value: 'litiere',    label: 'Nettoyage de la litière' },
+  { value: 'nettoyage',  label: 'Nettoyage des locaux' },
+  { value: 'jeux',       label: 'Jeux / câlins' },
+  { value: 'brossage',   label: 'Brossage' },
+  { value: 'plantes',    label: 'Arrosage des plantes' },
+  { value: 'courrier',   label: 'Relève du courrier' },
+  { value: 'volets',     label: 'Ouverture / fermeture des volets' },
+  { value: 'nouvelles',  label: 'Nouvelles au propriétaire' },
+];
+
+/** Actions proposées selon le profil (garde : visite à domicile). */
+export function actesSuggeresPour(profilSource?: string | null) {
+  return profilSource === 'garde' ? ACTES_SUGGERES_GARDE : ACTES_SUGGERES;
+}
+
+const TOUS_ACTES = () => [...ACTES_SUGGERES, ...ACTES_SUGGERES_GARDE];
+
 export function acteLabel(v: string | null | undefined): string {
   if (!v) return '';
   if (v === 'socialisation') return 'Promenade / Socialisation';
   if (v === 'autre') return 'Autre';
-  return ACTES_SUGGERES.find(a => a.value === v)?.label ?? v;
+  return TOUS_ACTES().find(a => a.value === v)?.label ?? v;
 }
 
 /** Saisie libre → code connu si elle correspond à une suggestion. */
 export function acteDepuisSaisie(s: string): string {
   const t = s.trim();
-  return ACTES_SUGGERES.find(a => a.label.toLowerCase() === t.toLowerCase() || a.value === t.toLowerCase())?.value ?? t;
+  return TOUS_ACTES().find(a => a.label.toLowerCase() === t.toLowerCase() || a.value === t.toLowerCase())?.value ?? t;
 }
 
 export const TRANCHES_LABELS: Record<string, string> = {

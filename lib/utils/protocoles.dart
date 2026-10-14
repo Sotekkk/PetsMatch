@@ -75,18 +75,32 @@ const kActesSuggeres = <(String, String)>[
   ('promenade', 'Promenade / Socialisation'),
 ];
 
+/// Pet-sitter (garde) : actions d'une visite à domicile — pas de soins
+/// d'élevage (vermifuge, vaccination…). Miroir site : ACTES_SUGGERES_GARDE.
+const kActesSuggeresGarde = <(String, String)>[
+  ('promenade', 'Promenade'), ('repas', 'Repas'), ('eau', 'Eau fraîche'),
+  ('medicament', 'Donner le traitement'), ('litiere', 'Nettoyage de la litière'),
+  ('nettoyage', 'Nettoyage des locaux'), ('jeux', 'Jeux / câlins'), ('brossage', 'Brossage'),
+  ('plantes', 'Arrosage des plantes'), ('courrier', 'Relève du courrier'),
+  ('volets', 'Ouverture / fermeture des volets'), ('nouvelles', 'Nouvelles au propriétaire'),
+];
+
+/// Actions proposées selon le profil (garde : visite à domicile).
+List<(String, String)> actesSuggeresPour(String? profilSource) =>
+    profilSource == 'garde' ? kActesSuggeresGarde : kActesSuggeres;
+
 /// Libellé lisible d'une action (code connu ou texte libre saisi).
 String acteLabel(String? v) {
   if (v == null || v.isEmpty) return '';
   if (v == 'socialisation') return 'Promenade / Socialisation';
   if (v == 'autre') return 'Autre';
-  return kActesSuggeres.firstWhere((a) => a.$1 == v, orElse: () => (v, v)).$2;
+  return [...kActesSuggeres, ...kActesSuggeresGarde].firstWhere((a) => a.$1 == v, orElse: () => (v, v)).$2;
 }
 
 /// Saisie libre → code connu si elle correspond à une suggestion.
 String acteDepuisSaisie(String s) {
   final t = s.trim();
-  return kActesSuggeres.firstWhere(
+  return [...kActesSuggeres, ...kActesSuggeresGarde].firstWhere(
     (a) => a.$2.toLowerCase() == t.toLowerCase() || a.$1 == t.toLowerCase(),
     orElse: () => (t, t),
   ).$1;
