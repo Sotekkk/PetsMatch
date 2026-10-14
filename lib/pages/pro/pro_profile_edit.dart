@@ -120,6 +120,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('promenade_2h',    'Promenade (2h)'),
     ('visite',          'Visite à domicile'),
     ('garde_journee',   'Garde à domicile (journée)'),
+    ('animal_supplementaire', 'Animal supplémentaire (par passage)'),
     ('autre',           'Autre prestation'),
   ];
 

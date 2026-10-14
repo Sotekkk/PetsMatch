@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -1437,6 +1438,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     } else {
       await _updateStatut(rdv['id'].toString(), 'confirme', dureeMinutes: dureeMinutes);
     }
+    // Pet-sitter : contrat, facture, clés (garde_acceptation.dart).
+    if (User_Info.catPro == 'garde' && mounted) {
+      await apresAcceptationGarde(context, [{...rdv, 'duree_minutes': dureeMinutes}]);
+    }
   }
 
   Future<void> _sendCounterProposal(Map<String, dynamic> rdv, DateTime counterDh) async {
@@ -1634,6 +1639,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         content: Text('${serie.length} passages confirmés', style: const TextStyle(fontFamily: 'Galey')),
         backgroundColor: _teal, behavior: SnackBarBehavior.floating,
       ));
+      // Contrat, facture, clés (garde_acceptation.dart).
+      await apresAcceptationGarde(context, serie);
     }
   }
 

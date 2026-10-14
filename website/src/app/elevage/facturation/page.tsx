@@ -68,6 +68,8 @@ interface FacturePrefill {
   // (facturation.dart lignes 916-925).
   sourceRdvId?: string;
   sourceRdvIds?: string[];
+  /** Acompte (pet-sitting : demande acceptée) — les RDV restent à facturer. */
+  typeFacture?: 'acompte';
   sourceAnimalId?: string;
   clientUid?: string;
   clientProfileId?: string;
@@ -667,6 +669,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       profil_source:  profilSource,
       regime_tva:     franchise ? 'franchise' : 'normal',
       ...(isAvoir ? { type_facture: 'avoir', facture_parente_id: avoirDe!.id } : {}),
+      ...(!isAvoir && prefill?.typeFacture === 'acompte' ? { type_facture: 'acompte' } : {}),
       ...(prefill?.sourcePensionEntreeId ? { source_pension_entree_id: prefill.sourcePensionEntreeId } : {}),
       ...(prefill?.sourceRdvId ? { source_rdv_id: prefill.sourceRdvId } : {}),
       ...(prefill?.sourceAnimalId ? { source_animal_id: prefill.sourceAnimalId } : {}),
@@ -732,7 +735,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
     try {
       const blob = await facturePdfBlob({
         numero,
-        typeFacture: isAvoir ? 'avoir' : null,
+        typeFacture: isAvoir ? 'avoir' : prefill?.typeFacture === 'acompte' ? 'acompte' : null,
         dateFacture, datePrestation, dateEcheance,
         nomEmetteur: emNom, rueEmetteur: emRue, cpEmetteur: emCp, villeEmetteur: emVille,
         paysEmetteur: emPays, telEmetteur: emTel, emailEmetteur: emEmail, siretEmetteur: emSiret,

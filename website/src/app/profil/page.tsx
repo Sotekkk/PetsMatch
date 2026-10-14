@@ -760,7 +760,9 @@ const PRESTATIONS_GARDE = [
   { value: 'promenade_30min', label: 'Promenade (30 min)' },
   { value: 'promenade_1h', label: 'Promenade (1h)' },
   { value: 'promenade_2h', label: 'Promenade (2h)' },
+  { value: 'visite', label: 'Visite à domicile' },
   { value: 'garde_journee', label: 'Garde à domicile (journée)' },
+  { value: 'animal_supplementaire', label: 'Animal supplémentaire (par passage)' },
   { value: 'autre', label: 'Autre prestation' },
 ];
 

@@ -18,6 +18,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { familleGarde, FAMILLES_GARDE } from '@/lib/compte-rendu-garde';
+import ApresAcceptationGardeModal from '@/components/garde/ApresAcceptationGardeModal';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ function toDateStr(d: Date): string {
 // ── Modal Accepter ─────────────────────────────────────────────────────────────
 
 function AccepterModal({ rdv, proName, onClose, onDone }: {
-  rdv: Rdv; proName: string; onClose: () => void; onDone: () => void;
+  rdv: Rdv; proName: string; onClose: () => void; onDone: (confirme?: boolean) => void;
 }) {
   const [mode, setMode]     = useState<'confirme' | 'contre_proposition'>('confirme');
   const [hour, setHour]     = useState(new Date(rdv.date_heure).getHours());
@@ -221,7 +222,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           data: { rdv_id: rdv.id }, read: false,
         });
       }
-      onDone();
+      onDone(mode === 'confirme');
     } catch { /* ignore */ } finally { setSaving(false); }
   }
 
@@ -821,7 +822,7 @@ function resumeSerie(serie: Rdv[]): string {
 }
 
 function SerieModal({ serie, mode, proName, onClose, onDone }: {
-  serie: Rdv[]; mode: 'accepter' | 'refuser'; proName: string; onClose: () => void; onDone: () => void;
+  serie: Rdv[]; mode: 'accepter' | 'refuser'; proName: string; onClose: () => void; onDone: (acceptee?: boolean) => void;
 }) {
   const [motif, setMotif] = useState('');
   const [saving, setSaving] = useState(false);
@@ -862,7 +863,7 @@ function SerieModal({ serie, mode, proName, onClose, onDone }: {
           data: { rdv_id: first.id, serie_id: first.serie_id }, read: false,
         });
       }
-      onDone();
+      onDone(mode === 'accepter');
     } catch (e) {
       alert(`Erreur : ${e instanceof Error ? e.message : String(e)}`);
       setSaving(false);
@@ -1518,6 +1519,8 @@ export default function MesRdvPage() {
   const [modalAccepter, setModalAccepter] = useState<Rdv | null>(null);
   const [modalRefuser, setModalRefuser]   = useState<Rdv | null>(null);
   const [modalSerie, setModalSerie]       = useState<{ serie: Rdv[]; mode: 'accepter' | 'refuser' } | null>(null);
+  // Pet-sitter : contrat, facture, clés après acceptation (ApresAcceptationGardeModal).
+  const [apresAcceptation, setApresAcceptation] = useState<Rdv[] | null>(null);
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
@@ -1944,15 +1947,19 @@ export default function MesRdvPage() {
           initial={modalNouveau} onClose={() => setModalNouveau(null)}
           onDone={() => { setModalNouveau(null); fetchRdvs(); }} />
       )}
+      {apresAcceptation && (
+        <ApresAcceptationGardeModal rdvs={apresAcceptation} proProfileId={activeProfileId || null}
+          onClose={() => setApresAcceptation(null)} />
+      )}
       {modalSerie && (
         <SerieModal serie={modalSerie.serie} mode={modalSerie.mode} proName={proName}
           onClose={() => setModalSerie(null)}
-          onDone={() => { setModalSerie(null); fetchRdvs(); }} />
+          onDone={ok => { const serie = modalSerie.serie; setModalSerie(null); fetchRdvs(); if (ok && catPro === 'garde') setApresAcceptation(serie); }} />
       )}
       {modalAccepter && (
         <AccepterModal rdv={modalAccepter} proName={proName}
           onClose={() => setModalAccepter(null)}
-          onDone={() => { setModalAccepter(null); fetchRdvs(); }} />
+          onDone={ok => { const r = modalAccepter; setModalAccepter(null); fetchRdvs(); if (ok && catPro === 'garde') setApresAcceptation([r]); }} />
       )}
       {modalModifier && (
         <ModifierModal rdv={modalModifier} proName={proName} activeProfileId={activeProfileId ?? ''}
