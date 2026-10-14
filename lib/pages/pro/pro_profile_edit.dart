@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
@@ -232,6 +233,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     } else if (User_Info.catPro == 'sante') {
       final code = await PlanService.getPlanCode(uid, profilType: 'sante');
       if (mounted) setState(() { _equipeIncluse = PlanService.getSanteConfig(code).hasMultiIntervenants; _equipeFormule = 'Pro'; });
+    } else if (User_Info.catPro == 'garde') {
+      // Employés : formules Pro / Premium (essai compris) — pas en Découverte.
+      final code = await PlanService.getGardePlanCode(uid);
+      if (mounted) setState(() { _equipeIncluse = PlanService.getGardeConfig(code).hasEmployes; _equipeFormule = 'Pro'; });
     }
   }
 
@@ -514,7 +519,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   Future<void> _ajouterForfait() async {
-    final unite = _catPro == 'garde' ? 'visites' : 'séances';
+    // Pet-sitter : pack de visites ou de promenades (forfaits_garde.type_prestation).
+    var typeGarde = 'visite';
+    String unite() => _catPro == 'garde' ? (typeGarde == 'promenade' ? 'promenades' : 'visites') : 'séances';
     final nomCtrl = TextEditingController();
     final seancesCtrl = TextEditingController(text: '5');
     final prixCtrl = TextEditingController();
@@ -523,17 +530,30 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
         padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Nouveau forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
+          if (_catPro == 'garde') ...[
+            Wrap(spacing: 8, children: [
+              for (final t in const [('visite', 'Visites'), ('promenade', 'Promenades')])
+                ChoiceChip(
+                  label: Text(t.$2, style: TextStyle(fontFamily: 'Galey',
+                      color: typeGarde == t.$1 ? Colors.white : const Color(0xFF1F2A2E))),
+                  selected: typeGarde == t.$1, showCheckmark: false,
+                  selectedColor: const Color(0xFF0C5C6C),
+                  onSelected: (_) => setSheet(() => typeGarde = t.$1),
+                ),
+            ]),
+            const SizedBox(height: 12),
+          ],
           TextField(controller: nomCtrl, decoration: InputDecoration(
-              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 $unite', border: const OutlineInputBorder())),
+              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 ${unite()}', border: const OutlineInputBorder())),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(child: TextField(controller: seancesCtrl, keyboardType: TextInputType.number,
-                decoration: InputDecoration(labelText: 'Nb $unite', border: const OutlineInputBorder()))),
+                decoration: InputDecoration(labelText: 'Nb ${unite()}', border: const OutlineInputBorder()))),
             const SizedBox(width: 8),
             Expanded(child: TextField(controller: prixCtrl, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()))),
@@ -548,7 +568,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             child: const Text('Créer le forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
           )),
         ]),
-      ),
+      )),
     );
     if (result != true || nomCtrl.text.trim().isEmpty) return;
     try {
@@ -560,6 +580,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _forfaitsCountCol: int.tryParse(seancesCtrl.text.trim()) ?? 1,
         'prix': double.tryParse(prixCtrl.text.trim()) ?? 0,
         if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
+        if (_catPro == 'garde') 'type_prestation': typeGarde,
       });
       await _loadForfaits();
     } catch (e) {
@@ -1092,10 +1113,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _field(_phoneCtrl, 'Téléphone (visible sur votre fiche : appel + WhatsApp)',
                       Icons.call_outlined, inputType: TextInputType.phone),
-                  // L'éducateur, le vétérinaire et l'ostéo/kiné ont une grille
+                  // L'éducateur, le vétérinaire, l'ostéo/kiné et le pet-sitter ont une grille
                   // de tarifs structurée (prestations fixes + libres) — le
                   // champ libre ferait doublon.
-                  if (!const {'education', 'veterinaire', 'sante'}.contains(_catPro)) ...[
+                  if (!const {'education', 'veterinaire', 'sante', 'garde'}.contains(_catPro)) ...[
                     const SizedBox(height: 12),
                     _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
                   ],
@@ -1749,7 +1770,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   if (_catPro == 'education' || _catPro == 'garde') ...[
                     const SizedBox(height: 24),
                     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      _sectionTitle(_catPro == 'garde' ? 'Forfaits (packs de visites)' : 'Forfaits (packs de séances)'),
+                      _sectionTitle(_catPro == 'garde' ? 'Forfaits (packs de visites ou de promenades)' : 'Forfaits (packs de séances)'),
                       TextButton.icon(
                         onPressed: _ajouterForfait,
                         icon: const Icon(Icons.add, size: 18),
@@ -1771,7 +1792,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                           Row(children: [
                             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                              Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? 'visites' : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                              Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? (f['type_prestation'] == 'promenade' ? 'promenades' : 'visites') : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
                                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                             ])),
                             IconButton(
@@ -1859,7 +1880,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ? EmployesPage(profileType: _catPro)
                         : _catPro == 'veterinaire'
                             ? const VetAbonnementPage()
-                            : const SanteAbonnementPage(profilType: 'sante'))),
+                            : _catPro == 'garde'
+                                ? const GardeAbonnementPage()
+                                : const SanteAbonnementPage(profilType: 'sante'))),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(

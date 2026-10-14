@@ -953,6 +953,16 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return '/mes-employeurs';
     case 'tache_assignee':
       return '/mes-taches';
+    // Fin d'abonnement / d'essai gratuit (functions/abonnements.js) → abonnement du métier.
+    case 'abonnement_expiration': {
+      const p = String(d.profilType ?? '');
+      const routes: Record<string, string> = {
+        garde: '/garde/abonnement', pension: '/pension/abonnement', education: '/education/abonnement',
+        veterinaire: '/veterinaire/abonnement', sante: '/sante/abonnement', marechal_ferrant: '/marechal-ferrant/abonnement',
+        toilettage: '/toilettage/abonnement', photographe: '/photographe/abonnement',
+      };
+      return routes[p] ?? '/abonnement';
+    }
     case 'sante_vet':
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
     case 'vet_access_reponse':

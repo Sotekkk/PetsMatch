@@ -123,6 +123,12 @@ exports.processAbonnementsExpiration = functions
         let blocked = 0;
 
         // ── 1. Relances J-7 / J-1 ───────────────────────────────────────────
+        // Essai gratuit 30 j (essai_gratuit, tous les pros) : message dédié
+        // « votre essai se termine » au lieu de « votre abonnement expire ».
+
+        const libellePlan = (code) => ({
+            premium: "Premium", pro: "Pro", clinique: "Clinique", avance: "Avancé", essentiel: "Essentiel",
+        })[code] || code;
 
         const paliers = [
             {key: "j7", days: 7, phrase: "dans 7 jours"},
@@ -135,7 +141,7 @@ exports.processAbonnementsExpiration = functions
                 `abonnements?date_fin=gte.${encodeURIComponent(start)}` +
                 `&date_fin=lt.${encodeURIComponent(end)}` +
                 `&statut=eq.actif&stripe_subscription_id=is.null` +
-                `&select=id,uid,profile_id,profil_type,plan_code`,
+                `&select=id,uid,profile_id,profil_type,plan_code,essai_gratuit,date_fin`,
             );
 
             for (const a of rows) {
@@ -145,9 +151,15 @@ exports.processAbonnementsExpiration = functions
                 );
                 if (existing.length > 0) continue;
 
-                const title = `⏳ Votre abonnement expire ${phrase}`;
-                const body = `Votre abonnement ${a.plan_code} (${a.profil_type}) expire ${phrase}. ` +
-                    `Renouvelez pour ne pas perdre vos avantages.`;
+                const essai = a.essai_gratuit === true;
+                const title = essai ?
+                    `Votre essai ${libellePlan(a.plan_code)} se termine ${phrase}` :
+                    `⏳ Votre abonnement expire ${phrase}`;
+                const body = essai ?
+                    `Votre essai gratuit ${libellePlan(a.plan_code)} se termine ${phrase}. ` +
+                    "Choisissez votre formule pour conserver toutes vos fonctionnalités." :
+                    `Votre abonnement ${a.plan_code} (${a.profil_type}) expire ${phrase}. ` +
+                    "Renouvelez pour ne pas perdre vos avantages.";
 
                 const pushed = await sendPush(a.uid, title, body,
                     {type: "abonnement_expiration", abonnementId: String(a.id)},
@@ -160,7 +172,7 @@ exports.processAbonnementsExpiration = functions
                         type: "abonnement_expiration",
                         title,
                         body,
-                        data: {abonnementId: String(a.id), palier: key},
+                        data: {abonnementId: String(a.id), palier: key, essai, profilType: a.profil_type},
                         read: false,
                         ...(a.profile_id ? {profile_id: a.profile_id} : {}),
                     }]);
@@ -180,7 +192,7 @@ exports.processAbonnementsExpiration = functions
 
         const toExpire = await supabaseGet(
             `abonnements?statut=eq.actif&date_fin=lt.${encodeURIComponent(nowIso)}` +
-            `&select=id,uid,profile_id,profil_type,plan_code`,
+            `&select=id,uid,profile_id,profil_type,plan_code,essai_gratuit`,
         );
 
         for (const a of toExpire) {
@@ -196,6 +208,34 @@ exports.processAbonnementsExpiration = functions
                 }
                 await supabasePatch(`users?uid=eq.${a.uid}`, {plan_code: "free", is_premium: false});
                 expired++;
+
+                // Fin d'essai gratuit : prévenir le pro (une seule fois).
+                if (a.essai_gratuit === true) {
+                    const dedupFin = `abonnement_essai_fin_${a.id}`;
+                    const deja = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(dedupFin)}`);
+                    if (deja.length === 0) {
+                        const title = `Votre essai ${libellePlan(a.plan_code)} est terminé`;
+                        const body = "Votre compte est passé en formule Découverte. " +
+                            "Choisissez une formule pour retrouver toutes vos fonctionnalités.";
+                        await sendPush(a.uid, title, body,
+                            {type: "abonnement_expiration", abonnementId: String(a.id)},
+                            {profileId: a.profile_id || null});
+                        try {
+                            await supabaseInsert("notifications", [{
+                                uid: a.uid, type: "abonnement_expiration", title, body,
+                                data: {
+                                    abonnementId: String(a.id), palier: "fin", essai: true,
+                                    profilType: a.profil_type,
+                                },
+                                read: false,
+                                ...(a.profile_id ? {profile_id: a.profile_id} : {}),
+                            }]);
+                            await supabaseInsert("notifs_sent", [{key: dedupFin, sent_at: nowIso}]);
+                        } catch (e) {
+                            console.error(`fin essai ${a.id}:`, e.message);
+                        }
+                    }
+                }
 
                 // Blocage rétroactif du surplus d'annonces — éleveur
                 // uniquement, seul métier avec un contenu public quota-géré

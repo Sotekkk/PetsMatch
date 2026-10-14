@@ -244,6 +244,9 @@ class _EleveurNavState extends State<EleveurNav> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
+                // Pet-sitter : « Mon espace pro » tout en haut ; « Accueil » est
+                // déjà dans la barre du bas (doublon retiré).
+                if (User_Info.catPro != 'garde')
                 _DrawerItem(
                   icon: Icons.home_outlined,
                   label: 'Accueil',
@@ -253,6 +256,176 @@ class _EleveurNavState extends State<EleveurNav> {
                     setState(() => _selectedIndex = 0);
                   },
                 ),
+                if (User_Info.catPro == 'garde') ...[
+                  _DrawerSection(
+                    icon: Icons.pets,
+                    label: 'Mon espace pro',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Mon agenda RDV',
+                        icon: Icons.event_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes créneaux',
+                        icon: Icons.schedule_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(initialTabIndex: 3),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Registre des visites',
+                        icon: Icons.checklist_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const RegistreVisitesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Ma tournée',
+                        icon: Icons.route_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const TourneePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes animaux en garde',
+                        icon: Icons.directions_walk_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProClientsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Gestion des clés',
+                        icon: Icons.vpn_key_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ClesClientsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Inventaire',
+                        icon: Icons.inventory_2_outlined,
+                        locked: _gardePlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _gardePlanCode == 'free'
+                                ? const GardeAbonnementPage()
+                                : const InventairePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Protocoles / Tâches',
+                        icon: Icons.event_note_outlined,
+                        locked: _gardePlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _gardePlanCode == 'free'
+                                ? const GardeAbonnementPage()
+                                : const PlanTemplateListPage(profilSource: 'garde'),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes Employés',
+                        icon: Icons.groups_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const GardeEmployesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon abonnement',
+                        icon: Icons.workspace_premium_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const GardeAbonnementPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.folder_open_outlined,
+                    label: 'Administratif',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Devis',
+                        icon: Icons.request_quote_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const DevisPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes contrats',
+                        icon: Icons.description_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const RegistreVisitesPage(initialTab: 2),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Tarifs clients',
+                        icon: Icons.sell_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const TarifsClientsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Facturation',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const FacturationPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Achats & crédits',
+                        icon: Icons.shopping_bag_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => MesAchatsPage(abonnement: const GardeAbonnementPage()),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                ],
                 // « Mon activité santé » — sections repliables, calquées sur
                 // la branche pet-sitting (« Mon activité pet sitting » /
                 // « Administratif »).
@@ -1185,7 +1358,7 @@ class _EleveurNavState extends State<EleveurNav> {
                   // Pension : compte forcément pro, le separateur "Espace pro"
                   // n'a pas de sens (pas de mode "non-pro" a distinguer).
                   // Santé / vétérinaire : leurs sections sont en haut du menu.
-                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'sante' && User_Info.catPro != 'veterinaire') ...[
+                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'sante' && User_Info.catPro != 'veterinaire' && User_Info.catPro != 'garde') ...[
                     const Divider(height: 24),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
@@ -1215,178 +1388,6 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  // « Mon activité pet sitting » — sections repliables, calquées
-                  // sur la branche éducateur (« Mon espace pro » / « Administratif »).
-                  if (User_Info.catPro == 'garde') ...[
-                    _DrawerSection(
-                      icon: Icons.pets,
-                      label: 'Mon activité pet sitting',
-                      children: [
-                        _DrawerSubItem(
-                          label: 'Mon agenda RDV',
-                          icon: Icons.event_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ProAgendaPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes créneaux',
-                          icon: Icons.schedule_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ProAgendaPage(initialTabIndex: 3),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Registre des visites',
-                          icon: Icons.checklist_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const RegistreVisitesPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Ma tournée',
-                          icon: Icons.route_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const TourneePage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes animaux en garde',
-                          icon: Icons.directions_walk_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ProClientsPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Gestion des clés',
-                          icon: Icons.vpn_key_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ClesClientsPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Inventaire',
-                          icon: Icons.inventory_2_outlined,
-                          locked: _gardePlanCode == 'free',
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => _gardePlanCode == 'free'
-                                  ? const GardeAbonnementPage()
-                                  : const InventairePage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Protocoles / Tâches',
-                          icon: Icons.event_note_outlined,
-                          locked: _gardePlanCode == 'free',
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => _gardePlanCode == 'free'
-                                  ? const GardeAbonnementPage()
-                                  : const PlanTemplateListPage(profilSource: 'garde'),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes Employés',
-                          icon: Icons.groups_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const GardeEmployesPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mon abonnement',
-                          icon: Icons.workspace_premium_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const GardeAbonnementPage(),
-                            ));
-                          },
-                        ),
-                      ],
-                    ),
-                    _DrawerSection(
-                      icon: Icons.folder_open_outlined,
-                      label: 'Administratif',
-                      children: [
-                        _DrawerSubItem(
-                          label: 'Devis',
-                          icon: Icons.request_quote_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const DevisPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mes contrats',
-                          icon: Icons.description_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const RegistreVisitesPage(initialTab: 2),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Tarifs clients',
-                          icon: Icons.sell_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const TarifsClientsPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Facturation',
-                          icon: Icons.receipt_long_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const FacturationPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Achats & crédits',
-                          icon: Icons.shopping_bag_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => MesAchatsPage(abonnement: const GardeAbonnementPage()),
-                            ));
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
                   if (User_Info.catPro == 'taxi_animalier') ...[
                     _DrawerItem(
                       icon: Icons.checklist_outlined,

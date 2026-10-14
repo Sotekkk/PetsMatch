@@ -888,7 +888,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [trajetOrigineDefaut, setTrajetOrigineDefaut] = useState('cabinet');
   const [autreDomicileAdresse, setAutreDomicileAdresse] = useState('');
   const [autreDomicileLatLng, setAutreDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
-  const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number; affiche_public: boolean }[]>([]);
+  const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number; affiche_public: boolean; type_prestation?: string }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
   const [showForfaitModal, setShowForfaitModal] = useState(false);
   const [arrhesPourcentage, setArrhesPourcentage] = useState(0);
@@ -1105,19 +1105,21 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   async function loadForfaits() {
     setLoadingForfaits(true);
     const { data: rows } = await supabase.from(forfaitsTable())
-      .select(`id, nom, ${forfaitsCountCol()}, prix, affiche_public`).eq('pro_uid', uid).eq('actif', true).order('created_at');
+      .select('*').eq('pro_uid', uid).eq('actif', true).order('created_at');
     setForfaits(((rows ?? []) as Record<string, unknown>[]).map(r => ({
       id: r.id as string, nom: r.nom as string, prix: r.prix as number,
       nb_seances: (r[forfaitsCountCol()] as number) ?? 1,
       affiche_public: (r.affiche_public as boolean) ?? false,
+      type_prestation: (r.type_prestation as string | undefined) ?? 'visite',
     })));
     setLoadingForfaits(false);
   }
 
-  async function ajouterForfait(nom: string, nbSeances: number, prix: number, description: string) {
+  async function ajouterForfait(nom: string, nbSeances: number, prix: number, description: string, typePrestation = 'visite') {
     await supabase.from(forfaitsTable()).insert({
       pro_uid: uid, pro_profile_id: profileId, nom, [forfaitsCountCol()]: nbSeances, prix,
       description: description || null,
+      ...(forfaitsTable() === 'forfaits_garde' ? { type_prestation: typePrestation } : {}),
     });
     setShowForfaitModal(false);
     loadForfaits();
@@ -1389,8 +1391,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               rows={4} placeholder="Présentez votre activité…" className={`${inputCls} resize-none`} />
           </Field>
-          {/* Éducateur / vétérinaire / ostéo-kiné : grille de tarifs structurée (doublon sinon). */}
-          {!['education', 'veterinaire', 'sante'].includes(catPro) && (
+          {/* Éducateur / vétérinaire / ostéo-kiné / pet-sitter : grille de tarifs structurée (doublon sinon). */}
+          {!['education', 'veterinaire', 'sante', 'garde'].includes(catPro) && (
             <Field label="Tarifs">
               <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
                 rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />
@@ -1887,7 +1889,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Forfaits éducateur/comportementaliste ou garde */}
         {(catPro === 'education' || catPro === 'garde') && (
-          <Card title={catPro === 'garde' ? 'Forfaits (packs de visites)' : 'Forfaits (packs de séances)'}>
+          <Card title={catPro === 'garde' ? 'Forfaits (packs de visites ou de promenades)' : 'Forfaits (packs de séances)'}>
             {loadingForfaits ? (
               <p className="text-sm text-gray-400">Chargement…</p>
             ) : forfaits.length === 0 ? (
@@ -1899,7 +1901,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm font-semibold text-[#1E2025]">{f.nom}</p>
-                        <p className="text-xs text-gray-500">{f.nb_seances} {catPro === 'garde' ? 'visites' : 'séances'} — {f.prix} €</p>
+                        <p className="text-xs text-gray-500">{f.nb_seances} {catPro === 'garde' ? (f.type_prestation === 'promenade' ? 'promenades' : 'visites') : 'séances'} — {f.prix} €</p>
                       </div>
                       <button onClick={() => supprimerForfait(f.id)} className="text-red-400 hover:text-red-600 text-sm">
                         Supprimer
@@ -2064,10 +2066,12 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
 function ForfaitModal({ onClose, onSave, catPro }: {
   onClose: () => void;
-  onSave: (nom: string, nbSeances: number, prix: number, description: string) => void;
+  onSave: (nom: string, nbSeances: number, prix: number, description: string, typePrestation?: string) => void;
   catPro?: string;
 }) {
-  const unite = catPro === 'garde' ? 'visites' : 'séances';
+  // Pet-sitter : pack de visites ou de promenades.
+  const [typePrestation, setTypePrestation] = useState('visite');
+  const unite = catPro === 'garde' ? (typePrestation === 'promenade' ? 'promenades' : 'visites') : 'séances';
   const [nom, setNom] = useState('');
   const [nbSeances, setNbSeances] = useState('5');
   const [prix, setPrix] = useState('');
@@ -2078,6 +2082,15 @@ function ForfaitModal({ onClose, onSave, catPro }: {
       <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
         <h3 className="font-bold text-base mb-4 text-[#1E2025]">Nouveau forfait</h3>
         <div className="space-y-3">
+          {catPro === 'garde' && (
+            <div className="flex gap-2">
+              {([['visite', 'Visites'], ['promenade', 'Promenades']] as const).map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setTypePrestation(k)}
+                  className="px-3 py-1.5 rounded-full text-sm font-semibold"
+                  style={typePrestation === k ? { background: '#0C5C6C', color: 'white' } : { background: '#F1F4F3', color: '#1F2A2E' }}>{l}</button>
+              ))}
+            </div>
+          )}
           <input value={nom} onChange={e => setNom(e.target.value)} placeholder={`Nom du forfait (ex : Pack 5 ${unite})`}
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
           <div className="grid grid-cols-2 gap-3">
@@ -2094,7 +2107,7 @@ function ForfaitModal({ onClose, onSave, catPro }: {
             Annuler
           </button>
           <button
-            onClick={() => nom.trim() && onSave(nom.trim(), parseInt(nbSeances, 10) || 1, parseFloat(prix) || 0, description.trim())}
+            onClick={() => nom.trim() && onSave(nom.trim(), parseInt(nbSeances, 10) || 1, parseFloat(prix) || 0, description.trim(), typePrestation)}
             className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold" style={{ backgroundColor: '#7B5EA7' }}>
             Créer
           </button>
@@ -2167,9 +2180,11 @@ export default function ProfilPage() {
   const [resolvedType, setResolvedType] = useState<string | null>(null);
   // Équipe incluse dans la formule (véto : dès Avancé ; santé : Pro).
   const metierEquipe = resolvedType ?? userData?.catPro ?? '';
-  const { planCode: planMetier } = useProfessionPlanCode(metierEquipe === 'veterinaire' || metierEquipe === 'sante' ? metierEquipe : '');
+  const { planCode: planMetier } = useProfessionPlanCode(['veterinaire', 'sante', 'garde'].includes(metierEquipe) ? metierEquipe : '');
+  // Pet-sitter : employés en formules Pro / Premium (essai compris), pas en Découverte.
   const equipeIncluse = metierEquipe === 'veterinaire' ? vetFormuleOk(planMetier, 'avance')
-    : metierEquipe === 'sante' ? planMetier === 'pro' : true;
+    : metierEquipe === 'sante' ? planMetier === 'pro'
+    : metierEquipe === 'garde' ? planMetier === 'pro' || planMetier === 'premium' : true;
   const equipeFormule = metierEquipe === 'veterinaire' ? 'Avancé' : 'Pro';
 
   // Identity
@@ -3112,7 +3127,7 @@ export default function ProfilPage() {
       {/* Employés — visible pour éleveurs, pros et associations ; véto dès
           Avancé, santé en formule Pro (sinon grisé → formules). */}
       {(isEleveur || userData?.isPro || userData?.isAssociation) && (
-        <Link href={equipeIncluse ? '/elevage/employes' : metierEquipe === 'veterinaire' ? '/veterinaire/abonnement' : '/sante/abonnement'}
+        <Link href={equipeIncluse ? '/elevage/employes' : metierEquipe === 'veterinaire' ? '/veterinaire/abonnement' : metierEquipe === 'garde' ? '/garde/abonnement' : '/sante/abonnement'}
           className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow mb-5">
           <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
             <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

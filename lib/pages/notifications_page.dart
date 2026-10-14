@@ -1,3 +1,11 @@
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -465,6 +473,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => AnimalFicheParticulierPage(animalId: animalId, initialTab: 3),
         ));
       }
+      return;
+    }
+    // Fin d'abonnement / d'essai gratuit (functions/abonnements.js) → page
+    // d'abonnement du métier concerné.
+    if (type == 'abonnement_expiration') {
+      final profil = (data is Map ? data['profilType']?.toString() : null) ?? User_Info.catPro;
+      final Widget page = switch (profil) {
+        'garde' => const GardeAbonnementPage(),
+        'pension' => const PensionAbonnementPage(),
+        'education' => const EducationAbonnementPage(),
+        'veterinaire' => const VetAbonnementPage(),
+        'sante' || 'marechal_ferrant' => SanteAbonnementPage(profilType: profil),
+        'toilettage' => const ToilettageAbonnementPage(),
+        'photographe' => const PhotographeAbonnementPage(),
+        _ => const AbonnementPage(),
+      };
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
       return;
     }
     // Rapport de garde / visite / promenade — nouvelle reçue par le

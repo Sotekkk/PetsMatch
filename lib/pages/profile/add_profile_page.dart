@@ -1,3 +1,6 @@
+import 'package:PetsMatch/utils/storage_helper.dart' show uploadPhotoPrive;
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -355,8 +358,25 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   }.contains(widget.typeInfo.type); // restauration = lieu fixe, pas de rayon
   bool get _hasSubProfession => _subProfessions.containsKey(widget.typeInfo.type);
 
+  /// Justificatif ACACED (pet-sitter, éducateur) — obligatoire à la création,
+  /// comme dans l'édition du profil (Code rural, art. L214-6-1).
+  File? _acacedDoc;
+  bool get _acacedRequis => widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde';
+
+  Future<void> _choisirAcacedDoc(ImageSource source) async {
+    final f = await ImagePicker().pickImage(source: source, imageQuality: 90);
+    if (f != null && mounted) setState(() => _acacedDoc = File(f.path));
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_acacedRequis && _acacedDoc == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Joignez le justificatif ACACED (photo ou scan) pour créer le profil.', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     setState(() => _saving = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -415,6 +435,18 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['especes_acceptees']  = _especesAcceptees.toList();
       if (type == 'education' || type == 'garde') {
         data['acaced_numero'] = _acacedCtrl.text.trim();
+        if (_acacedDoc != null) {
+          try {
+            data['acaced_doc_url'] = await uploadPhotoPrive(
+                _acacedDoc!, 'profiles/$uid/acaced_${type}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          } catch (e) {
+            if (mounted) {
+              setState(() => _saving = false);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi du justificatif impossible : $e')));
+            }
+            return;
+          }
+        }
       }
       if (_isVet) {
         // Numéro d'inscription à l'Ordre des vétérinaires — distinct du SIRET
@@ -541,6 +573,24 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
               const SizedBox(height: 16),
               _section('Numéro ACACED *'),
               _field(_acacedCtrl, 'Ex : 2022/9fd5-fd12', required: true),
+              const SizedBox(height: 8),
+              // Justificatif obligatoire (photo ou scan de l'attestation).
+              Row(children: [
+                if (_acacedDoc != null) ...[
+                  ClipRRect(borderRadius: BorderRadius.circular(8),
+                      child: Image.file(_acacedDoc!, width: 52, height: 52, fit: BoxFit.cover)),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Text('Justificatif ACACED joint', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600))),
+                  TextButton(onPressed: () => setState(() => _acacedDoc = null),
+                      child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey'))),
+                ] else ...[
+                  const Expanded(child: Text('Justificatif ACACED * (photo ou scan)', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                  IconButton(tooltip: 'Prendre une photo', icon: const Icon(Icons.camera_alt_outlined),
+                      onPressed: () => _choisirAcacedDoc(ImageSource.camera)),
+                  IconButton(tooltip: 'Choisir un fichier', icon: const Icon(Icons.upload_file_outlined),
+                      onPressed: () => _choisirAcacedDoc(ImageSource.gallery)),
+                ],
+              ]),
             ],
             if (_hasRayon) ...[
               const SizedBox(height: 16),

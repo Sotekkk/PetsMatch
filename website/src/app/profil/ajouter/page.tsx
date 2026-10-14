@@ -182,6 +182,8 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   const isProType   = PRO_TYPES.has(typeInfo.type);
   const isEleveur   = typeInfo.type === 'eleveur';
   const isEducation = typeInfo.type === 'education';
+  // ACACED (n°, date, certificat) obligatoire : éducateur ET pet-sitter (Code rural, art. L214-6-1).
+  const acacedRequis = isEducation || typeInfo.type === 'garde';
   const isVet = typeInfo.type === 'veterinaire';
   const isParticulier = typeInfo.type === 'particulier';
   const hasSiret    = HAS_SIRET.has(typeInfo.type);
@@ -253,7 +255,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
       if (!acacedDateObtention) errs.push("Date d'obtention ACACED");
       if (!acacedDocFile) errs.push('Certificat ACACED');
     }
-    if (isEducation) {
+    if (acacedRequis) {
       if (!acaced.trim()) errs.push('N° ACACED');
       if (!acacedDateObtention) errs.push("Date d'obtention ACACED");
       if (!acacedDocFile) errs.push('Certificat ACACED');
@@ -337,12 +339,12 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
           // jusqu'ici jamais écrite par aucun formulaire.
           data.numero_ordre = numeroOrdre.trim();
         }
-        if (isEducation) {
+        if (acacedRequis) {
           data.acaced_numero        = acaced.trim();
           data.acaced_date_obtention = acacedDateObtention;
           if (acacedDocFile) {
             const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
-            const path = `documents/${uid}/acaced.${ext}`;
+            const path = `documents/${uid}/acaced_${typeInfo.type}.${ext}`;
             const { data: up } = await supabase.storage.from('documents').upload(path, acacedDocFile, { upsert: true });
             if (up) {
               const { data: pub } = supabase.storage.from('documents').getPublicUrl(path);
@@ -580,7 +582,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
                     className="w-full input-field" placeholder="Ex : 12345" />
                 </Field>
               )}
-              {isEducation && (
+              {acacedRequis && (
                 <>
                   <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
