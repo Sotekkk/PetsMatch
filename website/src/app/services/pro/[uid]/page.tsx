@@ -234,6 +234,8 @@ function ProDetailContent() {
   // génériques creneaux_pro.domicile_ok/trajet_origine, user_profiles.
   // trajet_origine_defaut/autre_domicile_*, rdv.lieu_lat/lieu_lng).
   const [domicile, setDomicile] = useState(false);
+  // Pet-sitting (promenade) : récupérer l'animal au domicile ou autre lieu de RDV.
+  const [gardeRecupDomicile, setGardeRecupDomicile] = useState(true);
   const [adresseDomicile, setAdresseDomicile] = useState('');
   // Adresse connue du profil client (pré-remplissage) — cf. getClientKnownAddress.
   const [clientAdresseConnue, setClientAdresseConnue] = useState<string | null>(null);
@@ -707,7 +709,7 @@ function ProDetailContent() {
       animauxQ,
       ownQ,
       fetchRdvsDuJour(),
-      pro?.cat_pro === 'sante' && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
+      (pro?.cat_pro === 'sante' || pro?.cat_pro === 'garde') && user ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
     ]);
     setRdvsDuJourByDate(rdvsDuJour);
     if (clientAdresse) {
@@ -831,6 +833,13 @@ function ProDetailContent() {
       alert('Veuillez indiquer et valider votre adresse.');
       return;
     }
+    if (gardeAvecAdresse && !adresseDomicile.trim()) {
+      alert(gardePromenade && !gardeRecupDomicile ? 'Veuillez indiquer le lieu de rendez-vous.' : "Veuillez indiquer l'adresse où récupérer l'animal.");
+      return;
+    }
+    let gardeGeo = domicileLatLng;
+    if (gardeAvecAdresse && !gardeGeo) gardeGeo = await geocodeAddress(adresseDomicile.trim());
+    const notesGarde = [gardeAvecAdresse ? gardeLieuNote : '', notes.trim()].filter(Boolean).join('\n');
     setSaving(true);
     try {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
@@ -895,7 +904,7 @@ function ProDetailContent() {
           statut: 'demande',
           motif: `${motifLabel}${premiereSuffix}`,
           ...(premiereVisite !== null ? { premiere_visite: premiereVisite } : {}),
-          notes_client: notes || null,
+          notes_client: (pro.cat_pro === 'garde' ? notesGarde : notes) || null,
           pro_profile_id: pro.profileTableId || null,
           ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
           ...(isTaxi ? {
@@ -905,6 +914,10 @@ function ProDetailContent() {
             animaux_ids: animauxTaxiIds,
             ...(latDepart != null ? { lat_depart: latDepart, lng_depart: lngDepart } : {}),
             ...(latArrivee != null ? { lat_arrivee: latArrivee, lng_arrivee: lngArrivee } : {}),
+          } : {}),
+          ...(gardeAvecAdresse ? {
+            lieu: adresseDomicile.trim(),
+            ...(gardeGeo ? { lieu_lat: gardeGeo.lat, lieu_lng: gardeGeo.lng } : {}),
           } : {}),
           ...(pro.cat_pro === 'sante' && domicile ? {
             lieu: adresseDomicile.trim(),
@@ -1194,9 +1207,15 @@ function ProDetailContent() {
     pro?.cat_pro === 'garde' ? gardeMotifLabel(key, selectedEspece) : fallback;
 
   const premiereRequise = ['veterinaire', 'sante', 'pension', 'garde'].includes(pro?.cat_pro ?? '');
+  // Pet-sitting (promenade / visite) : adresse de prise en charge de l'animal.
+  const gardeAvecAdresse = pro?.cat_pro === 'garde' && !!motifKey && !isGardeJournee;
+  const gardePromenade = motifKey.startsWith('promenade');
+  const gardeLieuNote = !gardePromenade ? ''
+    : gardeRecupDomicile ? "Récupération de l'animal à domicile." : 'Rendez-vous au lieu indiqué.';
   const canConfirm = !!motifKey &&
     (isGardeJournee ? gardeJourOkDays.length > 0 : !!selectedSlot) &&
     (!premiereRequise || premiereVisite !== null) &&
+    (!gardeAvecAdresse || !!adresseDomicile.trim()) &&
     (!isTaxi || (!!adresseDepart.trim() && !!adresseArrivee.trim() && animauxTaxiIds.length > 0));
 
   if (loading) return (
@@ -2018,6 +2037,40 @@ function ProDetailContent() {
                       )}
                     </div>
                   )}
+
+                  {/* Pet-sitting : où le pet-sitter prend l'animal en charge (miroir appli _buildGardeAdresseSection) */}
+                  {gardeAvecAdresse && (() => {
+                    const chezMoi = !gardePromenade || gardeRecupDomicile;
+                    const bouton = (v: boolean, label: string) => (
+                      <button type="button" onClick={() => setGardeRecupDomicile(v)}
+                        className="flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-all"
+                        style={{ fontFamily: 'Galey, sans-serif', borderColor: catColor,
+                          backgroundColor: gardeRecupDomicile === v ? catColor : 'white', color: gardeRecupDomicile === v ? 'white' : catColor }}>
+                        {label}
+                      </button>
+                    );
+                    return (
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {gardePromenade ? "Prise en charge de l'animal *" : 'Adresse de la visite *'}
+                        </p>
+                        {gardePromenade && (
+                          <div className="flex gap-2 mb-3">
+                            {bouton(true, 'Récupérer à mon domicile')}
+                            {bouton(false, 'Autre lieu de rendez-vous')}
+                          </div>
+                        )}
+                        <input value={adresseDomicile}
+                          onChange={e => { setAdresseDomicile(e.target.value); if (domicileLatLng) setDomicileLatLng(null); }}
+                          placeholder={chezMoi ? 'Votre adresse' : 'Lieu de rendez-vous'}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"
+                          style={{ fontFamily: 'Galey, sans-serif' }} />
+                        {chezMoi && clientAdresseConnue && adresseDomicile.trim() === clientAdresseConnue && (
+                          <p className="text-xs text-gray-400 mt-1">Adresse enregistrée sur votre profil — modifiable ci-dessus.</p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Première fois ? (vétérinaire, ostéo, pension, garde) */}
                   {premiereRequise && motifKey && (

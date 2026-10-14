@@ -169,6 +169,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   DateTime? _gardeDebut;
   DateTime? _gardeFin;
   bool get _isGardeJournee => widget.isGarde && _selectedMotifKey == 'garde_journee';
+  // Pet-sitting (promenade / visite) : adresse de prise en charge de l'animal,
+  // pré-remplie depuis le profil du client (_loadClientAdresse).
+  bool get _gardeAvecAdresse => widget.isGarde && _selectedMotifKey != null && !_isGardeJournee;
+  bool get _gardePromenade => _selectedMotifKey?.startsWith('promenade') == true;
+  bool _gardeRecupDomicile = true;
+  String get _gardeLieuNote => !_gardePromenade ? ''
+      : _gardeRecupDomicile ? "Récupération de l'animal à domicile." : "Rendez-vous au lieu indiqué.";
 
   // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
   // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
@@ -994,6 +1001,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }
     }
 
+    // Pet-sitting : adresse de prise en charge obligatoire (promenade / visite).
+    if (_gardeAvecAdresse && _adresseDomicileCtrl.text.trim().isEmpty) {
+      _snack(_gardePromenade && !_gardeRecupDomicile
+          ? 'Veuillez indiquer le lieu de rendez-vous'
+          : "Veuillez indiquer l'adresse où récupérer l'animal", color: Colors.orange); return;
+    }
+    if (_gardeAvecAdresse && _domicileLat == null) {
+      final geo = await GeocodingHelper.geocode(_adresseDomicileCtrl.text.trim());
+      _domicileLat = geo?.lat; _domicileLng = geo?.lng;
+    }
+
     // Validation adresse domicile (santé/ostéo)
     if (_hasDomicileOption && _domicile && _domicileLat == null) {
       _snack('Veuillez indiquer et valider votre adresse', color: Colors.orange); return;
@@ -1138,15 +1156,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             if (_selectedPrestation != null) 'prix_calcule': _prixAffiche(_selectedPrestation!),
             if (_selectedEmploye != null) 'employe_id': _selectedEmploye!['id'],
           },
-          if (_hasDomicileOption && _domicile) ...{
+          if ((_hasDomicileOption && _domicile) || _gardeAvecAdresse) ...{
             'lieu': _adresseDomicileCtrl.text.trim(),
             if (_domicileLat != null) 'lieu_lat': _domicileLat,
             if (_domicileLng != null) 'lieu_lng': _domicileLng,
           },
           if ((widget.isPension || widget.isGarde) && _premiereVisite != null)
             'premiere_visite': _premiereVisite,
-          if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
-            'notes_client': _notesCtrl.text.trim(),
+          if ((_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true)) ||
+              (_gardeAvecAdresse && _gardeLieuNote.isNotEmpty))
+            'notes_client': [if (_gardeAvecAdresse) _gardeLieuNote, _notesCtrl.text.trim()]
+                .where((t) => t.isNotEmpty).join('\n'),
           'duree_minutes': dureeToSend,
           'statut': 'demande',
           if (_modeClinique && _selectedSlot?['praticien_profile_id'] != null)
@@ -1372,6 +1392,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   ],
                   if (_hasDomicileOption) ...[
                     _buildDomicileLieuSection(),
+                    const SizedBox(height: 20),
+                  ],
+                  if (_gardeAvecAdresse) ...[
+                    _buildGardeAdresseSection(),
                     const SizedBox(height: 20),
                   ],
                   if (_isGardeJournee)
@@ -2570,6 +2594,46 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     if (geo == null) {
       _snack('Adresse introuvable — précisez-la pour voir les créneaux à domicile.', color: Colors.orange);
     }
+  }
+
+  // Pet-sitting : où le pet-sitter prend l'animal en charge.
+  Widget _buildGardeAdresseSection() {
+    Widget choix(bool v, String label) => Expanded(child: OutlinedButton(
+      onPressed: () => setState(() => _gardeRecupDomicile = v),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: _gardeRecupDomicile == v ? Colors.white : widget.categoryColor,
+        backgroundColor: _gardeRecupDomicile == v ? widget.categoryColor : Colors.white,
+        side: BorderSide(color: widget.categoryColor),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+      ),
+      child: Text(label, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+    ));
+    final domicile = !_gardePromenade || _gardeRecupDomicile;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionTitle(_gardePromenade ? "Prise en charge de l'animal *" : 'Adresse de la visite *'),
+      const SizedBox(height: 8),
+      if (_gardePromenade) ...[
+        Row(children: [
+          choix(true, 'Récupérer à mon domicile'),
+          const SizedBox(width: 10),
+          choix(false, 'Autre lieu de rendez-vous'),
+        ]),
+        const SizedBox(height: 12),
+      ],
+      _addressAutocompleteField(
+        controller: _adresseDomicileCtrl,
+        label: domicile ? 'Votre adresse' : 'Lieu de rendez-vous',
+        icon: domicile ? Icons.home_outlined : Icons.place_outlined,
+        predictions: _predictionsDomicile,
+        onChanged: _onDomicileChanged,
+        onSelect: _selectDomicilePrediction,
+      ),
+      if (domicile && _clientAdresseConnue != null && _adresseDomicileCtrl.text.trim() == _clientAdresseConnue) ...[
+        const SizedBox(height: 4),
+        Text('Adresse enregistrée sur votre profil — modifiable ci-dessus.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+      ],
+    ]);
   }
 
   Widget _buildDomicileLieuSection() => Column(
