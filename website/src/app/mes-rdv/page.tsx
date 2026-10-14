@@ -1,4 +1,5 @@
 'use client';
+import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -121,7 +122,9 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
   const [hour, setHour]     = useState(new Date(rdv.date_heure).getHours());
   const [minute, setMinute] = useState(0);
   const [date, setDate]     = useState(rdv.date_heure.slice(0, 10));
-  const [duree, setDuree]   = useState(rdv.duree_minutes ?? 60);
+  // « Promenade 30 min » : la durée suit la prestation (une demande ancienne
+  // pouvait porter la longueur du créneau, ex. 15 min).
+  const [duree, setDuree]   = useState(dureeImposeeGarde(rdv.motif) ?? rdv.duree_minutes ?? 60);
   const [saving, setSaving] = useState(false);
   // Clinique : vétérinaire à qui attribuer la demande ('' = titulaire).
   const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);

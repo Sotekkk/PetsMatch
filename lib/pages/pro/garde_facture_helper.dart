@@ -26,6 +26,16 @@ String gardePrestationKey(String? motif) {
 /// Filtres agenda / tableau de bord.
 /// Famille de prestation d'après la clé de tarif (motif du RDV) — mêmes
 /// prestations que celles configurées dans les tarifs du profil.
+/// Durée imposée par le nom de la prestation (« Promenade 30 min » = 30) —
+/// null quand le nom n'en fixe pas (visite, autre…). Miroir site
+/// dureeImposeeGarde (lib/garde-facturation.ts).
+int? dureeImposeeGarde(String? motif) => switch (gardePrestationKey(motif)) {
+      'promenade_30min' => 30,
+      'promenade_1h' => 60,
+      'promenade_2h' => 120,
+      _ => null,
+    };
+
 String familleGarde(Map<String, dynamic> r) {
   final k = gardePrestationKey(r['motif']?.toString());
   if (k == 'garde_journee') return 'garde';

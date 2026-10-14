@@ -8,7 +8,7 @@ import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
-import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel;
+import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel, dureeImposeeGarde;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/widgets/rdv/rdv_form_widgets.dart';
 
@@ -267,6 +267,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       return _dureesMotifs[_selectedMotif] ?? 30;
     }
     if (_selectedMotifKey != null && _selectedMotifKey != 'autre') {
+      // Pet-sitting : « Promenade 30 min » dure 30 min, quel que soit le réglage.
+      if (widget.isGarde) {
+        final imposee = dureeImposeeGarde(_selectedMotifKey);
+        if (imposee != null) return imposee;
+      }
       return _dureesMotifs[_selectedMotifKey] ?? 30;
     }
     return _dureesMotifs['autre'] ?? 30;

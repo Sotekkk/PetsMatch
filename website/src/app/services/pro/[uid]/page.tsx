@@ -1,4 +1,5 @@
 'use client';
+import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
 import { cleMotif } from '@/lib/salles-clinique';
 import { TARIFS_VETO_GROUPES, libelleTarifVeto } from '@/lib/tarifs-veto';
@@ -874,7 +875,12 @@ function ProDetailContent() {
       for (const slot of targetSlots) {
         const dateDebut = new Date(`${slot.date}T${slot.heureDebut}`);
         const dateFin   = new Date(`${slot.date}T${slot.heureFin}`);
-        const dureeMinutes = Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
+        // Pet-sitting : la durée est celle de la prestation (« Promenade 30 min »,
+        // durée réglée par le pro pour une visite), pas la longueur du créneau.
+        const dureeGarde = pro.cat_pro === 'garde' && motifKey !== 'garde_journee'
+          ? (dureeImposeeGarde(motifKey) ?? (Number(dureesMotifsPro[motifKey]) || ((MOTIFS_BY_CAT.garde ?? []).find(m => m.key === motifKey)?.duree ?? null)))
+          : null;
+        const dureeMinutes = dureeGarde ?? Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
         const { error: rdvErr } = await supabase.from('rdv').insert({
           ...(pro.cat_pro === 'veterinaire' && slot.praticien ? { instructeur_profile_id: slot.praticien } : {}),
           // « Peu importe » : posé sur le premier praticien libre, visible dans

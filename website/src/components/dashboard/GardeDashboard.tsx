@@ -54,6 +54,8 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
   const pid = actifPid || pidPrincipal;
   const [loading, setLoading] = useState(true);
   const [rdvs, setRdvs] = useState<Rdv[]>([]);
+  // Demandes de réservation à traiter (comme les tableaux véto / ostéo).
+  const [demandes, setDemandes] = useState<(Rdv & { created_at?: string | null })[]>([]);
   const [cles, setCles] = useState<Cle[]>([]);
   const [animaux, setAnimaux] = useState<Record<string, Animal>>({});
   const [intervenants, setIntervenants] = useState<Record<string, string>>({});
@@ -74,11 +76,16 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
       .lte('date_heure', new Date(jour.getTime() + 31 * 86400000).toISOString())
       .order('date_heure');
     const liste = (rows ?? []) as Rdv[];
+    const { data: dem } = await supabase.from('rdv').select('*')
+      .eq('pro_profile_id', pid).in('statut', ['demande', 'contre_proposition'])
+      .order('created_at', { ascending: false });
+    const lesDemandes = (dem ?? []) as (Rdv & { created_at?: string | null })[];
     const { data: c } = await supabase.from('cles_clients').select('id, animal_id, owner_uid, description')
       .eq('pro_profile_id', pid).eq('statut', 'en_possession');
     const lesCles = (c ?? []) as Cle[];
-    const profils = [...new Set([...liste.map(r => r.client_profile_id), ...liste.map(r => r.instructeur_profile_id)].filter(Boolean) as string[])];
-    const ids = [...new Set([...liste.map(r => r.animal_id), ...lesCles.map(k => k.animal_id)].filter(Boolean) as string[])];
+    const tous = [...liste, ...lesDemandes];
+    const profils = [...new Set([...tous.map(r => r.client_profile_id), ...liste.map(r => r.instructeur_profile_id)].filter(Boolean) as string[])];
+    const ids = [...new Set([...tous.map(r => r.animal_id), ...lesCles.map(k => k.animal_id)].filter(Boolean) as string[])];
     const [profRes, animRes] = await Promise.all([
       profils.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').in('id', profils) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from('animaux').select('id, nom, espece, photo_url').in('id', ids) : Promise.resolve({ data: [] }),
@@ -93,7 +100,7 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
     }
     const an: Record<string, Animal> = {};
     for (const a of (animRes.data ?? []) as Animal[]) an[String(a.id)] = a;
-    for (const r of liste) {
+    for (const r of tous) {
       r._animal_nom = (r.animal_id && an[String(r.animal_id)]?.nom) || r.animal_nom_manuel || 'Animal';
       r._client_nom = (r.client_profile_id && cl[r.client_profile_id]) || r.client_nom_manuel || 'Client';
     }
@@ -104,7 +111,7 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
       const { data, error } = await supabase.from('pension_updates').select('rdv_id').in('rdv_id', ajd);
       if (!error) cr = new Set((data ?? []).map(x => String((x as { rdv_id: string }).rdv_id)));
     }
-    setRdvs(liste); setCles(lesCles); setAnimaux(an); setIntervenants(inter); setAvecCr(cr);
+    setRdvs(liste); setDemandes(lesDemandes); setCles(lesCles); setAnimaux(an); setIntervenants(inter); setAvecCr(cr);
     setNow(new Date()); setLoading(false);
   }, [pid]);
 
@@ -246,6 +253,31 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
               </div>
 
               <div className="space-y-5">
+                {/* Demandes en attente */}
+                <Section titre="Demandes en attente" icone={<Icone nom="cloche" taille={18} />} compteur={demandes.length}
+                  action={demandes.length > 0 ? <Link href="/mes-rdv?onglet=demandes" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Voir toutes →</Link> : undefined}>
+                  {demandes.length === 0 ? (
+                    <p className="text-sm text-gray-400">Aucune demande à traiter.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {demandes.slice(0, 3).map(r => {
+                        const c = r.created_at ? new Date(r.created_at) : null;
+                        const j = c ? Math.round((jour.getTime() - new Date(c.getFullYear(), c.getMonth(), c.getDate()).getTime()) / 86400000) : null;
+                        return (
+                          <Link key={r.id} href="/mes-rdv?onglet=demandes" className="flex items-center gap-2.5 py-1.5 hover:bg-gray-50 rounded-lg">
+                            <PhotoAnimal url={r.animal_id ? animaux[r.animal_id]?.photo_url : null} taille={32} />
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-sm font-bold text-[#1E2025] truncate">{r._animal_nom} · {r._client_nom}</span>
+                              <span className="block text-xs text-gray-500 truncate">{prestation(r)} · pour le {jm(debut(r))} {hm(debut(r))}{exterieur(r) ? ` · ${lieu(r)}` : ''}</span>
+                            </span>
+                            {j != null && <span className="text-xs font-semibold text-red-600 flex-shrink-0">{j === 0 ? "Aujourd'hui" : j === 1 ? 'Hier' : jm(c!)}</span>}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Section>
+
                 {/* Tournée du jour (le module « Ma tournée » avec carte est dans l'appli) */}
                 <Section titre="Ma tournée" icone={<Icone nom="pin" taille={18} />}>
                   {ext.length === 0 ? (

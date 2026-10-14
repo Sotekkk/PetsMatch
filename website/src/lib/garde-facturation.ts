@@ -14,6 +14,14 @@ export function gardePrestationKey(motif?: string | null): string {
   return 'autre';
 }
 
+/** Durée imposée par le nom de la prestation (« Promenade 30 min » = 30) —
+ *  null quand le nom n'en fixe pas (visite, autre…). Miroir appli
+ *  dureeImposeeGarde (garde_facture_helper.dart). */
+export function dureeImposeeGarde(motif?: string | null): number | null {
+  const k = gardePrestationKey(motif);
+  return k === 'promenade_30min' ? 30 : k === 'promenade_1h' ? 60 : k === 'promenade_2h' ? 120 : null;
+}
+
 export interface GardeRdvFacture {
   id: string;
   animal_id: string | null;

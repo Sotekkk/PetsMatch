@@ -42,6 +42,8 @@ class _GardeDashboardState extends State<GardeDashboard> {
   final _supa = Supabase.instance.client;
   bool _loading = true;
   List<Map<String, dynamic>> _rdvs = [];
+  /// Demandes de réservation à traiter (statut demande / contre-proposition).
+  List<Map<String, dynamic>> _demandes = [];
   List<Map<String, dynamic>> _cles = [];
   final Map<String, String> _clients = {};
   final Map<String, Map<String, dynamic>> _animaux = {};
@@ -97,6 +99,12 @@ class _GardeDashboardState extends State<GardeDashboard> {
       _rdvs = List<Map<String, dynamic>>.from((rows as List).map((e) => Map<String, dynamic>.from(e as Map)));
     } catch (_) {}
     try {
+      final rows = await _supa.from('rdv').select()
+          .eq('pro_profile_id', pid).inFilter('statut', ['demande', 'contre_proposition'])
+          .order('created_at', ascending: false);
+      _demandes = List<Map<String, dynamic>>.from((rows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+    } catch (_) { _demandes = []; }
+    try {
       final rows = await _supa.from('cles_clients').select()
           .eq('pro_profile_id', pid).eq('statut', 'en_possession');
       _cles = List<Map<String, dynamic>>.from(rows as List);
@@ -114,9 +122,9 @@ class _GardeDashboardState extends State<GardeDashboard> {
   }
 
   Future<void> _chargerNoms() async {
-    final profils = {for (final r in _rdvs) if (r['client_profile_id'] != null) r['client_profile_id'].toString()};
+    final profils = {for (final r in [..._rdvs, ..._demandes]) if (r['client_profile_id'] != null) r['client_profile_id'].toString()};
     final animaux = {
-      for (final r in _rdvs) if (r['animal_id'] != null) r['animal_id'].toString(),
+      for (final r in [..._rdvs, ..._demandes]) if (r['animal_id'] != null) r['animal_id'].toString(),
       for (final c in _cles) if (c['animal_id'] != null) c['animal_id'].toString(),
     };
     final intervenants = {for (final r in _rdvs) if (r['instructeur_profile_id'] != null) r['instructeur_profile_id'].toString()};
@@ -393,6 +401,8 @@ class _GardeDashboardState extends State<GardeDashboard> {
       final large = c.maxWidth >= 860;
       final planning = DashCarte(key: _planningKey, child: _planningSection(duJour, now));
       final colonne = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _demandesSection(),
+        const SizedBox(height: 16),
         _tourneeSection(duJour, now),
         const SizedBox(height: 16),
         _quotidienSection(enGarde, entrees, sorties, cles, aCloturer),
@@ -533,6 +543,50 @@ class _GardeDashboardState extends State<GardeDashboard> {
         ]),
       ),
     );
+  }
+
+  // Demandes en attente (comme les tableaux véto / ostéo) -----------------
+
+  Widget _demandesSection() {
+    final d = _demandes;
+    String quand(Map<String, dynamic> r) {
+      final c = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
+      if (c == null) return '';
+      final now = DateTime.now();
+      final j = DateTime(now.year, now.month, now.day).difference(DateTime(c.year, c.month, c.day)).inDays;
+      return j == 0 ? "Aujourd'hui" : j == 1 ? 'Hier' : _jm(c);
+    }
+    return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DashTitre('Demandes en attente', icone: Icons.notifications_none, compteur: d.length,
+          trailing: d.isEmpty ? null : DashLien('Voir toutes', onTap: () => _go(const ProAgendaPage(initialTabIndex: 0)))),
+      const SizedBox(height: 6),
+      if (d.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Aucune demande à traiter.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)))
+      else
+        for (final r in d.take(3))
+          InkWell(
+            onTap: () => _go(ProAgendaPage(initialTabIndex: 0, focusRdvId: r['id']?.toString())),
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(children: [
+                DashPhotoAnimal(url: _animaux[r['animal_id']?.toString()]?['photo_url']?.toString(), taille: 32),
+                const SizedBox(width: 9),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${_nomAnimal(r)} · ${_nomClient(r)}', maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _ink)),
+                  Text('${_prestation(r)} · pour le ${_jm(_debut(r))} ${_hm(_debut(r))}${_exterieur(r) ? ' · ${_lieu(r)}' : ''}',
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
+                ])),
+                const SizedBox(width: 6),
+                Text(quand(r), style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFFDC2626), fontWeight: FontWeight.w600)),
+                const Icon(Icons.chevron_right, size: 18, color: _muted),
+              ]),
+            ),
+          ),
+    ]));
   }
 
   // Ma tournée ------------------------------------------------------------

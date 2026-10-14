@@ -1064,7 +1064,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final motifLabel = rdv['motif']?.toString() ?? '';
     final motifKey = _motifToDuree[motifLabel];
     final rdvDuree = (rdv['duree_minutes'] as num?)?.toInt();
-    int duree = rdvDuree ??
+    // « Promenade 30 min » : la durée suit la prestation (une demande faite
+    // depuis le site portait la longueur du créneau, ex. 15 min).
+    int duree = dureeImposeeGarde(motifLabel) ?? rdvDuree ??
         (motifKey != null ? (_dureesMotifs[motifKey] ?? 30) : 30);
 
     // Garde à domicile pour la journée : pas d'heure/durée précise à saisir —
