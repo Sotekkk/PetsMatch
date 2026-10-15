@@ -10327,6 +10327,28 @@ class _AlimentationTabState extends State<_AlimentationTab> {
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
+  /// Ration effective enregistrée avec le plan (lue par la pension / le
+  /// pet-sitter) — migration_alimentation_ration_stockee.sql.
+  Map<String, dynamic> get _rationStockee {
+    double? principal, second;
+    if (_isDogOrCat) {
+      switch (_typeValide) {
+        case 'croquettes': principal = _doseEffCroq; break;
+        case 'barf': principal = _doseEffBarf; break;
+        case 'menagere': principal = _doseEffMenagere; break;
+        case 'mixte': principal = _doseEffMixteCroq; second = _doseEffMixteSecond; break;
+      }
+    } else if (_rationTotaleKg > 0) {
+      principal = _rationTotaleKg * 1000;
+    }
+    return {
+      'nb_repas': _nbRepas,
+      'ration_grammes': principal?.round(),
+      'ration2_grammes': second?.round(),
+      'ration_kcal': _kcalApportes?.round(),
+    };
+  }
+
   Future<void> _save({bool silent = false}) async {
     if (widget.s.widget.animalId == null) return;
     setState(() => _saving = true);
@@ -10359,6 +10381,13 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         final r = await _supa.from('alimentations').insert(payload).select().single();
         if (mounted) setState(() => _existing = r);
       }
+      // Ration calculée (repas, quantité, kcal) — écrite à part : colonnes de
+      // migration_alimentation_ration_stockee.sql (n'empêche pas l'enregistrement).
+      try {
+        if (_existing?['id'] != null) {
+          await _supa.from('alimentations').update(_rationStockee).eq('id', _existing!['id']);
+        }
+      } catch (_) {}
       if (mounted && !silent) ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Alimentation enregistrée'), behavior: SnackBarBehavior.floating));
       if (mounted && !silent) setState(() => _modeCalculateur = false);

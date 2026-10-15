@@ -6,6 +6,8 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
+import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
+import { PensionJournal } from '@/components/PensionJournal';
 import { alimSejourFournisParLabel, type AlimentationSejour } from '@/lib/pension-especes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,6 +49,8 @@ interface Alimentation {
   nb_repas?: number;
   complements?: string;
   notes?: string;
+  gamme?: string;
+  ration2_grammes?: number;
 }
 
 interface PensionEntry {
@@ -57,7 +61,16 @@ interface PensionEntry {
   statut?: string;
   logement_id?: string | null;
   alimentation_sejour?: AlimentationSejour | null;
+  // migration_pension_fiche.sql
+  date_sortie_effective?: string | null; arrivee_reelle_le?: string | null; depart_reel_le?: string | null;
+  depose_par?: string | null; recupere_par?: string | null; effets_personnels?: string | null;
+  consignes_sejour?: string | null; observations_depart?: string | null;
+  animal_id?: string | null; animal_nom?: string | null; proprietaire_nom?: string | null; pro_profile_id?: string | null;
 }
+interface TachePension { id: string; titre: string | null; date: string; statut: string | null }
+interface ObservationPension { id: string; note: string | null; photo_url: string | null; created_at: string; incident?: boolean | null }
+const fmtFr = (s?: string | null) => s ? new Date(s).toLocaleDateString('fr-FR') : '';
+const hmFr = (s?: string | null) => s ? new Date(s).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -108,7 +121,15 @@ export default function AnimalFichePensionWebPage() {
   const animalId = params?.animalId as string;
   const activeProfileId = useActiveProfile();
 
-  const [tab, setTab] = useState<'identite' | 'sante' | 'alimentation' | 'journal'>('identite');
+  const [tab, setTab] = useState<'synthese' | 'sejours' | 'consignes' | 'suivi' | 'identite'>('synthese');
+  const [consignesVue, setConsignesVue] = useState<'alimentation' | 'sante'>('alimentation');
+  const [sejours, setSejours] = useState<PensionEntry[]>([]);
+  const [logementsNoms, setLogementsNoms] = useState<Record<string, string>>({});
+  const [taches, setTaches] = useState<TachePension[]>([]);
+  const [observations, setObservations] = useState<ObservationPension[]>([]);
+  const [action, setAction] = useState<'arrivee' | 'depart' | null>(null);
+  const [journalOuvert, setJournalOuvert] = useState(false);
+  const [pensionUid, setPensionUid] = useState<string | null>(null);
   const [animal, setAnimal]               = useState<Animal | null>(null);
   const [vaccinations, setVaccinations]   = useState<MedRecord[]>([]);
   const [vermifuges, setVermifuges]       = useState<MedRecord[]>([]);
@@ -181,17 +202,27 @@ export default function AnimalFichePensionWebPage() {
     ]);
 
     // Entrée pension active pour ce pro (proProfileId peut être celui de l'employeur si vue employé)
-    const entQuery = proProfileId
-      ? supabase.from('pension_entrees')
-          .select('id, notes, date_entree, date_sortie_prevue, statut, logement_id, alimentation_sejour')
-          .eq('statut', 'en_pension').eq('pro_profile_id', proProfileId)
-          .order('date_entree', { ascending: false }).limit(1)
-      : supabase.from('pension_entrees')
-          .select('id, notes, date_entree, date_sortie_prevue, statut, logement_id, alimentation_sejour')
-          .eq('statut', 'en_pension').eq('pro_uid', user.uid)
-          .order('date_entree', { ascending: false }).limit(1);
-    const { data: entList } = await entQuery;
-    const entry = (entList ?? []).find((e: PensionEntry) => true) ?? null;
+    // Séjours de l'animal dans CETTE pension (profil actif, ou celui de l'employeur).
+    const sejQuery = proProfileId
+      ? supabase.from('pension_entrees').select('*').eq('animal_id', animalId).eq('pro_profile_id', proProfileId)
+      : supabase.from('pension_entrees').select('*').eq('animal_id', animalId).eq('pro_uid', user.uid);
+    const { data: sejList } = await sejQuery.order('date_entree', { ascending: false });
+    const tous = (sejList ?? []) as (PensionEntry & { pro_uid?: string })[];
+    const auj = new Date().toISOString().slice(0, 10);
+    const enPension = tous.filter(e => e.statut === 'en_pension');
+    const entry = enPension.find(e => (e.date_entree ?? '') <= auj) ?? enPension[enPension.length - 1] ?? null;
+    const proUidPension = tous[0]?.pro_uid ?? user.uid;
+    const [{ data: logs }, { data: tch }, obsRes] = await Promise.all([
+      supabase.from('enclos_chenil').select('id, nom').eq('uid_eleveur', proUidPension),
+      supabase.from('taches_elevage').select('id, titre, date, statut').eq('animal_id', animalId).eq('profil_source', 'pension')
+        .gte('date', new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)).order('date', { ascending: false }),
+      supabase.from('pension_updates').select('*').eq('animal_id', animalId).eq('pro_uid', proUidPension)
+        .order('created_at', { ascending: false }).limit(30),
+    ]);
+    const ln: Record<string, string> = {};
+    for (const l of (logs ?? []) as { id: string; nom: string }[]) ln[l.id] = l.nom;
+    setSejours(tous); setLogementsNoms(ln); setTaches((tch ?? []) as TachePension[]);
+    setObservations(obsRes.error ? [] : (obsRes.data ?? []) as ObservationPension[]); setPensionUid(proUidPension);
 
     setAnimal(a as Animal);
     setVaccinations((vac ?? []) as MedRecord[]);
@@ -265,10 +296,10 @@ export default function AnimalFichePensionWebPage() {
           {/* Onglets */}
           <div style={{ display: 'flex', gap: 0 }}>
             {([
-              ['identite', 'Identité'],
-              ['sante', 'Santé'],
-              ['alimentation', 'Alimentation'],
-              ['journal', 'Journal'],
+              ['synthese', 'Synthèse'],
+              ['sejours', 'Séjours'],
+              ['consignes', 'Consignes & soins'],
+              ['suivi', 'Suivi quotidien'],
             ] as const).map(([val, label]) => (
               <button key={val} onClick={() => setTab(val)} style={{
                 flex: 1, padding: '10px 0', background: 'none', border: 'none',
@@ -289,8 +320,99 @@ export default function AnimalFichePensionWebPage() {
             <ProAnimalEntete animalId={animalId} catPro="pension" myUid={user.uid} myProfileId={activeProfileId || null} />
           </div>
         )}
+        {tab === 'synthese' && (() => {
+          const auj = new Date().toISOString().slice(0, 10);
+          const present = !!pensionEntry && (pensionEntry.date_entree ?? '') <= auj;
+          const tachesJour = taches.filter(t => t.date === auj);
+          const traitsEnCours = traitements.filter(t => !t.date_fin || new Date(String(t.date_fin)) >= new Date());
+          const carte: React.CSSProperties = { background: 'white', borderRadius: 14, border: '1px solid #E6E8E6', padding: 16, marginBottom: 12, fontFamily: 'Galey, sans-serif' };
+          const titre: React.CSSProperties = { fontWeight: 700, fontSize: 14, color: '#1F2A2E', margin: '0 0 8px' };
+          const ligne: React.CSSProperties = { fontSize: 13.5, color: '#1F2A2E', margin: '0 0 4px' };
+          const discret: React.CSSProperties = { fontSize: 13, color: '#6B7280', margin: 0 };
+          return (
+            <>
+              <div style={carte}>
+                <p style={titre}>Présence</p>
+                {!pensionEntry ? <p style={discret}>Aucun séjour en cours ni à venir dans votre pension.</p> : (
+                  <>
+                    <p style={{ ...ligne, fontWeight: 700, color: present ? '#2E7D5E' : PURPLE }}>{present ? 'En pension' : `Arrivée prévue le ${fmtFr(pensionEntry.date_entree)}`}</p>
+                    <p style={ligne}>Arrivée : {fmtFr(pensionEntry.date_entree)}{pensionEntry.arrivee_reelle_le ? ` à ${hmFr(pensionEntry.arrivee_reelle_le)}` : ''}{pensionEntry.depose_par ? ` · déposé par ${pensionEntry.depose_par}` : ''}</p>
+                    <p style={ligne}>Départ prévu : {pensionEntry.date_sortie_prevue ? fmtFr(pensionEntry.date_sortie_prevue) : 'non renseigné'}</p>
+                    <p style={ligne}>Hébergement : {(pensionEntry.logement_id && logementsNoms[pensionEntry.logement_id]) || 'non attribué'}</p>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                      {!pensionEntry.arrivee_reelle_le && (
+                        <button onClick={() => setAction('arrivee')} style={{ padding: '8px 14px', borderRadius: 10, border: 'none', background: '#E6F2F3', color: TEAL, fontWeight: 700, cursor: 'pointer' }}>Enregistrer l&apos;arrivée</button>
+                      )}
+                      {present && (
+                        <button onClick={() => setAction('depart')} style={{ padding: '8px 14px', borderRadius: 10, border: 'none', background: '#EFE9F7', color: PURPLE, fontWeight: 700, cursor: 'pointer' }}>Enregistrer le départ</button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div style={carte}>
+                <p style={titre}>Consignes prioritaires</p>
+                {pensionEntry?.consignes_sejour && <p style={{ ...ligne, whiteSpace: 'pre-line' }}>{pensionEntry.consignes_sejour}</p>}
+                {allergies.map(a => <p key={a.id} style={{ ...ligne, color: '#B3261E' }}>Allergie : {String(a.nom ?? a.allergene ?? a.description ?? '')}</p>)}
+                {traitsEnCours.map(t => <p key={t.id} style={ligne}>Traitement : {String(t.nom ?? '')}{t.posologie ? ` — ${String(t.posologie)}` : ''}</p>)}
+                {!pensionEntry?.consignes_sejour && allergies.length === 0 && traitsEnCours.length === 0 && <p style={discret}>Aucune consigne particulière renseignée.</p>}
+              </div>
+              <div style={carte}>
+                <p style={titre}>Tâches du jour</p>
+                {tachesJour.length === 0 ? <p style={discret}>Aucune tâche prévue aujourd&apos;hui.</p>
+                  : tachesJour.map(t => <p key={t.id} style={{ ...ligne, textDecoration: t.statut === 'fait' ? 'line-through' : 'none', color: t.statut === 'fait' ? '#9CA3AF' : '#1F2A2E' }}>{t.titre ?? 'Tâche'}</p>)}
+              </div>
+              <div style={carte}>
+                <p style={titre}>Dernières observations</p>
+                {observations.length === 0 ? <p style={discret}>Aucune observation partagée.</p>
+                  : observations.slice(0, 3).map(o => <p key={o.id} style={ligne}>{fmtFr(o.created_at)} {hmFr(o.created_at)} — {o.note?.trim() || 'Photo / vidéo'}</p>)}
+              </div>
+              <button onClick={() => setTab('identite')} style={{ padding: '10px 16px', borderRadius: 12, border: `1px solid ${TEAL}`, background: 'white', color: TEAL, fontWeight: 600, cursor: 'pointer', fontFamily: 'Galey, sans-serif' }}>Identité complète</button>
+            </>
+          );
+        })()}
+        {tab === 'sejours' && (() => {
+          const auj = new Date().toISOString().slice(0, 10);
+          const groupes: [string, PensionEntry[]][] = [
+            ['En cours', sejours.filter(e => e.statut === 'en_pension' && (e.date_entree ?? '') <= auj)],
+            ['À venir', sejours.filter(e => e.statut === 'en_pension' && (e.date_entree ?? '') > auj)],
+            ['Terminés', sejours.filter(e => e.statut !== 'en_pension')],
+          ];
+          return groupes.map(([titre, l]) => (
+            <div key={titre} style={{ background: 'white', borderRadius: 14, border: '1px solid #E6E8E6', padding: 16, marginBottom: 12, fontFamily: 'Galey, sans-serif' }}>
+              <p style={{ fontWeight: 700, fontSize: 14, margin: '0 0 8px' }}>{titre}</p>
+              {l.length === 0 ? <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>Aucun.</p> : l.map(e => (
+                <div key={e.id} style={{ padding: '6px 0', borderTop: '1px solid #F3F4F6' }}>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, margin: 0 }}>Du {fmtFr(e.date_entree)} au {fmtFr(e.date_sortie_effective ?? e.date_sortie_prevue)}</p>
+                  <p style={{ fontSize: 12, color: '#4B5563', margin: '2px 0 0' }}>
+                    {[(e.logement_id && logementsNoms[e.logement_id]) || 'Sans hébergement attribué', e.arrivee_reelle_le ? `arrivé à ${hmFr(e.arrivee_reelle_le)}` : '',
+                      e.depart_reel_le ? `parti à ${hmFr(e.depart_reel_le)}` : '', e.recupere_par ? `récupéré par ${e.recupere_par}` : ''].filter(Boolean).join(' · ')}
+                  </p>
+                  {e.observations_depart && <p style={{ fontSize: 12, color: '#6B7280', margin: '2px 0 0', whiteSpace: 'pre-line' }}>{e.observations_depart}</p>}
+                </div>
+              ))}
+            </div>
+          ));
+        })()}
         {tab === 'identite' && <IdentiteTab animal={animal} />}
-        {tab === 'sante' && (
+        {tab === 'consignes' && (pensionEntry?.consignes_sejour || pensionEntry?.effets_personnels) && (
+          <div style={{ background: '#FFF8E8', borderRadius: 12, padding: 12, marginBottom: 12, fontFamily: 'Galey, sans-serif' }}>
+            <p style={{ fontWeight: 700, fontSize: 13, margin: '0 0 4px' }}>Consignes de ce séjour</p>
+            {pensionEntry?.consignes_sejour && <p style={{ fontSize: 13, margin: 0, whiteSpace: 'pre-line' }}>{pensionEntry.consignes_sejour}</p>}
+            {pensionEntry?.effets_personnels && <p style={{ fontSize: 12.5, margin: '4px 0 0' }}>Effets personnels : {pensionEntry.effets_personnels}</p>}
+          </div>
+        )}
+        {tab === 'consignes' && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            {([['alimentation', 'Alimentation (permanente)'], ['sante', 'Santé & soins']] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setConsignesVue(v)} style={{
+                padding: '6px 12px', borderRadius: 999, border: 'none', cursor: 'pointer', fontFamily: 'Galey, sans-serif', fontWeight: 600, fontSize: 12.5,
+                background: consignesVue === v ? TEAL : '#F1F4F3', color: consignesVue === v ? 'white' : '#1F2A2E',
+              }}>{l}</button>
+            ))}
+          </div>
+        )}
+        {tab === 'consignes' && consignesVue === 'sante' && (
           <SanteTab
             animalId={animalId}
             allergies={allergies}
@@ -302,13 +424,54 @@ export default function AnimalFichePensionWebPage() {
             onPoidsAdded={() => load()}
           />
         )}
-        {tab === 'alimentation' && <AlimentationTab alimentation={alimentation} pensionEntry={pensionEntry} />}
-        {tab === 'journal' && (
-          <JournalTab
-            animalId={animalId}
-            pensionEntry={pensionEntry}
-            onSaved={() => load()}
-          />
+        {tab === 'consignes' && consignesVue === 'alimentation' && <AlimentationTab alimentation={alimentation} pensionEntry={pensionEntry} />}
+        {tab === 'suivi' && (
+          <>
+            <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E6E8E6', padding: 16, marginBottom: 12, fontFamily: 'Galey, sans-serif' }}>
+              <p style={{ fontWeight: 700, fontSize: 14, margin: '0 0 8px' }}>Tâches et soins (7 derniers jours)</p>
+              {taches.length === 0 ? <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>Aucune tâche pour cet animal.</p> : taches.map(t => (
+                <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13.5 }}>
+                  <input type="checkbox" checked={t.statut === 'fait'} onChange={async e => {
+                    const statut = e.target.checked ? 'fait' : 'a_faire';
+                    setTaches(prev => prev.map(x => x.id === t.id ? { ...x, statut } : x));
+                    await supabase.from('taches_elevage').update({ statut, ...(statut === 'fait' && activeProfileId ? { fait_par_profile_id: activeProfileId } : {}) }).eq('id', t.id);
+                  }} />
+                  <span style={{ flex: 1, textDecoration: t.statut === 'fait' ? 'line-through' : 'none', color: t.statut === 'fait' ? '#9CA3AF' : '#1F2A2E' }}>{t.titre ?? 'Tâche'}</span>
+                  <span style={{ fontSize: 11.5, color: '#6B7280' }}>{fmtFr(t.date)}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E6E8E6', padding: 16, marginBottom: 12, fontFamily: 'Galey, sans-serif' }}>
+              <p style={{ fontWeight: 700, fontSize: 14, margin: '0 0 8px' }}>Observations et photos</p>
+              {observations.length === 0 && <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>Aucune observation pour le moment.</p>}
+              {observations.slice(0, 10).map(o => (
+                <div key={o.id} style={{ display: 'flex', gap: 10, padding: '6px 0' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {o.photo_url && <img src={o.photo_url} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover' }} />}
+                  <div>
+                    <p style={{ fontSize: 11.5, margin: 0, color: o.incident ? '#B3261E' : '#6B7280' }}>{fmtFr(o.created_at)} à {hmFr(o.created_at)}{o.incident ? ' · incident' : ''}</p>
+                    {o.note && <p style={{ fontSize: 13, margin: 0 }}>{o.note}</p>}
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => setJournalOuvert(true)} style={{ marginTop: 8, width: '100%', padding: '10px 0', borderRadius: 12, border: `1px solid ${TEAL}`, background: 'white', color: TEAL, fontWeight: 600, cursor: 'pointer' }}>
+                Ajouter une observation ou une photo
+              </button>
+            </div>
+            <JournalTab
+              animalId={animalId}
+              pensionEntry={pensionEntry}
+              onSaved={() => load()}
+            />
+          </>
+        )}
+        {action && pensionEntry && pensionUid && (
+          <ArriveeDepartModal sejour={{ ...pensionEntry, animal_id: animalId, animal_nom: animal?.nom ?? pensionEntry.animal_nom }} mode={action} uid={pensionUid}
+            onClose={() => setAction(null)} onDone={() => { setAction(null); load(); }} />
+        )}
+        {journalOuvert && (
+          <PensionJournal animalId={animalId} pensionEntreeId={pensionEntry?.id} animalNom={animal?.nom ?? 'Animal'}
+            proUid={pensionUid ?? user.uid} onClose={() => { setJournalOuvert(false); load(); }} />
         )}
       </div>
     </div>
@@ -567,6 +730,14 @@ function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Aliment
     </div>
   );
   const a = alimentation;
+  // « notes » encode l'état du calculateur du propriétaire (« 50|30|…|nb_repas|… ») :
+  // jamais affiché tel quel ; nb de repas / dose manuelle en repli des colonnes dédiées.
+  const parts = a.notes?.includes('|') ? a.notes.split('|') : [];
+  const nbRepas = a.nb_repas || Number(parts[3]) || 0;
+  const ration = a.ration_grammes || Number((parts[5] ?? '').replace(',', '.')) || 0;
+  const ration2 = a.ration2_grammes || Number((parts[6] ?? '').replace(',', '.')) || 0;
+  const instructions = a.notes && !a.notes.includes('|') ? a.notes : '';
+  const parRepas = (g: number) => nbRepas > 1 ? ` (${Math.round(g / nbRepas)} g par repas)` : '';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {hasSejour && <AlimSejourCard s={sejour!} />}
@@ -579,10 +750,12 @@ function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Aliment
         <Row label="Type de ration" value={RATION_LABEL[a.type_ration ?? ''] ?? a.type_ration} />
         <Row label="Niveau d'activité" value={ACTIVITE_LABEL[a.niveau_activite ?? ''] ?? a.niveau_activite} />
         <Row label="Marque / produit" value={a.marque} />
+        <Row label="Gamme" value={a.gamme} />
         <Row label="Référence" value={a.reference_produit} />
-        <Row label="Ration quotidienne" value={a.ration_grammes ? `${a.ration_grammes} g/jour` : undefined} />
-        <Row label="Apport énergétique" value={a.ration_kcal ? `${a.ration_kcal} kcal/jour` : undefined} />
-        <Row label="Nombre de repas" value={a.nb_repas ? `${a.nb_repas} repas/jour` : undefined} last />
+        <Row label="Nombre de repas" value={nbRepas ? `${nbRepas} repas/jour` : undefined} />
+        <Row label="Quantité par jour" value={ration ? `${Math.round(ration)} g/jour${parRepas(ration)}` : 'Non calculée par le propriétaire'} />
+        {ration2 > 0 && <Row label="2e composant (mixte)" value={`${Math.round(ration2)} g/jour${parRepas(ration2)}`} />}
+        <Row label="Apport énergétique" value={a.ration_kcal ? `${a.ration_kcal} kcal/jour` : undefined} last />
       </Section>
       {a.complements && (
         <Section title="Compléments alimentaires">
@@ -591,13 +764,13 @@ function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Aliment
           </div>
         </Section>
       )}
-      {a.notes && (
+      {instructions && (
         <Section title="Instructions spéciales">
           <div style={{ margin: 16, padding: 14, background: '#fff7ed', borderRadius: 10,
             border: '1px solid #fed7aa', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <span style={{ fontSize: 18 }}>⚠️</span>
             <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 14,
-              color: '#92400e', lineHeight: 1.5 }}>{a.notes}</p>
+              color: '#92400e', lineHeight: 1.5 }}>{instructions}</p>
           </div>
         </Section>
       )}

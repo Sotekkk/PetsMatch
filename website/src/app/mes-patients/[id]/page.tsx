@@ -2088,7 +2088,11 @@ function PatientDetailPageInner() {
                   ['Marque', [alimentation.marque, alimentation.gamme].filter(Boolean).join(' — ') || null],
                   ['Niveau d\'activité', alimentation.niveau_activite],
                   ['Densité calorique', alimentation.densite_calorique ? `${alimentation.densite_calorique} kcal/100g` : null],
-                  ['Repas par jour', alimentation.notes?.split('|')?.[3] || null],
+                  ['Repas par jour', (alimentation as { nb_repas?: number | null }).nb_repas?.toString() || alimentation.notes?.split('|')?.[3] || null],
+                  // Ration enregistrée par le propriétaire (migration_alimentation_ration_stockee.sql).
+                  ['Quantité par jour', (alimentation as { ration_grammes?: number | null }).ration_grammes ? `${(alimentation as { ration_grammes?: number | null }).ration_grammes} g/jour` : null],
+                  ['2e composant (mixte)', (alimentation as { ration2_grammes?: number | null }).ration2_grammes ? `${(alimentation as { ration2_grammes?: number | null }).ration2_grammes} g/jour` : null],
+                  ['Apport énergétique', (alimentation as { ration_kcal?: number | null }).ration_kcal ? `${(alimentation as { ration_kcal?: number | null }).ration_kcal} kcal/jour` : null],
                 ].filter(([, v]) => v).map(([label, v]) => (
                   <div key={label} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0">
                     <span className="text-xs text-gray-500 font-medium">{label}</span>

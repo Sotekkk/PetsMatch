@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/pension_dashboard.dart';
 import 'package:PetsMatch/pages/pro/education_dashboard.dart';
 import 'package:PetsMatch/pages/pro/garde_dashboard.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -31,7 +32,6 @@ import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
-import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
@@ -78,8 +78,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   /// Change à chaque « tirer pour rafraîchir » → recharge le tableau de bord véto.
   int _refreshTick = 0;
   int _pensionnairesCount = 0;
-  int _logementsDispo = 0;
-  int _logementsTotal = 0;
   List<Map<String, dynamic>> _mesAlertes = [];
   bool _loading = true;
   List<Map<String, dynamic>> _recentAnnonces = [];
@@ -299,28 +297,12 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             .gte('date_heure', todayStart)
             .lte('date_heure', todayEnd)
             .inFilter('statut', activeStatuts));
-        final logements = await supa.from('enclos_chenil').select('id, capacite').eq('uid_eleveur', uid);
         // Séjours réellement en cours aujourd'hui : statut actif + déjà arrivé (date_entree <= aujourd'hui)
         final entreesActives = await supa.from('pension_entrees').select('id, logement_id, date_entree')
             .eq('pro_uid', uid).eq('statut', 'en_pension').lte('date_entree', todayStr);
-        final occupePerLogement = <String, int>{};
-        for (final e in (entreesActives as List)) {
-          final lid = e['logement_id'] as String?;
-          if (lid != null) occupePerLogement[lid] = (occupePerLogement[lid] ?? 0) + 1;
-        }
-        var dispo = 0;
-        var total = 0;
-        for (final l in (logements as List)) {
-          final capacite = (l['capacite'] as int?) ?? 1;
-          final occupe = occupePerLogement[l['id']] ?? 0;
-          total += capacite;
-          dispo += (capacite - occupe).clamp(0, capacite);
-        }
         if (mounted) setState(() {
           _pensionnairesCount = entreesActives.length;
           _rdvTodayCount      = (rdvToday as List).length;
-          _logementsDispo     = dispo;
-          _logementsTotal     = total;
         });
       } else {
         final rdvToday = await pf(supa.from('rdv').select('id')
@@ -372,6 +354,9 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         // Éducateur / comportementaliste : tableau de bord dédié.
                         else if (User_Info.catPro == 'education')
                           EducationDashboard(key: ValueKey(_refreshTick))
+                        // Pension : poste de pilotage du jour.
+                        else if (User_Info.catPro == 'pension')
+                          PensionDashboard(key: ValueKey(_refreshTick))
                         else
                           _buildStatsRow(),
                         if (User_Info.catPro == 'photographe') ...[
@@ -385,10 +370,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         if (User_Info.catPro == 'marechal_ferrant') ...[
                           const SizedBox(height: 12),
                           _buildMarechalShortcuts(context),
-                        ],
-                        if (User_Info.catPro == 'pension' && _logementsTotal > 0) ...[
-                          const SizedBox(height: 12),
-                          _buildDisponibiliteBanner(context),
                         ],
                         if ((User_Info.isPro || User_Info.isElevage) && !User_Info.isValidate) ...[
                           const SizedBox(height: 16),
@@ -486,46 +467,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     }
   }
 
-  Widget _buildDisponibiliteBanner(BuildContext context) {
-    final occupe = _logementsTotal - _logementsDispo;
-    final tauxOccupation = _logementsTotal == 0 ? 0.0 : occupe / _logementsTotal;
-    final color = _logementsDispo == 0 ? Colors.orange : _green;
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionPlanningPage())),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: kDashBorder),
-          boxShadow: kDashOmbre,
-        ),
-        child: Row(children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: Icon(Icons.home_work_outlined, color: color, size: 21),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('$_logementsDispo / $_logementsTotal places disponibles',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: tauxOccupation, backgroundColor: Colors.grey.shade100, color: color, minHeight: 5,
-                ),
-              ),
-            ]),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.chevron_right, color: Colors.grey),
-        ]),
-      ),
-    );
-  }
 
   Widget _buildStatsRow() {
     if (!User_Info.isPro) {

@@ -9,6 +9,8 @@ import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionLogeme
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show alimSejourFromRaw, alimSejourFournisParLabel;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/sante_couleurs.dart';
+import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 
 class AnimalFichePensionPage extends StatefulWidget {
   final String animalId;
@@ -57,11 +59,18 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   Map<String, dynamic>? _proprietaire;
   Map<String, dynamic>? _sejourActuel;
   Map<String, dynamic>? _sejourLogement; // enclos_chenil {nom, type} du séjour
+  /// Tous les séjours de l'animal dans CETTE pension (à venir, en cours, terminés).
+  List<Map<String, dynamic>> _sejours = [];
+  final Map<String, String> _logementsNoms = {};
+  /// Tâches (protocoles) et observations du suivi quotidien.
+  List<Map<String, dynamic>> _taches = [];
+  List<Map<String, dynamic>> _observations = [];
+  String _consignesVue = 'alimentation';
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _load();
   }
 
@@ -159,9 +168,30 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         }
       }
 
-      final sejour = await _supa.from('pension_entrees').select()
-          .eq('animal_id', widget.animalId).eq('statut', 'en_pension')
-          .order('date_entree', ascending: false).limit(1).maybeSingle();
+      // Séjours de CETTE pension uniquement (pro_uid + profil actif).
+      final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final tous = List<Map<String, dynamic>>.from((await _supa.from('pension_entrees').select()
+          .eq('animal_id', widget.animalId).eq('pro_uid', myUid)
+          .order('date_entree', ascending: false)) as List).where(sejourDuProfil).toList();
+      final enPension = tous.where((e) => e['statut'] == 'en_pension').toList();
+      final jourStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final sejour = enPension.where((e) => (e['date_entree']?.toString() ?? '').compareTo(jourStr) <= 0).firstOrNull
+          ?? (enPension.isEmpty ? null : enPension.last);
+      try {
+        final logs = await _supa.from('enclos_chenil').select('id, nom').eq('uid_eleveur', myUid);
+        for (final l in logs as List) { _logementsNoms[l['id'].toString()] = l['nom']?.toString() ?? ''; }
+      } catch (_) {}
+      try {
+        _taches = List<Map<String, dynamic>>.from(await _supa.from('taches_elevage').select()
+            .eq('animal_id', widget.animalId).eq('profil_source', 'pension')
+            .gte('date', DateFormat('yyyy-MM-dd').format(DateTime.now().subtract(const Duration(days: 7))))
+            .order('date', ascending: false));
+      } catch (_) { _taches = []; }
+      try {
+        _observations = List<Map<String, dynamic>>.from(await _supa.from('pension_updates').select()
+            .eq('animal_id', widget.animalId).eq('pro_uid', myUid)
+            .order('created_at', ascending: false).limit(30));
+      } catch (_) { _observations = []; }
 
       Map<String, dynamic>? logement;
       final logementId = sejour?['logement_id']?.toString();
@@ -176,6 +206,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         _proprietaire = profil;
         _sejourActuel = sejour;
         _sejourLogement = logement;
+        _sejours = tous;
       });
     } catch (_) {}
   }
@@ -228,23 +259,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
     try { return DateFormat('dd/MM/yyyy').format(DateTime.parse(iso)); } catch (_) { return iso; }
   }
 
-  static int? _ageMonths(String? iso) {
-    if (iso == null) return null;
-    try {
-      final dob = DateTime.parse(iso);
-      final now = DateTime.now();
-      return (now.year - dob.year) * 12 + now.month - dob.month;
-    } catch (_) { return null; }
-  }
 
-  static String _ageStr(String? iso) {
-    final m = _ageMonths(iso);
-    if (m == null) return '';
-    if (m < 12) return '$m mois';
-    final y = m ~/ 12;
-    final rm = m % 12;
-    return rm == 0 ? '$y an${y > 1 ? 's' : ''}' : '$y an${y > 1 ? 's' : ''} $rm mois';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -270,10 +285,13 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(
               fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
-            Tab(text: 'Identité'),
-            Tab(text: 'Santé'),
-            Tab(text: 'Alimentation'),
+            Tab(text: 'Synthèse'),
+            Tab(text: 'Séjours'),
+            Tab(text: 'Consignes & soins'),
+            Tab(text: 'Suivi quotidien'),
           ],
         ),
       ),
@@ -304,8 +322,197 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                       statut: _sejourActuel != null ? 'En pension' : null),
                   Expanded(
                     child: TabBarView(controller: _tabs, children: [
-                      _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel, sejourLogement: _sejourLogement),
-                      _SanteTab(
+                      _syntheseTab(),
+                      _sejoursTab(),
+                      _consignesTab(),
+                      _suiviTab(),
+                    ]),
+                  ),
+                ]),
+    );
+  }
+
+  // ── Synthèse ──────────────────────────────────────────────────────────────
+
+  bool get _present {
+    final s = _sejourActuel;
+    if (s == null || s['statut'] != 'en_pension') return false;
+    final d = DateTime.tryParse(s['date_entree']?.toString() ?? '');
+    return d != null && !d.isAfter(DateTime.now());
+  }
+
+  String _heure(dynamic iso) {
+    final d = DateTime.tryParse(iso?.toString() ?? '')?.toLocal();
+    return d == null ? '' : DateFormat('HH:mm').format(d);
+  }
+
+  Widget _carte(String titre, IconData ic, Widget child, {Widget? action}) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE6E8E6))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(ic, size: 17, color: _teal),
+            const SizedBox(width: 8),
+            Expanded(child: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E)))),
+            if (action != null) action,
+          ]),
+          const SizedBox(height: 8),
+          child,
+        ]),
+      );
+
+  Widget _discret(String t) => Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600));
+  Widget _ligne(String t, {Color? couleur, FontWeight? poids}) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: couleur ?? const Color(0xFF1F2A2E), fontWeight: poids)),
+      );
+
+  Future<void> _arrivee() async {
+    final s = _sejourActuel;
+    if (s != null && await confirmerArriveePension(context, s)) _loadProprietaireEtSejour();
+  }
+
+  Future<void> _depart() async {
+    final s = _sejourActuel;
+    if (s != null && await enregistrerDepartPension(context, s)) _loadProprietaireEtSejour();
+  }
+
+  Widget _syntheseTab() {
+    final s = _sejourActuel;
+    final jour = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final tachesJour = _taches.where((t) => t['date']?.toString() == jour).toList();
+    final traitementsEnCours = _traitements.where((t) {
+      final fin = DateTime.tryParse(t['date_fin']?.toString() ?? '');
+      return fin == null || !fin.isBefore(DateTime.now());
+    }).toList();
+    final consignes = (s?['consignes_sejour']?.toString() ?? '').trim();
+    return RefreshIndicator(
+      onRefresh: () async { await _load(); },
+      color: _teal,
+      child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
+        _carte('Présence', Icons.home_work_outlined, s == null
+            ? _discret('Aucun séjour en cours ni à venir dans votre pension.')
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _ligne(_present ? 'En pension' : 'Arrivée prévue le ${_fmtDate(s['date_entree']?.toString())}',
+                    couleur: _present ? _green : _purple, poids: FontWeight.w700),
+                _ligne('Arrivée : ${_fmtDate(s['date_entree']?.toString())}${s['arrivee_reelle_le'] != null ? ' à ${_heure(s['arrivee_reelle_le'])}' : ''}'
+                    '${(s['depose_par']?.toString() ?? '').isNotEmpty ? ' · déposé par ${s['depose_par']}' : ''}'),
+                _ligne('Départ prévu : ${(s['date_sortie_prevue']?.toString() ?? '').isEmpty ? 'non renseigné' : _fmtDate(s['date_sortie_prevue']?.toString())}'),
+                _ligne('Hébergement : ${_logementsNoms[s['logement_id']?.toString()] ?? 'non attribué'}'),
+                const SizedBox(height: 6),
+                Wrap(spacing: 8, children: [
+                  if (s['arrivee_reelle_le'] == null)
+                    FilledButton.tonal(onPressed: _arrivee, child: const Text("Enregistrer l'arrivée", style: TextStyle(fontFamily: 'Galey'))),
+                  if (_present)
+                    FilledButton.tonal(onPressed: _depart, child: const Text('Enregistrer le départ', style: TextStyle(fontFamily: 'Galey'))),
+                ]),
+              ])),
+        _carte('Consignes prioritaires', Icons.priority_high_rounded, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (consignes.isNotEmpty) _ligne(consignes),
+          for (final a in _allergies) _ligne('Allergie : ${a['nom'] ?? a['allergene'] ?? a['description'] ?? ''}', couleur: const Color(0xFFB3261E)),
+          for (final t in traitementsEnCours) _ligne('Traitement : ${t['nom'] ?? ''}${(t['posologie']?.toString() ?? '').isNotEmpty ? ' — ${t['posologie']}' : ''}'),
+          if (consignes.isEmpty && _allergies.isEmpty && traitementsEnCours.isEmpty)
+            _discret('Aucune consigne particulière renseignée.'),
+        ]), action: TextButton(onPressed: () => _tabs.animateTo(2), child: const Text('Détail', style: TextStyle(fontFamily: 'Galey')))),
+        _carte("Tâches du jour", Icons.checklist_rtl_outlined, tachesJour.isEmpty
+            ? _discret("Aucune tâche prévue aujourd'hui.")
+            : Column(children: [for (final t in tachesJour) _tacheLigne(t)]),
+            action: TextButton(onPressed: () => _tabs.animateTo(3), child: const Text('Suivi', style: TextStyle(fontFamily: 'Galey')))),
+        _carte('Dernières observations', Icons.visibility_outlined, _observations.isEmpty
+            ? _discret('Aucune observation partagée.')
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                for (final o in _observations.take(3))
+                  _ligne('${_fmtDate(o['created_at']?.toString())} ${_heure(o['created_at'])} — ${(o['note']?.toString() ?? '').trim().isEmpty ? 'Photo / vidéo' : o['note']}'),
+              ])),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Identité', style: TextStyle(fontFamily: 'Galey')),
+                backgroundColor: _purple, foregroundColor: Colors.white),
+            body: _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel, sejourLogement: _sejourLogement),
+          ))),
+          icon: const Icon(Icons.badge_outlined, size: 18),
+          label: const Text('Identité complète', style: TextStyle(fontFamily: 'Galey')),
+        ),
+      ]),
+    );
+  }
+
+  // ── Séjours ───────────────────────────────────────────────────────────────
+
+  Widget _sejoursTab() {
+    final jour = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final aVenir = _sejours.where((e) => e['statut'] == 'en_pension' && (e['date_entree']?.toString() ?? '').compareTo(jour) > 0).toList();
+    final enCours = _sejours.where((e) => e['statut'] == 'en_pension' && (e['date_entree']?.toString() ?? '').compareTo(jour) <= 0).toList();
+    final termines = _sejours.where((e) => e['statut'] != 'en_pension').toList();
+    Widget bloc(String titre, List<Map<String, dynamic>> l) => _carte(titre, Icons.event_note_outlined, l.isEmpty
+        ? _discret('Aucun.')
+        : Column(children: [
+            for (final e in l)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Du ${_fmtDate(e['date_entree']?.toString())} au ${_fmtDate((e['date_sortie_effective'] ?? e['date_sortie_prevue'])?.toString())}',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
+                    Text([
+                      _logementsNoms[e['logement_id']?.toString()] ?? 'Sans hébergement attribué',
+                      if (e['arrivee_reelle_le'] != null) 'arrivé à ${_heure(e['arrivee_reelle_le'])}',
+                      if (e['depart_reel_le'] != null) 'parti à ${_heure(e['depart_reel_le'])}',
+                      if ((e['recupere_par']?.toString() ?? '').isNotEmpty) 'récupéré par ${e['recupere_par']}',
+                    ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                    if ((e['observations_depart']?.toString() ?? '').isNotEmpty)
+                      Text(e['observations_depart'].toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                  ])),
+                ]),
+              ),
+          ]));
+    return RefreshIndicator(
+      onRefresh: () async { await _load(); },
+      color: _teal,
+      child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
+        bloc('En cours', enCours),
+        bloc('À venir', aVenir),
+        bloc('Terminés', termines),
+      ]),
+    );
+  }
+
+  // ── Consignes & soins ─────────────────────────────────────────────────────
+
+  Widget _consignesTab() {
+    final consignesSejour = (_sejourActuel?['consignes_sejour']?.toString() ?? '').trim();
+    Widget seg(String v, String label) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                color: _consignesVue == v ? Colors.white : const Color(0xFF1F2A2E))),
+            selected: _consignesVue == v, showCheckmark: false,
+            selectedColor: _teal, backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+            onSelected: (_) => setState(() => _consignesVue = v),
+          ),
+        );
+    return Column(children: [
+      if (consignesSejour.isNotEmpty || (_sejourActuel?['effets_personnels']?.toString() ?? '').isNotEmpty)
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: const Color(0xFFFFF8E8), borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Consignes de ce séjour', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+            if (consignesSejour.isNotEmpty) Text(consignesSejour, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            if ((_sejourActuel?['effets_personnels']?.toString() ?? '').isNotEmpty)
+              Text('Effets personnels : ${_sejourActuel!['effets_personnels']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+          ]),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: Row(children: [seg('alimentation', 'Alimentation (permanente)'), seg('sante', 'Santé & soins')]),
+      ),
+      Expanded(child: _consignesVue == 'sante'
+          ? _SanteTab(
                         vaccinations: _vaccinations,
                         vermifuges: _vermifuges,
                         antiparasitaires: _antiparasitaires,
@@ -317,11 +524,77 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                         fmtDate: _fmtDate,
                         onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
                         onAddAntiparasitaire: ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe),
-                      ),
-                      _AlimentationTab(alimentation: _alimentation, alimentationSejour: _sejourActuel?['alimentation_sejour']),
-                    ]),
-                  ),
-                ]),
+                      )
+          : _AlimentationTab(alimentation: _alimentation, alimentationSejour: _sejourActuel?['alimentation_sejour'])),
+    ]);
+  }
+
+  // ── Suivi quotidien ───────────────────────────────────────────────────────
+
+  Widget _tacheLigne(Map<String, dynamic> t) {
+    final fait = t['statut'] == 'fait';
+    return CheckboxListTile(
+      contentPadding: EdgeInsets.zero, dense: true,
+      controlAffinity: ListTileControlAffinity.leading,
+      value: fait, activeColor: _green,
+      title: Text((t['titre'] ?? 'Tâche').toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 13.5,
+          decoration: fait ? TextDecoration.lineThrough : null, color: fait ? Colors.grey : const Color(0xFF1F2A2E))),
+      subtitle: Text(_fmtDate(t['date']?.toString()), style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+      onChanged: (v) async {
+        final statut = v == true ? 'fait' : 'a_faire';
+        setState(() => t['statut'] = statut);
+        try {
+          await _supa.from('taches_elevage').update({
+            'statut': statut,
+            if (statut == 'fait' && User_Info.activeProfileId.isNotEmpty) 'fait_par_profile_id': User_Info.activeProfileId,
+          }).eq('id', t['id']);
+        } catch (_) { _loadProprietaireEtSejour(); }
+      },
+    );
+  }
+
+  Widget _suiviTab() {
+    return RefreshIndicator(
+      onRefresh: () async { await _load(); },
+      color: _teal,
+      child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
+        _carte('Tâches et soins (7 derniers jours)', Icons.checklist_rtl_outlined, _taches.isEmpty
+            ? _discret('Aucune tâche pour cet animal.')
+            : Column(children: [for (final t in _taches) _tacheLigne(t)])),
+        _carte('Observations et photos', Icons.photo_library_outlined, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (_observations.isEmpty) _discret('Aucune observation pour le moment.'),
+          for (final o in _observations.take(10))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if ((o['photo_url']?.toString() ?? '').isNotEmpty) ...[
+                  ClipRRect(borderRadius: BorderRadius.circular(8),
+                      child: CachedNetworkImage(imageUrl: o['photo_url'].toString(), width: 48, height: 48, fit: BoxFit.cover)),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${_fmtDate(o['created_at']?.toString())} à ${_heure(o['created_at'])}${o['incident'] == true ? ' · incident' : ''}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: o['incident'] == true ? const Color(0xFFB3261E) : Colors.grey.shade600)),
+                  if ((o['note']?.toString() ?? '').isNotEmpty)
+                    Text(o['note'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                ])),
+              ]),
+            ),
+          const SizedBox(height: 4),
+          SizedBox(width: double.infinity, child: OutlinedButton.icon(
+            onPressed: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => PensionJournalPage(
+                animalId: widget.animalId,
+                pensionEntreeId: _sejourActuel?['id']?.toString(),
+                animalNom: (_animal?['nom'] ?? widget.animalNom ?? 'Animal').toString(),
+              )));
+              _loadProprietaireEtSejour();
+            },
+            icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+            label: const Text('Ajouter une observation ou une photo', style: TextStyle(fontFamily: 'Galey')),
+          )),
+        ])),
+      ]),
     );
   }
 }
@@ -871,7 +1144,10 @@ class _AlimentationTab extends StatelessWidget {
     final isMixte   = ration == 'mixte';
     final pctCroq   = notesParts.isNotEmpty ? (double.tryParse(notesParts[0]) ?? 0) : 0.0;
     final separe    = notesParts.length > 4 && notesParts[4] == '1';
-    final dose2     = notesParts.length > 6 ? (double.tryParse(notesParts[6]) ?? 0).round() : 0;
+    // 2e composant : ration enregistrée par le propriétaire, sinon dose manuelle (notes[6]).
+    final dose2Stockee = (double.tryParse(a['ration2_grammes']?.toString() ?? '') ?? 0).round();
+    final dose2     = dose2Stockee > 0 ? dose2Stockee
+        : notesParts.length > 6 ? (double.tryParse(notesParts[6]) ?? 0).round() : 0;
     final typeMixte2 = (notesParts.length > 7 && notesParts[7].isNotEmpty) ? notesParts[7] : 'patee';
     final secondLabel = typeMixte2 == 'barf' ? 'BARF'
         : typeMixte2 == 'menagere' ? 'Ration ménagère' : 'Pâtée';

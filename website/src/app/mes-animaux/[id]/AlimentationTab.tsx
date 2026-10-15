@@ -645,6 +645,19 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         const { data } = await supabase.from('alimentations').insert({ ...payload, id: crypto.randomUUID() }).select().single();
         if (data) setAlim(prev => ({ ...prev, id: data.id }));
       }
+      // Ration calculée (repas, quantité, kcal) lue par la pension / le pet-sitter —
+      // écrite à part (migration_alimentation_ration_stockee.sql), sans bloquer.
+      const idAlim = alim.id;
+      if (idAlim) {
+        const chienChatR = espece === 'chien' || espece === 'chat';
+        const principal = chienChatR ? doseEff : (rationGrandEspece != null ? rationGrandEspece * 1000 : null);
+        await supabase.from('alimentations').update({
+          nb_repas: alim.nb_repas ?? 2,
+          ration_grammes: principal != null ? Math.round(principal) : null,
+          ration2_grammes: chienChatR && type === 'mixte' && doseEff2 != null ? Math.round(doseEff2) : null,
+          ration_kcal: kcalApport != null ? Math.round(kcalApport) : null,
+        }).eq('id', idAlim);
+      }
       setNotesRaw(payload.notes);
       setHasData(true);
       setView('summary');

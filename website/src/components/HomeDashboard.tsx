@@ -2,6 +2,7 @@
 
 import GardeDashboard from '@/components/dashboard/GardeDashboard';
 import EducationDashboard from '@/components/dashboard/EducationDashboard';
+import PensionDashboard from '@/components/dashboard/PensionDashboard';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -190,6 +191,11 @@ export default function HomeDashboard() {
     return <EducationDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
       avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
   }
+  // Pension : poste de pilotage du jour (miroir appli PensionDashboard).
+  if (activeProfile?.profile_type === 'pension' || activeProfile?.cat_pro === 'pension') {
+    return <PensionDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma pension'}
+      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+  }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
@@ -209,6 +215,9 @@ export default function HomeDashboard() {
     }
     if (primaryProProfile.profile_type === 'garde') {
       return <GardeDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
+    }
+    if (primaryProProfile.profile_type === 'pension') {
+      return <PensionDashboard nom={primaryProProfile.nom || 'Ma pension'} avatar={primaryProProfile.avatar_url} />;
     }
     if (primaryProProfile.profile_type === 'education') {
       return <EducationDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
