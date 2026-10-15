@@ -109,6 +109,7 @@ interface Gestation {
 }
 interface EducObjectif {
   id: string; libelle: string; categorie: string | null; statut: string; note: string | null; ordre: number;
+  prioritaire?: boolean | null; difficultes?: string | null;
 }
 interface EducExercice { id: string; titre: string; description: string | null; media: unknown; }
 interface EducAttribue {
@@ -122,6 +123,10 @@ interface EducRetour {
 interface RapportEduP {
   id: string; date_seance: string; contenu: string; exercices_conseilles: string | null;
   type?: string; bilan_motif?: string | null; bilan_recommandation?: string | null; bilan_nb_seances_estime?: number | null;
+  // migration_education_fiche.sql
+  statut?: string | null; type_seance?: string | null; lieu?: string | null; duree_minutes?: number | null;
+  objectifs_travailles?: string[] | null; comportements?: string | null; difficultes?: string | null;
+  prochaine_etape?: string | null; rdv_id?: string | null;
 }
 interface ForfaitSous { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; }
 const EDUC_RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
@@ -133,9 +138,17 @@ const EDUC_CATEGORIES: Record<string, string> = {
   destruction: 'Destruction', socialisation_chien: 'Socialisation chiens', socialisation_humain: 'Socialisation humains',
   manipulation: 'Manipulation / soins', solitude: 'Solitude', agressivite: 'Agressivité', peurs: 'Peurs', autre: 'Autre',
 };
-const EDUC_STATUTS = ['a_travailler', 'en_cours', 'acquis'] as const;
-const EDUC_STATUT_LABEL: Record<string, string> = { a_travailler: 'À travailler', en_cours: 'En cours', acquis: 'Acquis' };
-const educStatutColor = (s: string) => s === 'acquis' ? '#6E9E57' : s === 'en_cours' ? '#EFA100' : '#D5573B';
+// Statut renseigné par le professionnel (aucun pourcentage calculé) — miroir appli education_shared.dart.
+const EDUC_STATUTS = ['a_travailler', 'en_cours', 'en_progression', 'acquis', 'a_reevaluer'] as const;
+const EDUC_STATUT_LABEL: Record<string, string> = {
+  a_travailler: 'À travailler', en_cours: 'En cours', en_progression: 'En progression',
+  acquis: 'Acquis selon évaluation', a_reevaluer: 'À réévaluer',
+};
+const educStatutColor = (s: string) => ({ acquis: '#6E9E57', en_progression: '#2E7D8C', en_cours: '#EFA100', a_reevaluer: '#7B5EA7' } as Record<string, string>)[s] ?? '#D5573B';
+const EDUC_TYPES_SEANCE: Record<string, string> = {
+  bilan: 'Bilan initial', individuelle: 'Séance individuelle', collective: 'Séance collective',
+  domicile: 'Séance à domicile', exterieur: 'Séance en extérieur', suivi: 'Suivi comportemental',
+};
 
 const ESPECE_EMOJI: Record<string, string> = {
   chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
@@ -554,7 +567,7 @@ function PatientDetailPageInner() {
   // Éducation (rapports de séance + exercices conseillés)
   const [rapports, setRapports] = useState<RapportEduP[]>([]);
   const [objectifs, setObjectifs] = useState<EducObjectif[]>([]);
-  const [objForm, setObjForm] = useState<{ id?: string; libelle: string; categorie: string; statut: string; note: string } | null>(null);
+  const [objForm, setObjForm] = useState<{ id?: string; libelle: string; categorie: string; statut: string; note: string; prioritaire?: boolean; difficultes?: string } | null>(null);
   const [savingObj, setSavingObj] = useState(false);
   const [biblio, setBiblio] = useState<EducExercice[]>([]);
   const [attribues, setAttribues] = useState<EducAttribue[]>([]);
@@ -567,6 +580,17 @@ function PatientDetailPageInner() {
   const [rapportContenu, setRapportContenu] = useState('');
   const [rapportExercices, setRapportExercices] = useState('');
   const [rapportType, setRapportType] = useState<'seance' | 'bilan'>('seance');
+  // Compte rendu de séance complet (migration_education_fiche.sql).
+  const [seanceType, setSeanceType] = useState('individuelle');
+  const [seanceLieu, setSeanceLieu] = useState('');
+  const [seanceDuree, setSeanceDuree] = useState('');
+  const [seanceObjs, setSeanceObjs] = useState<string[]>([]);
+  const [seanceDetaille, setSeanceDetaille] = useState(false);
+  const [seanceComport, setSeanceComport] = useState('');
+  const [seanceDiff, setSeanceDiff] = useState('');
+  const [seanceProchaine, setSeanceProchaine] = useState('');
+  const [seanceRdvId, setSeanceRdvId] = useState<string | null>(null);
+  const [prochainRdv, setProchainRdv] = useState<{ date_heure: string; motif: string | null; lieu: string | null } | null>(null);
   const [bilanMotif, setBilanMotif] = useState('');
   const [bilanReco, setBilanReco] = useState('');
   const [bilanNb, setBilanNb] = useState('');
@@ -653,6 +677,37 @@ function PatientDetailPageInner() {
     } else { setCatPro(userData?.catPro ?? ''); }
   }, [activeProfileId, userData]);
 
+  // Fiche éducative : Synthèse par défaut, prochain RDV de ce profil, et
+  // compte rendu pré-rempli depuis une séance (?rdv=<id>, tableau de bord).
+  useEffect(() => {
+    if (catPro !== 'education') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!searchParams.get('tab')) setTab(t => (t === 'Identité' ? 'Synthèse' : t));
+  }, [catPro, searchParams]);
+  useEffect(() => {
+    if (catPro !== 'education' || !animalId || !activeProfileId) return;
+    let annule = false;
+    (async () => {
+      const { data } = await supabase.from('rdv').select('date_heure, motif, lieu')
+        .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).eq('statut', 'confirme')
+        .gte('date_heure', new Date().toISOString()).order('date_heure').limit(1).maybeSingle();
+      if (!annule) setProchainRdv(data as { date_heure: string; motif: string | null; lieu: string | null } | null);
+      const rdvId = searchParams.get('rdv');
+      if (rdvId && !annule) {
+        const { data: r } = await supabase.from('rdv').select('id, lieu, duree_minutes').eq('id', rdvId).maybeSingle();
+        if (r && !annule) {
+          const rr = r as { id: string; lieu: string | null; duree_minutes: number | null };
+          setSeanceRdvId(rr.id);
+          if (rr.lieu) { setSeanceLieu(rr.lieu); setSeanceType('domicile'); }
+          if (rr.duree_minutes) setSeanceDuree(String(rr.duree_minutes));
+          setShowAddRapport(true);
+          setTab('Séances');
+        }
+      }
+    })();
+    return () => { annule = true; };
+  }, [catPro, animalId, activeProfileId, searchParams]);
+
   const isPensionType = PENSION_TYPES.has(catPro);
   const isVet = catPro === 'veterinaire' || catPro === 'sante' || catPro === 'marechal_ferrant';
   // Anatomie (pointage libre) fusionne dans Morphologie pour santé — reste
@@ -682,7 +737,8 @@ function PatientDetailPageInner() {
           ...(hasAnatomie ? ['Anatomie'] : []),
           ...(hasMorpho ? ['Ostéo / Kiné'] : [])]
       : isEducation
-        ? ['Identité', 'Santé', 'Éducation']
+        // Fiche éducative : Identité / Santé restent ouvrables depuis la Synthèse.
+        ? ['Synthèse', 'Programme', 'Séances', 'Documents']
         // Pet-sitter / toilettage / photographe / taxi animalier… : Consultations
         // (CR/ordonnances/radios) est réservé aux professions de santé, pas
         // seulement en lecture seule — masqué, pas juste verrouillé. Le
@@ -727,7 +783,7 @@ function PatientDetailPageInner() {
         isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
-        supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false }),
+        supabase.from('education_progression').select('*').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
         supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
@@ -1124,13 +1180,43 @@ function PatientDetailPageInner() {
     }
   }
 
-  async function soumettreRapport() {
+  // Notification à la famille — uniquement pour un compte rendu finalisé.
+  async function notifierRapportEdu(isBilan: boolean) {
+    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    if (!ownerUid || !animalId) return;
+    const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
+    const { data: propRow } = await supabase.from('animaux_proprietes')
+      .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
+      .order('date_debut', { ascending: false }).limit(1).maybeSingle();
+    await supabase.from('notifications').insert({
+      uid: ownerUid, type: isBilan ? 'education_bilan' : 'education_rapport',
+      title: `${isBilan ? 'Bilan comportemental' : 'Rapport de séance'} — ${animal?.nom ?? 'Animal'}`,
+      body: `${proNom} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'} pour ${animal?.nom ?? 'votre animal'}.`,
+      ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
+      data: { animalId, animalNom: animal?.nom ?? 'Animal', url: `/mes-animaux/${animalId}?tab=education` },
+      read: false,
+    });
+  }
+
+  async function soumettreRapport(finalise = true) {
     if (!user?.uid || !animalId || richTextIsEmpty(rapportContenu)) return;
     setSavingRapport(true);
     try {
       const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
       const isBilan = rapportType === 'bilan';
-      await supabase.from('education_progression').insert({
+      const extra: Record<string, unknown> = {
+        statut: finalise ? 'finalise' : 'brouillon',
+        pro_profile_id: activeProfileId || null,
+        ...(seanceRdvId ? { rdv_id: seanceRdvId } : {}),
+        type_seance: seanceType,
+        lieu: seanceLieu.trim() || null,
+        duree_minutes: seanceDuree.trim() ? Number(seanceDuree) : null,
+        objectifs_travailles: seanceObjs,
+        comportements: seanceDetaille ? (seanceComport.trim() || null) : null,
+        difficultes: seanceDetaille ? (seanceDiff.trim() || null) : null,
+        prochaine_etape: seanceDetaille ? (seanceProchaine.trim() || null) : null,
+      };
+      const ligne = {
         pro_uid: user.uid,
         animal_id: animalId,
         owner_uid: ownerUid,
@@ -1146,26 +1232,20 @@ function PatientDetailPageInner() {
           bilan_nb_seances_estime: bilanNb.trim() ? Number(bilanNb) : null,
           bilan_forfait_conseille_id: bilanForfait || null,
         } : {}),
-      });
-      if (ownerUid) {
-        const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
-        const { data: propRow } = await supabase.from('animaux_proprietes')
-          .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
-          .order('date_debut', { ascending: false }).limit(1).maybeSingle();
-        await supabase.from('notifications').insert({
-          uid: ownerUid, type: isBilan ? 'education_bilan' : 'education_rapport',
-          title: `${isBilan ? 'Bilan comportemental' : 'Rapport de séance'} — ${animal?.nom ?? 'Animal'}`,
-          body: `${proNom} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'} pour ${animal?.nom ?? 'votre animal'}.`,
-          ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
-          data: { animalId, animalNom: animal?.nom ?? 'Animal', url: `/mes-animaux/${animalId}?tab=education` },
-          read: false,
-        });
+      };
+      let { error: insErr } = await supabase.from('education_progression').insert({ ...ligne, ...extra });
+      // migration_education_fiche.sql pas encore passée : format d'origine (pas de brouillon).
+      if (insErr) {
+        if (!finalise) { alert('Brouillon indisponible : migration_education_fiche.sql à passer.'); return; }
+        ({ error: insErr } = await supabase.from('education_progression').insert(ligne));
+        if (insErr) throw insErr;
       }
+      if (finalise) await notifierRapportEdu(isBilan);
       if (!isBilan && imputerForfait && forfaitActif) await imputerSeanceForfait(forfaitActif);
       const { data } = await supabase.from('education_progression')
-        .select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false });
+        .select('*').eq('animal_id', animalId).order('date_seance', { ascending: false });
       setRapports((data ?? []) as RapportEduP[]);
-      if (isBilan) {
+      if (isBilan && finalise) {
         const params = new URLSearchParams({ prefill: '1', animal: animalId });
         if (ownerUid) params.set('clientUid', ownerUid);
         const { data: pp } = await supabase.from('animaux_proprietes')
@@ -1191,6 +1271,8 @@ function PatientDetailPageInner() {
       }
       setRapportContenu(''); setRapportExercices(''); setShowAddRapport(false);
       setRapportType('seance'); setBilanMotif(''); setBilanReco(''); setBilanNb(''); setBilanForfait('');
+      setSeanceType('individuelle'); setSeanceLieu(''); setSeanceDuree(''); setSeanceObjs([]);
+      setSeanceDetaille(false); setSeanceComport(''); setSeanceDiff(''); setSeanceProchaine(''); setSeanceRdvId(null);
     } finally {
       setSavingRapport(false);
     }
@@ -1203,14 +1285,20 @@ function PatientDetailPageInner() {
     setShowAddRapport(false);
   }
 
-  async function saveEditRapport() {
+  async function saveEditRapport(finaliser = false) {
     if (!editingRapportId || richTextIsEmpty(rapportContenu)) return;
     setSavingRapport(true);
     try {
+      const avant = rapports.find(r => r.id === editingRapportId);
       await supabase.from('education_progression').update({
         contenu: rapportContenu.trim(),
         exercices_conseilles: rapportExercices.trim() || null,
+        ...(finaliser ? { statut: 'finalise' } : {}),
       }).eq('id', editingRapportId);
+      if (finaliser && avant?.statut === 'brouillon') {
+        await notifierRapportEdu(avant.type === 'bilan');
+        setRapports(prev => prev.map(r => r.id === editingRapportId ? { ...r, statut: 'finalise' } : r));
+      }
       setRapports(prev => prev.map(r => r.id === editingRapportId
         ? { ...r, contenu: rapportContenu.trim(), exercices_conseilles: rapportExercices.trim() || null }
         : r));
@@ -1262,15 +1350,18 @@ function PatientDetailPageInner() {
         updated_at: now,
         acquis_le: objForm.statut === 'acquis' ? (wasAcquis ? undefined : now) : null,
       };
-      if (objForm.id) {
-        await supabase.from('education_objectifs').update(payload).eq('id', objForm.id);
-      } else {
+      const extra = { prioritaire: !!objForm.prioritaire, difficultes: objForm.difficultes?.trim() || null };
+      const ecrire = async (champs: Record<string, unknown>) => {
+        if (objForm.id) return supabase.from('education_objectifs').update(champs).eq('id', objForm.id);
         const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
-        await supabase.from('education_objectifs').insert({
-          ...payload, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+        return supabase.from('education_objectifs').insert({
+          ...champs, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
           animal_id: animalId, owner_uid: ownerUid, ordre: objectifs.length,
         });
-      }
+      };
+      // Repli sans les colonnes de migration_education_fiche.sql.
+      const { error: e1 } = await ecrire({ ...payload, ...extra });
+      if (e1) await ecrire(payload);
       if (objForm.statut === 'acquis' && !wasAcquis) await notifyOwnerObjectif(objForm.libelle.trim());
       setObjForm(null);
       await reloadObjectifs();
@@ -2008,7 +2099,125 @@ function PatientDetailPageInner() {
         )}
 
         {/* ── Éducation (plan de travail + rapports de séance) ── */}
-        {tab === 'Éducation' && (
+        {isEducation && tab === 'Synthèse' && (() => {
+          const bilans = rapports.filter(r => r.type === 'bilan');
+          const motif = bilans.find(b => b.bilan_motif)?.bilan_motif ?? '';
+          const finalises = rapports.filter(r => r.statut !== 'brouillon');
+          const derniere = finalises[0];
+          const brouillons = rapports.filter(r => r.statut === 'brouillon').length;
+          const prioritaires = [...objectifs.filter(o => o.prioritaire && o.statut !== 'acquis'),
+            ...objectifs.filter(o => !o.prioritaire && o.statut !== 'acquis')].slice(0, 3);
+          const reco = bilans[0]?.bilan_recommandation ? richTextToPlain(bilans[0].bilan_recommandation).trim() : '';
+          const travail = derniere?.exercices_conseilles?.trim() ?? '';
+          const discret = (t: string) => <p className="text-sm text-gray-400">{t}</p>;
+          return (
+            <>
+              {brouillons > 0 && (
+                <button onClick={() => setTab('Séances')} className="w-full text-left rounded-xl px-4 py-3 text-sm font-semibold"
+                  style={{ background: '#FFF4DC', color: '#8A5A00' }}>
+                  {brouillons} compte{brouillons > 1 ? 's' : ''} rendu{brouillons > 1 ? 's' : ''} à finaliser
+                </button>
+              )}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <Card title="Motif de l'accompagnement">
+                  {motif ? <p className="text-sm">{motif}</p> : discret('Non renseigné — il se saisit dans le bilan initial.')}
+                </Card>
+                <Card title="Programme actif">
+                  {forfaitActif
+                    ? <p className="text-sm">{forfaitActif.nom_snapshot} — séance {forfaitActif.nb_seances_utilisees}/{forfaitActif.nb_seances_total}</p>
+                    : discret('Aucun forfait en cours.')}
+                </Card>
+                <Card title="Objectifs prioritaires">
+                  {prioritaires.length === 0 ? discret('Aucun objectif en cours.') : (
+                    <div className="space-y-1.5">
+                      {prioritaires.map(o => (
+                        <p key={o.id} className="text-sm flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: educStatutColor(o.statut) }} />
+                          <span className="flex-1">{o.libelle}</span>
+                          <span className="text-xs" style={{ color: educStatutColor(o.statut) }}>{EDUC_STATUT_LABEL[o.statut]}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+                <Card title="Dernière séance">
+                  {derniere ? (
+                    <>
+                      <p className="text-xs font-semibold text-gray-600">{fmtDateShort(derniere.date_seance)} · {EDUC_TYPES_SEANCE[derniere.type_seance ?? ''] ?? (derniere.type === 'bilan' ? 'Bilan' : 'Séance')}</p>
+                      <p className="text-sm mt-1 line-clamp-3">{richTextToPlain(derniere.contenu)}</p>
+                    </>
+                  ) : discret('Aucune séance enregistrée.')}
+                </Card>
+                <Card title="Prochain rendez-vous">
+                  {prochainRdv
+                    ? <p className="text-sm">{new Date(prochainRdv.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}{prochainRdv.motif ? ` · ${prochainRdv.motif}` : ''}{prochainRdv.lieu ? ` · ${prochainRdv.lieu}` : ''}</p>
+                    : discret('Aucune séance planifiée.')}
+                </Card>
+                <Card title="Recommandations en cours">
+                  {!reco && !travail ? discret('Aucune recommandation partagée.') : (
+                    <div className="space-y-1 text-sm">
+                      {reco && <p>{reco}</p>}
+                      {travail && <p>Travail à la maison : {travail}</p>}
+                    </div>
+                  )}
+                </Card>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setTab('Identité')} className="px-4 py-2 rounded-xl border text-sm font-semibold" style={{ borderColor: TEAL, color: TEAL }}>Identité</button>
+                <button onClick={() => setTab('Santé')} className="px-4 py-2 rounded-xl border text-sm font-semibold" style={{ borderColor: TEAL, color: TEAL }}>Carnet de santé (lecture)</button>
+              </div>
+            </>
+          );
+        })()}
+
+        {isEducation && tab === 'Documents' && (
+          <>
+            <Card title="Bilans comportementaux">
+              {rapports.filter(r => r.type === 'bilan' && r.statut !== 'brouillon').length === 0 ? <EmptyState text="Aucun bilan finalisé" /> : (
+                <div className="divide-y divide-gray-50">
+                  {rapports.filter(r => r.type === 'bilan' && r.statut !== 'brouillon').map(r => (
+                    <button key={r.id} onClick={() => setTab('Séances')} className="w-full text-left py-2">
+                      <p className="text-sm font-semibold">Bilan — {fmtDateShort(r.date_seance)}</p>
+                      <p className="text-xs text-gray-500 truncate">{richTextToPlain(r.contenu)}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Card>
+            <Card title="Comptes rendus de séance">
+              {rapports.filter(r => r.type !== 'bilan' && r.statut !== 'brouillon').length === 0 ? <EmptyState text="Aucun compte rendu finalisé" /> : (
+                <div className="divide-y divide-gray-50">
+                  {rapports.filter(r => r.type !== 'bilan' && r.statut !== 'brouillon').slice(0, 10).map(r => (
+                    <button key={r.id} onClick={() => setTab('Séances')} className="w-full text-left py-2">
+                      <p className="text-sm font-semibold">{EDUC_TYPES_SEANCE[r.type_seance ?? ''] ?? 'Séance'} — {fmtDateShort(r.date_seance)}</p>
+                      <p className="text-xs text-gray-500 truncate">{richTextToPlain(r.contenu)}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Card>
+            {hasReportAccess && (
+              <Card title="Supports et documents partagés">
+                <div className="grid sm:grid-cols-3 gap-2">
+                  <button onClick={envoyerExercicesPdf} disabled={genExosPdf || attribues.length === 0}
+                    className="border border-[#EF6C00]/40 text-[#EF6C00] rounded-xl py-2.5 font-semibold text-xs disabled:opacity-40">
+                    {genExosPdf ? '…' : 'Exercices en PDF'}
+                  </button>
+                  <button onClick={genererSuiviLien} disabled={genSuiviLien}
+                    className="border border-[#0C5C6C]/40 text-[#0C5C6C] rounded-xl py-2.5 font-semibold text-xs disabled:opacity-40">
+                    {genSuiviLien ? '…' : 'Lien de suivi pour la famille'}
+                  </button>
+                  <button onClick={genererAttestation} disabled={genAttest || (rapports.length === 0 && objectifs.length === 0)}
+                    className="border border-[#6E9E57] text-[#4A7A32] rounded-xl py-2.5 font-semibold text-xs disabled:opacity-40">
+                    {genAttest ? 'Génération…' : 'Attestation de fin'}
+                  </button>
+                </div>
+              </Card>
+            )}
+          </>
+        )}
+
+        {isEducation && tab === 'Programme' && (
           <>
           <Card title="🎯 Plan de travail">
             {hasReportAccess && (
@@ -2028,14 +2237,22 @@ function PatientDetailPageInner() {
                   <option value="">Catégorie (optionnel)…</option>
                   {Object.entries(EDUC_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                   {EDUC_STATUTS.map(s => (
                     <button key={s} type="button" onClick={() => setObjForm({ ...objForm, statut: s })}
-                      className={`flex-1 text-xs py-1.5 rounded-lg border ${objForm.statut === s ? 'bg-gray-100 border-gray-400 font-semibold' : 'border-gray-200 text-gray-500'}`}>
+                      className="text-xs px-2.5 py-1.5 rounded-lg border"
+                      style={objForm.statut === s ? { background: educStatutColor(s), borderColor: educStatutColor(s), color: 'white', fontWeight: 600 } : { borderColor: '#E5E7EB', color: '#6B7280' }}>
                       {EDUC_STATUT_LABEL[s]}
                     </button>
                   ))}
                 </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={!!objForm.prioritaire} onChange={e => setObjForm({ ...objForm, prioritaire: e.target.checked })} />
+                  Objectif prioritaire
+                </label>
+                <input value={objForm.difficultes ?? ''} onChange={e => setObjForm({ ...objForm, difficultes: e.target.value })}
+                  placeholder="Difficultés rencontrées (facultatif)"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
                 <RichTextEditor value={objForm.note} onChange={html => setObjForm(f => f ? { ...f, note: html } : f)}
                   minHeight={90} placeholder="Note (facultatif)" />
                 <div className="flex gap-2">
@@ -2056,10 +2273,12 @@ function PatientDetailPageInner() {
                     <div className="flex items-start gap-2">
                       <span className="w-2.5 h-2.5 rounded-full mt-1 shrink-0" style={{ background: educStatutColor(o.statut) }} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1F2A2E]">{o.libelle}</p>
+                        <p className="text-sm font-semibold text-[#1F2A2E]">{o.libelle}
+                          {o.prioritaire && <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#E6F2F3', color: TEAL }}>Prioritaire</span>}</p>
                         <p className="text-xs" style={{ color: educStatutColor(o.statut) }}>{EDUC_STATUT_LABEL[o.statut]}
                           {o.categorie && EDUC_CATEGORIES[o.categorie] ? ` · ${EDUC_CATEGORIES[o.categorie]}` : ''}</p>
                         {o.note && <div className="text-xs text-gray-500 mt-0.5"><RichText value={o.note} /></div>}
+                        {o.difficultes && <p className="text-xs text-gray-600 mt-0.5">Difficultés : {o.difficultes}</p>}
                       </div>
                       {hasReportAccess && (
                         <div className="flex gap-1 shrink-0">
@@ -2070,7 +2289,7 @@ function PatientDetailPageInner() {
                               {EDUC_STATUT_LABEL[s]}
                             </button>
                           ))}
-                          <button onClick={() => setObjForm({ id: o.id, libelle: o.libelle, categorie: o.categorie ?? '', statut: o.statut, note: o.note ?? '' })}
+                          <button onClick={() => setObjForm({ id: o.id, libelle: o.libelle, categorie: o.categorie ?? '', statut: o.statut, note: o.note ?? '', prioritaire: !!o.prioritaire, difficultes: o.difficultes ?? '' })}
                             className="text-gray-300 hover:text-gray-500 text-xs">✏️</button>
                           <button onClick={() => deleteObjectif(o.id)}
                             className="text-gray-300 hover:text-red-400 text-xs">🗑</button>
@@ -2229,32 +2448,19 @@ function PatientDetailPageInner() {
               </div>
             )}
           </Card>
-          <Card title="🎓 Suivi de progression">
+          </>
+        )}
+
+        {isEducation && tab === 'Séances' && (
+          <>
+          <Card title="Séances et comptes rendus">
             {hasReportAccess && (
               <button onClick={() => setShowAddRapport(v => !v)}
-                className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2 mb-2"
+                className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2 mb-4"
                 style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
                 <span className="text-lg leading-none">+</span>
-                Ajouter un rapport de séance
+                Nouvelle séance
               </button>
-            )}
-            {hasReportAccess && (rapports.length > 0 || objectifs.length > 0) && (
-              <button onClick={genererAttestation} disabled={genAttest}
-                className="w-full border border-[#6E9E57] text-[#4A7A32] rounded-2xl py-2.5 font-semibold text-sm mb-2 disabled:opacity-50">
-                🎓 {genAttest ? 'Génération…' : 'Générer l\'attestation de fin de programme'}
-              </button>
-            )}
-            {hasReportAccess && (
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                <button onClick={envoyerExercicesPdf} disabled={genExosPdf || attribues.length === 0}
-                  className="border border-[#EF6C00]/40 text-[#EF6C00] rounded-2xl py-2.5 font-semibold text-xs disabled:opacity-40">
-                  📄 {genExosPdf ? '…' : 'Exercices en PDF'}
-                </button>
-                <button onClick={genererSuiviLien} disabled={genSuiviLien}
-                  className="border border-[#0C5C6C]/40 text-[#0C5C6C] rounded-2xl py-2.5 font-semibold text-xs disabled:opacity-40">
-                  🔗 {genSuiviLien ? '…' : 'Lien pour la famille'}
-                </button>
-              </div>
             )}
             {devisPrefillUrl && (
               <div className="bg-[#FFF3E9] border border-[#EF6C00]/40 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3">
@@ -2270,9 +2476,11 @@ function PatientDetailPageInner() {
             )}
             {showAddRapport && (
               <div className="border border-gray-100 rounded-2xl p-4 mb-4 space-y-3">
-                <div className="flex gap-1.5">
-                  {(['seance', 'bilan'] as const).map(t => (
-                    <button key={t} onClick={async () => {
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(EDUC_TYPES_SEANCE).map(([k, label]) => (
+                    <button key={k} onClick={async () => {
+                      setSeanceType(k);
+                      const t = k === 'bilan' ? 'bilan' : 'seance';
                       setRapportType(t);
                       if (t === 'bilan' && forfaitsEdu.length === 0 && user?.uid) {
                         const { data } = await supabase.from('forfaits_education')
@@ -2280,11 +2488,35 @@ function PatientDetailPageInner() {
                         setForfaitsEdu((data ?? []) as typeof forfaitsEdu);
                       }
                     }}
-                      className={`flex-1 text-xs py-1.5 rounded-lg border ${rapportType === t ? 'bg-gray-100 border-gray-400 font-semibold' : 'border-gray-200 text-gray-500'}`}>
-                      {t === 'seance' ? 'Séance' : 'Bilan'}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border"
+                      style={seanceType === k ? { background: '#EF6C00', borderColor: '#EF6C00', color: 'white', fontWeight: 600 } : { borderColor: '#E5E7EB', color: '#6B7280' }}>
+                      {label}
                     </button>
                   ))}
                 </div>
+                <div className="flex gap-2">
+                  <input value={seanceLieu} onChange={e => setSeanceLieu(e.target.value)} placeholder="Lieu (domicile, parc, terrain…)"
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                  <input type="number" value={seanceDuree} onChange={e => setSeanceDuree(e.target.value)} placeholder="Durée (min)"
+                    className="w-32 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                {objectifs.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Objectifs travaillés</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {objectifs.map(o => {
+                        const on = seanceObjs.includes(o.id);
+                        return (
+                          <button key={o.id} type="button" onClick={() => setSeanceObjs(v => on ? v.filter(x => x !== o.id) : [...v, o.id])}
+                            className="text-xs px-2.5 py-1 rounded-full border"
+                            style={on ? { background: '#FFF3E9', borderColor: '#EF6C00', color: '#B24E00', fontWeight: 600 } : { borderColor: '#E5E7EB', color: '#6B7280' }}>
+                            {o.libelle}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {rapportType === 'bilan' && (
                   <input value={bilanMotif} onChange={e => setBilanMotif(e.target.value)}
                     placeholder="Motif de la demande (aboiements, laisse…)"
@@ -2292,7 +2524,7 @@ function PatientDetailPageInner() {
                 )}
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
-                    {rapportType === 'bilan' ? 'Observations' : 'Compte rendu'}
+                    {rapportType === 'bilan' ? 'Observations' : 'Déroulement de la séance'}
                   </label>
                   <RichTextEditor value={rapportContenu} onChange={setRapportContenu} minHeight={150}
                     placeholder={rapportType === 'bilan' ? 'Comportement observé, contexte de vie…' : 'Déroulé de la séance, observations, progrès…'} />
@@ -2313,10 +2545,22 @@ function PatientDetailPageInner() {
                   </>
                 ) : (
                   <div>
-                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Exercices conseillés</label>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Recommandations / travail avant la prochaine séance</label>
                     <textarea value={rapportExercices} onChange={e => setRapportExercices(e.target.value)} rows={2}
                       placeholder="Exercices à faire à la maison d'ici la prochaine séance…"
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={seanceDetaille} onChange={e => setSeanceDetaille(e.target.checked)} />
+                  Compte rendu détaillé
+                </label>
+                {seanceDetaille && (
+                  <div className="space-y-2">
+                    {([['Comportements observés', seanceComport, setSeanceComport], ['Difficultés', seanceDiff, setSeanceDiff], ['Prochaine étape', seanceProchaine, setSeanceProchaine]] as const).map(([label, v, set]) => (
+                      <textarea key={label} value={v} onChange={e => set(e.target.value)} rows={2} placeholder={label}
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                    ))}
                   </div>
                 )}
                 {rapportType === 'seance' && forfaitActif && (
@@ -2325,11 +2569,18 @@ function PatientDetailPageInner() {
                     Imputer sur le forfait « {forfaitActif.nom_snapshot} » ({forfaitActif.nb_seances_utilisees + 1}/{forfaitActif.nb_seances_total})
                   </label>
                 )}
-                <button onClick={soumettreRapport} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
-                  className="w-full text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
-                  style={{ background: rapportType === 'bilan' ? '#EF6C00' : TEAL, fontFamily: 'Galey, sans-serif' }}>
-                  {savingRapport ? '…' : rapportType === 'bilan' ? 'Envoyer le bilan' : 'Envoyer au propriétaire'}
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => soumettreRapport(false)} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
+                    className="flex-1 border rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                    style={{ borderColor: '#EF6C00', color: '#EF6C00', fontFamily: 'Galey, sans-serif' }}>
+                    Brouillon
+                  </button>
+                  <button onClick={() => soumettreRapport(true)} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
+                    className="flex-[2] text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                    style={{ background: rapportType === 'bilan' ? '#EF6C00' : TEAL, fontFamily: 'Galey, sans-serif' }}>
+                    {savingRapport ? '…' : rapportType === 'bilan' ? 'Finaliser et envoyer le bilan' : 'Finaliser et envoyer'}
+                  </button>
+                </div>
               </div>
             )}
             {editingRapportId && (
@@ -2349,11 +2600,18 @@ function PatientDetailPageInner() {
                     className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm font-semibold">
                     Annuler
                   </button>
-                  <button onClick={saveEditRapport} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
+                  <button onClick={() => saveEditRapport(false)} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
                     className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
                     style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
                     {savingRapport ? '…' : 'Enregistrer'}
                   </button>
+                  {rapports.find(r => r.id === editingRapportId)?.statut === 'brouillon' && (
+                    <button onClick={() => saveEditRapport(true)} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
+                      className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                      style={{ background: '#EF6C00', fontFamily: 'Galey, sans-serif' }}>
+                      Finaliser et envoyer
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -2366,6 +2624,7 @@ function PatientDetailPageInner() {
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-xs text-gray-400 flex items-center gap-1.5">
                         {r.type === 'bilan' && <span className="text-[9px] bg-[#EF6C00] text-white px-1 py-0.5 rounded font-bold">BILAN</span>}
+                        {r.statut === 'brouillon' && <span className="text-[9px] px-1 py-0.5 rounded font-bold" style={{ background: '#FFF4DC', color: '#8A5A00' }}>BROUILLON</span>}
                         {fmtDateShort(r.date_seance)}
                       </p>
                       {hasReportAccess && (
@@ -2382,18 +2641,27 @@ function PatientDetailPageInner() {
                         </div>
                       )}
                     </div>
+                    {(r.type_seance || r.lieu || r.duree_minutes) && (
+                      <p className="text-xs text-gray-600 mb-0.5">{[EDUC_TYPES_SEANCE[r.type_seance ?? ''], r.lieu, r.duree_minutes ? `${r.duree_minutes} min` : ''].filter(Boolean).join(' · ')}</p>
+                    )}
+                    {(r.objectifs_travailles?.length ?? 0) > 0 && (
+                      <p className="text-xs font-semibold text-gray-700 mb-0.5">Objectifs travaillés : {(r.objectifs_travailles ?? []).map(id => objectifs.find(o => o.id === id)?.libelle).filter(Boolean).join(', ')}</p>
+                    )}
                     {r.type === 'bilan' && r.bilan_motif && <p className="text-xs font-semibold text-gray-700 mb-0.5">Motif : {r.bilan_motif}</p>}
                     <div className="text-sm text-[#1F2A2E]"><RichText value={r.contenu} /></div>
                     {r.type === 'bilan' && r.bilan_recommandation && (
                       <div className="mt-1.5 bg-[#FFF3E9] rounded-lg px-2 py-1.5">
-                        <p className="text-[11px] font-bold text-[#EF6C00]">📋 Recommandation</p>
+                        <p className="text-[11px] font-bold text-[#EF6C00]">Recommandation</p>
                         <div className="text-xs text-gray-800"><RichText value={r.bilan_recommandation} /></div>
                         {r.bilan_nb_seances_estime != null && <p className="text-[10px] text-gray-500">Estimation : {r.bilan_nb_seances_estime} séances</p>}
                       </div>
                     )}
+                    {([['Comportements observés', r.comportements], ['Difficultés', r.difficultes], ['Prochaine étape', r.prochaine_etape]] as const).map(([l, v]) => v ? (
+                      <p key={l} className="text-xs text-gray-700 mt-1">{l} : {v}</p>
+                    ) : null)}
                     {r.exercices_conseilles && (
                       <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">
-                        <p className="text-xs font-semibold text-[#4A7A32] mb-0.5">🏋️ Exercices conseillés</p>
+                        <p className="text-xs font-semibold text-[#4A7A32] mb-0.5">Recommandations / travail à la maison</p>
                         <p className="text-xs text-[#4A7A32]">{r.exercices_conseilles}</p>
                       </div>
                     )}

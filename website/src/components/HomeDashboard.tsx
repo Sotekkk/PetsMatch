@@ -1,6 +1,7 @@
 'use client';
 
 import GardeDashboard from '@/components/dashboard/GardeDashboard';
+import EducationDashboard from '@/components/dashboard/EducationDashboard';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -184,6 +185,11 @@ export default function HomeDashboard() {
     return <GardeDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
       avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
   }
+  // Éducateur / comportementaliste : tableau de bord dédié (miroir appli EducationDashboard).
+  if (activeProfile?.profile_type === 'education' || activeProfile?.cat_pro === 'education') {
+    return <EducationDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
+      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+  }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 
   // Profil principal pro (vétérinaire, éducateur, pension, etc.) → ProDashboard sans profileId secondaire
@@ -203,6 +209,9 @@ export default function HomeDashboard() {
     }
     if (primaryProProfile.profile_type === 'garde') {
       return <GardeDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
+    }
+    if (primaryProProfile.profile_type === 'education') {
+      return <EducationDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
     }
     return <ProDashboard profile={primaryProProfile} profileId="" />;
   }

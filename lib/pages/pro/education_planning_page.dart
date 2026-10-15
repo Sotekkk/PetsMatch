@@ -1,9 +1,9 @@
+import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -916,11 +916,11 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
                             icon: const Icon(Icons.school_outlined, size: 20, color: _kEducationPurple),
                             tooltip: 'Ajouter un rapport',
                             onPressed: () => Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => AnimalFichePage(
+                              // Fiche éducative, onglet Séances (compte rendu).
+                              builder: (_) => EducationSuiviPage(
                                 animalId: p['animal_id'].toString(),
-                                readOnly: true,
-                                educationMode: true,
-                                initialTabIndex: 2,
+                                animalNom: p['_animal_nom']?.toString() ?? 'Animal',
+                                initialTab: 2,
                               ),
                             )),
                           ),
@@ -1063,7 +1063,9 @@ class _RdvDetailSheet extends StatelessWidget {
             ActionChipButton(
               icon: Icons.pets_outlined, label: 'Fiche de l\'animal',
               onTap: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true, educationMode: true, rdvId: rdv['id']?.toString()),
+                builder: (_) => EducationSuiviPage(animalId: animalId,
+                    animalNom: (rdv['_animal_nom'] ?? rdv['animal_nom_manuel'] ?? 'Animal').toString(),
+                    ownerProfileId: rdv['client_profile_id']?.toString()),
               )),
             ),
         ]),

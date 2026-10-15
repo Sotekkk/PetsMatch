@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/education_dashboard.dart';
 import 'package:PetsMatch/pages/pro/garde_dashboard.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
@@ -37,7 +38,6 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
-import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/vet_dashboard.dart';
@@ -369,12 +369,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         // Pet-sitting / garde : tableau de bord (remplace compteurs + tuiles).
                         else if (User_Info.catPro == 'garde')
                           GardeDashboard(key: ValueKey(_refreshTick))
+                        // Éducateur / comportementaliste : tableau de bord dédié.
+                        else if (User_Info.catPro == 'education')
+                          EducationDashboard(key: ValueKey(_refreshTick))
                         else
                           _buildStatsRow(),
-                        if (User_Info.catPro == 'education') ...[
-                          const SizedBox(height: 12),
-                          _buildEducationShortcuts(context),
-                        ],
                         if (User_Info.catPro == 'photographe') ...[
                           const SizedBox(height: 12),
                           _buildPhotographeShortcuts(context),
@@ -649,22 +648,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     ]);
   }
 
-  Widget _buildEducationShortcuts(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.6,
-      children: [
-        _QuickTile(icon: Icons.pets, label: 'Mes\nélèves', color: const Color(0xFF7B5EA7),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage()))),
-        _QuickTile(icon: Icons.fitness_center_outlined, label: 'Bibliothèque\nd\'exercices', color: const Color(0xFFEF6C00),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EducationBibliothequePage()))),
-      ],
-    );
-  }
 
   Widget _buildVetShortcuts(BuildContext context) {
     void go(Widget page) =>

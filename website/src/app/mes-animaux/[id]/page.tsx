@@ -1203,8 +1203,11 @@ const EDU_CATEGORIES: Record<string, string> = {
   destruction: 'Destruction', socialisation_chien: 'Socialisation chiens', socialisation_humain: 'Socialisation humains',
   manipulation: 'Manipulation / soins', solitude: 'Solitude', agressivite: 'Agressivité', peurs: 'Peurs', autre: 'Autre',
 };
-const EDU_STATUT_LABEL: Record<string, string> = { a_travailler: 'À travailler', en_cours: 'En cours', acquis: 'Acquis' };
-const eduStatutColor = (s: string) => s === 'acquis' ? '#6E9E57' : s === 'en_cours' ? '#EFA100' : '#D5573B';
+const EDU_STATUT_LABEL: Record<string, string> = {
+  a_travailler: 'À travailler', en_cours: 'En cours', en_progression: 'En progression',
+  acquis: 'Acquis selon évaluation', a_reevaluer: 'À réévaluer',
+};
+const eduStatutColor = (s: string) => ({ acquis: '#6E9E57', en_progression: '#2E7D8C', en_cours: '#EFA100', a_reevaluer: '#7B5EA7' } as Record<string, string>)[s] ?? '#D5573B';
 interface EduObjectif { id: string; libelle: string; categorie: string | null; statut: string; note: string | null; acquis_le?: string | null; }
 interface EduExercice {
   id: string; titre_snapshot: string; description_snapshot: string | null;
@@ -1239,7 +1242,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
   const reload = useCallback(() => {
     Promise.all([
       supabase.from('education_progression')
-        .select('id, date_seance, contenu, exercices_conseilles, exercices_coches, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime')
+        .select('*')
         .eq('animal_id', animalId).order('date_seance', { ascending: false }),
       supabase.from('education_objectifs')
         .select('id, libelle, categorie, statut, note, acquis_le')
@@ -1256,7 +1259,8 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
       setForfaits(((fo.data ?? []) as EduForfait[]).filter(f => f.statut !== 'annule'));
       setAttestations((at.data ?? []) as EduAttestation[]);
       const exos = (e.data ?? []) as (EduExercice & { pro_uid?: string; pro_profile_id?: string })[];
-      setRapports((r.data ?? []) as RapportEdu[]);
+      // Brouillons de l'éducateur jamais visibles par la famille.
+      setRapports(((r.data ?? []) as (RapportEdu & { statut?: string | null })[]).filter(x => x.statut !== 'brouillon'));
       setObjectifs((o.data ?? []) as EduObjectif[]);
       setExercices(exos);
       const ids = exos.map(x => x.id);
@@ -1382,7 +1386,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {objectifs.map(o => (
                   <span key={o.id} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: `${eduStatutColor(o.statut)}18`, color: eduStatutColor(o.statut) }}>
-                    {o.statut === 'acquis' ? '✅' : o.statut === 'en_cours' ? '🟡' : '🔴'} {o.libelle}
+                    {o.statut === 'acquis' ? '✅' : (o.statut === 'en_cours' || o.statut === 'en_progression') ? '🟡' : o.statut === 'a_reevaluer' ? '🔁' : '🔴'} {o.libelle}
                   </span>
                 ))}
               </div>
@@ -2855,13 +2859,14 @@ function AnimalFichePageInner() {
     supabase.from('pension_updates').select('id').eq('animal_id', id).limit(1)
       .then(({ data }) => setHasPensionUpdates((data ?? []).length > 0));
     Promise.all([
-      supabase.from('education_progression').select('id').eq('animal_id', id).limit(1),
+      // Brouillons de l'éducateur exclus (filtrés ci-dessous).
+      supabase.from('education_progression').select('*').eq('animal_id', id).limit(20),
       supabase.from('education_objectifs').select('id').eq('animal_id', id).limit(1),
       supabase.from('exercices_attribues').select('id').eq('animal_id', id).limit(1),
       supabase.from('forfaits_souscrits').select('id').eq('animal_id', id).limit(1),
       supabase.from('education_attestations').select('id').eq('animal_id', id).limit(1),
     ]).then(([r, o, e, f, at]) => setHasEducationRapports(
-      (r.data ?? []).length > 0 || (o.data ?? []).length > 0 || (e.data ?? []).length > 0 || (f.data ?? []).length > 0 || (at.data ?? []).length > 0));
+      ((r.data ?? []) as { statut?: string | null }[]).some(x => x.statut !== 'brouillon') || (o.data ?? []).length > 0 || (e.data ?? []).length > 0 || (f.data ?? []).length > 0 || (at.data ?? []).length > 0));
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur || !ownerUid) return;
@@ -4605,9 +4610,9 @@ function AnimalFichePageInner() {
         {!isNew && hasEducationRapports && (
           <button onClick={() => {
             setShowEducationRapports(true);
-            supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles')
+            supabase.from('education_progression').select('*')
               .eq('animal_id', id).order('date_seance', { ascending: false })
-              .then(({ data }) => setEducationRapports(data ?? []));
+              .then(({ data }) => setEducationRapports(((data ?? []) as { statut?: string | null }[]).filter(r => r.statut !== 'brouillon') as typeof educationRapports));
           }}
             className="w-full text-left rounded-2xl border border-[#7B5EA7]/30 bg-[#7B5EA7]/5 p-4 hover:bg-[#7B5EA7]/10 transition-colors">
             <div className="flex items-center gap-2">

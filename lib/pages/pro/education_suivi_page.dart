@@ -10,18 +10,24 @@ import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_attestation.dart';
 import 'package:PetsMatch/pages/pro/education_exercices_pdf.dart';
 import 'package:PetsMatch/pages/pro/suivi_partage_sheet.dart';
-import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 
-/// Hub de suivi d'un animal côté éducateur/comportementaliste :
-/// onglets « Plan de travail » (objectifs), « Exercices » (attribués à la
-/// famille depuis la bibliothèque), « Séances » (comptes rendus).
+/// Fiche éducative (éducateur / comportementaliste) — vue métier unique de
+/// l'animal : en-tête commun (identité + propriétaire), onglets Synthèse ·
+/// Programme (objectifs, exercices, forfait) · Séances (comptes rendus,
+/// brouillon ou finalisé) · Documents. Identité et carnet de santé restent
+/// consultables depuis la Synthèse (AnimalFichePage en lecture seule).
 class EducationSuiviPage extends StatefulWidget {
   final String animalId;
   final String animalNom;
   final String? ownerProfileId;
   final String ownerName;
+  /// Séance (rdv) dont on rédige le compte rendu — ouvre le formulaire pré-rempli.
+  final String? rdvId;
+  final int initialTab;
 
   const EducationSuiviPage({
     super.key,
@@ -29,6 +35,8 @@ class EducationSuiviPage extends StatefulWidget {
     required this.animalNom,
     this.ownerProfileId,
     this.ownerName = 'La famille',
+    this.rdvId,
+    this.initialTab = 0,
   });
 
   @override
@@ -54,12 +62,17 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   List<Map<String, dynamic>> _seances = [];
   List<Map<String, dynamic>> _forfaits = [];
   List<Map<String, dynamic>> _souscrits = [];
+  /// Prochaine séance confirmée de ce profil pour l'animal.
+  Map<String, dynamic>? _prochainRdv;
+  /// Vue de l'onglet Programme : objectifs / exercices / forfait.
+  String _programmeVue = 'objectifs';
+  bool _rdvTraite = false;
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 4, vsync: this);
+    _tab = TabController(length: 4, vsync: this, initialIndex: widget.initialTab.clamp(0, 3));
     _load();
   }
 
@@ -142,6 +155,30 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           _loading = false;
         });
       }
+      // Prochaine séance (agenda de ce profil, jamais l'uid seul).
+      final pid = User_Info.activeProfileId;
+      if (pid.isNotEmpty) {
+        try {
+          final r = await _supa.from('rdv').select()
+              .eq('pro_profile_id', pid).eq('animal_id', widget.animalId).eq('statut', 'confirme')
+              .gte('date_heure', DateTime.now().toUtc().toIso8601String())
+              .order('date_heure').limit(1).maybeSingle();
+          if (mounted) setState(() => _prochainRdv = r);
+        } catch (_) {}
+      }
+      // Compte rendu d'une séance précise (depuis le tableau de bord / l'agenda).
+      if (widget.rdvId != null && !_rdvTraite && mounted) {
+        _rdvTraite = true;
+        final deja = _seances.where((x) => x['rdv_id']?.toString() == widget.rdvId).firstOrNull;
+        Map<String, dynamic>? rdv;
+        try {
+          rdv = await _supa.from('rdv').select().eq('id', widget.rdvId!).maybeSingle();
+        } catch (_) {}
+        if (mounted) {
+          _tab.animateTo(2);
+          await _editSeance(existing: deja, rdv: rdv);
+        }
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -180,6 +217,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final noteCtrl = TextEditingController(text: notePlain);
     String? categorie = existing?['categorie']?.toString();
     String statut = existing?['statut']?.toString() ?? 'a_travailler';
+    bool prioritaire = existing?['prioritaire'] == true;
+    final difficultesCtrl = TextEditingController(text: existing?['difficultes']?.toString() ?? '');
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -225,14 +264,32 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               onChanged: (v) => setSheet(() => categorie = v),
             ),
             const SizedBox(height: 12),
-            SegmentedButton<String>(
-              segments: _kStatuts.map((s) => ButtonSegment(
-                value: s,
-                label: Text(_kStatutLabels[s]!, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-              )).toList(),
-              selected: {statut},
-              onSelectionChanged: (v) => setSheet(() => statut = v.first),
-              showSelectedIcon: false,
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final st in _kStatuts)
+                ChoiceChip(
+                  label: Text(_kStatutLabels[st]!, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: statut == st ? Colors.white : const Color(0xFF1F2A2E))),
+                  selected: statut == st, showCheckmark: false,
+                  selectedColor: _statutColor(st), backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+                  onSelected: (_) => setSheet(() => statut = st),
+                ),
+            ]),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero, dense: true,
+              value: prioritaire, activeThumbColor: _kOrange,
+              onChanged: (v) => setSheet(() => prioritaire = v),
+              title: const Text('Objectif prioritaire', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            ),
+            TextField(
+              controller: difficultesCtrl,
+              maxLines: 2,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: InputDecoration(
+                labelText: 'Difficultés rencontrées (facultatif)',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -277,20 +334,32 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       if (statut == 'acquis' && !wasAcquis) 'acquis_le': now,
       if (statut != 'acquis') 'acquis_le': null,
     };
+    // Colonnes de migration_education_fiche.sql (repli sans si pas encore passée).
+    final extra = {
+      'prioritaire': prioritaire,
+      'difficultes': difficultesCtrl.text.trim().isEmpty ? null : difficultesCtrl.text.trim(),
+    };
 
     try {
-      if (existing == null) {
-        await _supa.from('education_objectifs').insert({
-          ...payload,
-          'pro_uid': proUid,
-          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
-          'animal_id': widget.animalId,
-          'owner_uid': _ownerUid,
-          if (widget.ownerProfileId != null) 'owner_profile_id': widget.ownerProfileId,
-          'ordre': _objectifs.length,
-        });
-      } else {
-        await _supa.from('education_objectifs').update(payload).eq('id', existing['id']);
+      Future<void> ecrire(Map<String, dynamic> champs) async {
+        if (existing == null) {
+          await _supa.from('education_objectifs').insert({
+            ...champs,
+            'pro_uid': proUid,
+            if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+            'animal_id': widget.animalId,
+            'owner_uid': _ownerUid,
+            if (widget.ownerProfileId != null) 'owner_profile_id': widget.ownerProfileId,
+            'ordre': _objectifs.length,
+          });
+        } else {
+          await _supa.from('education_objectifs').update(champs).eq('id', existing['id']);
+        }
+      }
+      try {
+        await ecrire({...payload, ...extra});
+      } on PostgrestException {
+        await ecrire(payload);
       }
       if (statut == 'acquis' && !wasAcquis) {
         await _notifyOwner('education_objectif_acquis',
@@ -344,113 +413,125 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
 
   // ── Séance ─────────────────────────────────────────────────────────────────
 
-  Future<void> _addSeance() async {
-    final contenuCtrl = TextEditingController();
-    final exercicesCtrl = TextEditingController();
-    final motifCtrl = TextEditingController();
-    final recoCtrl = TextEditingController();
-    final nbCtrl = TextEditingController();
-    String? forfaitId;
-    bool isBilan = false;
+  /// Compte rendu de séance (ou bilan) : rapide ou détaillé, brouillon ou
+  /// finalisé (seul le finalisé est envoyé à la famille). [existing] reprend
+  /// un brouillon, [rdv] pré-remplit depuis la séance de l'agenda.
+  Future<void> _editSeance({Map<String, dynamic>? existing, Map<String, dynamic>? rdv}) async {
+    String typeSeance = existing?['type_seance']?.toString() ??
+        (existing?['type'] == 'bilan' ? 'bilan' : null) ??
+        ((rdv?['lieu']?.toString().trim() ?? '').isNotEmpty ? 'domicile' : 'individuelle');
+    final contenuCtrl = TextEditingController(text: richTextToPlain(existing?['contenu']?.toString() ?? ''));
+    final exercicesCtrl = TextEditingController(text: existing?['exercices_conseilles']?.toString() ?? '');
+    final motifCtrl = TextEditingController(text: existing?['bilan_motif']?.toString() ?? rdv?['motif']?.toString() ?? '');
+    final recoCtrl = TextEditingController(text: richTextToPlain(existing?['bilan_recommandation']?.toString() ?? ''));
+    final nbCtrl = TextEditingController(text: existing?['bilan_nb_seances_estime']?.toString() ?? '');
+    final lieuCtrl = TextEditingController(text: existing?['lieu']?.toString() ?? rdv?['lieu']?.toString() ?? '');
+    final dureeCtrl = TextEditingController(
+        text: (existing?['duree_minutes'] ?? rdv?['duree_minutes'])?.toString() ?? '');
+    final comportementsCtrl = TextEditingController(text: existing?['comportements']?.toString() ?? '');
+    final difficultesCtrl = TextEditingController(text: existing?['difficultes']?.toString() ?? '');
+    final prochaineCtrl = TextEditingController(text: existing?['prochaine_etape']?.toString() ?? '');
+    final travailles = <String>{
+      for (final x in (existing?['objectifs_travailles'] as List? ?? const [])) x.toString(),
+    };
+    String? forfaitId = existing?['bilan_forfait_conseille_id']?.toString();
+    bool detaille = existing != null &&
+        ((existing['comportements'] ?? existing['difficultes'] ?? existing['prochaine_etape']) != null);
     final fActif = _forfaitActif;
-    bool imputer = fActif != null;
+    bool imputer = fActif != null && existing == null;
     final List<Map<String, dynamic>> joints = [];
+    final dateSeance = (existing?['date_seance']?.toString()) ??
+        (DateTime.tryParse(rdv?['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime.now())
+            .toIso8601String().substring(0, 10);
 
-    final ok = await showModalBottomSheet<bool>(
+    InputDecoration deco(String label, [String? hint]) => InputDecoration(
+          labelText: label, hintText: hint,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+          hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.all(12),
+        );
+    Widget champ(TextEditingController c, String label, {String? hint, int min = 1, int max = 4}) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: TextField(controller: c, minLines: min, maxLines: max,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14), decoration: deco(label, hint)),
+        );
+
+    final action = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('Séance', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
-                  ButtonSegment(value: true, label: Text('Bilan', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
-                ],
-                selected: {isBilan},
-                onSelectionChanged: (v) => setSheet(() => isBilan = v.first),
-                showSelectedIcon: false,
-              ),
-              const SizedBox(height: 14),
-              if (isBilan) ...[
-                TextField(
-                  controller: motifCtrl,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'Motif de la demande',
-                    hintText: 'Ex : aboiements, tirage en laisse, réactivité congénères…',
-                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
+        builder: (ctx, setSheet) {
+          final isBilan = typeSeance == 'bilan';
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+                Text(existing != null ? 'Compléter le compte rendu' : 'Nouvelle séance — ${widget.animalNom}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
                 const SizedBox(height: 12),
-              ],
-              TextField(
-                controller: contenuCtrl,
-                minLines: 6,
-                maxLines: 16,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: isBilan ? 'Observations' : null,
-                  hintText: isBilan
-                      ? 'Comportement observé, contexte de vie, relation au maître…'
-                      : 'Déroulé de la séance, exercices réalisés, progrès observés…',
-                  hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.all(12),
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text('Mise en forme (gras, couleurs, listes…) disponible sur le site.',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
-              const SizedBox(height: 12),
-              if (isBilan) ...[
-                TextField(
-                  controller: recoCtrl,
-                  minLines: 3,
-                  maxLines: 8,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'Recommandation',
-                    hintText: 'Programme conseillé, priorités de travail…',
-                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final t in kEduTypesSeance.entries)
+                    ChoiceChip(
+                      label: Text(t.value, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: typeSeance == t.key ? Colors.white : const Color(0xFF1F2A2E))),
+                      selected: typeSeance == t.key, showCheckmark: false,
+                      selectedColor: _kOrange, backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+                      onSelected: (_) => setSheet(() => typeSeance = t.key),
+                    ),
+                ]),
                 const SizedBox(height: 12),
                 Row(children: [
-                  SizedBox(
-                    width: 110,
-                    child: TextField(
-                      controller: nbCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                      decoration: InputDecoration(
-                        labelText: 'Nb séances',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                  Expanded(flex: 3, child: TextField(controller: lieuCtrl,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14), decoration: deco('Lieu', 'Domicile, parc, terrain…'))),
+                  const SizedBox(width: 8),
+                  Expanded(flex: 2, child: TextField(controller: dureeCtrl, keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14), decoration: deco('Durée (min)'))),
+                ]),
+                const SizedBox(height: 10),
+                if (isBilan) champ(motifCtrl, 'Motif de la demande', hint: 'Ex : aboiements, tirage en laisse, réactivité…'),
+                if (_objectifs.isNotEmpty) ...[
+                  const Text('Objectifs travaillés', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final o in _objectifs)
+                      FilterChip(
+                        label: Text(o['libelle']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        selected: travailles.contains(o['id'].toString()),
+                        selectedColor: _kOrange.withValues(alpha: 0.18), checkmarkColor: _kOrange,
+                        onSelected: (v) => setSheet(() => v ? travailles.add(o['id'].toString()) : travailles.remove(o['id'].toString())),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonFormField<String?>(
+                  ]),
+                  const SizedBox(height: 10),
+                ],
+                champ(contenuCtrl, isBilan ? 'Observations' : 'Déroulement de la séance',
+                    hint: isBilan ? 'Comportement observé, contexte de vie, relation au maître…'
+                        : 'Exercices réalisés, progrès constatés…', min: 4, max: 12),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero, dense: true,
+                  value: detaille, activeThumbColor: _kOrange,
+                  onChanged: (v) => setSheet(() => detaille = v),
+                  title: const Text('Compte rendu détaillé', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                ),
+                if (detaille) ...[
+                  champ(comportementsCtrl, 'Comportements observés'),
+                  champ(difficultesCtrl, 'Difficultés'),
+                  champ(prochaineCtrl, 'Prochaine étape'),
+                ],
+                if (isBilan) ...[
+                  champ(recoCtrl, 'Recommandation', hint: 'Programme conseillé, priorités de travail…', min: 3, max: 8),
+                  Row(children: [
+                    SizedBox(width: 110, child: TextField(controller: nbCtrl, keyboardType: TextInputType.number,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14), decoration: deco('Nb séances'))),
+                    const SizedBox(width: 10),
+                    Expanded(child: DropdownButtonFormField<String?>(
                       initialValue: forfaitId,
                       isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: 'Forfait conseillé',
-                        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 11),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      ),
+                      decoration: deco('Forfait conseillé'),
                       items: [
                         const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
                         ..._forfaits.map((f) => DropdownMenuItem(
@@ -460,88 +541,121 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                         )),
                       ],
                       onChanged: (v) => setSheet(() => forfaitId = v),
+                    )),
+                  ]),
+                  const SizedBox(height: 10),
+                ] else ...[
+                  champ(exercicesCtrl, 'Recommandations / travail avant la prochaine séance',
+                      hint: 'À faire à la maison d\'ici la prochaine séance…'),
+                  if (fActif != null && existing == null)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      value: imputer,
+                      activeColor: _kOrange,
+                      onChanged: (v) => setSheet(() => imputer = v ?? false),
+                      title: Text(
+                        'Imputer sur le forfait « ${fActif['nom_snapshot']} » '
+                        '(${((fActif['nb_seances_utilisees'] as num?)?.toInt() ?? 0) + 1}/'
+                        '${(fActif['nb_seances_total'] as num?)?.toInt() ?? 1})',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                      ),
                     ),
-                  ),
-                ]),
-                const SizedBox(height: 12),
-              ] else ...[
-                TextField(
-                  controller: exercicesCtrl,
-                  maxLines: 2,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'Exercices conseillés (note rapide)',
-                    hintText: 'À faire à la maison d\'ici la prochaine séance…',
-                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.all(12),
-                  ),
-                ),
-                if (fActif != null) ...[
-                  const SizedBox(height: 4),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    value: imputer,
-                    activeColor: _kOrange,
-                    onChanged: (v) => setSheet(() => imputer = v ?? false),
-                    title: Text(
-                      'Imputer sur le forfait « ${fActif['nom_snapshot']} » '
-                      '(${((fActif['nb_seances_utilisees'] as num?)?.toInt() ?? 0) + 1}/'
-                      '${(fActif['nb_seances_total'] as num?)?.toInt() ?? 1})',
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12),
-                    ),
-                  ),
                 ],
-                const SizedBox(height: 10),
-              ],
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final picked = await Navigator.push<List<Map<String, dynamic>>>(ctx,
-                      MaterialPageRoute(builder: (_) => const EducationBibliothequePage(pickMode: true)));
-                  if (picked != null) setSheet(() { joints..clear()..addAll(picked); });
-                },
-                icon: const Icon(Icons.fitness_center_outlined, size: 16),
-                label: Text(joints.isEmpty ? 'Joindre des exercices de la bibliothèque'
-                    : '${joints.length} exercice${joints.length > 1 ? 's' : ''} joint${joints.length > 1 ? 's' : ''}',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(width: double.infinity, child: ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kOrange, foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await Navigator.push<List<Map<String, dynamic>>>(ctx,
+                        MaterialPageRoute(builder: (_) => const EducationBibliothequePage(pickMode: true)));
+                    if (picked != null) setSheet(() { joints..clear()..addAll(picked); });
+                  },
+                  icon: const Icon(Icons.fitness_center_outlined, size: 16),
+                  label: Text(joints.isEmpty ? 'Joindre des exercices de la bibliothèque'
+                      : '${joints.length} exercice${joints.length > 1 ? 's' : ''} joint${joints.length > 1 ? 's' : ''}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                 ),
-                child: Text(isBilan ? 'Envoyer le bilan' : 'Envoyer à la famille',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-              )),
-            ]),
-          ),
-        ),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx, 'brouillon'),
+                    style: OutlinedButton.styleFrom(foregroundColor: _kOrange, side: const BorderSide(color: _kOrange),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    child: const Text('Brouillon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  )),
+                  const SizedBox(width: 10),
+                  Expanded(flex: 2, child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, 'finalise'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _kOrange, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13), elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(isBilan ? 'Finaliser et envoyer le bilan' : 'Finaliser et envoyer',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                  )),
+                ]),
+              ]),
+            ),
+          );
+        },
       ),
     );
 
-    if (ok != true || contenuCtrl.text.trim().isEmpty || !mounted) return;
+    if (action == null || contenuCtrl.text.trim().isEmpty || !mounted) return;
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     if (proUid == null) return;
+    final isBilan = typeSeance == 'bilan';
+    final finalise = action == 'finalise';
+    final etaitFinalise = existing?['statut'] != 'brouillon' && existing != null;
+    String? t(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
+    final base = <String, dynamic>{
+      'pro_uid': proUid,
+      'animal_id': widget.animalId,
+      'owner_uid': _ownerUid,
+      'date_seance': dateSeance,
+      'type': isBilan ? 'bilan' : 'seance',
+      'contenu': contenuCtrl.text.trim(),
+      'exercices_conseilles': isBilan ? null : t(exercicesCtrl),
+      'bilan_motif': isBilan ? t(motifCtrl) : null,
+      'bilan_observations': isBilan ? contenuCtrl.text.trim() : null,
+      'bilan_recommandation': isBilan ? t(recoCtrl) : null,
+      'bilan_nb_seances_estime': isBilan ? int.tryParse(nbCtrl.text.trim()) : null,
+      'bilan_forfait_conseille_id': isBilan ? forfaitId : null,
+      if (!isBilan && imputer && fActif != null) 'forfait_souscrit_id': fActif['id'],
+    };
+    // migration_education_fiche.sql (repli sur le format d'origine si absente).
+    final extra = <String, dynamic>{
+      'statut': finalise ? 'finalise' : 'brouillon',
+      if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+      if ((rdv?['id'] ?? existing?['rdv_id']) != null) 'rdv_id': rdv?['id'] ?? existing?['rdv_id'],
+      'type_seance': typeSeance,
+      'lieu': t(lieuCtrl),
+      'duree_minutes': int.tryParse(dureeCtrl.text.trim()),
+      'objectifs_travailles': travailles.toList(),
+      'comportements': detaille ? t(comportementsCtrl) : null,
+      'difficultes': detaille ? t(difficultesCtrl) : null,
+      'prochaine_etape': detaille ? t(prochaineCtrl) : null,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
     try {
-      final inserted = await _supa.from('education_progression').insert({
-        'pro_uid': proUid,
-        'animal_id': widget.animalId,
-        'owner_uid': _ownerUid,
-        'date_seance': DateTime.now().toIso8601String().substring(0, 10),
-        'type': isBilan ? 'bilan' : 'seance',
-        'contenu': isBilan ? contenuCtrl.text.trim() : contenuCtrl.text.trim(),
-        if (!isBilan && exercicesCtrl.text.trim().isNotEmpty) 'exercices_conseilles': exercicesCtrl.text.trim(),
-        if (isBilan) 'bilan_motif': motifCtrl.text.trim().isEmpty ? null : motifCtrl.text.trim(),
-        if (isBilan) 'bilan_observations': contenuCtrl.text.trim(),
-        if (isBilan) 'bilan_recommandation': recoCtrl.text.trim().isEmpty ? null : recoCtrl.text.trim(),
-        if (isBilan && int.tryParse(nbCtrl.text.trim()) != null) 'bilan_nb_seances_estime': int.parse(nbCtrl.text.trim()),
-        if (isBilan && forfaitId != null) 'bilan_forfait_conseille_id': forfaitId,
-        if (!isBilan && imputer && fActif != null) 'forfait_souscrit_id': fActif['id'],
-      }).select('id').single();
+      Future<String> ecrire(Map<String, dynamic> champs) async {
+        if (existing != null) {
+          await _supa.from('education_progression').update(champs).eq('id', existing['id']);
+          return existing['id'].toString();
+        }
+        final r = await _supa.from('education_progression').insert(champs).select('id').single();
+        return r['id'].toString();
+      }
+      String id;
+      try {
+        id = await ecrire({...base, ...extra});
+      } on PostgrestException {
+        if (!finalise) {
+          _snack('Brouillon indisponible : migration_education_fiche.sql à passer.', err: true);
+          return;
+        }
+        id = await ecrire(base);
+      }
       if (!isBilan && imputer && fActif != null) {
         await _imputerSeance(fActif);
       }
@@ -553,23 +667,26 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           'animal_id': widget.animalId,
           'owner_uid': _ownerUid,
           if (widget.ownerProfileId != null) 'owner_profile_id': widget.ownerProfileId,
-          'progression_id': inserted['id'],
+          'progression_id': id,
           'titre_snapshot': e['titre'],
           'description_snapshot': e['description'],
           'media_snapshot': e['media'] ?? [],
         }).toList());
       }
-      await _notifyOwner(isBilan ? 'education_bilan' : 'education_rapport',
-          isBilan ? 'Bilan comportemental — ${widget.animalNom}' : 'Rapport de séance — ${widget.animalNom}',
-          '${_proNom.isNotEmpty ? _proNom : 'Votre éducateur'} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'}'
-          '${joints.isNotEmpty ? ' + ${joints.length} exercice${joints.length > 1 ? 's' : ''}' : ''}.');
+      // Seul un compte rendu finalisé est partagé avec la famille.
+      if (finalise && !etaitFinalise) {
+        await _notifyOwner(isBilan ? 'education_bilan' : 'education_rapport',
+            isBilan ? 'Bilan comportemental — ${widget.animalNom}' : 'Rapport de séance — ${widget.animalNom}',
+            '${_proNom.isNotEmpty ? _proNom : 'Votre éducateur'} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'}'
+            '${joints.isNotEmpty ? ' + ${joints.length} exercice${joints.length > 1 ? 's' : ''}' : ''}.');
+      }
       await _load();
-      if (mounted && isBilan) {
+      if (mounted && isBilan && finalise) {
         _proposerDevis(recoCtrl.text.trim(),
             int.tryParse(nbCtrl.text.trim()),
             forfaitId == null ? null : _forfaits.firstWhere((f) => f['id'].toString() == forfaitId, orElse: () => {}));
       } else if (mounted) {
-        _snack('Rapport envoyé à la famille.');
+        _snack(finalise ? 'Compte rendu envoyé à la famille.' : 'Brouillon enregistré.');
       }
     } catch (e) {
       _snack('Erreur : $e', err: true);
@@ -927,32 +1044,11 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         title: Text('Suivi — ${widget.animalNom}',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
-          OwnerContactButton(
-            animalId: widget.animalId,
-            animalNom: widget.animalNom,
-            ownerUid: _ownerUid,
-            color: Colors.white,
-          ),
           IconButton(
             tooltip: 'Bibliothèque d\'exercices',
             icon: const Icon(Icons.fitness_center_outlined),
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const EducationBibliothequePage())),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'attestation') _genererAttestation();
-              if (v == 'pdf_exercices') _envoyerExercicesPdf();
-              if (v == 'lien_suivi') _partagerSuiviLien();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'pdf_exercices',
-                  child: Text('Envoyer les exercices en PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-              PopupMenuItem(value: 'lien_suivi',
-                  child: Text('Partager un lien (famille sans compte)', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-              PopupMenuItem(value: 'attestation',
-                  child: Text('Générer l\'attestation de fin', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-            ],
           ),
         ],
         bottom: TabBar(
@@ -961,28 +1057,235 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12),
-          tabs: const [Tab(text: 'Objectifs'), Tab(text: 'Exercices'), Tab(text: 'Séances'), Tab(text: 'Forfait')],
+          tabs: const [Tab(text: 'Synthèse'), Tab(text: 'Programme'), Tab(text: 'Séances'), Tab(text: 'Documents')],
         ),
       ),
       floatingActionButton: AnimatedBuilder(
         animation: _tab,
-        builder: (_, __) => FloatingActionButton.extended(
-          backgroundColor: _kOrange,
-          foregroundColor: Colors.white,
-          onPressed: switch (_tab.index) {
-            0 => () => _editObjectif(),
-            1 => _attribuerExercices,
-            2 => _addSeance,
-            _ => _enregistrerForfait,
-          },
-          icon: const Icon(Icons.add),
-          label: Text(switch (_tab.index) { 0 => 'Objectif', 1 => 'Attribuer', 2 => 'Séance', _ => 'Forfait' },
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        ),
+        builder: (_, __) {
+          if (_tab.index == 3) return const SizedBox.shrink();
+          final prog = _tab.index == 1;
+          return FloatingActionButton.extended(
+            backgroundColor: _kOrange,
+            foregroundColor: Colors.white,
+            onPressed: prog
+                ? switch (_programmeVue) {
+                    'exercices' => _attribuerExercices,
+                    'forfait' => _enregistrerForfait,
+                    _ => () => _editObjectif(),
+                  }
+                : () => _editSeance(),
+            icon: const Icon(Icons.add),
+            label: Text(prog
+                ? switch (_programmeVue) { 'exercices' => 'Attribuer', 'forfait' => 'Forfait', _ => 'Objectif' }
+                : 'Nouvelle séance',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          );
+        },
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _kOrange))
-          : TabBarView(controller: _tab, children: [_objectifsTab(), _exercicesTab(), _seancesTab(), _forfaitTab()]),
+      body: Column(children: [
+        // En-tête commun : identité + propriétaire (appeler, message, urgence).
+        ProAnimalEntete(animalId: widget.animalId, catPro: 'education', statut: _statutSuivi),
+        Expanded(child: _loading
+            ? const Center(child: CircularProgressIndicator(color: _kOrange))
+            : TabBarView(controller: _tab, children: [_syntheseTab(), _programmeTab(), _seancesTab(), _documentsTab()])),
+      ]),
+    );
+  }
+
+  /// Statut métier affiché dans l'en-tête.
+  String? get _statutSuivi {
+    if (_forfaitActif != null || _objectifs.any((o) => o['statut'] != 'acquis')) return 'Suivi actif';
+    return _seances.isEmpty ? null : 'Suivi terminé';
+  }
+
+  String _dateFr(String? iso) {
+    final d = DateTime.tryParse(iso ?? '')?.toLocal();
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  Widget _carte({required String titre, IconData? icone, required Widget child, Widget? action}) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE6E8E6))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            if (icone != null) ...[Icon(icone, size: 17, color: const Color(0xFF0C5C6C)), const SizedBox(width: 8)],
+            Expanded(child: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E)))),
+            if (action != null) action,
+          ]),
+          const SizedBox(height: 8),
+          child,
+        ]),
+      );
+
+  Widget _texteDiscret(String t) =>
+      Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600));
+
+  // ── Synthèse ───────────────────────────────────────────────────────────────
+
+  Widget _syntheseTab() {
+    final bilans = _seances.where((x) => x['type'] == 'bilan').toList();
+    final motif = bilans.map((b) => b['bilan_motif']?.toString() ?? '').firstWhere((m) => m.isNotEmpty, orElse: () => '');
+    final finalisees = _seances.where((x) => x['statut'] != 'brouillon').toList();
+    final derniere = finalisees.isEmpty ? null : finalisees.first;
+    final prioritaires = [
+      ..._objectifs.where((o) => o['prioritaire'] == true && o['statut'] != 'acquis'),
+      ..._objectifs.where((o) => o['prioritaire'] != true && o['statut'] != 'acquis'),
+    ].take(3).toList();
+    final reco = (bilans.isNotEmpty ? richTextToPlain(bilans.first['bilan_recommandation']?.toString() ?? '') : '').trim();
+    final travail = (derniere?['exercices_conseilles']?.toString() ?? '').trim();
+    final f = _forfaitActif;
+    final brouillons = _seances.where((x) => x['statut'] == 'brouillon').length;
+    final prochain = _prochainRdv;
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _kOrange,
+      child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 90), children: [
+        if (brouillons > 0)
+          InkWell(
+            onTap: () => _tab.animateTo(2),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFFFF4DC), borderRadius: BorderRadius.circular(12)),
+              child: Text('$brouillons compte${brouillons > 1 ? 's' : ''} rendu${brouillons > 1 ? 's' : ''} à finaliser',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF8A5A00))),
+            ),
+          ),
+        _carte(titre: "Motif de l'accompagnement", icone: Icons.flag_outlined,
+            child: motif.isEmpty ? _texteDiscret('Non renseigné — il se saisit dans le bilan initial.') : Text(motif,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+        _carte(titre: 'Programme actif', icone: Icons.assignment_outlined,
+            action: TextButton(onPressed: () { setState(() => _programmeVue = 'forfait'); _tab.animateTo(1); },
+                child: const Text('Voir', style: TextStyle(fontFamily: 'Galey'))),
+            child: f == null
+                ? _texteDiscret('Aucun forfait en cours.')
+                : Text('${f['nom_snapshot'] ?? 'Forfait'} — séance ${(f['nb_seances_utilisees'] as num?)?.toInt() ?? 0}/${(f['nb_seances_total'] as num?)?.toInt() ?? 0}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+        _carte(titre: 'Objectifs prioritaires', icone: Icons.track_changes_outlined,
+            action: TextButton(onPressed: () { setState(() => _programmeVue = 'objectifs'); _tab.animateTo(1); },
+                child: const Text('Programme', style: TextStyle(fontFamily: 'Galey'))),
+            child: prioritaires.isEmpty
+                ? _texteDiscret('Aucun objectif en cours.')
+                : Column(children: [
+                    for (final o in prioritaires)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(children: [
+                          Container(width: 8, height: 8, decoration: BoxDecoration(color: _statutColor(o['statut']?.toString() ?? ''), shape: BoxShape.circle)),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(o['libelle']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+                          Text(_kStatutLabels[o['statut']] ?? '', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _statutColor(o['statut']?.toString() ?? ''))),
+                        ]),
+                      ),
+                  ])),
+        _carte(titre: 'Dernière séance', icone: Icons.history,
+            child: derniere == null
+                ? _texteDiscret('Aucune séance enregistrée.')
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${_dateFr(derniere['date_seance']?.toString())} · ${kEduTypesSeance[derniere['type_seance']] ?? (derniere['type'] == 'bilan' ? 'Bilan' : 'Séance')}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(richTextToPlain(derniere['contenu']?.toString() ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.35)),
+                  ])),
+        _carte(titre: 'Prochain rendez-vous', icone: Icons.event_outlined,
+            child: prochain == null
+                ? _texteDiscret('Aucune séance planifiée.')
+                : Text('${_dateFr(prochain['date_heure']?.toString())} à ${DateTime.parse(prochain['date_heure'].toString()).toLocal().hour.toString().padLeft(2, '0')}h${DateTime.parse(prochain['date_heure'].toString()).toLocal().minute.toString().padLeft(2, '0')}'
+                    '${(prochain['motif']?.toString() ?? '').isNotEmpty ? ' · ${prochain['motif']}' : ''}'
+                    '${(prochain['lieu']?.toString() ?? '').isNotEmpty ? '\n${prochain['lieu']}' : ''}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+        _carte(titre: 'Recommandations en cours', icone: Icons.tips_and_updates_outlined,
+            child: reco.isEmpty && travail.isEmpty
+                ? _texteDiscret('Aucune recommandation partagée.')
+                : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (reco.isNotEmpty) Text(reco, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.35)),
+                    if (travail.isNotEmpty) ...[
+                      if (reco.isNotEmpty) const SizedBox(height: 6),
+                      Text('Travail à la maison : $travail', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.35)),
+                    ],
+                  ])),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AnimalFichePage(
+              animalId: widget.animalId, readOnly: true, educationMode: true))),
+          icon: const Icon(Icons.badge_outlined, size: 18),
+          label: const Text('Identité et carnet de santé (lecture)', style: TextStyle(fontFamily: 'Galey')),
+          style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+        ),
+      ]),
+    );
+  }
+
+  // ── Programme (objectifs · exercices · forfait) ────────────────────────────
+
+  Widget _programmeTab() {
+    Widget seg(String v, String label) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                color: _programmeVue == v ? Colors.white : const Color(0xFF1F2A2E))),
+            selected: _programmeVue == v, showCheckmark: false,
+            selectedColor: const Color(0xFF0C5C6C), backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+            onSelected: (_) => setState(() => _programmeVue = v),
+          ),
+        );
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: Row(children: [seg('objectifs', 'Objectifs'), seg('exercices', 'Exercices'), seg('forfait', 'Forfait')]),
+      ),
+      Expanded(child: switch (_programmeVue) {
+        'exercices' => _exercicesTab(),
+        'forfait' => _forfaitTab(),
+        _ => _objectifsTab(),
+      }),
+    ]);
+  }
+
+  // ── Documents ──────────────────────────────────────────────────────────────
+
+  Widget _documentsTab() {
+    final bilans = _seances.where((x) => x['type'] == 'bilan' && x['statut'] != 'brouillon').toList();
+    final crs = _seances.where((x) => x['type'] != 'bilan' && x['statut'] != 'brouillon').toList();
+    Widget ligneDoc(Map<String, dynamic> x, String type) => ListTile(
+          contentPadding: EdgeInsets.zero, dense: true,
+          leading: const Icon(Icons.description_outlined, color: Color(0xFF0C5C6C)),
+          title: Text('$type — ${_dateFr(x['date_seance']?.toString())}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+          subtitle: Text(richTextToPlain(x['contenu']?.toString() ?? ''), maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          onTap: () => _tab.animateTo(2),
+        );
+    Widget actionDoc(IconData ic, String titre, String sous, VoidCallback onTap) => ListTile(
+          contentPadding: EdgeInsets.zero, dense: true,
+          leading: Icon(ic, color: _kOrange),
+          title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+          subtitle: Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: onTap,
+        );
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _kOrange,
+      child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
+        _carte(titre: 'Bilans comportementaux', icone: Icons.psychology_outlined,
+            child: bilans.isEmpty ? _texteDiscret('Aucun bilan finalisé.')
+                : Column(children: [for (final b in bilans) ligneDoc(b, 'Bilan')])),
+        _carte(titre: 'Comptes rendus de séance', icone: Icons.article_outlined,
+            child: crs.isEmpty ? _texteDiscret('Aucun compte rendu finalisé.')
+                : Column(children: [for (final c in crs.take(10)) ligneDoc(c, kEduTypesSeance[c['type_seance']] ?? 'Séance')])),
+        _carte(titre: 'Supports et documents partagés', icone: Icons.folder_shared_outlined,
+            child: Column(children: [
+              actionDoc(Icons.picture_as_pdf_outlined, 'Exercices en PDF', 'Envoyer le programme d\'exercices à la famille', _envoyerExercicesPdf),
+              actionDoc(Icons.link, 'Lien de suivi', 'Partager le suivi avec une famille sans compte', _partagerSuiviLien),
+              actionDoc(Icons.workspace_premium_outlined, 'Attestation de fin', 'Générer l\'attestation de suivi', _genererAttestation),
+            ])),
+      ]),
     );
   }
 
@@ -1396,13 +1699,19 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               ]),
               const SizedBox(height: 4),
               Wrap(spacing: 6, children: [
-                _pill(_kStatutLabels[statut]!, _statutColor(statut)),
+                if (o['prioritaire'] == true) _pill('Prioritaire', const Color(0xFF0C5C6C)),
+                _pill(_kStatutLabels[statut] ?? statut, _statutColor(statut)),
                 if (cat != null && _kCategories[cat] != null) _pill(_kCategories[cat]!, Colors.grey.shade500),
               ]),
               if ((o['note']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 6),
                 RichTextView(o['note'].toString(),
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ],
+              if ((o['difficultes']?.toString() ?? '').isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Difficultés : ${o['difficultes']}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
               ],
             ]),
           );
@@ -1424,6 +1733,16 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         itemBuilder: (_, i) {
           final s = _seances[i];
           final isBilan = s['type'] == 'bilan';
+          final brouillon = s['statut'] == 'brouillon';
+          final infos = [
+            if (kEduTypesSeance[s['type_seance']] != null) kEduTypesSeance[s['type_seance']]!,
+            if ((s['lieu']?.toString() ?? '').isNotEmpty) s['lieu'].toString(),
+            if (s['duree_minutes'] != null) '${s['duree_minutes']} min',
+          ].join(' · ');
+          final objs = [
+            for (final id in (s['objectifs_travailles'] as List? ?? const []))
+              _objectifs.where((o) => o['id'].toString() == id.toString()).map((o) => o['libelle']?.toString() ?? '').firstOrNull,
+          ].whereType<String>().where((x) => x.isNotEmpty).toList();
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
@@ -1437,9 +1756,24 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   _pill('BILAN', _kOrange),
                   const SizedBox(width: 6),
                 ],
-                Text(s['date_seance']?.toString() ?? '',
+                Text(_dateFr(s['date_seance']?.toString()),
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                const Spacer(),
+                if (brouillon) ...[
+                  _pill('BROUILLON', const Color(0xFF8A5A00)),
+                  TextButton(onPressed: () => _editSeance(existing: s),
+                      child: const Text('Compléter', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                ],
               ]),
+              if (infos.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(infos, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+              ],
+              if (objs.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text('Objectifs travaillés : ${objs.join(', ')}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
               if (isBilan && (s['bilan_motif']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text('Motif : ${s['bilan_motif']}',
@@ -1454,7 +1788,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: const Color(0xFFFFF3E9), borderRadius: BorderRadius.circular(8)),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('📋 Recommandation',
+                    const Text('Recommandation',
                         style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: _kOrange)),
                     const SizedBox(height: 2),
                     RichTextView(s['bilan_recommandation'].toString(),
@@ -1465,13 +1799,18 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   ]),
                 ),
               ],
+              for (final e in [('Comportements observés', 'comportements'), ('Difficultés', 'difficultes'), ('Prochaine étape', 'prochaine_etape')])
+                if ((s[e.$2]?.toString() ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('${e.$1} : ${s[e.$2]}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, height: 1.35)),
+                ],
               if ((s['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: const Color(0xFFEEF5EA), borderRadius: BorderRadius.circular(8)),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('🏋️ Exercices conseillés',
+                    const Text('Recommandations / travail à la maison',
                         style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF4A7A32))),
                     const SizedBox(height: 2),
                     Text(s['exercices_conseilles'].toString(),

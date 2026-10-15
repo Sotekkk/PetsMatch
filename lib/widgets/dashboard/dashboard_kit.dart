@@ -286,15 +286,20 @@ class DashKpi extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: kDashOmbre,
                 border: Border.all(color: actif ? teinte : kDashBorder, width: actif ? 1.5 : 1)),
+            // Icône à côté du chiffre : le libellé garde deux lignes, sans
+            // déborder du cadre sur petit écran (ex. « Comptes rendus à finaliser »).
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(color: teinte.withValues(alpha: 0.09), shape: BoxShape.circle),
-                child: Icon(icon, size: 19, color: teinte),
-              ),
-              Text('$valeur', style: const TextStyle(fontFamily: 'Galey', fontSize: 26,
-                  fontWeight: FontWeight.w700, color: kDashInk, height: 1.1, fontFeatures: [FontFeature.tabularFigures()])),
-              Text(label, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+              Row(children: [
+                Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(color: teinte.withValues(alpha: 0.09), shape: BoxShape.circle),
+                  child: Icon(icon, size: 16, color: teinte),
+                ),
+                const SizedBox(width: 10),
+                Flexible(child: Text('$valeur', maxLines: 1, style: const TextStyle(fontFamily: 'Galey', fontSize: 26,
+                    fontWeight: FontWeight.w700, color: kDashInk, height: 1.1, fontFeatures: [FontFeature.tabularFigures()]))),
+              ]),
+              Text(label, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5,
                   fontWeight: FontWeight.w500, color: Color(0xFF4B5563), height: 1.2)),
             ]),
           ),

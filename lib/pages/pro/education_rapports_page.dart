@@ -22,10 +22,13 @@ const _kCategories = <String, String>{
   'agressivite': 'Agressivité', 'peurs': 'Peurs', 'autre': 'Autre',
 };
 const _kStatutLabels = {
-  'a_travailler': 'À travailler', 'en_cours': 'En cours', 'acquis': 'Acquis',
+  'a_travailler': 'À travailler', 'en_cours': 'En cours', 'en_progression': 'En progression',
+    'acquis': 'Acquis selon évaluation', 'a_reevaluer': 'À réévaluer',
 };
 Color _statutColor(String s) => switch (s) {
       'acquis' => const Color(0xFF6E9E57),
+      'en_progression' => const Color(0xFF2E7D8C),
+      'a_reevaluer' => const Color(0xFF7B5EA7),
       'en_cours' => const Color(0xFFEFA100),
       _ => const Color(0xFFD5573B),
     };
@@ -46,8 +49,10 @@ class _EducationRapportsPageState extends State<EducationRapportsPage> {
     if (widget.animalId == null) return;
     setState(() => _loading = true);
     try {
-      final rows = await _supa.from('education_progression').select()
-          .eq('animal_id', widget.animalId!).order('date_seance', ascending: false);
+      // Brouillons de l'éducateur jamais visibles par la famille.
+      final rows = (await _supa.from('education_progression').select()
+          .eq('animal_id', widget.animalId!).order('date_seance', ascending: false) as List)
+          .where((r) => r['statut'] != 'brouillon').toList();
       List objs = const [];
       try {
         objs = await _supa.from('education_objectifs').select()

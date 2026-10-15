@@ -68,7 +68,7 @@ export default function SuiviPartagePage() {
         supabase.from('animaux').select('id, nom, espece, race, photo_url').eq('id', animalId).single(),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut').eq('animal_id', animalId).order('ordre').order('created_at'),
         supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
-        supabase.from('education_progression').select('id, date_seance, contenu, type, bilan_recommandation').eq('animal_id', animalId).order('date_seance', { ascending: false }),
+        supabase.from('education_progression').select('*').eq('animal_id', animalId).order('date_seance', { ascending: false }),
       ]);
       if (aErr || !animal) { setState({ status: 'invalid' }); return; }
 
@@ -76,7 +76,7 @@ export default function SuiviPartagePage() {
         status: 'ok', animal: animal as Animal,
         objectifs: (objectifs ?? []) as Objectif[],
         exercices: (exercices ?? []) as Exercice[],
-        rapports: (rapports ?? []) as Rapport[],
+        rapports: ((rapports ?? []) as (Rapport & { statut?: string | null })[]).filter(x => x.statut !== 'brouillon'),
       });
     } catch {
       setState({ status: 'invalid' });

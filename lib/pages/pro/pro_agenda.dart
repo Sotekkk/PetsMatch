@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -5276,11 +5277,11 @@ class _RdvCard extends StatelessWidget {
                 const SizedBox(width: 4),
                 Builder(builder: (ctx) => IconButton(
                   onPressed: () => Navigator.push(ctx, MaterialPageRoute(
-                    builder: (_) => AnimalFichePage(
+                    // Fiche éducative (Synthèse · Programme · Séances · Documents).
+                    builder: (_) => EducationSuiviPage(
                       animalId: rdv['animal_id'].toString(),
-                      readOnly: true,
-                      educationMode: true,
-                      rdvId: rdv['id']?.toString(),
+                      animalNom: (rdv['_animal_nom'] ?? rdv['animal_nom_manuel'] ?? 'Animal').toString(),
+                      ownerProfileId: rdv['client_profile_id']?.toString(),
                     ),
                   )),
                   icon: const Icon(Icons.pets_outlined, size: 20, color: Color(0xFF6E9E57)),

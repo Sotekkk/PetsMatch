@@ -469,8 +469,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       hasUpd = (updates as List).isNotEmpty;
     } catch (_) {}
     try {
-      final rapports = await _supa.from('education_progression').select('id').eq('animal_id', _animalId!).limit(1);
-      hasRap = (rapports as List).isNotEmpty;
+      // Brouillons de l'éducateur exclus (jamais visibles par la famille).
+      final rapports = await _supa.from('education_progression').select().eq('animal_id', _animalId!).limit(20);
+      hasRap = (rapports as List).any((r) => r['statut'] != 'brouillon');
     } catch (_) {}
     if (!hasRap) {
       try {
@@ -7275,10 +7276,13 @@ class _EducationTabPState extends State<_EducationTabP> {
     'agressivite': 'Agressivité', 'peurs': 'Peurs', 'autre': 'Autre',
   };
   static const _kEduStatutLabels = {
-    'a_travailler': 'À travailler', 'en_cours': 'En cours', 'acquis': 'Acquis',
+    'a_travailler': 'À travailler', 'en_cours': 'En cours', 'en_progression': 'En progression',
+    'acquis': 'Acquis selon évaluation', 'a_reevaluer': 'À réévaluer',
   };
   Color _eduStatutColor(String s) => switch (s) {
         'acquis' => const Color(0xFF6E9E57),
+        'en_progression' => const Color(0xFF2E7D8C),
+        'a_reevaluer' => const Color(0xFF7B5EA7),
         'en_cours' => const Color(0xFFEFA100),
         _ => const Color(0xFFD5573B),
       };
@@ -7332,7 +7336,7 @@ class _EducationTabPState extends State<_EducationTabP> {
       }
       if (mounted) {
         setState(() {
-          _rapports = List<Map<String, dynamic>>.from(r as List);
+          _rapports = List<Map<String, dynamic>>.from((r as List).where((x) => x['statut'] != 'brouillon'));
           _devis = List<Map<String, dynamic>>.from(d as List);
           _objectifs = List<Map<String, dynamic>>.from(objectifs);
           _exercices = List<Map<String, dynamic>>.from(exercices);
@@ -7445,7 +7449,7 @@ class _EducationTabPState extends State<_EducationTabP> {
           Wrap(spacing: 6, runSpacing: 6, children: _objectifs.map((o) {
             final st = o['statut']?.toString() ?? 'a_travailler';
             final c = _eduStatutColor(st);
-            final emoji = st == 'acquis' ? '✅' : st == 'en_cours' ? '🟡' : '🔴';
+            final emoji = st == 'acquis' ? '✅' : (st == 'en_cours' || st == 'en_progression') ? '🟡' : st == 'a_reevaluer' ? '🔁' : '🔴';
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(color: c.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
