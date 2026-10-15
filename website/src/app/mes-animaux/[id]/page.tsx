@@ -2440,6 +2440,7 @@ function AnimalFichePageInner() {
   const [addOpen, setAddOpen] = useState<string|null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
   const [optsVermifuge, setOptsVermifuge] = useState<OptionsVermifuge>(optionsVermifugeVides());
+  const [optsAntiparasitaire, setOptsAntiparasitaire] = useState<OptionsVermifuge>(optionsVermifugeVides());
   const [editPoids, setEditPoids] = useState<string|null>(null);
   // "+ Rappel" sur un vaccin : pré-remplit le formulaire d'ajout avec le
   // même vaccin/vétérinaire, il ne reste qu'à changer date et lot.
@@ -3182,6 +3183,27 @@ function AnimalFichePageInner() {
       }
     }
     setOptsVermifuge(optionsVermifugeVides());
+    await loadHealth();
+    setAddOpen(null);
+    setSavingHealth(false);
+  }
+
+  // Antiparasitaire : plusieurs animaux d'un coup (même bloc que le vermifuge).
+  async function saveAntiparasitaire(data: Record<string,string>) {
+    if (!id) return;
+    setSavingHealth(true);
+    for (const animalId of [id, ...optsAntiparasitaire.autres]) {
+      const recordId = crypto.randomUUID();
+      await supabase.from('antiparasitaires').insert({ ...data, animal_id: animalId, id: recordId });
+      if (animalId === id) {
+        await writeRegistreActe('antiparasitaires', recordId, data);
+      } else {
+        const { data: autre } = await supabase.from('animaux')
+          .select('id, nom, espece, date_naissance, identification, sexe').eq('id', animalId).maybeSingle();
+        if (autre) await writeRegistreActe('antiparasitaires', recordId, data, autre as { id: string });
+      }
+    }
+    setOptsAntiparasitaire(optionsVermifugeVides());
     await loadHealth();
     setAddOpen(null);
     setSavingHealth(false);
@@ -4710,8 +4732,9 @@ function AnimalFichePageInner() {
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires'); } : undefined}
             addFormOpen={addOpen==='antiparasitaires'}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
-              onSave={async d=>{ await saveHealthRecord('antiparasitaires',d); setRappelPrefill(null); }}
+              onSave={async d=>{ await saveAntiparasitaire(d); setRappelPrefill(null); }}
               initial={rappelPrefill ?? undefined}
+              extra={id ? <VermifugeOptions animalId={id} value={optsAntiparasitaire} onChange={setOptsAntiparasitaire} prises={false} /> : null}
               fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'notes',label:'Notes'}]}/>}>
             {health.antiparasitaires.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('antiparasitaires',r.id)}

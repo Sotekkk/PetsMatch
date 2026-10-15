@@ -7692,6 +7692,8 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
   late String _type = widget.prefillType ?? 'pipette';
   late String _frequenceUnite = widget.prefillFrequenceUnite ?? 'mois';
   DateTime? _date, _dateRappel;
+  /// Saisie groupée « autres animaux » — même bloc que le vermifuge.
+  final _options = OptionsVermifuge();
 
   String get _frequenceLabel {
     final n = int.tryParse(_frequenceValeur.text.trim()) ?? 1;
@@ -7736,33 +7738,41 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
     ])),
+    // Saisie groupée : réservée au propriétaire (pas au vétérinaire).
+    if (widget.vetId == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
     _DD('Prochain rappel', _dateRappel, (d) => setState(() => _dateRappel = d)),
     _DF('Notes', _notes, maxLines: 2),
   ], onSave: () async {
     if (_produit.text.isEmpty || _date == null) return false;
-    final id = DateTime.now().microsecondsSinceEpoch.toString();
-    await Supabase.instance.client.from('antiparasitaires').insert({
-      'id': id, 'animal_id': widget.animalId,
-      'type': _type, 'produit': _produit.text.trim(),
-      'date': _date!.toIso8601String(),
-      'date_rappel': _dateRappel?.toIso8601String(),
-      'frequence': _frequenceLabel, 'notes': _notes.text.trim(),
-      'source': widget.source,
-      if (widget.vetId != null) 'vet_id': widget.vetId,
-    });
+    final cibles = [widget.animalId, ..._options.autresAnimaux];
+    final base = DateTime.now().microsecondsSinceEpoch;
+    for (var i = 0; i < cibles.length; i++) {
+      final id = '${base + i}';
+      await Supabase.instance.client.from('antiparasitaires').insert({
+        'id': id, 'animal_id': cibles[i],
+        'type': _type, 'produit': _produit.text.trim(),
+        'date': _date!.toIso8601String(),
+        'date_rappel': _dateRappel?.toIso8601String(),
+        'frequence': _frequenceLabel, 'notes': _notes.text.trim(),
+        'source': widget.source,
+        if (widget.vetId != null) 'vet_id': widget.vetId,
+      });
+      RegistreHelper.writeActe(
+        animalId: cibles[i], typeActe: 'antiparasitaire', dateActe: _date!,
+        intervenant: widget.vetName ?? '',
+        description: '${_produit.text.trim()} ($_type)',
+        sourceTable: 'antiparasitaires', sourceId: id,
+      );
+    }
+    // Prochain rappel : un seul événement d'agenda pour tous les animaux.
     if (_dateRappel != null) {
       await _scheduleRappelAgenda(
         animalId: widget.animalId,
         dateRappel: _dateRappel!,
         titre: 'Rappel antiparasitaire — ${_produit.text.trim()}',
+        autres: _options.autresAnimaux.toList(),
       );
     }
-    RegistreHelper.writeActe(
-      animalId: widget.animalId, typeActe: 'antiparasitaire', dateActe: _date!,
-      intervenant: widget.vetName ?? '',
-      description: '${_produit.text.trim()} ($_type)',
-      sourceTable: 'antiparasitaires', sourceId: id,
-    );
     if (widget.vetId != null) {
       try {
         await FirebaseFunctions.instanceFor(region: 'europe-west1')

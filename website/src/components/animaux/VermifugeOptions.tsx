@@ -28,8 +28,10 @@ export function colonnesPrises(o: OptionsVermifuge, date?: string): Record<strin
   return out;
 }
 
-export default function VermifugeOptions({ animalId, value, onChange, groupe = true }: {
+export default function VermifugeOptions({ animalId, value, onChange, groupe = true, prises = true }: {
   animalId: string; value: OptionsVermifuge; onChange: (v: OptionsVermifuge) => void; groupe?: boolean;
+  /** false : seulement « Appliquer aussi à » (ex. antiparasitaire). */
+  prises?: boolean;
 }) {
   const [heure, setHeure] = useState('08:00');
   const [animaux, setAnimaux] = useState<{ id: string; nom: string | null }[]>([]);
@@ -64,7 +66,7 @@ export default function VermifugeOptions({ animalId, value, onChange, groupe = t
 
   return (
     <div className="space-y-3">
-      <div className={cadre}>
+      {prises && <div className={cadre}>
         <div className="flex items-center gap-2 text-sm">
           <span className="font-semibold text-[#1F2A2E] flex-1">Durée du traitement</span>
           <input type="number" min={1} max={60} value={value.dureeJours}
@@ -91,7 +93,7 @@ export default function VermifugeOptions({ animalId, value, onChange, groupe = t
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {groupe && animaux.length > 0 && (
         <div className="relative">
