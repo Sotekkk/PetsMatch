@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -436,6 +437,11 @@ class _ProClientsPageState extends State<ProClientsPage>
     final animalId = animal['id']?.toString() ?? '';
     if (User_Info.catPro == 'garde') {
       Navigator.push(context, MaterialPageRoute(builder: (_) => GardeFicheAnimalPage(
+          animalId: animalId, animalNom: animal['nom']?.toString() ?? 'Animal')));
+      return;
+    }
+    if (User_Info.catPro == 'toilettage') {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ToilettageFicheClientPage(
           animalId: animalId, animalNom: animal['nom']?.toString() ?? 'Animal')));
       return;
     }

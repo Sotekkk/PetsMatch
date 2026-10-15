@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/toilettage_constantes.dart' show labelTravailToilettage;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
@@ -13177,7 +13178,9 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   Map<String, String> _vetNames = {};
   /// Comptes rendus de séance partagés (ostéo, kiné, rééducation, bilans).
   List<Map<String, dynamic>> _seances = [];
-  /// tous | osteopathie | kine | veterinaire | autre — d'après le métier de
+  /// Comptes rendus de toilettage que le salon a choisi de partager.
+  List<Map<String, dynamic>> _toilettages = [];
+  /// tous | osteopathie | kine | veterinaire | toilettage | autre — d'après le métier de
   /// l'auteur (categorieConsultation), pas le type de séance.
   String _categorie = 'tous';
 
@@ -13257,7 +13260,23 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
         }
       } catch (_) {}
 
+      var toilettages = <Map<String, dynamic>>[];
+      try {
+        toilettages = List<Map<String, dynamic>>.from(await _supa.from('seances_toilettage').select()
+            .eq('animal_id', widget.animalId!).eq('partage_proprietaire', true).order('date_seance', ascending: false));
+        final pids = toilettages.map((x) => x['pro_profile_id']?.toString()).whereType<String>().toSet().toList();
+        if (pids.isNotEmpty) {
+          final salons = await _supa.from('user_profiles_complet').select('id, nom, firstname, lastname').inFilter('id', pids);
+          final noms = {
+            for (final r in salons as List)
+              r['id'].toString(): (r['nom'] ?? '').toString().trim().isNotEmpty ? r['nom'].toString().trim() : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim(),
+          };
+          for (final x in toilettages) { x['_pro'] = noms[x['pro_profile_id']?.toString()]; }
+        }
+      } catch (_) {}
+
       if (mounted) setState(() {
+        _toilettages = toilettages;
         _crs      = allCrs;
         _ordos    = allOrdos;
         _vetNames = vetNames;
@@ -13280,13 +13299,14 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty;
+    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty && _toilettages.isEmpty;
     // Catégories présentes seulement (pas de filtre vide).
     // Ordre : Ostéopathie, Kiné, Vétérinaire, Autres — catégories présentes seulement.
     final presentes = <String>[
       for (final c in kCategoriesConsultation)
         if (_seances.any((x) => x['_categorie'] == c.$1)
             || (c.$1 == 'veterinaire' && (_crs.isNotEmpty || _ordos.isNotEmpty))
+            || (c.$1 == 'toilettage' && _toilettages.isNotEmpty)
             || (c.$1 == 'osteopathie' && _seancesOsteoCount > 0)) c.$1,
     ];
     bool voir(String c) => _categorie == 'tous' || _categorie == c;
@@ -13366,6 +13386,13 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
                   for (final x in seancesVues) _SeanceProprietaireCard(seance: x, espece: widget.espece),
                   const SizedBox(height: 20),
                 ],
+                if (voir('toilettage') && _toilettages.isNotEmpty) ...[
+                  _VetConsultSectionHeader(label: 'Toilettage', count: _toilettages.length,
+                      icon: Icons.content_cut, color: _teal),
+                  const SizedBox(height: 10),
+                  for (final x in _toilettages) _ToilettageProprietaireCard(seance: x),
+                  const SizedBox(height: 20),
+                ],
                 if (voir('osteopathie') && _seancesOsteoCount > 0)
                   AnatomieOwnerSection(animalId: widget.animalId ?? '', espece: widget.espece),
               ]),
@@ -13375,6 +13402,42 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
 }
 
 // ─── Widgets helpers consultations ───────────────────────────────────────────
+
+/// Compte rendu de toilettage partagé par le salon (lecture seule) : date,
+/// salon, travaux réalisés, compte rendu. Les observations internes et les
+/// photos restent côté salon.
+class _ToilettageProprietaireCard extends StatelessWidget {
+  final Map<String, dynamic> seance;
+  const _ToilettageProprietaireCard({required this.seance});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = DateTime.tryParse(seance['date_seance']?.toString() ?? '');
+    final travaux = ((seance['travaux'] as List?) ?? []).map((e) => labelTravailToilettage(e.toString())).join(', ');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Toilettage', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 2),
+        Text([
+          if (date != null) DateFormat('d MMMM yyyy', 'fr_FR').format(date),
+          if ((seance['_pro'] as String?)?.trim().isNotEmpty == true) seance['_pro'] as String,
+        ].join(' — '), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        if (travaux.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(travaux, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E))),
+        ],
+        if ((seance['compte_rendu']?.toString() ?? '').trim().isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(seance['compte_rendu'].toString().trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
+        ],
+      ]),
+    );
+  }
+}
 
 /// Carte compacte d'un compte rendu de séance (ostéo, kiné…) côté
 /// propriétaire : type, date, professionnel et spécialité ; ouvre le compte

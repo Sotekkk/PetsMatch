@@ -956,6 +956,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
     case 'toilettage_pret':
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
+    // Compte rendu de toilettage partagé → onglet Consultations de l'animal.
+    case 'toilettage_cr':
+      return d.animalId ? `/mes-animaux/${d.animalId}?tab=consultations` : null;
     // Fin d'abonnement / d'essai gratuit (functions/abonnements.js) → abonnement du métier.
     case 'abonnement_expiration': {
       const p = String(d.profilType ?? '');

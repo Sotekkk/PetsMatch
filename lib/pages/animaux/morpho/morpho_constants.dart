@@ -112,6 +112,7 @@ const List<(String, String)> kCategoriesConsultation = [
   ('osteopathie', 'Ostéopathie'),
   ('kine', 'Kiné · Physio'),
   ('veterinaire', 'Vétérinaire'),
+  ('toilettage', 'Toilettage'),
   ('autre', 'Autres'),
 ];
 

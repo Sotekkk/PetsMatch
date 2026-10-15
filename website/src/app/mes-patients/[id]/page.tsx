@@ -3,6 +3,7 @@
 import { SyntheseVet, SyntheseOsteo, DocumentsSantePro } from '@/components/animaux/SanteProTabs';
 import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
 import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
+import ToilettageFicheTabs from '@/components/toilettage/ToilettageFicheTabs';
 import { gardePrestationKey } from '@/lib/garde-facturation';
 import { gardeMotifLabel, accesLogementLabel } from '@/lib/garde-labels';
 import { Suspense, useEffect, useState, useCallback } from 'react';
@@ -698,7 +699,7 @@ function PatientDetailPageInner() {
   // Fiche éducative : Synthèse par défaut, prochain RDV de ce profil, et
   // compte rendu pré-rempli depuis une séance (?rdv=<id>, tableau de bord).
   useEffect(() => {
-    if (!['education', 'garde', 'veterinaire', 'sante'].includes(catPro)) return;
+    if (!['education', 'garde', 'veterinaire', 'sante', 'toilettage'].includes(catPro)) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!searchParams.get('tab')) setTab(t => (t === 'Identité' ? 'Synthèse' : t));
   }, [catPro, searchParams]);
@@ -765,7 +766,11 @@ function PatientDetailPageInner() {
   // accès accordé (lecture ou écriture) suffit pour les gérer, comme côté app.
   const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write';
 
-  const TABS: string[] = isPensionType
+  // Toiletteur : Synthèse · Prestations · Consignes · Historique (Identité /
+  // Santé ouvrables depuis la Synthèse).
+  const TABS: string[] = catPro === 'toilettage'
+    ? ['Synthèse', 'Prestations', 'Consignes', 'Historique']
+    : isPensionType
     ? ['Identité', 'Santé', 'Alimentation']
     : isVet
       // Ostéo / kiné (sante) : UN onglet « Consultations » = ses comptes
@@ -1716,7 +1721,7 @@ function PatientDetailPageInner() {
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-2 flex items-center gap-3">
           <button onClick={() => router.back()} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">←</button>
           <span className="font-bold text-base flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-            {catPro === 'garde' ? 'Animal en garde' : catPro === 'education' ? 'Animal suivi' : 'Fiche patient'}
+            {catPro === 'garde' ? 'Animal en garde' : catPro === 'education' ? 'Animal suivi' : catPro === 'toilettage' ? 'Fiche toilettage' : 'Fiche patient'}
           </span>
           {(catPro === 'education' || catPro === 'garde') && user && (
             <OwnerContactButton
@@ -2334,6 +2339,10 @@ function PatientDetailPageInner() {
             </>
           );
         })()}
+        {catPro === 'toilettage' && user && activeProfileId && ['Synthèse', 'Prestations', 'Consignes', 'Historique'].includes(tab) && (
+          <ToilettageFicheTabs tab={tab} setTab={setTab} animalId={animalId} animalNom={animal.nom ?? 'Animal'}
+            proUid={user.uid} profileId={activeProfileId} allergies={allergies} traitements={traitements} />
+        )}
         {crRdv && user && (
           <CompteRenduExpressModal rdv={crRdv} animalNom={animal.nom ?? 'Animal'} proUid={user.uid}
             proNom={userData?.nameElevage ?? ''} onClose={() => setCrRdv(null)} onEnvoye={() => chargerGarde()} />

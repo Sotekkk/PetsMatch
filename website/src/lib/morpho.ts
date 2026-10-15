@@ -103,6 +103,7 @@ export const CATEGORIES_CONSULTATION: { key: string; label: string }[] = [
   { key: 'osteopathie', label: 'Ostéopathie' },
   { key: 'kine', label: 'Kiné · Physio' },
   { key: 'veterinaire', label: 'Vétérinaire' },
+  { key: 'toilettage', label: 'Toilettage' },
   { key: 'autre', label: 'Autres' },
 ];
 

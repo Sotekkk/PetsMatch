@@ -7,6 +7,7 @@
 // Miroir site : website/src/components/dashboard/ToilettageDashboard.tsx.
 // Scopé au profil actif (pro_profile_id).
 
+import 'package:PetsMatch/pages/pro/toilettage_seance_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -296,6 +297,10 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
             action(ctx, Icons.check_circle_outline, 'Toilettage terminé — animal prêt', () => _pret(r), c: _vert),
           if (e == EtapeToilettage.pret)
             action(ctx, Icons.logout_rounded, 'Animal récupéré — clôturer', () => _maj(r, {'statut': 'termine', 'termine_at': _now}, ok: 'Prestation clôturée')),
+          // Fiche technique : dès que le toilettage a commencé.
+          if (r['animal_id'] != null && const {EtapeToilettage.enCours, EtapeToilettage.pret, EtapeToilettage.termine}.contains(e))
+            action(ctx, Icons.description_outlined, 'Fiche technique de la prestation', () => _go(ToilettageSeancePage(
+                animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r), rdv: {...r, '_prestation': _prestation(r)}))),
           if (r['animal_id'] != null)
             action(ctx, Icons.assignment_outlined, 'Fiche animal et consignes', () => _go(ToilettageFicheClientPage(
                 animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r), rdvId: r['id'].toString()))),

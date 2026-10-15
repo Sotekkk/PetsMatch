@@ -21,6 +21,7 @@ import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
 import { labelTypeSuivi, titreCompteRendu, categorieConsultation, CATEGORIES_CONSULTATION } from '@/lib/morpho';
+import { labelTravail } from '@/lib/toilettage';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
@@ -2458,6 +2459,8 @@ function AnimalFichePageInner() {
   const [crs, setCrs] = useState<HealthRecord[]>([]);
   // Bilans morphologiques (ex-onglet Morphologie) : carnet › Comptes rendus
   // Soins & Rééducation (comptes rendus de séance partagés) — cartes + filtres
+  // Comptes rendus de toilettage que le salon a choisi de partager.
+  const [toilettagesCr, setToilettagesCr] = useState<{ id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; _pro?: string }[]>([]);
   const [morphos, setMorphos] = useState<{ id: string; date: string; type_suivi: string; source?: string | null; intitule?: string | null; _pro?: string; _categorie?: string }[]>([]);
   const [filtreSoins, setFiltreSoins] = useState('tous');
   const [addDocOpen, setAddDocOpen] = useState<string|null>(null);
@@ -2606,6 +2609,19 @@ function AnimalFichePageInner() {
         _categorie: categorieConsultation(m.type_suivi, mt?.profession, mt?.cat_pro),
       };
     }));
+    {
+      const { data: tg } = await supabase.from('seances_toilettage').select('id, date_seance, travaux, compte_rendu, pro_profile_id')
+        .eq('animal_id', id).eq('partage_proprietaire', true).order('date_seance', { ascending: false });
+      const rows = (tg ?? []) as { id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; pro_profile_id: string | null }[];
+      const pids = [...new Set(rows.map(r => r.pro_profile_id).filter((x): x is string => !!x))];
+      const noms: Record<string, string> = {};
+      if (pids.length) {
+        const { data: sal } = await supabase.from('user_profiles_complet').select('id, nom, firstname, lastname').in('id', pids);
+        for (const x of (sal ?? []) as { id: string; nom?: string | null; firstname?: string | null; lastname?: string | null }[])
+          noms[x.id] = (x.nom ?? '').trim() || `${x.firstname ?? ''} ${x.lastname ?? ''}`.trim();
+      }
+      setToilettagesCr(rows.map(r => ({ ...r, _pro: r.pro_profile_id ? noms[r.pro_profile_id] : undefined })));
+    }
     const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
     setRadios((rad.data ?? []) as HealthRecord[]);
@@ -5010,7 +5026,8 @@ function AnimalFichePageInner() {
       {tab === 'consultations' && !isNew && (() => {
         // Ostéopathie, Kiné, Vétérinaire, Autres — présentes seulement.
         const presentes = CATEGORIES_CONSULTATION.map(c => c.key).filter(k =>
-          morphos.some(m => m._categorie === k) || (k === 'veterinaire' && (crs.length > 0 || ordonnances.length > 0)));
+          morphos.some(m => m._categorie === k) || (k === 'veterinaire' && (crs.length > 0 || ordonnances.length > 0))
+          || (k === 'toilettage' && toilettagesCr.length > 0));
         const libelle = (k: string) => CATEGORIES_CONSULTATION.find(c => c.key === k)?.label ?? k;
         const voir = (c: string) => filtreSoins === 'tous' || filtreSoins === c;
         const seances = morphos.filter(m => voir(m._categorie ?? 'autre'));
@@ -5046,6 +5063,18 @@ function AnimalFichePageInner() {
                     </span>
                     <span className="text-xs font-semibold text-[#0C5C6C] flex-shrink-0">Consulter le compte rendu ›</span>
                   </a>
+                ))}
+              </div>
+            )}
+            {voir('toilettage') && toilettagesCr.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <p className="px-4 pt-3 pb-1 text-sm font-bold text-[#0C5C6C]">Toilettage</p>
+                {toilettagesCr.map(t => (
+                  <div key={t.id} className="px-4 py-3 border-t border-gray-50">
+                    <p className="text-xs text-gray-500">{[new Date(t.date_seance).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }), t._pro].filter(Boolean).join(' — ')}</p>
+                    {(t.travaux ?? []).length > 0 && <p className="text-sm font-semibold text-[#1F2A2E]">{(t.travaux ?? []).map(labelTravail).join(', ')}</p>}
+                    {t.compte_rendu && <p className="text-sm text-gray-700 whitespace-pre-line mt-0.5">{t.compte_rendu}</p>}
+                  </div>
                 ))}
               </div>
             )}

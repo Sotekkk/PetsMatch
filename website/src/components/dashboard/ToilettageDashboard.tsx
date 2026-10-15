@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { Kpi, Section, Badge, PhotoAnimal, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
+import SeanceToilettageModal from '@/components/toilettage/SeanceToilettageModal';
 
 const TEAL = '#0C5C6C';
 const VERT = '#2E7D5E';
@@ -63,6 +64,7 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
   const [animaux, setAnimaux] = useState<Record<string, { nom: string | null; photo_url: string | null }>>({});
   const [prestations, setPrestations] = useState<Record<string, string>>({});
   const [fiche, setFiche] = useState<Rdv | null>(null);
+  const [seanceRdv, setSeanceRdv] = useState<Rdv | null>(null);
   const [now, setNow] = useState(() => new Date());
   const planningRef = useRef<HTMLDivElement>(null);
 
@@ -295,6 +297,7 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
                 {e === 'arrive' && bouton('Démarrer le toilettage', () => maj(fiche, { prestation_debut_le: iso() }))}
                 {e === 'enCours' && bouton('Toilettage terminé — animal prêt', () => pret(fiche), VERT)}
                 {e === 'pret' && bouton('Animal récupéré — clôturer', () => maj(fiche, { statut: 'termine', termine_at: iso() }))}
+                {fiche.animal_id && ['enCours', 'pret', 'termine'].includes(e) && bouton('Fiche technique de la prestation', () => { setSeanceRdv(fiche); setFiche(null); })}
                 {fiche.animal_id && <Link href={`/mes-patients/${fiche.animal_id}`} className="block py-2 text-sm font-semibold text-[#0C5C6C]">Fiche animal et consignes</Link>}
                 <Link href={`/mes-rdv?onglet=a_venir&rdv=${fiche.id}`} className="block py-2 text-sm font-semibold text-[#0C5C6C]">Voir le rendez-vous dans l&apos;agenda</Link>
               </div>
@@ -303,6 +306,10 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
           </div>
         );
       })()}
+      {seanceRdv?.animal_id && uid && pid && (
+        <SeanceToilettageModal animalId={seanceRdv.animal_id} animalNom={nomAnimal(seanceRdv)} proUid={uid} profileId={pid}
+          rdv={seanceRdv} prestation={prestation(seanceRdv)} onClose={() => setSeanceRdv(null)} onSaved={charger} />
+      )}
     </div>
   );
 }
