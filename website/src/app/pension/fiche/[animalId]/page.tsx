@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
 import { alimSejourFournisParLabel, type AlimentationSejour } from '@/lib/pension-especes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -282,6 +283,12 @@ export default function AnimalFichePensionWebPage() {
 
       {/* Contenu */}
       <div style={{ maxWidth: 800, margin: '24px auto', padding: '0 16px' }}>
+        {/* Propriétaire : appeler, message, urgence, personnes autorisées. */}
+        {user && (
+          <div style={{ marginBottom: 16 }}>
+            <ProAnimalEntete animalId={animalId} catPro="pension" myUid={user.uid} myProfileId={activeProfileId || null} />
+          </div>
+        )}
         {tab === 'identite' && <IdentiteTab animal={animal} />}
         {tab === 'sante' && (
           <SanteTab

@@ -1,11 +1,11 @@
 'use client';
 
+import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
 import { Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '@/lib/firebase';
+import { functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
@@ -621,7 +621,6 @@ function PatientDetailPageInner() {
   const [autreActe, setAutreActe] = useState('');
   const [traitementsCr, setTraitementsCr] = useState<TraitementCr[]>([]);
   const [requestingWrite, setRequestingWrite] = useState(false);
-  const [openingChat, setOpeningChat] = useState(false);
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false);
   const [ownerProfil, setOwnerProfil] = useState<OwnerProfil | null>(null);
 
@@ -673,24 +672,25 @@ function PatientDetailPageInner() {
   const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write';
 
   const TABS: string[] = isPensionType
-    ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
+    ? ['Identité', 'Santé', 'Alimentation']
     : isVet
       // Ostéo / kiné (sante) : UN onglet « Consultations » = ses comptes
       // rendus de séance ; vétérinaire : ses consultations + « Ostéo / Kiné ».
       ? catPro === 'sante'
-        ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations']
-        : ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations',
+        ? ['Identité', 'Santé', 'Repro', 'Consultations']
+        : ['Identité', 'Santé', 'Repro', 'Consultations',
           ...(hasAnatomie ? ['Anatomie'] : []),
           ...(hasMorpho ? ['Ostéo / Kiné'] : [])]
       : isEducation
-        ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
+        ? ['Identité', 'Santé', 'Éducation']
         // Pet-sitter / toilettage / photographe / taxi animalier… : Consultations
         // (CR/ordonnances/radios) est réservé aux professions de santé, pas
         // seulement en lecture seule — masqué, pas juste verrouillé. Le
         // pet-sitter garde Alimentation (essentiel pour nourrir l'animal).
         : catPro === 'garde'
-          ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
-          : ['Identité', 'Santé', 'Propriétaire'];
+          ? ['Identité', 'Santé', 'Alimentation']
+          : ['Identité', 'Santé'];
+  // Propriétaire : bloc commun sous l'en-tête (ProAnimalEntete), plus un onglet.
 
   // Load data
   useEffect(() => {
@@ -1561,32 +1561,6 @@ function PatientDetailPageInner() {
     setRequestingWrite(false);
   }
 
-  async function openChat(ownerUid: string) {
-    if (!user) return;
-    setOpeningChat(true);
-    try {
-      const sorted = [user.uid, ownerUid].sort();
-      const participantIds = sorted.join('_');
-      const snap = await getDocs(query(collection(db, 'conversations'), where('participantIds', '==', participantIds)));
-      let convId: string;
-      if (!snap.empty) {
-        convId = snap.docs[0].id;
-      } else {
-        const ref = await addDoc(collection(db, 'conversations'), {
-          participants: sorted,
-          participantIds,
-          lastMessage: '',
-          timestamp: serverTimestamp(),
-          categorie: 'services',
-          unreadCount: { [user.uid]: 0, [ownerUid]: 0 },
-        });
-        convId = ref.id;
-      }
-      router.push(`/messages?conv=${convId}`);
-    } finally {
-      setOpeningChat(false);
-    }
-  }
 
   if (!user) return null;
   if (loading) return (
@@ -1598,27 +1572,6 @@ function PatientDetailPageInner() {
     <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">Animal introuvable ou accès refusé.</div>
   );
 
-  // Adresse postale : celle du profil propriétaire, sinon celle du compte
-  // (perso pour un particulier, élevage pour un élevage / pro).
-  const pro = !!(owner?.is_elevage || owner?.is_pro);
-  const adresseCompte = owner ? [
-    (pro ? owner.rue_elevage ?? owner.adress_elevage : null) ?? owner.rue,
-    [(pro ? owner.code_postal_elevage : null) ?? owner.code_postal, (pro ? owner.ville_elevage : null) ?? owner.ville].filter(Boolean).join(' '),
-  ].filter(Boolean).join(', ') : '';
-  const p = ownerProfil;
-  const adresseProfil = p ? (p.profile_type === 'particulier'
-    ? [p.rue || p.adresse, [p.code_postal, p.ville].filter(Boolean).join(' ')]
-    : [p.rue_elevage || p.adress_elevage || p.rue || p.adresse,
-       [p.code_postal_elevage || p.code_postal, p.ville_elevage || p.ville].filter(Boolean).join(' ')]
-  ).filter(Boolean).join(', ') : '';
-  const ownerAdresse = adresseProfil || adresseCompte || null;
-  const ownerName = p?.profile_type === 'particulier' && `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim()
-    ? `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim()
-    : owner
-    ? (owner.is_elevage || owner.is_pro) && owner.name_elevage
-      ? owner.name_elevage
-      : [owner.firstname, owner.lastname].filter(Boolean).join(' ') || 'Propriétaire'
-    : '—';
 
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
@@ -1689,6 +1642,8 @@ function PatientDetailPageInner() {
 
       {/* ── Content ── */}
       <div className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        {/* Propriétaire : appeler, message, urgence, personnes autorisées (garde / pension). */}
+        {user && <ProAnimalEntete animalId={String(animal.id)} catPro={catPro} myUid={user.uid} myProfileId={activeProfileId || null} />}
 
         {/* ── Identité ── */}
         {tab === 'Identité' && (
@@ -2448,68 +2403,6 @@ function PatientDetailPageInner() {
             )}
           </Card>
           </>
-        )}
-
-        {/* ── Propriétaire ── */}
-        {tab === 'Propriétaire' && clientClinique && (
-          <Card title="👤 Propriétaire — client de la clinique">
-            <div className="space-y-1.5 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-              <p className="font-bold text-[#1F2A2E] text-base">{`${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()}</p>
-              <p className="text-xs text-gray-500">{clientClinique.uid_lie ? 'Compte PetsMatch rattaché' : 'Pas encore sur PetsMatch'}</p>
-              {clientClinique.telephone && <p>📞 <a href={`tel:${clientClinique.telephone.replace(/\s/g, '')}`} className="underline text-[#0C5C6C]">{clientClinique.telephone}</a></p>}
-              {clientClinique.email && <p>✉ <a href={`mailto:${clientClinique.email}`} className="underline text-[#0C5C6C]">{clientClinique.email}</a></p>}
-              {(clientClinique.adresse || clientClinique.ville) && (
-                <p>🏠 {[clientClinique.adresse, `${clientClinique.code_postal ?? ''} ${clientClinique.ville ?? ''}`.trim()].filter(Boolean).join(', ')}</p>
-              )}
-              {clientClinique.notes && <p className="text-gray-500">📝 {clientClinique.notes}</p>}
-            </div>
-          </Card>
-        )}
-        {tab === 'Propriétaire' && !clientClinique && (
-          <Card title="👤 Propriétaire">
-            {!owner ? (
-              <EmptyState text="Informations du propriétaire non disponibles" />
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[#E3F2FD] flex items-center justify-center text-xl flex-shrink-0">
-                    {owner.is_elevage ? '🏡' : '👤'}
-                  </div>
-                  <div>
-                    <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{ownerName}</p>
-                    {owner.is_elevage && owner.name_elevage && (
-                      <p className="text-xs text-gray-500">Élevage</p>
-                    )}
-                  </div>
-                </div>
-                <div className="border-t border-gray-50 pt-4">
-                  <InfoGrid rows={[
-                    { label: 'Email', value: owner.email },
-                    {
-                      label: 'Téléphone',
-                      value: (owner.is_elevage || owner.is_pro) && owner.numero_elevage
-                        ? owner.numero_elevage
-                        : owner.phone_number,
-                    },
-                    { label: 'Adresse postale', value: ownerAdresse },
-                  ]} />
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <button onClick={() => openChat(owner.uid)} disabled={openingChat}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60"
-                    style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
-                    {openingChat ? '…' : '💬 Envoyer un message'}
-                  </button>
-                  {owner.email && (
-                    <a href={`mailto:${owner.email}`}
-                      className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
-                      ✉️
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
-          </Card>
         )}
 
         {/* ── Consultations : suivi des consultations (CR + ordonnances) ; le

@@ -1,3 +1,4 @@
+import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -298,6 +299,9 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                 )
               : Column(children: [
                   _ReadOnlyBanner(espece: espece, photoUrl: photoUrl),
+                  // En-tête commun : identité + propriétaire, urgence, personnes autorisées.
+                  ProAnimalEntete(animalId: widget.animalId, catPro: 'pension',
+                      statut: _sejourActuel != null ? 'En pension' : null),
                   Expanded(
                     child: TabBarView(controller: _tabs, children: [
                       _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel, sejourLogement: _sejourLogement),

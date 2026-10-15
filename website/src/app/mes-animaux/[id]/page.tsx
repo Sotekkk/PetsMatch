@@ -45,6 +45,8 @@ interface Animal {
   nom_mere?: string; puce_mere?: string; race_mere?: string; date_naissance_mere?: string;
   importation_ref?: string;
   contacts_urgence?: { nom: string; tel: string }[];
+  /** Personnes autorisées à déposer / récupérer (pension, pet-sitter) — migration_personnes_autorisees.sql. */
+  personnes_autorisees?: { nom: string; tel: string; lien?: string }[];
   documents?: { nom: string; url: string; type: string; categorie?: string }[];
   date_entree?: string; provenance_qualite?: string; provenance_nom?: string;
   provenance_adresse?: string; date_sortie?: string; destinataire_qualite?: string;
@@ -2983,6 +2985,12 @@ function AnimalFichePageInner() {
         if (declareSteril) updatePayload.sterilisation_declaree_at = new Date().toISOString();
         const { error } = await supabase.from('animaux').update(updatePayload).eq('id', id);
         if (error) throw error;
+        // Personnes autorisées : écrit à part (colonne ajoutée par migration_personnes_autorisees.sql).
+        try {
+          await supabase.from('animaux').update({
+            personnes_autorisees: (animal.personnes_autorisees ?? []).filter(c => c.nom?.trim() || c.tel?.trim()),
+          }).eq('id', id);
+        } catch { /* migration pas encore passée */ }
         if (declareSteril && animal.sterilisation_eleveur_uid) {
           await supabase.from('notifications').insert({
             uid:   animal.sterilisation_eleveur_uid,
@@ -4328,6 +4336,44 @@ function AnimalFichePageInner() {
                 </div>
               ))}
               {!(animal.contacts_urgence?.length) && !editing && <p className="text-sm text-gray-400">Aucun contact</p>}
+            </div>
+          )}
+
+          {/* Personnes autorisées à déposer / récupérer (pension, pet-sitter) — miroir appli */}
+          {(editing || (animal.personnes_autorisees?.length ?? 0) > 0) && (
+            <div className="bg-white rounded-2xl p-4 space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide" style={{ fontFamily:'Galey,sans-serif' }}>Personnes autorisées à déposer / récupérer</h3>
+                {editing && (
+                  <button onClick={()=>set('personnes_autorisees', [...(animal.personnes_autorisees??[]), {nom:'',tel:'',lien:''}])}
+                    className="text-xs text-[#0C5C6C] font-semibold">+ Ajouter</button>
+                )}
+              </div>
+              <p className="text-xs text-gray-400">Pour la pension ou le pet-sitter (en plus de vous-même).</p>
+              {(animal.personnes_autorisees ?? []).map((c,i) => (
+                <div key={i} className="flex flex-wrap gap-2 items-center">
+                  {editing ? (
+                    <>
+                      {(['nom','lien','tel'] as const).map(k => (
+                        <input key={k} value={c[k] ?? ''} onChange={e=>{
+                          const arr = [...(animal.personnes_autorisees??[])];
+                          arr[i] = {...arr[i], [k]: e.target.value};
+                          set('personnes_autorisees',arr);
+                        }} placeholder={k==='nom' ? 'Nom' : k==='lien' ? 'Lien (ex. conjoint, voisin)' : 'Téléphone'}
+                          className="flex-1 min-w-[120px] border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                      ))}
+                      <button onClick={()=>set('personnes_autorisees', (animal.personnes_autorisees??[]).filter((_,j)=>j!==i))}
+                        className="text-red-400 hover:text-red-600 text-lg" aria-label="Retirer">×</button>
+                    </>
+                  ) : (
+                    <div className="text-sm">
+                      <span className="font-medium text-[#1F2A2E]">{c.nom}</span>
+                      {c.lien && <span className="text-gray-400"> ({c.lien})</span>}
+                      {c.tel && <a href={`tel:${c.tel}`} className="ml-2 text-[#0C5C6C] hover:underline">{c.tel}</a>}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

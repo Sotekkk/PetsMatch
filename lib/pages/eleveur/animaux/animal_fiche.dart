@@ -38,8 +38,6 @@ import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/widgets/vet/consultation_widgets.dart';
 import 'package:PetsMatch/pages/pro/historique_patient_page.dart';
 import 'package:PetsMatch/config.dart';
-import 'package:PetsMatch/pages/chatScreen.dart';
-import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
@@ -48,6 +46,7 @@ import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -68,10 +67,13 @@ const kStatutsContratNonFinalises = [
 class _ContactUrgence {
   final TextEditingController nom;
   final TextEditingController tel;
-  _ContactUrgence({String nomVal = '', String telVal = ''})
+  /// Lien avec le propriétaire (personnes autorisées uniquement).
+  final TextEditingController lien;
+  _ContactUrgence({String nomVal = '', String telVal = '', String lienVal = ''})
       : nom = TextEditingController(text: nomVal),
-        tel = TextEditingController(text: telVal);
-  void dispose() { nom.dispose(); tel.dispose(); }
+        tel = TextEditingController(text: telVal),
+        lien = TextEditingController(text: lienVal);
+  void dispose() { nom.dispose(); tel.dispose(); lien.dispose(); }
 }
 
 // ─── Bouton d'action rapide de l'en-tête (Partager / Réserver / Céder…) ───────
@@ -279,6 +281,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _pedigreeLof;
   final _passeportCtrl = TextEditingController();
   final List<_ContactUrgence> _contactsUrgence = [];
+  /// Personnes autorisées à déposer / récupérer l'animal (pension, pet-sitter) —
+  /// animaux.personnes_autorisees (migration_personnes_autorisees.sql).
+  final List<_ContactUrgence> _personnesAutorisees = [];
 
   final _descriptionCtrl = TextEditingController();
   List<Map<String, String>> _documents = [];
@@ -330,11 +335,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   int get _tabCount {
     if (widget.vetMode) {
-      if (User_Info.catPro == 'sante') return 5;
-      if (User_Info.catPro == 'marechal_ferrant') return 6;
-      if (User_Info.catPro == 'veterinaire') return 6;
-      if (User_Info.catPro == 'garde') return 5; // + Alimentation (essentiel pour un pet-sitter)
-      return 4; // toilettage / photographe / taxi animalier… : pas de Consultations
+      // Propriétaire : dans l'en-tête commun (ProAnimalEntete), plus un onglet.
+      if (User_Info.catPro == 'sante') return 4;
+      if (User_Info.catPro == 'marechal_ferrant') return 5;
+      if (User_Info.catPro == 'veterinaire') return 5;
+      if (User_Info.catPro == 'garde') return 3; // Identité · Santé · Alimentation (pas de Repro)
+      return 2; // toilettage / photographe / taxi animalier… : Identité · Santé
     }
     if (widget.isAssociation) return 5; // + Administratif (contrats, certificats)
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
@@ -1141,6 +1147,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _contactsUrgence.add(_ContactUrgence(
           nomVal: raw['nom'] ?? '', telVal: raw['tel'] ?? ''));
     }
+    for (final c in _personnesAutorisees) c.dispose();
+    _personnesAutorisees.clear();
+    final autorises = d['personnes_autorisees'];
+    for (final raw in (autorises is List ? autorises : [])) {
+      _personnesAutorisees.add(_ContactUrgence(
+          nomVal: raw['nom'] ?? '', telVal: raw['tel'] ?? '', lienVal: raw['lien'] ?? ''));
+    }
     _dateNaissance = _parseDate(d['date_naissance']);
     _ageEstime = d['age_estime'] as bool? ?? false;
     if (_ageEstime && _dateNaissance != null) {
@@ -1227,6 +1240,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
       _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
     for (final c in _contactsUrgence) c.dispose();
+    for (final c in _personnesAutorisees) c.dispose();
     _ageEstimeAnneesCtrl.dispose();
     _especeAutreCtrl.dispose();
     super.dispose();
@@ -1312,6 +1326,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       };
 
       await _supa.from('animaux').upsert(data);
+      // Personnes autorisées : écrit à part — la colonne n'existe qu'une fois
+      // migration_personnes_autorisees.sql passée (ne bloque pas l'enregistrement).
+      try {
+        await _supa.from('animaux').update({
+          'personnes_autorisees': _personnesAutorisees
+              .map((c) => {'nom': c.nom.text.trim(), 'tel': c.tel.text.trim(), 'lien': c.lien.text.trim()})
+              .where((c) => c['nom']!.isNotEmpty || c['tel']!.isNotEmpty)
+              .toList(),
+        }).eq('id', id);
+      } catch (_) {}
 
       // Création : initialiser animaux_proprietes avec le profil actif
       if (widget.animalId == null) {
@@ -2323,18 +2347,18 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   // Anatomie a fusionné dans Morphologie pour santé (pointage
                   // libre + compte-rendu structuré) — maréchal-ferrant garde
                   // l'ancien onglet Anatomie séparé, hors périmètre ici.
-                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Consultations')]
                   : User_Info.catPro == 'marechal_ferrant'
-                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
                   : User_Info.catPro == 'veterinaire'
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Ostéo / Kiné')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Consultations'), Tab(text: 'Ostéo / Kiné')]
                       // Pet-sitter : pas de Consultations (domaine santé réservé
                       // aux pros de santé) mais Alimentation (essentiel pour
                       // nourrir l'animal pendant la garde).
                       : User_Info.catPro == 'garde'
-                          ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Repro'), Tab(text: 'Propriétaire')]
+                          ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation')]
                           // toilettage / photographe / taxi animalier…
-                          : const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire')])
+                          : const [Tab(text: 'Identité'), Tab(text: 'Santé')])
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
@@ -2349,7 +2373,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           ]),
         ),
       ),
-      body: TabBarView(
+      body: Column(children: [
+        // Vues professionnelles : identité + propriétaire (appeler, message,
+        // urgence, personnes autorisées) — widgets/animal/pro_animal_entete.dart.
+        if ((widget.vetMode || widget.educationMode) && widget.animalId != null)
+          ProAnimalEntete(animalId: widget.animalId!, catPro: User_Info.catPro),
+        Expanded(child: TabBarView(
         controller: _tabs,
         children: widget.vetMode
             ? [
@@ -2369,10 +2398,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 // plan du propriétaire.
                 if (User_Info.catPro == 'garde')
                   _AlimentationTab(this),
-                // Pros (véto, santé…) : consultation seule — déclarer chaleurs,
-                // saillies et gestations est réservé à l'éleveur.
-                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: true, sterilise: _sterilise, dateNaissance: _dateNaissance),
-                _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
+                // Pros de santé : consultation seule — déclarer chaleurs,
+                // saillies et gestations est réservé à l'éleveur. Pas de Repro
+                // pour le pet-sitter, le toiletteur… (hors de leur métier).
+                if (_isHealthPro)
+                  _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: true, sterilise: _sterilise, dateNaissance: _dateNaissance),
                 // Ostéo / kiné : leurs comptes rendus de séance (onglet unique
                 // « Consultations » ci-dessous), pas le circuit vétérinaire.
                 if (_isHealthPro && User_Info.catPro != 'sante')
@@ -2429,7 +2459,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             ConsultationsProprietaireTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ])),
-      ),
+        )),
+      ]),
     );
   }
 }
@@ -2602,6 +2633,8 @@ class _IdentiteTab extends StatelessWidget {
                   const SizedBox(height: 12),
                 ],
                 _contactsUrgenceSection(context),
+                const SizedBox(height: 12),
+                _personnesAutoriseesSection(context),
                 const SizedBox(height: 12),
                 _card([_field('Notes', s._notesCtrl, maxLines: 3)]),
               ],
@@ -3438,6 +3471,75 @@ class _IdentiteTab extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  // Personnes autorisées à déposer / récupérer l'animal (pension, pet-sitter).
+  // Visibles par les pros qui gardent l'animal (en-tête de leur fiche).
+  Widget _personnesAutoriseesSection(BuildContext context) {
+    InputDecoration deco(String label) => InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      isDense: true,
+    );
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Expanded(child: Text('Personnes autorisées à déposer / récupérer',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 14, color: Color(0xFF1F2A2E)))),
+          TextButton.icon(
+            onPressed: () => s.setState(() => s._personnesAutorisees.add(_ContactUrgence())),
+            icon: const Icon(Icons.add, size: 16, color: Color(0xFF6E9E57)),
+            label: const Text('Ajouter',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57))),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
+          ),
+        ]),
+        const Text('Pour la pension ou le pet-sitter (en plus de vous-même).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+        if (s._personnesAutorisees.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Aucune personne', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+          ),
+        const SizedBox(height: 8),
+        ...s._personnesAutorisees.asMap().entries.map((e) {
+          final i = e.key;
+          final c = e.value;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(children: [
+                TextFormField(controller: c.nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 13), decoration: deco('Nom')),
+                const SizedBox(height: 6),
+                TextFormField(controller: c.lien, style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                    decoration: deco('Lien (ex. conjoint, voisin)')),
+                const SizedBox(height: 6),
+                TextFormField(controller: c.tel, keyboardType: TextInputType.phone,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13), decoration: deco('Téléphone')),
+              ])),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                onPressed: () => s.setState(() {
+                  s._personnesAutorisees[i].dispose();
+                  s._personnesAutorisees.removeAt(i);
+                }),
+              ),
+            ]),
+          );
+        }),
+      ]),
     );
   }
 
@@ -6493,335 +6595,6 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
 }
 
 // ─── Onglet Propriétaire (vue vétérinaire) ───────────────────────────────────
-
-class _ProprietaireVetTab extends StatefulWidget {
-  final String? ownerUid;
-  final String? animalId;
-  const _ProprietaireVetTab({this.ownerUid, this.animalId});
-  @override
-  State<_ProprietaireVetTab> createState() => _ProprietaireVetTabState();
-}
-
-class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
-  static const _teal = Color(0xFF26A69A);
-  bool _loading = true;
-  Map<String, dynamic>? _owner;
-  /// Patient créé par la clinique : client du fichier (propriétaire hors appli).
-  Map<String, dynamic>? _clientClinique;
-  /// Profil (user_profiles) qui a confié l'animal : son adresse prime sur
-  /// celle du compte (un compte éleveur peut avoir un profil particulier).
-  Map<String, dynamic>? _ownerProfil;
-  bool _openingChat = false;
-
-  /// Profil propriétaire : celui qui a accordé l'accès à ma clinique, sinon
-  /// le client du dernier RDV de l'animal.
-  Future<void> _chargerProfilProprietaire() async {
-    final animalId = widget.animalId;
-    if (animalId == null) return;
-    final supa = Supabase.instance.client;
-    var pid = User_Info.activeProfileId;
-    if (pid.isEmpty) {
-      for (final x in User_Info.availableProfiles) {
-        if (x['is_main'] == true) { pid = x['id']?.toString() ?? ''; }
-      }
-    }
-    try {
-      String? profilId;
-      if (pid.isNotEmpty) {
-        final g = await supa.from('animal_access').select('granted_by_profile_id')
-            .eq('animal_id', animalId).eq('pro_profile_id', pid).maybeSingle();
-        profilId = g?['granted_by_profile_id']?.toString();
-      }
-      if (profilId == null || profilId.isEmpty) {
-        final r = await supa.from('rdv').select('client_profile_id').eq('animal_id', animalId)
-            .not('client_profile_id', 'is', null).order('date_heure', ascending: false).limit(1).maybeSingle();
-        profilId = r?['client_profile_id']?.toString();
-      }
-      if (profilId == null || profilId.isEmpty) return;
-      final row = await supa.from('user_profiles_complet').select().eq('id', profilId).maybeSingle();
-      if (mounted && row != null) setState(() => _ownerProfil = Map<String, dynamic>.from(row));
-    } catch (_) {}
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void didUpdateWidget(_ProprietaireVetTab old) {
-    super.didUpdateWidget(old);
-    if (old.ownerUid != widget.ownerUid) _load();
-  }
-
-  Future<void> _load() async {
-    String? uid = widget.ownerUid;
-
-    // Patient créé par la clinique : le propriétaire est un client de son
-    // fichier (le compte technique de l'animal est celui de la clinique).
-    if (widget.animalId != null) {
-      try {
-        final a = await Supabase.instance.client.from('animaux')
-            .select('client_clinique_id').eq('id', widget.animalId!).maybeSingle();
-        if (a?['client_clinique_id'] != null) {
-          final c = await Supabase.instance.client.from('clients_clinique')
-              .select().eq('id', a!['client_clinique_id']).maybeSingle();
-          if (mounted) setState(() { _clientClinique = c; _loading = false; });
-          if (c != null) return;
-        }
-      } catch (_) {}
-    }
-
-    // Fallback : si ownerUid absent, le charger depuis l'animal
-    if ((uid == null || uid.isEmpty) && widget.animalId != null) {
-      try {
-        final row = await Supabase.instance.client
-            .from('animaux')
-            .select('uid_eleveur, uid_proprietaire')
-            .eq('id', widget.animalId!)
-            .maybeSingle();
-        uid = (row?['uid_eleveur'] ?? row?['uid_proprietaire'])?.toString();
-      } catch (_) {}
-    }
-
-    _chargerProfilProprietaire();
-    if (uid == null || uid.isEmpty) {
-      if (mounted) setState(() => _loading = false);
-      return;
-    }
-
-    try {
-      // select(*) évite les erreurs de casse sur les noms de colonnes
-      final row = await Supabase.instance.client
-          .from('users_complet')
-          .select('*')
-          .eq('uid', uid)
-          .maybeSingle();
-      if (mounted) setState(() {
-        _owner = row != null ? Map<String, dynamic>.from(row) : null;
-        _loading = false;
-      });
-    } catch (e) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _openChat() async {
-    final owner = _owner;
-    if (owner == null) return;
-    setState(() => _openingChat = true);
-    try {
-      final ownerUid = owner['uid'] as String;
-      final convId = await MessagingHelper.openOrCreateConversation(
-        otherUid: ownerUid,
-        categorie: 'services',
-        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-      );
-      if (mounted) {
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ChatScreen(conversationId: convId, eleveurId: ownerUid),
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _openingChat = false);
-    }
-  }
-
-  Widget _ligneClient(IconData ic, String texte, {VoidCallback? onTap}) => ListTile(
-    dense: true, contentPadding: EdgeInsets.zero,
-    leading: Icon(ic, size: 20, color: _teal),
-    title: Text(texte, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-        color: onTap != null ? _teal : const Color(0xFF1E2025),
-        decoration: onTap != null ? TextDecoration.underline : null)),
-    onTap: onTap,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final c = _clientClinique;
-    if (c != null) {
-      final tel = (c['telephone'] ?? '').toString();
-      final email = (c['email'] ?? '').toString();
-      final adresse = [c['adresse'], '${c['code_postal'] ?? ''} ${c['ville'] ?? ''}'.trim()]
-          .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', ');
-      return ListView(padding: const EdgeInsets.all(16), children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _teal.withValues(alpha: 0.25))),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${c['prenom'] ?? ''} ${c['nom'] ?? ''}'.trim(),
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text(c['uid_lie'] != null ? 'Client de la clinique — compte PetsMatch rattaché'
-                    : 'Client de la clinique — pas encore sur PetsMatch',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-            const SizedBox(height: 8),
-            if (tel.isNotEmpty) _ligneClient(Icons.phone_outlined, tel,
-                onTap: () => launchUrl(Uri.parse('tel:${tel.replaceAll(' ', '')}'))),
-            if (email.isNotEmpty) _ligneClient(Icons.mail_outline, email,
-                onTap: () => launchUrl(Uri.parse('mailto:$email'))),
-            if (adresse.isNotEmpty) _ligneClient(Icons.home_outlined, adresse),
-            if ((c['notes'] ?? '').toString().isNotEmpty) _ligneClient(Icons.notes_outlined, c['notes'].toString()),
-          ]),
-        ),
-      ]);
-    }
-    if (_owner == null) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.person_off_outlined, size: 64, color: Colors.grey.shade200),
-          const SizedBox(height: 12),
-          Text('Informations du propriétaire indisponibles',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
-        ]),
-      ));
-    }
-
-    final o = _owner!;
-    // Gère camelCase (isElevage) et snake_case (is_elevage) selon config Supabase
-    final isElevageOrPro = (o['isElevage'] == true || o['is_elevage'] == true)
-        || (o['isPro'] == true || o['is_pro'] == true);
-    final nameElevage = (o['name_elevage'] ?? o['nameElevage'] ?? '').toString();
-    final op = _ownerProfil;
-    final opParticulier = op?['profile_type'] == 'particulier';
-    final nomProfil = '${op?['firstname'] ?? ''} ${op?['lastname'] ?? ''}'.trim();
-    final nom = opParticulier && nomProfil.isNotEmpty
-        ? nomProfil : '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
-    final email = (o['email'] ?? '').toString();
-    // Téléphone : élevage ou perso
-    final telElevage = (o['numeroElevage'] ?? o['numero_elevage'] ?? '').toString().trim();
-    final telPerso   = (o['phone_number'] ?? '').toString().trim();
-    final tel = isElevageOrPro
-        ? (telElevage.isNotEmpty ? telElevage : telPerso)
-        : telPerso;
-    // Adresse : élevage ou perso
-    final rueElevage  = (o['rueElevage']        ?? o['rue_elevage']         ?? '').toString();
-    final villeElev   = (o['villeElevage']       ?? o['ville_elevage']       ?? '').toString();
-    final cpElev      = (o['codePostalElevage']  ?? o['code_postal_elevage'] ?? '').toString();
-    final ruePerso    = (o['rue']  ?? '').toString();
-    final villePerso  = (o['ville'] ?? '').toString();
-    final cpPerso     = (o['code_postal'] ?? '').toString();
-    final rue   = isElevageOrPro ? (rueElevage.isNotEmpty   ? rueElevage  : ruePerso)  : ruePerso;
-    final ville = isElevageOrPro ? (villeElev.isNotEmpty    ? villeElev   : villePerso) : villePerso;
-    final cp    = isElevageOrPro ? (cpElev.isNotEmpty       ? cpElev      : cpPerso)   : cpPerso;
-    final adresseCompte = [
-      if (rue.isNotEmpty) rue,
-      if (cp.isNotEmpty || ville.isNotEmpty) '$cp $ville'.trim(),
-    ].join(', ');
-    // Adresse postale du profil propriétaire en priorité.
-    String champ(List<String> cles) {
-      for (final k in cles) {
-        final v = (op?[k] ?? '').toString().trim();
-        if (v.isNotEmpty) return v;
-      }
-      return '';
-    }
-    final adresseProfil = op == null ? '' : [
-      opParticulier ? champ(['rue', 'adresse']) : champ(['rue_elevage', 'adress_elevage', 'rue', 'adresse']),
-      '${opParticulier ? champ(['code_postal']) : champ(['code_postal_elevage', 'code_postal'])} '
-          '${opParticulier ? champ(['ville']) : champ(['ville_elevage', 'ville'])}'.trim(),
-    ].where((x) => x.isNotEmpty).join(', ');
-    final adresse = adresseProfil.isNotEmpty ? adresseProfil : adresseCompte;
-    final afficheElevage = isElevageOrPro && !opParticulier;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(children: [
-        // Carte identité propriétaire
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: _teal.withValues(alpha: 0.12),
-                child: Icon(
-                  afficheElevage ? Icons.home_work_outlined : Icons.person_outlined,
-                  color: _teal, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Nom de la structure (élevage) en titre si disponible
-                if (afficheElevage && nameElevage.isNotEmpty)
-                  Text(nameElevage,
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                          fontSize: 17, color: Color(0xFF1F2A2E))),
-                // Prénom + nom du contact
-                if (nom.isNotEmpty)
-                  Text(nom,
-                      style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: afficheElevage && nameElevage.isNotEmpty
-                            ? FontWeight.w400 : FontWeight.w700,
-                        fontSize: afficheElevage && nameElevage.isNotEmpty ? 13 : 17,
-                        color: afficheElevage && nameElevage.isNotEmpty
-                            ? Colors.grey.shade600 : const Color(0xFF1F2A2E),
-                      )),
-                Text(afficheElevage ? 'Éleveur / Professionnel' : 'Particulier',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        color: Colors.grey)),
-              ])),
-            ]),
-            const SizedBox(height: 16),
-            const Divider(height: 1, color: Color(0xFFF0F0F0)),
-            const SizedBox(height: 12),
-            if (email.isNotEmpty) _infoRow(Icons.email_outlined, 'Email', email),
-            if (tel.isNotEmpty) _infoRow(Icons.phone_outlined, 'Téléphone', tel),
-            if (adresse.isNotEmpty) _infoRow(Icons.location_on_outlined, 'Adresse postale', adresse),
-            if (email.isEmpty && tel.isEmpty && adresse.isEmpty)
-              Text('Aucune information de contact disponible.',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                      color: Colors.grey.shade500)),
-          ]),
-        ),
-        const SizedBox(height: 20),
-        // Bouton Message
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _openingChat ? null : _openChat,
-            icon: _openingChat
-                ? const SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.message_outlined),
-            label: const Text('Envoyer un message',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _teal, foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  Widget _infoRow(IconData icon, String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(icon, size: 18, color: Colors.grey.shade400),
-      const SizedBox(width: 10),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-            color: Colors.grey, fontWeight: FontWeight.w600)),
-        Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E))),
-      ])),
-    ]),
-  );
-}
 
 // ─── Onglet Poids ─────────────────────────────────────────────────────────────
 
