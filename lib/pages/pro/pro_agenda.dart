@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
 import 'dart:convert';
@@ -4832,12 +4833,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // (y compris « Demandes »), pas seulement les RDV confirmés.
           onCarnetSante: (hasAnimal && AgendaContexte.catPro != 'education')
               ? () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AnimalFichePage(
-                    animalId: animalId,
-                    readOnly: true,
-                    vetMode: true,
-                    rdvId: rdv['id']?.toString(),
-                  )))
+                  // Pet-sitter : fiche métier (prestations, consignes, historique).
+                  builder: (_) => AgendaContexte.catPro == 'garde'
+                      ? GardeFicheAnimalPage(animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Animal')
+                      : AnimalFichePage(
+                          animalId: animalId,
+                          readOnly: true,
+                          vetMode: true,
+                          rdvId: rdv['id']?.toString(),
+                        )))
               : null,
           // CR / Ordonnance est un flux médical (vétérinaire, pension, santé…) —
           // sans objet pour l'éducateur (rapport de séance dédié) ni pour le

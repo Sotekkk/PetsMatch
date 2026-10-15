@@ -1,7 +1,11 @@
 'use client';
 
+import { SyntheseVet, SyntheseOsteo, DocumentsSantePro } from '@/components/animaux/SanteProTabs';
 import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
-import { Suspense, useEffect, useState } from 'react';
+import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
+import { gardePrestationKey } from '@/lib/garde-facturation';
+import { gardeMotifLabel, accesLogementLabel } from '@/lib/garde-labels';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
@@ -62,6 +66,12 @@ interface VisiteEntry {
   id: string; date: string; motif: string | null;
   veterinaire: string | null; diagnostic: string | null; notes: string | null;
   source: string | null; vet_id: string | null;
+}
+interface GardeRdvFiche {
+  id: string; date_heure: string; duree_minutes: number | null; statut: string; motif: string | null;
+  lieu: string | null; notes_client: string | null; acces_logement?: string | null; animal_id: string | null;
+  client_uid: string | null; client_profile_id: string | null;
+  arrivee_validee_le?: string | null; depart_valide_le?: string | null; termine_at?: string | null;
 }
 interface TraitementEntry {
   id: string; date: string; nom: string; posologie: string | null;
@@ -591,6 +601,11 @@ function PatientDetailPageInner() {
   const [seanceProchaine, setSeanceProchaine] = useState('');
   const [seanceRdvId, setSeanceRdvId] = useState<string | null>(null);
   const [prochainRdv, setProchainRdv] = useState<{ date_heure: string; motif: string | null; lieu: string | null } | null>(null);
+  // Fiche pet-sitter : prestations (rdv), clés, comptes rendus express.
+  const [gardeRdvs, setGardeRdvs] = useState<GardeRdvFiche[]>([]);
+  const [gardeCles, setGardeCles] = useState<{ id: string; description: string | null; statut: string | null }[]>([]);
+  const [gardeCrs, setGardeCrs] = useState<{ id: string; note: string | null; photo_url: string | null; created_at: string; incident?: boolean | null; rdv_id?: string | null }[]>([]);
+  const [crRdv, setCrRdv] = useState<GardeRdvFiche | null>(null);
   // Motif de l'accompagnement saisi depuis la Synthèse (education_suivis).
   const [motifSuivi, setMotifSuivi] = useState<string | null>(null);
   const [motifEdit, setMotifEdit] = useState<string | null>(null);
@@ -683,10 +698,28 @@ function PatientDetailPageInner() {
   // Fiche éducative : Synthèse par défaut, prochain RDV de ce profil, et
   // compte rendu pré-rempli depuis une séance (?rdv=<id>, tableau de bord).
   useEffect(() => {
-    if (catPro !== 'education') return;
+    if (!['education', 'garde', 'veterinaire', 'sante'].includes(catPro)) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!searchParams.get('tab')) setTab(t => (t === 'Identité' ? 'Synthèse' : t));
   }, [catPro, searchParams]);
+  const chargerGarde = useCallback(async () => {
+    if (catPro !== 'garde' || !animalId || !activeProfileId || !user) return;
+    const [r, c, u] = await Promise.all([
+      supabase.from('rdv').select('*').eq('pro_profile_id', activeProfileId).eq('animal_id', animalId)
+        .in('statut', ['confirme', 'termine']).order('date_heure', { ascending: false }).limit(150),
+      supabase.from('cles_clients').select('id, description, statut').eq('pro_profile_id', activeProfileId).eq('animal_id', animalId),
+      supabase.from('pension_updates').select('*').eq('pro_uid', user.uid).eq('animal_id', animalId)
+        .order('created_at', { ascending: false }).limit(60),
+    ]);
+    setGardeRdvs((r.data ?? []) as GardeRdvFiche[]);
+    setGardeCles((c.data ?? []) as { id: string; description: string | null; statut: string | null }[]);
+    setGardeCrs(u.error ? [] : (u.data ?? []) as typeof gardeCrs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catPro, animalId, activeProfileId, user]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    chargerGarde();
+  }, [chargerGarde]);
   useEffect(() => {
     if (catPro !== 'education' || !animalId || !activeProfileId) return;
     let annule = false;
@@ -737,11 +770,15 @@ function PatientDetailPageInner() {
     : isVet
       // Ostéo / kiné (sante) : UN onglet « Consultations » = ses comptes
       // rendus de séance ; vétérinaire : ses consultations + « Ostéo / Kiné ».
+      // Véto : Synthèse · Consultations · Santé (carnet / repro / ostéo-kiné) · Documents ;
+      // ostéo : Synthèse · Séances · Bilans · Documents. Identité depuis la Synthèse.
       ? catPro === 'sante'
-        ? ['Identité', 'Santé', 'Repro', 'Consultations']
-        : ['Identité', 'Santé', 'Repro', 'Consultations',
-          ...(hasAnatomie ? ['Anatomie'] : []),
-          ...(hasMorpho ? ['Ostéo / Kiné'] : [])]
+        ? ['Synthèse', 'Séances', 'Bilans', 'Documents']
+        : catPro === 'veterinaire'
+          ? ['Synthèse', 'Consultations', 'Santé', 'Documents']
+          : ['Identité', 'Santé', 'Repro', 'Consultations',
+            ...(hasAnatomie ? ['Anatomie'] : []),
+            ...(hasMorpho ? ['Ostéo / Kiné'] : [])]
       : isEducation
         // Fiche éducative : Identité / Santé restent ouvrables depuis la Synthèse.
         ? ['Synthèse', 'Programme', 'Séances', 'Documents']
@@ -749,8 +786,9 @@ function PatientDetailPageInner() {
         // (CR/ordonnances/radios) est réservé aux professions de santé, pas
         // seulement en lecture seule — masqué, pas juste verrouillé. Le
         // pet-sitter garde Alimentation (essentiel pour nourrir l'animal).
+        // Fiche pet-sitter : Identité / Santé / Alimentation ouvrables depuis la Synthèse.
         : catPro === 'garde'
-          ? ['Identité', 'Santé', 'Alimentation']
+          ? ['Synthèse', 'Prestations', 'Consignes', 'Historique']
           : ['Identité', 'Santé'];
   // Propriétaire : bloc commun sous l'en-tête (ProAnimalEntete), plus un onglet.
 
@@ -1743,6 +1781,33 @@ function PatientDetailPageInner() {
         {user && <ProAnimalEntete animalId={String(animal.id)} catPro={catPro} myUid={user.uid} myProfileId={activeProfileId || null} />}
 
         {/* ── Identité ── */}
+        {/* ── Véto / ostéo : Synthèse, Documents, sous-onglets Santé ── */}
+        {tab === 'Synthèse' && catPro === 'veterinaire' && (
+          <SyntheseVet animalId={animalId} pid={activeProfileId || null} onIdentite={() => setTab('Identité')} />
+        )}
+        {tab === 'Synthèse' && catPro === 'sante' && (
+          <SyntheseOsteo animalId={animalId} pid={activeProfileId || null} onIdentite={() => setTab('Identité')} onSeances={() => setTab('Séances')} />
+        )}
+        {tab === 'Documents' && (catPro === 'veterinaire' || catPro === 'sante') && (
+          <DocumentsSantePro animalId={animalId} pid={activeProfileId || null} osteo={catPro === 'sante'} />
+        )}
+        {catPro === 'veterinaire' && ['Santé', 'Repro', 'Ostéo / Kiné'].includes(tab) && (
+          <div className="flex gap-2">
+            {([['Santé', 'Carnet de santé'], ['Repro', 'Reproduction'], ['Ostéo / Kiné', 'Ostéo / Kiné']] as const).map(([t, l]) => (
+              <button key={t} onClick={() => setTab(t)} className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                style={tab === t ? { background: TEAL, color: 'white' } : { background: '#F1F4F3', color: '#1F2A2E' }}>{l}</button>
+            ))}
+          </div>
+        )}
+        {catPro === 'sante' && ['Identité', 'Santé', 'Repro'].includes(tab) && (
+          <div className="flex gap-2">
+            {([['Identité', 'Identité'], ['Santé', 'Carnet de santé']] as const).map(([t, l]) => (
+              <button key={t} onClick={() => setTab(t)} className="px-3 py-1.5 rounded-full text-xs font-semibold"
+                style={tab === t ? { background: TEAL, color: 'white' } : { background: '#F1F4F3', color: '#1F2A2E' }}>{l}</button>
+            ))}
+          </div>
+        )}
+
         {tab === 'Identité' && (
           <>
             <Card title="Identité">
@@ -2106,6 +2171,172 @@ function PatientDetailPageInner() {
               <EmptyState text="Plan alimentaire non renseigné par le propriétaire" />
             )}
           </Card>
+        )}
+
+        {/* ── Pet-sitter : Synthèse · Prestations · Consignes · Historique ── */}
+        {catPro === 'garde' && ['Synthèse', 'Prestations', 'Consignes', 'Historique'].includes(tab) && (() => {
+          const now = new Date();
+          const debut = (r: GardeRdvFiche) => new Date(r.date_heure);
+          const fin = (r: GardeRdvFiche) => new Date(debut(r).getTime() + (r.duree_minutes ?? 30) * 60000);
+          const hm = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+          const jour = (d: Date) => d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+          const journee = (r: GardeRdvFiche) => /garde/i.test(r.motif ?? '') && /journ/i.test(r.motif ?? '');
+          const prestation = (r: GardeRdvFiche) => {
+            const k = gardePrestationKey(r.motif);
+            return k === 'autre' ? (r.motif?.trim() || 'Prestation') : gardeMotifLabel(k, animal.espece);
+          };
+          const horaires = (r: GardeRdvFiche) => {
+            if (journee(r)) return `${jour(debut(r))} · journée`;
+            const rd = r.arrivee_validee_le ? new Date(r.arrivee_validee_le) : null;
+            const rf = r.depart_valide_le ? new Date(r.depart_valide_le) : r.termine_at ? new Date(r.termine_at) : null;
+            return `${jour(debut(r))} · prévu ${hm(debut(r))}–${hm(fin(r))}${rd || rf ? ` · réel ${rd ? hm(rd) : '?'}–${rf ? hm(rf) : '…'}` : ''}`;
+          };
+          const aVenir = gardeRdvs.filter(r => r.statut === 'confirme' && fin(r) > now).sort((a, b) => debut(a).getTime() - debut(b).getTime());
+          const passees = gardeRdvs.filter(r => !aVenir.includes(r));
+          const prochaine = aVenir[0] ?? null;
+          const consignes = (prochaine?.notes_client ?? gardeRdvs.find(r => r.notes_client?.trim())?.notes_client ?? '').trim();
+          const acces = accesLogementLabel((prochaine ?? gardeRdvs[0])?.acces_logement);
+          const cle = gardeCles.find(c => c.statut === 'en_possession');
+          const traitsEnCours = traitements.filter(t => !t.date_fin || new Date(t.date_fin) >= now);
+          const a = alimentation as (typeof alimentation & { nb_repas?: number | null; ration_grammes?: number | null; ration2_grammes?: number | null }) | null;
+          const nbRepas = a?.nb_repas || Number(a?.notes?.split('|')?.[3]) || 0;
+          const discret = (t: string) => <p className="text-sm text-gray-400">{t}</p>;
+          const ligne = (r: GardeRdvFiche) => {
+            const avecCr = gardeCrs.some(c => c.rdv_id === r.id);
+            return (
+              <div key={r.id} className="flex items-start gap-3 py-2 border-t border-gray-50 first:border-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-[#1F2A2E]">{prestation(r)}</p>
+                  <p className="text-xs text-gray-600">{horaires(r)}</p>
+                  {r.lieu && <p className="text-xs text-gray-500 truncate">{r.lieu}</p>}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs font-bold" style={{ color: r.statut === 'termine' ? '#6B7280' : TEAL }}>{r.statut === 'termine' ? 'Terminée' : 'Confirmée'}</p>
+                  {r.statut === 'termine' && !avecCr && !journee(r) && (
+                    <button onClick={() => setCrRdv(r)} className="text-xs font-semibold" style={{ color: TEAL }}>Compte rendu</button>
+                  )}
+                  {avecCr && <p className="text-[11px]" style={{ color: '#2E7D5E' }}>CR envoyé</p>}
+                </div>
+              </div>
+            );
+          };
+          if (tab === 'Synthèse') return (
+            <>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <Card title={prochaine && debut(prochaine) < now ? 'Prestation en cours' : 'Prochaine prestation'}>
+                  {prochaine ? (
+                    <div className="text-sm space-y-0.5">
+                      <p className="font-bold">{prestation(prochaine)}</p>
+                      <p>{horaires(prochaine)}</p>
+                      {prochaine.lieu && <p className="text-gray-600">Lieu : {prochaine.lieu}</p>}
+                    </div>
+                  ) : discret('Aucune prestation à venir.')}
+                </Card>
+                <Card title="Consignes essentielles">
+                  <div className="text-sm space-y-1">
+                    {consignes && <p className="whitespace-pre-line">{consignes}</p>}
+                    {acces && <p>Accès au logement : {acces}</p>}
+                    {allergies.map(al => <p key={al.id} style={{ color: '#B3261E' }}>Allergie : {al.description}</p>)}
+                    {!consignes && !acces && allergies.length === 0 && discret('Aucune consigne transmise.')}
+                  </div>
+                </Card>
+                <Card title="Clés">
+                  {cle ? <p className="text-sm">{cle.description ?? 'Clé'} — en votre possession</p> : discret('Aucune clé en votre possession pour cet animal.')}
+                  <a href="/garde/cles" className="text-xs font-semibold" style={{ color: TEAL }}>Gestion des clés →</a>
+                </Card>
+                <Card title="Dernier compte rendu">
+                  {gardeCrs[0] ? (
+                    <div className="text-sm">
+                      <p className="text-xs" style={{ color: gardeCrs[0].incident ? '#B3261E' : '#6B7280' }}>{new Date(gardeCrs[0].created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                      <p>{gardeCrs[0].note ?? 'Photo partagée'}</p>
+                    </div>
+                  ) : discret('Aucun compte rendu envoyé.')}
+                </Card>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(['Identité', 'Santé', 'Alimentation'] as const).map(t => (
+                  <button key={t} onClick={() => setTab(t)} className="px-4 py-2 rounded-xl border text-sm font-semibold" style={{ borderColor: TEAL, color: TEAL }}>
+                    {t === 'Santé' ? 'Carnet de santé (lecture)' : t === 'Alimentation' ? 'Alimentation complète' : t}
+                  </button>
+                ))}
+              </div>
+            </>
+          );
+          if (tab === 'Prestations') return (
+            <>
+              <Card title="À venir">{aVenir.length === 0 ? discret('Aucune.') : aVenir.slice(0, 20).map(ligne)}</Card>
+              <Card title="Passées">{passees.length === 0 ? discret('Aucune.') : passees.slice(0, 30).map(ligne)}</Card>
+            </>
+          );
+          if (tab === 'Consignes') return (
+            <>
+              <Card title="Alimentation">
+                {!a ? discret("Plan d'alimentation non renseigné par le propriétaire.") : (
+                  <div className="text-sm space-y-0.5">
+                    {[a.marque, a.gamme].filter(Boolean).length > 0 && <p className="font-bold">{[a.marque, a.gamme].filter(Boolean).join(' — ')}</p>}
+                    {a.type_ration && <p>Type : {a.type_ration}</p>}
+                    {nbRepas > 0 && <p>{nbRepas} repas par jour</p>}
+                    {a.ration_grammes ? <p>Quantité : {a.ration_grammes} g/jour{nbRepas > 1 ? ` (${Math.round(a.ration_grammes / nbRepas)} g par repas)` : ''}</p> : <p className="text-gray-400">Quantité non calculée par le propriétaire.</p>}
+                    {a.ration2_grammes ? <p>2e composant : {a.ration2_grammes} g/jour</p> : null}
+                  </div>
+                )}
+              </Card>
+              <Card title="Traitements et précautions">
+                <div className="text-sm space-y-0.5">
+                  {traitsEnCours.map(t => <p key={t.id}>{t.nom}{t.posologie ? ` — ${t.posologie}` : ''}</p>)}
+                  {allergies.map(al => <p key={al.id} style={{ color: '#B3261E' }}>Allergie : {al.description}</p>)}
+                  {traitsEnCours.length === 0 && allergies.length === 0 && discret('Aucun traitement en cours ni allergie connue.')}
+                </div>
+              </Card>
+              <Card title="Instructions d'accès">
+                <div className="text-sm space-y-0.5">
+                  {[...new Set(gardeRdvs.map(r => accesLogementLabel(r.acces_logement)).filter(Boolean))].map(x => <p key={x}>{x}</p>)}
+                  {gardeCles.map(c => <p key={c.id}>Clé : {c.description ?? 'Clé'} ({c.statut === 'en_possession' ? 'en votre possession' : 'rendue'})</p>)}
+                  {gardeCles.length === 0 && !gardeRdvs.some(r => r.acces_logement) && discret("Aucune instruction d'accès.")}
+                  <p className="text-xs text-gray-400">Aucun code d&apos;accès n&apos;est stocké dans la fiche.</p>
+                </div>
+              </Card>
+              <Card title="Consignes des réservations">
+                {gardeRdvs.filter(r => r.notes_client?.trim()).length === 0 ? discret('Aucune consigne saisie par le propriétaire.') : (
+                  <div className="space-y-2">
+                    {gardeRdvs.filter(r => r.notes_client?.trim()).slice(0, 5).map(r => (
+                      <div key={r.id}><p className="text-xs text-gray-500">{debut(r).toLocaleDateString('fr-FR')}</p><p className="text-sm whitespace-pre-line">{r.notes_client}</p></div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </>
+          );
+          const faites = gardeRdvs.filter(r => r.statut === 'termine');
+          return (
+            <>
+              <Card title="Comptes rendus et photos">
+                {gardeCrs.length === 0 ? discret('Aucun compte rendu.') : (
+                  <div className="space-y-3">
+                    {gardeCrs.slice(0, 20).map(c => (
+                      <div key={c.id} className="flex gap-3">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {c.photo_url && <img src={c.photo_url} alt="" className="w-14 h-14 rounded-lg object-cover" />}
+                        <div>
+                          <p className="text-xs" style={{ color: c.incident ? '#B3261E' : '#6B7280' }}>{new Date(c.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}{c.incident ? ' · incident' : ''}</p>
+                          {c.note && <p className="text-sm">{c.note}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+              <Card title={`Prestations réalisées (${faites.length})`}>
+                {faites.length === 0 ? discret('Aucune prestation terminée.') : faites.slice(0, 30).map(r => (
+                  <p key={r.id} className="text-sm py-1">{prestation(r)} · {horaires(r)}</p>
+                ))}
+              </Card>
+            </>
+          );
+        })()}
+        {crRdv && user && (
+          <CompteRenduExpressModal rdv={crRdv} animalNom={animal.nom ?? 'Animal'} proUid={user.uid}
+            proNom={userData?.nameElevage ?? ''} onClose={() => setCrRdv(null)} onEnvoye={() => chargerGarde()} />
         )}
 
         {/* ── Éducation (plan de travail + rapports de séance) ── */}
@@ -2752,8 +2983,14 @@ function PatientDetailPageInner() {
           <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} profilType={catPro} />
         )}
 
-        {((tab === 'Ostéo / Kiné') || (tab === 'Consultations' && catPro === 'sante')) && animal && (
+        {tab === 'Ostéo / Kiné' && animal && (
           <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} />
+        )}
+        {tab === 'Séances' && catPro === 'sante' && animal && (
+          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} sansBilans />
+        )}
+        {tab === 'Bilans' && catPro === 'sante' && animal && (
+          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} bilansSeulement />
         )}
       </div>
 

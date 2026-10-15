@@ -27,7 +27,17 @@ class MorphoTimelineTab extends StatefulWidget {
     this.canWrite = true,
     this.proProfileId,
     this.proNom,
+    this.bilansSeulement = false,
+    this.sansBilans = false,
   });
+
+  /// Onglet « Séances » de la fiche ostéo : tout sauf les bilans (exclusif
+  /// avec l'onglet « Bilans »).
+  final bool sansBilans;
+
+  /// Onglet « Bilans » de la fiche ostéo : bilans (morphologique, posture)
+  /// uniquement.
+  final bool bilansSeulement;
 
   @override
   State<MorphoTimelineTab> createState() => _MorphoTimelineTabState();
@@ -163,7 +173,11 @@ class _MorphoTimelineTabState extends State<MorphoTimelineTab> {
         final m = metiers[s['pro_profile_id']?.toString()];
         s['_categorie'] = categorieConsultation(type: s['type_suivi']?.toString(), profession: m?.$1, catPro: m?.$2);
       }
-      if (mounted) setState(() { _suivis = visibles; _loading = false; });
+      bool bilan(Map<String, dynamic> s) => (s['type_suivi']?.toString() ?? '').startsWith('bilan');
+      final liste = widget.bilansSeulement ? visibles.where(bilan).toList()
+          : widget.sansBilans ? visibles.where((s) => !bilan(s)).toList()
+          : visibles;
+      if (mounted) setState(() { _suivis = liste; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

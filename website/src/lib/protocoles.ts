@@ -137,12 +137,20 @@ export const ACTES_SUGGERES_GARDE: { value: string; label: string }[] = [
   { value: 'nouvelles',  label: 'Nouvelles au propriétaire' },
 ];
 
-/** Actions proposées selon le profil (garde : visite à domicile). */
+/** Pension : soins et entretien quotidiens — miroir appli kActesSuggeresPension. */
+export const ACTES_SUGGERES_PENSION: { value: string; label: string }[] = [
+  { value: 'repas', label: 'Repas' }, { value: 'eau', label: 'Eau fraîche' }, { value: 'sortie', label: 'Sortie / promenade' },
+  { value: 'nettoyage_box', label: 'Nettoyage du box' }, { value: 'nettoyage', label: 'Désinfection' }, { value: 'litiere', label: 'Change de litière' },
+  { value: 'medicament', label: 'Donner le traitement' }, { value: 'controle', label: "Contrôle de l'état général" }, { value: 'pesee', label: 'Pesée' },
+  { value: 'brossage', label: 'Brossage / toilettage' }, { value: 'jeux', label: 'Jeux / socialisation' }, { value: 'nouvelles', label: 'Nouvelles au propriétaire' },
+];
+
+/** Actions proposées selon le profil (garde : visite à domicile ; pension). */
 export function actesSuggeresPour(profilSource?: string | null) {
-  return profilSource === 'garde' ? ACTES_SUGGERES_GARDE : ACTES_SUGGERES;
+  return profilSource === 'garde' ? ACTES_SUGGERES_GARDE : profilSource === 'pension' ? ACTES_SUGGERES_PENSION : ACTES_SUGGERES;
 }
 
-const TOUS_ACTES = () => [...ACTES_SUGGERES, ...ACTES_SUGGERES_GARDE];
+const TOUS_ACTES = () => [...ACTES_SUGGERES, ...ACTES_SUGGERES_GARDE, ...ACTES_SUGGERES_PENSION];
 
 export function acteLabel(v: string | null | undefined): string {
   if (!v) return '';

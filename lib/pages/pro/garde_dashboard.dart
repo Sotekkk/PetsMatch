@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/pro/garde_facture_helper.dart'
     show estGardeJournee, gardePrestationKey, gardeMotifLabel, familleGarde, kFamillesGarde;
 import 'package:PetsMatch/pages/pro/garde_sejour_helper.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 
 const _teal = kDashTeal;
 const _ink = kDashInk;
@@ -341,6 +342,12 @@ class _GardeDashboardState extends State<GardeDashboard> {
             ],
             const SizedBox(height: 16),
             Wrap(spacing: 8, runSpacing: 8, children: [
+              if (r['animal_id'] != null)
+                OutlinedButton.icon(
+                  onPressed: () { Navigator.pop(ctx); _go(GardeFicheAnimalPage(animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r))); },
+                  icon: const Icon(Icons.pets_outlined, size: 18),
+                  label: const Text("Fiche de l'animal", style: TextStyle(fontFamily: 'Galey')),
+                ),
               if (_exterieur(r))
                 OutlinedButton.icon(
                   onPressed: () => ouvrirItineraire(context, lat: (r['lieu_lat'] as num?)?.toDouble(),

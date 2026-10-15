@@ -47,6 +47,7 @@ import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
+import 'package:PetsMatch/widgets/animal/sante_pro_tabs.dart';
 import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -336,9 +337,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   int get _tabCount {
     if (widget.vetMode) {
       // Propriétaire : dans l'en-tête commun (ProAnimalEntete), plus un onglet.
+      // Véto : Synthèse · Consultations · Santé · Documents ;
+      // ostéo : Synthèse · Séances · Bilans · Documents.
       if (User_Info.catPro == 'sante') return 4;
       if (User_Info.catPro == 'marechal_ferrant') return 5;
-      if (User_Info.catPro == 'veterinaire') return 5;
+      if (User_Info.catPro == 'veterinaire') return 4;
       if (User_Info.catPro == 'garde') return 3; // Identité · Santé · Alimentation (pas de Repro)
       return 2; // toilettage / photographe / taxi animalier… : Identité · Santé
     }
@@ -2299,6 +2302,93 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     );
   }
 
+  // ── Fiches métier vétérinaire / ostéopathe (étape 5) ─────────────────────
+
+  bool get _ficheSanteMetier =>
+      widget.animalId != null && (User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante');
+
+  /// Vue de l'onglet Santé du vétérinaire : carnet / reproduction / ostéo-kiné.
+  String _santeVue = 'carnet';
+
+  Widget _carnetVet() => _CarnetSanteTab(
+        animalId: widget.animalId, vetMode: true, espece: _espece,
+        canWrite: _canWriteHealth,
+        writeRequested: _healthAccessStatut == 'write_requested',
+        onRequestWrite: (!_canWriteHealth && _healthAccessGrantId != null && _healthAccessStatut != 'write_requested')
+            ? _requestHealthWriteAccess : null,
+      );
+
+  /// Identité complète + carnet de santé (lecture), ouverts depuis la Synthèse.
+  void _ouvrirIdentite() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8F8F6),
+        appBar: AppBar(
+          backgroundColor: _teal, foregroundColor: Colors.white,
+          title: Text(_nomCtrl.text.isNotEmpty ? _nomCtrl.text : 'Animal', style: const TextStyle(fontFamily: 'Galey')),
+          bottom: const TabBar(indicatorColor: Colors.white, labelColor: Colors.white, unselectedLabelColor: Colors.white60,
+              tabs: [Tab(text: 'Identité'), Tab(text: 'Carnet de santé')]),
+        ),
+        body: TabBarView(children: [_IdentiteTab(this), _carnetVet()]),
+      ),
+    )));
+  }
+
+  List<Widget> _ongletsSanteMetier() {
+    final morpho = MorphoTimelineTab(
+      animalId: widget.animalId ?? '', espece: _espece,
+      canWrite: _canWriteHealth,
+      proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+    );
+    if (User_Info.catPro == 'sante') {
+      return [
+        SyntheseOsteoTab(animalId: widget.animalId!, onIdentite: _ouvrirIdentite, onSeances: () => _tabs.animateTo(1)),
+        MorphoTimelineTab(
+          animalId: widget.animalId ?? '', espece: _espece,
+          canWrite: _canWriteHealth,
+          proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+          sansBilans: true,
+        ),
+        MorphoTimelineTab(
+          animalId: widget.animalId ?? '', espece: _espece,
+          canWrite: _canWriteHealth,
+          proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+          bilansSeulement: true,
+        ),
+        DocumentsSanteProTab(animalId: widget.animalId!, espece: _espece, osteo: true),
+      ];
+    }
+    Widget seg(String v, String label) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            label: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                color: _santeVue == v ? Colors.white : const Color(0xFF1F2A2E))),
+            selected: _santeVue == v, showCheckmark: false,
+            selectedColor: _teal, backgroundColor: const Color(0xFFF1F4F3), side: BorderSide.none,
+            onSelected: (_) => setState(() => _santeVue = v),
+          ),
+        );
+    return [
+      SyntheseVetTab(animalId: widget.animalId!, onIdentite: _ouvrirIdentite),
+      _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId, espece: _espece),
+      Column(children: [
+        SizedBox(
+          height: 48,
+          child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.fromLTRB(12, 8, 12, 0), children: [
+            seg('carnet', 'Carnet de santé'), seg('repro', 'Reproduction'), seg('morpho', 'Ostéo / Kiné'),
+          ]),
+        ),
+        Expanded(child: switch (_santeVue) {
+          'repro' => _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: true, sterilise: _sterilise, dateNaissance: _dateNaissance),
+          'morpho' => morpho,
+          _ => _carnetVet(),
+        }),
+      ]),
+      DocumentsSanteProTab(animalId: widget.animalId!, espece: _espece),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final quickActions = _ficheQuickActions();
@@ -2342,7 +2432,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: widget.vetMode
+          tabs: (widget.vetMode && _ficheSanteMetier)
+              ? (User_Info.catPro == 'veterinaire'
+                  ? const [Tab(text: 'Synthèse'), Tab(text: 'Consultations'), Tab(text: 'Santé'), Tab(text: 'Documents')]
+                  : const [Tab(text: 'Synthèse'), Tab(text: 'Séances'), Tab(text: 'Bilans'), Tab(text: 'Documents')])
+              : widget.vetMode
               ? (User_Info.catPro == 'sante'
                   // Anatomie a fusionné dans Morphologie pour santé (pointage
                   // libre + compte-rendu structuré) — maréchal-ferrant garde
@@ -2380,7 +2474,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           ProAnimalEntete(animalId: widget.animalId!, catPro: User_Info.catPro),
         Expanded(child: TabBarView(
         controller: _tabs,
-        children: widget.vetMode
+        children: (widget.vetMode && _ficheSanteMetier)
+            ? _ongletsSanteMetier()
+            : widget.vetMode
             ? [
                 _IdentiteTab(this),
                 _CarnetSanteTab(

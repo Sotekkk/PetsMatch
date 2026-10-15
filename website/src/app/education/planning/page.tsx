@@ -517,7 +517,7 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
                   </div>
                   <div className="flex items-center gap-2">
                     {p.animal_id && (
-                      <button onClick={() => router.push(`/mes-patients/${p.animal_id}?tab=Éducation`)}
+                      <button onClick={() => router.push(`/mes-patients/${p.animal_id}?tab=Séances`)}
                         title="Ajouter un rapport" className="text-lg" style={{ color: PURPLE }}>
                         🎓
                       </button>

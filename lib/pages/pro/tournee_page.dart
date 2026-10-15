@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
-import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
 // ── Ma tournée — carte des visites du jour + ordre réordonnable. L'heure du
@@ -192,7 +192,8 @@ class _TourneePageState extends State<TourneePage> {
       return;
     }
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true, rdvId: rdv['id']?.toString()),
+      // Fiche pet-sitter (avant : fiche en mode propriétaire complet).
+      builder: (_) => GardeFicheAnimalPage(animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Animal'),
     ));
   }
 

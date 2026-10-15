@@ -288,6 +288,8 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
         Text(
           widget.profilSource == 'garde'
               ? 'Créez des protocoles réutilisables\npour vos visites : promenade, repas,\nlitière, nettoyage des locaux…'
+              : widget.profilSource == 'pension'
+              ? 'Créez des protocoles réutilisables\npour vos pensionnaires : repas, sorties,\nnettoyage des box, traitements…'
               : 'Créez des protocoles réutilisables\npour vos soins, nettoyages et rondes',
           textAlign: TextAlign.center,
           style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),

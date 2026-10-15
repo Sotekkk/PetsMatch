@@ -924,6 +924,8 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
           <p className="text-sm text-gray-400 mb-4">
             {profilSource === 'garde'
               ? 'Créez des protocoles réutilisables pour vos visites : promenade, repas, litière, nettoyage des locaux…'
+              : profilSource === 'pension'
+              ? 'Créez des protocoles réutilisables pour vos pensionnaires : repas, sorties, nettoyage des box, traitements…'
               : 'Créez des protocoles réutilisables pour vos soins, nettoyages et rondes.'}
           </p>
           {canWrite && (

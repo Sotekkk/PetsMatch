@@ -85,22 +85,32 @@ const kActesSuggeresGarde = <(String, String)>[
   ('volets', 'Ouverture / fermeture des volets'), ('nouvelles', 'Nouvelles au propriétaire'),
 ];
 
-/// Actions proposées selon le profil (garde : visite à domicile).
+/// Pension : soins et entretien quotidiens des pensionnaires — pas de soins
+/// d'élevage (reproduction, vaccination). Miroir site : ACTES_SUGGERES_PENSION.
+const kActesSuggeresPension = <(String, String)>[
+  ('repas', 'Repas'), ('eau', 'Eau fraîche'), ('sortie', 'Sortie / promenade'),
+  ('nettoyage_box', 'Nettoyage du box'), ('nettoyage', 'Désinfection'), ('litiere', 'Change de litière'),
+  ('medicament', 'Donner le traitement'), ('controle', "Contrôle de l'état général"), ('pesee', 'Pesée'),
+  ('brossage', 'Brossage / toilettage'), ('jeux', 'Jeux / socialisation'), ('nouvelles', 'Nouvelles au propriétaire'),
+];
+
+/// Actions proposées selon le profil (garde : visite à domicile ; pension).
 List<(String, String)> actesSuggeresPour(String? profilSource) =>
-    profilSource == 'garde' ? kActesSuggeresGarde : kActesSuggeres;
+    profilSource == 'garde' ? kActesSuggeresGarde
+        : profilSource == 'pension' ? kActesSuggeresPension : kActesSuggeres;
 
 /// Libellé lisible d'une action (code connu ou texte libre saisi).
 String acteLabel(String? v) {
   if (v == null || v.isEmpty) return '';
   if (v == 'socialisation') return 'Promenade / Socialisation';
   if (v == 'autre') return 'Autre';
-  return [...kActesSuggeres, ...kActesSuggeresGarde].firstWhere((a) => a.$1 == v, orElse: () => (v, v)).$2;
+  return [...kActesSuggeres, ...kActesSuggeresGarde, ...kActesSuggeresPension].firstWhere((a) => a.$1 == v, orElse: () => (v, v)).$2;
 }
 
 /// Saisie libre → code connu si elle correspond à une suggestion.
 String acteDepuisSaisie(String s) {
   final t = s.trim();
-  return [...kActesSuggeres, ...kActesSuggeresGarde].firstWhere(
+  return [...kActesSuggeres, ...kActesSuggeresGarde, ...kActesSuggeresPension].firstWhere(
     (a) => a.$2.toLowerCase() == t.toLowerCase() || a.$1 == t.toLowerCase(),
     orElse: () => (t, t),
   ).$1;

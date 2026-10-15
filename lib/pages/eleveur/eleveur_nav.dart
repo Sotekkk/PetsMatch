@@ -818,7 +818,8 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => _pensionPlanCode == 'free'
                                 ? const PensionAbonnementPage()
-                                : const PlanTemplateListPage(),
+                                // profilSource 'pension' : pas de protocole chaleur, actions de pension.
+                                : const PlanTemplateListPage(profilSource: 'pension'),
                           ));
                         },
                       ),

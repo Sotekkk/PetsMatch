@@ -4,26 +4,30 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { TEAL, labelTypeSuivi, morphoSpeciesSupported } from '@/lib/morpho';
 
-interface SuiviRow { id: string; date: string; type_suivi: string; source?: string | null; notifie_a?: string | null; pro_profile_id?: string | null }
+interface SuiviRow { id: string; date: string; type_suivi: string; source?: string | null; notifie_a?: string | null; pro_profile_id?: string | null; avec_anatomie?: boolean | null }
 
 /// Onglet "Morphologie" embarqué dans la fiche patient (mes-patients/[id]) —
 /// liste les suivis morphologiques de CET animal, création rapide.
-export default function MorphoAnimalTab({ animalId, espece, canWrite = true, proProfileId }: { animalId: string; espece: string; canWrite?: boolean; proProfileId?: string | null }) {
+/// bilansSeulement : onglet « Bilans » de la fiche ostéo (bilans + séances avec anatomie).
+/// sansBilans : onglet « Séances » (tout sauf les bilans, exclusif avec « Bilans »).
+export default function MorphoAnimalTab({ animalId, espece, canWrite = true, proProfileId, bilansSeulement = false, sansBilans = false }: { animalId: string; espece: string; canWrite?: boolean; proProfileId?: string | null; bilansSeulement?: boolean; sansBilans?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [suivis, setSuivis] = useState<SuiviRow[]>([]);
 
   useEffect(() => {
     let active = true;
-    supabase.from('suivis_morpho').select('id, date, type_suivi, source, notifie_a, pro_profile_id').eq('animal_id', animalId)
+    supabase.from('suivis_morpho').select('id, date, type_suivi, source, notifie_a, pro_profile_id, avec_anatomie').eq('animal_id', animalId)
       .order('date', { ascending: false }).then(({ data }) => {
         // Bilan d'un pro NON ENVOYÉ : visible seulement de son profil auteur
         // (la RLS le cache aux autres comptes ; ici le même compte multi-profil).
         const visibles = ((data ?? []) as SuiviRow[]).filter((s) =>
           s.source !== 'professionnel' || !!s.notifie_a || (!!proProfileId && s.pro_profile_id === proProfileId));
-        if (active) { setSuivis(visibles); setLoading(false); }
+        const bilan = (s: SuiviRow) => (s.type_suivi ?? '').startsWith('bilan');
+        const liste = bilansSeulement ? visibles.filter(bilan) : sansBilans ? visibles.filter(s => !bilan(s)) : visibles;
+        if (active) { setSuivis(liste); setLoading(false); }
       });
     return () => { active = false; };
-  }, [animalId, proProfileId]);
+  }, [animalId, proProfileId, bilansSeulement, sansBilans]);
 
   if (!morphoSpeciesSupported(espece)) {
     return <p className="text-sm text-gray-400 font-galey py-8 text-center">Le suivi morphologique est disponible pour chien, chat et cheval.</p>;

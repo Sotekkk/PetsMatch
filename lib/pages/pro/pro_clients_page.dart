@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -433,6 +434,11 @@ class _ProClientsPageState extends State<ProClientsPage>
 
   void _openAnimal(Map<String, dynamic> animal) {
     final animalId = animal['id']?.toString() ?? '';
+    if (User_Info.catPro == 'garde') {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => GardeFicheAnimalPage(
+          animalId: animalId, animalNom: animal['nom']?.toString() ?? 'Animal')));
+      return;
+    }
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => AnimalFichePage(
         animalId: animalId,
