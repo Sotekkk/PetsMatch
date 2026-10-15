@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
@@ -148,6 +149,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   ];
   // Vitrine publique, comme l'éducateur.
   bool _tarifsSanteVisibles = false;
+  bool _tarifsToilettageVisibles = true;
   List<Map<String, dynamic>> _tarifsSanteExtra = [];
   // Vétérinaire : grille de tarifs (kTarifsVetoGroupes), vitrine opt-in,
   // prestations libres ; et déplacement à domicile (sinon cabinet seul,
@@ -421,6 +423,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
         _tarifsEducationVisibles = row['tarifs_education_visibles'] as bool? ?? false;
         _tarifsSanteVisibles = row['tarifs_sante_visibles'] as bool? ?? false;
+        _tarifsToilettageVisibles = row['tarifs_toilettage_visibles'] as bool? ?? true;
         _educationBilanDescCtrl.text = row['education_bilan_description']?.toString() ?? '';
         if (row['tarifs_education_extra'] is List) {
           _tarifsEducationExtra = [
@@ -844,6 +847,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
           if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
+          if (_catPro == 'toilettage') 'tarifs_toilettage_visibles': _tarifsToilettageVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
@@ -908,6 +912,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
           if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
+          if (_catPro == 'toilettage') 'tarifs_toilettage_visibles': _tarifsToilettageVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
@@ -959,6 +964,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
           if (_catPro == 'sante') 'se_deplace': _seDeplace,
           if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
+          if (_catPro == 'toilettage') 'tarifs_toilettage_visibles': _tarifsToilettageVisibles,
           if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
@@ -1117,9 +1123,38 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // L'éducateur, le vétérinaire, l'ostéo/kiné et le pet-sitter ont une grille
                   // de tarifs structurée (prestations fixes + libres) — le
                   // champ libre ferait doublon.
-                  if (!const {'education', 'veterinaire', 'sante', 'garde'}.contains(_catPro)) ...[
+                  if (!const {'education', 'veterinaire', 'sante', 'garde', 'toilettage'}.contains(_catPro)) ...[
                     const SizedBox(height: 12),
                     _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
+                  ],
+                  // Toiletteur : tarifs = catalogue de prestations (prix par espèce
+                  // et gabarit), repris dans les devis et les contrats.
+                  if (_catPro == 'toilettage') ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE6E8E6))),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('Tarifs', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                        const SizedBox(height: 4),
+                        Text('Vos prix viennent de votre catalogue de prestations (par espèce et gabarit). '
+                            'Ils sont repris dans vos devis et vos contrats.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero, dense: true,
+                          value: _tarifsToilettageVisibles,
+                          onChanged: (v) => setState(() => _tarifsToilettageVisibles = v),
+                          title: const Text('Afficher les prix sur ma fiche publique', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+                          subtitle: const Text("Sinon les prestations s'affichent « Sur devis ».", style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ToilettagePrestationsPage())),
+                          icon: const Icon(Icons.content_cut, size: 16),
+                          label: const Text('Gérer mes prestations et tarifs', style: TextStyle(fontFamily: 'Galey')),
+                        ),
+                      ]),
+                    ),
                   ],
 
                   // ── Adresse & géolocalisation ─────────────────────────────

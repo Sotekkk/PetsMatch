@@ -92,6 +92,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             'horaires':                  raw['horaires'] ?? {},
             'certifications':            raw['certifications'] ?? [],
             'tarifs':                    raw['tarifs'] ?? '',
+            'tarifs_toilettage_visibles': raw['tarifs_toilettage_visibles'] ?? true,
             'site_web':                  raw['site_web'] ?? '',
             'instagram':                 raw['instagram'] ?? '',
             'facebook':                  raw['facebook'] ?? '',
@@ -125,6 +126,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             'horaires':                  raw['horaires'] ?? {},
             'certifications':            raw['certifications'] ?? [],
             'tarifs':                    raw['tarifs'] ?? '',
+            'tarifs_toilettage_visibles': raw['tarifs_toilettage_visibles'] ?? true,
             'site_web':                  raw['site_web'] ?? '',
             'instagram':                 raw['instagram'] ?? '',
             'facebook':                  raw['facebook'] ?? '',
@@ -272,6 +274,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     if (_proData?['cat_pro'] != 'toilettage') {
       return '${((p['prix'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €';
     }
+    // Toiletteur : prix masqués si le pro l'a choisi (profil).
+    if (_proData?['tarifs_toilettage_visibles'] == false) return 'Sur devis';
     final grille = (p['grille_prix'] as List?) ?? [];
     if (grille.isEmpty) {
       return 'à partir de ${((p['prix_base'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €';
@@ -1205,7 +1209,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
 
           // Tarifs (texte libre — sauf éducateur, qui a une grille structurée)
           // Éducateur / vétérinaire / ostéo-kiné : grille de tarifs structurée, pas le texte libre.
-          if (_tarifs.isNotEmpty && !const {'education', 'veterinaire', 'sante'}.contains(_proData?['cat_pro'])) ...[
+          if (_tarifs.isNotEmpty && !const {'education', 'veterinaire', 'sante', 'garde', 'toilettage'}.contains(_proData?['cat_pro'])) ...[
             const SizedBox(height: 12),
             _card(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

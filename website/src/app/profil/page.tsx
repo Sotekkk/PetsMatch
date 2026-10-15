@@ -874,6 +874,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
   const [tarifsSante, setTarifsSante] = useState<Record<string, number>>({});
   const [tarifsSanteVisibles, setTarifsSanteVisibles] = useState(false);
+  const [tarifsToilettageVisibles, setTarifsToilettageVisibles] = useState(true);
   const [tarifsSanteExtra, setTarifsSanteExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   // Vétérinaire : grille de tarifs (miroir appli) + déplacement à domicile.
   const [tarifsVeto, setTarifsVeto] = useState<Record<string, number>>({});
@@ -990,6 +991,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           setTarifsSante(r.tarifs_sante as Record<string, number>);
         }
         setTarifsSanteVisibles((r.tarifs_sante_visibles as boolean) ?? false);
+        setTarifsToilettageVisibles((r.tarifs_toilettage_visibles as boolean) ?? true);
         if (r.tarifs_veto && typeof r.tarifs_veto === 'object') {
           setTarifsVeto(r.tarifs_veto as Record<string, number>);
         }
@@ -1224,6 +1226,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       ...((data?.profile_type ?? data?.cat_pro) === 'garde'
         ? { tarifs_garde: tarifsGarde }
         : {}),
+      // Toiletteur : prix du catalogue affichés ou non sur la fiche publique.
+      ...((data?.profile_type ?? data?.cat_pro) === 'toilettage' ? { tarifs_toilettage_visibles: tarifsToilettageVisibles } : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'sante'
         ? {
             tarifs_sante: tarifsSante,
@@ -1393,8 +1397,19 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               rows={4} placeholder="Présentez votre activité…" className={`${inputCls} resize-none`} />
           </Field>
-          {/* Éducateur / vétérinaire / ostéo-kiné / pet-sitter : grille de tarifs structurée (doublon sinon). */}
-          {!['education', 'veterinaire', 'sante', 'garde'].includes(catPro) && (
+          {/* Éducateur / vétérinaire / ostéo-kiné / pet-sitter / toiletteur : grille de tarifs structurée (doublon sinon). */}
+          {catPro === 'toilettage' && (
+            <div className="rounded-xl border border-gray-200 p-4 space-y-2">
+              <p className="text-sm font-bold text-[#1F2A2E]">Tarifs</p>
+              <p className="text-xs text-gray-500">Vos prix viennent de votre catalogue de prestations (par espèce et gabarit). Ils sont repris dans vos devis et vos contrats.</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={tarifsToilettageVisibles} onChange={e => setTarifsToilettageVisibles(e.target.checked)} />
+                Afficher les prix sur ma fiche publique <span className="text-xs text-gray-400">(sinon « Sur devis »)</span>
+              </label>
+              <a href="/toilettage/prestations" className="text-sm font-semibold text-[#0C5C6C]">Gérer mes prestations et tarifs →</a>
+            </div>
+          )}
+          {!['education', 'veterinaire', 'sante', 'garde', 'toilettage'].includes(catPro) && (
             <Field label="Tarifs">
               <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
                 rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />

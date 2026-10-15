@@ -394,10 +394,32 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
 
   String get _tarifsCol => User_Info.catPro == 'garde' ? 'tarifs_garde' : 'tarifs_education';
 
+  /// Toiletteur : prestations du catalogue (prix de base, ou le plus bas de
+  /// la grille par espèce / gabarit) proposées comme lignes de devis.
+  List<Map<String, dynamic>> _catalogueToilettage = [];
+
   Future<void> _loadTarifsForfaits() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
+    if (User_Info.catPro == 'toilettage') {
+      try {
+        var q = _supa.from('prestations_toilettage').select('nom, prix_base, grille_prix').eq('pro_uid', uid).eq('actif', true);
+        if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
+        final rows = await q.order('nom');
+        if (mounted) {
+          setState(() => _catalogueToilettage = [
+                for (final r in rows as List)
+                  () {
+                    final grille = (r['grille_prix'] as List? ?? const []).map((t) => ((t as Map)['prix'] as num?)?.toDouble() ?? 0).where((x) => x > 0).toList();
+                    final prix = grille.isNotEmpty ? grille.reduce((a, b) => a < b ? a : b) : ((r['prix_base'] as num?)?.toDouble() ?? 0);
+                    return {'nom': r['nom']?.toString() ?? 'Prestation', 'prix': prix};
+                  }(),
+              ]);
+        }
+      } catch (_) {}
+      return;
+    }
     try {
       final forfaitsTable = User_Info.catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
       final isEducation = User_Info.catPro == 'education';
@@ -639,6 +661,9 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
               _quickAddChip('Promenade (2h)', _tarifs['promenade_2h'] as num),
             if (User_Info.catPro == 'garde' && (_tarifs['garde_journee'] as num? ?? 0) > 0)
               _quickAddChip('Garde à domicile (journée)', _tarifs['garde_journee'] as num),
+            if (User_Info.catPro == 'toilettage')
+              for (final p in _catalogueToilettage)
+                _quickAddChip(p['nom'] as String, (p['prix'] as num?) ?? 0),
             for (final f in _forfaits)
               _quickAddChip(f['nom']?.toString() ?? '', (f['prix'] as num?) ?? 0, purple: true),
           ]),

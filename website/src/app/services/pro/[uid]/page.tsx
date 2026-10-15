@@ -496,6 +496,8 @@ function ProDetailContent() {
 
   function prestationPrixLabel(p: Prestation, catPro: string) {
     if (catPro !== 'toilettage') return `${(p.prix ?? 0).toFixed(0)} €`;
+    // Toiletteur : prix masqués si le pro l'a choisi (profil).
+    if ((pro as { tarifs_toilettage_visibles?: boolean | null } | null)?.tarifs_toilettage_visibles === false) return 'Sur devis';
     const grille = p.grille_prix ?? [];
     if (grille.length === 0) return `à partir de ${(p.prix_base ?? 0).toFixed(0)} €`;
     const prices = grille.map(t => t.prix);
@@ -1591,7 +1593,7 @@ function ProDetailContent() {
                 <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.education_bilan_description}</p>
               </div>
             )}
-            {pro.tarifs && !['education', 'veterinaire', 'sante'].includes(pro.cat_pro) && (
+            {pro.tarifs && !['education', 'veterinaire', 'sante', 'garde', 'toilettage'].includes(pro.cat_pro) && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
                 <p className="text-sm text-gray-600 leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.tarifs}</p>

@@ -2081,8 +2081,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'statut': 'en_attente',
           'metadata': {
             'client_nom': rdv['_client_name'],
-            'prestation_nom': prestation?['nom'],
-            'prix_total': prestation?['prix_base']?.toString(),
+            'prestation_nom': prestation?['nom'] ?? rdv['motif'],
+            // Prix calculé à la réservation (grille espèce / gabarit du
+            // catalogue), sinon prix de base de la prestation.
+            'prix_total': (rdv['prix_calcule'] ?? prestation?['prix_base'])?.toString(),
           },
         }).select('token').single();
         token = row['token'] as String?;

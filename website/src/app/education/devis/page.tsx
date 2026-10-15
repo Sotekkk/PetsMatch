@@ -150,9 +150,21 @@ function DevisPageInner() {
               .map(e => ({ label: e.label!.trim(), prix: Number(e.prix) || 0 }))
           : [],
       );
-      const forfaitsTable = pt === 'garde' ? 'forfaits_garde' : 'forfaits_education';
-      const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
-      setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
+      if (pt === 'toilettage') {
+        // Toiletteur : prestations du catalogue (prix de base, ou le plus bas
+        // de la grille espèce / gabarit) — miroir appli _catalogueToilettage.
+        let q = supabase.from('prestations_toilettage').select('id, nom, prix_base, grille_prix').eq('pro_uid', user.uid).eq('actif', true);
+        if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
+        const { data: cat } = await q.order('nom');
+        setForfaits(((cat ?? []) as { id: string; nom: string; prix_base: number | null; grille_prix: { prix?: number }[] | null }[]).map(c => {
+          const g = (c.grille_prix ?? []).map(x => Number(x.prix) || 0).filter(x => x > 0);
+          return { id: c.id, nom: c.nom, prix: g.length ? Math.min(...g) : Number(c.prix_base) || 0 };
+        }));
+      } else {
+        const forfaitsTable = pt === 'garde' ? 'forfaits_garde' : 'forfaits_education';
+        const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
+        setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
+      }
       const animalIds = [...new Set(((acc.data ?? []) as { animal_id: string }[]).map(a => a.animal_id))];
       const preAnimal = prefillRef.current?.animalId;
       if (preAnimal && !animalIds.includes(preAnimal)) animalIds.push(preAnimal);
