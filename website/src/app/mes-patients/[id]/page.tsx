@@ -591,6 +591,9 @@ function PatientDetailPageInner() {
   const [seanceProchaine, setSeanceProchaine] = useState('');
   const [seanceRdvId, setSeanceRdvId] = useState<string | null>(null);
   const [prochainRdv, setProchainRdv] = useState<{ date_heure: string; motif: string | null; lieu: string | null } | null>(null);
+  // Motif de l'accompagnement saisi depuis la Synthèse (education_suivis).
+  const [motifSuivi, setMotifSuivi] = useState<string | null>(null);
+  const [motifEdit, setMotifEdit] = useState<string | null>(null);
   const [bilanMotif, setBilanMotif] = useState('');
   const [bilanReco, setBilanReco] = useState('');
   const [bilanNb, setBilanNb] = useState('');
@@ -692,6 +695,9 @@ function PatientDetailPageInner() {
         .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).eq('statut', 'confirme')
         .gte('date_heure', new Date().toISOString()).order('date_heure').limit(1).maybeSingle();
       if (!annule) setProchainRdv(data as { date_heure: string; motif: string | null; lieu: string | null } | null);
+      const { data: ms, error: msErr } = await supabase.from('education_suivis').select('motif')
+        .eq('pro_profile_id', activeProfileId).eq('animal_id', animalId).maybeSingle();
+      if (!annule && !msErr) setMotifSuivi((ms as { motif: string | null } | null)?.motif ?? null);
       const rdvId = searchParams.get('rdv');
       if (rdvId && !annule) {
         const { data: r } = await supabase.from('rdv').select('id, lieu, duree_minutes').eq('id', rdvId).maybeSingle();
@@ -2101,7 +2107,7 @@ function PatientDetailPageInner() {
         {/* ── Éducation (plan de travail + rapports de séance) ── */}
         {isEducation && tab === 'Synthèse' && (() => {
           const bilans = rapports.filter(r => r.type === 'bilan');
-          const motif = bilans.find(b => b.bilan_motif)?.bilan_motif ?? '';
+          const motif = motifSuivi?.trim() || bilans.find(b => b.bilan_motif)?.bilan_motif || '';
           const finalises = rapports.filter(r => r.statut !== 'brouillon');
           const derniere = finalises[0];
           const brouillons = rapports.filter(r => r.statut === 'brouillon').length;
@@ -2120,7 +2126,31 @@ function PatientDetailPageInner() {
               )}
               <div className="grid sm:grid-cols-2 gap-4">
                 <Card title="Motif de l'accompagnement">
-                  {motif ? <p className="text-sm">{motif}</p> : discret('Non renseigné — il se saisit dans le bilan initial.')}
+                  {motifEdit !== null ? (
+                    <div className="space-y-2">
+                      <textarea value={motifEdit} onChange={e => setMotifEdit(e.target.value)} rows={3} autoFocus
+                        placeholder="Ex : réactivité envers les congénères, tirage en laisse…"
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                      <div className="flex gap-2">
+                        <button onClick={() => setMotifEdit(null)} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
+                        <button onClick={async () => {
+                          if (!user || !activeProfileId) return;
+                          const texte = motifEdit.trim();
+                          const { error } = await supabase.from('education_suivis').upsert({
+                            pro_uid: user.uid, pro_profile_id: activeProfileId, animal_id: animalId,
+                            motif: texte || null, updated_at: new Date().toISOString(),
+                          }, { onConflict: 'pro_profile_id,animal_id' });
+                          if (error) { alert('Motif non enregistré (migration_education_suivi_motif.sql à passer).'); return; }
+                          setMotifSuivi(texte); setMotifEdit(null);
+                        }} className="flex-1 text-white rounded-xl py-2 text-sm font-semibold" style={{ background: '#EF6C00' }}>Enregistrer</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setMotifEdit(motif)} className="w-full text-left">
+                      {motif ? <p className="text-sm">{motif}</p> : discret('Non renseigné.')}
+                      <span className="text-xs font-semibold" style={{ color: TEAL }}>{motif ? 'Modifier' : 'Renseigner'}</span>
+                    </button>
+                  )}
                 </Card>
                 <Card title="Programme actif">
                   {forfaitActif

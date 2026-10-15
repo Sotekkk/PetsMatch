@@ -64,6 +64,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   List<Map<String, dynamic>> _souscrits = [];
   /// Prochaine séance confirmée de ce profil pour l'animal.
   Map<String, dynamic>? _prochainRdv;
+  /// Motif de l'accompagnement saisi depuis la Synthèse (education_suivis).
+  String? _motifSuivi;
   /// Vue de l'onglet Programme : objectifs / exercices / forfait.
   String _programmeVue = 'objectifs';
   bool _rdvTraite = false;
@@ -158,6 +160,11 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       // Prochaine séance (agenda de ce profil, jamais l'uid seul).
       final pid = User_Info.activeProfileId;
       if (pid.isNotEmpty) {
+        try {
+          final m = await _supa.from('education_suivis').select('motif')
+              .eq('pro_profile_id', pid).eq('animal_id', widget.animalId).maybeSingle();
+          if (mounted) setState(() => _motifSuivi = m?['motif']?.toString());
+        } catch (_) {} // migration_education_suivi_motif.sql pas encore passée
         try {
           final r = await _supa.from('rdv').select()
               .eq('pro_profile_id', pid).eq('animal_id', widget.animalId).eq('statut', 'confirme')
@@ -1128,7 +1135,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
 
   Widget _syntheseTab() {
     final bilans = _seances.where((x) => x['type'] == 'bilan').toList();
-    final motif = bilans.map((b) => b['bilan_motif']?.toString() ?? '').firstWhere((m) => m.isNotEmpty, orElse: () => '');
+    final motifBilan = bilans.map((b) => b['bilan_motif']?.toString() ?? '').firstWhere((m) => m.isNotEmpty, orElse: () => '');
+    final motif = (_motifSuivi ?? '').trim().isNotEmpty ? _motifSuivi!.trim() : motifBilan;
     final finalisees = _seances.where((x) => x['statut'] != 'brouillon').toList();
     final derniere = finalisees.isEmpty ? null : finalisees.first;
     final prioritaires = [
@@ -1156,8 +1164,13 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             ),
           ),
         _carte(titre: "Motif de l'accompagnement", icone: Icons.flag_outlined,
-            child: motif.isEmpty ? _texteDiscret('Non renseigné — il se saisit dans le bilan initial.') : Text(motif,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5))),
+            action: TextButton(onPressed: () => _modifierMotif(motif),
+                child: Text(motif.isEmpty ? 'Renseigner' : 'Modifier', style: const TextStyle(fontFamily: 'Galey'))),
+            child: InkWell(
+              onTap: () => _modifierMotif(motif),
+              child: motif.isEmpty ? _texteDiscret('Non renseigné.') : Text(motif,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+            )),
         _carte(titre: 'Programme actif', icone: Icons.assignment_outlined,
             action: TextButton(onPressed: () { setState(() => _programmeVue = 'forfait'); _tab.animateTo(1); },
                 child: const Text('Voir', style: TextStyle(fontFamily: 'Galey'))),
@@ -1220,6 +1233,41 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         ),
       ]),
     );
+  }
+
+  /// Saisie du motif directement depuis la Synthèse (sans bilan).
+  Future<void> _modifierMotif(String actuel) async {
+    final ctrl = TextEditingController(text: actuel);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Motif de l'accompagnement", style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: TextField(controller: ctrl, autofocus: true, minLines: 2, maxLines: 5,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: const InputDecoration(hintText: 'Ex : réactivité envers les congénères, tirage en laisse…',
+                border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Enregistrer', style: TextStyle(fontWeight: FontWeight.w700, color: _kOrange))),
+        ],
+      ),
+    );
+    final texte = ctrl.text.trim();
+    ctrl.dispose();
+    final pid = User_Info.activeProfileId;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (ok != true || pid.isEmpty || uid == null) return;
+    try {
+      await _supa.from('education_suivis').upsert({
+        'pro_uid': uid, 'pro_profile_id': pid, 'animal_id': widget.animalId,
+        'motif': texte.isEmpty ? null : texte,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'pro_profile_id,animal_id');
+      if (mounted) setState(() => _motifSuivi = texte);
+    } catch (e) {
+      _snack('Motif non enregistré (migration_education_suivi_motif.sql à passer) : $e', err: true);
+    }
   }
 
   // ── Programme (objectifs · exercices · forfait) ────────────────────────────
