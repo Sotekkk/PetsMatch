@@ -953,6 +953,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return '/mes-employeurs';
     case 'tache_assignee':
       return '/mes-taches';
+    // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
+    case 'toilettage_pret':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : null;
     // Fin d'abonnement / d'essai gratuit (functions/abonnements.js) → abonnement du métier.
     case 'abonnement_expiration': {
       const p = String(d.profilType ?? '');

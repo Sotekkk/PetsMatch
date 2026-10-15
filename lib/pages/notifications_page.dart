@@ -494,6 +494,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Rapport de garde / visite / promenade — nouvelle reçue par le
     // propriétaire (module garde / pet-sitting). Contenu dans pension_updates.
+    // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
+    if (type == 'toilettage_pret') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => AnimalFicheParticulierPage(animalId: animalId)));
+      }
+      return;
+    }
     if (type == 'visite_rapport' || type == 'garde_journal') {
       final animalId  = data is Map ? data['animalId'] as String? : null;
       final animalNom = data is Map ? data['animalNom'] as String? : null;

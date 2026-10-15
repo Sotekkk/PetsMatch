@@ -3,6 +3,7 @@
 import GardeDashboard from '@/components/dashboard/GardeDashboard';
 import EducationDashboard from '@/components/dashboard/EducationDashboard';
 import PensionDashboard from '@/components/dashboard/PensionDashboard';
+import ToilettageDashboard from '@/components/dashboard/ToilettageDashboard';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -191,6 +192,11 @@ export default function HomeDashboard() {
     return <EducationDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
       avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
   }
+  // Toiletteur : tableau de bord du salon (miroir appli ToilettageSalonDashboard).
+  if (activeProfile?.profile_type === 'toilettage' || activeProfile?.cat_pro === 'toilettage') {
+    return <ToilettageDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon salon'}
+      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+  }
   // Pension : poste de pilotage du jour (miroir appli PensionDashboard).
   if (activeProfile?.profile_type === 'pension' || activeProfile?.cat_pro === 'pension') {
     return <PensionDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma pension'}
@@ -215,6 +221,9 @@ export default function HomeDashboard() {
     }
     if (primaryProProfile.profile_type === 'garde') {
       return <GardeDashboard nom={primaryProProfile.nom || 'Mon activité'} avatar={primaryProProfile.avatar_url} />;
+    }
+    if (primaryProProfile.profile_type === 'toilettage') {
+      return <ToilettageDashboard nom={primaryProProfile.nom || 'Mon salon'} avatar={primaryProProfile.avatar_url} />;
     }
     if (primaryProProfile.profile_type === 'pension') {
       return <PensionDashboard nom={primaryProProfile.nom || 'Ma pension'} avatar={primaryProProfile.avatar_url} />;
