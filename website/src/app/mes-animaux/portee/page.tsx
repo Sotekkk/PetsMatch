@@ -23,6 +23,7 @@ interface ExistingAnimal {
   identification?: string | null;
   date_naissance?: string | null;
   photo_url?: string | null;
+  nom_pedigree?: string | null;
 }
 
 interface AnimalRow {
@@ -106,6 +107,11 @@ export default function PorteePage() {
   const [pereSelected,  setPereSelected]  = useState<ExistingAnimal | null>(null);
   const [nomPere,        setNomPere]       = useState('');
   const [pucePere,       setPucePere]      = useState('');
+  // Mêmes informations que sur la fiche animal (père et mère).
+  const [nomPedigreePere, setNomPedigreePere] = useState('');
+  const [racePere,        setRacePere]        = useState('');
+  const [dateNaissancePere, setDateNaissancePere] = useState('');
+  const [nomPedigreeMere, setNomPedigreeMere] = useState('');
   const [showPerePicker, setShowPerePicker] = useState(false);
   const [myMales,        setMyMales]        = useState<ExistingAnimal[]>([]);
   const [loadingMales,   setLoadingMales]   = useState(false);
@@ -145,7 +151,7 @@ export default function PorteePage() {
     if (!user) return;
     setLoadingMales(true);
     let qm = supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
+      .select('id, nom, nom_pedigree, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
       .eq('uid_eleveur', proprioUid)
       .eq('espece', espece)
       .eq('sexe', 'male').eq('reproducteur', true)
@@ -161,7 +167,7 @@ export default function PorteePage() {
     if (!user) return;
     setLoadingFemelles(true);
     let qf = supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
+      .select('id, nom, nom_pedigree, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
       .eq('uid_eleveur', proprioUid)
       .eq('espece', espece)
       .eq('sexe', 'femelle').eq('reproducteur', true)
@@ -176,11 +182,14 @@ export default function PorteePage() {
     setPereSelected(a);
     setNomPere(a.nom ?? '');
     setPucePere(a.identification ?? '');
+    setNomPedigreePere(a.nom_pedigree ?? '');
+    setRacePere(a.race ?? '');
+    setDateNaissancePere(a.date_naissance?.slice(0, 10) ?? '');
     setShowPerePicker(false);
   }
 
   function clearPere() {
-    setPereSelected(null); setNomPere(''); setPucePere('');
+    setPereSelected(null); setNomPere(''); setPucePere(''); setNomPedigreePere(''); setRacePere(''); setDateNaissancePere('');
     setShowPerePicker(false);
   }
 
@@ -189,13 +198,14 @@ export default function PorteePage() {
     setNomMere(a.nom ?? '');
     setPuceMere(a.identification ?? '');
     setRaceMere(a.race ?? '');
+    setNomPedigreeMere(a.nom_pedigree ?? '');
     setDateNaissanceMere(a.date_naissance?.slice(0, 10) ?? '');
     if (!race && a.race) setRace(a.race);
     setShowMerePicker(false);
   }
 
   function clearMere() {
-    setMereSelected(null); setNomMere(''); setPuceMere(''); setRaceMere(''); setDateNaissanceMere('');
+    setMereSelected(null); setNomMere(''); setPuceMere(''); setRaceMere(''); setDateNaissanceMere(''); setNomPedigreeMere('');
     setShowMerePicker(false);
   }
 
@@ -276,6 +286,10 @@ export default function PorteePage() {
         pedigree_lof:        pedigreeLof.trim()      || null,
         nom_pere:            nomPere.trim()           || null,
         puce_pere:           pucePere.trim()          || null,
+        nom_pedigree_pere:   nomPedigreePere.trim()   || null,
+        race_pere:           racePere.trim()          || null,
+        date_naissance_pere: dateNaissancePere        || null,
+        nom_pedigree_mere:   nomPedigreeMere.trim()   || null,
         nom_mere:            nomMere.trim()           || null,
         puce_mere:           puceMere.trim()          || null,
         race_mere:           raceMere.trim()          || null,
@@ -465,6 +479,24 @@ export default function PorteePage() {
                 placeholder={['chien', 'chat'].includes(espece) ? 'I-CAD (15 chiffres)' : 'Puce / tatouage'} />
             </div>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nom de pedigree (affixe)</label>
+            <input className={iSmCls} value={nomPedigreePere} disabled={!!pereSelected}
+              onChange={e => setNomPedigreePere(e.target.value)} placeholder="Ex : Nom du Domaine de…" />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Race du père</label>
+              <input list="breeds-pere" className={iSmCls} value={racePere} disabled={!!pereSelected}
+                onChange={e => setRacePere(e.target.value)} placeholder="Race" />
+              {!pereSelected && <datalist id="breeds-pere">{breeds.map(b => <option key={b} value={b} />)}</datalist>}
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Date de naissance</label>
+              <input type="date" className={iSmCls} value={dateNaissancePere} disabled={!!pereSelected}
+                onChange={e => setDateNaissancePere(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
+            </div>
+          </div>
         </div>
 
         {/* ── Mère ── */}
@@ -510,6 +542,11 @@ export default function PorteePage() {
                 onChange={e => setPuceMere(['chien', 'chat'].includes(espece) ? e.target.value.replace(/\D/g, '') : e.target.value)}
                 placeholder={['chien', 'chat'].includes(espece) ? 'I-CAD (15 chiffres)' : 'Puce / tatouage'} />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nom de pedigree (affixe)</label>
+            <input className={iSmCls} value={nomPedigreeMere} disabled={!!mereSelected}
+              onChange={e => setNomPedigreeMere(e.target.value)} placeholder="Ex : Nom du Domaine de…" />
           </div>
           <div className="flex gap-3">
             <div className="flex-1">

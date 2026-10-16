@@ -46,6 +46,7 @@ interface Animal {
   pedigree?: boolean; pedigree_lof?: string; pedigree_numero?: string; club_registre?: string; pedigree_url?: string;
   nom_pere?: string; puce_pere?: string; race_pere?: string;
   nom_mere?: string; puce_mere?: string; race_mere?: string; date_naissance_mere?: string;
+  nom_pedigree_pere?: string; nom_pedigree_mere?: string; date_naissance_pere?: string;
   importation_ref?: string;
   contacts_urgence?: { nom: string; tel: string }[];
   /** Personnes autorisées à déposer / récupérer (pension, pet-sitter) — migration_personnes_autorisees.sql. */
@@ -83,8 +84,10 @@ const MORT_FR: Record<string,string> = { maladie:'Maladie', accident:'Accident',
 const STATUT_FR: Record<string,{label:string;color:string}> = { present:{label:'Présent',color:'text-green-700 bg-green-100'}, reserve:{label:'Réservé',color:'text-amber-700 bg-amber-100'}, sorti:{label:'Sorti',color:'text-blue-700 bg-blue-100'}, decede:{label:'Décédé',color:'text-red-600 bg-red-100'} };
 
 const PEDIGREE_CONFIG: Record<string, { label: string; types: string[] }> = {
-  chien:  { label: 'LOF (Livre des Origines Français)', types: ['LOF', 'Non-LOF'] },
-  chat:   { label: 'LOOF (Livre Officiel des Origines Félines)', types: ['LOOF', 'Non-LOOF'] },
+  // « Club de race (hors LOF) » : pedigree délivré par un club de race
+  // (races non reconnues FCI, ex. Pomsky). « Non-LOF » = sans pedigree.
+  chien:  { label: 'Pedigree', types: ['LOF', 'Club de race (hors LOF)', 'Non-LOF'] },
+  chat:   { label: 'Pedigree', types: ['LOOF', 'Club de race (hors LOOF)', 'Non-LOOF'] },
   cheval: { label: 'Registre', types: ["Stud-book", "Registre d'élevage", 'Non-inscrit'] },
   lapin:  { label: 'Livre de race', types: ['Livre de race', 'Non-inscrit'] },
   oiseau: { label: 'Baguage', types: ['Bagué fermé', 'Bagué ouvert', 'Non-bagué'] },
@@ -93,6 +96,9 @@ const PEDIGREE_CONFIG: Record<string, { label: string; types: string[] }> = {
   porcin: { label: 'Livre généalogique LG', types: ['Livre généalogique LG', 'Non-inscrit'] },
   nac:    { label: "Registre d'élevage", types: ["Registre d'élevage", 'Non-inscrit'] },
 };
+
+/** Libellé affiché : « Non-LOF » / « Non-LOOF » = sans pedigree. */
+const libellePedigree = (t: string) => (/^non-lo/i.test(t) ? 'Sans pedigree' : t);
 
 const DOC_TYPES: { value: string; label: string; icon: string }[] = [
   { value: 'adn',         label: 'Test ADN',             icon: '🧬' },
@@ -2496,10 +2502,10 @@ function AnimalFichePageInner() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [nomElevage, setNomElevage] = useState('');
   const [adresseElevage, setAdresseElevage] = useState('');
-  const [mesFemelles, setMesFemelles] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]>([]);
+  const [mesFemelles, setMesFemelles] = useState<{id:string;nom:string;nom_pedigree?:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]>([]);
   const [showMerePicker, setShowMerePicker] = useState(false);
   const [mereSearch, setMereSearch] = useState('');
-  const [mesMales, setMesMales] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]>([]);
+  const [mesMales, setMesMales] = useState<{id:string;nom:string;nom_pedigree?:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]>([]);
   const [showPerePicker, setShowPerePicker] = useState(false);
   const [pereSearch, setPereSearch] = useState('');
   // Rattachement par puce : recherche l'animal (tous propriétaires confondus,
@@ -2900,12 +2906,12 @@ function AnimalFichePageInner() {
 
   useEffect(() => {
     if (!user || !isEleveur || !ownerUid) return;
-    supabase.from('animaux').select('id, nom, identification, race, photo_url, date_naissance')
+    supabase.from('animaux').select('id, nom, nom_pedigree, identification, race, photo_url, date_naissance')
       .eq('uid_eleveur', ownerUid).eq('sexe', 'femelle').order('nom')
-      .then(({ data }) => setMesFemelles((data ?? []) as {id:string;nom:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]));
-    supabase.from('animaux').select('id, nom, identification, race, photo_url')
+      .then(({ data }) => setMesFemelles((data ?? []) as {id:string;nom:string;nom_pedigree?:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]));
+    supabase.from('animaux').select('id, nom, nom_pedigree, identification, race, photo_url, date_naissance')
       .eq('uid_eleveur', ownerUid).eq('sexe', 'male').order('nom')
-      .then(({ data }) => setMesMales((data ?? []) as {id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]));
+      .then(({ data }) => setMesMales((data ?? []) as {id:string;nom:string;nom_pedigree?:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]));
   }, [user, isEleveur, ownerUid]);
 
   // ── Sauvegarde identité
@@ -2959,6 +2965,8 @@ function AnimalFichePageInner() {
         passeport_europeen: animal.passeport_europeen,
         nom_pere: animal.nom_pere, puce_pere: animal.puce_pere, race_pere: animal.race_pere,
         nom_mere: animal.nom_mere, puce_mere: animal.puce_mere, race_mere: animal.race_mere,
+        nom_pedigree_pere: animal.nom_pedigree_pere || undefined, nom_pedigree_mere: animal.nom_pedigree_mere || undefined,
+        date_naissance_pere: animal.date_naissance_pere || undefined,
         contacts_urgence: animal.contacts_urgence,
         photo_url: animal.photo_url,
         statut: animal.statut || 'present',
@@ -4150,17 +4158,17 @@ function AnimalFichePageInner() {
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {(PEDIGREE_CONFIG[animal.espece ?? '']?.types ?? ['Oui', 'Non']).map(t => (
-                    <button key={t} type="button" onClick={() => set('pedigree_lof', t)}
+                    <button key={t} type="button" onClick={() => { set('pedigree_lof', t); set('pedigree', !t.toLowerCase().startsWith('non')); }}
                       className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${animal.pedigree_lof === t ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                      {t}
+                      {libellePedigree(t)}
                     </button>
                   ))}
                 </div>
               </div>
               {animal.pedigree_lof && !animal.pedigree_lof.toLowerCase().startsWith('non') && (
                 <>
-                  <Field label="N° de pedigree (LOF, LOOF, SIRE…)" value={animal.pedigree_numero ?? ''} onChange={v => set('pedigree_numero', v)} />
-                  <Field label="Club / Registre" value={animal.club_registre ?? ''} onChange={v => set('club_registre', v)} />
+                  <Field label={animal.pedigree_lof?.startsWith('Club') ? "N° de pedigree / d'inscription au club" : 'N° de pedigree (LOF, LOOF, SIRE…)'} value={animal.pedigree_numero ?? ''} onChange={v => set('pedigree_numero', v)} />
+                  <Field label={animal.pedigree_lof?.startsWith('Club') ? 'Nom du club de race' : 'Club / Registre'} value={animal.club_registre ?? ''} onChange={v => set('club_registre', v)} />
                   <div>
                     <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Document pedigree</label>
                     <div className="flex items-center gap-3">
@@ -4198,7 +4206,7 @@ function AnimalFichePageInner() {
               <div className="flex gap-2 text-sm">
                 <span className="text-gray-400 w-28 flex-shrink-0">Inscription</span>
                 <span className={animal.pedigree_lof ? 'font-medium text-[#1F2A2E]' : 'text-gray-400 italic'}>
-                  {animal.pedigree_lof || 'Non renseigné'}
+                  {animal.pedigree_lof ? libellePedigree(animal.pedigree_lof) : 'Non renseigné'}
                 </span>
               </div>
               {animal.pedigree_numero && (
@@ -4237,6 +4245,8 @@ function AnimalFichePageInner() {
                   )}
                   <Field label="Nom du père" value={animal.nom_pere??''} onChange={v=>set('nom_pere',v)} />
                   <Field label="Puce père" value={animal.puce_pere??''} onChange={v=>set('puce_pere',v)} />
+                  <Field label="Nom de pedigree du père (affixe)" value={animal.nom_pedigree_pere??''} onChange={v=>set('nom_pedigree_pere',v)} />
+                  <Field label="Date de naissance du père" value={animal.date_naissance_pere??''} onChange={v=>set('date_naissance_pere',v)} type="date" />
                   {perePuceMatch && animal.nom_pere !== perePuceMatch.nom && (
                     <div className="col-span-2 flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                       <span className="text-xs text-[#0C5C6C]">
@@ -4266,6 +4276,8 @@ function AnimalFichePageInner() {
                   )}
                   <Field label="Nom de la mère" value={animal.nom_mere??''} onChange={v=>set('nom_mere',v)} />
                   <Field label="Puce mère" value={animal.puce_mere??''} onChange={v=>set('puce_mere',v)} />
+                  <Field label="Nom de pedigree de la mère (affixe)" value={animal.nom_pedigree_mere??''} onChange={v=>set('nom_pedigree_mere',v)} />
+                  <Field label="Date de naissance de la mère" value={(animal.date_naissance_mere??'').slice(0, 10)} onChange={v=>set('date_naissance_mere',v)} type="date" />
                   {merePuceMatch && animal.nom_mere !== merePuceMatch.nom && (
                     <div className="col-span-2 flex items-center justify-between gap-2 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
                       <span className="text-xs text-[#5A8A45]">
@@ -4288,13 +4300,15 @@ function AnimalFichePageInner() {
               ) : (
                 <div className="space-y-2">
                   {[
-                    { label:'♂ Père', nom:animal.nom_pere, puce:animal.puce_pere, race:animal.race_pere },
-                    { label:'♀ Mère', nom:animal.nom_mere, puce:animal.puce_mere, race:animal.race_mere },
-                  ].map(row => (row.nom || row.puce || row.race) && (
+                    { label:'♂ Père', nom:animal.nom_pere, puce:animal.puce_pere, race:animal.race_pere, ped:animal.nom_pedigree_pere, dn:animal.date_naissance_pere },
+                    { label:'♀ Mère', nom:animal.nom_mere, puce:animal.puce_mere, race:animal.race_mere, ped:animal.nom_pedigree_mere, dn:animal.date_naissance_mere },
+                  ].map(row => (row.nom || row.puce || row.race || row.ped) && (
                     <div key={row.label} className="text-sm space-y-0.5">
                       <p className="text-gray-400 text-xs font-semibold uppercase">{row.label}</p>
                       <div className="flex flex-wrap gap-3">
                         {row.nom && <span className="text-[#1F2A2E] font-medium">{row.nom}</span>}
+                        {row.ped && <span className="text-[#1F2A2E]">{row.ped}</span>}
+                        {row.dn && <span className="text-gray-500">né{row.label.includes('Mère') ? 'e' : ''} le {new Date(row.dn).toLocaleDateString('fr-FR')}</span>}
                         {row.race && <span className="text-gray-500">{row.race}</span>}
                         {row.puce && <span className="text-gray-400 text-xs">#{row.puce}</span>}
                       </div>
@@ -5151,6 +5165,8 @@ function AnimalFichePageInner() {
                     set('nom_pere', m.nom);
                     set('puce_pere', m.identification ?? '');
                     set('race_pere', m.race ?? '');
+                    set('nom_pedigree_pere', m.nom_pedigree ?? '');
+                    if (m.date_naissance) set('date_naissance_pere', m.date_naissance.substring(0, 10));
                     setShowPerePicker(false);
                     setPereSearch('');
                   }}
@@ -5193,6 +5209,7 @@ function AnimalFichePageInner() {
                     set('nom_mere', f.nom);
                     set('puce_mere', f.identification ?? '');
                     set('race_mere', f.race ?? '');
+                    set('nom_pedigree_mere', f.nom_pedigree ?? '');
                     if (f.date_naissance) set('date_naissance_mere', f.date_naissance.substring(0, 10));
                     setShowMerePicker(false);
                     setMereSearch('');

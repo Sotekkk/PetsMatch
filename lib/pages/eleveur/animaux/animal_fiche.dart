@@ -226,6 +226,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _nomPereCtrl  = TextEditingController();
   final _pucePereCtrl = TextEditingController();
   final _racePereCtrl = TextEditingController();
+  // Généalogie : nom de pedigree (affixe) et date de naissance des parents.
+  final _nomPedigreePereCtrl = TextEditingController();
+  final _nomPedigreeMereCtrl = TextEditingController();
+  DateTime? _dateNaissancePere;
   final _nomMereCtrl  = TextEditingController();
   final _puceMereCtrl = TextEditingController();
   // Rattachement par puce : recherche l'animal (tous propriétaires confondus,
@@ -1049,12 +1053,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     try {
       final pid = User_Info.activeProfileId;
       var maleQ = _supa.from('animaux')
-          .select('id, nom, identification, race, photo_url')
+          .select('id, nom, nom_pedigree, identification, race, photo_url, date_naissance')
           .eq('uid_eleveur', uid).eq('sexe', 'male');
       if (pid.isNotEmpty) maleQ = maleQ.eq('profile_id', pid);
       final males = await maleQ.order('nom');
       var femelleQ = _supa.from('animaux')
-          .select('id, nom, identification, race, photo_url, date_naissance')
+          .select('id, nom, nom_pedigree, identification, race, photo_url, date_naissance')
           .eq('uid_eleveur', uid).eq('sexe', 'femelle');
       if (pid.isNotEmpty) femelleQ = femelleQ.eq('profile_id', pid);
       final femelles = await femelleQ.order('nom');
@@ -1137,6 +1141,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _nomPereCtrl.text  = d['nom_pere'] ?? '';
     _pucePereCtrl.text = d['puce_pere'] ?? '';
     _racePereCtrl.text = (d['race_pere'] as String?) ?? '';
+    _nomPedigreePereCtrl.text = (d['nom_pedigree_pere'] as String?) ?? '';
+    _nomPedigreeMereCtrl.text = (d['nom_pedigree_mere'] as String?) ?? '';
+    _dateNaissancePere = _parseDate(d['date_naissance_pere']);
     _nomMereCtrl.text  = d['nom_mere'] ?? '';
     _puceMereCtrl.text = d['puce_mere'] ?? '';
     _sexe = d['sexe'] ?? 'male';
@@ -1256,6 +1263,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     for (final c in [_nomCtrl, _nomPedigreeCtrl, _raceCtrl, _couleurCtrl, _couleurYeuxCtrl, _identCtrl,
       _sireCtrl, _carteImmatCtrl, _livretCtrl,
       _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl, _racePereCtrl,
+      _nomPedigreePereCtrl, _nomPedigreeMereCtrl,
       _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
       _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
@@ -1325,6 +1333,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'nom_pere':            _nomPereCtrl.text.trim(),
         'puce_pere':           _pucePereCtrl.text.trim(),
         'race_pere':           _racePereCtrl.text.trim(),
+        'nom_pedigree_pere':   _nomPedigreePereCtrl.text.trim().isEmpty ? null : _nomPedigreePereCtrl.text.trim(),
+        'nom_pedigree_mere':   _nomPedigreeMereCtrl.text.trim().isEmpty ? null : _nomPedigreeMereCtrl.text.trim(),
+        'date_naissance_pere': _dateNaissancePere?.toIso8601String(),
         'nom_mere':            _nomMereCtrl.text.trim(),
         'puce_mere':           _puceMereCtrl.text.trim(),
         'notes':               _notesCtrl.text.trim(),
@@ -3847,16 +3858,18 @@ class _IdentiteTab extends StatelessWidget {
     'chien': (
       sectionLabel: 'Pedigree',
       yesLabel: 'Avec pedigree',
-      typeLabel: 'Type LOF',
-      typeOptions: ['LOF', 'Non-LOF'],
-      clubLabel: 'Club de race (SCC, etc.)',
+      typeLabel: 'Inscription',
+      // « Club de race (hors LOF) » : pedigree d'un club de race (races non
+      // reconnues FCI, ex. Pomsky).
+      typeOptions: ['LOF', 'Club de race (hors LOF)', 'Non-LOF'],
+      clubLabel: 'Club de race (SCC, club de race…)',
       docLabel: 'Charger le pedigree (PDF/photo)',
     ),
     'chat': (
       sectionLabel: 'Pedigree',
       yesLabel: 'Avec pedigree',
-      typeLabel: 'Type LOOF',
-      typeOptions: ['LOOF', 'Non-LOOF'],
+      typeLabel: 'Inscription',
+      typeOptions: ['LOOF', 'Club de race (hors LOOF)', 'Non-LOOF'],
       clubLabel: 'Club de race (LOOF, etc.)',
       docLabel: 'Charger le pedigree (PDF/photo)',
     ),
@@ -3995,7 +4008,8 @@ class _IdentiteTab extends StatelessWidget {
                         border: Border.all(color: active ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(opt, textAlign: TextAlign.center,
+                      // « Non-LOF » / « Non-LOOF » = sans pedigree.
+                      child: Text(RegExp(r'^Non-LO').hasMatch(opt) ? 'Sans pedigree' : opt, textAlign: TextAlign.center,
                           style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                               color: active ? Colors.white : const Color(0xFF1F2A2E))),
                     ),
@@ -4156,15 +4170,19 @@ class _IdentiteTab extends StatelessWidget {
                             nomCtrl.text = a['nom'] ?? '';
                             puceCtrl.text = a['identification'] ?? '';
                             final race = a['race'] as String?;
-                            if (isMere) {
-                              final dn = a['date_naissance'] as String?;
-                              s.setState(() {
+                            final dn = a['date_naissance'] as String?;
+                            final ped = (a['nom_pedigree'] as String?) ?? '';
+                            s.setState(() {
+                              if (isMere) {
                                 if (dn != null && dn.isNotEmpty) s._dateNaissanceMere = DateTime.tryParse(dn);
                                 if (race != null && race.isNotEmpty) s._raceMereCtrl.text = race;
-                              });
-                            } else if (race != null && race.isNotEmpty) {
-                              s.setState(() => s._racePereCtrl.text = race);
-                            }
+                                if (ped.isNotEmpty) s._nomPedigreeMereCtrl.text = ped;
+                              } else {
+                                if (dn != null && dn.isNotEmpty) s._dateNaissancePere = DateTime.tryParse(dn);
+                                if (race != null && race.isNotEmpty) s._racePereCtrl.text = race;
+                                if (ped.isNotEmpty) s._nomPedigreePereCtrl.text = ped;
+                              }
+                            });
                             Navigator.pop(context);
                           },
                         );
@@ -4205,12 +4223,17 @@ class _IdentiteTab extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: _inlineField('N° puce père', s._pucePereCtrl)),
       ]),
+      const SizedBox(height: 8),
+      _inlineField('Nom de pedigree du père (affixe)', s._nomPedigreePereCtrl),
       _puceMatchBanner(context,
         match: s._perePuceMatch, nomCtrl: s._nomPereCtrl, raceCtrl: s._racePereCtrl,
         onClear: () => s.setState(() => s._perePuceMatch = null), color: const Color(0xFF0C5C6C)),
       const SizedBox(height: 8),
       _hasBreeds ? _racePereAutocomplete(context) : _inlineField('Race du père', s._racePereCtrl),
       const SizedBox(height: 8),
+      _dateRegistreField(context, 'Date de naissance du père', s._dateNaissancePere,
+          (d) => s.setState(() => s._dateNaissancePere = d)),
+      const SizedBox(height: 12),
       Row(children: [
         const SizedBox(width: 6),
         FaIcon(FontAwesomeIcons.venus, size: 14, color: Colors.pink.shade300),
@@ -4230,11 +4253,16 @@ class _IdentiteTab extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: _inlineField('N° puce mère', s._puceMereCtrl)),
       ]),
+      const SizedBox(height: 8),
+      _inlineField('Nom de pedigree de la mère (affixe)', s._nomPedigreeMereCtrl),
       _puceMatchBanner(context,
         match: s._merePuceMatch, nomCtrl: s._nomMereCtrl, raceCtrl: s._raceMereCtrl,
         onClear: () => s.setState(() => s._merePuceMatch = null), color: const Color(0xFF6E9E57)),
       const SizedBox(height: 8),
       _hasBreeds ? _raceMereAutocomplete(context) : _inlineField('Race de la mère', s._raceMereCtrl),
+      const SizedBox(height: 8),
+      _dateRegistreField(context, 'Date de naissance de la mère', s._dateNaissanceMere,
+          (d) => s.setState(() => s._dateNaissanceMere = d)),
     ]);
   }
 

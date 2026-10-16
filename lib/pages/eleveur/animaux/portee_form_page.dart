@@ -72,6 +72,11 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
   Map<String, dynamic>? _pereSelected;
   final _nomPereCtrl  = TextEditingController();
   final _pucePereCtrl = TextEditingController();
+  // Mêmes informations que sur la fiche animal (père et mère).
+  final _nomPedigreePereCtrl = TextEditingController();
+  final _racePereCtrl = TextEditingController();
+  DateTime? _dateNaissancePere;
+  final _nomPedigreeMereCtrl = TextEditingController();
 
   // ── Mère
   Map<String, dynamic>? _mereSelected;
@@ -155,7 +160,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       final pid = widget.profileIdOverride ?? User_Info.activeProfileId;
       var q = _supa
           .from('animaux')
-          .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
+          .select('id, nom, nom_pedigree, sexe, espece, race, identification, date_naissance, photo_url, statut, reproducteur, is_retraite, sterilise')
           .eq('uid_eleveur', uid)
           .or('statut.is.null,statut.eq.present');
       if (pid.isNotEmpty) q = q.eq('profile_id', pid);
@@ -258,6 +263,10 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         _pereSelected  = sel;
         _nomPereCtrl.text  = sel['nom']            as String? ?? '';
         _pucePereCtrl.text = sel['identification'] as String? ?? '';
+        _nomPedigreePereCtrl.text = sel['nom_pedigree'] as String? ?? '';
+        _racePereCtrl.text = sel['race'] as String? ?? '';
+        final dnp = sel['date_naissance'] as String?;
+        _dateNaissancePere = dnp != null ? DateTime.tryParse(dnp) : null;
       });
     }
   }
@@ -276,6 +285,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         _nomMereCtrl.text  = sel['nom']            as String? ?? '';
         _puceMereCtrl.text = sel['identification'] as String? ?? '';
         _raceMereCtrl.text = sel['race']           as String? ?? '';
+        _nomPedigreeMereCtrl.text = sel['nom_pedigree'] as String? ?? '';
         final dn = sel['date_naissance'] as String?;
         _dateNaissanceMere = dn != null ? DateTime.tryParse(dn) : null;
         if (_raceCtrl.text.isEmpty && (sel['race'] as String? ?? '').isNotEmpty) {
@@ -373,6 +383,10 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         'pedigree_lof':        _pedigreeLofCtrl.text.trim(),
         'nom_pere':            _nomPereCtrl.text.trim(),
         'puce_pere':           _pucePereCtrl.text.trim(),
+        'race_pere':           _racePereCtrl.text.trim(),
+        'nom_pedigree_pere':   _nomPedigreePereCtrl.text.trim().isEmpty ? null : _nomPedigreePereCtrl.text.trim(),
+        'date_naissance_pere': _dateNaissancePere?.toIso8601String(),
+        'nom_pedigree_mere':   _nomPedigreeMereCtrl.text.trim().isEmpty ? null : _nomPedigreeMereCtrl.text.trim(),
         'nom_mere':            _nomMereCtrl.text.trim(),
         'puce_mere':           _puceMereCtrl.text.trim(),
         'race_mere':           _raceMereCtrl.text.trim(),
@@ -432,6 +446,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     _clubRegistreCtrl.dispose(); _pedigreeLofCtrl.dispose();
     _nomPereCtrl.dispose(); _pucePereCtrl.dispose();
     _nomMereCtrl.dispose(); _puceMereCtrl.dispose(); _raceMereCtrl.dispose();
+    _nomPedigreePereCtrl.dispose(); _racePereCtrl.dispose(); _nomPedigreeMereCtrl.dispose();
     for (final a in _animaux) a.dispose();
     super.dispose();
   }
@@ -529,6 +544,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         onClear: () => setState(() {
           _pereSelected = null;
           _nomPereCtrl.clear(); _pucePereCtrl.clear();
+          _nomPedigreePereCtrl.clear(); _racePereCtrl.clear(); _dateNaissancePere = null;
         }),
       ),
       const SizedBox(height: 10),
@@ -547,9 +563,22 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     _label('Nom du père'),
     _textField(_nomPereCtrl, 'Nom', enabled: _pereSelected == null),
     const SizedBox(height: 10),
+    _label('Nom de pedigree (affixe)'),
+    _textField(_nomPedigreePereCtrl, 'Ex : Nom du Domaine de…', enabled: _pereSelected == null),
+    const SizedBox(height: 10),
     _label('Identification (puce / tatouage)'),
     _textField(_pucePereCtrl, _identDigitsOnly ? 'Numéro I-CAD (15 chiffres)' : 'Numéro de puce ou tatouage',
         enabled: _pereSelected == null, keyboardType: _identKeyboard, inputFormatters: _identFormatters),
+    const SizedBox(height: 10),
+    _label('Race du père'),
+    _textField(_racePereCtrl, 'Race', enabled: _pereSelected == null),
+    const SizedBox(height: 10),
+    _label('Date de naissance du père'),
+    _datePicker(
+      'Sélectionner une date',
+      _dateNaissancePere,
+      _pereSelected == null ? (d) => setState(() => _dateNaissancePere = d) : null,
+    ),
   ]);
 
   Widget _sectionMere() => _card('Mère', Icons.female, [
@@ -559,7 +588,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         onClear: () => setState(() {
           _mereSelected = null;
           _nomMereCtrl.clear(); _puceMereCtrl.clear();
-          _raceMereCtrl.clear(); _dateNaissanceMere = null;
+          _raceMereCtrl.clear(); _dateNaissanceMere = null; _nomPedigreeMereCtrl.clear();
         }),
       ),
       const SizedBox(height: 10),
@@ -577,6 +606,9 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     const SizedBox(height: 12),
     _label('Nom de la mère'),
     _textField(_nomMereCtrl, 'Nom', enabled: _mereSelected == null),
+    const SizedBox(height: 10),
+    _label('Nom de pedigree (affixe)'),
+    _textField(_nomPedigreeMereCtrl, 'Ex : Nom du Domaine de…', enabled: _mereSelected == null),
     const SizedBox(height: 10),
     _label('Identification (puce / tatouage)'),
     _textField(_puceMereCtrl, _identDigitsOnly ? 'Numéro I-CAD (15 chiffres)' : 'Numéro de puce ou tatouage',
