@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
@@ -498,6 +499,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // propriétaire (module garde / pet-sitting). Contenu dans pension_updates.
     // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
     // Compte rendu de toilettage partagé → onglet Consultations de l'animal.
+    // Récupération d'animal : demande reçue (élevage) / réponse / fiche récupérée.
+    if (type == 'animal_recuperation') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const RecuperationsPage()));
+      return;
+    }
+    if (type == 'animal_recuperation_reponse' || type == 'animal_recupere') {
+      final animalId = data is Map ? data['animalId']?.toString() : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => type == 'animal_recupere'
+            ? AnimalFichePage(animalId: animalId)
+            : AnimalFicheParticulierPage(animalId: animalId)));
+      }
+      return;
+    }
     // Galerie photo partagée par un photographe → galerie privée.
     // Sélection confirmée (photographe) / livraison prête ou bientôt expirée.
     if (type == 'galerie_selection_recue' || type == 'galerie_livree' || type == 'galerie_expiration') {

@@ -1,5 +1,7 @@
 'use client';
 
+import { appelRecuperation } from '@/components/animaux/RecuperationAnimal';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabaseLien } from '@/lib/supabase';
@@ -25,6 +27,7 @@ export default function ReclamerAnimalPage({ params }: { params: Promise<{ token
   // Toutes les requêtes de la page portent le lien (en-tête x-pm-token).
   const supabase = supabaseLien(token);
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [claim, setClaim] = useState<Claim | null>(null);
   const [animal, setAnimal] = useState<Animal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,13 +54,11 @@ export default function ReclamerAnimalPage({ params }: { params: Promise<{ token
     if (!user || !claim) return;
     setSaving(true);
     setError('');
-    const [{ error: e1 }, { error: e2 }] = await Promise.all([
-      supabase.from('animaux').update({ owner_uid: user.uid }).eq('id', claim.animal_id),
-      supabase.from('animal_claims').update({
-        statut: 'reclame', claimed_by_uid: user.uid, claimed_at: new Date().toISOString(),
-      }).eq('id', claim.id),
-    ]);
-    if (e1 || e2) { setError((e1 ?? e2)?.message ?? 'Erreur'); setSaving(false); return; }
+    // Rattachement par le serveur : propriété transférée au compte (fiche
+    // d'élevage cédée) ou propriétaire noté (fiche créée par une pension).
+    try {
+      await appelRecuperation({ action: 'reclamer', token, profileId: activeProfileId || null });
+    } catch (e) { setError((e as Error).message); setSaving(false); return; }
     setDone(true);
     setSaving(false);
   }

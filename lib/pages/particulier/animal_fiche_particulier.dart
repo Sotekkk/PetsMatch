@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal;
 import 'package:PetsMatch/widgets/carnet/vermifuge_options.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -665,12 +666,30 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     return uploadPhoto(_photoFile!, 'animaux/$uid/$name');
   }
 
+  String _puceVerifiee = '';
+
   Future<void> _save() async {
     final nom = _nomCtrl.text.trim();
     if (nom.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Le nom est requis'), backgroundColor: Colors.red));
       return;
+    }
+    // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) :
+    // proposer de récupérer sa fiche plutôt que d'en créer une seconde.
+    if (_animalId == null && _identCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 8 && _identCtrl.text != _puceVerifiee) {
+      try {
+        final v = await verifierPuce(_identCtrl.text);
+        _puceVerifiee = _identCtrl.text;
+        if (v['etat'] != 'aucun' && mounted) {
+          final id = await showRecuperationAnimal(context, v, profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null);
+          if (id != null && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fiche récupérée : elle est maintenant dans vos animaux.')));
+            Navigator.pop(context, true);
+          }
+          return;
+        }
+      } catch (_) {}
     }
     setState(() => _saving = true);
     try {

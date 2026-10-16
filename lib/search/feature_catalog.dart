@@ -6,6 +6,7 @@
 // ⚠️ À garder synchronisé avec les tiroirs : eleveur_nav.dart,
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
+import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/icad_import_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
@@ -279,6 +280,12 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => true, open: (c) => _push(c, const AnimalTrouveFormPage()),
   ),
 
+  QuickAction(
+    label: 'Demandes de récupération',
+    keywords: ['récupération', 'acquéreur', 'rattacher', 'transfert', 'cession', 'ancien chiot'],
+    icon: Icons.swap_horiz, group: 'Mes animaux',
+    visible: () => _eleveur, open: (c) => _push(c, const RecuperationsPage()),
+  ),
   QuickAction(
     label: 'Importer depuis I-CAD',
     keywords: ['icad', 'i-cad', 'import', 'csv', 'puce', 'identification', 'mise à jour des fiches'],

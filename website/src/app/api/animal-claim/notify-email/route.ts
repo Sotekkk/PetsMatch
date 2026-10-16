@@ -10,8 +10,10 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const clean = sanitizeEmailBody(await req.json().catch(() => ({})), ['claim_url'], req);
   if (clean instanceof NextResponse) return clean;
-  const { email, nom_destinataire, animal_nom, pro_nom, claim_url } =
+  const { email, nom_destinataire, animal_nom, pro_nom, claim_url, contexte } =
     clean as {
+      /** 'cession' : animal acquis auprès d'un éleveur (sinon séjour en pension). */
+      contexte?: string;
       email: string;
       nom_destinataire?: string;
       animal_nom: string;
@@ -35,8 +37,10 @@ export async function POST(req: NextRequest) {
     <div style="padding:32px;">
       <p style="font-size:15px;color:#1F2A2E;margin:0 0 16px;">Bonjour${nom_destinataire ? ` <strong>${nom_destinataire}</strong>` : ''},</p>
       <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 24px;">
-        <strong>${pro_nom}</strong> a créé une fiche PetsMatch pour <strong>${animal_nom}</strong> pendant son séjour.
-        Récupérez-la pour suivre son carnet de santé, ses séjours et recevoir des nouvelles pendant qu'il est en pension.
+        ${contexte === 'cession'
+          ? `<strong>${pro_nom}</strong> vous invite à retrouver <strong>${animal_nom}</strong> sur PetsMatch : sa fiche (identité, généalogie, carnet de santé, documents) est prête. Créez votre compte ou connectez-vous pour la récupérer.`
+          : `<strong>${pro_nom}</strong> a créé une fiche PetsMatch pour <strong>${animal_nom}</strong> pendant son séjour.
+        Récupérez-la pour suivre son carnet de santé, ses séjours et recevoir des nouvelles pendant qu'il est en pension.`}
       </p>
       <div style="text-align:center;margin-bottom:28px;">
         <a href="${claim_url}"

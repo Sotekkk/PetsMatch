@@ -1,5 +1,6 @@
 'use client';
 
+import { InviterAcquereurBouton } from '@/components/animaux/RecuperationAnimal';
 import { resoudreEmployeur } from '@/lib/employeur-contexte';
 import { miseBasDeReference } from '@/lib/chaleurs-etat';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
@@ -3936,6 +3937,9 @@ function AnimalFichePageInner() {
                   <span className="text-xs font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-lg">
                     ✓ Acquéreur sur PetsMatch
                   </span>
+                )}
+                {animal.statut === 'sorti' && !animal.uid_acquereur && animal.id && (
+                  <InviterAcquereurBouton animalId={String(animal.id)} />
                 )}
               </div>
               {animal.cession_notes && <p className="text-xs text-blue-500 mt-1 italic">{animal.cession_notes}</p>}

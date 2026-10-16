@@ -142,6 +142,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/cogerance',              label: 'Co-gérance',        icon: '🤝' },
       { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
       { href: '/elevage/import-icad',            label: 'Import I-CAD',     icon: '📥' },
+      { href: '/mes-animaux/recuperations',      label: 'Demandes de récupération', icon: '🔁' },
     ],
   },
   {
@@ -967,6 +968,12 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'toilettage_pret':
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
     // Galerie photo partagée par un photographe → galerie privée.
+    // Récupération d'animal : demande reçue (élevage) / réponse / fiche récupérée.
+    case 'animal_recuperation':
+      return '/mes-animaux/recuperations';
+    case 'animal_recuperation_reponse':
+    case 'animal_recupere':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'galerie_disponible':
     case 'galerie_livree':
     case 'galerie_expiration':

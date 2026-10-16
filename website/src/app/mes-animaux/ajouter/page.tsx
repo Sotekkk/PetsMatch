@@ -1,5 +1,6 @@
 'use client';
 
+import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -32,6 +33,10 @@ const ESPECES = [
 export default function AjouterAnimalPage() {
   const { user, userData, activeProfileId } = useAuth();
   const router = useRouter();
+  // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) : proposer
+  // de récupérer sa fiche plutôt que d'en créer une seconde.
+  const [verifPuce, setVerifPuce] = useState<VerifPuce | null>(null);
+  const [puceVerifiee, setPuceVerifiee] = useState('');
 
   // Vue employé : ?employeur=<eleveur_profile_id> — l'animal est créé pour le
   // profil élevage de l'employeur (uid + profile_id), avec « Modifier les
@@ -106,6 +111,13 @@ export default function AjouterAnimalPage() {
     if (employeurParam && !employeur?.perms.includes('write_animaux')) {
       setError("Vous n'avez pas l'autorisation d'ajouter des animaux pour cet élevage.");
       return;
+    }
+    if (identification.replace(/\D/g, '').length >= 8 && identification !== puceVerifiee) {
+      try {
+        const v = await verifierPuce(identification);
+        setPuceVerifiee(identification);
+        if (v.etat !== 'aucun') { setVerifPuce(v); return; }
+      } catch { /* vérification indisponible : création normale */ }
     }
     // Propriétaire : élevage de l'employeur (vue employé) ou profil actif.
     const proprioUid = employeur?.uid ?? user.uid;
@@ -187,6 +199,11 @@ export default function AjouterAnimalPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
+      {verifPuce && (
+        <RecuperationModal verif={verifPuce} profileId={activeProfileId || null}
+          onFermer={() => setVerifPuce(null)}
+          onFini={id => { setVerifPuce(null); router.push(id ? `/mes-animaux/${id}` : '/mes-animaux'); }} />
+      )}
 
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">

@@ -1,3 +1,5 @@
+import 'package:share_plus/share_plus.dart';
+import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal, inviterAcquereur;
 import 'package:PetsMatch/pages/pro/toilettage_constantes.dart' show labelTravailToilettage;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
@@ -1252,10 +1254,28 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   // ── Sauvegarde ───────────────────────────────────────────────────────────────
 
+  String _puceVerifiee = '';
+
   Future<void> _save() async {
     if (_nomCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez saisir un nom')));
       return;
+    }
+    // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) :
+    // proposer de récupérer sa fiche plutôt que d'en créer une seconde.
+    if (widget.animalId == null && _identCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 8 && _identCtrl.text != _puceVerifiee) {
+      try {
+        final v = await verifierPuce(_identCtrl.text);
+        _puceVerifiee = _identCtrl.text;
+        if (v['etat'] != 'aucun' && mounted) {
+          final id = await showRecuperationAnimal(context, v, profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null);
+          if (id != null && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Fiche récupérée : elle est maintenant dans vos animaux.')));
+            Navigator.pop(context, true);
+          }
+          return;
+        }
+      } catch (_) {}
     }
     setState(() => _saving = true);
     try {
@@ -2636,6 +2656,8 @@ class _IdentiteTab extends StatelessWidget {
             notes: s._cessionNotes,
             contratUrl: s._cessionContratUrl,
             certificatUrl: s._cessionCertificatUrl,
+            // Acquéreur sans compte : l'élevage peut l'inviter à récupérer la fiche.
+            animalIdInvitation: !s._isNewOwner && (s._uidAcquereur ?? '').isEmpty ? s.widget.animalId : null,
           ),
           if (s._statut == 'sorti') const SizedBox(height: 12),
           // Association : statut visible et modifiable en un geste (avant :
@@ -5004,11 +5026,34 @@ class _CessionBanner extends StatelessWidget {
   final String? notes;
   final String? contratUrl;
   final String? certificatUrl;
+  /// Renseigné quand l'acquéreur n'a pas de compte : bouton d'invitation.
+  final String? animalIdInvitation;
 
   const _CessionBanner({
     this.dateDepart, required this.nomDestinataire, this.prix,
-    this.notes, this.contratUrl, this.certificatUrl,
+    this.notes, this.contratUrl, this.certificatUrl, this.animalIdInvitation,
   });
+
+  Future<void> _inviter(BuildContext context) async {
+    try {
+      final r = await inviterAcquereur(animalIdInvitation!);
+      if (!context.mounted) return;
+      await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Invitation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(r.message, style: const TextStyle(fontFamily: 'Galey')),
+          const SizedBox(height: 8),
+          SelectableText(r.lien, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Share.share(r.lien), child: const Text('Partager le lien')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+        ],
+      ));
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5045,6 +5090,15 @@ class _CessionBanner extends StatelessWidget {
             _DocLink('📜 Certificat de cession', certificatUrl!),
           if (contratUrl != null)
             _DocLink('🤝 Contrat de vente', contratUrl!),
+        ],
+        if (animalIdInvitation != null) ...[
+          const Divider(height: 14),
+          TextButton.icon(
+            onPressed: () => _inviter(context),
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, foregroundColor: const Color(0xFF1565C0)),
+            icon: const Icon(Icons.forward_to_inbox_outlined, size: 18),
+            label: const Text("Inviter l'acquéreur à récupérer la fiche", style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
         ],
       ]),
     );
