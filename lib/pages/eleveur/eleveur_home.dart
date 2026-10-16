@@ -46,9 +46,7 @@ import 'package:PetsMatch/pages/pro/sante_dashboard.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
-import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
-import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
-import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_studio_dashboard.dart';
 import 'package:PetsMatch/pages/pro/marechal_contrats_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -358,12 +356,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         // Toiletteur : tableau de bord du salon.
                         else if (User_Info.catPro == 'toilettage')
                           ToilettageSalonDashboard(key: ValueKey(_refreshTick))
+                        // Photographe : tableau de bord du studio.
+                        else if (User_Info.catPro == 'photographe')
+                          PhotographeStudioDashboard(key: ValueKey(_refreshTick))
                         else
                           _buildStatsRow(),
-                        if (User_Info.catPro == 'photographe') ...[
-                          const SizedBox(height: 12),
-                          _buildPhotographeShortcuts(context),
-                        ],
                         if (User_Info.catPro == 'marechal_ferrant') ...[
                           const SizedBox(height: 12),
                           _buildMarechalShortcuts(context),
@@ -709,34 +706,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       initialTabIndex: ongletFiche,
     )));
   }
-
-  Widget _buildPhotographeShortcuts(BuildContext context) {
-    void go(Widget page) =>
-        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.0,
-      children: [
-        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF90A4AE),
-            onTap: () => go(const ProAgendaPage())),
-        _QuickTile(icon: Icons.camera_alt_outlined, label: 'Mes\nprestations', color: const Color(0xFF5F9EAA),
-            onTap: () => go(const PhotographePrestationsPage())),
-        _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
-            onTap: () => go(const DevisPage())),
-        _QuickTile(icon: Icons.description_outlined, label: 'Mes\ncontrats', color: const Color(0xFFB8860B),
-            onTap: () => go(const PhotographeContratsPage())),
-        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
-            onTap: () => go(const FacturationPage())),
-        _QuickTile(icon: Icons.dashboard_outlined, label: 'Tableau\nde bord', color: const Color(0xFF7B5EA7),
-            onTap: () => go(const PhotographeDashboardPage())),
-      ],
-    );
-  }
-
 
   Widget _buildMarechalShortcuts(BuildContext context) {
     void go(Widget page) =>
