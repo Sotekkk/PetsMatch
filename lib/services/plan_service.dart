@@ -210,6 +210,8 @@ class PhotographePlanConfig {
   final int maxPhotosPortfolio; // -1 = illimité
   final bool hasMiseEnAvant;
   final bool hasStatistiques;
+  /// Galeries clients privées (sélection, livraison ZIP) — formule Premium.
+  final bool hasGaleriesClients;
   final double prixMensuel;
   final double prixAnnuel;
 
@@ -219,6 +221,7 @@ class PhotographePlanConfig {
     required this.maxPhotosPortfolio,
     required this.hasMiseEnAvant,
     required this.hasStatistiques,
+    this.hasGaleriesClients = false,
     this.prixMensuel = 0,
     this.prixAnnuel = 0,
   });
@@ -730,7 +733,8 @@ class PlanService {
     }
   }
 
-  // Photographe animalier — grille dédiée (Spec §8.1), FREE/Essentiel.
+  // Photographe animalier — grille dédiée (Spec §8.1) : Découverte /
+  // Essentiel / Premium (galeries clients privées, sélection, livraison).
   static const Map<String, PhotographePlanConfig> photographeConfigs = {
     'free': PhotographePlanConfig(
       code: 'free', label: 'Découverte', maxPhotosPortfolio: 5, hasMiseEnAvant: false,
@@ -739,6 +743,10 @@ class PlanService {
     'essentiel': PhotographePlanConfig(
       code: 'essentiel', label: 'Essentiel', maxPhotosPortfolio: -1, hasMiseEnAvant: true,
       hasStatistiques: true, prixMensuel: 9, prixAnnuel: 90,
+    ),
+    'premium': PhotographePlanConfig(
+      code: 'premium', label: 'Premium', maxPhotosPortfolio: -1, hasMiseEnAvant: true,
+      hasStatistiques: true, hasGaleriesClients: true, prixMensuel: 19, prixAnnuel: 190,
     ),
   };
 
@@ -767,6 +775,7 @@ class PlanService {
           maxPhotosPortfolio: (f['maxPhotosPortfolio'] as num?)?.toInt() ?? fallback.maxPhotosPortfolio,
           hasMiseEnAvant: f['hasMiseEnAvant'] as bool? ?? fallback.hasMiseEnAvant,
           hasStatistiques: f['hasStatistiques'] as bool? ?? fallback.hasStatistiques,
+          hasGaleriesClients: f['hasGaleriesClients'] as bool? ?? fallback.hasGaleriesClients,
           prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
           prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
         );

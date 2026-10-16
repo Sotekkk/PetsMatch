@@ -63,6 +63,9 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
   const [clients, setClients] = useState<Record<string, string>>({});
   const [animaux, setAnimaux] = useState<Record<string, { nom: string | null; photo_url: string | null }>>({});
   const [prestations, setPrestations] = useState<Record<string, string>>({});
+  const [prixPresta, setPrixPresta] = useState<Record<string, number>>({});
+  // RDV déjà facturés (factures.source_rdv_id, hors annulées).
+  const [factures, setFactures] = useState<Set<string>>(new Set());
   const [fiche, setFiche] = useState<Rdv | null>(null);
   const [seanceRdv, setSeanceRdv] = useState<Rdv | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -88,7 +91,7 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
     const [pRes, aRes, prRes] = await Promise.all([
       profils.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').in('id', profils) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from('animaux').select('id, nom, photo_url').in('id', ids) : Promise.resolve({ data: [] }),
-      prs.length ? supabase.from('prestations_toilettage').select('id, nom').in('id', prs) : Promise.resolve({ data: [] }),
+      prs.length ? supabase.from('prestations_toilettage').select('id, nom, prix_base').in('id', prs) : Promise.resolve({ data: [] }),
     ]);
     const cl: Record<string, string> = {};
     for (const p of (pRes.data ?? []) as { id: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]) {
@@ -101,6 +104,11 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
     for (const p of (prRes.data ?? []) as { id: string; nom: string }[]) pr[p.id] = p.nom;
     const em: Record<string, string> = {};
     for (const x of (e.data ?? []) as { id: string; prenom: string | null; nom: string | null }[]) em[x.id] = `${x.prenom ?? ''} ${x.nom ?? ''}`.trim();
+    setPrixPresta(Object.fromEntries(((prRes.data ?? []) as { id: string; prix_base?: number | null }[]).map(x => [x.id, Number(x.prix_base) || 0])));
+    if (liste.length) {
+      const { data: fa } = await supabase.from('factures').select('source_rdv_id, statut').in('source_rdv_id', liste.map(x => x.id));
+      setFactures(new Set(((fa ?? []) as { source_rdv_id: string; statut: string }[]).filter(f => f.statut !== 'annulee').map(f => f.source_rdv_id)));
+    }
     setRdvs(liste); setDemandes(dem); setEmployes(em); setClients(cl); setAnimaux(an); setPrestations(pr);
     setNow(new Date()); setLoading(false);
   }, [pid]);
@@ -297,6 +305,19 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
                 {e === 'arrive' && bouton('Démarrer le toilettage', () => maj(fiche, { prestation_debut_le: iso() }))}
                 {e === 'enCours' && bouton('Toilettage terminé — animal prêt', () => pret(fiche), VERT)}
                 {e === 'pret' && bouton('Animal récupéré — clôturer', () => maj(fiche, { statut: 'termine', termine_at: iso() }))}
+                {(e === 'pret' || e === 'termine') && !factures.has(fiche.id) && bouton('Facturer la prestation', () => {
+                  // Facture pré-remplie (module existant) ; terminé ≠ payé.
+                  const prix = (fiche as Rdv & { prix_calcule?: number | null }).prix_calcule ?? (fiche.prestation_id ? prixPresta[fiche.prestation_id] : 0) ?? 0;
+                  try {
+                    sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
+                      nomClient: nomClient(fiche), sourceRdvId: fiche.id, sourceAnimalId: fiche.animal_id ?? undefined,
+                      clientUid: fiche.client_uid ?? undefined, clientProfileId: fiche.client_profile_id ?? undefined,
+                      lignes: [{ description: `${prestation(fiche)} — ${nomAnimal(fiche)}`, quantite: 1, prixUnitaire: Number(prix) || 0, tva: 20 }],
+                    }));
+                  } catch { /* facture vierge */ }
+                  window.location.href = '/elevage/facturation';
+                })}
+                {factures.has(fiche.id) && <Link href="/elevage/facturation" className="block py-2 text-sm font-semibold text-[#0C5C6C]">Prestation facturée — voir la facturation</Link>}
                 {fiche.animal_id && ['enCours', 'pret', 'termine'].includes(e) && bouton('Fiche technique de la prestation', () => { setSeanceRdv(fiche); setFiche(null); })}
                 {fiche.animal_id && <Link href={`/mes-patients/${fiche.animal_id}`} className="block py-2 text-sm font-semibold text-[#0C5C6C]">Fiche animal et consignes</Link>}
                 <Link href={`/mes-rdv?onglet=a_venir&rdv=${fiche.id}`} className="block py-2 text-sm font-semibold text-[#0C5C6C]">Voir le rendez-vous dans l&apos;agenda</Link>

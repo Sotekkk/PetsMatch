@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const album = await gestionnaire(req, id);
   if (album instanceof NextResponse) return album;
   if (!(await estPremium(album.pro_uid))) {
-    return NextResponse.json({ error: 'Les galeries clients sont réservées aux photographes Premium.' }, { status: 402 });
+    return NextResponse.json({ error: 'Les galeries clients sont réservées à la formule Premium.' }, { status: 402 });
   }
   const body = await req.json().catch(() => ({})) as {
     action?: string;

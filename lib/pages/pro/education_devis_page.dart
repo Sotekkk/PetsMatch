@@ -70,10 +70,12 @@ class DevisPrefill {
   final String? clientEmail;
   final List<Map<String, dynamic>> lignes; // {description, quantite, prix_unitaire}
   final String? note;
+  /// Séance (rdv) à laquelle le devis est rattaché (photographe…).
+  final String? rdvId;
   const DevisPrefill({
     this.animalId, this.clientUid, this.clientProfileId,
     this.clientNom, this.clientPrenom, this.clientEmail,
-    this.lignes = const [], this.note,
+    this.lignes = const [], this.note, this.rdvId,
   });
 }
 
@@ -551,6 +553,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
         'note': _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
         'statut': envoyer ? 'envoye' : 'brouillon',
         'token_acceptation': token,
+        if (widget.prefill?.rdvId != null) 'rdv_id': widget.prefill!.rdvId,
       };
       final inserted = await _supa.from('devis').insert(row).select().single();
       final docToken = await _syncContratDocument(row, inserted['id'] as String, row['statut'] as String);

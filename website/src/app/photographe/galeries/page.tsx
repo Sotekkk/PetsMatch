@@ -25,7 +25,7 @@ export default function GaleriesPage() {
   const router = useRouter();
   const pid = useActiveProfile();
   const { planCode, loading: planLoading } = useProfessionPlanCode('photographe');
-  const premium = planCode !== 'free';
+  const premium = planCode === 'premium';
   const [galeries, setGaleries] = useState<Galerie[]>([]);
   const [nb, setNb] = useState<Record<string, number>>({});
   const [clients, setClients] = useState<Record<string, string>>({});
@@ -98,7 +98,7 @@ export default function GaleriesPage() {
         </div>
         {!planLoading && !premium && (
           <div className="bg-white border border-gray-200 rounded-2xl p-4 text-sm">
-            <p className="font-semibold text-[#1F2A2E]">Les galeries clients privées sont réservées à l&apos;abonnement Premium.</p>
+            <p className="font-semibold text-[#1F2A2E]">Les galeries clients privées sont réservées à la formule Premium.</p>
             <p className="text-gray-600 mt-1">Aperçus compressés et protégés, partage privé au client, sélection et livraison des photos.</p>
             <Link href="/photographe/abonnement" className="inline-block mt-2 font-semibold" style={{ color: TEAL }}>Voir les abonnements →</Link>
           </div>

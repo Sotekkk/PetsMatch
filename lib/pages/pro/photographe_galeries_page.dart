@@ -45,7 +45,8 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
   Future<void> _charger() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || _pid.isEmpty) { setState(() => _loading = false); return; }
-    _premium = (await PlanService.getPhotographePlanCode(uid)) != 'free';
+    // Galeries clients : formule Premium uniquement.
+    _premium = PlanService.getPhotographeConfig(await PlanService.getPhotographePlanCode(uid)).hasGaleriesClients;
     try {
       _galeries = List<Map<String, dynamic>>.from(await _supa.from('albums_photo').select()
           .eq('pro_profile_id', _pid).order('updated_at', ascending: false));
@@ -191,7 +192,7 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFE6E8E6))),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Les galeries clients privées sont réservées à l\'abonnement Premium.',
+                      const Text('Les galeries clients privées sont réservées à la formule Premium.',
                           style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _ink)),
                       const SizedBox(height: 4),
                       Text('Aperçus compressés et protégés, partage privé au client, sélection et livraison des photos.',

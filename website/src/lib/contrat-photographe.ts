@@ -24,6 +24,20 @@ export interface DataContratPhotographe {
   acomptePourcentage?: number;
   delaiLivraisonJours?: number;
   notes?: string;
+  /** Diffusion par le photographe : aucune | book | book_reseaux. */
+  autorisationImages?: string;
+}
+
+/** Clause de diffusion des images selon le choix du photographe. */
+export function clauseDiffusion(choix?: string): string {
+  switch (choix) {
+    case 'aucune':
+      return "Le Photographe s'interdit toute diffusion des photos réalisées (book, site, réseaux sociaux, portfolio PetsMatch).";
+    case 'book_reseaux':
+      return "Le Client autorise le Photographe à présenter une sélection des photos dans son book professionnel, sur son site, ses réseaux sociaux et son portfolio PetsMatch. Toute photo sur laquelle une personne est identifiable ne sera diffusée qu'avec l'autorisation écrite de cette personne.";
+    default:
+      return "Le Photographe conserve le droit de présenter les photos dans son book professionnel et son portfolio PetsMatch, sauf refus exprès du Client. Toute photo sur laquelle une personne est identifiable ne sera diffusée qu'avec l'autorisation écrite de cette personne.";
+  }
 }
 
 const CSS = `
@@ -126,7 +140,7 @@ export function generateContratPrestationPhotoHTML(
 <div class="block">Les photos retenues sont livrées dans le délai indiqué ci-dessus, via une galerie numérique en ligne. Le nombre de photos livrées est celui convenu dans la prestation choisie ; des photos supplémentaires peuvent être proposées en option moyennant supplément.</div>
 
 <div class="art-title">Art. 3 – Droits d'usage des photos</div>
-<div class="block">Le Client bénéficie d'un droit d'usage privé et non commercial des photos livrées (impression, réseaux sociaux personnels). Toute utilisation commerciale requiert l'accord écrit préalable du Photographe. Le Photographe conserve le droit de présenter les photos dans son book professionnel, sauf refus exprès du Client.</div>
+<div class="block">Le Client bénéficie d'un droit d'usage privé et non commercial des photos livrées (impression, réseaux sociaux personnels). Toute utilisation commerciale requiert l'accord écrit préalable du Photographe. ${clauseDiffusion(data.autorisationImages)}</div>
 
 <div class="art-title">Art. 4 – Modalités financières</div>
 <div class="block">Un acompte de ${acompte} % du montant total est exigé à la réservation pour confirmer la prestation. Le solde est dû à la livraison des photos. En cas d'annulation moins de 48 h avant la date convenue, l'acompte est conservé. Un déplacement au-delà du forfait inclus donne lieu à un supplément kilométrique facturé en sus.</div>

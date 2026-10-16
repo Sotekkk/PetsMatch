@@ -97,6 +97,8 @@ function DevisPageInner() {
   const [clientProfileId, setClientProfileId] = useState<string | null>(null);
   const [dateValidite, setDateValidite] = useState('');
   const [note, setNote] = useState('');
+  // Séance (rdv) à laquelle le devis est rattaché (?rdv=, photographe…).
+  const [rdvId, setRdvId] = useState<string | null>(null);
   const [lignes, setLignes] = useState<Ligne[]>([{ description: '', quantite: 1, prix_unitaire: 0, total: 0 }]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -192,6 +194,7 @@ function DevisPageInner() {
     setPrenomClient(searchParams.get('prenom') ?? '');
     setEmailClient(searchParams.get('email') ?? '');
     setNote(searchParams.get('note') ?? '');
+    setRdvId(searchParams.get('rdv') || null);
     const ld = searchParams.get('ligneDesc');
     if (ld) {
       const q = Number(searchParams.get('ligneQte') ?? 1) || 1;
@@ -359,6 +362,7 @@ function DevisPageInner() {
         note: note.trim() || null,
         statut: envoyer ? 'envoye' : 'brouillon',
         token_acceptation: token,
+        ...(rdvId ? { rdv_id: rdvId } : {}),
       };
       const { data, error: err } = await supabase.from('devis').insert(row).select().single();
       if (err) { setError(err.message); return; }

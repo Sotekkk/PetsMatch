@@ -15,10 +15,11 @@ interface PlanTarifaire {
   features: Record<string, boolean | number>;
 }
 
-const PLAN_ICONS: Record<string, string> = { free: '🌱', essentiel: '⚡' };
+const PLAN_ICONS: Record<string, string> = { free: '🌱', essentiel: '⚡', premium: '📸' };
 const PLAN_COLORS: Record<string, string> = {
   free:      'border-gray-200 bg-white',
   essentiel: 'border-[#0C5C6C] bg-white ring-2 ring-[#0C5C6C]/20',
+  premium:   'border-[#7B5EA7] bg-white',
 };
 
 function featureLabels(f: Record<string, boolean | number>): string[] {
@@ -26,6 +27,7 @@ function featureLabels(f: Record<string, boolean | number>): string[] {
   out.push(f.maxPhotosPortfolio === -1 ? 'Portfolio illimité' : `${f.maxPhotosPortfolio ?? 5} photos portfolio`);
   if (f.hasMiseEnAvant) out.push('Mis en avant dans l\'annuaire');
   if (f.hasStatistiques) out.push('Statistiques de profil');
+  if (f.hasGaleriesClients) out.push('Galeries clients privées : sélection et livraison des photos');
   return out;
 }
 

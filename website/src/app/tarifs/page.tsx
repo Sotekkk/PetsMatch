@@ -39,7 +39,7 @@ const PLAN_COLORS_BY_METIER: Record<string, Record<string, string>> = {
   sante:            { free: 'border-gray-200 bg-white', essentiel: 'border-[#0C5C6C] bg-white ring-2 ring-[#0C5C6C]/20', pro: 'border-[#D97706] bg-white ring-2 ring-[#D97706]/20' },
   marechal_ferrant: { free: 'border-gray-200 bg-white', essentiel: 'border-[#0C5C6C] bg-white ring-2 ring-[#0C5C6C]/20', pro: 'border-[#D97706] bg-white ring-2 ring-[#D97706]/20' },
   veterinaire:      { free: 'border-gray-200 bg-white', avance: 'border-[#0C5C6C] bg-white ring-2 ring-[#0C5C6C]/20', clinique: 'border-[#D97706] bg-white ring-2 ring-[#D97706]/20' },
-  photographe:      { free: 'border-gray-200 bg-white', essentiel: 'border-[#0C5C6C] bg-white ring-2 ring-[#0C5C6C]/20' },
+  photographe:      { free: 'border-gray-200 bg-white', essentiel: 'border-[#0C5C6C] bg-white ring-2 ring-[#0C5C6C]/20', premium: 'border-[#7B5EA7] bg-white' },
 };
 
 // Palier mis en avant (ruban « Populaire ») par métier, + sa couleur.
@@ -105,6 +105,7 @@ function featureLabels(profilType: string, raw: unknown): string[] {
       const out = [f.maxPhotosPortfolio === -1 ? 'Portfolio illimité' : `${f.maxPhotosPortfolio ?? 5} photos portfolio`];
       if (f.hasMiseEnAvant) out.push('Mis en avant dans l\'annuaire');
       if (f.hasStatistiques) out.push('Statistiques de profil');
+      if (f.hasGaleriesClients) out.push('Galeries clients privées : sélection et livraison des photos');
       return out;
     }
     case 'toilettage': {

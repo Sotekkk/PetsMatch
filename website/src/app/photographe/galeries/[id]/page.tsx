@@ -24,7 +24,7 @@ export default function GalerieStudioPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
   const { planCode } = useProfessionPlanCode('photographe');
-  const premium = planCode !== 'free';
+  const premium = planCode === 'premium';
   const [g, setG] = useState<ContenuGalerie | null>(null);
   const [err, setErr] = useState('');
   const [liens, setLiens] = useState<Lien[]>([]);
@@ -184,7 +184,7 @@ export default function GalerieStudioPage() {
               </label>
             ) : (
               <div className="bg-white rounded-2xl border border-gray-200 p-4 text-sm">
-                L&apos;import de photos est réservé à l&apos;abonnement Premium. <Link href="/photographe/abonnement" className="font-semibold" style={{ color: TEAL }}>Voir les abonnements →</Link>
+                L&apos;import de photos est réservé à la formule Premium. <Link href="/photographe/abonnement" className="font-semibold" style={{ color: TEAL }}>Voir les abonnements →</Link>
               </div>
             )}
             {message && <p className="text-sm text-gray-600">{message}</p>}

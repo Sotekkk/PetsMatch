@@ -336,6 +336,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             acomptePourcentage: prestationInfo.acompte_pourcentage ?? (meta.acompte_pourcentage ? Number(meta.acompte_pourcentage) : undefined),
             delaiLivraisonJours: prestationInfo.delai_livraison_jours,
             notes: meta.notes,
+            autorisationImages: meta.autorisation_images,
           },
         );
       } else if (data.type === 'contrat_prestation_toilettage') {

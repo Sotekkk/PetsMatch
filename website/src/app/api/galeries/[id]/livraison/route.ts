@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const album = await chargerAlbum(id);
   if (!album) return NextResponse.json({ error: 'Galerie introuvable' }, { status: 404 });
   if (!(await estGestionnaire(album, auth.uid))) return NextResponse.json({ error: 'Réservé au photographe' }, { status: 403 });
-  if (!(await estPremium(album.pro_uid))) return NextResponse.json({ error: 'La livraison est réservée aux photographes Premium.' }, { status: 402 });
+  if (!(await estPremium(album.pro_uid))) return NextResponse.json({ error: 'La livraison est réservée à la formule Premium.' }, { status: 402 });
   const body = await req.json().catch(() => ({})) as {
     action?: string; parts?: number | { path?: string; nom?: string; taille?: number; nb?: number }[]; jours?: number;
   };

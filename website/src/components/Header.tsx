@@ -1520,6 +1520,8 @@ export default function Header() {
       effectiveIsPension ? pensionPlan === 'free'
       : effectiveIsGarde ? gardePlan === 'free'
       : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
+      // Photographe : Essentiel suffit pour la facturation ; Premium l'inclut.
+      : otherProfilType === 'photographe' ? !['essentiel', 'premium'].includes(otherPlan)
       : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
       : false
     );

@@ -60,7 +60,8 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
   Future<void> _initialiser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    _premium = (await PlanService.getPhotographePlanCode(uid)) != 'free';
+    // Galeries clients : formule Premium uniquement.
+    _premium = PlanService.getPhotographeConfig(await PlanService.getPhotographePlanCode(uid)).hasGaleriesClients;
     _albumId = widget.albumId;
     if (_albumId == null && widget.rdvId != null) {
       try {
@@ -480,7 +481,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
               ? Center(child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Text('Les galeries clients privées sont réservées à l\'abonnement Premium.', textAlign: TextAlign.center,
+                    const Text('Les galeries clients privées sont réservées à la formule Premium.', textAlign: TextAlign.center,
                         style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _ink)),
                     TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PhotographeAbonnementPage())),
                         child: const Text('Voir les abonnements', style: TextStyle(fontFamily: 'Galey', color: _teal))),
@@ -524,7 +525,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                       Expanded(child: _photos.isEmpty
                           ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
                               _premium ? 'Aucune photo. Importez vos aperçus : ils sont compressés et stockés dans un espace privé.'
-                                  : 'Import réservé à l\'abonnement Premium.',
+                                  : 'Import réservé à la formule Premium.',
                               textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))))
                           : RefreshIndicator(
                               onRefresh: _charger, color: _teal,

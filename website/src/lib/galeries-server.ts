@@ -40,13 +40,13 @@ export async function estGestionnaire(album: AlbumRow, uid: string | null): Prom
   return (data ?? []).length > 0;
 }
 
-/** Abonnement photographe payant actif (galeries privées = Premium). */
+/** Formule photographe Premium active (galeries clients privées). */
 export async function estPremium(proUid: string): Promise<boolean> {
   const { data } = await admin.from('abonnements').select('plan_code')
     .eq('uid', proUid).eq('profil_type', 'photographe').eq('statut', 'actif')
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   const plan = (data as { plan_code?: string } | null)?.plan_code ?? 'free';
-  return plan !== 'free';
+  return plan === 'premium';
 }
 
 /** Lien privé valide (actif, non expiré) pour CETTE galerie uniquement. */

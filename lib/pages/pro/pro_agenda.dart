@@ -1968,6 +1968,27 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               .select('nom, prix, acompte_pourcentage')
               .eq('id', prestationId).maybeSingle();
         }
+        // Diffusion des images par le photographe : choisie à la génération,
+        // écrite dans le contrat que le client signe.
+        if (!mounted) return;
+        final diffusion = await showModalBottomSheet<String>(
+          context: context,
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Text('Diffusion des photos par vous', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+            for (final o in const [
+              ('book', 'Book et portfolio PetsMatch, sauf refus du client'),
+              ('book_reseaux', 'Book, site, réseaux sociaux et portfolio PetsMatch'),
+              ('aucune', 'Aucune diffusion'),
+            ])
+              ListTile(title: Text(o.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)), onTap: () => Navigator.pop(ctx, o.$1)),
+            const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Text("Une personne identifiable n'est jamais diffusée sans son autorisation écrite.",
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey))),
+          ])),
+        );
+        if (diffusion == null) return;
         final row = await supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
           if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
@@ -1981,6 +2002,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'prestation_nom': prestation?['nom'],
             'prix_total': prestation?['prix']?.toString(),
             'acompte_pourcentage': prestation?['acompte_pourcentage']?.toString(),
+            'autorisation_images': diffusion,
           },
         }).select('token').single();
         token = row['token'] as String?;

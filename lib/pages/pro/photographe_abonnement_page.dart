@@ -96,7 +96,7 @@ class _PhotographeAbonnementPageState extends State<PhotographeAbonnementPage> {
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const SizedBox(height: 12),
-                for (final code in ['free', 'essentiel']) ...[
+                for (final code in ['free', 'essentiel', 'premium']) ...[
                   _PhotographePlanCard(
                     config: _plans[code] ?? PlanService.getPhotographeConfig(code),
                     isCurrent: _planCode == code,
@@ -121,6 +121,7 @@ class _PhotographeAbonnementPageState extends State<PhotographeAbonnementPage> {
       c.maxPhotosPortfolio == -1 ? 'Portfolio illimité' : '${c.maxPhotosPortfolio} photos portfolio',
       if (c.hasMiseEnAvant) 'Mise en avant',
       if (c.hasStatistiques) 'Statistiques profil',
+      if (c.hasGaleriesClients) 'Galeries clients',
     ];
     return parts.join(' · ');
   }
@@ -136,13 +137,15 @@ class _PhotographePlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const teal = Color(0xFF0C5C6C);
-    final accent = config.code == 'essentiel' ? teal : const Color(0xFF6B7280);
-    final badge = config.code == 'essentiel' ? '⚡' : '🌱';
+    final accent = config.code == 'premium' ? const Color(0xFF7B5EA7)
+        : config.code == 'essentiel' ? teal : const Color(0xFF6B7280);
+    final badge = config.code == 'premium' ? '📸' : config.code == 'essentiel' ? '⚡' : '🌱';
 
     final features = <String?>[
       config.maxPhotosPortfolio == -1 ? 'Portfolio illimité' : '${config.maxPhotosPortfolio} photos portfolio',
       config.hasMiseEnAvant ? 'Mis en avant dans l\'annuaire' : null,
       config.hasStatistiques ? 'Statistiques de profil' : null,
+      config.hasGaleriesClients ? 'Galeries clients privées : sélection et livraison des photos' : null,
     ].whereType<String>().toList();
 
     return Container(

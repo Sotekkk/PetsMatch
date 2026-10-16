@@ -18,7 +18,7 @@ import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 
 const _teal = kDashTeal;
@@ -70,6 +70,9 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
   final Map<String, String> _clients = {};
   final Map<String, Map<String, dynamic>> _animaux = {};
   final Map<String, String> _prestations = {};
+  final Map<String, double> _prixPrestations = {};
+  /// RDV déjà facturés (factures.source_rdv_id, hors annulées).
+  final Set<String> _factures = {};
   final _planningKey = GlobalKey();
 
   String get _pid {
@@ -135,11 +138,37 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
     } catch (_) {}
     try {
       if (prestas.isNotEmpty) {
-        final rows = await _supa.from('prestations_toilettage').select('id, nom').inFilter('id', prestas.toList());
-        for (final p in rows as List) { _prestations[p['id'].toString()] = p['nom']?.toString() ?? ''; }
+        final rows = await _supa.from('prestations_toilettage').select('id, nom, prix_base').inFilter('id', prestas.toList());
+        for (final p in rows as List) {
+          _prestations[p['id'].toString()] = p['nom']?.toString() ?? '';
+          _prixPrestations[p['id'].toString()] = (p['prix_base'] as num?)?.toDouble() ?? 0;
+        }
       }
     } catch (_) {}
+    _factures.clear();
+    if (_rdvs.isNotEmpty) {
+      try {
+        for (final f in await _supa.from('factures').select('source_rdv_id, statut')
+            .inFilter('source_rdv_id', _rdvs.map((r) => r['id']).toList())) {
+          if (f['statut'] != 'annulee') _factures.add(f['source_rdv_id'].toString());
+        }
+      } catch (_) {}
+    }
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Facture pré-remplie depuis la prestation (prix calculé à la réservation
+  /// selon l'espèce / le gabarit, sinon prix de base du catalogue).
+  void _facturer(Map<String, dynamic> r) {
+    final prix = (r['prix_calcule'] as num?)?.toDouble() ?? _prixPrestations[r['prestation_id']?.toString()] ?? 0;
+    _go(CreerFacturePage(
+      clientNom: _nomClient(r),
+      lignesPrefill: [FacturePrefillLigne(designation: '${_prestation(r)} — ${_nomAnimal(r)}', prixHT: prix, quantite: 1, tauxTVA: 20)],
+      sourceRdvId: r['id'].toString(),
+      sourceAnimalId: r['animal_id']?.toString(),
+      clientUid: r['client_uid']?.toString(),
+      clientProfileId: r['client_profile_id']?.toString(),
+    ));
   }
 
   // ── Sélections ──────────────────────────────────────────────────────────
@@ -297,6 +326,11 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
             action(ctx, Icons.check_circle_outline, 'Toilettage terminé — animal prêt', () => _pret(r), c: _vert),
           if (e == EtapeToilettage.pret)
             action(ctx, Icons.logout_rounded, 'Animal récupéré — clôturer', () => _maj(r, {'statut': 'termine', 'termine_at': _now}, ok: 'Prestation clôturée')),
+          // Facturation : module existant, statut propre (terminé ≠ payé).
+          if ((e == EtapeToilettage.pret || e == EtapeToilettage.termine) && !_factures.contains(r['id'].toString()))
+            action(ctx, Icons.receipt_long_outlined, 'Facturer la prestation', () => _facturer(r)),
+          if (_factures.contains(r['id'].toString()))
+            action(ctx, Icons.receipt_long_outlined, 'Prestation facturée — voir la facturation', () => _go(const FacturationPage())),
           // Fiche technique : dès que le toilettage a commencé.
           if (r['animal_id'] != null && const {EtapeToilettage.enCours, EtapeToilettage.pret, EtapeToilettage.termine}.contains(e))
             action(ctx, Icons.description_outlined, 'Fiche technique de la prestation', () => _go(ToilettageSeancePage(
