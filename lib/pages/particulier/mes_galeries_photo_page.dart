@@ -181,6 +181,12 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
     if (mounted) setState(() => _occupe = false);
   }
 
+  String _supplement(int incluses, double? prix) {
+    final n = _nbChoisies - incluses;
+    if (prix == null || prix <= 0) return ' Les photos supplémentaires sont facturées selon le tarif de votre photographe.';
+    return ' $n photo${n > 1 ? 's' : ''} supplémentaire${n > 1 ? 's' : ''} × ${prix.toStringAsFixed(0)} € = ${(n * prix).toStringAsFixed(0)} € en plus du forfait.';
+  }
+
   Widget _bloc(List<Widget> enfants) => Container(
         margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
         padding: const EdgeInsets.all(14),
@@ -259,7 +265,7 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
                           const Text('Choisissez vos photos', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _ink)),
                           Text('Touchez le cœur sur chaque photo. $_nbChoisies sélectionnée${_nbChoisies > 1 ? 's' : ''}'
                               '${incluses != null ? ' sur $incluses incluse${incluses > 1 ? 's' : ''} dans votre prestation' : ''}.'
-                              '${incluses != null && _nbChoisies > incluses ? ' Les photos supplémentaires sont facturées selon le tarif de votre photographe.' : ''}',
+                              '${incluses != null && _nbChoisies > incluses ? _supplement(incluses, (album['prix_photo_supp'] as num?)?.toDouble()) : ''}',
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
                         ],
                         if (_nbChoisies > 0)

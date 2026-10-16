@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { Kpi, Section, Badge, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
 import { styleGalerie, GALERIES_A_LIVRER } from '@/lib/photographe';
+import { geocodeAddress } from '@/lib/geocoding';
 
 const AMBRE = '#D97706';
 const VERT = '#2E7D5E';
@@ -20,12 +21,14 @@ const VIOLET = '#7B5EA7';
 
 interface Rdv {
   id: string; date_heure: string; duree_minutes: number | null; statut: string; motif: string | null; lieu: string | null;
+  lieu_type?: string | null; adresse_depart?: string | null;
   animal_id: string | null; animal_nom_manuel: string | null; client_uid: string | null; client_profile_id: string | null;
   client_nom_manuel: string | null; prestation_id: string | null; notes_client: string | null;
 }
 interface Galerie {
   id: string; titre: string | null; rdv_id: string | null; client_profile_id: string | null; statut?: string | null;
   date_seance?: string | null; updated_at?: string | null; created_at: string;
+  nb_photos_incluses?: number | null; prix_photo_supp?: number | null;
 }
 interface Devis { id: string; numero_devis: string | null; date_devis: string; total_ttc: number | null; client_profile_id: string | null; nom_client: string | null; prenom_client: string | null }
 
@@ -48,6 +51,8 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
   const [devis, setDevis] = useState<Devis[]>([]);
   const [contrats, setContrats] = useState<{ id: string; rdv_id: string | null }[]>([]);
   const [nbPhotos, setNbPhotos] = useState<Record<string, number>>({});
+  const [nbChoisies, setNbChoisies] = useState<Record<string, number>>({});
+  const [lieuEdit, setLieuEdit] = useState<{ adresse: string; prevenir: boolean } | null>(null);
   // Dossier de chaque séance : devis (rdv_id), contrats, factures (source_rdv_id).
   const [devisSeances, setDevisSeances] = useState<{ rdv_id: string; statut: string; total_ttc: number | null }[]>([]);
   const [contratsSeances, setContratsSeances] = useState<{ rdv_id: string; statut: string }[]>([]);
@@ -90,7 +95,7 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
       profils.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, profile_type').in('id', profils) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from('animaux').select('id, nom').in('id', ids) : Promise.resolve({ data: [] }),
       prs.length ? supabase.from('prestations_photographe').select('id, nom, prix').in('id', prs) : Promise.resolve({ data: [] }),
-      gal.length ? supabase.from('album_photos').select('album_id').in('album_id', gal.map(x => x.id)) : Promise.resolve({ data: [] }),
+      gal.length ? supabase.from('album_photos').select('album_id, selectionnee').in('album_id', gal.map(x => x.id)) : Promise.resolve({ data: [] }),
     ]);
     const cl: Record<string, string> = {};
     for (const x of (pRes.data ?? []) as { id: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]) {
@@ -110,7 +115,12 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
     }
     setPrix(Object.fromEntries(((prRes.data ?? []) as { id: string; prix?: number | null }[]).map(x => [x.id, Number(x.prix) || 0])));
     const nb: Record<string, number> = {};
-    for (const x of (phRes.data ?? []) as { album_id: string }[]) nb[x.album_id] = (nb[x.album_id] ?? 0) + 1;
+    const ch: Record<string, number> = {};
+    for (const x of (phRes.data ?? []) as { album_id: string; selectionnee?: boolean }[]) {
+      nb[x.album_id] = (nb[x.album_id] ?? 0) + 1;
+      if (x.selectionnee) ch[x.album_id] = (ch[x.album_id] ?? 0) + 1;
+    }
+    setNbChoisies(ch);
     setSeances((s.data ?? []) as Rdv[]); setPassees((p.data ?? []) as Rdv[]); setDemandes((d.data ?? []) as Rdv[]);
     setDevis((dv.data ?? []) as Devis[]); setContrats((ct.data ?? []) as { id: string; rdv_id: string | null }[]);
     setGaleries(gal); setStatutDispo(dispo); setNbPhotos(nb); setClients(cl);
@@ -133,6 +143,14 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
   const nomClient = (r: { client_profile_id: string | null; client_nom_manuel?: string | null; nom_client?: string | null; prenom_client?: string | null }) =>
     (r.client_profile_id && clients[r.client_profile_id]) || r.client_nom_manuel || `${r.prenom_client ?? ''} ${r.nom_client ?? ''}`.trim() || 'Client';
   const prestation = (r: Rdv) => (r.prestation_id && prestations[r.prestation_id]) || r.motif?.trim() || 'Séance photo';
+  // Lieu : à domicile (adresse du client) ou proposé par le photographe (à préciser).
+  const lieuDe = (r: Rdv) => {
+    const adr = r.adresse_depart?.trim() ?? '';
+    const l = r.lieu?.trim() ?? '';
+    if (r.lieu_type === 'domicile') return `À domicile : ${adr}`;
+    if (r.lieu_type === 'photographe') return adr || `Lieu à préciser${l.startsWith('Souhait') ? ` — ${l}` : ''}`;
+    return adr || l;
+  };
   const animal = (r: Rdv) => (r.animal_id && animaux[r.animal_id]) || r.animal_nom_manuel || null;
   const statut = (g: Galerie) => (statutDispo ? g.statut ?? 'brouillon' : 'brouillon');
   const galerieDe = (r: Rdv) => galeries.find(g => g.rdv_id === r.id);
@@ -175,7 +193,7 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-[#1E2025] truncate">{prestation(r)}</p>
                   <p className="text-xs text-gray-500 truncate">{[nomClient(r), animal(r)].filter(Boolean).join(' · ')}</p>
-                  {r.lieu?.trim() && <p className="text-xs text-gray-500 truncate">{r.lieu.trim()}</p>}
+                  {lieuDe(r) && <p className="text-xs truncate" style={{ color: lieuDe(r).startsWith('Lieu à préciser') ? AMBRE : '#6B7280' }}>{lieuDe(r)}</p>}
                 </div>
                 {contratAttente(r) ? <Badge texte="Contrat à signer" fg={AMBRE} bg="#FFF4DC" /> : <Badge texte="Confirmée" fg="#1D4ED8" bg="#E8F0FE" />}
               </button>
@@ -288,7 +306,8 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
 
       {fiche && (() => {
         const d = new Date(fiche.date_heure);
-        const lieu = fiche.lieu?.trim();
+        const lieu = lieuDe(fiche);
+        const adresse = fiche.adresse_depart?.trim();
         const lien = (href: string, t: string, externe = false) => (
           <a href={href} {...(externe ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className="block py-2 text-sm font-semibold text-[#0C5C6C]">{t}</a>
         );
@@ -322,7 +341,10 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
                         nomClient: nomClient(fiche), sourceRdvId: fiche.id, sourceAnimalId: fiche.animal_id ?? undefined,
                         clientUid: fiche.client_uid ?? undefined, clientProfileId: fiche.client_profile_id ?? undefined,
                         lignes: [{ description: `${prestation(fiche)} — séance du ${jour(new Date(fiche.date_heure))}`, quantite: 1,
-                          prixUnitaire: fiche.prestation_id ? prix[fiche.prestation_id] ?? 0 : 0, tva: 20 }],
+                          prixUnitaire: fiche.prestation_id ? prix[fiche.prestation_id] ?? 0 : 0, tva: 20 },
+                          // Photos choisies au-delà du forfait.
+                          ...(gal && gal.nb_photos_incluses != null && gal.prix_photo_supp && (nbChoisies[gal.id] ?? 0) > gal.nb_photos_incluses
+                            ? [{ description: 'Photos supplémentaires', quantite: (nbChoisies[gal.id] ?? 0) - gal.nb_photos_incluses, prixUnitaire: Number(gal.prix_photo_supp), tva: 20 }] : [])],
                       }));
                     } catch { /* stockage indisponible : facture vierge */ }
                     router.push('/elevage/facturation');
@@ -348,7 +370,42 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
               </div>
               <div className="mt-2">
                 {fiche.client_uid && lien(`/messages?uid=${fiche.client_uid}`, 'Contacter le client')}
-                {lieu && lien(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lieu)}`, "Itinéraire jusqu'au lieu", true)}
+                {lieuEdit ? (
+                  <div className="py-2 space-y-2">
+                    <input value={lieuEdit.adresse} onChange={e => setLieuEdit({ ...lieuEdit, adresse: e.target.value })} placeholder="Adresse ou lieu (plage, forêt, studio…)"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" autoFocus />
+                    {fiche.client_uid && (
+                      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lieuEdit.prevenir} onChange={e => setLieuEdit({ ...lieuEdit, prevenir: e.target.checked })} />Prévenir le client</label>
+                    )}
+                    <div className="flex gap-2">
+                      <button onClick={() => setLieuEdit(null)} className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200">Annuler</button>
+                      <button onClick={async () => {
+                        const adr = lieuEdit.adresse.trim();
+                        if (!adr) return;
+                        // Coordonnées : kilomètres de la séance (statistiques).
+                        const geo = await geocodeAddress(adr);
+                        const { error } = await supabase.from('rdv').update({
+                          adresse_depart: adr, ...(fiche.lieu_type ? {} : { lieu_type: 'photographe' }),
+                          ...(geo ? { lat_depart: geo.lat, lng_depart: geo.lng } : {}),
+                        }).eq('id', fiche.id);
+                        if (error) { alert(error.message); return; }
+                        if (lieuEdit.prevenir && fiche.client_uid) {
+                          await supabase.from('notifications').insert({
+                            uid: fiche.client_uid, type: 'rdv_modifie', title: 'Lieu de votre séance photo',
+                            body: `Votre séance du ${jour(new Date(fiche.date_heure))} à ${hm(new Date(fiche.date_heure))} aura lieu : ${adr}`,
+                            ...(fiche.client_profile_id ? { profile_id: fiche.client_profile_id } : {}),
+                            data: { rdv_id: fiche.id }, read: false,
+                          });
+                        }
+                        setLieuEdit(null); setFiche(null); charger();
+                      }} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: '#0C5C6C' }}>Enregistrer</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setLieuEdit({ adresse: fiche.lieu_type === 'photographe' ? fiche.adresse_depart ?? '' : '', prevenir: !!fiche.client_uid })}
+                    className="block py-2 text-sm font-semibold text-[#0C5C6C]">{fiche.lieu_type === 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting'}</button>
+                )}
+                {adresse && lien(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(adresse)}`, "Itinéraire jusqu'au lieu", true)}
                 {lien(`/mes-rdv?onglet=a_venir&rdv=${fiche.id}`, "Voir la séance dans l'agenda")}
               </div>
               <button onClick={() => setFiche(null)} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>

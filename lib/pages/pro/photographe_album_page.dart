@@ -69,7 +69,13 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
         if (a != null) {
           _albumId = a['id'].toString();
         } else if (_premium) {
-          final rdv = await _supa.from('rdv').select('client_uid, client_profile_id, date_heure').eq('id', widget.rdvId!).maybeSingle();
+          final rdv = await _supa.from('rdv').select('client_uid, client_profile_id, date_heure, prestation_id').eq('id', widget.rdvId!).maybeSingle();
+          Map<String, dynamic>? presta;
+          if (rdv?['prestation_id'] != null) {
+            try {
+              presta = await _supa.from('prestations_photographe').select('nb_photos, prix_photo_supp').eq('id', rdv!['prestation_id']).maybeSingle();
+            } catch (_) {}
+          }
           final row = await _supa.from('albums_photo').insert({
             'pro_uid': uid,
             if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
@@ -78,6 +84,8 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
             if (rdv?['client_profile_id'] != null) 'client_profile_id': rdv!['client_profile_id'],
             if (rdv?['date_heure'] != null) 'date_seance': rdv!['date_heure'].toString().substring(0, 10),
             'titre': widget.clientName.isNotEmpty ? 'Séance photo — ${widget.clientName}' : 'Séance photo',
+            if (presta?['nb_photos'] != null) 'nb_photos_incluses': presta!['nb_photos'],
+            if (presta?['prix_photo_supp'] != null) 'prix_photo_supp': presta!['prix_photo_supp'],
           }).select('id').single();
           _albumId = row['id'].toString();
         }

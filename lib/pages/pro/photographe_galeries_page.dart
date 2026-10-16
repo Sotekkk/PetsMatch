@@ -58,7 +58,7 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
     }
     try {
       _seances = List<Map<String, dynamic>>.from(await _supa.from('rdv')
-          .select('id, date_heure, motif, client_uid, client_profile_id, client_nom_manuel')
+          .select('id, date_heure, motif, client_uid, client_profile_id, client_nom_manuel, prestation_id')
           .eq('pro_profile_id', _pid).inFilter('statut', ['confirme', 'termine'])
           .gte('date_heure', DateTime.now().subtract(const Duration(days: 120)).toUtc().toIso8601String())
           .order('date_heure', ascending: false).limit(80));
@@ -144,6 +144,12 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
     );
     if (ok != true) return;
     final s = _seances.where((x) => x['id'].toString() == rdvId).firstOrNull;
+    Map<String, dynamic>? presta;
+    if (s?['prestation_id'] != null) {
+      try {
+        presta = await _supa.from('prestations_photographe').select('nb_photos, prix_photo_supp').eq('id', s!['prestation_id']).maybeSingle();
+      } catch (_) {}
+    }
     try {
       final row = await _supa.from('albums_photo').insert({
         'pro_uid': FirebaseAuth.instance.currentUser!.uid,
@@ -152,6 +158,8 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
         'date_seance': date != null ? DateFormat('yyyy-MM-dd').format(date!)
             : (s != null ? s['date_heure'].toString().substring(0, 10) : null),
         if (s != null) ...{'rdv_id': s['id'], 'client_uid': s['client_uid'], 'client_profile_id': s['client_profile_id']},
+        if (presta?['nb_photos'] != null) 'nb_photos_incluses': presta!['nb_photos'],
+        if (presta?['prix_photo_supp'] != null) 'prix_photo_supp': presta!['prix_photo_supp'],
       }).select('id').single();
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(builder: (_) => PhotographeAlbumPage(albumId: row['id'].toString(),

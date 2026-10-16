@@ -18,7 +18,7 @@ interface Galerie {
   id: string; titre: string | null; statut: string | null; date_seance: string | null; client_profile_id: string | null;
   rdv_id: string | null; updated_at: string | null; created_at: string; partage_client: boolean | null;
 }
-interface Seance { id: string; date_heure: string; motif: string | null; client_uid: string | null; client_profile_id: string | null; client_nom_manuel: string | null }
+interface Seance { id: string; date_heure: string; motif: string | null; client_uid: string | null; client_profile_id: string | null; client_nom_manuel: string | null; prestation_id?: string | null }
 
 export default function GaleriesPage() {
   const { user, loading } = useAuth();
@@ -40,7 +40,7 @@ export default function GaleriesPage() {
     const depuis = new Date(Date.now() - 120 * 86400000).toISOString();
     const [g, s] = await Promise.all([
       supabase.from('albums_photo').select('*').eq('pro_profile_id', pid).order('updated_at', { ascending: false }),
-      supabase.from('rdv').select('id, date_heure, motif, client_uid, client_profile_id, client_nom_manuel').eq('pro_profile_id', pid)
+      supabase.from('rdv').select('id, date_heure, motif, client_uid, client_profile_id, client_nom_manuel, prestation_id').eq('pro_profile_id', pid)
         .in('statut', ['confirme', 'termine']).gte('date_heure', depuis).order('date_heure', { ascending: false }).limit(80),
     ]);
     const gal = (g.data ?? []) as Galerie[];
@@ -72,11 +72,18 @@ export default function GaleriesPage() {
     if (!creation || !user || !pid) return;
     setEnCours(true);
     const s = seances.find(x => x.id === creation.rdvId);
+    // Forfait de la séance : photos incluses et prix de la photo supplémentaire.
+    const { data: presta } = s?.prestation_id
+      ? await supabase.from('prestations_photographe').select('nb_photos, prix_photo_supp').eq('id', s.prestation_id).maybeSingle()
+      : { data: null };
+    const pr = presta as { nb_photos?: number | null; prix_photo_supp?: number | null } | null;
     const { data, error } = await supabase.from('albums_photo').insert({
       pro_uid: user.uid, pro_profile_id: pid,
       titre: creation.titre.trim() || (s ? `Séance photo — ${nomSeance(s)}` : 'Séance photo'),
       date_seance: creation.date || (s ? s.date_heure.slice(0, 10) : null),
       ...(s ? { rdv_id: s.id, client_uid: s.client_uid, client_profile_id: s.client_profile_id } : {}),
+      ...(pr?.nb_photos != null ? { nb_photos_incluses: pr.nb_photos } : {}),
+      ...(pr?.prix_photo_supp != null ? { prix_photo_supp: pr.prix_photo_supp } : {}),
     }).select('id').single();
     setEnCours(false);
     if (error) { alert(error.message.includes('column') ? 'Migrations des galeries à passer (migration_photographe_galeries_statut.sql puis migration_photographe_galeries_privees.sql).' : error.message); return; }

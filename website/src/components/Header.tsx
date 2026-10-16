@@ -141,6 +141,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/employes',                        label: 'Mes employés',       icon: '👥' },
       { href: '/elevage/cogerance',              label: 'Co-gérance',        icon: '🤝' },
       { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
+      { href: '/elevage/import-icad',            label: 'Import I-CAD',     icon: '📥' },
     ],
   },
   {
@@ -669,6 +670,7 @@ const MENU_PARTICULIER = [
 // Synonymes / termes courants pour retrouver une fonctionnalité sans fouiller
 // le menu. Fusionnés à l'index au moment de la recherche.
 const SEARCH_KEYWORDS: Record<string, string[]> = {
+  '/elevage/import-icad': ['icad', 'i-cad', 'import', 'csv', 'puce', 'identification', 'fichier', 'mise a jour'],
   '/photographe/portfolio': ['portfolio', 'realisations', 'book', 'photos publiques', 'vitrine', 'couverture'],
   '/photographe/galeries': ['galerie', 'galeries', 'photos clients', 'livraison', 'selection', 'partage', 'album', 'apercus'],
   '/mes-galeries': ['galerie', 'photos', 'photographe', 'seance photo', 'album'],

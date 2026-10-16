@@ -99,6 +99,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   final List<TimeOfDay> _gardeHorairesSupp = [];
   // Plusieurs animaux (rdv.animaux_ids) — _selectedAnimal = le premier.
   List<Map<String, dynamic>> _animauxGarde = [];
+  // Photographe : lieu du shooting — 'domicile' (adresse du client) ou
+  // 'photographe' (plage, forêt, studio… proposé par le photographe).
+  String? _lieuPhoto;
+  final _lieuSouhaitCtrl = TextEditingController();
   // Accès au logement (rdv.acces_logement) — jamais de code ici.
   String? _accesLogement;
   // Forfait choisi (rdv.forfait_id).
@@ -322,6 +326,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     _motifCtrl.dispose();
     _notesCtrl.dispose();
     _adresseDepartCtrl.dispose();
+    _lieuSouhaitCtrl.dispose();
     _adresseArriveeCtrl.dispose();
     _adresseDomicileCtrl.dispose();
     _debounceDepart?.cancel();
@@ -1075,8 +1080,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (_selectedPrestation == null) {
         _snack('Veuillez choisir une prestation', color: Colors.orange); return;
       }
-      if (_adresseDepartCtrl.text.trim().isEmpty) {
-        _snack('Veuillez indiquer le lieu du shooting', color: Colors.orange); return;
+      if (_lieuPhoto == null) {
+        _snack('Choisissez le lieu du shooting', color: Colors.orange); return;
+      }
+      if (_lieuPhoto == 'domicile' && _adresseDepartCtrl.text.trim().isEmpty) {
+        _snack('Indiquez votre adresse pour le shooting à domicile', color: Colors.orange); return;
       }
     }
 
@@ -1176,7 +1184,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             if (arrivee.isNotEmpty) { _latArrivee = arrivee.first.latitude; _lngArrivee = arrivee.first.longitude; }
           } catch (_) {}
         }
-      } else if (widget.isPhotographe) {
+      } else if (widget.isPhotographe && _lieuPhoto == 'domicile') {
         if (_latDepart == null || _lngDepart == null) {
           try {
             final lieu = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
@@ -1213,7 +1221,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }
 
       final heureDebutStr = _selectedSlot!['heure_debut'] as String;
-      final animauxGarde = widget.isGarde && _animauxGarde.isNotEmpty ? _animauxGarde : null;
+      // Pet-sitting et photographe : plusieurs animaux (même tarif pour la séance photo).
+      final animauxGarde = (widget.isGarde || widget.isPhotographe) && _animauxGarde.isNotEmpty ? _animauxGarde : null;
       final rows = occurrenceDates.map((d) {
         final hp = heureDebutStr.split(':');
         final dh = widget.isGarde
@@ -1249,9 +1258,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           },
           if (widget.isPhotographe) ...{
             'prestation_id': _selectedPrestation?['id'],
-            'adresse_depart': _adresseDepartCtrl.text.trim(),
-            if (_latDepart != null) 'lat_depart': _latDepart,
-            if (_lngDepart != null) 'lng_depart': _lngDepart,
+            'lieu_type': _lieuPhoto,
+            if (_lieuPhoto == 'domicile') ...{
+              'adresse_depart': _adresseDepartCtrl.text.trim(),
+              if (_latDepart != null) 'lat_depart': _latDepart,
+              if (_lngDepart != null) 'lng_depart': _lngDepart,
+            } else ...{
+              // Lieu choisi par le photographe : le souhait du client reste indicatif.
+              'lieu': _lieuSouhaitCtrl.text.trim().isEmpty ? 'Lieu proposé par le photographe' : 'Souhait : ${_lieuSouhaitCtrl.text.trim()}',
+            },
           },
           if (widget.isToilettage) ...{
             'prestation_id': _selectedPrestation?['id'],
@@ -1860,6 +1875,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     }
     return [
       _sectionTitle('Prestation *'),
+      if (widget.isPhotographe) ...[
+        const SizedBox(height: 4),
+        Text('Même tarif quel que soit le nombre d\'animaux : le forfait comprend un nombre de photos, '
+            'les photos supplémentaires se choisissent ensuite dans votre galerie.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      ],
       if (widget.isToilettage && _selectedAnimal == null) ...[
         const SizedBox(height: 4),
         Text('Sélectionnez d\'abord l\'animal ci-dessous pour voir le prix exact.',
@@ -1883,9 +1904,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 Text(p['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 const SizedBox(height: 2),
                 Text('${p['duree_minutes']} min'
-                    '${p['nb_photos'] != null ? ' · ${p['nb_photos']} photos' : ''}'
+                    '${p['nb_photos'] != null ? ' · ${p['nb_photos']} photos incluses' : ''}'
                     '${p['delai_livraison_jours'] != null ? ' · livraison ${p['delai_livraison_jours']}j' : ''}',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                if (widget.isPhotographe && ((p['prix_photo_supp'] as num?) ?? 0) > 0)
+                  Text('Puis ${((p['prix_photo_supp'] as num).toDouble()).toStringAsFixed(0)} € par photo supplémentaire choisie',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ])),
               Text('${_prixAffiche(p).toStringAsFixed(0)} €',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: widget.categoryColor)),
@@ -2659,7 +2683,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         ],
       );
     }
-    if (widget.isGarde) return _buildAnimauxGardeSection();
+    if (widget.isGarde || widget.isPhotographe) return _buildAnimauxGardeSection();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2824,19 +2848,45 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     ],
   );
 
-  Widget _buildPhotographeLieuSection() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _sectionTitle('Lieu du shooting'),
-      const SizedBox(height: 8),
-      TextField(
-        controller: _adresseDepartCtrl,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-        decoration: _inputDecoration('Adresse du shooting (studio ou déplacement)').copyWith(
-            prefixIcon: const Icon(Icons.location_on_outlined, size: 18)),
+  Widget _buildPhotographeLieuSection() {
+    Widget choix(String v, String label) => Expanded(child: OutlinedButton(
+      onPressed: () => setState(() => _lieuPhoto = v),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: _lieuPhoto == v ? Colors.white : widget.categoryColor,
+        backgroundColor: _lieuPhoto == v ? widget.categoryColor : Colors.white,
+        side: BorderSide(color: widget.categoryColor),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
-    ],
-  );
+      child: Text(label, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+    ));
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _sectionTitle('Lieu du shooting *'),
+      const SizedBox(height: 8),
+      Row(children: [
+        choix('domicile', 'À domicile'),
+        const SizedBox(width: 8),
+        choix('photographe', 'Lieu proposé par le photographe'),
+      ]),
+      const SizedBox(height: 10),
+      if (_lieuPhoto == 'domicile')
+        TextField(
+          controller: _adresseDepartCtrl,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: _inputDecoration('Votre adresse').copyWith(prefixIcon: const Icon(Icons.home_outlined, size: 18)),
+        )
+      else if (_lieuPhoto == 'photographe') ...[
+        Text('Plage, forêt, parc, studio… le photographe vous proposera le lieu de la séance.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _lieuSouhaitCtrl,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: _inputDecoration('Une envie particulière ? (facultatif)').copyWith(prefixIcon: const Icon(Icons.park_outlined, size: 18)),
+        ),
+      ],
+    ]);
+  }
 
   // Santé/ostéo : au cabinet (par défaut, tous les créneaux) ou à domicile
   // (seulement les créneaux que le pro a marqués "à domicile", filtrés en

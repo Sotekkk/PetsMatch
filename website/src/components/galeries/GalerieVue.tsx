@@ -132,7 +132,11 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
                   <p className="text-sm font-bold text-[#1F2A2E]">Choisissez vos photos</p>
                   <p className="text-xs text-gray-500">
                     Touchez le cœur sur chaque photo. {nbChoisies} sélectionnée{nbChoisies > 1 ? 's' : ''}{album.nb_photos_incluses ? ` sur ${album.nb_photos_incluses} incluse${album.nb_photos_incluses > 1 ? 's' : ''} dans votre prestation` : ''}.
-                    {album.nb_photos_incluses && nbChoisies > album.nb_photos_incluses ? ' Les photos supplémentaires sont facturées selon le tarif de votre photographe.' : ''}
+                    {album.nb_photos_incluses && nbChoisies > album.nb_photos_incluses
+                      ? (album.prix_photo_supp
+                        ? ` ${nbChoisies - album.nb_photos_incluses} photo${nbChoisies - album.nb_photos_incluses > 1 ? 's' : ''} supplémentaire${nbChoisies - album.nb_photos_incluses > 1 ? 's' : ''} × ${album.prix_photo_supp} € = ${(nbChoisies - album.nb_photos_incluses) * album.prix_photo_supp} € en plus du forfait.`
+                        : ' Les photos supplémentaires sont facturées selon le tarif de votre photographe.')
+                      : ''}
                   </p>
                 </>
               )}

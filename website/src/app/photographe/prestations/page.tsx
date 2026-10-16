@@ -22,19 +22,21 @@ interface Prestation {
   id: string; type: string; nom: string; prix: number; duree_minutes: number;
   nb_photos: number | null; delai_livraison_jours: number;
   deplacement_inclus_km: number; prix_km_supp: number; acompte_pourcentage: number;
-  description: string | null;
+  description: string | null; prix_photo_supp?: number | null;
 }
 
 type FormState = {
   id?: string; type: string; nom: string; prix: string; duree_minutes: string;
   nb_photos: string; delai_livraison_jours: string; deplacement_inclus_km: string;
   prix_km_supp: string; acompte_pourcentage: string; description: string;
+  /** Prix de chaque photo choisie au-delà des photos incluses. */
+  prix_photo_supp: string;
 };
 
 const EMPTY_FORM: FormState = {
   type: 'shooting_individuel', nom: '', prix: '', duree_minutes: '60',
   nb_photos: '', delai_livraison_jours: '7', deplacement_inclus_km: '0',
-  prix_km_supp: '0', acompte_pourcentage: '30', description: '',
+  prix_km_supp: '0', acompte_pourcentage: '30', description: '', prix_photo_supp: '',
 };
 
 export default function PhotographePrestationsPage() {
@@ -69,6 +71,7 @@ export default function PhotographePrestationsPage() {
         prix: Number(form.prix) || 0,
         duree_minutes: parseInt(form.duree_minutes, 10) || 60,
         nb_photos: form.nb_photos.trim() ? parseInt(form.nb_photos, 10) : null,
+        prix_photo_supp: form.prix_photo_supp.trim() ? Number(form.prix_photo_supp.replace(',', '.')) || null : null,
         delai_livraison_jours: parseInt(form.delai_livraison_jours, 10) || 7,
         deplacement_inclus_km: parseInt(form.deplacement_inclus_km, 10) || 0,
         prix_km_supp: Number(form.prix_km_supp) || 0,
@@ -124,7 +127,11 @@ export default function PhotographePrestationsPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <input type="number" value={form.nb_photos} onChange={e => setForm({ ...form, nb_photos: e.target.value })}
-              placeholder="Nb de photos" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              placeholder="Photos incluses" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            <input type="number" step="0.5" value={form.prix_photo_supp} onChange={e => setForm({ ...form, prix_photo_supp: e.target.value })}
+              placeholder="Prix photo suppl. (€)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <input type="number" value={form.delai_livraison_jours} onChange={e => setForm({ ...form, delai_livraison_jours: e.target.value })}
               placeholder="Délai livraison (j)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           </div>
@@ -161,6 +168,7 @@ export default function PhotographePrestationsPage() {
                 onClick={() => setForm({
                   id: p.id, type: p.type, nom: p.nom, prix: String(p.prix),
                   duree_minutes: String(p.duree_minutes), nb_photos: p.nb_photos != null ? String(p.nb_photos) : '',
+                  prix_photo_supp: p.prix_photo_supp != null ? String(p.prix_photo_supp) : '',
                   delai_livraison_jours: String(p.delai_livraison_jours),
                   deplacement_inclus_km: String(p.deplacement_inclus_km), prix_km_supp: String(p.prix_km_supp),
                   acompte_pourcentage: String(p.acompte_pourcentage), description: p.description ?? '',

@@ -90,6 +90,7 @@ interface ProData {
 interface Prestation {
   id: string; nom: string; description?: string; duree_minutes?: number;
   prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
+  nb_photos?: number | null; prix_photo_supp?: number | null; delai_livraison_jours?: number | null;
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; praticien?: string | null; }
 // Plage occupée (pm_plages_occupees — RDV de tous les clients + indisponibilités).
@@ -346,6 +347,12 @@ function ProDetailContent() {
 
   // Prestations (photographe / toilettage)
   const [prestations, setPrestations] = useState<Prestation[]>([]);
+  // Photographe : prestation du catalogue et lieu du shooting
+  // ('domicile' = adresse du client, 'photographe' = lieu proposé par le pro).
+  const [prestationPhotoId, setPrestationPhotoId] = useState<string | null>(null);
+  const [lieuPhoto, setLieuPhoto] = useState<'domicile' | 'photographe' | null>(null);
+  const [adressePhoto, setAdressePhoto] = useState('');
+  const [souhaitPhoto, setSouhaitPhoto] = useState('');
 
   useEffect(() => { loadPro(); }, [uid]);
 
@@ -892,13 +899,17 @@ function ProDetailContent() {
       alert('Indiquez comment le pet-sitter accède au logement.');
       return;
     }
+    const photoGeo = pro.cat_pro === 'photographe' && lieuPhoto === 'domicile' && adressePhoto.trim()
+      ? await geocodeAddress(adressePhoto.trim()) : null;
     let gardeGeo = domicileLatLng;
     if (gardeAvecAdresse && !gardeGeo) gardeGeo = await geocodeAddress(adresseDomicile.trim());
     const notesGarde = [gardeAvecAdresse ? gardeLieuNote : '', notes.trim()].filter(Boolean).join('\n');
     setSaving(true);
     try {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
-      const motifLabel = motifInfo?.label ?? motifKey;
+      const motifLabel = pro.cat_pro === 'photographe' && prestationPhotoId
+        ? (prestations.find(x => x.id === prestationPhotoId)?.nom ?? 'Séance photo')
+        : (motifInfo?.label ?? motifKey);
       const premiereSuffix = premiereVisite !== null ? `${premiereVisite ? ' (1ère visite)' : ''}` : '';
 
       // Garde-journée : une ligne rdv par jour disponible de la plage.
@@ -936,7 +947,8 @@ function ProDetailContent() {
       const targetSlots = occurrenceSlots();
       const skipReserve = pro.cat_pro === 'garde' && pro.garde_chevauchement_ok !== false;
       const serieId = pro.cat_pro === 'garde' && targetSlots.length > 1 ? crypto.randomUUID() : null;
-      const animauxSel = pro.cat_pro === 'garde' && animauxGarde.length > 0
+      // Pet-sitting et photographe : plusieurs animaux (même tarif pour la séance photo).
+      const animauxSel = (pro.cat_pro === 'garde' || pro.cat_pro === 'photographe') && animauxGarde.length > 0
         ? animauxGarde.map(id => animaux.find(a => a.id === id)).filter(Boolean) as typeof animaux : null;
       const extraGarde: Record<string, unknown> = pro.cat_pro === 'garde' ? {
         ...(serieId ? { serie_id: serieId } : {}),
@@ -985,6 +997,13 @@ function ProDetailContent() {
           ...(pro.cat_pro === 'sante' && domicile ? {
             lieu: adresseDomicile.trim(),
             ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
+          } : {}),
+          ...(pro.cat_pro === 'photographe' ? {
+            ...(prestationPhotoId ? { prestation_id: prestationPhotoId } : {}),
+            lieu_type: lieuPhoto,
+            ...(lieuPhoto === 'domicile'
+              ? { adresse_depart: adressePhoto.trim(), ...(photoGeo ? { lat_depart: photoGeo.lat, lng_depart: photoGeo.lng } : {}) }
+              : { lieu: souhaitPhoto.trim() ? `Souhait : ${souhaitPhoto.trim()}` : 'Lieu proposé par le photographe' }),
           } : {}),
           ...(animauxSel ? {
             animal_nom_manuel: animauxSel.map(a => a.nom).filter(Boolean).join(' + '),
@@ -1289,7 +1308,9 @@ function ProDetailContent() {
     gardePromenade ? (gardeRecupDomicile ? "Récupération de l'animal à domicile." : 'Rendez-vous au lieu indiqué.') : '',
     gardeChezClient && accesLogement ? `Accès : ${accesLogementLabel(accesLogement)}.` : '',
   ].filter(Boolean).join(' ');
-  const canConfirm = !!motifKey &&
+  const photoOk = pro?.cat_pro !== 'photographe'
+    || (!!lieuPhoto && (lieuPhoto !== 'domicile' || !!adressePhoto.trim()) && (prestations.length === 0 || !!prestationPhotoId));
+  const canConfirm = !!motifKey && photoOk &&
     (isGardeJournee ? gardeJourOkDays.length > 0 : !!selectedSlot) &&
     (!premiereRequise || premiereVisite !== null) &&
     (!gardeAvecAdresse || !!adresseDomicile.trim()) &&
@@ -2022,7 +2043,57 @@ function ProDetailContent() {
                     </div>
                   )}
 
+                  {/* Photographe : prestation du catalogue + lieu du shooting */}
+                  {pro.cat_pro === 'photographe' && prestations.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Prestation *</p>
+                      <p className="text-xs text-gray-500 mb-2.5">Même tarif quel que soit le nombre d&apos;animaux : le forfait comprend un nombre de photos, les photos supplémentaires se choisissent ensuite dans votre galerie.</p>
+                      <div className="space-y-2">
+                        {prestations.map(p => (
+                          <button key={p.id} type="button" onClick={() => { setPrestationPhotoId(p.id); setMotifKey('seance'); }}
+                            className="w-full text-left px-3 py-2.5 rounded-xl border flex items-center gap-3"
+                            style={{ borderColor: prestationPhotoId === p.id ? catColor : '#E5E7EB', backgroundColor: prestationPhotoId === p.id ? `${catColor}15` : 'white' }}>
+                            <span className="flex-1 min-w-0" style={{ fontFamily: 'Galey, sans-serif' }}>
+                              <span className="block text-sm font-bold text-[#1E2025]">{p.nom}</span>
+                              <span className="block text-xs text-gray-500">
+                                {[p.duree_minutes ? `${p.duree_minutes} min` : '', p.nb_photos ? `${p.nb_photos} photos incluses` : '', p.delai_livraison_jours ? `livraison ${p.delai_livraison_jours} j` : ''].filter(Boolean).join(' · ')}
+                              </span>
+                              {!!p.prix_photo_supp && <span className="block text-xs text-gray-500">Puis {p.prix_photo_supp} € par photo supplémentaire choisie</span>}
+                            </span>
+                            <span className="text-sm font-bold" style={{ color: catColor }}>{Math.round(p.prix ?? 0)} €</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {pro.cat_pro === 'photographe' && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>Lieu du shooting *</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([['domicile', 'À domicile'], ['photographe', 'Lieu proposé par le photographe']] as const).map(([k, l]) => (
+                          <button key={k} type="button" onClick={() => setLieuPhoto(k)}
+                            className="px-3 py-2.5 rounded-xl border text-sm font-semibold"
+                            style={{ fontFamily: 'Galey, sans-serif', borderColor: lieuPhoto === k ? catColor : '#E5E7EB', backgroundColor: lieuPhoto === k ? `${catColor}15` : 'white', color: lieuPhoto === k ? catColor : '#6B7280' }}>
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                      {lieuPhoto === 'domicile' && (
+                        <input value={adressePhoto} onChange={e => setAdressePhoto(e.target.value)} placeholder="Votre adresse"
+                          className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm" style={{ fontFamily: 'Galey, sans-serif' }} />
+                      )}
+                      {lieuPhoto === 'photographe' && (
+                        <>
+                          <p className="text-xs text-gray-500 mt-2">Plage, forêt, parc, studio… le photographe vous proposera le lieu de la séance.</p>
+                          <input value={souhaitPhoto} onChange={e => setSouhaitPhoto(e.target.value)} placeholder="Une envie particulière ? (facultatif)"
+                            className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm" style={{ fontFamily: 'Galey, sans-serif' }} />
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   {/* Motif */}
+                  {!(pro.cat_pro === 'photographe' && prestations.length > 0) && (
                   <div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
                       style={{ fontFamily: 'Galey, sans-serif' }}>Motif *</p>
@@ -2047,6 +2118,7 @@ function ProDetailContent() {
                       ))}
                     </div>
                   </div>
+                  )}
 
                   {/* Clinique : choix du vétérinaire (miroir appli) */}
                   {pro.cat_pro === 'veterinaire' && praticiens.length > 1 && choixPraticienPermis && (
@@ -2224,7 +2296,7 @@ function ProDetailContent() {
                           Ajouter un animal
                         </Link>
                       </div>
-                    ) : pro.cat_pro === 'garde' ? (
+                    ) : pro.cat_pro === 'garde' || pro.cat_pro === 'photographe' ? (
                       <div>
                         <AnimalMultiPickerField animaux={animaux} selectedIds={animauxGarde} accentColor={catColor}
                           onChange={ids => { setAnimauxGarde(ids); setSelectedAnimalId((ids[0] ?? null) as number | null); }} />
@@ -2442,7 +2514,7 @@ function ProDetailContent() {
                           {forfaitId ? ` · forfait de ${forfaitsGarde.find(f => f.id === forfaitId)?.nb_visites ?? '?'}` : ''}
                         </p>
                       )}
-                      {pro.cat_pro === 'garde' && animauxGarde.length > 0 && (
+                      {(pro.cat_pro === 'garde' || pro.cat_pro === 'photographe') && animauxGarde.length > 0 && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {animauxGarde.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
                         </p>

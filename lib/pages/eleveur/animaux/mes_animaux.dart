@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/eleveur/animaux/icad_import_page.dart';
 import 'package:PetsMatch/utils/chaleurs_etat.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
@@ -2036,6 +2037,21 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               });
             },
           ),
+          // Import I-CAD : seulement pour ses propres animaux (pas en vue employé).
+          if (_emp == null) ...[
+            const SizedBox(height: 12),
+            _AddOptionTile(
+              icon: Icons.upload_file_outlined,
+              color: const Color(0xFF7B5EA7),
+              title: 'Importer depuis I-CAD',
+              subtitle: "Créer et mettre à jour les fiches à partir de l'export CSV",
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const IcadImportPage()))
+                    .then((modifie) { if (modifie == true) _loadAnimaux(); });
+              },
+            ),
+          ],
         ]),
       ),
     );

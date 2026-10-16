@@ -131,6 +131,7 @@ class _PrestationFormState extends State<_PrestationForm> {
   late final TextEditingController _prixCtrl;
   late final TextEditingController _dureeCtrl;
   late final TextEditingController _nbPhotosCtrl;
+  late final TextEditingController _prixPhotoCtrl;
   late final TextEditingController _delaiCtrl;
   late final TextEditingController _kmInclusCtrl;
   late final TextEditingController _prixKmCtrl;
@@ -147,6 +148,7 @@ class _PrestationFormState extends State<_PrestationForm> {
     _prixCtrl = TextEditingController(text: (e?['prix'] as num?)?.toString() ?? '');
     _dureeCtrl = TextEditingController(text: (e?['duree_minutes'] as num?)?.toString() ?? '60');
     _nbPhotosCtrl = TextEditingController(text: (e?['nb_photos'] as num?)?.toString() ?? '');
+    _prixPhotoCtrl = TextEditingController(text: (e?['prix_photo_supp'] as num?)?.toString() ?? '');
     _delaiCtrl = TextEditingController(text: (e?['delai_livraison_jours'] as num?)?.toString() ?? '7');
     _kmInclusCtrl = TextEditingController(text: (e?['deplacement_inclus_km'] as num?)?.toString() ?? '0');
     _prixKmCtrl = TextEditingController(text: (e?['prix_km_supp'] as num?)?.toString() ?? '0');
@@ -156,7 +158,7 @@ class _PrestationFormState extends State<_PrestationForm> {
 
   @override
   void dispose() {
-    for (final c in [_nomCtrl, _prixCtrl, _dureeCtrl, _nbPhotosCtrl, _delaiCtrl, _kmInclusCtrl, _prixKmCtrl, _acompteCtrl, _descCtrl]) {
+    for (final c in [_nomCtrl, _prixCtrl, _dureeCtrl, _nbPhotosCtrl, _prixPhotoCtrl, _delaiCtrl, _kmInclusCtrl, _prixKmCtrl, _acompteCtrl, _descCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -176,6 +178,7 @@ class _PrestationFormState extends State<_PrestationForm> {
         'prix': double.tryParse(_prixCtrl.text.trim()) ?? 0,
         'duree_minutes': int.tryParse(_dureeCtrl.text.trim()) ?? 60,
         if (_nbPhotosCtrl.text.trim().isNotEmpty) 'nb_photos': int.tryParse(_nbPhotosCtrl.text.trim()),
+        'prix_photo_supp': double.tryParse(_prixPhotoCtrl.text.trim().replaceAll(',', '.')),
         'delai_livraison_jours': int.tryParse(_delaiCtrl.text.trim()) ?? 7,
         'deplacement_inclus_km': int.tryParse(_kmInclusCtrl.text.trim()) ?? 0,
         'prix_km_supp': double.tryParse(_prixKmCtrl.text.trim()) ?? 0,
@@ -228,8 +231,12 @@ class _PrestationFormState extends State<_PrestationForm> {
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            Expanded(child: _field(_nbPhotosCtrl, 'Nb de photos', type: TextInputType.number)),
+            Expanded(child: _field(_nbPhotosCtrl, 'Photos incluses', type: TextInputType.number)),
             const SizedBox(width: 8),
+            Expanded(child: _field(_prixPhotoCtrl, 'Prix photo suppl. (€)', type: const TextInputType.numberWithOptions(decimal: true))),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
             Expanded(child: _field(_delaiCtrl, 'Délai livraison (j)', type: TextInputType.number)),
           ]),
           const SizedBox(height: 12),

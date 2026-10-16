@@ -916,6 +916,12 @@ function MesAnimauxPageInner() {
                     <p className="text-sm font-semibold text-[#1F2A2E]">Charger une portée</p>
                     <p className="text-xs text-gray-500">Plusieurs animaux d&apos;un coup</p>
                   </Link>
+                  {!qsEmployeur && (
+                    <Link href="/elevage/import-icad" onClick={() => setAddMenuOpen(false)} className="block px-4 py-2.5 hover:bg-gray-50 border-t border-gray-100">
+                      <p className="text-sm font-semibold text-[#1F2A2E]">Importer depuis I-CAD</p>
+                      <p className="text-xs text-gray-500">Créer et mettre à jour les fiches (export CSV)</p>
+                    </Link>
+                  )}
                 </div>
               )}
             </>

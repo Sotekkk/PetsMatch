@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/utils/geocoding_helper.dart';
 
 const _teal = kDashTeal;
 const _ink = kDashInk;
@@ -61,6 +62,8 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
   List<Map<String, dynamic>> _contratsSeances = [];
   List<Map<String, dynamic>> _facturesSeances = [];
   final Map<String, double> _prixPrestations = {};
+  /// Photos choisies par le client, par galerie (supplément au forfait).
+  final Map<String, int> _nbChoisies = {};
   final Map<String, int> _nbPhotos = {};
   final Map<String, String> _clients = {};
   final Map<String, String> _animaux = {};
@@ -142,9 +145,11 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
     _nbPhotos.clear();
     if (ids.isNotEmpty) {
       try {
-        for (final p in await _supa.from('album_photos').select('album_id').inFilter('album_id', ids)) {
+        _nbChoisies.clear();
+        for (final p in await _supa.from('album_photos').select('album_id, selectionnee').inFilter('album_id', ids)) {
           final k = p['album_id'].toString();
           _nbPhotos[k] = (_nbPhotos[k] ?? 0) + 1;
+          if (p['selectionnee'] == true) _nbChoisies[k] = (_nbChoisies[k] ?? 0) + 1;
         }
       } catch (_) {}
     }
@@ -202,6 +207,59 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
     final n = _animaux[r['animal_id']?.toString()] ?? r['animal_nom_manuel']?.toString();
     return n == null || n.trim().isEmpty ? null : n.trim();
   }
+  /// Lieu du shooting : à domicile (adresse du client) ou proposé par le
+  /// photographe (à préciser, souhait éventuel du client).
+  String _lieu(Map<String, dynamic> r) {
+    final adr = (r['adresse_depart']?.toString() ?? '').trim();
+    final lieu = (r['lieu']?.toString() ?? '').trim();
+    if (r['lieu_type'] == 'domicile') return 'À domicile : $adr';
+    if (r['lieu_type'] == 'photographe') {
+      return adr.isNotEmpty ? adr : 'Lieu à préciser${lieu.startsWith('Souhait') ? ' — $lieu' : ''}';
+    }
+    return adr.isNotEmpty ? adr : lieu;
+  }
+  Future<void> _preciserLieu(Map<String, dynamic> r) async {
+    final ctrl = TextEditingController(text: r['lieu_type'] == 'photographe' ? (r['adresse_depart']?.toString() ?? '') : '');
+    var prevenir = (r['client_uid']?.toString() ?? '').isNotEmpty;
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+      title: const Text('Lieu du shooting', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        if ((r['lieu']?.toString() ?? '').startsWith('Souhait'))
+          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(r['lieu'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
+        TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Adresse ou lieu (plage, forêt, studio…)', border: OutlineInputBorder())),
+        if ((r['client_uid']?.toString() ?? '').isNotEmpty)
+          CheckboxListTile(contentPadding: EdgeInsets.zero, value: prevenir, onChanged: (v) => setD(() => prevenir = v == true),
+              title: const Text('Prévenir le client', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer')),
+      ],
+    )));
+    final adr = ctrl.text.trim();
+    if (ok != true || adr.isEmpty) return;
+    // Coordonnées : kilomètres de la séance (statistiques).
+    final geo = await GeocodingHelper.geocode(adr);
+    try {
+      await _supa.from('rdv').update({
+        'adresse_depart': adr,
+        if (r['lieu_type'] == null) 'lieu_type': 'photographe',
+        if (geo != null) ...{'lat_depart': geo.lat, 'lng_depart': geo.lng},
+      }).eq('id', r['id']);
+      if (prevenir) {
+        await _supa.from('notifications').insert({
+          'uid': r['client_uid'], 'type': 'rdv_modifie', 'title': 'Lieu de votre séance photo',
+          'body': 'Votre séance du ${_jour(_debut(r))} à ${_hm(_debut(r))} aura lieu : $adr',
+          if (r['client_profile_id'] != null) 'profile_id': r['client_profile_id'],
+          'data': {'rdv_id': r['id']}, 'read': false,
+        });
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+    _charger();
+  }
+
   Map<String, dynamic>? _galerieDe(Map<String, dynamic> r) =>
       _galeries.where((g) => g['rdv_id']?.toString() == r['id']?.toString()).firstOrNull;
   bool _contratEnAttente(Map<String, dynamic> r) =>
@@ -280,9 +338,18 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
 
   void _facturer(Map<String, dynamic> r) {
     final prix = _prixPrestations[r['prestation_id']?.toString()] ?? 0;
+    // Photos choisies au-delà du forfait (galerie de la séance).
+    final g = _galerieDe(r);
+    final incluses = (g?['nb_photos_incluses'] as num?)?.toInt();
+    final prixSupp = (g?['prix_photo_supp'] as num?)?.toDouble();
+    final supp = g == null || incluses == null ? 0 : ((_nbChoisies[g['id'].toString()] ?? 0) - incluses).clamp(0, 9999);
     _go(CreerFacturePage(
       clientNom: _nomClient(r),
-      lignesPrefill: [FacturePrefillLigne(designation: '${_prestation(r)} — séance du ${_jour(_debut(r))}', prixHT: prix, quantite: 1, tauxTVA: 20)],
+      lignesPrefill: [
+        FacturePrefillLigne(designation: '${_prestation(r)} — séance du ${_jour(_debut(r))}', prixHT: prix, quantite: 1, tauxTVA: 20),
+        if (supp > 0 && prixSupp != null && prixSupp > 0)
+          FacturePrefillLigne(designation: 'Photos supplémentaires', prixHT: prixSupp, quantite: supp.toDouble(), tauxTVA: 20),
+      ],
       sourceRdvId: r['id'].toString(),
       sourceAnimalId: r['animal_id']?.toString(),
       clientUid: r['client_uid']?.toString(),
@@ -291,7 +358,8 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
   }
 
   Future<void> _actions(Map<String, dynamic> r) async {
-    final lieu = (r['lieu']?.toString() ?? '').trim();
+    final lieu = _lieu(r);
+    final adresse = (r['adresse_depart']?.toString() ?? '').trim();
     final galerie = _galerieDe(r);
     final animal = _animal(r);
     final notes = (r['notes_client']?.toString() ?? '').trim();
@@ -342,7 +410,8 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
           const SizedBox(height: 6),
           if ((r['client_uid']?.toString() ?? '').isNotEmpty)
             action(ctx, Icons.chat_bubble_outline, 'Contacter le client', () => _message(r)),
-          if (lieu.isNotEmpty) action(ctx, Icons.directions_outlined, "Itinéraire jusqu'au lieu", () => _naviguer(lieu)),
+          action(ctx, Icons.place_outlined, r['lieu_type'] == 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting', () => _preciserLieu(r)),
+          if (adresse.isNotEmpty) action(ctx, Icons.directions_outlined, "Itinéraire jusqu'au lieu", () => _naviguer(adresse)),
           action(ctx, Icons.event_note_outlined, "Voir la séance dans l'agenda",
               () => _go(ProAgendaPage(initialTabIndex: 1, focusRdvId: r['id']?.toString()))),
         ]),
@@ -443,9 +512,9 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _ink)),
                 Text([_nomClient(r), if (_animal(r) != null) _animal(r)!].join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted)),
-                if ((r['lieu']?.toString() ?? '').trim().isNotEmpty)
-                  Text(r['lieu'].toString().trim(), maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
+                if (_lieu(r).isNotEmpty)
+                  Text(_lieu(r), maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _lieu(r).startsWith('Lieu à préciser') ? _ambre : _muted)),
               ])),
               const SizedBox(width: 6),
               _contratEnAttente(r)

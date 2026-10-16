@@ -22,6 +22,7 @@ export interface ContenuGalerie {
     couverture_url: string | null; filigrane: boolean; partage_client: boolean;
     rdv_id?: string | null; client_uid?: string | null; client_profile_id?: string | null;
     selection_confirmee_le: string | null; selection_commentaire: string | null; nb_photos_incluses: number | null; livree_le: string | null;
+    prix_photo_supp?: number | null;
   };
   livraison: { id: string; numero: number; nom: string; taille: number | null; nb: number | null; expire_le: string; telechargements?: number }[];
   studio: { nom: string; avatar: string | null };

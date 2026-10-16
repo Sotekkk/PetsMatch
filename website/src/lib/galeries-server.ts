@@ -21,7 +21,7 @@ export interface AlbumRow {
   description?: string | null; statut?: string | null; date_seance?: string | null; couverture_url?: string | null;
   filigrane?: boolean | null; partage_client?: boolean | null; created_at: string; updated_at?: string | null;
   selection_confirmee_le?: string | null; selection_commentaire?: string | null; nb_photos_incluses?: number | null;
-  livree_le?: string | null;
+  livree_le?: string | null; prix_photo_supp?: number | null;
 }
 export const BUCKET_LIVRAISONS = 'livraisons';
 
@@ -101,6 +101,7 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
       filigrane: album.filigrane ?? true, partage_client: album.partage_client ?? false,
       selection_confirmee_le: album.selection_confirmee_le ?? null, selection_commentaire: album.selection_commentaire ?? null,
       nb_photos_incluses: album.nb_photos_incluses ?? null, livree_le: album.livree_le ?? null,
+      prix_photo_supp: album.prix_photo_supp != null ? Number(album.prix_photo_supp) : null,
       // Données de gestion réservées au photographe.
       ...(role === 'pro' ? { rdv_id: album.rdv_id, client_uid: album.client_uid, client_profile_id: album.client_profile_id } : {}),
     },

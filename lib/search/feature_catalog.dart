@@ -6,6 +6,7 @@
 // ⚠️ À garder synchronisé avec les tiroirs : eleveur_nav.dart,
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
+import 'package:PetsMatch/pages/eleveur/animaux/icad_import_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
@@ -275,6 +276,13 @@ List<QuickAction> _all(BuildContext ctx) => [
     keywords: ['signaler', 'déclarer', 'recueilli', 'errant'],
     icon: Icons.pets, group: 'Perdus & Trouvés', isAction: true,
     visible: () => true, open: (c) => _push(c, const AnimalTrouveFormPage()),
+  ),
+
+  QuickAction(
+    label: 'Importer depuis I-CAD',
+    keywords: ['icad', 'i-cad', 'import', 'csv', 'puce', 'identification', 'mise à jour des fiches'],
+    icon: Icons.upload_file_outlined, group: 'Mes animaux',
+    visible: () => _eleveur, open: (c) => _push(c, const IcadImportPage()),
   ),
 
   // ── Mes animaux — particulier ──────────────────────────────────────────────
