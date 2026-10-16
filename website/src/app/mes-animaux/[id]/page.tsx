@@ -1,5 +1,6 @@
 'use client';
 
+import { SterilisationCedee } from '@/components/animaux/SterilisationCedee';
 import { InviterAcquereurBouton } from '@/components/animaux/RecuperationAnimal';
 import { resoudreEmployeur } from '@/lib/employeur-contexte';
 import { miseBasDeReference } from '@/lib/chaleurs-etat';
@@ -3628,8 +3629,11 @@ function AnimalFichePageInner() {
   const isAncienProprio = estAncienProprio && !isCogerantActif && !isEmployeOfOwner && !isAcquereur;
   const isCede = ((animal.statut === 'sorti' || animal.statut === 'decede') && !isAcquereur) || isAncienProprio;
   const isOriginalBreeder = isEleveur && !!user && (user.uid === animal.uid_eleveur || isCogerantActif);
+  // Cédé à un particulier SANS compte PetsMatch : l'élevage garde la fiche
+  // complète en écriture jusqu'à ce que l'acquéreur la récupère.
+  const cedeSansCompte = animal.statut === 'sorti' && !animal.uid_acquereur && isOriginalBreeder;
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
-  const tabs = ((isCede && isOriginalBreeder && !isAcquereur) || isAncienProprio)
+  const tabs = ((isCede && isOriginalBreeder && !isAcquereur && !cedeSansCompte) || isAncienProprio)
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Administratif' }]
     : (isEleveur || isEmployeOfOwner)
     ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'repro', label:'Suivi repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations' }, { key:'documents', label:'Administratif' }]
@@ -3722,7 +3726,7 @@ function AnimalFichePageInner() {
                 🖤 Décéder
               </button>
             )}
-            {canWrite && !isCede && animal.statut !== 'cession_en_cours' && (
+            {((canWrite && !isCede) || cedeSansCompte) && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setEditing(true)}
                 className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
                 Modifier
@@ -3943,6 +3947,18 @@ function AnimalFichePageInner() {
                 )}
               </div>
               {animal.cession_notes && <p className="text-xs text-blue-500 mt-1 italic">{animal.cession_notes}</p>}
+              {isOriginalBreeder && (
+                <p className="text-[11px] text-blue-600 mt-1">
+                  {cedeSansCompte
+                    ? "Acquéreur sans compte PetsMatch : vous gardez la fiche en écriture jusqu'à ce qu'il la récupère."
+                    : 'Fiche gérée par son nouveau propriétaire : lecture seule.'}
+                </p>
+              )}
+              {isOriginalBreeder && animal.statut === 'sorti' && (
+                <SterilisationCedee animal={animal} profileId={activeProfileId || null}
+                  modifiable={cedeSansCompte || !!animal.uid_acquereur}
+                  onChange={v => setAnimal(p => ({ ...p, ...(v as Partial<Animal>) }))} />
+              )}
             </div>
           </div>
         </div>

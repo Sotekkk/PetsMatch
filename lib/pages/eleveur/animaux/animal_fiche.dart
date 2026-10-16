@@ -311,6 +311,17 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       _uidAcquereur != null &&
       _uidAcquereur == FirebaseAuth.instance.currentUser?.uid;
 
+  /// Fiche cédée verrouillée pour le cédant : seulement quand l'acquéreur a
+  /// un compte PetsMatch (il gère la fiche). Cédé à un particulier sans
+  /// compte : l'élevage garde la fiche complète en écriture jusqu'à ce que
+  /// l'acquéreur la récupère.
+  bool get _cedeVerrouille => _statut == 'sorti' && !_isNewOwner && (_uidAcquereur ?? '').isNotEmpty;
+
+  // Condition de stérilisation (suivi des animaux cédés).
+  bool _sterilRequise = false;
+  DateTime? _sterilEcheance;
+  bool _sterilValidee = false;
+
   bool _tabReadOnly(String perm) {
     if (widget.readOnly) return true;
     if (widget.employePerms == null) return false;
@@ -349,7 +360,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       return 2; // toilettage / photographe / taxi animalier… : Identité · Santé
     }
     if (widget.isAssociation) return 5; // + Administratif (contrats, certificats)
-    if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
+    if (_cedeVerrouille) return 2; // ancien proprio (acquéreur sur PetsMatch) : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
     return 6; // éleveur / employé élevage (morphologie : carnet de santé › Comptes rendus)
   }
@@ -1182,6 +1193,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _dateSortie      = _parseDate(d['date_sortie']);
     // Cession
     _uidAcquereur          = d['uid_acquereur'] as String?;
+    _sterilRequise         = d['sterilisation_requise'] == true;
+    _sterilEcheance        = _parseDate(d['sterilisation_echeance']);
+    _sterilValidee         = d['sterilisation_validee'] == true;
     // Statut + acquéreur connus → nombre d'onglets définitif, rebuild
     // immédiat (la suite du chargement attend le réseau).
     if (mounted) { setState(_syncTabs); } else { _syncTabs(); }
@@ -1637,6 +1651,55 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
     } finally {
       setState(() => _revokingCession = false);
+    }
+  }
+
+  /// Condition de stérilisation d'un animal cédé : alimente l'onglet
+  /// « Suivi » des cessions et ses rappels (J-30, J-7, J-48 h, J-0).
+  Future<void> _editerSterilisation() async {
+    var requise = _sterilRequise;
+    var echeance = _sterilEcheance ?? (_dateNaissance != null
+        ? DateTime(_dateNaissance!.year + 1, _dateNaissance!.month, _dateNaissance!.day)
+        : DateTime.now().add(const Duration(days: 180)));
+    var validee = _sterilValidee;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('Condition de stérilisation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          SwitchListTile(contentPadding: EdgeInsets.zero, value: requise, onChanged: (v) => setM(() => requise = v),
+              title: const Text('Stérilisation exigée', style: TextStyle(fontFamily: 'Galey'))),
+          if (requise) ...[
+            OutlinedButton.icon(
+              onPressed: () async {
+                final d = await showDatePicker(context: ctx, initialDate: echeance, firstDate: DateTime(2015), lastDate: DateTime.now().add(const Duration(days: 3650)));
+                if (d != null) setM(() => echeance = d);
+              },
+              icon: const Icon(Icons.event_outlined, size: 18),
+              label: Text('Échéance : ${DateFormat('dd/MM/yyyy').format(echeance)}', style: const TextStyle(fontFamily: 'Galey')),
+            ),
+            CheckboxListTile(contentPadding: EdgeInsets.zero, value: validee, onChanged: (v) => setM(() => validee = v == true),
+                title: const Text('Stérilisation confirmée', style: TextStyle(fontFamily: 'Galey'))),
+          ],
+          const SizedBox(height: 8),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey'))),
+        ]),
+      ))),
+    );
+    if (ok != true || widget.animalId == null) return;
+    try {
+      await _supa.from('animaux').update({
+        'sterilisation_requise': requise,
+        'sterilisation_echeance': requise ? DateFormat('yyyy-MM-dd').format(echeance) : null,
+        'sterilisation_validee': requise && validee,
+        'sterilisation_eleveur_uid': requise ? (widget.eleveurUidOverride ?? FirebaseAuth.instance.currentUser?.uid) : null,
+        if (requise && User_Info.activeProfileId.isNotEmpty) 'sterilisation_eleveur_profile_id': User_Info.activeProfileId,
+      }).eq('id', widget.animalId!);
+      setState(() { _sterilRequise = requise; _sterilEcheance = requise ? echeance : null; _sterilValidee = requise && validee; });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 
@@ -2478,7 +2541,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
                       ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Administratif')]
-                      : (_statut == 'sorti' && !_isNewOwner
+                      : (_cedeVerrouille
                           ? const [Tab(text: 'Identité'), Tab(text: 'Administratif')]
                           : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                               ? const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Administratif')]
@@ -2555,7 +2618,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     // d'engagement.
                     _DocumentsTab(animalId: widget.animalId ?? ''),
                   ]
-                : (_statut == 'sorti' && !_isNewOwner
+                : (_cedeVerrouille
                     ? [
                         _IdentiteTab(this),
                         _DocumentsTab(animalId: widget.animalId ?? ''),
@@ -2658,6 +2721,12 @@ class _IdentiteTab extends StatelessWidget {
             certificatUrl: s._cessionCertificatUrl,
             // Acquéreur sans compte : l'élevage peut l'inviter à récupérer la fiche.
             animalIdInvitation: !s._isNewOwner && (s._uidAcquereur ?? '').isEmpty ? s.widget.animalId : null,
+            modifiable: !s._cedeVerrouille && !s._isNewOwner,
+            sterilisation: s._isNewOwner ? null
+                : !s._sterilRequise ? 'Aucune condition de stérilisation'
+                : s._sterilValidee ? 'Stérilisation confirmée'
+                : 'Stérilisation exigée${s._sterilEcheance != null ? ' avant le ${DateFormat('dd/MM/yyyy').format(s._sterilEcheance!)}' : ''}',
+            onSterilisation: s._isNewOwner || s.widget.readOnly ? null : s._editerSterilisation,
           ),
           if (s._statut == 'sorti') const SizedBox(height: 12),
           // Association : statut visible et modifiable en un geste (avant :
@@ -5028,10 +5097,16 @@ class _CessionBanner extends StatelessWidget {
   final String? certificatUrl;
   /// Renseigné quand l'acquéreur n'a pas de compte : bouton d'invitation.
   final String? animalIdInvitation;
+  /// Fiche encore modifiable par l'élevage (acquéreur sans compte).
+  final bool modifiable;
+  /// Condition de stérilisation (libellé) et son édition.
+  final String? sterilisation;
+  final VoidCallback? onSterilisation;
 
   const _CessionBanner({
     this.dateDepart, required this.nomDestinataire, this.prix,
     this.notes, this.contratUrl, this.certificatUrl, this.animalIdInvitation,
+    this.modifiable = false, this.sterilisation, this.onSterilisation,
   });
 
   Future<void> _inviter(BuildContext context) async {
@@ -5071,9 +5146,16 @@ class _CessionBanner extends StatelessWidget {
         const Row(children: [
           Icon(Icons.handshake_outlined, color: Color(0xFF1565C0), size: 18),
           SizedBox(width: 6),
-          Text('Animal cédé (lecture seule)',
+          Text('Animal cédé',
               style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1565C0), fontFamily: 'Galey', fontSize: 13)),
         ]),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(modifiable
+              ? "Acquéreur sans compte PetsMatch : vous gardez la fiche en écriture jusqu'à ce qu'il la récupère."
+              : 'Fiche gérée par son nouveau propriétaire : lecture seule.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF1565C0))),
+        ),
         const SizedBox(height: 8),
         if (nomDestinataire.isNotEmpty)
           _CessionLine(Icons.person_outline, 'Acquéreur', nomDestinataire),
@@ -5090,6 +5172,17 @@ class _CessionBanner extends StatelessWidget {
             _DocLink('📜 Certificat de cession', certificatUrl!),
           if (contratUrl != null)
             _DocLink('🤝 Contrat de vente', contratUrl!),
+        ],
+        if (sterilisation != null) ...[
+          const Divider(height: 14),
+          Row(children: [
+            const Icon(Icons.health_and_safety_outlined, size: 14, color: Color(0xFF1565C0)),
+            const SizedBox(width: 6),
+            Expanded(child: Text(sterilisation!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E)))),
+            if (onSterilisation != null)
+              TextButton(onPressed: onSterilisation, style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 28)),
+                  child: const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+          ]),
         ],
         if (animalIdInvitation != null) ...[
           const Divider(height: 14),
