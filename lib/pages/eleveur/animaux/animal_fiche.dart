@@ -5137,22 +5137,53 @@ class _CessionBanner extends StatelessWidget {
     this.modifiable = false, this.sterilisation, this.onSterilisation,
   });
 
+  /// Invitation de l'acquéreur : WhatsApp, SMS, e-mail, partage ou copie.
   Future<void> _inviter(BuildContext context) async {
     try {
-      final r = await inviterAcquereur(animalIdInvitation!);
+      final inv = await inviterAcquereur(animalIdInvitation!);
       if (!context.mounted) return;
-      await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('Invitation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(r.message, style: const TextStyle(fontFamily: 'Galey')),
-          const SizedBox(height: 8),
-          SelectableText(r.lien, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Share.share(r.lien), child: const Text('Partager le lien')),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
-        ],
-      ));
+      final msg = inv.message;
+      await showModalBottomSheet<void>(
+        context: context,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) {
+          Widget canal(IconData ic, String t, Future<void> Function() f) => ListTile(
+                leading: Icon(ic, color: const Color(0xFF1565C0)),
+                title: Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                onTap: () async { Navigator.pop(ctx); await f(); },
+              );
+          return SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text("Inviter ${'${inv.prenom} ${inv.nom}'.trim().isNotEmpty ? '${inv.prenom} ${inv.nom}'.trim() : "l'acquéreur"} à récupérer la fiche",
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            ),
+            canal(Icons.chat_outlined, 'WhatsApp', () async {
+              final t = inv.telInternational;
+              await launchUrl(Uri.parse(t != null ? 'https://wa.me/$t?text=${Uri.encodeComponent(msg)}' : 'https://wa.me/?text=${Uri.encodeComponent(msg)}'),
+                  mode: LaunchMode.externalApplication);
+            }),
+            canal(Icons.sms_outlined, 'SMS', () async {
+              await launchUrl(Uri.parse('sms:${(inv.tel ?? '').replaceAll(' ', '')}?body=${Uri.encodeComponent(msg)}'));
+            }),
+            canal(Icons.email_outlined, (inv.email ?? '').isNotEmpty ? 'E-mail (${inv.email})' : 'E-mail', () async {
+              if ((inv.email ?? '').isNotEmpty) {
+                final ok = await inv.envoyerEmail();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok ? 'E-mail envoyé à ${inv.email}.' : "L'e-mail n'a pas pu être envoyé.")));
+                }
+              } else {
+                await launchUrl(Uri.parse('mailto:?subject=${Uri.encodeComponent('${inv.animalNom} vous attend sur PetsMatch')}&body=${Uri.encodeComponent(msg)}'));
+              }
+            }),
+            canal(Icons.ios_share_rounded, 'Partager…', () async => Share.share(msg)),
+            canal(Icons.copy_outlined, 'Copier le message', () async {
+              await Clipboard.setData(ClipboardData(text: msg));
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Message copié.')));
+            }),
+          ]));
+        },
+      );
     } catch (e) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
     }

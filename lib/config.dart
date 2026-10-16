@@ -12,3 +12,7 @@ const kBetaGateEnabled = true;
 // est injoignable ou vide. Le mot de passe en base a priorité : le changer là
 // évite de republier l'app.
 const kBetaPassword = 'petsmatch-beta-2026';
+
+/// Liens de l'application dans les stores (invitations, partages).
+const kStoreAndroid = 'https://play.google.com/store/apps/details?id=com.application.petsmatchapp';
+const kStoreIos = 'https://apps.apple.com/fr/developer/petsmatch/id1762868142';

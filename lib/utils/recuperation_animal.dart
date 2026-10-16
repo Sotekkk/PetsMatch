@@ -5,7 +5,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl, kStoreAndroid, kStoreIos;
 import 'package:PetsMatch/utils/site_api.dart';
 
 const _teal = Color(0xFF0C5C6C);
@@ -128,20 +128,49 @@ class _RecuperationSheetState extends State<_RecuperationSheet> {
   }
 }
 
-/// Élevage : invite l'acquéreur (sans compte) à récupérer la fiche. Renvoie
-/// un message à afficher (e-mail envoyé ou lien à transmettre).
-Future<({String message, String lien})> inviterAcquereur(String animalId) async {
-  final r = await appelRecuperation({'action': 'inviter', 'animalId': animalId});
-  final lien = '$kSiteBaseUrl/reclamer-animal/${r['token']}';
-  final email = r['email']?.toString();
-  if (email != null && email.isNotEmpty) {
+/// Invitation créée pour l'acquéreur (lien + coordonnées connues).
+class InvitationAcquereur {
+  final String lien, prenom, nom, animalNom, proNom;
+  final String? email, tel;
+  const InvitationAcquereur({required this.lien, required this.prenom, required this.nom, required this.animalNom,
+      required this.proNom, this.email, this.tel});
+
+  String get message => 'Bonjour${prenom.isNotEmpty ? ' $prenom' : ''}, ${proNom.isNotEmpty ? proNom : 'votre éleveur'} '
+      'vous invite à retrouver $animalNom sur PetsMatch : sa fiche (identité, généalogie, carnet de santé, documents) vous attend. '
+      "Ouvrez ce lien pour la récupérer, en créant votre compte sur le site ou dans l'application PetsMatch : $lien"
+      ' — Application : Android $kStoreAndroid · iPhone $kStoreIos';
+
+  /// Numéro au format international pour WhatsApp (06… → 336…).
+  String? get telInternational {
+    final d = (tel ?? '').replaceAll(RegExp(r'\D'), '');
+    if (d.isEmpty) return null;
+    if (d.startsWith('00')) return d.substring(2);
+    if (d.startsWith('0') && d.length == 10) return '33${d.substring(1)}';
+    return d;
+  }
+
+  /// E-mail envoyé par PetsMatch (si l'adresse de l'acquéreur est connue).
+  Future<bool> envoyerEmail() async {
+    if (email == null || email!.isEmpty) return false;
     try {
-      await http.post(Uri.parse('$kSiteBaseUrl/api/animal-claim/notify-email'), headers: await siteApiHeaders(), body: jsonEncode({
-        'email': email, 'nom_destinataire': r['nom'], 'animal_nom': r['animalNom'], 'pro_nom': r['proNom'],
+      final r = await http.post(Uri.parse('$kSiteBaseUrl/api/animal-claim/notify-email'), headers: await siteApiHeaders(), body: jsonEncode({
+        'email': email, 'nom_destinataire': '$prenom $nom'.trim(), 'animal_nom': animalNom, 'pro_nom': proNom,
         'claim_url': lien, 'contexte': 'cession',
       }));
-      return (message: 'Invitation envoyée à $email.', lien: lien);
-    } catch (_) {}
+      return r.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
-  return (message: "Pas d'e-mail connu pour l'acquéreur : transmettez-lui ce lien.", lien: lien);
+}
+
+/// Élevage : crée le lien d'invitation de l'acquéreur (sans compte).
+Future<InvitationAcquereur> inviterAcquereur(String animalId) async {
+  final r = await appelRecuperation({'action': 'inviter', 'animalId': animalId});
+  return InvitationAcquereur(
+    lien: '$kSiteBaseUrl/reclamer-animal/${r['token']}',
+    prenom: r['prenom']?.toString() ?? '', nom: r['nom']?.toString() ?? '',
+    animalNom: r['animalNom']?.toString() ?? 'votre animal', proNom: r['proNom']?.toString() ?? '',
+    email: r['email']?.toString(), tel: r['tel']?.toString(),
+  );
 }

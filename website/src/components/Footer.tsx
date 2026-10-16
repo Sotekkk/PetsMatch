@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { STORE_ANDROID, STORE_IOS } from '@/lib/stores';
 
 export default function Footer() {
   return (
@@ -35,10 +36,10 @@ export default function Footer() {
           <h4 className="text-white font-semibold mb-3 text-sm uppercase tracking-wider">Télécharger l'app</h4>
           <p className="text-sm mb-3">Disponible sur Android et iOS</p>
           <div className="flex flex-col gap-2">
-            <a href="#" className="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-colors text-center">
+            <a href={STORE_ANDROID} target="_blank" rel="noopener noreferrer" className="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-colors text-center">
               Google Play
             </a>
-            <a href="#" className="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-colors text-center">
+            <a href={STORE_IOS} target="_blank" rel="noopener noreferrer" className="text-xs bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition-colors text-center">
               App Store
             </a>
           </div>

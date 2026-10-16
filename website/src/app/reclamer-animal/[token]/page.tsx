@@ -1,5 +1,6 @@
 'use client';
 
+import { STORE_ANDROID, STORE_IOS } from '@/lib/stores';
 import { appelRecuperation } from '@/components/animaux/RecuperationAnimal';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { use, useEffect, useState } from 'react';
@@ -97,21 +98,33 @@ export default function ReclamerAnimalPage({ params }: { params: Promise<{ token
         ) : !user ? (
           <>
             <p className="text-sm text-gray-600 mb-4">
-              Connectez-vous ou créez un compte PetsMatch, puis revenez sur ce lien pour récupérer cette fiche.
+              Pour récupérer la fiche de {animal.nom}, créez votre compte PetsMatch (gratuit) ou connectez-vous : vous reviendrez directement ici.
             </p>
             <div className="flex gap-3">
-              <Link href="/connexion" className="flex-1 bg-[#0C5C6C] text-white text-sm font-galey font-semibold py-2.5 rounded-xl hover:bg-[#094F5D] transition-colors">
-                Se connecter
+              <Link href={`/inscription?suite=${encodeURIComponent(`/reclamer-animal/${token}`)}`} className="flex-1 bg-[#0C5C6C] text-white text-sm font-galey font-semibold py-2.5 rounded-xl hover:bg-[#094F5D] transition-colors">
+                Créer mon compte
               </Link>
-              <Link href="/inscription" className="flex-1 border border-gray-200 text-gray-600 text-sm font-galey font-semibold py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
-                Créer un compte
+              <Link href={`/connexion?suite=${encodeURIComponent(`/reclamer-animal/${token}`)}`} className="flex-1 border border-gray-200 text-gray-600 text-sm font-galey font-semibold py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
+                J&apos;ai déjà un compte
               </Link>
+            </div>
+            <div className="mt-6 pt-5 border-t border-gray-100 text-left">
+              <p className="text-sm font-semibold text-[#1F2A2E]">Vous préférez l&apos;application ?</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Téléchargez PetsMatch, créez votre compte avec l&apos;adresse e-mail ou le téléphone donnés à votre éleveur, puis ajoutez {animal.nom} avec son numéro de puce : sa fiche complète vous sera proposée. Vous pouvez aussi revenir sur ce lien une fois votre compte créé.
+              </p>
+              {(STORE_ANDROID || STORE_IOS) && (
+                <div className="flex gap-2 mt-3">
+                  {STORE_ANDROID && <a href={STORE_ANDROID} target="_blank" rel="noopener noreferrer" className="flex-1 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 hover:bg-gray-50">Google Play</a>}
+                  {STORE_IOS && <a href={STORE_IOS} target="_blank" rel="noopener noreferrer" className="flex-1 text-center text-xs font-semibold py-2 rounded-xl border border-gray-200 hover:bg-gray-50">App Store</a>}
+                </div>
+              )}
             </div>
           </>
         ) : (
           <>
             <p className="text-sm text-gray-600 mb-4">
-              Récupérez cette fiche pour suivre le carnet de santé de {animal.nom} et recevoir des nouvelles pendant ses séjours.
+              Récupérez la fiche de {animal.nom} sur votre compte : identité, généalogie, carnet de santé et documents.
             </p>
             {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
             <button onClick={claimIt} disabled={saving}

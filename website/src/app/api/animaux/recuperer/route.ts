@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
       }).select('token').single();
       if (error) throw new Error(error.message);
       return NextResponse.json({
-        ok: true, token: (data as { token: string }).token, email: c.email ?? null,
+        ok: true, token: (data as { token: string }).token, email: c.email ?? null, tel: c.tel ?? null, prenom: c.prenom ?? '',
         nom: `${c.prenom ?? ''} ${c.nom ?? ''}`.trim(), animalNom: a.nom ?? 'votre animal', proNom: await nomProfil(uid),
       });
     }

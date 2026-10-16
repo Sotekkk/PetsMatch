@@ -4,6 +4,7 @@
 // enregistré. Miroir appli : lib/utils/recuperation_animal.dart.
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
+import { STORE_ANDROID, STORE_IOS } from '@/lib/stores';
 
 export interface VerifPuce {
   etat: 'aucun' | 'deja_a_vous' | 'detenu' | 'recuperable';
@@ -89,39 +90,62 @@ export function RecuperationModal({ verif, profileId, onFermer, onFini }: {
   );
 }
 
+/** Message d'invitation (WhatsApp, SMS, e-mail). */
+export function messageInvitation(prenom: string, elevage: string, animal: string, lien: string) {
+  return `Bonjour${prenom ? ` ${prenom}` : ''}, ${elevage || 'votre éleveur'} vous invite à retrouver ${animal} sur PetsMatch : sa fiche (identité, généalogie, carnet de santé, documents) vous attend. `
+    + `Ouvrez ce lien pour la récupérer, en créant votre compte sur le site ou dans l'application PetsMatch : ${lien}`
+    + ` — Application : Android ${STORE_ANDROID} · iPhone ${STORE_IOS}`;
+}
+
+/** Numéro au format international pour WhatsApp (06… → 336…). */
+export const telInternational = (tel: string) => {
+  const d = tel.replace(/\D/g, '');
+  if (d.startsWith('00')) return d.slice(2);
+  if (d.startsWith('0') && d.length === 10) return `33${d.slice(1)}`;
+  return d;
+};
+
 /** Élevage : inviter l'acquéreur (sans compte) à récupérer la fiche de
- *  l'animal cédé — lien envoyé par e-mail si l'adresse est connue, sinon
- *  lien à copier. */
+ *  l'animal cédé — WhatsApp, SMS, e-mail ou lien à copier. */
 export function InviterAcquereurBouton({ animalId }: { animalId: string }) {
-  const [etat, setEtat] = useState<'' | 'envoi' | 'fait'>('');
-  const [lien, setLien] = useState('');
+  const [etat, setEtat] = useState<'' | 'envoi' | 'pret'>('');
+  const [inv, setInv] = useState<{ lien: string; email: string | null; tel: string | null; prenom: string; nom: string; animalNom: string; proNom: string } | null>(null);
   const [info, setInfo] = useState('');
-  async function inviter() {
+  async function preparer() {
     setEtat('envoi'); setInfo('');
     try {
-      const r = await appelRecuperation<{ token: string; email: string | null; nom: string; animalNom: string; proNom: string }>({ action: 'inviter', animalId });
-      const url = `${window.location.origin}/reclamer-animal/${r.token}`;
-      setLien(url);
-      if (r.email) {
-        await apiFetch('/api/animal-claim/notify-email', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: r.email, nom_destinataire: r.nom, animal_nom: r.animalNom, pro_nom: r.proNom, claim_url: url, contexte: 'cession' }),
-        });
-        setInfo(`Invitation envoyée à ${r.email}.`);
-      } else {
-        setInfo("Pas d'e-mail connu pour l'acquéreur : transmettez-lui ce lien.");
-      }
-      setEtat('fait');
+      const r = await appelRecuperation<{ token: string; email: string | null; tel: string | null; prenom: string; nom: string; animalNom: string; proNom: string }>({ action: 'inviter', animalId });
+      setInv({ ...r, lien: `${window.location.origin}/reclamer-animal/${r.token}` });
+      setEtat('pret');
     } catch (e) { setInfo((e as Error).message); setEtat(''); }
   }
+  async function email() {
+    if (!inv?.email) return;
+    const r = await apiFetch('/api/animal-claim/notify-email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: inv.email, nom_destinataire: inv.nom, animal_nom: inv.animalNom, pro_nom: inv.proNom, claim_url: inv.lien, contexte: 'cession' }),
+    });
+    setInfo(r.ok ? `E-mail envoyé à ${inv.email}.` : "L'e-mail n'a pas pu être envoyé.");
+  }
+  const msg = inv ? messageInvitation(inv.prenom, inv.proNom, inv.animalNom, inv.lien) : '';
+  const btn = 'text-xs font-semibold text-blue-700 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors';
   return (
-    <span className="inline-flex flex-col gap-1">
-      <button onClick={inviter} disabled={etat === 'envoi'}
-        className="text-xs font-semibold text-blue-700 border border-blue-300 px-2.5 py-1 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50">
-        {etat === 'fait' ? 'Invitation créée' : "Inviter l'acquéreur à récupérer la fiche"}
-      </button>
+    <span className="inline-flex flex-col gap-1.5">
+      {etat !== 'pret' ? (
+        <button onClick={preparer} disabled={etat === 'envoi'} className={`${btn} disabled:opacity-50`}>Inviter l&apos;acquéreur à récupérer la fiche</button>
+      ) : inv && (
+        <span className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[11px] text-blue-700 w-full">Envoyer l&apos;invitation{inv.prenom || inv.nom ? ` à ${`${inv.prenom} ${inv.nom}`.trim()}` : ''} :</span>
+          <a className={btn} target="_blank" rel="noopener noreferrer"
+            href={inv.tel ? `https://wa.me/${telInternational(inv.tel)}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`}>WhatsApp</a>
+          <a className={btn} href={`sms:${inv.tel ? inv.tel.replace(/\s/g, '') : ''}?&body=${encodeURIComponent(msg)}`}>SMS</a>
+          {inv.email
+            ? <button className={btn} onClick={email}>E-mail</button>
+            : <a className={btn} href={`mailto:?subject=${encodeURIComponent(`${inv.animalNom} vous attend sur PetsMatch`)}&body=${encodeURIComponent(msg)}`}>E-mail</a>}
+          <button className={btn} onClick={async () => { try { await navigator.clipboard.writeText(msg); setInfo('Message copié.'); } catch { setInfo(inv.lien); } }}>Copier le message</button>
+        </span>
+      )}
       {info && <span className="text-[11px] text-blue-600">{info}</span>}
-      {lien && <input readOnly value={lien} onFocus={e => e.target.select()} className="text-[11px] border border-blue-200 rounded px-2 py-1 bg-white w-64" />}
     </span>
   );
 }
