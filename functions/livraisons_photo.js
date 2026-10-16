@@ -64,13 +64,15 @@ exports.purgerLivraisonsPhoto = functions
         for (const albumId of albumsRappel) {
             const exp = rappels.find((r) => r.album_id === albumId).expire_le;
             const a = await httpRequest("GET",
-                `/rest/v1/albums_photo?id=eq.${albumId}&select=titre,pro_uid,pro_profile_id,client_uid,client_profile_id,partage_client`);
+                `/rest/v1/albums_photo?id=eq.${albumId}` +
+                "&select=titre,pro_uid,pro_profile_id,client_uid,client_profile_id,partage_client");
             const album = Array.isArray(a.body) ? a.body[0] : null;
             if (album) {
                 const titre = album.titre || "Séance photo";
                 const notifs = [{
                     uid: album.pro_uid, type: "galerie_expiration", title: "Livraison bientôt expirée",
-                    body: `Les fichiers livrés de « ${titre} » seront supprimés le ${fmt(exp)}. Vous pouvez prolonger la livraison.`,
+                    body: `Les fichiers livrés de « ${titre} » seront supprimés le ${fmt(exp)}. ` +
+                        "Vous pouvez prolonger la livraison.",
                     ...(album.pro_profile_id ? {profile_id: album.pro_profile_id} : {}),
                     data: {albumId}, read: false,
                 }];
@@ -89,11 +91,13 @@ exports.purgerLivraisonsPhoto = functions
 
         // 2. Suppression des livraisons expirées.
         const expirees = await httpRequest("GET",
-            `/rest/v1/album_livraisons?expire_le=lt.${encodeURIComponent(maintenant.toISOString())}&select=id,storage_path`);
+            `/rest/v1/album_livraisons?expire_le=lt.${encodeURIComponent(maintenant.toISOString())}` +
+            "&select=id,storage_path");
         const rows = Array.isArray(expirees.body) ? expirees.body : [];
         if (rows.length > 0) {
             try {
-                await httpRequest("DELETE", "/storage/v1/object/livraisons", {prefixes: rows.map((r) => r.storage_path)});
+                await httpRequest("DELETE", "/storage/v1/object/livraisons",
+                    {prefixes: rows.map((r) => r.storage_path)});
             } catch (e) {
                 console.error("[livraisons_photo] suppression storage échouée:", e.message);
             }
