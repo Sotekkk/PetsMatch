@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:PetsMatch/services/factures_non_vues.dart';
 import 'package:flutter/material.dart';
@@ -234,6 +235,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const AnimauxAcquisPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes galeries photo',
+                      icon: Icons.photo_library_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesGaleriesPhotoPage(),
                         ));
                       },
                     ),

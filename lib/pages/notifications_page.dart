@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
@@ -496,6 +497,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // propriétaire (module garde / pet-sitting). Contenu dans pension_updates.
     // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
     // Compte rendu de toilettage partagé → onglet Consultations de l'animal.
+    // Galerie photo partagée par un photographe → galerie privée.
+    if (type == 'galerie_disponible') {
+      final albumId = data is Map ? data['albumId'] as String? : null;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+          albumId != null ? GalerieClientPage(albumId: albumId) : const MesGaleriesPhotoPage()));
+      return;
+    }
     if (type == 'toilettage_cr') {
       final animalId = data is Map ? data['animalId'] as String? : null;
       if (animalId != null) {

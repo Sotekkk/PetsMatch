@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
@@ -451,16 +452,6 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'photographe') _DrawerItem(
-                    icon: Icons.people_outline,
-                    label: 'Mes clients',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const ProClientsPage(),
-                      ));
-                    },
-                  ),
                   if (User_Info.catPro == 'taxi_animalier') ...[
                     _DrawerItem(
                       icon: Icons.checklist_outlined,
@@ -509,6 +500,26 @@ class _EleveurNavState extends State<EleveurNav> {
                           },
                         ),
                         _DrawerSubItem(
+                          label: 'Mes galeries clients',
+                          icon: Icons.photo_library_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PhotographeGaleriesPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes clients',
+                          icon: Icons.people_outline,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProClientsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
                           label: 'Mes prestations',
                           icon: Icons.camera_alt_outlined,
                           onTap: () {
@@ -519,8 +530,8 @@ class _EleveurNavState extends State<EleveurNav> {
                           },
                         ),
                         _DrawerSubItem(
-                          label: 'Tableau de bord',
-                          icon: Icons.dashboard_outlined,
+                          label: 'Statistiques',
+                          icon: Icons.bar_chart_outlined,
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(

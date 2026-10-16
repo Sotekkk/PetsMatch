@@ -6,6 +6,8 @@
 // ⚠️ À garder synchronisé avec les tiroirs : eleveur_nav.dart,
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
+import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
 import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
@@ -775,7 +777,20 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'taxi_animalier', open: (c) => _push(c, const FacturationPage()),
   ),
 
+  QuickAction(
+    label: 'Mes galeries photo',
+    keywords: ['galerie', 'photos', 'photographe', 'séance photo', 'album'],
+    icon: Icons.photo_library_outlined, group: 'Mon profil',
+    visible: () => _particulier, open: (c) => _push(c, const MesGaleriesPhotoPage()),
+  ),
+
   // ── Photographe ────────────────────────────────────────────────────────────
+  QuickAction(
+    label: 'Mes galeries clients',
+    keywords: ['galerie', 'galeries', 'photos clients', 'livraison', 'sélection', 'partage', 'album', 'aperçus'],
+    icon: Icons.photo_library_outlined, group: 'Mon espace pro',
+    visible: () => _catPro == 'photographe', open: (c) => _push(c, const PhotographeGaleriesPage()),
+  ),
   QuickAction(
     label: 'Mes prestations (photo)',
     keywords: ['shootings', 'séances photo', 'forfaits', 'galeries'],

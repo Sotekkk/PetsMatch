@@ -3,265 +3,441 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:qr_flutter/qr_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/utils/galeries_api.dart';
+import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 
-const _kAlbumBaseUrl = 'https://www.petsmatchapp.com/album/';
-
-/// Galerie de livraison (photographe animalier) — un album par prestation
-/// (rattaché au rdv), upload multi-photos, favoris, partage public par
-/// token (calqué sur partage_animal_sheet.dart).
+/// Galerie client privée (photographe) — une galerie, rattachée ou non à une
+/// séance (rdv). Aperçus compressés (filigrane facultatif) dans le bucket
+/// privé « galeries », affichés par URL signées courtes (/api/galeries) ;
+/// import multiple avec progression et doublons écartés ; couverture, ordre,
+/// statut, partage (compte client et / ou lien privé avec expiration),
+/// archivage, suppression. Premium. Miroir site : /photographe/galeries/[id].
+/// Ouverte depuis une séance ([rdvId] : galerie retrouvée ou créée) ou depuis
+/// la liste ([albumId]).
 class PhotographeAlbumPage extends StatefulWidget {
-  final String rdvId;
+  final String? rdvId;
+  final String? albumId;
   final String clientName;
-  const PhotographeAlbumPage({super.key, required this.rdvId, required this.clientName});
+  const PhotographeAlbumPage({super.key, this.rdvId, this.albumId, this.clientName = ''});
 
   @override
   State<PhotographeAlbumPage> createState() => _PhotographeAlbumPageState();
 }
 
 class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
-  static const _teal = Color(0xFF90A4AE);
+  static const _teal = Color(0xFF0C5C6C);
+  static const _ink = Color(0xFF1F2A2E);
+  static const _rouge = Color(0xFFB3261E);
   final _supa = Supabase.instance.client;
 
   bool _loading = true;
-  bool _uploading = false;
+  bool _premium = false;
   String? _albumId;
+  String? _erreur;
+  Map<String, dynamic> _album = {};
+  String _studio = '';
   List<Map<String, dynamic>> _photos = [];
+  List<Map<String, dynamic>> _liens = [];
+  final Set<String> _sel = {};
+  (int, int)? _progres;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _initialiser();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  Future<void> _initialiser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) { setState(() => _loading = false); return; }
-    try {
-      var album = await _supa.from('albums_photo').select('id')
-          .eq('rdv_id', widget.rdvId).maybeSingle();
-      if (album == null) {
-        final rdv = await _supa.from('rdv').select('client_uid, client_profile_id')
-            .eq('id', widget.rdvId).maybeSingle();
-        album = await _supa.from('albums_photo').insert({
-          'pro_uid': uid,
-          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
-          'rdv_id': widget.rdvId,
-          if (rdv?['client_uid'] != null) 'client_uid': rdv!['client_uid'],
-          if (rdv?['client_profile_id'] != null) 'client_profile_id': rdv!['client_profile_id'],
-          'titre': 'Séance photo — ${widget.clientName}',
-        }).select('id').single();
+    if (uid == null) return;
+    _premium = (await PlanService.getPhotographePlanCode(uid)) != 'free';
+    _albumId = widget.albumId;
+    if (_albumId == null && widget.rdvId != null) {
+      try {
+        final a = await _supa.from('albums_photo').select('id').eq('rdv_id', widget.rdvId!).maybeSingle();
+        if (a != null) {
+          _albumId = a['id'].toString();
+        } else if (_premium) {
+          final rdv = await _supa.from('rdv').select('client_uid, client_profile_id, date_heure').eq('id', widget.rdvId!).maybeSingle();
+          final row = await _supa.from('albums_photo').insert({
+            'pro_uid': uid,
+            if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+            'rdv_id': widget.rdvId,
+            if (rdv?['client_uid'] != null) 'client_uid': rdv!['client_uid'],
+            if (rdv?['client_profile_id'] != null) 'client_profile_id': rdv!['client_profile_id'],
+            if (rdv?['date_heure'] != null) 'date_seance': rdv!['date_heure'].toString().substring(0, 10),
+            'titre': widget.clientName.isNotEmpty ? 'Séance photo — ${widget.clientName}' : 'Séance photo',
+          }).select('id').single();
+          _albumId = row['id'].toString();
+        }
+      } catch (e) {
+        _erreur = e.toString().contains('column') ? 'Migrations des galeries à passer.' : 'Erreur : $e';
       }
-      _albumId = album['id'] as String;
-      final photos = await _supa.from('album_photos').select()
-          .eq('album_id', _albumId!).order('created_at', ascending: false);
-      if (mounted) setState(() { _photos = List<Map<String, dynamic>>.from(photos as List); _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
     }
+    await _charger();
   }
 
-  Future<void> _uploadPhotos() async {
-    if (_albumId == null) return;
-    final files = await ImagePicker().pickMultiImage(imageQuality: 90);
-    if (files.isEmpty) return;
-    setState(() => _uploading = true);
+  Future<void> _charger() async {
+    if (_albumId == null) {
+      if (mounted) setState(() { _loading = false; _erreur ??= _premium ? null : 'premium'; });
+      return;
+    }
     try {
-      for (final f in files) {
-        final path = 'albums_photo/${_albumId}_${DateTime.now().microsecondsSinceEpoch}.jpg';
-        final url = await storage.uploadPhoto(File(f.path), path, maxDim: 2000, quality: 90);
-        await _supa.from('album_photos').insert({'album_id': _albumId, 'photo_url': url});
-      }
-      await _load();
+      final c = await GaleriesApi.charger(_albumId!);
+      _album = Map<String, dynamic>.from(c['album'] as Map);
+      _studio = (c['studio'] as Map?)?['nom']?.toString() ?? '';
+      _photos = List<Map<String, dynamic>>.from((c['photos'] as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      _sel.removeWhere((id) => !_photos.any((p) => p['id'] == id));
+      _liens = List<Map<String, dynamic>>.from(await _supa.from('album_partage').select('id, token, expire_at, actif')
+          .eq('album_id', _albumId!).order('created_at', ascending: false));
+      _erreur = null;
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
-      }
-    } finally {
-      if (mounted) setState(() => _uploading = false);
+      _erreur = e.toString().replaceFirst('Exception: ', '');
+    }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  void _snack(String t) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t, style: const TextStyle(fontFamily: 'Galey'))));
+  }
+
+  Future<bool> _majAlbum(Map<String, dynamic> champs) async {
+    try {
+      await _supa.from('albums_photo').update({...champs, 'updated_at': DateTime.now().toUtc().toIso8601String()}).eq('id', _albumId!);
+      await _charger();
+      return true;
+    } catch (e) {
+      _snack(e.toString().contains('column') ? 'Migration migration_photographe_galeries_privees.sql à passer.' : 'Erreur : $e');
+      return false;
     }
   }
 
-  Future<void> _toggleFavori(Map<String, dynamic> photo) async {
-    await _supa.from('album_photos').update({'favori': !(photo['favori'] as bool? ?? false)}).eq('id', photo['id']);
-    await _load();
+  Future<void> _importer() async {
+    final choix = await ImagePicker().pickMultiImage(requestFullMetadata: false);
+    if (choix.isEmpty || _albumId == null) return;
+    setState(() => _progres = (0, choix.length));
+    try {
+      final b = await GaleriesApi.importer(_albumId!, choix.map((x) => File(x.path)).toList(),
+          _album['filigrane'] == false ? null : '© ${_studio.isNotEmpty ? _studio : 'PetsMatch'}',
+          (f, t) { if (mounted) setState(() => _progres = (f, t)); });
+      _snack([
+        '${b.ajoutees} photo${b.ajoutees > 1 ? 's' : ''} ajoutée${b.ajoutees > 1 ? 's' : ''}',
+        if (b.doublons > 0) '${b.doublons} doublon${b.doublons > 1 ? 's' : ''} ignoré${b.doublons > 1 ? 's' : ''}',
+        if (b.erreurs.isNotEmpty) '${b.erreurs.length} erreur${b.erreurs.length > 1 ? 's' : ''}',
+      ].join(' · '));
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+    if (mounted) setState(() => _progres = null);
+    _charger();
   }
 
-  Future<void> _deletePhoto(String id) async {
-    await _supa.from('album_photos').delete().eq('id', id);
-    await _load();
+  Future<void> _supprimerSelection() async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: Text('Supprimer ${_sel.length} photo${_sel.length > 1 ? 's' : ''} ?', style: const TextStyle(fontFamily: 'Galey')),
+      content: const Text('Cette action est définitive.', style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Supprimer', style: TextStyle(color: _rouge))),
+      ],
+    ));
+    if (ok != true) return;
+    try {
+      await GaleriesApi.supprimerPhotos(_albumId!, _sel.toList());
+      _sel.clear();
+      _charger();
+    } catch (e) { _snack(e.toString()); }
   }
 
-  Future<void> _openPartage() async {
-    if (_albumId == null) return;
+  Future<void> _deplacer(int sens) async {
+    if (_sel.length != 1) return;
+    final i = _photos.indexWhere((p) => p['id'] == _sel.first);
+    final j = i + sens;
+    if (i < 0 || j < 0 || j >= _photos.length) return;
+    for (var k = 0; k < _photos.length; k++) {
+      final o = k == i ? j : k == j ? i : k;
+      if (_photos[k]['ordre'] != o) await _supa.from('album_photos').update({'ordre': o}).eq('id', _photos[k]['id']);
+    }
+    _charger();
+  }
+
+  Future<void> _partageClient(bool actif) async {
+    final clientUid = _album['client_uid']?.toString();
+    if (clientUid == null) return;
+    final premiere = actif && _album['partage_client'] != true;
+    final ok = await _majAlbum({
+      'partage_client': actif,
+      if (actif && _album['statut'] == 'brouillon') ...{'statut': 'partagee', 'partagee_le': DateTime.now().toUtc().toIso8601String()},
+    });
+    if (ok && premiere) {
+      try {
+        await _supa.from('notifications').insert({
+          'uid': clientUid,
+          'type': 'galerie_disponible',
+          'title': 'Votre galerie photo est disponible',
+          'body': '${_studio.isNotEmpty ? _studio : 'Votre photographe'} a partagé la galerie « ${_album['titre'] ?? 'Séance photo'} ».',
+          if (_album['client_profile_id'] != null) 'profile_id': _album['client_profile_id'],
+          'data': {'albumId': _albumId},
+          'read': false,
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _creerLien(int jours) async {
+    try {
+      await _supa.from('album_partage').insert({
+        'album_id': _albumId,
+        'expire_at': DateTime.now().add(Duration(days: jours)).toUtc().toIso8601String(),
+        'actif': true,
+      });
+      if (_album['statut'] == 'brouillon') {
+        await _majAlbum({'statut': 'partagee', 'partagee_le': DateTime.now().toUtc().toIso8601String()});
+      } else {
+        await _charger();
+      }
+    } catch (e) { _snack('Erreur : $e'); }
+  }
+
+  Future<void> _reglages() async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => _PartageAlbumSheet(albumId: _albumId!),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        Future<void> apres(Future<void> f) async { await f; setM(() {}); }
+        final actifs = _liens.where((l) => l['actif'] == true
+            && (DateTime.tryParse(l['expire_at']?.toString() ?? '')?.isAfter(DateTime.now()) ?? false)).toList();
+        return SafeArea(child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Statut', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: kStatutsGalerie.any((s) => s.$1 == _album['statut']) ? _album['statut'] as String : 'brouillon',
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+              items: [for (final s in kStatutsGalerie) DropdownMenuItem(value: s.$1, child: Text(s.$2, style: const TextStyle(fontFamily: 'Galey')))],
+              onChanged: (v) { if (v != null) apres(_majAlbum({'statut': v, if (v == 'livree') 'livree_le': DateTime.now().toUtc().toIso8601String()})); },
+            ),
+            Text('Une galerie livrée n\'est pas considérée comme payée.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            const Divider(height: 28),
+            const Text('Partage', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            if (_album['client_uid'] != null)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero, activeThumbColor: _teal,
+                value: _album['partage_client'] == true,
+                onChanged: (v) => apres(_partageClient(v)),
+                title: Text('Partager sur le compte de ${widget.clientName.isNotEmpty ? widget.clientName : 'mon client'}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                subtitle: const Text('Il est prévenu et retrouve la galerie dans « Mes galeries photo ».', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              )
+            else
+              Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text('Galerie sans client PetsMatch : utilisez un lien privé.', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700))),
+            const SizedBox(height: 4),
+            const Text('Lien privé', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: _ink)),
+            Wrap(spacing: 6, children: [
+              for (final j in [7, 30, 90])
+                ActionChip(label: Text('Créer · $j jours', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)), onPressed: () => apres(_creerLien(j))),
+            ]),
+            for (final l in actifs)
+              Builder(builder: (_) {
+                final url = '$kSiteBaseUrl/album/${l['token']}';
+                final exp = DateTime.tryParse(l['expire_at'].toString())?.toLocal();
+                return ListTile(
+                  contentPadding: EdgeInsets.zero, dense: true,
+                  title: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  subtitle: Text(exp != null ? 'Expire le ${DateFormat('dd/MM/yyyy').format(exp)}' : '', style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(icon: const Icon(Icons.copy_outlined, size: 18), onPressed: () {
+                      Clipboard.setData(ClipboardData(text: url));
+                      _snack('Lien copié');
+                    }),
+                    IconButton(icon: const Icon(Icons.ios_share_rounded, size: 18), onPressed: () => Share.share(url)),
+                    IconButton(icon: const Icon(Icons.link_off, size: 18, color: _rouge), onPressed: () => apres(() async {
+                      await _supa.from('album_partage').update({'actif': false}).eq('id', l['id']);
+                      await _charger();
+                    }())),
+                  ]),
+                );
+              }),
+            Text('Le lien n\'ouvre que cette galerie, n\'est jamais indexé et cesse de fonctionner à l\'expiration.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            const Divider(height: 28),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero, activeThumbColor: _teal,
+              value: _album['filigrane'] != false,
+              onChanged: (v) => apres(_majAlbum({'filigrane': v})),
+              title: const Text('Filigrane sur les aperçus', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              subtitle: const Text('S\'applique aux prochains imports. Dissuasif, pas une protection absolue.', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            ),
+            const Divider(height: 28),
+            if (_album['statut'] == 'archivee')
+              OutlinedButton(onPressed: () => apres(_majAlbum({'statut': _album['partage_client'] == true ? 'partagee' : 'brouillon'}).then((_) {})),
+                  child: const Text('Rouvrir la galerie', style: TextStyle(fontFamily: 'Galey')))
+            else
+              OutlinedButton(onPressed: () => apres(() async {
+                await _supa.from('album_partage').update({'actif': false}).eq('album_id', _albumId!);
+                await _majAlbum({'statut': 'archivee'});
+              }()), child: const Text('Archiver (masque la galerie et désactive les liens)', style: TextStyle(fontFamily: 'Galey'))),
+            const SizedBox(height: 6),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(foregroundColor: _rouge),
+              onPressed: () async {
+                final ok = await showDialog<bool>(context: ctx, builder: (d) => AlertDialog(
+                  title: const Text('Supprimer la galerie ?', style: TextStyle(fontFamily: 'Galey')),
+                  content: const Text('La galerie et toutes ses photos seront supprimées définitivement.', style: TextStyle(fontFamily: 'Galey')),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Annuler')),
+                    TextButton(onPressed: () => Navigator.pop(d, true), child: const Text('Supprimer', style: TextStyle(color: _rouge))),
+                  ],
+                ));
+                if (ok != true) return;
+                try {
+                  await GaleriesApi.supprimerGalerie(_albumId!);
+                  if (!mounted) return;
+                  Navigator.of(context)..pop()..pop();
+                } catch (e) { _snack(e.toString()); }
+              },
+              child: const Text('Supprimer la galerie', style: TextStyle(fontFamily: 'Galey')),
+            ),
+          ]),
+        ));
+      }),
     );
+  }
+
+  Future<void> _renommer() async {
+    final ctrl = TextEditingController(text: _album['titre']?.toString() ?? '');
+    final desc = TextEditingController(text: _album['description']?.toString() ?? '');
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Galerie', style: TextStyle(fontFamily: 'Galey')),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Titre')),
+        TextField(controller: desc, maxLines: 3, decoration: const InputDecoration(labelText: 'Message au client (facultatif)')),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer')),
+      ],
+    ));
+    if (ok == true) {
+      await _majAlbum({'titre': ctrl.text.trim().isEmpty ? 'Séance photo' : ctrl.text.trim(),
+          'description': desc.text.trim().isEmpty ? null : desc.text.trim()});
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final statut = kStatutsGalerie.where((s) => s.$1 == _album['statut']).firstOrNull?.$2 ?? 'Brouillon';
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text('Galerie — ${widget.clientName}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        title: Text(_album['titre']?.toString() ?? 'Galerie', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
         actions: [
-          IconButton(icon: const Icon(Icons.share_outlined), tooltip: 'Partager', onPressed: _openPartage),
+          if (_albumId != null && _erreur == null) ...[
+            IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Titre et message', onPressed: _renommer),
+            IconButton(icon: const Icon(Icons.tune), tooltip: 'Statut et partage', onPressed: _reglages),
+          ],
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _teal,
-        onPressed: _uploading ? null : _uploadPhotos,
-        icon: _uploading
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-            : const Icon(Icons.add_photo_alternate_outlined, color: Colors.white),
-        label: Text(_uploading ? 'Envoi...' : 'Ajouter des photos', style: const TextStyle(fontFamily: 'Galey', color: Colors.white)),
-      ),
+      floatingActionButton: _albumId != null && _premium && _erreur == null && _sel.isEmpty
+          ? FloatingActionButton.extended(
+              backgroundColor: _teal,
+              onPressed: _progres != null ? null : _importer,
+              icon: const Icon(Icons.add_photo_alternate_outlined, color: Colors.white),
+              label: Text(_progres != null ? 'Import ${_progres!.$1}/${_progres!.$2}' : 'Importer des photos',
+                  style: const TextStyle(fontFamily: 'Galey', color: Colors.white)),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _photos.isEmpty
-              ? const Center(child: Text('Aucune photo livrée pour l\'instant.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
-              : GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3, crossAxisSpacing: 6, mainAxisSpacing: 6),
-                  itemCount: _photos.length,
-                  itemBuilder: (_, i) {
-                    final p = _photos[i];
-                    final favori = p['favori'] as bool? ?? false;
-                    return Stack(children: [
-                      Positioned.fill(child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(p['photo_url'] as String, fit: BoxFit.cover),
-                      )),
-                      Positioned(
-                        top: 4, right: 4,
-                        child: GestureDetector(
-                          onTap: () => _toggleFavori(p),
-                          child: Icon(favori ? Icons.favorite : Icons.favorite_border,
-                              color: favori ? Colors.redAccent : Colors.white, size: 20,
-                              shadows: const [Shadow(color: Colors.black45, blurRadius: 4)]),
-                        ),
+          : _erreur == 'premium'
+              ? Center(child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Les galeries clients privées sont réservées à l\'abonnement Premium.', textAlign: TextAlign.center,
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _ink)),
+                    TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PhotographeAbonnementPage())),
+                        child: const Text('Voir les abonnements', style: TextStyle(fontFamily: 'Galey', color: _teal))),
+                  ]),
+                ))
+              : _erreur != null
+                  ? Center(child: Padding(padding: const EdgeInsets.all(24),
+                      child: Text(_erreur!, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', color: Colors.grey))))
+                  : Column(children: [
+                      Container(
+                        color: Colors.white,
+                        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                        child: Row(children: [
+                          Expanded(child: Text([
+                            if (widget.clientName.isNotEmpty) widget.clientName,
+                            '${_photos.length} photo${_photos.length > 1 ? 's' : ''}',
+                            statut,
+                            if (_album['partage_client'] == true) 'partagée au client',
+                          ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700))),
+                          if (_sel.isNotEmpty) ...[
+                            if (_sel.length == 1) ...[
+                              IconButton(tooltip: 'Couverture', icon: const Icon(Icons.star_outline, size: 20),
+                                  onPressed: () => _majAlbum({'couverture_url': _sel.first})),
+                              IconButton(tooltip: 'Avancer', icon: const Icon(Icons.arrow_back, size: 20), onPressed: () => _deplacer(-1)),
+                              IconButton(tooltip: 'Reculer', icon: const Icon(Icons.arrow_forward, size: 20), onPressed: () => _deplacer(1)),
+                            ],
+                            IconButton(tooltip: 'Supprimer', icon: const Icon(Icons.delete_outline, size: 20, color: _rouge), onPressed: _supprimerSelection),
+                            IconButton(tooltip: 'Désélectionner', icon: const Icon(Icons.close, size: 20), onPressed: () => setState(_sel.clear)),
+                          ],
+                        ]),
                       ),
-                      Positioned(
-                        bottom: 4, right: 4,
-                        child: GestureDetector(
-                          onTap: () => _deletePhoto(p['id'].toString()),
-                          child: const Icon(Icons.delete_outline, color: Colors.white, size: 18,
-                              shadows: [Shadow(color: Colors.black45, blurRadius: 4)]),
-                        ),
-                      ),
-                    ]);
-                  },
-                ),
-    );
-  }
-}
-
-class _PartageAlbumSheet extends StatefulWidget {
-  final String albumId;
-  const _PartageAlbumSheet({required this.albumId});
-
-  @override
-  State<_PartageAlbumSheet> createState() => _PartageAlbumSheetState();
-}
-
-class _PartageAlbumSheetState extends State<_PartageAlbumSheet> {
-  final _supa = Supabase.instance.client;
-  static const _durees = [('7 jours', 7), ('30 jours', 30), ('90 jours', 90)];
-  int _dureeJours = 30;
-  bool _creating = false;
-  String? _token;
-
-  Future<void> _createLien() async {
-    setState(() => _creating = true);
-    try {
-      final expireAt = DateTime.now().add(Duration(days: _dureeJours)).toUtc();
-      final data = await _supa.from('album_partage').insert({
-        'album_id': widget.albumId,
-        'expire_at': expireAt.toIso8601String(),
-        'actif': true,
-      }).select('token').single();
-      setState(() { _token = data['token'] as String; _creating = false; });
-    } catch (e) {
-      if (mounted) {
-        setState(() => _creating = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final link = _token != null ? '$_kAlbumBaseUrl$_token' : null;
-    return Padding(
-      padding: EdgeInsets.only(left: 20, right: 20, top: 24, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
-      child: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Partager la galerie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
-          const SizedBox(height: 6),
-          const Text('Lien de téléchargement — le client peut voir et télécharger les photos sans compte.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-          const SizedBox(height: 16),
-          Wrap(spacing: 8, children: _durees.map((d) {
-            final selected = _dureeJours == d.$2;
-            return ChoiceChip(
-              label: Text(d.$1, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: selected ? Colors.white : Colors.black87)),
-              selected: selected,
-              selectedColor: const Color(0xFF90A4AE),
-              onSelected: (_) => setState(() => _dureeJours = d.$2),
-            );
-          }).toList()),
-          const SizedBox(height: 16),
-          SizedBox(width: double.infinity, child: ElevatedButton.icon(
-            onPressed: _creating ? null : _createLien,
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF90A4AE), padding: const EdgeInsets.symmetric(vertical: 14)),
-            icon: _creating
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.add_link, color: Colors.white),
-            label: Text(_creating ? 'Génération...' : 'Créer le lien', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
-          )),
-          if (link != null) ...[
-            const SizedBox(height: 20),
-            Center(child: QrImageView(data: link, size: 160, backgroundColor: Colors.white)),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(color: const Color(0xFFF0F4F8), borderRadius: BorderRadius.circular(10)),
-              child: Text(link, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-            ),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(child: OutlinedButton.icon(
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: link));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié !', style: TextStyle(fontFamily: 'Galey'))));
-                },
-                icon: const Icon(Icons.copy_outlined, size: 14),
-                label: const Text('Copier', style: TextStyle(fontFamily: 'Galey')),
-              )),
-              const SizedBox(width: 10),
-              Expanded(child: ElevatedButton.icon(
-                onPressed: () => Share.share(link),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C), foregroundColor: Colors.white),
-                icon: const Icon(Icons.ios_share_rounded, size: 14),
-                label: const Text('Partager', style: TextStyle(fontFamily: 'Galey')),
-              )),
-            ]),
-          ],
-        ]),
-      ),
+                      if (_progres != null)
+                        LinearProgressIndicator(value: _progres!.$2 == 0 ? null : _progres!.$1 / _progres!.$2, color: _teal, backgroundColor: const Color(0xFFE6F2F3)),
+                      Expanded(child: _photos.isEmpty
+                          ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
+                              _premium ? 'Aucune photo. Importez vos aperçus : ils sont compressés et stockés dans un espace privé.'
+                                  : 'Import réservé à l\'abonnement Premium.',
+                              textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))))
+                          : RefreshIndicator(
+                              onRefresh: _charger, color: _teal,
+                              child: GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
+                                itemCount: _photos.length,
+                                itemBuilder: (_, i) {
+                                  final p = _photos[i];
+                                  final id = p['id'].toString();
+                                  final actif = _sel.contains(id);
+                                  return GestureDetector(
+                                    onTap: () => setState(() => actif ? _sel.remove(id) : _sel.add(id)),
+                                    child: Stack(children: [
+                                      Positioned.fill(child: Container(
+                                        decoration: BoxDecoration(color: const Color(0xFFF0F1EF), borderRadius: BorderRadius.circular(6),
+                                            border: actif ? Border.all(color: _teal, width: 3) : null),
+                                        child: ClipRRect(borderRadius: BorderRadius.circular(4),
+                                            child: Image.network(p['url'].toString(), fit: BoxFit.contain, cacheWidth: 400)),
+                                      )),
+                                      if (_album['couverture_url'] == id)
+                                        Positioned(left: 4, top: 4, child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(4)),
+                                          child: const Text('Couverture', style: TextStyle(fontFamily: 'Galey', fontSize: 9.5, fontWeight: FontWeight.w700)),
+                                        )),
+                                      if (actif)
+                                        const Positioned(right: 4, top: 4, child: CircleAvatar(radius: 10, backgroundColor: _teal,
+                                            child: Icon(Icons.check, size: 13, color: Colors.white))),
+                                    ]),
+                                  );
+                                },
+                              ),
+                            )),
+                    ]),
     );
   }
 }

@@ -470,8 +470,10 @@ const MENU_PHOTOGRAPHE = [
       { href: '/agenda',              label: 'Mon agenda',       icon: '📅' },
       { href: '/mes-rdv',             label: 'Gérer mes RDV',    icon: '🗓️' },
       { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
+      { href: '/photographe/galeries', label: 'Mes galeries clients', icon: '🖼️' },
+      { href: '/mes-patients',        label: 'Mes clients',      icon: '👥' },
       { href: '/photographe/prestations', label: 'Mes prestations', icon: '📷' },
-      { href: '/photographe/dashboard',   label: 'Tableau de bord', icon: '📊' },
+      { href: '/photographe/dashboard',   label: 'Statistiques',   icon: '📊' },
       { href: '/photographe/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },
@@ -620,6 +622,7 @@ const MENU_PARTICULIER = [
       { href: '/mes-animaux-acquis',  label: 'Mes Animaux Acquis', icon: '🤝' },
       { href: '/agenda',              label: 'Mon Agenda',         icon: '🗓️' },
       { href: '/mes-taches',          label: 'Mes tâches',         icon: '✅' },
+      { href: '/mes-galeries',        label: 'Mes galeries photo', icon: '🖼️' },
       { href: '/demande-influenceur', label: 'Badge Influenceur',  icon: '⭐' },
     ],
   },
@@ -665,6 +668,8 @@ const MENU_PARTICULIER = [
 // Synonymes / termes courants pour retrouver une fonctionnalité sans fouiller
 // le menu. Fusionnés à l'index au moment de la recherche.
 const SEARCH_KEYWORDS: Record<string, string[]> = {
+  '/photographe/galeries': ['galerie', 'galeries', 'photos clients', 'livraison', 'selection', 'partage', 'album', 'apercus'],
+  '/mes-galeries': ['galerie', 'photos', 'photographe', 'seance photo', 'album'],
   '/mes-animaux': ['carnet de sante', 'sante', 'vaccins', 'vaccination', 'vermifuge', 'antiparasitaire', 'poids', 'courbe de poids', 'fiche animal', 'mes betes', 'chiens', 'chats', 'chirurgie', 'hospitalisation', 'traitement', 'allergie', 'radio'],
   '/elevage/agenda': ['calendrier', 'rendez-vous', 'planning', 'agenda'],
   '/elevage/planning': ['protocoles', 'vermifuge', 'soins', 'calendrier sanitaire', 'rappels'],
@@ -956,6 +961,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
     case 'toilettage_pret':
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
+    // Galerie photo partagée par un photographe → galerie privée.
+    case 'galerie_disponible':
+      return d.albumId ? `/galerie/${d.albumId}` : '/mes-galeries';
     // Compte rendu de toilettage partagé → onglet Consultations de l'animal.
     case 'toilettage_cr':
       return d.animalId ? `/mes-animaux/${d.animalId}?tab=consultations` : null;

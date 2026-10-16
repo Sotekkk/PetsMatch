@@ -171,13 +171,13 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
     <div ref={galeriesRef} className="scroll-mt-4">
       <Section titre="Galeries en cours" icone={<Icone nom="image" taille={18} />} compteur={enCours.length}>
         {!statutDispo && <p className="text-xs mb-2" style={{ color: AMBRE }}>Migration migration_photographe_galeries_statut.sql à passer pour suivre les statuts.</p>}
-        {galVues.length === 0 ? <p className="text-sm text-gray-400 text-center py-8">Aucune galerie. Créez-la depuis une séance (application).</p> : (
+        {galVues.length === 0 ? <p className="text-sm text-gray-400 text-center py-8">Aucune galerie. Créez-la depuis une séance ou depuis Mes galeries.</p> : (
           <div className="space-y-2">
             {galVues.map(g => {
               const st = styleGalerie(statut(g));
               const n = nbPhotos[g.id] ?? 0;
               return (
-                <div key={g.id} className="flex items-center gap-3 border border-[#EEF0EE] rounded-xl px-3 py-2.5">
+                <Link key={g.id} href={`/photographe/galeries/${g.id}`} className="flex items-center gap-3 border border-[#EEF0EE] rounded-xl px-3 py-2.5 hover:bg-gray-50">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[#1E2025] truncate">{g.titre ?? 'Galerie'}</p>
                     <p className="text-xs text-gray-500 truncate">
@@ -186,7 +186,7 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
                     <p className="text-[11px] text-gray-400">Dernière activité : {depuis(g.updated_at ?? g.created_at)}</p>
                   </div>
                   <Badge texte={st.label} fg={st.fg} bg={st.bg} />
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -258,7 +258,7 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
               action={<Link href="/photographe/dashboard" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Statistiques →</Link>}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Tuile href="/mes-rdv?onglet=a_venir" icone="plus" label="Nouvelle séance" />
-                <Tuile onClick={versGaleries} icone="image" label="Mes galeries" teinte={VIOLET} />
+                <Tuile href="/photographe/galeries" icone="image" label="Mes galeries" teinte={VIOLET} />
                 <Tuile href="/photographe/devis" icone="facture" label="Créer un devis" />
                 <Tuile href="/elevage/facturation" icone="facture" label="Facturation" />
               </div>

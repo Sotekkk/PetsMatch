@@ -15,6 +15,7 @@ import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage;
 import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
@@ -367,18 +368,18 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
     final enCours = _galeries.where((g) => _statut(g) != 'archivee' && _statut(g) != 'livree').toList();
     final liste = (enCours.isEmpty ? _galeries.where((g) => _statut(g) != 'archivee').toList() : enCours).take(8).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      DashTitre('Galeries en cours', icone: Icons.photo_library_outlined, compteur: enCours.length),
+      DashTitre('Galeries en cours', icone: Icons.photo_library_outlined, compteur: enCours.length,
+          trailing: DashLien('Toutes les galeries', onTap: () => _go(const PhotographeGaleriesPage()))),
       const SizedBox(height: 6),
       if (!_statutDispo)
         const Padding(padding: EdgeInsets.only(bottom: 6),
             child: Text('Migration migration_photographe_galeries_statut.sql à passer pour suivre les statuts.',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _ambre))),
-      if (liste.isEmpty) _discret('Aucune galerie. Créez-la depuis une séance.'),
+      if (liste.isEmpty) _discret('Aucune galerie. Créez-la depuis une séance ou depuis Mes galeries.'),
       for (final g in liste)
         InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: g['rdv_id'] == null ? null
-              : () => _go(PhotographeAlbumPage(rdvId: g['rdv_id'].toString(), clientName: _nomClient(g))),
+          onTap: () => _go(PhotographeAlbumPage(albumId: g['id'].toString(), clientName: _nomClient(g))),
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 2),
             decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF0F1EF)))),
@@ -417,7 +418,7 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
             () => _go(const ProAgendaPage(initialTabIndex: 0)), _ambre),
       for (final g in selections)
         (Icons.favorite_border, 'Sélection reçue — ${g['titre'] ?? 'galerie'}',
-            () { if (g['rdv_id'] != null) _go(PhotographeAlbumPage(rdvId: g['rdv_id'].toString(), clientName: _nomClient(g))); }, _vert),
+            () => _go(PhotographeAlbumPage(albumId: g['id'].toString(), clientName: _nomClient(g))), _vert),
       for (final r in sansGalerie.take(4))
         (Icons.add_photo_alternate_outlined, 'Galerie à créer — séance du ${_jour(_debut(r))}, ${_nomClient(r)}', () => _ouvrirGalerie(r), _violet),
       if (contrats.isNotEmpty)
@@ -507,7 +508,7 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
           crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: cols == 4 ? 3.0 : 2.9,
           children: [
             tuile(Icons.add_circle_outline, 'Nouvelle séance', () => _go(const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true))),
-            tuile(Icons.photo_library_outlined, 'Mes galeries', versGaleries),
+            tuile(Icons.photo_library_outlined, 'Mes galeries', () => _go(const PhotographeGaleriesPage())),
             tuile(Icons.request_quote_outlined, 'Créer un devis', () => _go(const DevisPage())),
             tuile(Icons.receipt_long_outlined, 'Facturation', () => _go(const FacturationPage())),
           ],
