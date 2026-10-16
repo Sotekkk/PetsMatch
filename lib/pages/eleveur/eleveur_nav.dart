@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/main.dart';
@@ -506,6 +507,16 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const PhotographeGaleriesPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mon portfolio',
+                          icon: Icons.collections_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PhotographePortfolioPage(),
                             ));
                           },
                         ),

@@ -1,4 +1,5 @@
 'use client';
+import { portfolioPublic, type ItemPortfolio } from '@/lib/portfolio';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
 import { cleMotif } from '@/lib/salles-clinique';
@@ -54,6 +55,8 @@ interface ProData {
   especes: string[]; horaires: Record<string, string>;
   certifications: { nom: string; numero?: string }[];
   photos_galerie: { url: string; legende: string }[];
+  /** Photographe : portfolio publiable (masquées / sans autorisation exclues). */
+  portfolio?: ItemPortfolio[];
   tarifs: string; site_web: string; instagram: string; facebook: string; phone: string;
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
@@ -363,6 +366,7 @@ function ProDetailContent() {
           horaires: (data.horaires && typeof data.horaires === 'object') ? data.horaires : {},
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
           photos_galerie: normGalerie(data.photos_galerie),
+          portfolio: portfolioPublic(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           phone: (data.phone_number || data.numero_elevage || data.phone || '') as string,
@@ -409,6 +413,7 @@ function ProDetailContent() {
           horaires: (data.horaires && typeof data.horaires === 'object') ? data.horaires : {},
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
           photos_galerie: normGalerie(data.photos_galerie),
+          portfolio: portfolioPublic(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           phone: (data.phone_number || data.numero_elevage || data.phone || '') as string,
@@ -1480,14 +1485,24 @@ function ProDetailContent() {
                 {pro.description || 'Aucune description disponible.'}
               </p>
             </div>
-            {pro.photos_galerie && pro.photos_galerie.length > 0 && (
+            {pro.cat_pro === 'photographe' && (pro.portfolio ?? []).length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm" id="portfolio">
+                <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Portfolio</p>
+                <PortfolioPub photos={pro.portfolio ?? []} />
+                <div className="flex flex-wrap gap-3 mt-3 text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {prestations.length > 0 && <a href="#prestations" className="text-[#0C5C6C]">Voir les prestations</a>}
+                  <Link href={`/messages?uid=${pro.uid}`} className="text-[#0C5C6C]">Demander un devis</Link>
+                </div>
+              </div>
+            )}
+            {pro.cat_pro !== 'photographe' && pro.photos_galerie && pro.photos_galerie.length > 0 && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Galerie</p>
                 <GaleriePub photos={pro.photos_galerie} />
               </div>
             )}
             {prestations.length > 0 && (
-              <div className="bg-white rounded-2xl p-4 shadow-sm">
+              <div className="bg-white rounded-2xl p-4 shadow-sm scroll-mt-20" id="prestations">
                 <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Prestations</p>
                 <div className="space-y-3">
                   {prestations.map(p => (
@@ -2485,6 +2500,55 @@ export default function ProDetailPage() {
 }
 
 // ── Galerie publique : bande défilable + visionneuse plein écran ──────────────
+/** Portfolio du photographe : filtres par catégorie, grille en colonnes
+ *  aux proportions conservées, visionneuse avec titre et description. */
+function PortfolioPub({ photos }: { photos: ItemPortfolio[] }) {
+  const [cat, setCat] = useState('');
+  const [open, setOpen] = useState<number | null>(null);
+  const cats = [...new Set(photos.map(p => p.categorie ?? '').filter(Boolean))];
+  const vues = cat ? photos.filter(p => p.categorie === cat) : photos;
+  const show = (i: number) => setOpen(((i % vues.length) + vues.length) % vues.length);
+  return (
+    <>
+      {cats.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {['', ...cats].map(c => (
+            <button key={c || 'tout'} type="button" onClick={() => setCat(c)} className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+              style={cat === c ? { background: '#0C5C6C', color: '#fff', borderColor: '#0C5C6C' } : { borderColor: '#E5E7EB', color: '#374151' }}>
+              {c || 'Tout'}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="columns-2 md:columns-3 gap-3">
+        {vues.map((p, i) => (
+          <button key={p.url} type="button" onClick={() => setOpen(i)} className="block w-full mb-3 break-inside-avoid rounded-xl overflow-hidden bg-gray-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={p.url} alt={p.legende || 'Réalisation'} loading="lazy" className="w-full h-auto block" />
+          </button>
+        ))}
+      </div>
+      {open !== null && vues[open] && (
+        <div className="fixed inset-0 z-[1000] bg-black/95 flex flex-col" onClick={() => setOpen(null)}>
+          <button type="button" onClick={() => setOpen(null)} className="absolute top-3 right-4 text-white text-3xl leading-none z-10">×</button>
+          <div className="flex-1 flex items-center justify-center relative" onClick={e => e.stopPropagation()}>
+            {vues.length > 1 && <button type="button" onClick={() => show(open - 1)} className="absolute left-3 text-white text-4xl px-2">‹</button>}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={vues[open].url} alt={vues[open].legende} className="max-h-[80vh] max-w-[92vw] object-contain" />
+            {vues.length > 1 && <button type="button" onClick={() => show(open + 1)} className="absolute right-3 text-white text-4xl px-2">›</button>}
+          </div>
+          {(vues[open].legende || vues[open].description) && (
+            <div className="text-center px-6 pb-6" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+              {vues[open].legende && <p className="text-white font-semibold">{vues[open].legende}</p>}
+              {vues[open].description && <p className="text-white/70 text-sm mt-1">{vues[open].description}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function GaleriePub({ photos }: { photos: { url: string; legende: string }[] }) {
   const [open, setOpen] = useState<number | null>(null);
   const stripRef = useRef<HTMLDivElement>(null);

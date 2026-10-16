@@ -471,6 +471,7 @@ const MENU_PHOTOGRAPHE = [
       { href: '/mes-rdv',             label: 'Gérer mes RDV',    icon: '🗓️' },
       { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
       { href: '/photographe/galeries', label: 'Mes galeries clients', icon: '🖼️' },
+      { href: '/photographe/portfolio', label: 'Mon portfolio',  icon: '🎞️' },
       { href: '/mes-patients',        label: 'Mes clients',      icon: '👥' },
       { href: '/photographe/prestations', label: 'Mes prestations', icon: '📷' },
       { href: '/photographe/dashboard',   label: 'Statistiques',   icon: '📊' },
@@ -668,6 +669,7 @@ const MENU_PARTICULIER = [
 // Synonymes / termes courants pour retrouver une fonctionnalité sans fouiller
 // le menu. Fusionnés à l'index au moment de la recherche.
 const SEARCH_KEYWORDS: Record<string, string[]> = {
+  '/photographe/portfolio': ['portfolio', 'realisations', 'book', 'photos publiques', 'vitrine', 'couverture'],
   '/photographe/galeries': ['galerie', 'galeries', 'photos clients', 'livraison', 'selection', 'partage', 'album', 'apercus'],
   '/mes-galeries': ['galerie', 'photos', 'photographe', 'seance photo', 'album'],
   '/mes-animaux': ['carnet de sante', 'sante', 'vaccins', 'vaccination', 'vermifuge', 'antiparasitaire', 'poids', 'courbe de poids', 'fiche animal', 'mes betes', 'chiens', 'chats', 'chirurgie', 'hospitalisation', 'traitement', 'allergie', 'radio'],

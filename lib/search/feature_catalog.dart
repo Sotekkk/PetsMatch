@@ -6,6 +6,7 @@
 // ⚠️ À garder synchronisé avec les tiroirs : eleveur_nav.dart,
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
+import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:flutter/material.dart';
@@ -785,6 +786,12 @@ List<QuickAction> _all(BuildContext ctx) => [
   ),
 
   // ── Photographe ────────────────────────────────────────────────────────────
+  QuickAction(
+    label: 'Mon portfolio',
+    keywords: ['portfolio', 'réalisations', 'book', 'photos publiques', 'vitrine', 'couverture'],
+    icon: Icons.collections_outlined, group: 'Mon espace pro',
+    visible: () => _catPro == 'photographe', open: (c) => _push(c, const PhotographePortfolioPage()),
+  ),
   QuickAction(
     label: 'Mes galeries clients',
     keywords: ['galerie', 'galeries', 'photos clients', 'livraison', 'sélection', 'partage', 'album', 'aperçus'],

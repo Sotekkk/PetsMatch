@@ -1279,7 +1279,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       }
     }
 
-    if (catPro === 'photographe' || catPro === 'pension' || catPro === 'education') {
+    // Photographe : le portfolio a sa propre page (/photographe/portfolio,
+    // catégories, couverture, masquage…) — jamais réécrit d'ici.
+    if (catPro === 'pension' || catPro === 'education') {
       const items = [...galeriePhotos];
       for (let i = 0; i < newGaleriePhotos.length; i++) {
         const path = `profiles/${uid}/pro_${profileId}_galerie_${i}_${Date.now()}.jpg`;
@@ -1960,8 +1962,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </button>
         </Card>
 
-        {/* Galerie — photographe (portfolio), pension (logements), éducateur */}
-        {(catPro === 'photographe' || catPro === 'pension' || catPro === 'education') && (
+        {catPro === 'photographe' && (
+          <Card title="Portfolio">
+            <p className="text-xs text-gray-500 mb-2">Vos réalisations (catégories, couverture, ordre, masquage) se gèrent dans « Mon portfolio ».</p>
+            <a href="/photographe/portfolio" className="text-sm font-semibold text-[#0C5C6C]">Gérer mon portfolio →</a>
+          </Card>
+        )}
+        {/* Galerie — pension (logements), éducateur */}
+        {(catPro === 'pension' || catPro === 'education') && (
           <Card title={catPro === 'pension' ? 'Photos de la pension et des logements' : catPro === 'education' ? 'Photos' : 'Galerie / portfolio'}>
             <p className="text-xs text-gray-400 mb-3">
               {catPro === 'pension'

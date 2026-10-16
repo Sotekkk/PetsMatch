@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart' show portfolioPublic;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/utils/tarifs_veto.dart';
 import 'package:flutter/material.dart';
@@ -1025,8 +1026,18 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             ],
           )),
 
-          // Galerie / portfolio (photographe et tout autre pro l'ayant renseignée)
-          if (_photosGalerie.isNotEmpty) ...[
+          // Photographe : portfolio (catégories, couverture, photos masquées
+          // ou sans autorisation exclues).
+          if (_proData?['cat_pro'] == 'photographe' && portfolioPublic(_proData?['photos_galerie']).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: _PortfolioSection(
+              photos: portfolioPublic(_proData?['photos_galerie']),
+              onContact: _openChat,
+            )),
+          ],
+
+          // Galerie (pension, éducateur et autres pros l'ayant renseignée)
+          if (_proData?['cat_pro'] != 'photographe' && _photosGalerie.isNotEmpty) ...[
             const SizedBox(height: 12),
             _card(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1465,6 +1476,101 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
 }
 
 // ── Galerie défilable + visionneuse plein écran ───────────────────────────────
+
+/// Portfolio public du photographe : filtres par catégorie, grille sur deux
+/// colonnes aux proportions conservées, visionneuse avec titre et
+/// description, accès au contact (les boutons Contacter / Prendre RDV
+/// restent dans la barre du bas).
+class _PortfolioSection extends StatefulWidget {
+  final List<Map<String, dynamic>> photos;
+  final VoidCallback onContact;
+  const _PortfolioSection({required this.photos, required this.onContact});
+
+  @override
+  State<_PortfolioSection> createState() => _PortfolioSectionState();
+}
+
+class _PortfolioSectionState extends State<_PortfolioSection> {
+  String _cat = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final cats = widget.photos.map((p) => p['categorie']?.toString() ?? '').where((c) => c.isNotEmpty).toSet().toList();
+    final vues = _cat.isEmpty ? widget.photos : widget.photos.where((p) => p['categorie'] == _cat).toList();
+    final gauche = <int>[], droite = <int>[];
+    for (var i = 0; i < vues.length; i++) { (i.isEven ? gauche : droite).add(i); }
+    Widget tuile(int i) => GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _PortfolioVisionneuse(photos: vues, depart: i))),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ClipRRect(borderRadius: BorderRadius.circular(10),
+                child: Image.network(vues[i]['url'].toString(), fit: BoxFit.fitWidth, width: double.infinity, cacheWidth: 700)),
+          ),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('Portfolio', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025))),
+      if (cats.length > 1) ...[
+        const SizedBox(height: 10),
+        SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+          for (final c in ['', ...cats])
+            Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(
+              label: Text(c.isEmpty ? 'Tout' : c, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _cat == c ? Colors.white : const Color(0xFF1E2025))),
+              selected: _cat == c, showCheckmark: false, selectedColor: const Color(0xFF0C5C6C), backgroundColor: Colors.white,
+              side: BorderSide(color: _cat == c ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+              onSelected: (_) => setState(() => _cat = c),
+            )),
+        ])),
+      ],
+      const SizedBox(height: 10),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(children: [for (final i in gauche) tuile(i)])),
+        const SizedBox(width: 8),
+        Expanded(child: Column(children: [for (final i in droite) tuile(i)])),
+      ]),
+      TextButton.icon(
+        onPressed: widget.onContact,
+        style: TextButton.styleFrom(padding: EdgeInsets.zero, foregroundColor: const Color(0xFF0C5C6C)),
+        icon: const Icon(Icons.request_quote_outlined, size: 18),
+        label: const Text('Demander un devis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+      ),
+    ]);
+  }
+}
+
+class _PortfolioVisionneuse extends StatelessWidget {
+  final List<Map<String, dynamic>> photos;
+  final int depart;
+  const _PortfolioVisionneuse({required this.photos, required this.depart});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0),
+        body: PageView.builder(
+          controller: PageController(initialPage: depart),
+          itemCount: photos.length,
+          itemBuilder: (_, i) {
+            final p = photos[i];
+            final titre = p['legende']?.toString() ?? '';
+            final desc = p['description']?.toString() ?? '';
+            return Column(children: [
+              Expanded(child: InteractiveViewer(maxScale: 4,
+                  child: Center(child: Image.network(p['url'].toString(), fit: BoxFit.contain)))),
+              if (titre.isNotEmpty || desc.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+                  child: Column(children: [
+                    if (titre.isNotEmpty) Text(titre, textAlign: TextAlign.center,
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 15)),
+                    if (desc.isNotEmpty) Text(desc, textAlign: TextAlign.center,
+                        style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 13)),
+                  ]),
+                ),
+            ]);
+          },
+        ),
+      );
+}
 
 class _GalerieCarrousel extends StatefulWidget {
   final List<({String url, String legende})> photos;

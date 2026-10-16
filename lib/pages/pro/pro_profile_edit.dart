@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
@@ -505,9 +506,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   String get _forfaitsTable => _catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
   String get _forfaitsCountCol => _catPro == 'garde' ? 'nb_visites' : 'nb_seances';
 
-  // Pros disposant d'une galerie / portfolio public sur leur fiche.
-  bool get _hasGalerie =>
-      _catPro == 'photographe' || _catPro == 'pension' || _catPro == 'education';
+  // Pros disposant d'une galerie publique éditée ici. Le photographe a sa
+  // page « Mon portfolio » (catégories, couverture, masquage…) : jamais
+  // réécrit depuis le profil.
+  bool get _hasGalerie => _catPro == 'pension' || _catPro == 'education';
 
   Future<void> _loadForfaits() async {
     setState(() => _loadingForfaits = true);
@@ -1886,7 +1888,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _certificationsEditor(),
 
-                  // ── Galerie / portfolio public ────────────────────────────
+                  if (_catPro == 'photographe') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Portfolio'),
+                    const SizedBox(height: 4),
+                    Text('Vos réalisations (catégories, couverture, ordre, masquage) se gèrent dans « Mon portfolio ».',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                    TextButton.icon(
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PhotographePortfolioPage())),
+                      icon: const Icon(Icons.collections_outlined, size: 18),
+                      label: const Text('Gérer mon portfolio', style: TextStyle(fontFamily: 'Galey')),
+                    ),
+                  ],
+                  // ── Galerie publique (pension, éducateur) ─────────────────
                   if (_hasGalerie) ...[
                     const SizedBox(height: 24),
                     _sectionTitle(_catPro == 'pension'
