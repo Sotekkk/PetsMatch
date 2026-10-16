@@ -20,7 +20,10 @@ export interface AlbumRow {
   client_uid: string | null; client_profile_id: string | null; titre: string | null;
   description?: string | null; statut?: string | null; date_seance?: string | null; couverture_url?: string | null;
   filigrane?: boolean | null; partage_client?: boolean | null; created_at: string; updated_at?: string | null;
+  selection_confirmee_le?: string | null; selection_commentaire?: string | null; nb_photos_incluses?: number | null;
+  livree_le?: string | null;
 }
+export const BUCKET_LIVRAISONS = 'livraisons';
 
 export async function chargerAlbum(id: string): Promise<AlbumRow | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
@@ -72,10 +75,10 @@ export async function roleLecture(album: AlbumRow, uid: string | null, token: st
 export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
   const id = album.id;
   const { data: rows } = await admin.from('album_photos')
-    .select('id, storage_path, photo_url, nom_fichier, largeur, hauteur, ordre, favori, created_at')
+    .select('*')
     .eq('album_id', id).order('ordre').order('created_at');
   const photos = (rows ?? []) as { id: string; storage_path: string | null; photo_url: string | null; nom_fichier: string | null;
-    largeur: number | null; hauteur: number | null; ordre: number; favori: boolean; created_at: string }[];
+    largeur: number | null; hauteur: number | null; ordre: number; favori: boolean; created_at: string; selectionnee?: boolean | null }[];
   const chemins = photos.map(p => p.storage_path).filter((x): x is string => !!x);
   const signees: Record<string, string> = {};
   if (chemins.length) {
@@ -85,6 +88,10 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
   const { data: pro } = await admin.from('user_profiles_complet').select('nom, firstname, lastname, avatar_url')
     .eq('id', album.pro_profile_id ?? '').maybeSingle();
   const p = pro as { nom?: string | null; firstname?: string | null; lastname?: string | null; avatar_url?: string | null } | null;
+  // Livraison en cours (sans URL : le téléchargement passe par une URL
+  // signée de 10 min, demandée au moment du clic).
+  const { data: liv } = await admin.from('album_livraisons').select('id, numero, nom_fichier, taille_octets, nb_fichiers, expire_le, telechargements')
+    .eq('album_id', id).gt('expire_le', new Date().toISOString()).order('numero');
 
   return {
     role,
@@ -92,6 +99,8 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
       id: album.id, titre: album.titre, description: album.description ?? null, statut: album.statut ?? 'brouillon',
       date_seance: album.date_seance ?? null, couverture_url: album.couverture_url ?? null,
       filigrane: album.filigrane ?? true, partage_client: album.partage_client ?? false,
+      selection_confirmee_le: album.selection_confirmee_le ?? null, selection_commentaire: album.selection_commentaire ?? null,
+      nb_photos_incluses: album.nb_photos_incluses ?? null, livree_le: album.livree_le ?? null,
       // Données de gestion réservées au photographe.
       ...(role === 'pro' ? { rdv_id: album.rdv_id, client_uid: album.client_uid, client_profile_id: album.client_profile_id } : {}),
     },
@@ -99,8 +108,11 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
     photos: photos.map(ph => ({
       id: ph.id,
       url: ph.storage_path ? signees[ph.storage_path] ?? null : ph.photo_url,
-      largeur: ph.largeur, hauteur: ph.hauteur, ordre: ph.ordre,
+      largeur: ph.largeur, hauteur: ph.hauteur, ordre: ph.ordre, selectionnee: !!ph.selectionnee,
       ...(role === 'pro' ? { nom_fichier: ph.nom_fichier, storage_path: ph.storage_path, favori: ph.favori } : {}),
     })).filter(ph => !!ph.url),
+    livraison: ((liv ?? []) as { id: string; numero: number; nom_fichier: string; taille_octets: number | null; nb_fichiers: number | null; expire_le: string; telechargements: number }[])
+      .map(l => ({ id: l.id, numero: l.numero, nom: l.nom_fichier, taille: l.taille_octets, nb: l.nb_fichiers, expire_le: l.expire_le,
+        ...(role === 'pro' ? { telechargements: l.telechargements } : {}) })),
   };
 }

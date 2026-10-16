@@ -2,13 +2,25 @@
 // Galerie privée côté client (compte destinataire ou lien privé) : grille
 // d'aperçus aux proportions conservées, agrandissement. Aperçus seulement
 // (compressés, filigrane si activé) : les fichiers finaux ne sont jamais
-// exposés ici. Sélection et livraison : étape suivante.
-import { useEffect, useState } from 'react';
-import type { ContenuGalerie } from '@/lib/galeries-client';
+// exposés ici. Sélection : le client coche ses photos puis confirme
+// explicitement (définitif). Livraison : ZIP en stockage temporaire,
+// téléchargeables jusqu'à la date d'expiration affichée.
+import { useCallback, useEffect, useState } from 'react';
+import { choisirPhoto, confirmerSelection, liensLivraison, fmtTaille, type ContenuGalerie } from '@/lib/galeries-client';
 
-export default function GalerieVue({ charger }: { charger: () => Promise<ContenuGalerie> }) {
+const TEAL = '#0C5C6C';
+const ROUGE = '#B3261E';
+
+export default function GalerieVue({ charger, token }: { charger: () => Promise<ContenuGalerie>; token?: string }) {
   const [etat, setEtat] = useState<{ ok: true; g: ContenuGalerie } | { ok: false; err: string } | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
+  const [vueSelection, setVueSelection] = useState(false);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [occupe, setOccupe] = useState(false);
+
+  const recharger = useCallback(() => {
+    charger().then(g => setEtat({ ok: true, g })).catch(e => setEtat({ ok: false, err: (e as Error).message }));
+  }, [charger]);
 
   useEffect(() => {
     let annule = false;
@@ -36,8 +48,46 @@ export default function GalerieVue({ charger }: { charger: () => Promise<Contenu
       <p className="text-sm text-gray-500 mt-1">{etat.err}</p>
     </div>
   );
-  const { album, studio, photos } = etat.g;
+  const { album, studio, livraison } = etat.g;
+  const toutes = etat.g.photos;
+  const photos = vueSelection ? toutes.filter(p => p.selectionnee) : toutes;
   const protege = (e: React.SyntheticEvent) => e.preventDefault();
+  const client = etat.g.role === 'client';
+  const selectionOuverte = client && album.statut === 'partagee' && !album.selection_confirmee_le;
+  const nbChoisies = toutes.filter(p => p.selectionnee).length;
+  const nbLivres = livraison.reduce((n, l) => n + (l.nb ?? 0), 0);
+
+  async function basculer(id: string, choisie: boolean) {
+    if (!etat?.ok) return;
+    const g = etat.g;
+    setEtat({ ok: true, g: { ...g, photos: g.photos.map(p => (p.id === id ? { ...p, selectionnee: choisie } : p)) } });
+    try { await choisirPhoto(album.id, id, choisie, token); } catch (e) { alert((e as Error).message); recharger(); }
+  }
+  async function confirmer() {
+    setOccupe(true);
+    try { await confirmerSelection(album.id, confirmation ?? '', token); setConfirmation(null); recharger(); }
+    catch (e) { alert((e as Error).message); }
+    setOccupe(false);
+  }
+  async function telecharger() {
+    setOccupe(true);
+    try {
+      const liens = await liensLivraison(album.id, token);
+      // Un lien par archive : déclenchés l'un après l'autre (URL signées 10 min).
+      for (const l of liens) {
+        const a = document.createElement('a');
+        a.href = l.url; a.download = l.nom; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } catch (e) { alert((e as Error).message); }
+    setOccupe(false);
+  }
+  const coeur = (choisie: boolean) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill={choisie ? '#fff' : 'none'} stroke="#fff" strokeWidth={2} aria-hidden>
+      <path d="M12 20s-7-4.4-9-9a5 5 0 019-3 5 5 0 019 3c-2 4.6-9 9-9 9z" />
+    </svg>
+  );
 
   return (
     <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -54,14 +104,71 @@ export default function GalerieVue({ charger }: { charger: () => Promise<Contenu
         </div>
         {album.description && <p className="text-sm text-gray-700 mt-2 whitespace-pre-line">{album.description}</p>}
         <p className="text-xs text-gray-400 mt-2">Aperçus en qualité réduite. Les fichiers définitifs vous seront remis par votre photographe.</p>
-        {photos.length === 0 ? <p className="text-sm text-gray-400 text-center py-16">Aucune photo pour le moment.</p> : (
+
+        {livraison.length > 0 && (
+          <div className="mt-4 bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <p className="text-sm font-bold text-[#1F2A2E]">Vos photos finales sont prêtes</p>
+              <p className="text-xs text-gray-500">
+                {[nbLivres ? `${nbLivres} fichier${nbLivres > 1 ? 's' : ''}` : '', fmtTaille(livraison.reduce((n, l) => n + (l.taille ?? 0), 0)),
+                  livraison.length > 1 ? `${livraison.length} archives ZIP` : 'archive ZIP'].filter(Boolean).join(' · ')}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: ROUGE }}>Disponibles jusqu&apos;au {new Date(livraison[0].expire_le).toLocaleDateString('fr-FR')}, puis supprimées : pensez à les enregistrer.</p>
+            </div>
+            <button onClick={telecharger} disabled={occupe} className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>Télécharger</button>
+          </div>
+        )}
+
+        {client && (selectionOuverte || album.selection_confirmee_le) && (
+          <div className="mt-4 bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[200px]">
+              {album.selection_confirmee_le ? (
+                <>
+                  <p className="text-sm font-bold text-[#1F2A2E]">Sélection envoyée le {new Date(album.selection_confirmee_le).toLocaleDateString('fr-FR')}</p>
+                  <p className="text-xs text-gray-500">{nbChoisies} photo{nbChoisies > 1 ? 's' : ''} choisie{nbChoisies > 1 ? 's' : ''}. Votre photographe prépare vos fichiers.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-bold text-[#1F2A2E]">Choisissez vos photos</p>
+                  <p className="text-xs text-gray-500">
+                    Touchez le cœur sur chaque photo. {nbChoisies} sélectionnée{nbChoisies > 1 ? 's' : ''}{album.nb_photos_incluses ? ` sur ${album.nb_photos_incluses} incluse${album.nb_photos_incluses > 1 ? 's' : ''} dans votre prestation` : ''}.
+                    {album.nb_photos_incluses && nbChoisies > album.nb_photos_incluses ? ' Les photos supplémentaires sont facturées selon le tarif de votre photographe.' : ''}
+                  </p>
+                </>
+              )}
+            </div>
+            {nbChoisies > 0 && (
+              <button onClick={() => setVueSelection(v => !v)} className="px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200">
+                {vueSelection ? 'Toutes les photos' : 'Voir ma sélection'}
+              </button>
+            )}
+            {selectionOuverte && (
+              <button onClick={() => setConfirmation('')} disabled={!nbChoisies} className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{ background: TEAL }}>
+                Confirmer ma sélection
+              </button>
+            )}
+          </div>
+        )}
+
+        {photos.length === 0 ? <p className="text-sm text-gray-400 text-center py-16">{vueSelection ? 'Aucune photo sélectionnée.' : 'Aucune photo pour le moment.'}</p> : (
           <div className="mt-5 columns-2 sm:columns-3 lg:columns-4 gap-3 [column-fill:_balance]">
             {photos.map((p, i) => (
-              <button key={p.id} onClick={() => setZoom(i)} className="block w-full mb-3 break-inside-avoid rounded-xl overflow-hidden bg-gray-100">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.url} alt="" loading="lazy" draggable={false} onContextMenu={protege}
-                  className="w-full h-auto block select-none" style={p.largeur && p.hauteur ? { aspectRatio: `${p.largeur} / ${p.hauteur}` } : undefined} />
-              </button>
+              <div key={p.id} className="relative mb-3 break-inside-avoid rounded-xl overflow-hidden bg-gray-100"
+                style={p.selectionnee && client ? { outline: `3px solid ${TEAL}`, outlineOffset: -3 } : undefined}>
+                <button onClick={() => setZoom(i)} className="block w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" loading="lazy" draggable={false} onContextMenu={protege}
+                    className="w-full h-auto block select-none" style={p.largeur && p.hauteur ? { aspectRatio: `${p.largeur} / ${p.hauteur}` } : undefined} />
+                </button>
+                {selectionOuverte ? (
+                  <button onClick={() => basculer(p.id, !p.selectionnee)} aria-label={p.selectionnee ? 'Retirer de ma sélection' : 'Ajouter à ma sélection'}
+                    className="absolute right-2 top-2 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: p.selectionnee ? TEAL : 'rgba(0,0,0,0.35)' }}>
+                    {coeur(p.selectionnee)}
+                  </button>
+                ) : p.selectionnee && client ? (
+                  <span className="absolute right-2 top-2 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: TEAL }}>{coeur(true)}</span>
+                ) : null}
+              </div>
             ))}
           </div>
         )}
@@ -80,6 +187,26 @@ export default function GalerieVue({ charger }: { charger: () => Promise<Contenu
             </>
           )}
           <p className="absolute bottom-4 text-white/70 text-sm">{zoom + 1} / {photos.length}</p>
+          {selectionOuverte && (
+            <button onClick={e => { e.stopPropagation(); basculer(photos[zoom].id, !photos[zoom].selectionnee); }}
+              className="absolute top-4 right-4 px-4 py-2 rounded-full text-sm font-semibold text-white" style={{ background: photos[zoom].selectionnee ? TEAL : 'rgba(255,255,255,0.18)' }}>
+              {photos[zoom].selectionnee ? 'Dans ma sélection' : 'Ajouter à ma sélection'}
+            </button>
+          )}
+        </div>
+      )}
+      {confirmation !== null && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setConfirmation(null)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="font-bold text-[#1F2A2E]">Confirmer ma sélection</p>
+            <p className="text-sm text-gray-600">Vous avez choisi {nbChoisies} photo{nbChoisies > 1 ? 's' : ''}. Une fois confirmée, la sélection est transmise à votre photographe et ne peut plus être modifiée.</p>
+            <textarea value={confirmation} onChange={e => setConfirmation(e.target.value)} rows={3} placeholder="Un message pour votre photographe (facultatif)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmation(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Revenir</button>
+              <button onClick={confirmer} disabled={occupe} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>Confirmer</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

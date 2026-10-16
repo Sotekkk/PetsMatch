@@ -7,7 +7,9 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:archive/archive_io.dart' show ZipFileEncoder;
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -132,5 +134,96 @@ class GaleriesApi {
       }
     }
     return (ajoutees: ajoutees, doublons: doublons, erreurs: erreurs);
+  }
+
+  // ── Sélection (client) ───────────────────────────────────────────────
+
+  static Future<void> choisir(String albumId, String photoId, bool choisie) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/selection'),
+        headers: await siteApiHeaders(), body: jsonEncode({'photoId': photoId, 'choisie': choisie}));
+    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Sélection impossible');
+  }
+
+  static Future<void> confirmerSelection(String albumId, String commentaire) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/selection'),
+        headers: await siteApiHeaders(), body: jsonEncode({'confirmer': true, 'commentaire': commentaire}));
+    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Confirmation impossible');
+  }
+
+  // ── Livraison (stockage temporaire, ZIP) ─────────────────────────────
+
+  /// Liens de téléchargement (URL signées de 10 min) des ZIP livrés.
+  static Future<List<Map<String, dynamic>>> liensLivraison(String albumId) async {
+    final r = await http.get(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'), headers: await siteApiHeaders());
+    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'Téléchargement indisponible');
+    return (j['fichiers'] as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Taille max d'une archive (limite d'envoi du stockage).
+  static const partMax = 45 * 1024 * 1024;
+
+  /// Photographe : regroupe les fichiers finaux en ZIP (45 Mo max chacun,
+  /// sans recompression, écrits sur disque), les envoie au stockage
+  /// temporaire privé puis publie la livraison.
+  static Future<void> livrer(String albumId, List<File> fichiers, int jours, void Function(String) progres) async {
+    final groupes = <List<File>>[];
+    var courant = <File>[];
+    var taille = 0;
+    for (final f in fichiers) {
+      final t = await f.length();
+      if (courant.isNotEmpty && taille + t > partMax) { groupes.add(courant); courant = []; taille = 0; }
+      courant.add(f); taille += t;
+    }
+    if (courant.isNotEmpty) groupes.add(courant);
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
+        headers: await siteApiHeaders(), body: jsonEncode({'action': 'preparer', 'parts': groupes.length}));
+    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'Livraison impossible');
+    final cibles = (j['parts'] as List).cast<Map<String, dynamic>>();
+    final dossier = await getTemporaryDirectory();
+    final storage = Supabase.instance.client.storage.from('livraisons');
+    final publies = <Map<String, dynamic>>[];
+    for (var i = 0; i < groupes.length; i++) {
+      progres('Compression ${i + 1} / ${groupes.length}…');
+      final chemin = '${dossier.path}/livraison_${DateTime.now().microsecondsSinceEpoch}_$i.zip';
+      final enc = ZipFileEncoder()..create(chemin, level: ZipFileEncoder.store);
+      final noms = <String>{};
+      for (final f in groupes[i]) {
+        var nom = f.uri.pathSegments.last;
+        var k = 2;
+        while (noms.contains(nom)) {
+          final p = nom.lastIndexOf('.');
+          nom = p > 0 ? '${nom.substring(0, p)}-$k${nom.substring(p)}' : '$nom-$k';
+          k++;
+        }
+        noms.add(nom);
+        await enc.addFile(f, nom);
+      }
+      await enc.close();
+      final zip = File(chemin);
+      try {
+        progres('Envoi ${i + 1} / ${groupes.length}…');
+        await storage.uploadBinaryToSignedUrl(cibles[i]['path'] as String, cibles[i]['token'] as String,
+            await zip.readAsBytes(), const FileOptions(contentType: 'application/zip'));
+        publies.add({'path': cibles[i]['path'], 'taille': await zip.length(), 'nb': groupes[i].length});
+      } finally {
+        try { await zip.delete(); } catch (_) {}
+      }
+    }
+    final p = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
+        headers: await siteApiHeaders(), body: jsonEncode({'action': 'publier', 'parts': publies, 'jours': jours}));
+    if (p.statusCode != 200) throw Exception((jsonDecode(p.body) as Map)['error'] ?? 'Publication impossible');
+  }
+
+  static Future<void> actionLivraison(String albumId, String action, {int jours = 30}) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
+        headers: await siteApiHeaders(), body: jsonEncode({'action': action, 'jours': jours}));
+    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Action impossible');
+  }
+
+  static String taille(num? o) {
+    if (o == null || o == 0) return '';
+    return o > 1024 * 1024 ? '${(o / 1024 / 1024).toStringAsFixed(1).replaceAll('.', ',')} Mo' : '${(o / 1024).round()} Ko';
   }
 }

@@ -18,6 +18,7 @@ const pensionFunctions = require("./pension");
 const cessionSterilisationFunctions = require("./cession_sterilisation");
 const abonnementFunctions = require("./abonnements");
 const storiesCleanupFunctions = require("./stories_cleanup");
+const livraisonsPhotoFunctions = require("./livraisons_photo");
 const parseCarnetDocumentFunctions = require("./parse_carnet_document");
 
 // Stripe + messagerie
@@ -103,6 +104,7 @@ exports.sendAnimalBirthdayParticulier = cessionSterilisationFunctions.sendAnimal
 
 // Stories Pets Social — purge 24h
 exports.cleanupExpiredStories = storiesCleanupFunctions.cleanupExpiredStories;
+exports.purgerLivraisonsPhoto = livraisonsPhotoFunctions.purgerLivraisonsPhoto;
 
 // Carnet de santé — import IA photo/PDF (ordonnance, CR, carnet vaccinal...)
 exports.parseCarnetDocument = parseCarnetDocumentFunctions.parseCarnetDocument;

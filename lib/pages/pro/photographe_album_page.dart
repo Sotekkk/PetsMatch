@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -44,6 +45,9 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
   String _studio = '';
   List<Map<String, dynamic>> _photos = [];
   List<Map<String, dynamic>> _liens = [];
+  List<Map<String, dynamic>> _livraison = [];
+  bool _filtreSel = false;
+  String? _livEnCours;
   final Set<String> _sel = {};
   (int, int)? _progres;
 
@@ -93,6 +97,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
       _album = Map<String, dynamic>.from(c['album'] as Map);
       _studio = (c['studio'] as Map?)?['nom']?.toString() ?? '';
       _photos = List<Map<String, dynamic>>.from((c['photos'] as List).map((e) => Map<String, dynamic>.from(e as Map)));
+      _livraison = List<Map<String, dynamic>>.from(((c['livraison'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)));
       _sel.removeWhere((id) => !_photos.any((p) => p['id'] == id));
       _liens = List<Map<String, dynamic>>.from(await _supa.from('album_partage').select('id, token, expire_at, actif')
           .eq('album_id', _albumId!).order('created_at', ascending: false));
@@ -203,6 +208,113 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
         await _charger();
       }
     } catch (e) { _snack('Erreur : $e'); }
+  }
+
+  int get _nbSel => _photos.where((p) => p['selectionnee'] == true).length;
+
+  Future<void> _livrer(int jours) async {
+    final res = await FilePicker.pickFiles(allowMultiple: true);
+    final fichiers = (res?.files ?? []).where((f) => f.path != null).map((f) => File(f.path!)).toList();
+    if (fichiers.isEmpty) return;
+    setState(() => _livEnCours = 'Préparation…');
+    try {
+      await GaleriesApi.livrer(_albumId!, fichiers, jours, (t) { if (mounted) setState(() => _livEnCours = t); });
+      _snack('Livraison envoyée${_album['partage_client'] == true ? ' : votre client est prévenu' : ''}');
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+    if (mounted) setState(() => _livEnCours = null);
+    _charger();
+  }
+
+  Future<void> _selectionEtLivraison() async {
+    final incluses = TextEditingController(text: _album['nb_photos_incluses']?.toString() ?? '');
+    var jours = 30;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        final confirmee = DateTime.tryParse(_album['selection_confirmee_le']?.toString() ?? '')?.toLocal();
+        final exp = _livraison.isEmpty ? null : DateTime.tryParse(_livraison.first['expire_le'].toString())?.toLocal();
+        final nbLivres = _livraison.fold<int>(0, (n, l) => n + ((l['nb'] as num?)?.toInt() ?? 0));
+        final telech = _livraison.fold<int>(0, (n, l) => (l['telechargements'] as num? ?? 0).toInt() > n ? (l['telechargements'] as num).toInt() : n);
+        return SafeArea(child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Sélection du client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            const SizedBox(height: 6),
+            if (confirmee != null) ...[
+              Text('$_nbSel photo${_nbSel > 1 ? 's' : ''} choisie${_nbSel > 1 ? 's' : ''}, confirmée le ${DateFormat('dd/MM/yyyy').format(confirmee)}.',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+              if ((_album['selection_commentaire']?.toString() ?? '').isNotEmpty)
+                Text('« ${_album['selection_commentaire']} »', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+              TextButton(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                onPressed: () async {
+                  await _majAlbum({'selection_confirmee_le': null, 'statut': 'partagee'});
+                  setM(() {});
+                },
+                child: const Text('Rouvrir la sélection', style: TextStyle(fontFamily: 'Galey', color: _teal)),
+              ),
+            ] else
+              Text(_album['statut'] == 'partagee'
+                  ? 'Ouverte : le client choisit ses photos ($_nbSel pour l\'instant) puis confirme.'
+                  : 'La sélection s\'ouvre quand la galerie est partagée (statut « En attente de sélection »).',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: incluses, keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Photos incluses dans la prestation (facultatif)', border: OutlineInputBorder(), isDense: true),
+              onSubmitted: (v) => _majAlbum({'nb_photos_incluses': int.tryParse(v.trim())}),
+            ),
+            const Divider(height: 28),
+            const Text('Livraison des fichiers finaux', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            const SizedBox(height: 6),
+            if (_livraison.isNotEmpty) ...[
+              Text('$nbLivres fichiers · ${GaleriesApi.taille(_livraison.fold<num>(0, (n, l) => n + ((l['taille'] as num?) ?? 0)))} · ${_livraison.length} ZIP',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+              if (exp != null)
+                Text('Supprimés automatiquement le ${DateFormat('dd/MM/yyyy').format(exp)} (client et vous prévenus 3 jours avant).',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _rouge)),
+              Text('Téléchargements par le client : $telech', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+              Row(children: [
+                TextButton(onPressed: () async {
+                  try { await GaleriesApi.actionLivraison(_albumId!, 'prolonger'); await _charger(); setM(() {}); } catch (e) { _snack(e.toString()); }
+                }, child: const Text('Prolonger de 30 jours', style: TextStyle(fontFamily: 'Galey', color: _teal))),
+                TextButton(onPressed: () async {
+                  try { await GaleriesApi.actionLivraison(_albumId!, 'supprimer'); await _charger(); setM(() {}); } catch (e) { _snack(e.toString()); }
+                }, child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: _rouge))),
+              ]),
+            ] else
+              Text('Aucune livraison en cours.', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+            if (_premium) ...[
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, children: [
+                for (final j in [15, 30, 60])
+                  ChoiceChip(
+                    label: Text('$j jours', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: jours == j ? Colors.white : _ink)),
+                    selected: jours == j, showCheckmark: false, selectedColor: _teal,
+                    onSelected: (_) => setM(() => jours = j),
+                  ),
+              ]),
+              const SizedBox(height: 6),
+              SizedBox(width: double.infinity, child: FilledButton.icon(
+                onPressed: _livEnCours != null ? null : () { Navigator.pop(ctx); _livrer(jours); },
+                style: FilledButton.styleFrom(backgroundColor: _teal),
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: Text(_livraison.isEmpty ? 'Choisir les fichiers finaux et livrer' : 'Remplacer la livraison',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              )),
+              const SizedBox(height: 6),
+              Text('Fichiers regroupés en ZIP (45 Mo max par archive) dans un stockage temporaire privé : seul le client peut les télécharger, '
+                  'puis ils sont supprimés. La galerie passe en « Livrée » (sans la marquer payée).',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            ],
+          ]),
+        ));
+      }),
+    );
   }
 
   Future<void> _reglages() async {
@@ -334,6 +446,8 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
     }
   }
 
+  List<Map<String, dynamic>> get _vues => _filtreSel ? _photos.where((p) => p['selectionnee'] == true).toList() : _photos;
+
   @override
   Widget build(BuildContext context) {
     final statut = kStatutsGalerie.where((s) => s.$1 == _album['statut']).firstOrNull?.$2 ?? 'Brouillon';
@@ -346,6 +460,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
         actions: [
           if (_albumId != null && _erreur == null) ...[
             IconButton(icon: const Icon(Icons.edit_outlined), tooltip: 'Titre et message', onPressed: _renommer),
+            IconButton(icon: const Icon(Icons.favorite_border), tooltip: 'Sélection et livraison', onPressed: _selectionEtLivraison),
             IconButton(icon: const Icon(Icons.tune), tooltip: 'Statut et partage', onPressed: _reglages),
           ],
         ],
@@ -384,7 +499,14 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                             '${_photos.length} photo${_photos.length > 1 ? 's' : ''}',
                             statut,
                             if (_album['partage_client'] == true) 'partagée au client',
+                            if (_livEnCours != null) _livEnCours!,
                           ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700))),
+                          if (_nbSel > 0 && _sel.isEmpty)
+                            FilterChip(
+                              label: Text('Sélection client ($_nbSel)', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _filtreSel ? Colors.white : _ink)),
+                              selected: _filtreSel, showCheckmark: false, selectedColor: _teal, visualDensity: VisualDensity.compact,
+                              onSelected: (v) => setState(() => _filtreSel = v),
+                            ),
                           if (_sel.isNotEmpty) ...[
                             if (_sel.length == 1) ...[
                               IconButton(tooltip: 'Couverture', icon: const Icon(Icons.star_outline, size: 20),
@@ -409,9 +531,9 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                               child: GridView.builder(
                                 padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
                                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4),
-                                itemCount: _photos.length,
+                                itemCount: _vues.length,
                                 itemBuilder: (_, i) {
-                                  final p = _photos[i];
+                                  final p = _vues[i];
                                   final id = p['id'].toString();
                                   final actif = _sel.contains(id);
                                   return GestureDetector(
@@ -432,6 +554,9 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                                       if (actif)
                                         const Positioned(right: 4, top: 4, child: CircleAvatar(radius: 10, backgroundColor: _teal,
                                             child: Icon(Icons.check, size: 13, color: Colors.white))),
+                                      if (p['selectionnee'] == true)
+                                        const Positioned(left: 4, bottom: 4, child: CircleAvatar(radius: 10, backgroundColor: _teal,
+                                            child: Icon(Icons.favorite, size: 11, color: Colors.white))),
                                     ]),
                                   );
                                 },

@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
@@ -498,6 +499,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // Toilettage terminé (prévenu par le salon) → fiche de l'animal.
     // Compte rendu de toilettage partagé → onglet Consultations de l'animal.
     // Galerie photo partagée par un photographe → galerie privée.
+    // Sélection confirmée (photographe) / livraison prête ou bientôt expirée.
+    if (type == 'galerie_selection_recue' || type == 'galerie_livree' || type == 'galerie_expiration') {
+      final albumId = data is Map ? data['albumId'] as String? : null;
+      if (albumId != null) {
+        final pro = type == 'galerie_selection_recue' || (type == 'galerie_expiration' && User_Info.catPro == 'photographe');
+        await Navigator.push(context, MaterialPageRoute(builder: (_) =>
+            pro ? PhotographeAlbumPage(albumId: albumId) : GalerieClientPage(albumId: albumId)));
+      }
+      return;
+    }
     if (type == 'galerie_disponible') {
       final albumId = data is Map ? data['albumId'] as String? : null;
       await Navigator.push(context, MaterialPageRoute(builder: (_) =>

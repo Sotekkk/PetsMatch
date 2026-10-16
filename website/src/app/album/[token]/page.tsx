@@ -10,5 +10,5 @@ import { chargerGalerieParLien } from '@/lib/galeries-client';
 export default function AlbumPartagePage() {
   const { token } = useParams<{ token: string }>();
   const charger = useCallback(() => chargerGalerieParLien(token), [token]);
-  return <GalerieVue charger={charger} />;
+  return <GalerieVue charger={charger} token={token} />;
 }

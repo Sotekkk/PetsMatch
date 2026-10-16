@@ -4,13 +4,14 @@
 // lib/utils/galeries_api.dart.
 import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
+import { zip } from 'fflate';
 
 /** Taille max (côté le plus long) et qualité des aperçus conservés. */
 export const APERCU_MAX = 1600;
 export const APERCU_QUALITE = 0.78;
 
 export interface PhotoGalerie {
-  id: string; url: string; largeur: number | null; hauteur: number | null; ordre: number;
+  id: string; url: string; largeur: number | null; hauteur: number | null; ordre: number; selectionnee: boolean;
   nom_fichier?: string | null; storage_path?: string | null; favori?: boolean;
 }
 export interface ContenuGalerie {
@@ -20,7 +21,9 @@ export interface ContenuGalerie {
     /** Id de la photo de couverture (album_photos.id). */
     couverture_url: string | null; filigrane: boolean; partage_client: boolean;
     rdv_id?: string | null; client_uid?: string | null; client_profile_id?: string | null;
+    selection_confirmee_le: string | null; selection_commentaire: string | null; nb_photos_incluses: number | null; livree_le: string | null;
   };
+  livraison: { id: string; numero: number; nom: string; taille: number | null; nb: number | null; expire_le: string; telechargements?: number }[];
   studio: { nom: string; avatar: string | null };
   photos: PhotoGalerie[];
 }
@@ -141,3 +144,89 @@ export async function supprimerGalerie(albumId: string) {
   const r = await apiFetch(`/api/galeries/${albumId}`, { method: 'DELETE' });
   if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Suppression impossible');
 }
+
+const q = (token?: string) => (token ? `?token=${encodeURIComponent(token)}` : '');
+
+/** Client : coche / décoche une photo (avant confirmation). */
+export async function choisirPhoto(albumId: string, photoId: string, choisie: boolean, token?: string) {
+  const r = await apiFetch(`/api/galeries/${albumId}/selection${q(token)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoId, choisie }),
+  });
+  if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Sélection impossible');
+}
+
+/** Client : confirmation explicite et définitive de la sélection. */
+export async function confirmerSelection(albumId: string, commentaire: string, token?: string) {
+  const r = await apiFetch(`/api/galeries/${albumId}/selection${q(token)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmer: true, commentaire }),
+  });
+  if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Confirmation impossible');
+}
+
+/** Liens de téléchargement (URL signées de 10 min) des ZIP livrés. */
+export async function liensLivraison(albumId: string, token?: string): Promise<{ id: string; nom: string; url: string }[]> {
+  const r = await apiFetch(`/api/galeries/${albumId}/livraison${q(token)}`, { cache: 'no-store' });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error ?? 'Téléchargement indisponible');
+  return j.fichiers;
+}
+
+/** Taille max d'une partie ZIP (limite d'envoi du stockage). */
+export const PART_MAX = 45 * 1024 * 1024;
+
+function zipper(fichiers: Record<string, Uint8Array>): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => zip(fichiers, { level: 0 }, (e, d) => (e ? reject(e) : resolve(d))));
+}
+
+/** Photographe : livre les fichiers finaux. ZIP construits dans le
+ *  navigateur (parties de 45 Mo max, fichiers déjà compressés : stockage
+ *  sans recompression), envoyés au stockage temporaire privé, puis publiés
+ *  avec une durée de disponibilité. */
+export async function livrerFichiers(albumId: string, files: File[], jours: number, onProgres: (t: string) => void) {
+  const groupes: File[][] = [];
+  let courant: File[] = [], taille = 0;
+  for (const f of files) {
+    if (courant.length && taille + f.size > PART_MAX) { groupes.push(courant); courant = []; taille = 0; }
+    courant.push(f); taille += f.size;
+  }
+  if (courant.length) groupes.push(courant);
+  const r = await apiFetch(`/api/galeries/${albumId}/livraison`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'preparer', parts: groupes.length }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error ?? 'Livraison impossible');
+  const cibles = j.parts as { path: string; token: string }[];
+  const publies: { path: string; taille: number; nb: number }[] = [];
+  for (let i = 0; i < groupes.length; i++) {
+    onProgres(`Compression ${i + 1} / ${groupes.length}…`);
+    const contenu: Record<string, Uint8Array> = {};
+    const noms = new Set<string>();
+    for (const f of groupes[i]) {
+      let nom = f.name; let k = 2;
+      while (noms.has(nom)) nom = f.name.replace(/(\.[^.]*)?$/, `-${k++}$1`);
+      noms.add(nom);
+      contenu[nom] = new Uint8Array(await f.arrayBuffer());
+    }
+    const data = await zipper(contenu);
+    onProgres(`Envoi ${i + 1} / ${groupes.length}…`);
+    const { error } = await supabase.storage.from('livraisons').uploadToSignedUrl(cibles[i].path, cibles[i].token,
+      new Blob([data as BlobPart], { type: 'application/zip' }), { contentType: 'application/zip' });
+    if (error) throw new Error(error.message.includes('size') || error.message.includes('large')
+      ? 'Fichier trop volumineux pour le stockage (une photo dépasse 45 Mo ?)' : error.message);
+    publies.push({ path: cibles[i].path, taille: data.byteLength, nb: groupes[i].length });
+  }
+  const p = await apiFetch(`/api/galeries/${albumId}/livraison`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publier', parts: publies, jours }),
+  });
+  if (!p.ok) throw new Error(((await p.json()) as { error?: string }).error ?? 'Publication impossible');
+}
+
+export async function actionLivraison(albumId: string, action: 'prolonger' | 'supprimer', jours = 30) {
+  const r = await apiFetch(`/api/galeries/${albumId}/livraison`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, jours }),
+  });
+  if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Action impossible');
+}
+
+export const fmtTaille = (o: number | null | undefined) =>
+  !o ? '' : o > 1024 * 1024 ? `${(o / 1024 / 1024).toFixed(1).replace('.', ',')} Mo` : `${Math.round(o / 1024)} Ko`;

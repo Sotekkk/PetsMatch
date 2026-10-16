@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifiedUid, requireUser } from '@/lib/server-auth';
-import { admin, BUCKET_GALERIES, chargerAlbum, roleLecture, contenuGalerie, ENTETES_PRIVEES } from '@/lib/galeries-server';
+import { admin, BUCKET_GALERIES, BUCKET_LIVRAISONS, chargerAlbum, roleLecture, contenuGalerie, ENTETES_PRIVEES } from '@/lib/galeries-server';
 
 // GET : contenu d'une galerie privée (fiche + aperçus en URL signées courtes).
 // Accès : photographe / cogérant, client destinataire (galerie partagée) ou
@@ -30,6 +30,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   for (let i = 0; i < chemins.length; i += 100) {
     await admin.storage.from(BUCKET_GALERIES).remove(chemins.slice(i, i + 100));
   }
+  // Livraison temporaire éventuelle (ZIP) : supprimée avec la galerie.
+  const { data: liv } = await admin.from('album_livraisons').select('storage_path').eq('album_id', id);
+  const zips = ((liv ?? []) as { storage_path: string }[]).map(r => r.storage_path);
+  if (zips.length) await admin.storage.from(BUCKET_LIVRAISONS).remove(zips);
   await admin.from('album_partage').delete().eq('album_id', id);
   await admin.from('album_photos').delete().eq('album_id', id);
   const { error } = await admin.from('albums_photo').delete().eq('id', id);

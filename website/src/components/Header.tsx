@@ -963,7 +963,12 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
     // Galerie photo partagée par un photographe → galerie privée.
     case 'galerie_disponible':
+    case 'galerie_livree':
+    case 'galerie_expiration':
       return d.albumId ? `/galerie/${d.albumId}` : '/mes-galeries';
+    // Sélection confirmée par le client → gestion de la galerie (photographe).
+    case 'galerie_selection_recue':
+      return d.albumId ? `/photographe/galeries/${d.albumId}` : '/photographe/galeries';
     // Compte rendu de toilettage partagé → onglet Consultations de l'animal.
     case 'toilettage_cr':
       return d.animalId ? `/mes-animaux/${d.animalId}?tab=consultations` : null;

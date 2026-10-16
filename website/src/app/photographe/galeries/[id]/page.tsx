@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useProfessionPlanCode } from '@/lib/use-plan';
 import { STATUTS_GALERIE } from '@/lib/photographe';
-import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, type ContenuGalerie } from '@/lib/galeries-client';
+import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, type ContenuGalerie } from '@/lib/galeries-client';
 
 const TEAL = '#0C5C6C';
 const ROUGE = '#B3261E';
@@ -37,6 +37,10 @@ export default function GalerieStudioPage() {
   const [titre, setTitre] = useState('');
   const [description, setDescription] = useState('');
   const [maintenant, setMaintenant] = useState(0);
+  const [filtreSel, setFiltreSel] = useState(false);
+  const [finals, setFinals] = useState<File[]>([]);
+  const [joursLiv, setJoursLiv] = useState(30);
+  const [livEnCours, setLivEnCours] = useState('');
 
   const charger = useCallback(async () => {
     try {
@@ -130,9 +134,20 @@ export default function GalerieStudioPage() {
     else charger();
   }
 
+  async function livrer() {
+    if (!finals.length) return;
+    try {
+      await livrerFichiers(id, finals, joursLiv, setLivEnCours);
+      setFinals([]); setLivEnCours('');
+      charger();
+    } catch (e) { setLivEnCours(''); alert((e as Error).message); }
+  }
+
   if (err) return <p className="text-center py-24 text-sm text-gray-500">{err}</p>;
   if (!g) return <div className="flex justify-center py-24"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
-  const { album, photos } = g;
+  const { album, livraison } = g;
+  const nbSel = g.photos.filter(p => p.selectionnee).length;
+  const photos = filtreSel ? g.photos.filter(p => p.selectionnee) : g.photos;
   const tousSel = photos.length > 0 && sel.size === photos.length;
   const origine = typeof window !== 'undefined' ? window.location.origin : '';
   const liensActifs = liens.filter(l => l.actif && new Date(l.expire_at).getTime() > maintenant);
@@ -180,6 +195,12 @@ export default function GalerieStudioPage() {
                   <input type="checkbox" checked={tousSel} onChange={() => setSel(tousSel ? new Set() : new Set(photos.map(p => p.id)))} />
                   {sel.size ? `${sel.size} sélectionnée${sel.size > 1 ? 's' : ''}` : 'Tout sélectionner'}
                 </label>
+                {nbSel > 0 && (
+                  <button onClick={() => setFiltreSel(f => !f)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border"
+                    style={filtreSel ? { background: TEAL, color: '#fff', borderColor: TEAL } : { borderColor: '#E5E7EB' }}>
+                    Sélection client ({nbSel})
+                  </button>
+                )}
                 <span className="flex-1" />
                 {sel.size === 1 && <>
                   <button onClick={() => majAlbum({ couverture_url: [...sel][0] })} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200">Définir comme couverture</button>
@@ -199,6 +220,7 @@ export default function GalerieStudioPage() {
                         <img src={p.url} alt="" loading="lazy" className="w-full h-full object-contain bg-gray-50" />
                         {album.couverture_url === p.id && <span className="absolute left-1 top-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/90 text-[#1F2A2E]">Couverture</span>}
                         {actif && <span className="absolute right-1 top-1 w-5 h-5 rounded-full text-white text-xs flex items-center justify-center" style={{ background: TEAL }}>✓</span>}
+                        {p.selectionnee && <span className="absolute left-1 bottom-1 text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style={{ background: TEAL }}>Choisie</span>}
                       </button>
                     );
                   })}
@@ -216,6 +238,62 @@ export default function GalerieStudioPage() {
                 {Object.entries(STATUTS_GALERIE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
               <p className="text-xs text-gray-500">Une galerie livrée n&apos;est pas considérée comme payée : la facturation garde son propre statut.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+              <p className="text-sm font-bold text-[#1F2A2E]">Sélection du client</p>
+              {album.selection_confirmee_le ? (
+                <>
+                  <p className="text-sm">{nbSel} photo{nbSel > 1 ? 's' : ''} choisie{nbSel > 1 ? 's' : ''}, confirmée le {new Date(album.selection_confirmee_le).toLocaleDateString('fr-FR')}.</p>
+                  {album.selection_commentaire && <p className="text-sm text-gray-600 whitespace-pre-line">« {album.selection_commentaire} »</p>}
+                  <button onClick={() => { if (confirm('Rouvrir la sélection ? Le client pourra de nouveau la modifier.')) majAlbum({ selection_confirmee_le: null, statut: 'partagee' }); }}
+                    className="text-xs font-semibold" style={{ color: TEAL }}>Rouvrir la sélection</button>
+                </>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  {album.statut === 'partagee' ? `Ouverte : le client choisit ses photos (${nbSel} pour l'instant) puis confirme.` : 'La sélection s\'ouvre quand la galerie est partagée (statut « En attente de sélection »).'}
+                </p>
+              )}
+              <label className="flex items-center gap-2 text-sm pt-1">
+                <span className="flex-1 text-xs text-gray-600">Photos incluses dans la prestation</span>
+                <input type="number" min={0} defaultValue={album.nb_photos_incluses ?? ''} placeholder="—"
+                  onBlur={e => { const v = e.target.value ? Math.max(0, parseInt(e.target.value)) : null; if (v !== album.nb_photos_incluses) majAlbum({ nb_photos_incluses: v }); }}
+                  className="w-20 border border-gray-200 rounded-lg px-2 py-1 text-sm" />
+              </label>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+              <p className="text-sm font-bold text-[#1F2A2E]">Livraison des fichiers finaux</p>
+              {livraison.length > 0 ? (
+                <div className="text-sm space-y-1">
+                  <p>{livraison.reduce((n, l) => n + (l.nb ?? 0), 0)} fichiers · {fmtTaille(livraison.reduce((n, l) => n + (l.taille ?? 0), 0))} · {livraison.length} ZIP</p>
+                  <p className="text-xs" style={{ color: ROUGE }}>Supprimés automatiquement le {new Date(livraison[0].expire_le).toLocaleDateString('fr-FR')} (client et vous prévenus 3 jours avant).</p>
+                  <p className="text-xs text-gray-500">Téléchargements par le client : {Math.max(...livraison.map(l => l.telechargements ?? 0))}</p>
+                  <div className="flex gap-3 pt-1">
+                    <button onClick={async () => { try { await actionLivraison(id, 'prolonger', 30); charger(); } catch (e) { alert((e as Error).message); } }} className="text-xs font-semibold" style={{ color: TEAL }}>Prolonger de 30 jours</button>
+                    <button onClick={async () => { if (!confirm('Supprimer la livraison ? Le client ne pourra plus télécharger les fichiers.')) return; try { await actionLivraison(id, 'supprimer'); charger(); } catch (e) { alert((e as Error).message); } }} className="text-xs font-semibold" style={{ color: ROUGE }}>Supprimer</button>
+                  </div>
+                </div>
+              ) : <p className="text-xs text-gray-500">Aucune livraison en cours.</p>}
+              {premium && (
+                <div className="border-t border-gray-100 pt-2 space-y-2">
+                  <label className="block text-xs font-semibold cursor-pointer" style={{ color: TEAL }}>
+                    {finals.length ? `${finals.length} fichier${finals.length > 1 ? 's' : ''} choisi${finals.length > 1 ? 's' : ''} (${fmtTaille(finals.reduce((n, f) => n + f.size, 0))})` : (livraison.length ? 'Remplacer par de nouveaux fichiers…' : 'Choisir les fichiers finaux…')}
+                    <input type="file" multiple className="hidden" onChange={e => { setFinals([...(e.target.files ?? [])]); e.target.value = ''; }} />
+                  </label>
+                  {finals.length > 0 && (
+                    <>
+                      <select value={joursLiv} onChange={e => setJoursLiv(Number(e.target.value))} className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm bg-white">
+                        <option value={15}>Disponible 15 jours</option><option value={30}>Disponible 30 jours</option><option value={60}>Disponible 60 jours</option>
+                      </select>
+                      <button onClick={livrer} disabled={!!livEnCours} className="w-full py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>
+                        {livEnCours || 'Livrer au client'}
+                      </button>
+                    </>
+                  )}
+                  <p className="text-[11px] text-gray-400">Fichiers regroupés en ZIP (45 Mo max par archive) dans un stockage temporaire privé : seul le client peut les télécharger, puis ils sont supprimés. La galerie passe en « Livrée » (sans la marquer payée).</p>
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
