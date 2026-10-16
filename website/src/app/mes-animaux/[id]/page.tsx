@@ -1,5 +1,6 @@
 'use client';
 
+import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { SterilisationCedee } from '@/components/animaux/SterilisationCedee';
 import { InviterAcquereurBouton } from '@/components/animaux/RecuperationAnimal';
 import { resoudreEmployeur } from '@/lib/employeur-contexte';
@@ -2343,7 +2344,12 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 function AnimalFichePageInner() {
-  const { id } = useParams<{ id: string }>();
+  // /mes-animaux/ajouter (création) n'a pas de segment [id] : mode création,
+  // même fiche (mêmes champs) qu'en modification.
+  const id = useParams<{ id?: string }>().id ?? 'ajouter';
+  // Puce déjà enregistrée à la création : proposer de récupérer la fiche.
+  const [verifPuce, setVerifPuce] = useState<VerifPuce | null>(null);
+  const [puceVerifiee, setPuceVerifiee] = useState('');
   const { user, userData, availableProfiles } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
@@ -2946,6 +2952,14 @@ function AnimalFichePageInner() {
   async function saveAnimal() {
     if (!user) return;
     if (!animal.nom?.trim()) { setSaveError('Le nom est requis.'); return; }
+    const ident = animal.identification ?? '';
+    if (isNew && ident.replace(/\D/g, '').length >= 8 && ident !== puceVerifiee) {
+      try {
+        const v = await verifierPuce(ident);
+        setPuceVerifiee(ident);
+        if (v.etat !== 'aucun') { setVerifPuce(v); return; }
+      } catch { /* vérification indisponible : création normale */ }
+    }
     setSaveError(null);
     setSaving(true);
     try {
@@ -3661,6 +3675,11 @@ function AnimalFichePageInner() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
+      {verifPuce && (
+        <RecuperationModal verif={verifPuce} profileId={activeProfileId || null}
+          onFermer={() => setVerifPuce(null)}
+          onFini={nid => { setVerifPuce(null); router.push(nid ? `/mes-animaux/${nid}` : '/mes-animaux'); }} />
+      )}
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button type="button" onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-2xl">←</button>

@@ -1,5 +1,6 @@
 'use client';
 
+import FicheAnimal from '@/app/mes-animaux/[id]/page';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { useEffect, useState } from 'react';
@@ -30,7 +31,7 @@ const ESPECES = [
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function AjouterAnimalPage() {
+function AjouterAnimalEmploye() {
   const { user, userData, activeProfileId } = useAuth();
   const router = useRouter();
   // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) : proposer
@@ -430,4 +431,18 @@ export default function AjouterAnimalPage() {
       )}
     </div>
   );
+}
+
+/** Création d'un animal : même fiche complète qu'en modification
+ *  (identité, généalogie, pedigree, registre…). La vue employé
+ *  (?employeur=) garde le formulaire avec contrôle des droits. */
+export default function AjouterAnimalPage() {
+  const [mode, setMode] = useState<'' | 'fiche' | 'employe'>('');
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMode(new URLSearchParams(window.location.search).get('employeur') ? 'employe' : 'fiche');
+  }, []);
+  if (mode === 'employe') return <AjouterAnimalEmploye />;
+  if (mode === 'fiche') return <FicheAnimal />;
+  return null;
 }
