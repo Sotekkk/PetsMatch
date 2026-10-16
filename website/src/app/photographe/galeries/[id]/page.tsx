@@ -47,7 +47,7 @@ export default function GalerieStudioPage() {
       const c = await chargerGalerie(id);
       if (c.role !== 'pro') { setErr('Galerie réservée au photographe.'); return; }
       setG(c); setTitre(c.album.titre ?? ''); setDescription(c.album.description ?? '');
-      const { data } = await supabase.from('album_partage').select('id, token, expire_at, actif').eq('album_id', id).order('created_at', { ascending: false });
+      const { data } = await supabase.from('album_partage').select('id, token, expire_at, actif').eq('album_id', id).eq('type', 'client').order('created_at', { ascending: false });
       setLiens((data ?? []) as Lien[]);
       setMaintenant(Date.now());
       if (c.album.client_profile_id) {

@@ -112,7 +112,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
       _livraison = List<Map<String, dynamic>>.from(((c['livraison'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)));
       _sel.removeWhere((id) => !_photos.any((p) => p['id'] == id));
       _liens = List<Map<String, dynamic>>.from(await _supa.from('album_partage').select('id, token, expire_at, actif')
-          .eq('album_id', _albumId!).order('created_at', ascending: false));
+          .eq('album_id', _albumId!).eq('type', 'client').order('created_at', ascending: false));
       _erreur = null;
     } catch (e) {
       _erreur = e.toString().replaceFirst('Exception: ', '');

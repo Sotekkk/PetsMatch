@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { mesFavorisShootings, type FavorisShooting } from '@/lib/galeries-client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,9 @@ interface SavedItem {
 }
 
 type Tab = 'favoris' | 'likes';
+/** Onglets de la page : annonces (tables favoris / likes) + Shootings
+ *  (photos aimées et sélectionnées dans mes galeries photo). */
+type Onglet = Tab | 'shootings';
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -87,7 +91,8 @@ export default function FavorisPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
-  const [tab, setTab] = useState<Tab>('favoris');
+  const [tab, setTab] = useState<Onglet>('favoris');
+  const [shootings, setShootings] = useState<FavorisShooting[] | null>(null);
   const [likeItems, setLikeItems]   = useState<SavedItem[]>([]);
   const [favItems, setFavItems]     = useState<SavedItem[]>([]);
   const [loadingLikes, setLoadingLikes] = useState(false);
@@ -119,6 +124,22 @@ export default function FavorisPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileType, user]);
+
+  // ?onglet=shootings (lien depuis une galerie photo).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (new URLSearchParams(window.location.search).get('onglet') === 'shootings') setTab('shootings');
+  }, []);
+
+  // Shootings : profil actif (galeries de ce profil ou sans profil précis).
+  useEffect(() => {
+    if (!user || tab !== 'shootings') return;
+    let annule = false;
+    mesFavorisShootings(activeProfileId ?? null)
+      .then(g => { if (!annule) setShootings(g); })
+      .catch(() => { if (!annule) setShootings([]); });
+    return () => { annule = true; };
+  }, [user, tab, activeProfileId]);
 
   useEffect(() => {
     if (!user || !profileType) return;
@@ -173,7 +194,8 @@ export default function FavorisPage() {
   }
 
   const items     = tab === 'likes' ? likeItems : favItems;
-  const isLoading = tab === 'likes' ? loadingLikes : loadingFavs;
+  const isLoading = tab === 'shootings' ? shootings === null : tab === 'likes' ? loadingLikes : loadingFavs;
+  const tabAnnonces: Tab = tab === 'likes' ? 'likes' : 'favoris';
 
   return (
     <div className="min-h-screen bg-[#F5F5F0]">
@@ -220,6 +242,18 @@ export default function FavorisPage() {
                 </span>
               )}
             </button>
+            <button
+              onClick={() => setTab('shootings')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold border-b-2 transition-colors ${
+                tab === 'shootings'
+                  ? 'border-white text-white'
+                  : 'border-transparent text-white/50 hover:text-white/75'
+              }`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" />
+              </svg>
+              Shootings
+            </button>
           </div>
         </div>
       </div>
@@ -232,6 +266,38 @@ export default function FavorisPage() {
             <div className="w-8 h-8 border-4 border-[#0C5C6C]/20 border-t-[#0C5C6C] rounded-full animate-spin" />
           </div>
 
+        ) : tab === 'shootings' ? (
+          !shootings?.length ? (
+            <div className="flex flex-col items-center py-24 text-center">
+              <p className="text-gray-400 text-base font-medium mb-1">Aucune photo pour le moment</p>
+              <p className="text-gray-300 text-sm mb-8 max-w-xs">Dans une galerie de votre photographe, touchez le cœur sur vos photos préférées : elles apparaîtront ici, avec votre sélection.</p>
+              <Link href="/mes-galeries" className="bg-[#0C5C6C] text-white px-7 py-3 rounded-full text-sm font-semibold hover:bg-[#094F5D] transition-colors">Mes galeries photo</Link>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {shootings.map(g => (
+                <div key={g.album.id}>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <p className="flex-1 font-bold text-sm text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{g.album.titre ?? 'Séance photo'}</p>
+                    <Link href={`/galerie/${g.album.id}`} className="text-xs font-semibold text-[#0C5C6C]">Ouvrir la galerie</Link>
+                  </div>
+                  <p className="text-xs text-gray-500 -mt-1.5 mb-2">{[g.album.studio, g.album.date_seance ? new Date(g.album.date_seance).toLocaleDateString('fr-FR') : ''].filter(Boolean).join(' · ')}</p>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {g.photos.map(p => (
+                      <Link key={p.id} href={`/galerie/${g.album.id}`} className="relative block aspect-square rounded-lg overflow-hidden bg-gray-100">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.url} alt="" loading="lazy" draggable={false} onContextMenu={e => e.preventDefault()} className="w-full h-full object-cover select-none" />
+                        <span className="absolute left-1 bottom-1 flex gap-1">
+                          {p.aimee && <span className="text-[10px] font-semibold text-white bg-[#E0457B] rounded-full px-1.5 py-0.5">Coup de cœur</span>}
+                          {p.selectionnee && <span className="text-[10px] font-semibold text-white bg-[#0C5C6C] rounded-full px-1.5 py-0.5">Sélection</span>}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center py-24 text-center">
             <svg className="w-20 h-20 text-gray-200 mb-5" fill="currentColor" viewBox="0 0 24 24">
@@ -255,8 +321,8 @@ export default function FavorisPage() {
               <SavedCard
                 key={`${item.annonceId}_${item.bebeIndex ?? 'null'}`}
                 item={item}
-                isFavori={tab === 'favoris'}
-                onRemove={() => removeItem(item, tab)}
+                isFavori={tabAnnonces === 'favoris'}
+                onRemove={() => removeItem(item, tabAnnonces)}
                 onOpen={() => openInFeed(item)}
               />
             ))}

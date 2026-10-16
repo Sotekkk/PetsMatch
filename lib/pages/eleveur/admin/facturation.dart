@@ -693,12 +693,17 @@ class FacturePrefillLigne {
   final String designation;
   final String description;
   final double prixHT;
+  /// Prix affiché TTC (catalogue, tarif annoncé au client) : le HT est
+  /// déduit selon le régime de TVA (franchise : HT = TTC), pour que le total
+  /// facturé reste le prix annoncé.
+  final double? prixTTC;
   final double quantite;
   final double tauxTVA;
   const FacturePrefillLigne({
     required this.designation,
     this.description = '',
-    required this.prixHT,
+    this.prixHT = 0,
+    this.prixTTC,
     this.quantite = 1,
     this.tauxTVA = 20,
   });
@@ -709,6 +714,9 @@ class CreerFacturePage extends StatefulWidget {
   final String? clientPrenom;
   final String? clientEmail;
   final String? clientTel;
+  final String? clientRue;
+  final String? clientCp;
+  final String? clientVille;
   final List<FacturePrefillLigne> lignesPrefill;
   final String? noteInitiale;
   final String? typeFacture; // 'acompte' | 'solde' | 'avoir' | null
@@ -728,6 +736,9 @@ class CreerFacturePage extends StatefulWidget {
     this.clientPrenom,
     this.clientEmail,
     this.clientTel,
+    this.clientRue,
+    this.clientCp,
+    this.clientVille,
     this.lignesPrefill = const [],
     this.noteInitiale,
     this.typeFacture,
@@ -799,6 +810,9 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     if (widget.clientPrenom != null) _prenomClient.text = widget.clientPrenom!;
     if (widget.clientEmail != null) _emailClient.text = widget.clientEmail!;
     if (widget.clientTel != null) _telClient.text = widget.clientTel!;
+    if (widget.clientRue != null) _rueClient.text = widget.clientRue!;
+    if (widget.clientCp != null) _cpClient.text = widget.clientCp!;
+    if (widget.clientVille != null) _villeClient.text = widget.clientVille!;
     if (widget.noteInitiale != null) _noteComplementaire.text = widget.noteInitiale!;
     _franchise = widget.franchiseInitiale;
     for (final l in widget.lignesPrefill) {
@@ -807,10 +821,23 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         ..description.text = l.description
         ..quantite.text = l.quantite.toStringAsFixed(0)
         ..prixHT.text = l.prixHT.toStringAsFixed(2)
-        ..tauxTVA = l.tauxTVA;
+        ..tauxTVA = l.tauxTVA
+        ..prixTTCRef = l.prixTTC;
       _lignes.add(ligne);
     }
+    _appliquerPrixTTC();
     _loadUserData();
+  }
+
+  /// Lignes saisies en TTC (prix annoncé) : HT recalculé selon le régime de
+  /// TVA et le taux de la ligne. Une saisie manuelle du prix HT les libère.
+  void _appliquerPrixTTC() {
+    for (final l in _lignes) {
+      final ttc = l.prixTTCRef;
+      if (ttc == null) continue;
+      final ht = _franchise ? ttc : ttc / (1 + l.tauxTVA / 100);
+      l.prixHT.text = ht.toStringAsFixed(2);
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -897,6 +924,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       final esc = lastFact?['conditions_escompte']?.toString();
       _conditionsEscompte.text = (esc != null && esc.trim().isNotEmpty) ? esc : _kEscompteDefaut;
       if ((prof?['regime_tva_pro'] as String?) == 'franchise') _franchise = true;
+      _appliquerPrixTTC();
       final iban = (prof?['iban_pro'] as String?)?.trim() ?? '';
       final bic = (prof?['bic_pro'] as String?)?.trim() ?? '';
       if (_noteComplementaire.text.trim().isEmpty && iban.isNotEmpty) {
@@ -1265,7 +1293,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                 Switch(
                   value: !_franchise,
                   activeColor: _green,
-                  onChanged: (v) => setState(() { _franchise = !v; }),
+                  onChanged: (v) => setState(() { _franchise = !v; _appliquerPrixTTC(); }),
                 ),
               ]),
               if (_franchise)
@@ -1290,7 +1318,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
               index: e.key,
               ligne: e.value,
               franchise: _franchise,
-              onChanged: () => setState(() {}),
+              onChanged: () => setState(_appliquerPrixTTC),
               onDelete: () => setState(() => _lignes.removeAt(e.key)),
             )),
             const SizedBox(height: 10),
@@ -1368,6 +1396,9 @@ class _Ligne {
   final quantite = TextEditingController(text: '1');
   final prixHT = TextEditingController(text: '0.00');
   double tauxTVA = 20.0;
+  /// Prix TTC de référence (prérempli depuis un tarif affiché TTC) ; null
+  /// dès que le prix HT est modifié à la main.
+  double? prixTTCRef;
 
   double get _qty => double.tryParse(quantite.text) ?? 1;
   double get _pu => double.tryParse(prixHT.text) ?? 0;
@@ -1429,7 +1460,7 @@ class _LigneCardState extends State<_LigneCard> {
         Row(children: [
           Expanded(child: _Field(ctrl: l.quantite, label: 'Quantité', keyboard: TextInputType.number, onChanged: (_) { setState(() {}); widget.onChanged(); })),
           const SizedBox(width: 12),
-          Expanded(child: _Field(ctrl: l.prixHT, label: 'Prix unitaire HT (€)', keyboard: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) { setState(() {}); widget.onChanged(); })),
+          Expanded(child: _Field(ctrl: l.prixHT, label: 'Prix unitaire HT (€)', keyboard: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) { l.prixTTCRef = null; setState(() {}); widget.onChanged(); })),
         ]),
         if (!widget.franchise) ...[
           const SizedBox(height: 8),

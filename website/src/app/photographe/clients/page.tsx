@@ -4,6 +4,7 @@
 // regroupé par tâche) et « Clients » (séances, galeries, factures par
 // client). Chaque séance ouvre le dossier de la séance.
 // Miroir appli : photographe_clients_page.dart. Scopé au profil actif.
+import ContactCanaux from '@/components/ContactCanaux';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -211,7 +212,7 @@ export default function PhotographeClientsPage() {
             <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <p className="font-bold text-lg text-[#1E2025]">{nomClient(r0)}</p>
               {(tel || mail) && <p className="text-sm text-gray-500">{[tel, mail].filter(Boolean).join(' · ')}</p>}
-              {r0.client_uid && <a href={`/messages?uid=${r0.client_uid}`} className="inline-block mt-1 text-sm font-semibold" style={{ color: TEAL }}>Contacter</a>}
+              <ContactCanaux uid={r0.client_uid} tel={tel} email={mail} className="mt-2" />
               <p className="text-sm font-bold text-[#1E2025] mt-4 mb-1">Séances</p>
               {s.map(r => {
                 const g = galeries[r.id], f = factures[r.id], t = taches(r);

@@ -8,9 +8,14 @@ import 'package:PetsMatch/main.dart' show getApiKey;
 /// ville et géolocaliser.
 class AdresseTrouvee {
   final String rue, codePostal, ville, pays, formatee;
+  /// Nom du lieu chez Google (plage, parc, studio…) ; vide pour une adresse simple.
+  final String nom;
   final double? lat, lng;
   const AdresseTrouvee({required this.rue, required this.codePostal, required this.ville,
-      required this.pays, required this.formatee, this.lat, this.lng});
+      required this.pays, required this.formatee, this.nom = '', this.lat, this.lng});
+
+  /// « Nom, adresse » pour un lieu nommé, sinon l'adresse.
+  String get libelle => nom.isNotEmpty && !formatee.startsWith(nom) ? '$nom, $formatee' : formatee;
 }
 
 /// Champ « Rechercher l'adresse » avec suggestions Google Maps — même logique
@@ -20,7 +25,11 @@ class AdresseTrouvee {
 class AdresseRechercheField extends StatefulWidget {
   final ValueChanged<AdresseTrouvee> onSelection;
   final String label;
-  const AdresseRechercheField({super.key, required this.onSelection, this.label = 'Rechercher l\'adresse (Google Maps)'});
+  final String hint;
+  /// Texte affiché après la sélection : l'adresse (défaut) ou « nom, adresse ».
+  final bool afficherLibelle;
+  const AdresseRechercheField({super.key, required this.onSelection, this.label = 'Rechercher l\'adresse (Google Maps)',
+      this.hint = 'Tapez l\'adresse, puis choisissez-la dans la liste', this.afficherLibelle = false});
 
   @override
   State<AdresseRechercheField> createState() => _AdresseRechercheFieldState();
@@ -78,15 +87,16 @@ class _AdresseRechercheFieldState extends State<AdresseRechercheField> {
     final rue = [num, route].where((s) => s.isNotEmpty).join(' ');
     final loc = det.result.geometry?.location;
     final formatee = det.result.formattedAddress ?? p.description ?? '';
+    final trouvee = AdresseTrouvee(
+      rue: rue.isNotEmpty ? rue : lieuDit, codePostal: cp, ville: ville,
+      pays: pays.isNotEmpty ? pays : 'France', formatee: formatee, nom: det.result.name, lat: loc?.lat, lng: loc?.lng,
+    );
     setState(() {
-      _ctrl.text = formatee;
+      _ctrl.text = widget.afficherLibelle ? trouvee.libelle : formatee;
       _suggestions = [];
     });
     FocusScope.of(context).unfocus();
-    widget.onSelection(AdresseTrouvee(
-      rue: rue.isNotEmpty ? rue : lieuDit, codePostal: cp, ville: ville,
-      pays: pays.isNotEmpty ? pays : 'France', formatee: formatee, lat: loc?.lat, lng: loc?.lng,
-    ));
+    widget.onSelection(trouvee);
   }
 
   @override
@@ -98,7 +108,7 @@ class _AdresseRechercheFieldState extends State<AdresseRechercheField> {
         style: const TextStyle(fontFamily: 'Galey'),
         decoration: InputDecoration(
           labelText: widget.label,
-          hintText: 'Tapez l\'adresse, puis choisissez-la dans la liste',
+          hintText: widget.hint,
           prefixIcon: const Icon(Icons.search),
           suffixIcon: _chargement
               ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))

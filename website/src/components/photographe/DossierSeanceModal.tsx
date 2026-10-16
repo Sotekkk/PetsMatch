@@ -11,6 +11,8 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { geocodeAddress } from '@/lib/geocoding';
 import { styleGalerie } from '@/lib/photographe';
+import ContactCanaux from '@/components/ContactCanaux';
+import LieuGoogleRecherche from '@/components/LieuGoogleRecherche';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -58,7 +60,13 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   const [nbChoisies, setNbChoisies] = useState(0);
   const [prix, setPrix] = useState<number | null>(null);
   const [message, setMessage] = useState('');
-  const [lieuEdit, setLieuEdit] = useState<{ adresse: string; prevenir: boolean } | null>(null);
+  const [lieuEdit, setLieuEdit] = useState<{ adresse: string; prevenir: boolean; lat: number | null; lng: number | null } | null>(null);
+  // Coordonnées du client : son profil PetsMatch (à jour), sinon celles
+  // saisies par le photographe sur le rendez-vous.
+  const [coord, setCoord] = useState({ tel: '', email: '', prenom: '', nom: '', rue: '', cp: '', ville: '' });
+  // Animaux de la séance (plusieurs possibles), pour les lignes de devis / facture.
+  const animaux = (animal ?? '').split('+').map(x => x.trim()).filter(Boolean).join(', ');
+  const designation = [prestation, animaux].filter(Boolean).join(' — ');
   const [diffusion, setDiffusion] = useState<string | null>(null);
   const [r, setR] = useState(rdv);
   const [now, setNow] = useState(0);
@@ -81,13 +89,31 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     setGalerie(gal);
     setFacture(f.data as Facture | null);
     setPrix((p.data as { prix?: number } | null)?.prix ?? null);
+    const [{ data: man }, { data: prof }] = await Promise.all([
+      supabase.from('rdv').select('client_telephone_manuel, client_email_manuel').eq('id', rdv.id).maybeSingle(),
+      rdv.client_profile_id
+        ? supabase.from('user_profiles_complet')
+          .select('firstname, lastname, phone_number, phone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
+          .eq('id', rdv.client_profile_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const m = man as { client_telephone_manuel?: string | null; client_email_manuel?: string | null } | null;
+    const pr = prof as Record<string, string | null | undefined> | null;
+    const v = (...x: (string | null | undefined)[]) => x.map(y => (y ?? '').trim()).find(Boolean) ?? '';
+    setCoord({
+      tel: v(pr?.phone_number, pr?.phone, m?.client_telephone_manuel), email: v(pr?.email_contact, m?.client_email_manuel),
+      prenom: v(pr?.firstname), nom: v(pr?.lastname),
+      // Sans adresse au profil : adresse du shooting à domicile.
+      rue: v(pr?.rue, pr?.rue_pro, rdv.lieu_type === 'domicile' ? rdv.adresse_depart : null),
+      cp: v(pr?.code_postal, pr?.code_postal_pro), ville: v(pr?.ville, pr?.ville_pro),
+    });
     if (gal) {
       const { data: ph } = await supabase.from('album_photos').select('selectionnee').eq('album_id', gal.id);
       const l = (ph ?? []) as { selectionnee?: boolean }[];
       setNbPhotos(l.length); setNbChoisies(l.filter(x => x.selectionnee).length);
     }
     setNow(Date.now()); setLoading(false);
-  }, [rdv.id, rdv.prestation_id]);
+  }, [rdv.id, rdv.prestation_id, rdv.client_profile_id, rdv.lieu_type, rdv.adresse_depart]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
@@ -104,10 +130,12 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
 
   // ── Devis ──
   const creerDevis = () => {
-    const q = new URLSearchParams({ prefill: '1', rdv: r.id, nom: nomClient,
+    // Tarifs affichés TTC : le total du devis est la somme des lignes.
+    const q = new URLSearchParams({ prefill: '1', rdv: r.id, nom: coord.nom || nomClient,
+      ...(coord.prenom ? { prenom: coord.prenom } : {}), ...(coord.email ? { email: coord.email } : {}), ...(coord.tel ? { tel: coord.tel } : {}),
       ...(r.client_uid ? { clientUid: r.client_uid } : {}), ...(r.client_profile_id ? { clientProfileId: r.client_profile_id } : {}),
       ...(r.animal_id ? { animal: r.animal_id } : {}),
-      ...(prix != null ? { ligneDesc: prestation, lignePrix: String(prix) } : {}) });
+      ...(prix != null ? { ligneDesc: designation, lignePrix: String(prix) } : {}) });
     router.push(`/photographe/devis?${q.toString()}`);
   };
   async function transmettreDevis() {
@@ -129,7 +157,10 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     const { data, error } = await supabase.from('documents_animaux').insert({
       uid_eleveur: user.uid, ...(pid ? { pro_profile_id: pid } : {}), animal_id: r.animal_id, rdv_id: r.id,
       type: 'contrat_prestation_photo', titre: `Contrat de prestation photo — ${nomClient}`, statut: 'en_attente',
-      metadata: { client_nom: nomClient, prestation_nom: p?.nom ?? null, prix_total: p?.prix != null ? String(p.prix) : null,
+      // client_uid / client_profile_id / client_email : le contrat remonte dans
+      // « Mes contrats » du client (profil destinataire uniquement).
+      metadata: { client_nom: nomClient, client_uid: r.client_uid ?? null, client_profile_id: r.client_profile_id ?? null,
+        client_email: coord.email || null, prestation_nom: p?.nom ?? null, prix_total: p?.prix != null ? String(p.prix) : null,
         acompte_pourcentage: p?.acompte_pourcentage != null ? String(p.acompte_pourcentage) : null, autorisation_images: choix },
     }).select('id, token, statut').single();
     if (error) { setMessage(error.message); return; }
@@ -162,12 +193,16 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   function facturer() {
     const supp = galerie?.nb_photos_incluses != null && galerie.prix_photo_supp ? Math.max(0, nbChoisies - galerie.nb_photos_incluses) : 0;
     try {
+      // Tarifs affichés TTC : le HT est déduit selon le régime de TVA du pro.
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
-        nomClient, sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined,
+        nomClient: coord.nom || nomClient, prenomClient: coord.prenom || undefined,
+        emailClient: coord.email || undefined, telClient: coord.tel || undefined,
+        rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
+        sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined,
         clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         lignes: [
-          { description: `${prestation} — séance du ${jour(debut)}`, quantite: 1, prixUnitaire: prix ?? 0, tva: 20 },
-          ...(supp > 0 ? [{ description: 'Photos supplémentaires', quantite: supp, prixUnitaire: Number(galerie!.prix_photo_supp), tva: 20 }] : []),
+          { description: `${designation} — séance du ${jour(debut)}`, quantite: 1, prixUnitaire: 0, prixTTC: prix ?? 0, tva: 20 },
+          ...(supp > 0 ? [{ description: 'Photos supplémentaires', quantite: supp, prixUnitaire: 0, prixTTC: Number(galerie!.prix_photo_supp), tva: 20 }] : []),
         ],
       }));
     } catch { /* facture vierge */ }
@@ -180,7 +215,8 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   async function enregistrerLieu() {
     if (!lieuEdit?.adresse.trim()) return;
     const adr = lieuEdit.adresse.trim();
-    const geo = await geocodeAddress(adr);
+    // Lieu choisi dans Google Maps : coordonnées déjà connues.
+    const geo = lieuEdit.lat != null && lieuEdit.lng != null ? { lat: lieuEdit.lat, lng: lieuEdit.lng } : await geocodeAddress(adr);
     const { error } = await supabase.from('rdv').update({
       adresse_depart: adr, ...(r.lieu_type ? {} : { lieu_type: 'photographe' }), ...(geo ? { lat_depart: geo.lat, lng_depart: geo.lng } : {}),
     }).eq('id', r.id);
@@ -255,8 +291,9 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
           {lieuEdit ? (
             <div className="py-2 space-y-2">
               {r.lieu?.startsWith('Souhait') && <p className="text-xs text-gray-500">{r.lieu}</p>}
-              <input value={lieuEdit.adresse} onChange={e => setLieuEdit({ ...lieuEdit, adresse: e.target.value })} placeholder="Adresse ou lieu (plage, forêt, studio…)"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" autoFocus />
+              <LieuGoogleRecherche value={lieuEdit.adresse} autoFocus placeholder="Rechercher le lieu : plage, forêt, parc, studio, adresse…"
+                onChange={v => setLieuEdit(l => (l ? { ...l, adresse: v, lat: null, lng: null } : l))}
+                onSelect={x => setLieuEdit(l => (l ? { ...l, adresse: x.libelle, lat: x.lat, lng: x.lng } : l))} />
               {r.client_uid && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lieuEdit.prevenir} onChange={e => setLieuEdit({ ...lieuEdit, prevenir: e.target.checked })} />Prévenir le client</label>}
               <div className="flex gap-2">
                 <button onClick={() => setLieuEdit(null)} className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200">Annuler</button>
@@ -264,10 +301,13 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
               </div>
             </div>
           ) : (
-            <button onClick={() => setLieuEdit({ adresse: r.lieu_type === 'photographe' ? r.adresse_depart ?? '' : '', prevenir: !!r.client_uid })}
+            <button onClick={() => setLieuEdit({ adresse: r.lieu_type === 'photographe' ? r.adresse_depart ?? '' : '', prevenir: !!r.client_uid, lat: null, lng: null })}
               className="block py-2 text-sm font-semibold" style={{ color: TEAL }}>{r.lieu_type === 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting'}</button>
           )}
-          {r.client_uid && <a href={`/messages?uid=${r.client_uid}`} className="block py-2 text-sm font-semibold" style={{ color: TEAL }}>Contacter le client</a>}
+          <div className="py-2">
+            <p className="text-sm font-semibold text-[#1E2025] mb-1.5">Contacter le client</p>
+            <ContactCanaux uid={r.client_uid} tel={coord.tel} email={coord.email} sujet={`Votre séance photo du ${jour(debut)}`} />
+          </div>
           {r.adresse_depart?.trim() && <a href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(r.adresse_depart.trim())}`} target="_blank" rel="noopener noreferrer" className="block py-2 text-sm font-semibold" style={{ color: TEAL }}>Itinéraire jusqu&apos;au lieu</a>}
           {!depuisAgenda && <a href={`/mes-rdv?onglet=a_venir&rdv=${r.id}`} className="block py-2 text-sm font-semibold" style={{ color: TEAL }}>Voir la séance dans l&apos;agenda</a>}
         </div>

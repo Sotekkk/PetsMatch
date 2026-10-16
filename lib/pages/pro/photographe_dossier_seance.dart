@@ -12,8 +12,6 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
-import 'package:PetsMatch/utils/messaging_helper.dart';
-import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
@@ -21,6 +19,8 @@ import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/utils/galeries_api.dart' show kStatutsGalerie;
+import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
+import 'package:PetsMatch/widgets/contact_canaux.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -104,8 +104,12 @@ Future<void> genererContratPhoto(BuildContext context, Map<String, dynamic> rdv,
       'type': 'contrat_prestation_photo',
       'titre': 'Contrat de prestation photo — $nomClient',
       'statut': 'en_attente',
+      // client_uid / client_profile_id : le contrat remonte dans « Mes
+      // contrats » du client (profil destinataire uniquement).
       'metadata': {
         'client_nom': nomClient,
+        'client_uid': rdv['client_uid'],
+        'client_profile_id': rdv['client_profile_id'],
         'prestation_nom': prestation?['nom'],
         'prix_total': prestation?['prix']?.toString(),
         'acompte_pourcentage': prestation?['acompte_pourcentage']?.toString(),
@@ -167,6 +171,12 @@ class _DossierSeanceState extends State<_DossierSeance> {
   Map<String, dynamic>? _devis, _contrat, _galerie, _facture;
   int _nbPhotos = 0, _nbChoisies = 0;
   double? _prix;
+  // Coordonnées du client : son profil PetsMatch (à jour), sinon celles
+  // saisies par le photographe sur le rendez-vous.
+  String _tel = '', _email = '';
+  String _prenom = '', _nom = '', _rue = '', _cp = '', _ville = '';
+  /// Animaux de la séance (plusieurs possibles), pour les lignes de devis / facture.
+  String get _animaux => (widget.animal ?? '').split('+').map((x) => x.trim()).where((x) => x.isNotEmpty).join(', ');
 
   Map<String, dynamic> get r => widget.rdv;
   String get _uid => r['pro_uid']?.toString() ?? '';
@@ -181,6 +191,24 @@ class _DossierSeanceState extends State<_DossierSeance> {
 
   Future<void> _charger() async {
     final id = r['id'];
+    try {
+      final man = await _supa.from('rdv').select('client_telephone_manuel, client_email_manuel').eq('id', id).maybeSingle();
+      final cp = r['client_profile_id']?.toString() ?? '';
+      final prof = cp.isEmpty ? null
+          : await _supa.from('user_profiles_complet')
+              .select('firstname, lastname, phone_number, phone, email_contact, rue, code_postal, ville, rue_pro, code_postal_pro, ville_pro')
+              .eq('id', cp).maybeSingle();
+      String premier(List<dynamic> v) => v.map((x) => (x ?? '').toString().trim()).firstWhere((x) => x.isNotEmpty, orElse: () => '');
+      _tel = premier([prof?['phone_number'], prof?['phone'], man?['client_telephone_manuel']]);
+      _email = premier([prof?['email_contact'], man?['client_email_manuel']]);
+      _prenom = premier([prof?['firstname']]);
+      _nom = premier([prof?['lastname']]);
+      _rue = premier([prof?['rue'], prof?['rue_pro']]);
+      _cp = premier([prof?['code_postal'], prof?['code_postal_pro']]);
+      _ville = premier([prof?['ville'], prof?['ville_pro']]);
+      // Sans adresse au profil : adresse du shooting à domicile.
+      if (_rue.isEmpty && r['lieu_type'] == 'domicile') _rue = (r['adresse_depart']?.toString() ?? '').trim();
+    } catch (_) {}
     try { _devis = await _supa.from('devis').select().eq('rdv_id', id).order('created_at', ascending: false).limit(1).maybeSingle(); } catch (_) {}
     try {
       _contrat = await _supa.from('documents_animaux').select('id, token, statut')
@@ -228,10 +256,17 @@ class _DossierSeanceState extends State<_DossierSeance> {
   }
 
   // ── Devis ──
+  /// Nom du client : celui du profil s'il est connu, sinon le nom affiché.
+  String get _nomFacture => _nom.isNotEmpty ? _nom : widget.nomClient;
+  String get _designation => [widget.prestation, if (_animaux.isNotEmpty) _animaux].join(' — ');
+
+  // Devis : tarifs affichés TTC (le total du devis est la somme des lignes).
   void _creerDevis() => _go(DevisPage(prefill: DevisPrefill(
         rdvId: r['id'].toString(), clientUid: r['client_uid']?.toString(), clientProfileId: r['client_profile_id']?.toString(),
-        clientNom: widget.nomClient, animalId: r['animal_id']?.toString(),
-        lignes: [if (_prix != null) {'description': widget.prestation, 'quantite': 1, 'prix_unitaire': _prix}],
+        clientNom: _nomFacture, clientPrenom: _prenom.isNotEmpty ? _prenom : null,
+        clientEmail: _email.isNotEmpty ? _email : null, clientTel: _tel.isNotEmpty ? _tel : null,
+        animalId: r['animal_id']?.toString(),
+        lignes: [if (_prix != null) {'description': _designation, 'quantite': 1, 'prix_unitaire': _prix}],
       )));
   Future<void> _transmettreDevis() async {
     final d = _devis!;
@@ -249,12 +284,19 @@ class _DossierSeanceState extends State<_DossierSeance> {
     final incluses = (_galerie?['nb_photos_incluses'] as num?)?.toInt();
     final prixSupp = (_galerie?['prix_photo_supp'] as num?)?.toDouble();
     final supp = incluses == null ? 0 : (_nbChoisies - incluses).clamp(0, 9999);
+    // Tarifs affichés TTC : le HT est déduit selon le régime de TVA du pro.
     _go(CreerFacturePage(
-      clientNom: widget.nomClient,
+      clientNom: _nomFacture,
+      clientPrenom: _prenom.isNotEmpty ? _prenom : null,
+      clientEmail: _email.isNotEmpty ? _email : null,
+      clientTel: _tel.isNotEmpty ? _tel : null,
+      clientRue: _rue.isNotEmpty ? _rue : null,
+      clientCp: _cp.isNotEmpty ? _cp : null,
+      clientVille: _ville.isNotEmpty ? _ville : null,
       lignesPrefill: [
-        FacturePrefillLigne(designation: '${widget.prestation} — séance du ${_jour(_debut)}', prixHT: _prix ?? 0, quantite: 1, tauxTVA: 20),
+        FacturePrefillLigne(designation: '$_designation — séance du ${_jour(_debut)}', prixTTC: _prix ?? 0, quantite: 1, tauxTVA: 20),
         if (supp > 0 && prixSupp != null && prixSupp > 0)
-          FacturePrefillLigne(designation: 'Photos supplémentaires', prixHT: prixSupp, quantite: supp.toDouble(), tauxTVA: 20),
+          FacturePrefillLigne(designation: 'Photos supplémentaires', prixTTC: prixSupp, quantite: supp.toDouble(), tauxTVA: 20),
       ],
       sourceRdvId: r['id'].toString(),
       sourceAnimalId: r['animal_id']?.toString(),
@@ -274,12 +316,23 @@ class _DossierSeanceState extends State<_DossierSeance> {
   Future<void> _preciserLieu() async {
     final ctrl = TextEditingController(text: r['lieu_type'] == 'photographe' ? (r['adresse_depart']?.toString() ?? '') : '');
     var prevenir = (r['client_uid']?.toString() ?? '').isNotEmpty;
+    // Lieu choisi dans Google Maps : coordonnées connues (sinon géocodage).
+    double? lat, lng;
     final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+      scrollable: true,
       title: const Text('Lieu du shooting', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         if ((r['lieu']?.toString() ?? '').startsWith('Souhait'))
           Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(r['lieu'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
-        TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Adresse ou lieu (plage, forêt, studio…)', border: OutlineInputBorder())),
+        AdresseRechercheField(
+          label: 'Rechercher le lieu (Google Maps)',
+          hint: 'Plage, forêt, parc, studio, adresse…',
+          afficherLibelle: true,
+          onSelection: (a) => setD(() { ctrl.text = a.libelle; lat = a.lat; lng = a.lng; }),
+        ),
+        const SizedBox(height: 10),
+        TextField(controller: ctrl, maxLines: 2, minLines: 1, onChanged: (_) { lat = null; lng = null; },
+            decoration: const InputDecoration(labelText: 'Lieu retenu (modifiable)', border: OutlineInputBorder())),
         if ((r['client_uid']?.toString() ?? '').isNotEmpty)
           CheckboxListTile(contentPadding: EdgeInsets.zero, value: prevenir, onChanged: (v) => setD(() => prevenir = v == true),
               title: const Text('Prévenir le client', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
@@ -291,7 +344,7 @@ class _DossierSeanceState extends State<_DossierSeance> {
     )));
     final adr = ctrl.text.trim();
     if (ok != true || adr.isEmpty) return;
-    final geo = await GeocodingHelper.geocode(adr);
+    final geo = lat != null && lng != null ? (lat: lat!, lng: lng!) : await GeocodingHelper.geocode(adr);
     await _supa.from('rdv').update({
       'adresse_depart': adr,
       if (r['lieu_type'] == null) 'lieu_type': 'photographe',
@@ -303,13 +356,6 @@ class _DossierSeanceState extends State<_DossierSeance> {
       await _notifier('rdv_modifie', 'Lieu de votre séance photo', 'Votre séance du ${_jour(_debut)} à ${_hm(_debut)} aura lieu : $adr', {'rdv_id': r['id']});
     }
     if (mounted) setState(() {});
-  }
-
-  Future<void> _contacter() async {
-    final uid = r['client_uid']?.toString();
-    if (uid == null || uid.isEmpty) return;
-    final conv = await MessagingHelper.openOrCreateConversation(otherUid: uid, categorie: 'services', myProfileId: _pid.isNotEmpty ? _pid : null);
-    if (mounted) await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(conversationId: conv, eleveurId: uid)));
   }
 
   Widget _ligne(String titre, String etat, Color c, List<(String, VoidCallback)> actions) => Padding(
@@ -406,10 +452,11 @@ class _DossierSeanceState extends State<_DossierSeance> {
             title: Text(r['lieu_type'] == 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _ink)),
             onTap: _preciserLieu),
-        if (aCompte)
-          ListTile(contentPadding: EdgeInsets.zero, dense: true, leading: const Icon(Icons.chat_bubble_outline, color: _teal),
-              title: const Text('Contacter le client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _ink)),
-              onTap: _contacter),
+        const Padding(padding: EdgeInsets.only(top: 6, bottom: 6),
+            child: Text('Contacter le client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _ink))),
+        ContactCanaux(clientUid: r['client_uid']?.toString(), tel: _tel, email: _email, monProfilId: _pid,
+            sujet: 'Votre séance photo du ${_jour(_debut)}'),
+        const SizedBox(height: 6),
         if (adresse.isNotEmpty)
           ListTile(contentPadding: EdgeInsets.zero, dense: true, leading: const Icon(Icons.directions_outlined, color: _teal),
               title: const Text("Itinéraire jusqu'au lieu", style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _ink)),

@@ -7,6 +7,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/lieux/lieu_detail_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/galeries_api.dart';
+import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart' show GalerieClientPage, MesGaleriesPhotoPage;
 
 // ── Modèles ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +45,10 @@ class _SavedItem {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 class LikesPage extends StatefulWidget {
-  const LikesPage({super.key});
+  /// Onglet ouvert : 0 Sauvegardés, 1 J'aime, 2 Shootings (photos aimées et
+  /// sélectionnées dans mes galeries photo).
+  final int initialTab;
+  const LikesPage({super.key, this.initialTab = 0});
   @override
   State<LikesPage> createState() => _LikesPageState();
 }
@@ -63,16 +68,19 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
   bool _loadingPlaces = false;
   bool _loadedFavs    = false;
   bool _loadedLikes   = false;
+  List<Map<String, dynamic>>? _shootings;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this, initialIndex: widget.initialTab.clamp(0, 2));
     _tabCtrl.addListener(() {
       if (_tabCtrl.indexIsChanging) return;
       if (_tabCtrl.index == 0 && !_loadedFavs)  _loadTab('favoris');
       if (_tabCtrl.index == 1 && !_loadedLikes) _loadTab('likes');
+      if (_tabCtrl.index == 2 && _shootings == null) _loadShootings();
     });
+    if (widget.initialTab == 2) _loadShootings();
     _initLoad();
   }
 
@@ -194,6 +202,98 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
     }
     return result;
   }
+
+  /// Shootings : profil actif (galeries de ce profil ou sans profil précis).
+  Future<void> _loadShootings() async {
+    try {
+      final g = await GaleriesApi.mesFavoris(User_Info.activeProfileId);
+      if (mounted) setState(() => _shootings = g);
+    } catch (_) {
+      if (mounted) setState(() => _shootings = []);
+    }
+  }
+
+  Widget _buildShootingsTab() {
+    final liste = _shootings;
+    if (liste == null) return const Center(child: CircularProgressIndicator(color: _teal));
+    if (liste.isEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.photo_camera_outlined, size: 64, color: Color(0xFFDDE1E4)),
+          const SizedBox(height: 14),
+          const Text('Aucune photo pour le moment', style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Color(0xFFADB5BD))),
+          const SizedBox(height: 8),
+          const Text('Dans une galerie de votre photographe, touchez le cœur sur vos photos préférées : elles apparaîtront ici, avec votre sélection.',
+              textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFADB5BD))),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesGaleriesPhotoPage())),
+            style: FilledButton.styleFrom(backgroundColor: _teal),
+            child: const Text('Mes galeries photo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ]),
+      ));
+    }
+    Future<void> ouvrir(String albumId) async {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => GalerieClientPage(albumId: albumId)));
+      _loadShootings();
+    }
+    return RefreshIndicator(
+      onRefresh: _loadShootings,
+      color: _teal,
+      child: ListView(padding: const EdgeInsets.all(12), children: [
+        for (final g in liste) ...[
+          Builder(builder: (_) {
+            final a = (g['album'] as Map?) ?? {};
+            final date = DateTime.tryParse(a['date_seance']?.toString() ?? '');
+            final sous = [
+              if ((a['studio']?.toString() ?? '').isNotEmpty) a['studio'].toString(),
+              if (date != null) '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}',
+            ].join(' · ');
+            return Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(a['titre']?.toString() ?? 'Séance photo',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+                if (sous.isNotEmpty) Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6B7280))),
+              ])),
+              TextButton(onPressed: () => ouvrir(a['id'].toString()),
+                  child: const Text('Ouvrir la galerie', style: TextStyle(fontFamily: 'Galey', color: _teal, fontSize: 12.5))),
+            ]);
+          }),
+          const SizedBox(height: 6),
+          GridView.count(
+            crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4, shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              for (final p in ((g['photos'] as List?) ?? []).cast<Map>())
+                GestureDetector(
+                  onTap: () => ouvrir(((g['album'] as Map?) ?? {})['id'].toString()),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(fit: StackFit.expand, children: [
+                      Container(color: const Color(0xFFF0F1EF), child: Image.network(p['url'].toString(), fit: BoxFit.cover, cacheWidth: 400)),
+                      Positioned(left: 4, bottom: 4, child: Row(children: [
+                        if (p['aimee'] == true) _pastille('Coup de cœur', const Color(0xFFE0457B)),
+                        if (p['selectionnee'] == true) _pastille('Sélection', _teal),
+                      ])),
+                    ]),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 18),
+        ],
+      ]),
+    );
+  }
+
+  Widget _pastille(String t, Color c) => Container(
+        margin: const EdgeInsets.only(right: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(10)),
+        child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
+      );
 
   Future<void> _loadTab(String table) async {
     if (table == 'favoris') {
@@ -321,6 +421,7 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
           tabs: const [
             Tab(icon: Icon(Icons.bookmark, size: 18), text: 'Sauvegardés'),
             Tab(icon: Icon(Icons.favorite, size: 18), text: 'J\'aime'),
+            Tab(icon: Icon(Icons.photo_camera_outlined, size: 18), text: 'Shootings'),
           ],
         ),
       ),
@@ -329,6 +430,7 @@ class _LikesPageState extends State<LikesPage> with SingleTickerProviderStateMix
         children: [
           _buildFavorisTab(),
           _buildTab(_likeItems, _loadingLikes, 'likes'),
+          _buildShootingsTab(),
         ],
       ),
     );

@@ -22,7 +22,14 @@ interface Ligne {
   quantite: number;
   prixUnitaire: number;
   tva: number;
+  /** Prix affiché TTC (tarif annoncé au client) : le HT est déduit selon le
+   *  régime de TVA ; abandonné dès que le prix HT est saisi à la main. */
+  prixTTC?: number;
 }
+
+/** Lignes à prix TTC : HT recalculé selon la franchise et le taux de la ligne. */
+const appliquerPrixTTC = (lignes: Ligne[], franchise: boolean): Ligne[] => lignes.map(l => l.prixTTC == null ? l
+  : { ...l, prixUnitaire: Math.round((franchise ? l.prixTTC : l.prixTTC / (1 + l.tva / 100)) * 100) / 100 });
 
 interface Facture {
   id: string;
@@ -59,8 +66,11 @@ interface FacturePrefill {
   prenomClient?: string;
   emailClient?: string;
   telClient?: string;
+  rueClient?: string;
+  cpClient?: string;
+  villeClient?: string;
   note?: string;
-  lignes?: { description: string; quantite: number; prixUnitaire: number; tva: number }[];
+  lignes?: Ligne[];
   sourcePensionEntreeId?: string;
   // Garde à domicile — voir GardeFacturationModal. sourceRdvIds n'est pas une
   // colonne de `factures` : utilisé uniquement pour marquer après coup tous
@@ -562,9 +572,9 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   const [prenomClient, setPrenomClient] = useState(avoirDe?.prenom_client ?? prefill?.prenomClient ?? '');
   const [emailClient, setEmailClient] = useState(avoirDe?.email_client ?? prefill?.emailClient ?? '');
   const [telClient, setTelClient] = useState(avoirDe?.telephone_client ?? prefill?.telClient ?? '');
-  const [rueClient, setRueClient] = useState(avoirDe?.rue_client ?? '');
-  const [cpClient, setCpClient] = useState(avoirDe?.cp_client ?? '');
-  const [villeClient, setVilleClient] = useState(avoirDe?.ville_client ?? '');
+  const [rueClient, setRueClient] = useState(avoirDe?.rue_client ?? prefill?.rueClient ?? '');
+  const [cpClient, setCpClient] = useState(avoirDe?.cp_client ?? prefill?.cpClient ?? '');
+  const [villeClient, setVilleClient] = useState(avoirDe?.ville_client ?? prefill?.villeClient ?? '');
   const [paysClient, setPaysClient] = useState(avoirDe?.pays_client ?? 'France');
   const [siretClient, setSiretClient] = useState('');
   const [tvaClient, setTvaClient] = useState('');
@@ -588,7 +598,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
           };
         })
       : prefill?.lignes?.length
-        ? prefill.lignes
+        ? appliquerPrixTTC(prefill.lignes, false)
         : [{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]
   );
   const [saving, setSaving] = useState(false);
@@ -624,7 +634,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       setEmCapital(pick(last?.capital_emetteur, prof?.capital_social_pro));
       setEmRcs(pick(last?.rcs_emetteur, prof?.rcs_pro));
       setEmRm(pick(last?.rm_emetteur, prof?.rm_pro));
-      if (!last && (prof?.regime_tva_pro === 'franchise')) setFranchise(true);
+      if (!last && (prof?.regime_tva_pro === 'franchise')) changerFranchise(true);
       if (prof?.iban_pro || prof?.bic_pro) {
         setNote(prev => prev.trim()
           ? prev
@@ -640,7 +650,17 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   function addLigne() { setLignes((prev) => [...prev, { description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]); }
   function removeLigne(i: number) { setLignes((prev) => prev.filter((_, idx) => idx !== i)); }
   function updateLigne(i: number, field: keyof Ligne, value: string) {
-    setLignes((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: field === 'description' ? value : Number(value) } : l));
+    setLignes((prev) => appliquerPrixTTC(prev.map((l, idx) => {
+      if (idx !== i) return l;
+      const maj: Ligne = { ...l, [field]: field === 'description' ? value : Number(value) };
+      // Prix HT saisi à la main : la ligne n'est plus pilotée par le TTC.
+      if (field === 'prixUnitaire') delete maj.prixTTC;
+      return maj;
+    }), franchise));
+  }
+  function changerFranchise(v: boolean) {
+    setFranchise(v);
+    setLignes(prev => appliquerPrixTTC(prev, v));
   }
 
   const totalHT  = lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
@@ -881,7 +901,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
           {/* TVA / paiement */}
           <div className="border border-gray-200 rounded-xl p-4 space-y-3">
             <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={franchise} onChange={(e) => setFranchise(e.target.checked)} />
+              <input type="checkbox" checked={franchise} onChange={(e) => changerFranchise(e.target.checked)} />
               Franchise en base de TVA (mention « TVA non applicable, art. 293 B du CGI »)
             </label>
             <div className="grid grid-cols-2 gap-2">

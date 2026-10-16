@@ -193,6 +193,7 @@ function DevisPageInner() {
     setNomClient(searchParams.get('nom') ?? '');
     setPrenomClient(searchParams.get('prenom') ?? '');
     setEmailClient(searchParams.get('email') ?? '');
+    setTelClient(searchParams.get('tel') ?? '');
     setNote(searchParams.get('note') ?? '');
     setRdvId(searchParams.get('rdv') || null);
     const ld = searchParams.get('ligneDesc');

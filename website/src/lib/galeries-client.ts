@@ -11,11 +11,12 @@ export const APERCU_MAX = 1600;
 export const APERCU_QUALITE = 0.78;
 
 export interface PhotoGalerie {
-  id: string; url: string; largeur: number | null; hauteur: number | null; ordre: number; selectionnee: boolean;
+  id: string; url: string; largeur: number | null; hauteur: number | null; ordre: number; selectionnee: boolean; aimee?: boolean;
   nom_fichier?: string | null; storage_path?: string | null; favori?: boolean;
 }
 export interface ContenuGalerie {
-  role: 'pro' | 'client';
+  /** 'proche' : lien partagé par le client à sa famille (consultation seule, filigrane). */
+  role: 'pro' | 'client' | 'proche';
   album: {
     id: string; titre: string | null; description: string | null; statut: string; date_seance: string | null;
     /** Id de la photo de couverture (album_photos.id). */
@@ -38,6 +39,14 @@ export async function chargerGalerie(albumId: string, token?: string): Promise<C
 
 export async function chargerGalerieParLien(token: string): Promise<ContenuGalerie> {
   const r = await fetch(`/api/galeries/lien/${encodeURIComponent(token)}`, { cache: 'no-store' });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error ?? 'Lien expiré ou désactivé');
+  return j as ContenuGalerie;
+}
+
+/** Galerie partagée aux proches (lien créé par le client). */
+export async function chargerGalerieProches(token: string): Promise<ContenuGalerie> {
+  const r = await fetch(`/api/galeries/proches/${encodeURIComponent(token)}`, { cache: 'no-store' });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error ?? 'Lien expiré ou désactivé');
   return j as ContenuGalerie;
@@ -162,6 +171,40 @@ export async function confirmerSelection(albumId: string, commentaire: string, t
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmer: true, commentaire }),
   });
   if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Confirmation impossible');
+}
+
+/** Client : coup de cœur sur une photo (distinct de la sélection). */
+export async function aimerPhoto(albumId: string, photoId: string, aimee: boolean, token?: string) {
+  const r = await apiFetch(`/api/galeries/${albumId}/aimer${q(token)}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoId, aimee }),
+  });
+  if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Action impossible');
+}
+
+/** Client : lien de partage aux proches (créé au besoin, 90 jours). */
+export async function lienProches(albumId: string, token?: string): Promise<{ url: string; expire_at: string }> {
+  const r = await apiFetch(`/api/galeries/${albumId}/proches${q(token)}`, { method: 'POST' });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error ?? 'Partage impossible');
+  return { url: `${window.location.origin}/galerie-proches/${j.token}`, expire_at: j.expire_at };
+}
+
+export async function desactiverLienProches(albumId: string, token?: string) {
+  const r = await apiFetch(`/api/galeries/${albumId}/proches${q(token)}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error(((await r.json()) as { error?: string }).error ?? 'Action impossible');
+}
+
+export interface FavorisShooting {
+  album: { id: string; titre: string | null; date_seance: string | null; studio: string };
+  photos: { id: string; url: string; largeur: number | null; hauteur: number | null; aimee: boolean; selectionnee: boolean }[];
+}
+
+/** Mes favoris > Shootings : photos aimées et sélectionnées (profil actif). */
+export async function mesFavorisShootings(profileId: string | null): Promise<FavorisShooting[]> {
+  const r = await apiFetch(`/api/galeries/mes-favoris${profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''}`, { cache: 'no-store' });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error ?? 'Chargement impossible');
+  return j.galeries as FavorisShooting[];
 }
 
 /** Liens de téléchargement (URL signées de 10 min) des ZIP livrés. */

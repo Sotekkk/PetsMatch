@@ -49,13 +49,36 @@ export async function estPremium(proUid: string): Promise<boolean> {
   return plan === 'premium';
 }
 
-/** Lien privé valide (actif, non expiré) pour CETTE galerie uniquement. */
+/** Lien privé valide (actif, non expiré) pour CETTE galerie uniquement.
+ *  Seuls les liens « client » (créés par le photographe) donnent le rôle
+ *  client ; un lien « proches » ne permet que la consultation filigranée. */
 export async function lienValide(albumId: string, token: string | null): Promise<boolean> {
   if (!token || token.length < 16) return false;
-  const { data } = await admin.from('album_partage').select('album_id, expire_at, actif')
+  const { data } = await admin.from('album_partage').select('album_id, expire_at, actif, type')
     .eq('token', token).maybeSingle();
-  const l = data as { album_id: string; expire_at: string; actif: boolean } | null;
-  return !!l && l.actif && l.album_id === albumId && new Date(l.expire_at).getTime() > Date.now();
+  const l = data as { album_id: string; expire_at: string; actif: boolean; type?: string | null } | null;
+  return !!l && l.actif && (l.type ?? 'client') === 'client' && l.album_id === albumId && new Date(l.expire_at).getTime() > Date.now();
+}
+
+/** Galerie ouverte par un lien « proches » valide (créé par le client),
+ *  jamais en brouillon ni archivée. */
+export async function albumProches(token: string): Promise<AlbumRow | null> {
+  if (!token || token.length < 16) return null;
+  const { data } = await admin.from('album_partage').select('album_id, expire_at, actif, type')
+    .eq('token', token).maybeSingle();
+  const l = data as { album_id: string; expire_at: string; actif: boolean; type?: string | null } | null;
+  if (!l || !l.actif || l.type !== 'proches' || new Date(l.expire_at).getTime() <= Date.now()) return null;
+  const album = await chargerAlbum(l.album_id);
+  if (!album || album.statut === 'brouillon' || album.statut === 'archivee') return null;
+  return album;
+}
+
+/** Nom affiché du studio (profil photographe de la galerie). */
+export async function nomStudio(album: AlbumRow): Promise<{ nom: string; avatar: string | null }> {
+  const { data: pro } = await admin.from('user_profiles_complet').select('nom, firstname, lastname, avatar_url')
+    .eq('id', album.pro_profile_id ?? '').maybeSingle();
+  const p = pro as { nom?: string | null; firstname?: string | null; lastname?: string | null; avatar_url?: string | null } | null;
+  return { nom: (p?.nom ?? '').trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim(), avatar: p?.avatar_url ?? null };
 }
 
 /** Accès en lecture : gestionnaire, client destinataire (galerie partagée),
@@ -78,16 +101,14 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
     .select('*')
     .eq('album_id', id).order('ordre').order('created_at');
   const photos = (rows ?? []) as { id: string; storage_path: string | null; photo_url: string | null; nom_fichier: string | null;
-    largeur: number | null; hauteur: number | null; ordre: number; favori: boolean; created_at: string; selectionnee?: boolean | null }[];
+    largeur: number | null; hauteur: number | null; ordre: number; favori: boolean; created_at: string; selectionnee?: boolean | null; aimee?: boolean | null }[];
   const chemins = photos.map(p => p.storage_path).filter((x): x is string => !!x);
   const signees: Record<string, string> = {};
   if (chemins.length) {
     const { data } = await admin.storage.from(BUCKET_GALERIES).createSignedUrls(chemins, DUREE_URL);
     for (const s of data ?? []) if (s.path && s.signedUrl) signees[s.path] = s.signedUrl;
   }
-  const { data: pro } = await admin.from('user_profiles_complet').select('nom, firstname, lastname, avatar_url')
-    .eq('id', album.pro_profile_id ?? '').maybeSingle();
-  const p = pro as { nom?: string | null; firstname?: string | null; lastname?: string | null; avatar_url?: string | null } | null;
+  const studio = await nomStudio(album);
   // Livraison en cours (sans URL : le téléchargement passe par une URL
   // signée de 10 min, demandée au moment du clic).
   const { data: liv } = await admin.from('album_livraisons').select('id, numero, nom_fichier, taille_octets, nb_fichiers, expire_le, telechargements')
@@ -105,11 +126,11 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
       // Données de gestion réservées au photographe.
       ...(role === 'pro' ? { rdv_id: album.rdv_id, client_uid: album.client_uid, client_profile_id: album.client_profile_id } : {}),
     },
-    studio: { nom: (p?.nom ?? '').trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim(), avatar: p?.avatar_url ?? null },
+    studio,
     photos: photos.map(ph => ({
       id: ph.id,
       url: ph.storage_path ? signees[ph.storage_path] ?? null : ph.photo_url,
-      largeur: ph.largeur, hauteur: ph.hauteur, ordre: ph.ordre, selectionnee: !!ph.selectionnee,
+      largeur: ph.largeur, hauteur: ph.hauteur, ordre: ph.ordre, selectionnee: !!ph.selectionnee, aimee: !!ph.aimee,
       ...(role === 'pro' ? { nom_fichier: ph.nom_fichier, storage_path: ph.storage_path, favori: ph.favori } : {}),
     })).filter(ph => !!ph.url),
     livraison: ((liv ?? []) as { id: string; numero: number; nom_fichier: string; taille_octets: number | null; nb_fichiers: number | null; expire_le: string; telechargements: number }[])

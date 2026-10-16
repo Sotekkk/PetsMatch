@@ -5,8 +5,11 @@
 // exposés ici. Sélection : le client coche ses photos puis confirme
 // explicitement (définitif). Livraison : ZIP en stockage temporaire,
 // téléchargeables jusqu'à la date d'expiration affichée.
+// Coups de cœur (cœur) : distincts de la sélection (coche), retrouvés dans
+// Mes favoris > Shootings. Partage aux proches : lien de consultation seule,
+// aperçus filigranés (rôle « proche » : ni sélection, ni livraison).
 import { useCallback, useEffect, useState } from 'react';
-import { choisirPhoto, confirmerSelection, liensLivraison, fmtTaille, type ContenuGalerie } from '@/lib/galeries-client';
+import { choisirPhoto, confirmerSelection, liensLivraison, fmtTaille, aimerPhoto, lienProches, desactiverLienProches, type ContenuGalerie } from '@/lib/galeries-client';
 
 const TEAL = '#0C5C6C';
 const ROUGE = '#B3261E';
@@ -17,6 +20,8 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
   const [vueSelection, setVueSelection] = useState(false);
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
+  const [partage, setPartage] = useState<{ url: string; expire_at: string } | null>(null);
+  const [copie, setCopie] = useState(false);
 
   const recharger = useCallback(() => {
     charger().then(g => setEtat({ ok: true, g })).catch(e => setEtat({ ok: false, err: (e as Error).message }));
@@ -53,6 +58,7 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
   const photos = vueSelection ? toutes.filter(p => p.selectionnee) : toutes;
   const protege = (e: React.SyntheticEvent) => e.preventDefault();
   const client = etat.g.role === 'client';
+  const proche = etat.g.role === 'proche';
   const selectionOuverte = client && album.statut === 'partagee' && !album.selection_confirmee_le;
   const nbChoisies = toutes.filter(p => p.selectionnee).length;
   const nbLivres = livraison.reduce((n, l) => n + (l.nb ?? 0), 0);
@@ -62,6 +68,21 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
     const g = etat.g;
     setEtat({ ok: true, g: { ...g, photos: g.photos.map(p => (p.id === id ? { ...p, selectionnee: choisie } : p)) } });
     try { await choisirPhoto(album.id, id, choisie, token); } catch (e) { alert((e as Error).message); recharger(); }
+  }
+  async function aimer(id: string, aimee: boolean) {
+    if (!etat?.ok) return;
+    const g = etat.g;
+    setEtat({ ok: true, g: { ...g, photos: g.photos.map(p => (p.id === id ? { ...p, aimee } : p)) } });
+    try { await aimerPhoto(album.id, id, aimee, token); } catch (e) { alert((e as Error).message); recharger(); }
+  }
+  async function ouvrirPartage() {
+    setOccupe(true);
+    try { setPartage(await lienProches(album.id, token)); setCopie(false); } catch (e) { alert((e as Error).message); }
+    setOccupe(false);
+  }
+  async function couperPartage() {
+    if (!confirm('Désactiver le lien ? Vos proches ne pourront plus voir la galerie.')) return;
+    try { await desactiverLienProches(album.id, token); setPartage(null); } catch (e) { alert((e as Error).message); }
   }
   async function confirmer() {
     setOccupe(true);
@@ -83,11 +104,19 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
     } catch (e) { alert((e as Error).message); }
     setOccupe(false);
   }
-  const coeur = (choisie: boolean) => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill={choisie ? '#fff' : 'none'} stroke="#fff" strokeWidth={2} aria-hidden>
+  const coeur = (plein: boolean) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill={plein ? '#fff' : 'none'} stroke="#fff" strokeWidth={2} aria-hidden>
       <path d="M12 20s-7-4.4-9-9a5 5 0 019-3 5 5 0 019 3c-2 4.6-9 9-9 9z" />
     </svg>
   );
+  const coche = (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+  const messagePartage = partage
+    ? `Regardez les photos de notre séance « ${album.titre ?? 'Séance photo'} »${studio.nom ? ` par ${studio.nom}` : ''} : ${partage.url}`
+    : '';
 
   return (
     <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -103,7 +132,15 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
           </div>
         </div>
         {album.description && <p className="text-sm text-gray-700 mt-2 whitespace-pre-line">{album.description}</p>}
-        <p className="text-xs text-gray-400 mt-2">Aperçus en qualité réduite. Les fichiers définitifs vous seront remis par votre photographe.</p>
+        <p className="text-xs text-gray-400 mt-2">
+          {proche ? 'Galerie partagée avec vous : aperçus protégés par filigrane.' : 'Aperçus en qualité réduite. Les fichiers définitifs vous seront remis par votre photographe.'}
+        </p>
+        {client && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button onClick={ouvrirPartage} disabled={occupe} className="px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 bg-white disabled:opacity-50">Partager à mes proches</button>
+            {!token && <a href="/favoris?onglet=shootings" className="px-3 py-2 text-sm font-semibold" style={{ color: TEAL }}>Mes coups de cœur dans Mes favoris</a>}
+          </div>
+        )}
 
         {livraison.length > 0 && (
           <div className="mt-4 bg-white rounded-2xl border border-gray-100 p-4 flex flex-wrap items-center gap-3">
@@ -131,7 +168,7 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
                 <>
                   <p className="text-sm font-bold text-[#1F2A2E]">Choisissez vos photos</p>
                   <p className="text-xs text-gray-500">
-                    Touchez le cœur sur chaque photo. {nbChoisies} sélectionnée{nbChoisies > 1 ? 's' : ''}{album.nb_photos_incluses ? ` sur ${album.nb_photos_incluses} incluse${album.nb_photos_incluses > 1 ? 's' : ''} dans votre prestation` : ''}.
+                    Cochez chaque photo que vous souhaitez recevoir ; le cœur garde vos coups de cœur dans Mes favoris. {nbChoisies} sélectionnée{nbChoisies > 1 ? 's' : ''}{album.nb_photos_incluses ? ` sur ${album.nb_photos_incluses} incluse${album.nb_photos_incluses > 1 ? 's' : ''} dans votre prestation` : ''}.
                     {album.nb_photos_incluses && nbChoisies > album.nb_photos_incluses
                       ? (album.prix_photo_supp
                         ? ` ${nbChoisies - album.nb_photos_incluses} photo${nbChoisies - album.nb_photos_incluses > 1 ? 's' : ''} supplémentaire${nbChoisies - album.nb_photos_incluses > 1 ? 's' : ''} × ${album.prix_photo_supp} € = ${(nbChoisies - album.nb_photos_incluses) * album.prix_photo_supp} € en plus du forfait.`
@@ -164,13 +201,19 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
                   <img src={p.url} alt="" loading="lazy" draggable={false} onContextMenu={protege}
                     className="w-full h-auto block select-none" style={p.largeur && p.hauteur ? { aspectRatio: `${p.largeur} / ${p.hauteur}` } : undefined} />
                 </button>
+                {client && (
+                  <button onClick={() => aimer(p.id, !p.aimee)} aria-label={p.aimee ? 'Retirer de mes coups de cœur' : 'Coup de cœur'}
+                    className="absolute left-2 top-2 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: p.aimee ? '#E0457B' : 'rgba(0,0,0,0.35)' }}>
+                    {coeur(!!p.aimee)}
+                  </button>
+                )}
                 {selectionOuverte ? (
                   <button onClick={() => basculer(p.id, !p.selectionnee)} aria-label={p.selectionnee ? 'Retirer de ma sélection' : 'Ajouter à ma sélection'}
-                    className="absolute right-2 top-2 w-9 h-9 rounded-full flex items-center justify-center" style={{ background: p.selectionnee ? TEAL : 'rgba(0,0,0,0.35)' }}>
-                    {coeur(p.selectionnee)}
+                    className="absolute right-2 top-2 w-9 h-9 rounded-full flex items-center justify-center border-2 border-white/80" style={{ background: p.selectionnee ? TEAL : 'rgba(0,0,0,0.35)' }}>
+                    {p.selectionnee && coche}
                   </button>
                 ) : p.selectionnee && client ? (
-                  <span className="absolute right-2 top-2 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: TEAL }}>{coeur(true)}</span>
+                  <span className="absolute right-2 top-2 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: TEAL }}>{coche}</span>
                 ) : null}
               </div>
             ))}
@@ -191,12 +234,41 @@ export default function GalerieVue({ charger, token }: { charger: () => Promise<
             </>
           )}
           <p className="absolute bottom-4 text-white/70 text-sm">{zoom + 1} / {photos.length}</p>
+          {client && (
+            <button onClick={e => { e.stopPropagation(); aimer(photos[zoom].id, !photos[zoom].aimee); }} aria-label="Coup de cœur"
+              className="absolute top-4 left-4 w-10 h-10 rounded-full flex items-center justify-center" style={{ background: photos[zoom].aimee ? '#E0457B' : 'rgba(255,255,255,0.18)' }}>
+              {coeur(!!photos[zoom].aimee)}
+            </button>
+          )}
           {selectionOuverte && (
             <button onClick={e => { e.stopPropagation(); basculer(photos[zoom].id, !photos[zoom].selectionnee); }}
               className="absolute top-4 right-4 px-4 py-2 rounded-full text-sm font-semibold text-white" style={{ background: photos[zoom].selectionnee ? TEAL : 'rgba(255,255,255,0.18)' }}>
               {photos[zoom].selectionnee ? 'Dans ma sélection' : 'Ajouter à ma sélection'}
             </button>
           )}
+        </div>
+      )}
+      {partage && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setPartage(null)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5 space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="font-bold text-[#1F2A2E]">Partager à mes proches</p>
+            <p className="text-sm text-gray-600">Vos proches voient les photos en aperçu, avec filigrane, sans pouvoir les télécharger ni les choisir. Lien valable jusqu&apos;au {new Date(partage.expire_at).toLocaleDateString('fr-FR')}.</p>
+            <div className="grid grid-cols-2 gap-2">
+              <a href={`https://wa.me/?text=${encodeURIComponent(messagePartage)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 rounded-xl text-sm font-semibold text-center border border-gray-200">WhatsApp</a>
+              <a href={`sms:?&body=${encodeURIComponent(messagePartage)}`} className="py-2.5 rounded-xl text-sm font-semibold text-center border border-gray-200">SMS</a>
+              <a href={`mailto:?subject=${encodeURIComponent(`Photos — ${album.titre ?? 'Séance photo'}`)}&body=${encodeURIComponent(messagePartage)}`} className="py-2.5 rounded-xl text-sm font-semibold text-center border border-gray-200">E-mail</a>
+              <button onClick={async () => { try { await navigator.clipboard.writeText(partage.url); setCopie(true); } catch { prompt('Copiez le lien :', partage.url); } }}
+                className="py-2.5 rounded-xl text-sm font-semibold border border-gray-200">{copie ? 'Lien copié' : 'Copier le lien'}</button>
+            </div>
+            {typeof navigator !== 'undefined' && 'share' in navigator && (
+              <button onClick={() => navigator.share({ title: album.titre ?? 'Séance photo', text: messagePartage }).catch(() => {})}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: TEAL }}>Partager…</button>
+            )}
+            <div className="flex gap-2">
+              <button onClick={couperPartage} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200" style={{ color: ROUGE }}>Désactiver le lien</button>
+              <button onClick={() => setPartage(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
+            </div>
+          </div>
         </div>
       )}
       {confirmation !== null && (

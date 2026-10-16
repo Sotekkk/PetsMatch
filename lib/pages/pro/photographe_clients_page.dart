@@ -10,8 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/utils/messaging_helper.dart';
-import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart';
 
 const _teal = Color(0xFF0C5C6C);
@@ -307,17 +306,8 @@ class _PhotographeClientsPageState extends State<PhotographeClientsPage> with Si
           Text(_nomClient(r0), style: const TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.w700, color: _ink)),
           if (tel.isNotEmpty || mail.isNotEmpty)
             Text([tel, mail].where((x) => x.isNotEmpty).join(' · '), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
-          if (clientUid.isNotEmpty)
-            Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final conv = await MessagingHelper.openOrCreateConversation(otherUid: clientUid, categorie: 'services', myProfileId: _pid);
-                if (mounted) await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(conversationId: conv, eleveurId: clientUid)));
-              },
-              icon: const Icon(Icons.chat_bubble_outline, size: 18),
-              label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey')),
-              style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
-            )),
+          const SizedBox(height: 8),
+          ContactCanaux(clientUid: clientUid, tel: tel, email: mail, monProfilId: _pid),
           const SizedBox(height: 8),
           const Text('Séances', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _ink)),
           for (final r in seances)

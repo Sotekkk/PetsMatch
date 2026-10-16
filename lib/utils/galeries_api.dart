@@ -30,9 +30,19 @@ const List<(String, String)> kStatutsGalerie = [
 ];
 
 class GaleriesApi {
+  /// Réponse JSON des routes du site ; une page HTML (route absente tant que
+  /// le site n'est pas redéployé, erreur serveur) donne un message lisible.
+  static Map<String, dynamic> _json(http.Response r) {
+    try {
+      return jsonDecode(r.body) as Map<String, dynamic>;
+    } on FormatException {
+      return {'error': 'Service momentanément indisponible (${r.statusCode}). Réessayez dans quelques minutes.'};
+    }
+  }
+
   static Future<Map<String, dynamic>> charger(String albumId) async {
     final r = await http.get(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId'), headers: await siteApiHeaders());
-    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    final j = _json(r);
     if (r.statusCode != 200) throw Exception(j['error'] ?? 'Galerie indisponible');
     return j;
   }
@@ -40,12 +50,12 @@ class GaleriesApi {
   static Future<void> supprimerPhotos(String albumId, List<String> ids) async {
     final r = await http.delete(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/photos'),
         headers: await siteApiHeaders(), body: jsonEncode({'ids': ids}));
-    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Suppression impossible');
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Suppression impossible');
   }
 
   static Future<void> supprimerGalerie(String albumId) async {
     final r = await http.delete(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId'), headers: await siteApiHeaders());
-    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Suppression impossible');
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Suppression impossible');
   }
 
   /// Aperçu : réduit à kApercuMax (proportions conservées), filigrane en
@@ -104,7 +114,7 @@ class GaleriesApi {
       final infos = [for (final f in part) {'nom': f.uri.pathSegments.last, 'taille': await f.length()}];
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/photos'),
           headers: await siteApiHeaders(), body: jsonEncode({'action': 'preparer', 'fichiers': infos}));
-      final j = jsonDecode(r.body) as Map<String, dynamic>;
+      final j = _json(r);
       if (r.statusCode != 200) throw Exception(j['error'] ?? 'Import impossible');
       final cibles = (j['fichiers'] as List).cast<Map<String, dynamic>>();
       final prets = <Map<String, dynamic>>[];
@@ -129,7 +139,7 @@ class GaleriesApi {
         if (e.statusCode == 200) {
           ajoutees += prets.length;
         } else {
-          erreurs.add(((jsonDecode(e.body) as Map)['error'] ?? 'Enregistrement impossible').toString());
+          erreurs.add((_json(e)['error'] ?? 'Enregistrement impossible').toString());
         }
       }
     }
@@ -141,13 +151,44 @@ class GaleriesApi {
   static Future<void> choisir(String albumId, String photoId, bool choisie) async {
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/selection'),
         headers: await siteApiHeaders(), body: jsonEncode({'photoId': photoId, 'choisie': choisie}));
-    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Sélection impossible');
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Sélection impossible');
   }
 
   static Future<void> confirmerSelection(String albumId, String commentaire) async {
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/selection'),
         headers: await siteApiHeaders(), body: jsonEncode({'confirmer': true, 'commentaire': commentaire}));
-    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Confirmation impossible');
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Confirmation impossible');
+  }
+
+  /// Coup de cœur du client (distinct de la sélection) : remonte dans
+  /// Mes interactions > Shootings.
+  static Future<void> aimer(String albumId, String photoId, bool aimee) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/aimer'),
+        headers: await siteApiHeaders(), body: jsonEncode({'photoId': photoId, 'aimee': aimee}));
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Action impossible');
+  }
+
+  /// Lien « proches » (consultation seule, filigrane), créé au besoin, 90 jours.
+  static Future<({String url, DateTime expire})> lienProches(String albumId) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/proches'), headers: await siteApiHeaders());
+    final j = _json(r);
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'Partage impossible');
+    return (url: '$kSiteBaseUrl/galerie-proches/${j['token']}', expire: DateTime.parse(j['expire_at'].toString()).toLocal());
+  }
+
+  static Future<void> desactiverLienProches(String albumId) async {
+    final r = await http.delete(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/proches'), headers: await siteApiHeaders());
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Action impossible');
+  }
+
+  /// Mes interactions > Shootings : photos aimées et sélectionnées des
+  /// galeries partagées sur mon compte, pour le profil actif.
+  static Future<List<Map<String, dynamic>>> mesFavoris(String profileId) async {
+    final q = profileId.isNotEmpty ? '?profileId=${Uri.encodeComponent(profileId)}' : '';
+    final r = await http.get(Uri.parse('$kSiteBaseUrl/api/galeries/mes-favoris$q'), headers: await siteApiHeaders());
+    final j = _json(r);
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'Chargement impossible');
+    return (j['galeries'] as List).cast<Map<String, dynamic>>();
   }
 
   // ── Livraison (stockage temporaire, ZIP) ─────────────────────────────
@@ -155,7 +196,7 @@ class GaleriesApi {
   /// Liens de téléchargement (URL signées de 10 min) des ZIP livrés.
   static Future<List<Map<String, dynamic>>> liensLivraison(String albumId) async {
     final r = await http.get(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'), headers: await siteApiHeaders());
-    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    final j = _json(r);
     if (r.statusCode != 200) throw Exception(j['error'] ?? 'Téléchargement indisponible');
     return (j['fichiers'] as List).cast<Map<String, dynamic>>();
   }
@@ -178,7 +219,7 @@ class GaleriesApi {
     if (courant.isNotEmpty) groupes.add(courant);
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
         headers: await siteApiHeaders(), body: jsonEncode({'action': 'preparer', 'parts': groupes.length}));
-    final j = jsonDecode(r.body) as Map<String, dynamic>;
+    final j = _json(r);
     if (r.statusCode != 200) throw Exception(j['error'] ?? 'Livraison impossible');
     final cibles = (j['parts'] as List).cast<Map<String, dynamic>>();
     final dossier = await getTemporaryDirectory();
@@ -213,13 +254,13 @@ class GaleriesApi {
     }
     final p = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
         headers: await siteApiHeaders(), body: jsonEncode({'action': 'publier', 'parts': publies, 'jours': jours}));
-    if (p.statusCode != 200) throw Exception((jsonDecode(p.body) as Map)['error'] ?? 'Publication impossible');
+    if (p.statusCode != 200) throw Exception(_json(p)['error'] ?? 'Publication impossible');
   }
 
   static Future<void> actionLivraison(String albumId, String action, {int jours = 30}) async {
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
         headers: await siteApiHeaders(), body: jsonEncode({'action': action, 'jours': jours}));
-    if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'Action impossible');
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Action impossible');
   }
 
   static String taille(num? o) {

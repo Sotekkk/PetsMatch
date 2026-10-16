@@ -68,13 +68,14 @@ class DevisPrefill {
   final String? clientNom;
   final String? clientPrenom;
   final String? clientEmail;
+  final String? clientTel;
   final List<Map<String, dynamic>> lignes; // {description, quantite, prix_unitaire}
   final String? note;
   /// Séance (rdv) à laquelle le devis est rattaché (photographe…).
   final String? rdvId;
   const DevisPrefill({
     this.animalId, this.clientUid, this.clientProfileId,
-    this.clientNom, this.clientPrenom, this.clientEmail,
+    this.clientNom, this.clientPrenom, this.clientEmail, this.clientTel,
     this.lignes = const [], this.note, this.rdvId,
   });
 }
@@ -352,6 +353,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
       _nomCtrl.text = p.clientNom ?? '';
       _prenomCtrl.text = p.clientPrenom ?? '';
       _emailCtrl.text = p.clientEmail ?? '';
+      if ((p.clientTel ?? '').isNotEmpty) _telCtrl.text = p.clientTel!;
       if ((p.clientNom ?? '').isNotEmpty) {
         _searchCtrl.text = '${p.clientPrenom ?? ''} ${p.clientNom ?? ''}'.trim();
       }

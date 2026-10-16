@@ -1,9 +1,12 @@
 // Galeries photo du client : liste des galeries privées que des
 // photographes ont partagées sur son compte, et consultation (aperçus en URL
 // signées courtes délivrées par le serveur, agrandissement). Aucune galerie
-// n'est publique. Sélection (cœurs puis confirmation explicite) et
+// n'est publique. Sélection (coches puis confirmation explicite) et
 // téléchargement de la livraison (ZIP temporaires, URL signées 10 min).
-// Miroir site : /mes-galeries et /galerie/[id].
+// Coups de cœur (cœur) : distincts de la sélection, retrouvés dans Mes
+// interactions > Shootings. Partage aux proches : lien de consultation seule,
+// aperçus filigranés, sans téléchargement ni sélection.
+// Miroir site : /mes-galeries, /galerie/[id] et /galerie-proches/[token].
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -11,9 +14,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
+const _rose = Color(0xFFE0457B);
 
 class MesGaleriesPhotoPage extends StatefulWidget {
   const MesGaleriesPhotoPage({super.key});
@@ -140,6 +147,81 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
     }
   }
 
+  Future<void> _aimer(Map p) async {
+    final aimee = p['aimee'] != true;
+    setState(() => p['aimee'] = aimee);
+    try {
+      await GaleriesApi.aimer(widget.albumId, p['id'].toString(), aimee);
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+      _charger();
+    }
+  }
+
+  Future<void> _partagerProches() async {
+    ({String url, DateTime expire}) lien;
+    try {
+      lien = await GaleriesApi.lienProches(widget.albumId);
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+      return;
+    }
+    if (!mounted) return;
+    final studio = (_g?['studio'] as Map?)?['nom']?.toString() ?? '';
+    final titre = _album['titre']?.toString() ?? 'Séance photo';
+    final message = 'Regardez les photos de notre séance « $titre »${studio.isNotEmpty ? ' par $studio' : ''} : ${lien.url}';
+    Future<void> ouvrir(Uri u) async {
+      if (!await launchUrl(u, mode: LaunchMode.externalApplication)) _snack("Impossible d'ouvrir l'application");
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const Text('Partager à mes proches', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _ink)),
+          const SizedBox(height: 6),
+          Text('Vos proches voient les photos en aperçu, avec filigrane, sans pouvoir les télécharger ni les choisir. '
+              'Lien valable jusqu\'au ${DateFormat('dd/MM/yyyy').format(lien.expire)}.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+          const SizedBox(height: 8),
+          ListTile(contentPadding: EdgeInsets.zero, leading: const FaIcon(FontAwesomeIcons.whatsapp, color: Color(0xFF25D366)),
+              title: const Text('WhatsApp', style: TextStyle(fontFamily: 'Galey')),
+              onTap: () => ouvrir(Uri.parse('https://wa.me/?text=${Uri.encodeComponent(message)}'))),
+          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.sms_outlined, color: _teal),
+              title: const Text('SMS', style: TextStyle(fontFamily: 'Galey')),
+              onTap: () => ouvrir(Uri(scheme: 'sms', queryParameters: {'body': message}))),
+          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.mail_outline, color: _teal),
+              title: const Text('E-mail', style: TextStyle(fontFamily: 'Galey')),
+              onTap: () => ouvrir(Uri(scheme: 'mailto', query: 'subject=${Uri.encodeComponent('Photos — $titre')}&body=${Uri.encodeComponent(message)}'))),
+          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.share_outlined, color: _teal),
+              title: const Text('Autre application…', style: TextStyle(fontFamily: 'Galey')),
+              onTap: () => Share.share(message, subject: 'Photos — $titre')),
+          ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.link, color: _teal),
+              title: const Text('Copier le lien', style: TextStyle(fontFamily: 'Galey')),
+              onTap: () async {
+                await Clipboard.setData(ClipboardData(text: lien.url));
+                if (ctx.mounted) Navigator.pop(ctx);
+                _snack('Lien copié');
+              }),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await GaleriesApi.desactiverLienProches(widget.albumId);
+                _snack('Lien désactivé : vos proches ne voient plus la galerie');
+              } catch (e) {
+                _snack(e.toString().replaceFirst('Exception: ', ''));
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFB3261E)),
+            child: const Text('Désactiver le lien', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ]),
+      )),
+    );
+  }
+
   Future<void> _confirmer() async {
     final ctrl = TextEditingController();
     final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -206,7 +288,11 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
-          title: Text(album['titre']?.toString() ?? 'Galerie', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+          title: Text(album['titre']?.toString() ?? 'Galerie', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          actions: [
+            if (_client)
+              IconButton(tooltip: 'Partager à mes proches', icon: const Icon(Icons.share_outlined), onPressed: _partagerProches),
+          ]),
       bottomNavigationBar: _selectionOuverte && _nbChoisies > 0
           ? SafeArea(child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -237,6 +323,15 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
                         const SizedBox(height: 6),
                         Text('Aperçus en qualité réduite. Les fichiers définitifs vous seront remis par votre photographe.',
                             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500)),
+                        if (_client) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _partagerProches,
+                            icon: const Icon(Icons.share_outlined, size: 16),
+                            label: const Text('Partager à mes proches', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                            style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: Color(0xFFE0E3E0))),
+                          ),
+                        ],
                       ]),
                     )),
                     if (livraison.isNotEmpty)
@@ -263,7 +358,7 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
                         ] else ...[
                           const Text('Choisissez vos photos', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _ink)),
-                          Text('Touchez le cœur sur chaque photo. $_nbChoisies sélectionnée${_nbChoisies > 1 ? 's' : ''}'
+                          Text('Cochez chaque photo que vous souhaitez recevoir ; le cœur garde vos coups de cœur dans Mes interactions. $_nbChoisies sélectionnée${_nbChoisies > 1 ? 's' : ''}'
                               '${incluses != null ? ' sur $incluses incluse${incluses > 1 ? 's' : ''} dans votre prestation' : ''}.'
                               '${incluses != null && _nbChoisies > incluses ? _supplement(incluses, (album['prix_photo_supp'] as num?)?.toDouble()) : ''}',
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
@@ -281,22 +376,28 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
                           final choisie = p['selectionnee'] == true;
                           return Stack(children: [
                             Positioned.fill(child: GestureDetector(
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _Visionneuse(photos: photos, depart: i))),
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _Visionneuse(photos: photos, depart: i, onAimer: _client ? _aimer : null))),
                               child: Container(
                                 decoration: BoxDecoration(color: const Color(0xFFF0F1EF),
                                     border: choisie && _client ? Border.all(color: _teal, width: 3) : null),
                                 child: Image.network(p['url'].toString(), fit: BoxFit.cover, cacheWidth: 400),
                               ),
                             )),
+                            if (_client)
+                              Positioned(left: 4, top: 4, child: GestureDetector(
+                                onTap: () => _aimer(p),
+                                child: CircleAvatar(radius: 15, backgroundColor: p['aimee'] == true ? _rose : Colors.black38,
+                                    child: Icon(p['aimee'] == true ? Icons.favorite : Icons.favorite_border, size: 16, color: Colors.white)),
+                              )),
                             if (_selectionOuverte)
                               Positioned(right: 4, top: 4, child: GestureDetector(
                                 onTap: () => _basculer(p),
                                 child: CircleAvatar(radius: 15, backgroundColor: choisie ? _teal : Colors.black38,
-                                    child: Icon(choisie ? Icons.favorite : Icons.favorite_border, size: 16, color: Colors.white)),
+                                    child: Icon(choisie ? Icons.check : Icons.circle_outlined, size: 16, color: Colors.white)),
                               ))
                             else if (choisie && _client)
                               const Positioned(right: 4, top: 4, child: CircleAvatar(radius: 11, backgroundColor: _teal,
-                                  child: Icon(Icons.favorite, size: 12, color: Colors.white))),
+                                  child: Icon(Icons.check, size: 13, color: Colors.white))),
                           ]);
                         }, childCount: photos.length),
                       ),
@@ -307,22 +408,49 @@ class _GalerieClientPageState extends State<GalerieClientPage> {
   }
 }
 
-class _Visionneuse extends StatelessWidget {
+class _Visionneuse extends StatefulWidget {
   final List<Map> photos;
   final int depart;
-  const _Visionneuse({required this.photos, required this.depart});
+  /// Client : cœur sur la photo affichée (coup de cœur).
+  final Future<void> Function(Map)? onAimer;
+  const _Visionneuse({required this.photos, required this.depart, this.onAimer});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0),
-        body: PageView.builder(
-          controller: PageController(initialPage: depart),
-          itemCount: photos.length,
-          itemBuilder: (_, i) => InteractiveViewer(
-            maxScale: 4,
-            child: Center(child: Image.network(photos[i]['url'].toString(), fit: BoxFit.contain)),
+  State<_Visionneuse> createState() => _VisionneuseState();
+}
+
+class _VisionneuseState extends State<_Visionneuse> {
+  late int _i = widget.depart;
+  late final _ctrl = PageController(initialPage: widget.depart);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.photos[_i];
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0, actions: [
+        if (widget.onAimer != null)
+          IconButton(
+            tooltip: 'Coup de cœur',
+            icon: Icon(p['aimee'] == true ? Icons.favorite : Icons.favorite_border, color: p['aimee'] == true ? _rose : Colors.white),
+            onPressed: () async { await widget.onAimer!(p); if (mounted) setState(() {}); },
           ),
+      ]),
+      body: PageView.builder(
+        controller: _ctrl,
+        itemCount: widget.photos.length,
+        onPageChanged: (i) => setState(() => _i = i),
+        itemBuilder: (_, i) => InteractiveViewer(
+          maxScale: 4,
+          child: Center(child: Image.network(widget.photos[i]['url'].toString(), fit: BoxFit.contain)),
         ),
-      );
+      ),
+    );
+  }
 }
