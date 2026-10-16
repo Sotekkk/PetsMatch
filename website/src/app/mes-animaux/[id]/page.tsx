@@ -2782,6 +2782,61 @@ function AnimalFichePageInner() {
     setConfirmingCession(false);
   }
 
+  /** Cession faite hors PetsMatch (contrat papier) : finalise le transfert
+   *  sans signature électronique, avec ou sans ligne `cessions` (cession
+   *  créée sur le site). Contrats encore à signer annulés (trace conservée). */
+  async function validerSansSignature() {
+    if (!user || !id) return;
+    if (!confirm(`La cession de ${animal.nom ?? 'cet animal'} a été faite hors PetsMatch (contrat papier) ? Le transfert sera finalisé sans contrat signé dans l'application ; les documents encore à signer seront annulés.`)) return;
+    setConfirmingCession(true);
+    try {
+      const cedantUid = animal.uid_eleveur ?? ownerUid ?? user.uid;
+      const row = cessionEnCours;
+      const acqUid = (row?.uid_acquereur as string | null | undefined) ?? animal.uid_acquereur ?? null;
+      const dateCession = (row?.date_cession as string | undefined) ?? (animal.date_sortie ?? '').slice(0, 10) ?? '';
+      const date = dateCession || new Date().toISOString().slice(0, 10);
+      if (row) await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: new Date().toISOString() }).eq('id', row.id);
+      const acqProfileId = acqUid ? await resolveAcquereurProfileId(acqUid, (row?.qualite as string | undefined) ?? null, (row?.acquereur_profile_id as string | undefined) ?? null) : null;
+      const { error } = await supabase.from('animaux').update({
+        statut: 'sorti', date_sortie: date,
+        ...(row ? { destinataire_nom: row.nom_acquereur, destinataire_adresse: row.adresse_acquereur ?? null, destinataire_qualite: row.qualite ?? 'particulier' } : {}),
+        ...(acqUid ? { uid_acquereur: acqUid } : {}),
+        ...(acqProfileId ? { profile_id_acquereur: acqProfileId } : {}),
+      }).eq('id', id);
+      if (error) throw error;
+      if (acqUid) {
+        const { error: e2 } = await supabase.rpc('ceder_propriete_animal', { p_animal_id: id, p_uid_acquereur: acqUid, p_profile_acquereur: acqProfileId, p_date: date });
+        if (e2) throw e2;
+      } else {
+        await supabase.from('animaux_proprietes').update({ date_fin: date }).eq('animal_id', id).eq('uid_proprio', cedantUid).is('date_fin', null);
+      }
+      // Registre : sortie du cédant (déjà inscrite pour une cession du site).
+      try {
+        const { data: deja } = await supabase.from('registre_mouvements').select('id').eq('animal_id', id).eq('uid_eleveur', cedantUid).eq('type', 'sortie').limit(1);
+        if (!deja?.length) {
+          await supabase.from('registre_mouvements').insert({
+            animal_id: id, uid_eleveur: cedantUid, ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
+            type: 'sortie', date_mouvement: date, motif: 'cession',
+            destinataire_qualite: (row?.qualite as string | undefined) ?? 'particulier',
+            destinataire_nom: (row?.nom_acquereur as string | undefined) ?? animal.destinataire_nom ?? null,
+          });
+        }
+      } catch { /* pas bloquant */ }
+      // Contrats de cession encore à signer : annulés (cession faite sur papier).
+      try {
+        await supabase.from('documents_animaux').update({ statut: 'annule' }).eq('animal_id', id)
+          .in('type', ['contrat_vente', 'certificat_cession'])
+          .in('statut', ['brouillon', 'en_attente', 'genere', 'partiellement_signe', 'signe_acquereur', 'signe_vendeur']);
+      } catch { /* pas bloquant */ }
+      setCessionEnCours(null);
+      await loadAnimal();
+    } catch (e) {
+      setSaveError(`Validation impossible : ${(e as Error).message}`);
+    } finally {
+      setConfirmingCession(false);
+    }
+  }
+
   async function revoquerCession() {
     if (!user || !confirm('Annuler la cession ? L\'animal restera dans votre élevage.')) return;
     setRevokingCession(true);
@@ -3892,6 +3947,12 @@ function AnimalFichePageInner() {
                   className="text-xs font-semibold bg-[#6E9E57] hover:bg-[#5a8a45] text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
                   {confirmingCession ? '…' : '✅ Confirmer le transfert'}
                 </button>}
+                <button
+                  onClick={validerSansSignature}
+                  disabled={confirmingCession || revokingCession}
+                  className="text-xs font-semibold border border-[#6E9E57] text-[#4E7E3A] hover:bg-[#6E9E57]/10 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                  {confirmingCession ? '…' : 'Valider sans signature (cession faite sur papier)'}
+                </button>
                 <button
                   onClick={revoquerCession}
                   disabled={confirmingCession || revokingCession}

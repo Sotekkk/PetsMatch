@@ -1588,6 +1588,92 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     }
   }
 
+  /// Cession faite hors PetsMatch (contrat papier) : finalise le transfert
+  /// sans signature électronique — avec ou sans ligne `cessions` (cession
+  /// créée sur le site). Contrats encore à signer annulés (trace conservée).
+  Future<void> _validerCessionSansSignature() async {
+    if (widget.animalId == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Valider sans signature ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('La cession de ${_nomCtrl.text.isNotEmpty ? _nomCtrl.text : 'cet animal'} a été faite hors PetsMatch '
+            '(contrat papier). Le transfert est finalisé sans contrat signé dans l\'application ; les documents encore à signer sont annulés.',
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Valider la cession')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _confirmingCession = true);
+    try {
+      final id = widget.animalId!;
+      final cedant = _ownerUid ?? FirebaseAuth.instance.currentUser!.uid;
+      final row = _cessionEnCours;
+      final uidAcq = (row?['uid_acquereur'] as String?) ?? _uidAcquereur;
+      final dateCession = (row?['date_cession'] as String?)
+          ?? _dateSortie?.toIso8601String().split('T').first
+          ?? DateTime.now().toIso8601String().split('T').first;
+      if (row != null) {
+        await _supa.from('cessions').update({'statut': 'confirme', 'confirmed_at': DateTime.now().toIso8601String()}).eq('id', row['id']);
+      }
+      String? acqProfileId = row?['acquereur_profile_id'] as String?;
+      if ((acqProfileId == null || acqProfileId.isEmpty) && uidAcq != null) {
+        acqProfileId = (await _supa.from('user_profiles_complet').select('id').eq('uid', uidAcq).eq('profile_type', 'particulier').maybeSingle())?['id'] as String?;
+        acqProfileId ??= (await _supa.from('user_profiles_complet').select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle())?['id'] as String?;
+      }
+      await _supa.from('animaux').update({
+        'statut': 'sorti',
+        'date_sortie': dateCession,
+        if (row != null) ...{
+          'destinataire_nom': row['nom_acquereur'],
+          'destinataire_adresse': row['adresse_acquereur'],
+          'destinataire_qualite': row['qualite'] ?? 'particulier',
+        },
+        if (uidAcq != null) 'uid_acquereur': uidAcq,
+        if (acqProfileId != null) 'profile_id_acquereur': acqProfileId,
+      }).eq('id', id);
+      if (uidAcq != null) {
+        await _supa.rpc('ceder_propriete_animal', params: {
+          'p_animal_id': id, 'p_uid_acquereur': uidAcq, 'p_profile_acquereur': acqProfileId, 'p_date': dateCession,
+        });
+      } else {
+        await _supa.from('animaux_proprietes').update({'date_fin': dateCession})
+            .eq('animal_id', id).eq('uid_proprio', cedant).isFilter('date_fin', null);
+      }
+      // Registre : sortie du cédant (déjà inscrite pour une cession du site).
+      try {
+        final deja = await _supa.from('registre_mouvements').select('id')
+            .eq('animal_id', id).eq('uid_eleveur', cedant).eq('type', 'sortie').limit(1);
+        if ((deja as List).isEmpty) {
+          await _supa.from('registre_mouvements').insert({
+            'animal_id': id, 'uid_eleveur': cedant,
+            if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
+            'type': 'sortie', 'date_mouvement': dateCession, 'motif': 'cession',
+            'destinataire_qualite': row?['qualite'] ?? 'particulier',
+            'destinataire_nom': row?['nom_acquereur'] ?? _destinataireNomCtrl.text,
+          });
+        }
+      } catch (_) {}
+      // Contrats de cession encore à signer : annulés (cession faite sur papier).
+      try {
+        await _supa.from('documents_animaux').update({'statut': 'annule'})
+            .eq('animal_id', id).inFilter('type', ['contrat_vente', 'certificat_cession'])
+            .inFilter('statut', kStatutsContratNonFinalises);
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() { _statut = 'sorti'; _cessionEnCours = null; _syncTabs(); });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cession validée.'), backgroundColor: Color(0xFF6E9E57)));
+      await _refreshFromSupabase();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _confirmingCession = false);
+    }
+  }
+
   Future<void> _revoquerCession() async {
     if (_cessionEnCours == null && _statut != 'en_attente_cession') return;
     final ok = await showDialog<bool>(
@@ -2719,6 +2805,7 @@ class _IdentiteTab extends StatelessWidget {
               confirming: s._confirmingCession,
               revoking: s._revokingCession,
               onConfirm: s._confirmerCession,
+              onSansSignature: s._validerCessionSansSignature,
               onRevoke: s._revoquerCession,
               onEdit: s._modifierCession,
             ),
@@ -4976,6 +5063,8 @@ class _CessionEnCoursBanner extends StatelessWidget {
   final bool revoking;
   final VoidCallback onConfirm;
   final VoidCallback onRevoke;
+  /// Cession faite sur papier : finaliser sans signature électronique.
+  final VoidCallback? onSansSignature;
   final VoidCallback onEdit;
 
   const _CessionEnCoursBanner({
@@ -4983,7 +5072,7 @@ class _CessionEnCoursBanner extends StatelessWidget {
     required this.dateFiche, required this.prixFiche,
     required this.contratSigne,
     required this.confirming, required this.revoking,
-    required this.onConfirm, required this.onRevoke, required this.onEdit,
+    required this.onConfirm, required this.onRevoke, required this.onEdit, this.onSansSignature,
   });
 
   @override
@@ -5091,6 +5180,17 @@ class _CessionEnCoursBanner extends StatelessWidget {
             padding: EdgeInsets.only(top: 6),
             child: Text('La confirmation sera possible une fois l\'acquéreur signé.',
                 style: TextStyle(fontSize: 10, color: Colors.grey)),
+          ),
+        if (onSansSignature != null && !(cession != null && signedByAcq))
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: confirming || revoking ? null : onSansSignature,
+              icon: const Icon(Icons.task_alt, size: 16),
+              label: const Text('Valider sans signature (cession faite sur papier)',
+                  style: TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF6E9E57), padding: EdgeInsets.zero),
+            ),
           ),
       ]),
     );
