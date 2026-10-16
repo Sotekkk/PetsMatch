@@ -184,7 +184,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
           acquereur_telephone:   tel.trim() || null,
           acquereur_adresse:     adresse.trim() || null,
           modalite_cession:      qualite === 'autre' ? 'gratuit' : 'vente',
-          prix:                  acompte ? parseFloat(acompte) : null,
+          prix:                  acompte ? parseFloat(acompte.replace(',', '.')) : null,
           date_remise:           dateRemise.toISOString(),
           date_limite_signature: dateLimite?.toISOString() ?? null,
           notes:                 notes.trim(),
@@ -529,7 +529,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
 
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Acompte / arrhes versé (€) — optionnel</label>
-                <input type="number" min="0" placeholder="0" value={acompte} onChange={e => setAcompte(e.target.value)}
+                <input type="text" inputMode="decimal" placeholder="0" value={acompte} onChange={e => setAcompte(e.target.value.replace(/[^0-9.,]/g, ''))}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
               </div>
 

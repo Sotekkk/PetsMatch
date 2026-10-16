@@ -597,7 +597,7 @@ Céder quand même ?`)) return;
         ...(acqProfileId ? { profile_id_acquereur: acqProfileId } : {}),
         cession_contrat_url:    finalContratUrl,
         cession_certificat_url: finalCertificatUrl,
-        cession_prix:           prix ? parseFloat(prix) : null,
+        cession_prix:           prix ? parseFloat(prix.replace(',', '.')) : null,
         cession_notes:          notes.trim() || null,
         sterilisation_requise:  sterilOn,
         ...(sterilOn ? {
@@ -823,7 +823,7 @@ Céder quand même ?`)) return;
                 {!isReCession && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1">Prix (€)</label>
-                    <input type="number" min="0" placeholder="0" value={prix} onChange={e => setPrix(e.target.value)}
+                    <input type="text" inputMode="decimal" placeholder="0" value={prix} onChange={e => setPrix(e.target.value.replace(/[^0-9.,]/g, ''))}
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
                   </div>
                 )}

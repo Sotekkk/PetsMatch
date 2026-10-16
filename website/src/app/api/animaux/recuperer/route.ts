@@ -49,6 +49,27 @@ async function nomProfil(uid: string | null): Promise<string> {
   return ((pro?.profile_type !== 'particulier' ? pro?.nom : '') || `${pro?.firstname ?? ''} ${pro?.lastname ?? ''}`.trim() || pro?.nom || '').trim();
 }
 
+/** Nom de l'élevage cédant : le profil qui détenait l'animal
+ *  (animaux_proprietes.profile_id_proprio), jamais le premier profil pro
+ *  du compte — un même compte peut avoir élevage + taxi, pension… */
+async function nomElevage(a: Animal): Promise<string> {
+  if (!a.uid_eleveur) return '';
+  const { data: props } = await admin.from('animaux_proprietes').select('profile_id_proprio, date_debut')
+    .eq('animal_id', a.id).eq('uid_proprio', a.uid_eleveur).order('date_debut', { ascending: false }).limit(1);
+  let profilId = (props?.[0] as { profile_id_proprio?: string | null } | undefined)?.profile_id_proprio ?? null;
+  if (!profilId) {
+    const { data: reg } = await admin.from('registre_mouvements').select('eleveur_profile_id')
+      .eq('animal_id', a.id).eq('uid_eleveur', a.uid_eleveur).not('eleveur_profile_id', 'is', null).limit(1);
+    profilId = (reg?.[0] as { eleveur_profile_id?: string | null } | undefined)?.eleveur_profile_id ?? null;
+  }
+  const { data } = profilId
+    ? await admin.from('user_profiles_complet').select('nom, firstname, lastname, profile_type').eq('id', profilId).eq('uid', a.uid_eleveur)
+    : await admin.from('user_profiles_complet').select('nom, firstname, lastname, profile_type').eq('uid', a.uid_eleveur).eq('profile_type', 'eleveur');
+  const p = (data?.[0] ?? null) as { nom?: string | null; firstname?: string | null; lastname?: string | null } | null;
+  if (!p) return nomProfil(a.uid_eleveur);
+  return (p.nom || `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim()).trim();
+}
+
 /** Le compte correspond-il à l'acquéreur enregistré (e-mail ou téléphone) ? */
 async function correspond(uid: string, a: Animal): Promise<boolean> {
   const c = a.acquereur_contact_manuel;
@@ -95,7 +116,7 @@ async function transferer(a: Animal, uid: string, profileId: string | null) {
   if (maj.error?.message.includes('profile_id_acquereur')) maj = await admin.from('animaux').update({ uid_acquereur: uid }).eq('id', a.id);
   if (maj.error) throw new Error(maj.error.message);
   if (estUuid(a.id)) {
-    const eleveur = await nomProfil(a.uid_eleveur);
+    const eleveur = await nomElevage(a);
     await admin.from('registre_mouvements').insert({
       animal_id: a.id, uid_eleveur: uid, ...(profil ? { eleveur_profile_id: profil } : {}), type: 'entree', date_mouvement: date,
       motif: 'acquisition', provenance_qualite: 'eleveur', provenance_nom: eleveur || null,
@@ -142,7 +163,7 @@ export async function POST(req: NextRequest) {
       if (!recuperable(a)) return NextResponse.json({ etat: 'detenu', animal: { nom: a.nom, espece: a.espece } });
       const { data: dem } = await admin.from('animal_recuperations').select('id').eq('animal_id', a.id).eq('demandeur_uid', uid).eq('statut', 'en_attente').limit(1);
       return NextResponse.json({
-        etat: 'recuperable', animal, elevage: await nomProfil(a.uid_eleveur),
+        etat: 'recuperable', animal, elevage: await nomElevage(a),
         correspondance: await correspond(uid, a), demandeEnCours: (dem ?? []).length > 0,
       });
     }
@@ -211,7 +232,7 @@ export async function POST(req: NextRequest) {
       if (error) throw new Error(error.message);
       return NextResponse.json({
         ok: true, token: (data as { token: string }).token, email: c.email ?? null, tel: c.tel ?? null, prenom: c.prenom ?? '',
-        nom: `${c.prenom ?? ''} ${c.nom ?? ''}`.trim(), animalNom: a.nom ?? 'votre animal', proNom: await nomProfil(uid),
+        nom: `${c.prenom ?? ''} ${c.nom ?? ''}`.trim(), animalNom: a.nom ?? 'votre animal', proNom: await nomElevage(a),
       });
     }
 

@@ -57,6 +57,10 @@ interface Animal {
 const CHALEURS_INTERVAL_WEB: Record<string, number> = {
   chien: 182, chat: 21, lapin: 14, ovin: 17, caprin: 21, porcin: 21, cheval: 21,
 };
+// Âge de retraite (années) : au-delà, plus de cycle de chaleurs à suivre (miroir appli).
+const AGES_RETRAITE: Record<string, number> = {
+  chien: 7, chat: 8, lapin: 5, cheval: 18, ovin: 8, caprin: 8, porcin: 5, ane: 15,
+};
 
 const SPECIES = [
   { value: 'tous',   label: 'Tous',    color: '#1F2A2E' },
@@ -573,9 +577,10 @@ function MesAnimauxPageInner() {
           ? { ...a, statut: 'sorti' } : a);
       if (!cancelled) { setAnimaux(merged); setCessionEnAttente(currentIds); setFetching(false); }
 
-      // Calcul flags chaleurs et gestante pour les femelles présentes
+      // Calcul flags chaleurs et gestante pour les femelles présentes —
+      // stérilisées exclues : plus de cycle à suivre (miroir appli).
       const femIds = merged
-        .filter((a: Animal) => (a.sexe ?? '').startsWith('f') && a.statut !== 'sorti' && a.statut !== 'decede')
+        .filter((a: Animal) => (a.sexe ?? '').startsWith('f') && a.sterilise !== true && a.statut !== 'sorti' && a.statut !== 'decede')
         .map((a: Animal) => a.id);
 
       if (femIds.length === 0) return;
@@ -631,6 +636,7 @@ function MesAnimauxPageInner() {
       const vFlags: Record<string, boolean> = {};
       const now = new Date();
       for (const a of merged) {
+        if (!femIds.includes(a.id)) continue;
         // En chaleurs : chaleur notée en cours (fait observé, prioritaire).
         const cr = lastChaleurRow[a.id];
         if (cr && estEnChaleurs(lastChaleur[a.id] ?? null, cr.date_fin ? new Date(cr.date_fin) : null, cr.duree, a.espece ?? '', now)) {
@@ -643,6 +649,14 @@ function MesAnimauxPageInner() {
 
         const interval = a.intervalle_chaleurs_jours || raceIntervalFor(a.uid_eleveur, a.espece ?? '', a.race) || CHALEURS_INTERVAL_WEB[a.espece ?? ''] || 0;
         if (!interval) continue;
+
+        // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.
+        const naissance = a.date_naissance ? new Date(a.date_naissance) : null;
+        const ageRetraite = AGES_RETRAITE[(a.espece ?? '').toLowerCase()];
+        if (naissance && !isNaN(naissance.getTime()) && ageRetraite) {
+          const dateRetraite = new Date(naissance.getFullYear() + ageRetraite, naissance.getMonth(), naissance.getDate());
+          if (now >= dateRetraite) continue;
+        }
 
         // Une mise-bas postérieure à la dernière chaleur enregistrée redémarre
         // le cycle : sans ça, une femelle qui vient de mettre bas retombe,

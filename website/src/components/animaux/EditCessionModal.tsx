@@ -166,7 +166,7 @@ export default function EditCessionModal({ animal, cession, cedantUid, onClose, 
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Prix (€)</label>
-                <input type="number" min="0" value={prix} onChange={e => setPrix(e.target.value)} className={inputCls} />
+                <input type="text" inputMode="decimal" value={prix} onChange={e => setPrix(e.target.value.replace(/[^0-9.,]/g, ''))} className={inputCls} />
               </div>
             </div>
             <div>
