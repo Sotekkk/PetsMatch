@@ -25,7 +25,9 @@ class PhotographeAlbumPage extends StatefulWidget {
   final String? rdvId;
   final String? albumId;
   final String clientName;
-  const PhotographeAlbumPage({super.key, this.rdvId, this.albumId, this.clientName = ''});
+  /// Ouvre directement sur les photos choisies par le client.
+  final bool filtreSelection;
+  const PhotographeAlbumPage({super.key, this.rdvId, this.albumId, this.clientName = '', this.filtreSelection = false});
 
   @override
   State<PhotographeAlbumPage> createState() => _PhotographeAlbumPageState();
@@ -54,6 +56,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
   @override
   void initState() {
     super.initState();
+    _filtreSel = widget.filtreSelection;
     _initialiser();
   }
 

@@ -6,6 +6,7 @@
 // ⚠️ À garder synchronisé avec les tiroirs : eleveur_nav.dart,
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
+import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/icad_import_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
@@ -794,6 +795,12 @@ List<QuickAction> _all(BuildContext ctx) => [
   ),
 
   // ── Photographe ────────────────────────────────────────────────────────────
+  QuickAction(
+    label: 'Mes clients et suivi',
+    keywords: ['clients', 'suivi', 'à traiter', 'travail', 'facture', 'contrat', 'devis', 'sélection', 'retouche'],
+    icon: Icons.people_outline, group: 'Mon espace pro',
+    visible: () => _catPro == 'photographe', open: (c) => _push(c, const PhotographeClientsPage()),
+  ),
   QuickAction(
     label: 'Mon portfolio',
     keywords: ['portfolio', 'réalisations', 'book', 'photos publiques', 'vitrine', 'couverture'],

@@ -7,13 +7,12 @@
 // lib/pages/pro/photographe_studio_dashboard.dart. Scopé au profil actif.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { Kpi, Section, Badge, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
 import { styleGalerie, GALERIES_A_LIVRER } from '@/lib/photographe';
-import { geocodeAddress } from '@/lib/geocoding';
+import DossierSeanceModal from '@/components/photographe/DossierSeanceModal';
 
 const AMBRE = '#D97706';
 const VERT = '#2E7D5E';
@@ -51,14 +50,6 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
   const [devis, setDevis] = useState<Devis[]>([]);
   const [contrats, setContrats] = useState<{ id: string; rdv_id: string | null }[]>([]);
   const [nbPhotos, setNbPhotos] = useState<Record<string, number>>({});
-  const [nbChoisies, setNbChoisies] = useState<Record<string, number>>({});
-  const [lieuEdit, setLieuEdit] = useState<{ adresse: string; prevenir: boolean } | null>(null);
-  // Dossier de chaque séance : devis (rdv_id), contrats, factures (source_rdv_id).
-  const [devisSeances, setDevisSeances] = useState<{ rdv_id: string; statut: string; total_ttc: number | null }[]>([]);
-  const [contratsSeances, setContratsSeances] = useState<{ rdv_id: string; statut: string }[]>([]);
-  const [facturesSeances, setFacturesSeances] = useState<{ source_rdv_id: string; statut: string; total_ttc: number | null }[]>([]);
-  const [prix, setPrix] = useState<Record<string, number>>({});
-  const router = useRouter();
   const [clients, setClients] = useState<Record<string, string>>({});
   const [animaux, setAnimaux] = useState<Record<string, string>>({});
   const [prestations, setPrestations] = useState<Record<string, string>>({});
@@ -102,25 +93,10 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
       const perso = `${x.firstname ?? ''} ${x.lastname ?? ''}`.trim(); const st = (x.nom ?? '').trim();
       cl[x.id] = x.profile_type !== 'particulier' && st ? st : perso || st;
     }
-    const rdvIds = [...new Set([...((s.data ?? []) as Rdv[]), ...((p.data ?? []) as Rdv[])].map(x => x.id))];
-    if (rdvIds.length) {
-      const [dv2, ct2, fa2] = await Promise.all([
-        supabase.from('devis').select('rdv_id, statut, total_ttc').in('rdv_id', rdvIds),
-        supabase.from('documents_animaux').select('rdv_id, statut').eq('type', 'contrat_prestation_photo').in('rdv_id', rdvIds),
-        supabase.from('factures').select('source_rdv_id, statut, total_ttc').in('source_rdv_id', rdvIds),
-      ]);
-      setDevisSeances(dv2.error ? [] : (dv2.data ?? []) as typeof devisSeances);
-      setContratsSeances((ct2.data ?? []) as typeof contratsSeances);
-      setFacturesSeances((fa2.data ?? []) as typeof facturesSeances);
-    }
-    setPrix(Object.fromEntries(((prRes.data ?? []) as { id: string; prix?: number | null }[]).map(x => [x.id, Number(x.prix) || 0])));
     const nb: Record<string, number> = {};
-    const ch: Record<string, number> = {};
     for (const x of (phRes.data ?? []) as { album_id: string; selectionnee?: boolean }[]) {
       nb[x.album_id] = (nb[x.album_id] ?? 0) + 1;
-      if (x.selectionnee) ch[x.album_id] = (ch[x.album_id] ?? 0) + 1;
     }
-    setNbChoisies(ch);
     setSeances((s.data ?? []) as Rdv[]); setPassees((p.data ?? []) as Rdv[]); setDemandes((d.data ?? []) as Rdv[]);
     setDevis((dv.data ?? []) as Devis[]); setContrats((ct.data ?? []) as { id: string; rdv_id: string | null }[]);
     setGaleries(gal); setStatutDispo(dispo); setNbPhotos(nb); setClients(cl);
@@ -304,115 +280,10 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
         )}
       </div>
 
-      {fiche && (() => {
-        const d = new Date(fiche.date_heure);
-        const lieu = lieuDe(fiche);
-        const adresse = fiche.adresse_depart?.trim();
-        const lien = (href: string, t: string, externe = false) => (
-          <a href={href} {...(externe ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className="block py-2 text-sm font-semibold text-[#0C5C6C]">{t}</a>
-        );
-        return (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setFiche(null)}>
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md p-5" onClick={ev => ev.stopPropagation()}>
-              <p className="font-bold text-[#1E2025]">{prestation(fiche)}</p>
-              <p className="text-sm text-gray-500">{nomClient(fiche)} · {jour(d)} à {hm(d)} · {fiche.duree_minutes ?? 60} min</p>
-              {lieu && <p className="text-sm mt-1">Lieu : {lieu}</p>}
-              {animal(fiche) && <p className="text-sm">Animal : {animal(fiche)}</p>}
-              {fiche.notes_client?.trim() && <p className="text-sm" style={{ color: AMBRE }}>Demande : {fiche.notes_client.trim()}</p>}
-              {contratAttente(fiche) && <p className="text-sm" style={{ color: AMBRE }}>Contrat en attente de signature</p>}
-              <div className="mt-3 border border-gray-100 rounded-xl px-3 py-1.5">
-                {(() => {
-                  const dv = devisSeances.find(x => x.rdv_id === fiche.id);
-                  const ct = contratsSeances.find(x => x.rdv_id === fiche.id);
-                  const fa = facturesSeances.find(x => x.source_rdv_id === fiche.id && x.statut !== 'annulee');
-                  const gal = galerieDe(fiche);
-                  const eur = (n: number | null) => `${Math.round(Number(n) || 0)} €`;
-                  const VERT_ = '#2E7D5E', GRIS = '#6B7280';
-                  const nouveauDevis = () => {
-                    const q = new URLSearchParams({ prefill: '1', rdv: fiche.id, nom: nomClient(fiche),
-                      ...(fiche.client_uid ? { clientUid: fiche.client_uid } : {}), ...(fiche.client_profile_id ? { clientProfileId: fiche.client_profile_id } : {}),
-                      ...(fiche.animal_id ? { animal: fiche.animal_id } : {}),
-                      ...(fiche.prestation_id ? { ligneDesc: prestation(fiche), lignePrix: String(prix[fiche.prestation_id] ?? 0) } : {}) });
-                    router.push(`/photographe/devis?${q.toString()}`);
-                  };
-                  const facturer = () => {
-                    try {
-                      sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
-                        nomClient: nomClient(fiche), sourceRdvId: fiche.id, sourceAnimalId: fiche.animal_id ?? undefined,
-                        clientUid: fiche.client_uid ?? undefined, clientProfileId: fiche.client_profile_id ?? undefined,
-                        lignes: [{ description: `${prestation(fiche)} — séance du ${jour(new Date(fiche.date_heure))}`, quantite: 1,
-                          prixUnitaire: fiche.prestation_id ? prix[fiche.prestation_id] ?? 0 : 0, tva: 20 },
-                          // Photos choisies au-delà du forfait.
-                          ...(gal && gal.nb_photos_incluses != null && gal.prix_photo_supp && (nbChoisies[gal.id] ?? 0) > gal.nb_photos_incluses
-                            ? [{ description: 'Photos supplémentaires', quantite: (nbChoisies[gal.id] ?? 0) - gal.nb_photos_incluses, prixUnitaire: Number(gal.prix_photo_supp), tva: 20 }] : [])],
-                      }));
-                    } catch { /* stockage indisponible : facture vierge */ }
-                    router.push('/elevage/facturation');
-                  };
-                  const lignes: [string, string, string, string, () => void][] = [
-                    ['Devis', dv ? (dv.statut === 'accepte' ? `Accepté · ${eur(dv.total_ttc)}` : dv.statut === 'envoye' ? `Envoyé, en attente · ${eur(dv.total_ttc)}` : dv.statut === 'refuse' ? 'Refusé' : `Brouillon · ${eur(dv.total_ttc)}`) : 'Aucun',
-                      dv ? (dv.statut === 'accepte' ? VERT_ : dv.statut === 'envoye' ? AMBRE : GRIS) : GRIS, dv ? 'Voir' : 'Créer', dv ? () => router.push('/photographe/devis') : nouveauDevis],
-                    ['Contrat', ct ? (ct.statut === 'signe' ? 'Signé' : ct.statut === 'partiellement_signe' ? 'Signé par une partie' : ct.statut === 'refuse' ? 'Refusé' : 'En attente de signature') : 'Non généré',
-                      ct?.statut === 'signe' ? VERT_ : ct ? AMBRE : GRIS, 'Voir', () => router.push('/photographe/contrat')],
-                    ['Galerie', gal ? styleGalerie(statut(gal)).label : 'Pas encore créée', gal ? styleGalerie(statut(gal)).fg : GRIS,
-                      gal ? 'Ouvrir' : 'Créer', () => router.push(gal ? `/photographe/galeries/${gal.id}` : '/photographe/galeries')],
-                    ['Facture', fa ? (fa.statut === 'payee' ? `Payée · ${eur(fa.total_ttc)}` : `Émise, non payée · ${eur(fa.total_ttc)}`) : 'Non facturée',
-                      fa?.statut === 'payee' ? VERT_ : fa ? AMBRE : GRIS, fa ? 'Voir' : 'Facturer', fa ? () => router.push('/elevage/facturation') : facturer],
-                  ];
-                  return lignes.map(([t, etat, c, act, f]) => (
-                    <div key={t} className="flex items-center gap-2 py-1">
-                      <span className="w-16 text-sm font-bold text-[#1E2025]">{t}</span>
-                      <span className="flex-1 text-sm" style={{ color: c }}>{etat}</span>
-                      <button onClick={f} className="text-sm font-semibold text-[#0C5C6C]">{act}</button>
-                    </div>
-                  ));
-                })()}
-              </div>
-              <div className="mt-2">
-                {fiche.client_uid && lien(`/messages?uid=${fiche.client_uid}`, 'Contacter le client')}
-                {lieuEdit ? (
-                  <div className="py-2 space-y-2">
-                    <input value={lieuEdit.adresse} onChange={e => setLieuEdit({ ...lieuEdit, adresse: e.target.value })} placeholder="Adresse ou lieu (plage, forêt, studio…)"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" autoFocus />
-                    {fiche.client_uid && (
-                      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lieuEdit.prevenir} onChange={e => setLieuEdit({ ...lieuEdit, prevenir: e.target.checked })} />Prévenir le client</label>
-                    )}
-                    <div className="flex gap-2">
-                      <button onClick={() => setLieuEdit(null)} className="flex-1 py-2 rounded-xl text-sm font-semibold border border-gray-200">Annuler</button>
-                      <button onClick={async () => {
-                        const adr = lieuEdit.adresse.trim();
-                        if (!adr) return;
-                        // Coordonnées : kilomètres de la séance (statistiques).
-                        const geo = await geocodeAddress(adr);
-                        const { error } = await supabase.from('rdv').update({
-                          adresse_depart: adr, ...(fiche.lieu_type ? {} : { lieu_type: 'photographe' }),
-                          ...(geo ? { lat_depart: geo.lat, lng_depart: geo.lng } : {}),
-                        }).eq('id', fiche.id);
-                        if (error) { alert(error.message); return; }
-                        if (lieuEdit.prevenir && fiche.client_uid) {
-                          await supabase.from('notifications').insert({
-                            uid: fiche.client_uid, type: 'rdv_modifie', title: 'Lieu de votre séance photo',
-                            body: `Votre séance du ${jour(new Date(fiche.date_heure))} à ${hm(new Date(fiche.date_heure))} aura lieu : ${adr}`,
-                            ...(fiche.client_profile_id ? { profile_id: fiche.client_profile_id } : {}),
-                            data: { rdv_id: fiche.id }, read: false,
-                          });
-                        }
-                        setLieuEdit(null); setFiche(null); charger();
-                      }} className="flex-1 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: '#0C5C6C' }}>Enregistrer</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button onClick={() => setLieuEdit({ adresse: fiche.lieu_type === 'photographe' ? fiche.adresse_depart ?? '' : '', prevenir: !!fiche.client_uid })}
-                    className="block py-2 text-sm font-semibold text-[#0C5C6C]">{fiche.lieu_type === 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting'}</button>
-                )}
-                {adresse && lien(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(adresse)}`, "Itinéraire jusqu'au lieu", true)}
-                {lien(`/mes-rdv?onglet=a_venir&rdv=${fiche.id}`, "Voir la séance dans l'agenda")}
-              </div>
-              <button onClick={() => setFiche(null)} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
-            </div>
-          </div>
-        );
-      })()}
+      {fiche && (
+        <DossierSeanceModal rdv={fiche} nomClient={nomClient(fiche)} prestation={prestation(fiche)} animal={animal(fiche)}
+          onClose={() => setFiche(null)} onChanged={charger} />
+      )}
     </div>
   );
 }

@@ -5,21 +5,19 @@
 // statistiques (CA, avis, zone) restent sur PhotographeDashboardPage.
 // Miroir site : website/src/components/dashboard/PhotographeDashboard.tsx.
 // Scopé au profil actif (pro_profile_id).
+import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/pages/chatScreen.dart';
-import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
-import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
+import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage;
 import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
-import 'package:PetsMatch/utils/geocoding_helper.dart';
+import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, lieuSeance;
 
 const _teal = kDashTeal;
 const _ink = kDashInk;
@@ -56,11 +54,6 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
   List<Map<String, dynamic>> _galeries = [];
   List<Map<String, dynamic>> _devis = [];
   List<Map<String, dynamic>> _contratsAttente = [];
-  // Dossier de chaque séance : devis (devis.rdv_id), contrats (tous
-  // statuts), factures (factures.source_rdv_id), prix du catalogue.
-  List<Map<String, dynamic>> _devisSeances = [];
-  List<Map<String, dynamic>> _contratsSeances = [];
-  List<Map<String, dynamic>> _facturesSeances = [];
   final Map<String, double> _prixPrestations = {};
   /// Photos choisies par le client, par galerie (supplément au forfait).
   final Map<String, int> _nbChoisies = {};
@@ -128,19 +121,6 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
       _contratsAttente = _l(await _supa.from('documents_animaux').select('id, rdv_id, titre, created_at')
           .eq('pro_profile_id', pid).eq('type', 'contrat_prestation_photo').eq('statut', 'en_attente'));
     } catch (_) {}
-    final rdvIds = {for (final r in [..._seances, ..._passees]) r['id'].toString()}.toList();
-    if (rdvIds.isNotEmpty) {
-      try {
-        _devisSeances = _l(await _supa.from('devis').select('id, rdv_id, statut, total_ttc, numero_devis').inFilter('rdv_id', rdvIds));
-      } catch (_) { _devisSeances = []; }
-      try {
-        _contratsSeances = _l(await _supa.from('documents_animaux').select('id, rdv_id, statut')
-            .eq('type', 'contrat_prestation_photo').inFilter('rdv_id', rdvIds));
-      } catch (_) {}
-      try {
-        _facturesSeances = _l(await _supa.from('factures').select('id, source_rdv_id, statut, total_ttc').inFilter('source_rdv_id', rdvIds));
-      } catch (_) {}
-    }
     final ids = _galeries.map((g) => g['id'].toString()).toList();
     _nbPhotos.clear();
     if (ids.isNotEmpty) {
@@ -207,58 +187,10 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
     final n = _animaux[r['animal_id']?.toString()] ?? r['animal_nom_manuel']?.toString();
     return n == null || n.trim().isEmpty ? null : n.trim();
   }
-  /// Lieu du shooting : à domicile (adresse du client) ou proposé par le
-  /// photographe (à préciser, souhait éventuel du client).
-  String _lieu(Map<String, dynamic> r) {
-    final adr = (r['adresse_depart']?.toString() ?? '').trim();
-    final lieu = (r['lieu']?.toString() ?? '').trim();
-    if (r['lieu_type'] == 'domicile') return 'À domicile : $adr';
-    if (r['lieu_type'] == 'photographe') {
-      return adr.isNotEmpty ? adr : 'Lieu à préciser${lieu.startsWith('Souhait') ? ' — $lieu' : ''}';
-    }
-    return adr.isNotEmpty ? adr : lieu;
-  }
-  Future<void> _preciserLieu(Map<String, dynamic> r) async {
-    final ctrl = TextEditingController(text: r['lieu_type'] == 'photographe' ? (r['adresse_depart']?.toString() ?? '') : '');
-    var prevenir = (r['client_uid']?.toString() ?? '').isNotEmpty;
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
-      title: const Text('Lieu du shooting', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        if ((r['lieu']?.toString() ?? '').startsWith('Souhait'))
-          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(r['lieu'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
-        TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Adresse ou lieu (plage, forêt, studio…)', border: OutlineInputBorder())),
-        if ((r['client_uid']?.toString() ?? '').isNotEmpty)
-          CheckboxListTile(contentPadding: EdgeInsets.zero, value: prevenir, onChanged: (v) => setD(() => prevenir = v == true),
-              title: const Text('Prévenir le client', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Enregistrer')),
-      ],
-    )));
-    final adr = ctrl.text.trim();
-    if (ok != true || adr.isEmpty) return;
-    // Coordonnées : kilomètres de la séance (statistiques).
-    final geo = await GeocodingHelper.geocode(adr);
-    try {
-      await _supa.from('rdv').update({
-        'adresse_depart': adr,
-        if (r['lieu_type'] == null) 'lieu_type': 'photographe',
-        if (geo != null) ...{'lat_depart': geo.lat, 'lng_depart': geo.lng},
-      }).eq('id', r['id']);
-      if (prevenir) {
-        await _supa.from('notifications').insert({
-          'uid': r['client_uid'], 'type': 'rdv_modifie', 'title': 'Lieu de votre séance photo',
-          'body': 'Votre séance du ${_jour(_debut(r))} à ${_hm(_debut(r))} aura lieu : $adr',
-          if (r['client_profile_id'] != null) 'profile_id': r['client_profile_id'],
-          'data': {'rdv_id': r['id']}, 'read': false,
-        });
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
-    }
-    _charger();
-  }
+  String _lieu(Map<String, dynamic> r) => lieuSeance(r);
+
+  void _ouvrirGalerie(Map<String, dynamic> r) =>
+      _go(PhotographeAlbumPage(rdvId: r['id'].toString(), clientName: _nomClient(r)));
 
   Map<String, dynamic>? _galerieDe(Map<String, dynamic> r) =>
       _galeries.where((g) => g['rdv_id']?.toString() == r['id']?.toString()).firstOrNull;
@@ -271,153 +203,10 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
     if (mounted) _charger();
   }
 
-  Future<void> _message(Map<String, dynamic> r) async {
-    final uid = r['client_uid']?.toString();
-    if (uid == null || uid.isEmpty) return;
-    final conv = await MessagingHelper.openOrCreateConversation(otherUid: uid, categorie: 'services',
-        myProfileId: _pid.isNotEmpty ? _pid : null);
-    if (mounted) await Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(conversationId: conv, eleveurId: uid)));
-  }
-
-  Future<void> _naviguer(String lieu) async {
-    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=${Uri.encodeComponent(lieu)}');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
-  void _ouvrirGalerie(Map<String, dynamic> r) =>
-      _go(PhotographeAlbumPage(rdvId: r['id'].toString(), clientName: _nomClient(r)));
-
-  // ── Dossier de la séance (devis · contrat · galerie · facture) ─────────
-
-  ({String texte, Color c}) _etatDevis(Map<String, dynamic> r) {
-    final d = _devisSeances.where((x) => x['rdv_id']?.toString() == r['id']?.toString()).firstOrNull;
-    if (d == null) return (texte: 'Aucun', c: _muted);
-    final t = '${((d['total_ttc'] as num?) ?? 0).toStringAsFixed(0)} €';
-    return switch (d['statut']) {
-      'accepte' => (texte: 'Accepté · $t', c: _vert),
-      'envoye' => (texte: 'Envoyé, en attente · $t', c: _ambre),
-      'refuse' => (texte: 'Refusé', c: const Color(0xFFB3261E)),
-      _ => (texte: 'Brouillon · $t', c: _muted),
-    };
-  }
-  ({String texte, Color c}) _etatContrat(Map<String, dynamic> r) {
-    final c = _contratsSeances.where((x) => x['rdv_id']?.toString() == r['id']?.toString()).firstOrNull;
-    if (c == null) return (texte: 'Non généré', c: _muted);
-    return switch (c['statut']) {
-      'signe' => (texte: 'Signé', c: _vert),
-      'partiellement_signe' => (texte: 'Signé par une partie', c: _ambre),
-      'refuse' => (texte: 'Refusé', c: const Color(0xFFB3261E)),
-      _ => (texte: 'En attente de signature', c: _ambre),
-    };
-  }
-  ({String texte, Color c}) _etatGalerie(Map<String, dynamic> r) {
-    final g = _galerieDe(r);
-    if (g == null) return (texte: 'Pas encore créée', c: _muted);
-    final st = styleGalerie(_statut(g));
-    return (texte: st.label, c: st.fg);
-  }
-  ({String texte, Color c}) _etatFacture(Map<String, dynamic> r) {
-    final f = _facturesSeances.where((x) => x['source_rdv_id']?.toString() == r['id']?.toString()
-        && x['statut'] != 'annulee').firstOrNull;
-    if (f == null) return (texte: 'Non facturée', c: _muted);
-    final t = '${((f['total_ttc'] as num?) ?? 0).toStringAsFixed(0)} €';
-    return f['statut'] == 'payee' ? (texte: 'Payée · $t', c: _vert) : (texte: 'Émise, non payée · $t', c: _ambre);
-  }
-
-  void _nouveauDevis(Map<String, dynamic> r) {
-    final prix = _prixPrestations[r['prestation_id']?.toString()];
-    _go(DevisPage(prefill: DevisPrefill(
-      rdvId: r['id'].toString(),
-      clientUid: r['client_uid']?.toString(),
-      clientProfileId: r['client_profile_id']?.toString(),
-      clientNom: _nomClient(r),
-      animalId: r['animal_id']?.toString(),
-      lignes: [if (prix != null) {'description': _prestation(r), 'quantite': 1, 'prix_unitaire': prix}],
-    )));
-  }
-
-  void _facturer(Map<String, dynamic> r) {
-    final prix = _prixPrestations[r['prestation_id']?.toString()] ?? 0;
-    // Photos choisies au-delà du forfait (galerie de la séance).
-    final g = _galerieDe(r);
-    final incluses = (g?['nb_photos_incluses'] as num?)?.toInt();
-    final prixSupp = (g?['prix_photo_supp'] as num?)?.toDouble();
-    final supp = g == null || incluses == null ? 0 : ((_nbChoisies[g['id'].toString()] ?? 0) - incluses).clamp(0, 9999);
-    _go(CreerFacturePage(
-      clientNom: _nomClient(r),
-      lignesPrefill: [
-        FacturePrefillLigne(designation: '${_prestation(r)} — séance du ${_jour(_debut(r))}', prixHT: prix, quantite: 1, tauxTVA: 20),
-        if (supp > 0 && prixSupp != null && prixSupp > 0)
-          FacturePrefillLigne(designation: 'Photos supplémentaires', prixHT: prixSupp, quantite: supp.toDouble(), tauxTVA: 20),
-      ],
-      sourceRdvId: r['id'].toString(),
-      sourceAnimalId: r['animal_id']?.toString(),
-      clientUid: r['client_uid']?.toString(),
-      clientProfileId: r['client_profile_id']?.toString(),
-    ));
-  }
-
-  Future<void> _actions(Map<String, dynamic> r) async {
-    final lieu = _lieu(r);
-    final adresse = (r['adresse_depart']?.toString() ?? '').trim();
-    final galerie = _galerieDe(r);
-    final animal = _animal(r);
-    final notes = (r['notes_client']?.toString() ?? '').trim();
-    Widget action(BuildContext ctx, IconData ic, String t, VoidCallback f) => ListTile(
-          contentPadding: EdgeInsets.zero, dense: true,
-          leading: Icon(ic, color: _teal),
-          title: Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _ink)),
-          onTap: () { Navigator.pop(ctx); f(); },
-        );
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SafeArea(child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(_prestation(r), style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _ink)),
-          const SizedBox(height: 2),
-          Text('${_nomClient(r)} · ${_jour(_debut(r))} à ${_hm(_debut(r))} · ${(r['duree_minutes'] as num?)?.toInt() ?? 60} min',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
-          if (lieu.isNotEmpty) Text('Lieu : $lieu', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink)),
-          if (animal != null) Text('Animal : $animal', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink)),
-          if (notes.isNotEmpty) Text('Demande : $notes', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ambre)),
-          if (_contratEnAttente(r))
-            const Text('Contrat en attente de signature', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ambre)),
-          const SizedBox(height: 10),
-          // Dossier de la séance : chaque module garde son propre statut
-          // (une galerie livrée n'est pas une facture payée).
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: kDashBorder)),
-            child: Column(children: [
-              for (final l in [
-                ('Devis', _etatDevis(r), _devisSeances.any((x) => x['rdv_id']?.toString() == r['id']?.toString()) ? 'Voir' : 'Créer',
-                    () { Navigator.pop(ctx); _devisSeances.any((x) => x['rdv_id']?.toString() == r['id']?.toString()) ? _go(const DevisPage()) : _nouveauDevis(r); }),
-                ('Contrat', _etatContrat(r), 'Voir', () { Navigator.pop(ctx); _go(const PhotographeContratsPage()); }),
-                ('Galerie', _etatGalerie(r), galerie == null ? 'Créer' : 'Ouvrir', () { Navigator.pop(ctx); _ouvrirGalerie(r); }),
-                ('Facture', _etatFacture(r), _facturesSeances.any((x) => x['source_rdv_id']?.toString() == r['id']?.toString() && x['statut'] != 'annulee') ? 'Voir' : 'Facturer',
-                    () { Navigator.pop(ctx); _facturesSeances.any((x) => x['source_rdv_id']?.toString() == r['id']?.toString() && x['statut'] != 'annulee') ? _go(const FacturationPage()) : _facturer(r); }),
-              ])
-                Row(children: [
-                  SizedBox(width: 64, child: Text(l.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: _ink))),
-                  Expanded(child: Text(l.$2.texte, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: l.$2.c))),
-                  TextButton(onPressed: l.$4, child: Text(l.$3, style: const TextStyle(fontFamily: 'Galey', color: _teal))),
-                ]),
-            ]),
-          ),
-          const SizedBox(height: 6),
-          if ((r['client_uid']?.toString() ?? '').isNotEmpty)
-            action(ctx, Icons.chat_bubble_outline, 'Contacter le client', () => _message(r)),
-          action(ctx, Icons.place_outlined, r['lieu_type'] == 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting', () => _preciserLieu(r)),
-          if (adresse.isNotEmpty) action(ctx, Icons.directions_outlined, "Itinéraire jusqu'au lieu", () => _naviguer(adresse)),
-          action(ctx, Icons.event_note_outlined, "Voir la séance dans l'agenda",
-              () => _go(ProAgendaPage(initialTabIndex: 1, focusRdvId: r['id']?.toString()))),
-        ]),
-      )),
-    );
-  }
+  /// Dossier de la séance (devis, contrat, galerie, sélection, facture,
+  /// lieu) — partagé avec l'agenda et Mes clients.
+  Future<void> _actions(Map<String, dynamic> r) => showDossierSeance(context, r,
+      nomClient: _nomClient(r), prestation: _prestation(r), animal: _animal(r), onChanged: _charger);
 
   // ── UI ──────────────────────────────────────────────────────────────────
 
@@ -598,7 +387,8 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        DashTitre('À traiter', icone: Icons.notifications_none, compteur: alertes.length),
+        DashTitre('À traiter', icone: Icons.notifications_none, compteur: alertes.length,
+            trailing: DashLien('Tout le suivi', onTap: () => _go(const PhotographeClientsPage()))),
         const SizedBox(height: 4),
         for (final a in alertes.take(7))
           InkWell(
@@ -678,6 +468,7 @@ class _PhotographeStudioDashboardState extends State<PhotographeStudioDashboard>
           children: [
             tuile(Icons.add_circle_outline, 'Nouvelle séance', () => _go(const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true))),
             tuile(Icons.photo_library_outlined, 'Mes galeries', () => _go(const PhotographeGaleriesPage())),
+            tuile(Icons.people_outline, 'Clients et suivi', () => _go(const PhotographeClientsPage())),
             tuile(Icons.request_quote_outlined, 'Créer un devis', () => _go(const DevisPage())),
             tuile(Icons.receipt_long_outlined, 'Facturation', () => _go(const FacturationPage())),
           ],

@@ -59,6 +59,11 @@ export default function GalerieStudioPage() {
   }, [id]);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
+  // ?selection=1 : ouverture directe sur les photos choisies par le client.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (new URLSearchParams(window.location.search).get('selection') === '1') setFiltreSel(true);
+  }, []);
   useEffect(() => {
     if (!user) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect

@@ -473,7 +473,7 @@ const MENU_PHOTOGRAPHE = [
       { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
       { href: '/photographe/galeries', label: 'Mes galeries clients', icon: '🖼️' },
       { href: '/photographe/portfolio', label: 'Mon portfolio',  icon: '🎞️' },
-      { href: '/mes-patients',        label: 'Mes clients',      icon: '👥' },
+      { href: '/photographe/clients', label: 'Mes clients et suivi', icon: '👥' },
       { href: '/photographe/prestations', label: 'Mes prestations', icon: '📷' },
       { href: '/photographe/dashboard',   label: 'Statistiques',   icon: '📊' },
       { href: '/photographe/abonnement', label: 'Mon abonnement', icon: '💳' },
@@ -671,6 +671,7 @@ const MENU_PARTICULIER = [
 // le menu. Fusionnés à l'index au moment de la recherche.
 const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/elevage/import-icad': ['icad', 'i-cad', 'import', 'csv', 'puce', 'identification', 'fichier', 'mise a jour'],
+  '/photographe/clients': ['clients', 'suivi', 'a traiter', 'travail', 'facture', 'contrat', 'devis', 'selection', 'retouche'],
   '/photographe/portfolio': ['portfolio', 'realisations', 'book', 'photos publiques', 'vitrine', 'couverture'],
   '/photographe/galeries': ['galerie', 'galeries', 'photos clients', 'livraison', 'selection', 'partage', 'album', 'apercus'],
   '/mes-galeries': ['galerie', 'photos', 'photographe', 'seance photo', 'album'],

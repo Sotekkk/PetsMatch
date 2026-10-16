@@ -10,11 +10,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/icad_import.dart';
+import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:http/http.dart' as http;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
 const _ambre = Color(0xFFD97706);
-const _cols = 'id, nom, identification, espece, sexe, race, couleur, date_naissance, statut, date_entree, date_sortie, destinataire_nom, destinataire_adresse';
+const _cols = 'id, nom, identification, espece, sexe, race, couleur, date_naissance, statut, date_entree, date_sortie, destinataire_nom, destinataire_adresse, uid_acquereur, profile_id_acquereur';
+bool _estUuid(String s) => RegExp(r'^[0-9a-f-]{36}$', caseSensitive: false).hasMatch(s);
 
 class IcadImportPage extends StatefulWidget {
   const IcadImportPage({super.key});
@@ -27,6 +31,7 @@ class _IcadImportPageState extends State<IcadImportPage> {
   final _supa = Supabase.instance.client;
   IcadAnalyse? _analyse;
   final Set<String> _creer = {};
+  /// Changements validés, un par ligne : « idFiche|champ ».
   final Set<String> _maj = {};
   String _etat = '';
   String? _bilan, _erreur;
@@ -70,11 +75,27 @@ class _IcadImportPageState extends State<IcadImportPage> {
           if (!fiches.containsKey(x['id'].toString())) autres.add(x['identification'].toString().replaceAll(RegExp(r'\D'), ''));
         }
       }
+      // Nom du compte PetsMatch rattaché comme acquéreur (cessions faites dans l'appli).
+      final liees = fiches.values.where((f) => (f['uid_acquereur']?.toString() ?? '').isNotEmpty).toList();
+      if (liees.isNotEmpty) {
+        try {
+          final profils = List<Map<String, dynamic>>.from(await _supa.from('user_profiles_complet')
+              .select('id, uid, firstname, lastname, nom, is_main').inFilter('uid', liees.map((f) => f['uid_acquereur']).toList()));
+          for (final f in liees) {
+            final p = profils.where((x) => x['id'] == f['profile_id_acquereur']).firstOrNull
+                ?? profils.where((x) => x['uid'] == f['uid_acquereur'] && x['is_main'] == true).firstOrNull;
+            if (p != null) {
+              final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+              f['_compte_acquereur'] = n.isNotEmpty ? n : (p['nom']?.toString() ?? '');
+            }
+          }
+        } catch (_) {}
+      }
       final r = analyserIcad(icad, fiches.values.toList(), autres);
       setState(() {
         _analyse = r;
         _creer..clear()..addAll(r.nouvelles.map((a) => a.cle));
-        _maj..clear()..addAll(r.majs.map((m) => m.fiche['id'].toString()));
+        _maj..clear()..addAll([for (final m in r.majs) for (final c in m.changements) '${m.fiche['id']}|${c.champ}']);
       });
     } catch (e) {
       setState(() => _erreur = e is FormatException ? e.message : 'Erreur : $e');
@@ -107,7 +128,7 @@ class _IcadImportPageState extends State<IcadImportPage> {
         }
         await _supa.from('animaux_proprietes').insert({
           'animal_id': id, 'uid_proprio': uid, if (_pid.isNotEmpty) 'profile_id_proprio': _pid,
-          'date_debut': n.dateEntree.isNotEmpty ? n.dateEntree : (n.dateNaissance.isNotEmpty ? n.dateNaissance : today),
+          'date_debut': icadEntreeRegistre(n).isNotEmpty ? icadEntreeRegistre(n) : today,
           if (n.dateCession.isNotEmpty) 'date_fin': n.dateCession,
         });
         crees++;
@@ -115,20 +136,48 @@ class _IcadImportPageState extends State<IcadImportPage> {
         erreurs.add('${n.nom} : $e');
       }
     }
-    for (final m in a.majs.where((x) => _maj.contains(x.fiche['id'].toString()))) {
-      final champs = {...icadChampsMiseAJour(m), 'updated_at': DateTime.now().toIso8601String()};
+    for (final m in a.majs) {
+      final id = m.fiche['id'].toString();
+      final choisis = {for (final c in m.changements) if (_maj.contains('$id|${c.champ}')) c.champ};
+      if (choisis.isEmpty) continue;
+      final champs = icadChampsMiseAJour(m, choisis);
       try {
-        try {
-          await _supa.from('animaux').update(champs).eq('id', m.fiche['id']);
-        } on PostgrestException catch (e) {
-          if (!e.message.contains('acquereur_contact_manuel')) rethrow;
-          champs.remove('acquereur_contact_manuel');
-          await _supa.from('animaux').update(champs).eq('id', m.fiche['id']);
+        if (champs.isNotEmpty) {
+          champs['updated_at'] = DateTime.now().toIso8601String();
+          try {
+            await _supa.from('animaux').update(champs).eq('id', id);
+          } on PostgrestException catch (e) {
+            if (!e.message.contains('acquereur_contact_manuel')) rethrow;
+            champs.remove('acquereur_contact_manuel');
+            await _supa.from('animaux').update(champs).eq('id', id);
+          }
         }
-        // Sortie : l'historique de propriété du profil se clôt à la date de cession.
-        if (m.changements.any((c) => c.champ == 'sortie')) {
-          await _supa.from('animaux_proprietes').update({'date_fin': m.icad.dateCession})
-              .eq('animal_id', m.fiche['id']).eq('uid_proprio', uid).isFilter('date_fin', null);
+        final acq = m.icad.acquereur;
+        if (icadCorrectionCompte(m, choisis) && acq != null) {
+          // Cession test vers un compte PetsMatch : annulée par le serveur.
+          final r = await http.post(Uri.parse('$kSiteBaseUrl/api/icad/corriger-cession'), headers: await siteApiHeaders(),
+              body: jsonEncode({
+                'animalId': id,
+                'acquereur': {'prenom': acq.prenom, 'nom': acq.nom, 'adresse': acq.adresse, 'email': acq.email, 'tel': acq.tel},
+                'dateCession': choisis.contains('sortie') ? m.icad.dateCession : null,
+              }));
+          if (r.statusCode != 200) throw Exception((jsonDecode(r.body) as Map)['error'] ?? 'correction impossible');
+        } else {
+          // Sortie : la propriété du profil se clôt à la cession ; le registre suit.
+          if (choisis.contains('sortie')) {
+            await _supa.from('animaux_proprietes').update({'date_fin': m.icad.dateCession})
+                .eq('animal_id', id).eq('uid_proprio', uid).isFilter('date_fin', null);
+          }
+          if (_estUuid(id) && (choisis.contains('sortie') || choisis.contains('acquereur'))) {
+            await _supa.from('registre_mouvements').update({
+              if (choisis.contains('sortie')) 'date_mouvement': m.icad.dateCession,
+              if (choisis.contains('acquereur') && acq != null) ...{
+                'destinataire_nom': '${acq.prenom} ${acq.nom}'.trim(),
+                'destinataire_qualite': 'particulier',
+                'destinataire_adresse': acq.adresse,
+              },
+            }).eq('animal_id', id).eq('uid_eleveur', uid).eq('type', 'sortie');
+          }
         }
         majs++;
       } catch (e) {
@@ -197,17 +246,24 @@ class _IcadImportPageState extends State<IcadImportPage> {
             if (a.alertes.isNotEmpty) _carte('Points à vérifier (${a.alertes.length})', [for (final t in a.alertes) _txt('• $t')], bord: const Color(0xFFF5D9A8)),
             _carte('Fiches existantes à mettre à jour (${a.majs.length})', [
               if (a.majs.isEmpty) _txt('Aucune.', c: Colors.grey),
-              for (final m in a.majs)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero, activeColor: _teal, controlAffinity: ListTileControlAffinity.leading,
-                  value: _maj.contains(m.fiche['id'].toString()),
-                  onChanged: (v) => setState(() => v == true ? _maj.add(m.fiche['id'].toString()) : _maj.remove(m.fiche['id'].toString())),
-                  title: Text('${m.fiche['nom'] ?? m.icad.nom} — reconnu par ${m.parPuce ? 'la puce' : 'le prénom et la date de naissance'}',
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
-                  subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    for (final c in m.changements) _txt('${c.libelle} : ${c.actuel} → ${c.icad}', taille: 12),
-                  ]),
+              for (final m in a.majs) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('${m.fiche['nom'] ?? m.icad.nom} — reconnu par ${m.parPuce ? 'la puce' : 'le prénom et la date de naissance'}',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _ink)),
                 ),
+                for (final c in m.changements)
+                  CheckboxListTile(
+                    dense: true, contentPadding: EdgeInsets.zero, activeColor: _teal, controlAffinity: ListTileControlAffinity.leading,
+                    value: _maj.contains('${m.fiche['id']}|${c.champ}'),
+                    onChanged: (v) => setState(() {
+                      final k = '${m.fiche['id']}|${c.champ}';
+                      v == true ? _maj.add(k) : _maj.remove(k);
+                    }),
+                    title: _txt('${c.libelle} : ${c.actuel} → ${c.icad}', taille: 12.5,
+                        c: c.champ == 'acquereur' && (m.fiche['uid_acquereur']?.toString() ?? '').isNotEmpty ? _ambre : null),
+                  ),
+              ],
             ]),
             _carte('Nouvelles fiches à créer (${a.nouvelles.length})', [
               if (a.nouvelles.isEmpty) _txt('Aucune.', c: Colors.grey),
@@ -219,9 +275,8 @@ class _IcadImportPageState extends State<IcadImportPage> {
                   title: Text('${n.nom} · ${n.race} · ${sx(n.sexe)}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
                   subtitle: _txt([
                     'Puce ${n.puce} · né le ${icadDate(n.dateNaissance)}',
-                    n.dateCession.isNotEmpty
-                        ? 'Entré le ${icadDate(n.dateEntree)}, sorti le ${icadDate(n.dateCession)}${n.acquereur != null ? ' → ${n.acquereur!.prenom} ${n.acquereur!.nom}' : ''}'
-                        : 'Présent depuis le ${icadDate(n.dateEntree)}',
+                    '${icadNeALElevage(n) ? "Né à l'élevage" : 'Entré le ${icadDate(icadEntreeRegistre(n))}'}'
+                        '${n.dateCession.isNotEmpty ? ', sorti le ${icadDate(n.dateCession)}${n.acquereur != null ? ' → ${n.acquereur!.prenom} ${n.acquereur!.nom}' : ''}' : ', présent'}',
                   ].join('\n'), taille: 12),
                 ),
             ]),

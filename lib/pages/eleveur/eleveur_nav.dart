@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_galeries_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
@@ -521,12 +522,12 @@ class _EleveurNavState extends State<EleveurNav> {
                           },
                         ),
                         _DrawerSubItem(
-                          label: 'Mes clients',
+                          label: 'Mes clients et suivi',
                           icon: Icons.people_outline,
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ProClientsPage(),
+                              builder: (_) => const PhotographeClientsPage(),
                             ));
                           },
                         ),

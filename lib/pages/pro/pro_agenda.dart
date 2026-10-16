@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
@@ -31,7 +32,6 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/services/plan_service.dart';
-import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
@@ -1921,125 +1921,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Photographe — génère (ou récupère) le contrat de prestation et copie le
   // lien de signature, sur le modèle de _genererContratSignature (garde,
   // registre_visites_page.dart).
+  // Contrat photo : logique partagée avec le dossier de la séance
+  // (photographe_dossier_seance.dart) — formules Essentiel et Premium.
   Future<void> _genererContratPhoto(Map<String, dynamic> rdv) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return;
-    final planCode = await PlanService.getPlanCode(uid, profilType: 'photographe');
-    if (planCode != 'essentiel') {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Signature — Plan Essentiel requis',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            content: const Text('La signature électronique de contrats est disponible avec l\'abonnement Essentiel.',
-                style: TextStyle(fontFamily: 'Galey')),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PhotographeAbonnementPage()));
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
-                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
-    }
     try {
-      final supa = Supabase.instance.client;
-      final existing = await supa
-          .from('documents_animaux')
-          .select('token')
-          .eq('rdv_id', rdv['id'])
-          .eq('type', 'contrat_prestation_photo')
-          .maybeSingle();
-
-      String? token = existing?['token'] as String?;
-      if (token == null) {
-        Map<String, dynamic>? prestation;
-        final prestationId = rdv['prestation_id']?.toString();
-        if (prestationId != null && prestationId.isNotEmpty) {
-          prestation = await supa.from('prestations_photographe')
-              .select('nom, prix, acompte_pourcentage')
-              .eq('id', prestationId).maybeSingle();
-        }
-        // Diffusion des images par le photographe : choisie à la génération,
-        // écrite dans le contrat que le client signe.
-        if (!mounted) return;
-        final diffusion = await showModalBottomSheet<String>(
-          context: context,
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-          builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
-                child: Text('Diffusion des photos par vous', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
-            for (final o in const [
-              ('book', 'Book et portfolio PetsMatch, sauf refus du client'),
-              ('book_reseaux', 'Book, site, réseaux sociaux et portfolio PetsMatch'),
-              ('aucune', 'Aucune diffusion'),
-            ])
-              ListTile(title: Text(o.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)), onTap: () => Navigator.pop(ctx, o.$1)),
-            const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: Text("Une personne identifiable n'est jamais diffusée sans son autorisation écrite.",
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey))),
-          ])),
-        );
-        if (diffusion == null) return;
-        final row = await supa.from('documents_animaux').insert({
-          'uid_eleveur': uid,
-          if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
-          'animal_id': rdv['animal_id'],
-          'rdv_id': rdv['id'],
-          'type': 'contrat_prestation_photo',
-          'titre': 'Contrat de prestation photo — ${rdv['_client_name'] ?? ''}',
-          'statut': 'en_attente',
-          'metadata': {
-            'client_nom': rdv['_client_name'],
-            'prestation_nom': prestation?['nom'],
-            'prix_total': prestation?['prix']?.toString(),
-            'acompte_pourcentage': prestation?['acompte_pourcentage']?.toString(),
-            'autorisation_images': diffusion,
-          },
-        }).select('token').single();
-        token = row['token'] as String?;
-        // Notifie le client (uniquement à la création — pas à chaque réouverture).
-        final clientUid = rdv['client_uid']?.toString();
-        if (clientUid != null && clientUid.isNotEmpty && token != null) {
-          try {
-            await supa.from('notifications').insert({
-              'uid': clientUid,
-              'type': 'contrat_invite',
-              'title': '📷 Contrat de prestation à signer',
-              'body': 'Votre photographe vous envoie un contrat de prestation — vérifiez et signez',
-              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
-              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
-              'read': false,
-            });
-          } catch (_) {}
-        }
-      } else {
-        await supa.from('documents_animaux')
-            .update({'statut': 'en_attente'})
-            .eq('rdv_id', rdv['id'])
-            .eq('type', 'contrat_prestation_photo');
-      }
-      if (token == null) return;
-      if (mounted) {
-        await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ContratSignaturePage(token: token),
-        ));
-      }
+      await genererContratPhoto(context, rdv, uid: uid, profileId: AgendaContexte.profileId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
       }
     }
   }
@@ -4855,7 +4748,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onNotes:   () => _showNotesDialog(rdv),
           // Fiche/carnet de santé en lecture — désormais sur tous les onglets
           // (y compris « Demandes »), pas seulement les RDV confirmés.
-          onCarnetSante: (hasAnimal && AgendaContexte.catPro != 'education')
+          // Photographe : le client est le propriétaire — pas d'accès santé.
+          onCarnetSante: (hasAnimal && AgendaContexte.catPro != 'education' && AgendaContexte.catPro != 'photographe')
               ? () => Navigator.push(context, MaterialPageRoute(
                   // Pet-sitter : fiche métier (prestations, consignes, historique).
                   builder: (_) => AgendaContexte.catPro == 'garde'
@@ -4872,7 +4766,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // pet-sitter (pas d'ordonnance → « Envoyer des nouvelles », ci-dessous).
           // Ostéo / physio (sante) : pas de CR vétérinaire — leur compte rendu
           // de séance passe par onSuiviMorpho (Soins & Rééducation).
-          onCompteRendu: (showProTools && AgendaContexte.catPro != 'education' && AgendaContexte.catPro != 'garde' && AgendaContexte.catPro != 'sante')
+          onCompteRendu: (showProTools && !const {'education', 'garde', 'sante', 'photographe'}.contains(AgendaContexte.catPro))
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
@@ -4934,7 +4828,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
                   const {
-                    'photographe', 'toilettage',
+                    'toilettage',
                     'sante', 'veterinaire', 'marechal_ferrant', 'garde',
                   }.contains(AgendaContexte.catPro))
               ? () {
@@ -4960,6 +4854,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onHistorique: (AgendaContexte.catPro == 'veterinaire' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => HistoriquePatientPage(
                   animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Patient')))
+              : null,
+          onDossier: AgendaContexte.catPro == 'photographe' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition'
+              ? () => showDossierSeance(context, rdv,
+                  nomClient: rdv['_client_name']?.toString() ?? 'Client',
+                  prestation: (rdv['motif']?.toString() ?? '').trim().isEmpty ? 'Séance photo' : rdv['motif'].toString().trim(),
+                  animal: rdv['animal_nom_manuel']?.toString() ?? rdv['_animal_nom']?.toString(),
+                  depuisAgenda: true)
               : null,
           onFiche: (showProTools && AgendaContexte.catPro == 'toilettage' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
@@ -5023,6 +4924,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onFacturer;
   final VoidCallback? onAlbum;
   final VoidCallback? onFiche;
+  /// Photographe : dossier de la séance (devis, contrat, galerie, facture).
+  final VoidCallback? onDossier;
   /// Vétérinaire : historique des consultations du patient.
   final VoidCallback? onHistorique;
 
@@ -5047,6 +4950,7 @@ class _RdvCard extends StatelessWidget {
     this.onFacturer,
     this.onAlbum,
     this.onFiche,
+    this.onDossier,
     this.onHistorique,
   });
 
@@ -5404,6 +5308,16 @@ class _RdvCard extends StatelessWidget {
                   onPressed: onHistorique,
                   icon: const Icon(Icons.history, size: 20, color: Color(0xFF0C5C6C)),
                   tooltip: 'Historique du patient',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onDossier != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onDossier,
+                  icon: const Icon(Icons.folder_open_outlined, size: 20, color: Color(0xFF0C5C6C)),
+                  tooltip: 'Dossier de la séance',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),

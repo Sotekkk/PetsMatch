@@ -18,6 +18,9 @@ export interface FicheExistante {
   id: string; nom: string | null; identification: string | null; espece: string | null; sexe: string | null;
   race: string | null; couleur: string | null; date_naissance: string | null; statut: string | null;
   date_entree: string | null; date_sortie: string | null; destinataire_nom: string | null; destinataire_adresse: string | null;
+  uid_acquereur?: string | null; profile_id_acquereur?: string | null;
+  /** Nom du compte PetsMatch rattaché comme acquéreur (résolu par la page). */
+  _compteAcquereur?: string;
 }
 
 export interface Changement { champ: string; libelle: string; actuel: string; icad: string; valeur: unknown }
@@ -34,6 +37,19 @@ const casseLibelle = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).
 const chiffres = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 const jour = (s: string | null | undefined) => (s ?? '').slice(0, 10);
 const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+/** Entrée au registre : I-CAD donne la date d'identification (pose de la
+ *  puce). Un animal identifié dans les 4 mois suivant sa naissance est né à
+ *  l'élevage : son entrée est sa date de naissance. */
+export function entreeRegistre(a: IcadAnimal): string {
+  if (!a.dateNaissance || !a.dateEntree) return a.dateEntree || a.dateNaissance;
+  const ecart = (new Date(a.dateEntree).getTime() - new Date(a.dateNaissance).getTime()) / 86400000;
+  return ecart >= 0 && ecart <= 120 ? a.dateNaissance : a.dateEntree;
+}
+export const neALElevage = (a: IcadAnimal) => !!a.dateNaissance && entreeRegistre(a) === a.dateNaissance;
+
+/** Mêmes mots, dans n'importe quel ordre (« NOM Prénom » ≈ « Prénom Nom »). */
+const memesMots = (a: string | null | undefined, b: string | null | undefined) =>
+  norm(a).split(/\s+/).filter(Boolean).sort().join(' ') === norm(b).split(/\s+/).filter(Boolean).sort().join(' ');
 const fr = (iso: string) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString('fr-FR') : '—');
 
 /** Découpe une ligne CSV « ; » avec guillemets doublés. */
@@ -130,14 +146,28 @@ export function analyser(icad: IcadAnimal[], fiches: FicheExistante[], pucesAutr
     ajoute('couleur', 'Robe', fiche.couleur, a.couleur);
     if (a.dateNaissance && jour(fiche.date_naissance) !== a.dateNaissance)
       ch.push({ champ: 'date_naissance', libelle: 'Naissance', actuel: fr(jour(fiche.date_naissance)), icad: fr(a.dateNaissance), valeur: a.dateNaissance });
-    if (a.dateEntree && jour(fiche.date_entree) !== a.dateEntree)
-      ch.push({ champ: 'date_entree', libelle: 'Entrée (registre)', actuel: fr(jour(fiche.date_entree)), icad: fr(a.dateEntree), valeur: a.dateEntree });
+    const entree = entreeRegistre(a);
+    if (entree && jour(fiche.date_entree) !== entree)
+      ch.push({ champ: 'date_entree', libelle: 'Entrée (registre)', actuel: fr(jour(fiche.date_entree)),
+        icad: `${fr(entree)}${neALElevage(a) ? " (naissance à l'élevage)" : ''}`, valeur: entree });
     if (a.dateCession) {
       const dejaSorti = fiche.statut === 'sorti' && jour(fiche.date_sortie) === a.dateCession;
       if (!dejaSorti) {
         ch.push({ champ: 'sortie', libelle: 'Sortie (registre)',
           actuel: fiche.statut === 'sorti' ? `Sorti le ${fr(jour(fiche.date_sortie))}` : 'Présent',
-          icad: `Sorti le ${fr(a.dateCession)}${a.acquereur ? ` — ${a.acquereur.prenom} ${a.acquereur.nom}` : ''}`, valeur: a.dateCession });
+          icad: `Sorti le ${fr(a.dateCession)}`, valeur: a.dateCession });
+      }
+      if (a.acquereur) {
+        const nomIcad = `${a.acquereur.prenom} ${a.acquereur.nom}`.trim();
+        if (fiche.uid_acquereur) {
+          // Cession enregistrée vers un compte PetsMatch (cession test…) alors
+          // qu'I-CAD indique un particulier sans compte : à corriger.
+          ch.push({ champ: 'acquereur', libelle: 'Acquéreur',
+            actuel: `${fiche._compteAcquereur || 'un compte'} (compte PetsMatch)`,
+            icad: `${nomIcad} (particulier, sans compte) — la cession vers ce compte sera annulée`, valeur: a.acquereur });
+        } else if (!memesMots(fiche.destinataire_nom, nomIcad)) {
+          ch.push({ champ: 'acquereur', libelle: 'Acquéreur', actuel: fiche.destinataire_nom || '—', icad: nomIcad, valeur: a.acquereur });
+        }
       }
     } else if (fiche.statut === 'sorti') {
       res.alertes.push(`${a.nom} : I-CAD vous indique encore détenteur, mais la fiche est « sortie ». Vérifiez sur I-CAD (déclaration de cession non faite ?). Rien n'est modifié.`);
@@ -152,7 +182,7 @@ export function analyser(icad: IcadAnimal[], fiches: FicheExistante[], pucesAutr
 export function ligneNouvelle(a: IcadAnimal) {
   return {
     nom: a.nom, identification: a.puce, espece: a.espece, sexe: a.sexe || null, race: a.race, couleur: a.couleur,
-    date_naissance: a.dateNaissance || null, date_entree: a.dateEntree || null,
+    date_naissance: a.dateNaissance || null, date_entree: entreeRegistre(a) || null,
     statut: a.dateCession ? 'sorti' : 'present',
     ...(a.dateCession ? champsSortie(a) : {}),
   };
@@ -169,12 +199,22 @@ export function champsSortie(a: IcadAnimal) {
   };
 }
 
-/** Champs animaux à écrire pour une mise à jour validée. */
-export function champsMiseAJour(m: MiseAJour): Record<string, unknown> {
+/** La correction de l'acquéreur passe par le serveur quand la fiche est
+ *  rattachée à un compte PetsMatch (retrait de ce compte). */
+export const correctionCompte = (m: MiseAJour, choisis: Set<string>) => choisis.has('acquereur') && !!m.fiche.uid_acquereur;
+
+/** Champs animaux à écrire (côté client) pour les changements validés. */
+export function champsMiseAJour(m: MiseAJour, choisis: Set<string>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const c of m.changements) {
-    if (c.champ === 'sortie') Object.assign(out, champsSortie(m.icad));
-    else out[c.champ] = c.valeur;
+    if (!choisis.has(c.champ)) continue;
+    if (c.champ === 'sortie') Object.assign(out, { statut: 'sorti', date_sortie: m.icad.dateCession });
+    else if (c.champ === 'acquereur') {
+      if (correctionCompte(m, choisis) || !m.icad.acquereur) continue;
+      const { statut: _s, date_sortie: _d, ...dest } = champsSortie(m.icad);
+      void _s; void _d;
+      Object.assign(out, dest);
+    } else out[c.champ] = c.valeur;
   }
   return out;
 }

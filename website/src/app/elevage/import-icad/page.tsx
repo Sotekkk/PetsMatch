@@ -10,17 +10,20 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { lireCsvIcad, analyser, ligneNouvelle, champsMiseAJour, libelleDate, type Analyse, type FicheExistante, type IcadAnimal } from '@/lib/icad-import';
+import { lireCsvIcad, analyser, ligneNouvelle, champsMiseAJour, correctionCompte, entreeRegistre, neALElevage, libelleDate, type Analyse, type FicheExistante, type IcadAnimal } from '@/lib/icad-import';
+import { apiFetch } from '@/lib/api-fetch';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
-const COLS = 'id, nom, identification, espece, sexe, race, couleur, date_naissance, statut, date_entree, date_sortie, destinataire_nom, destinataire_adresse';
+const COLS = 'id, nom, identification, espece, sexe, race, couleur, date_naissance, statut, date_entree, date_sortie, destinataire_nom, destinataire_adresse, uid_acquereur, profile_id_acquereur';
+const estUuid = (s: string) => /^[0-9a-f-]{36}$/i.test(s);
 
 export default function ImportIcadPage() {
   const { user } = useAuth();
   const pid = useActiveProfile();
   const [analyse, setAnalyse] = useState<Analyse | null>(null);
   const [creer, setCreer] = useState<Set<string>>(new Set());
+  /** Changements validés, un par ligne : « idFiche|champ ». */
   const [maj, setMaj] = useState<Set<string>>(new Set());
   const [etat, setEtat] = useState('');
   const [bilan, setBilan] = useState<string | null>(null);
@@ -46,10 +49,26 @@ export default function ImportIcadPage() {
       const { data: autres } = puces.length ? await supabase.from('animaux').select('id, identification').in('identification', puces) : { data: [] };
       const pucesAutres = new Set(((autres ?? []) as { id: string; identification: string }[])
         .filter(x => !fiches.has(String(x.id))).map(x => x.identification.replace(/\D/g, '')));
+      // Nom du compte PetsMatch rattaché comme acquéreur (cessions faites dans l'appli).
+      const liees = [...fiches.values()].filter(f => f.uid_acquereur);
+      if (liees.length) {
+        const pids = liees.map(f => f.profile_id_acquereur).filter((x): x is string => !!x);
+        const uids = liees.map(f => f.uid_acquereur as string);
+        const [{ data: parPid }, { data: parUid }] = await Promise.all([
+          pids.length ? supabase.from('user_profiles_complet').select('id, uid, firstname, lastname, nom').in('id', pids) : Promise.resolve({ data: [] }),
+          supabase.from('user_profiles_complet').select('id, uid, firstname, lastname, nom').in('uid', uids).eq('is_main', true),
+        ]);
+        type P = { id: string; uid: string; firstname?: string | null; lastname?: string | null; nom?: string | null };
+        const nomP = (p?: P) => (p ? `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || (p.nom ?? '') : '');
+        for (const f of liees) {
+          const p = ((parPid ?? []) as P[]).find(x => x.id === f.profile_id_acquereur) ?? ((parUid ?? []) as P[]).find(x => x.uid === f.uid_acquereur);
+          f._compteAcquereur = nomP(p);
+        }
+      }
       const r = analyser(icad, [...fiches.values()], pucesAutres);
       setAnalyse(r);
       setCreer(new Set(r.nouvelles.map(cle)));
-      setMaj(new Set(r.majs.map(m => String(m.fiche.id))));
+      setMaj(new Set(r.majs.flatMap(m => m.changements.map(c => `${m.fiche.id}|${c.champ}`))));
     } catch (e) { setErreur((e as Error).message); }
     setEtat('');
   }
@@ -72,22 +91,46 @@ export default function ImportIcadPage() {
       if (error) { erreurs.push(`${a.nom} : ${error.message}`); continue; }
       await supabase.from('animaux_proprietes').insert({
         animal_id: id, uid_proprio: user.uid, ...(pid ? { profile_id_proprio: pid } : {}),
-        date_debut: a.dateEntree || a.dateNaissance || today, ...(a.dateCession ? { date_fin: a.dateCession } : {}),
+        date_debut: entreeRegistre(a) || today, ...(a.dateCession ? { date_fin: a.dateCession } : {}),
       });
       crees++;
     }
-    for (const m of analyse.majs.filter(x => maj.has(String(x.fiche.id)))) {
-      const champs = { ...champsMiseAJour(m), updated_at: new Date().toISOString() };
-      let { error } = await supabase.from('animaux').update(champs).eq('id', m.fiche.id);
-      if (error?.message.includes('acquereur_contact_manuel')) {
-        delete (champs as Record<string, unknown>).acquereur_contact_manuel;
-        ({ error } = await supabase.from('animaux').update(champs).eq('id', m.fiche.id));
+    for (const m of analyse.majs) {
+      const id = String(m.fiche.id);
+      const choisis = new Set(m.changements.map(c => c.champ).filter(c => maj.has(`${id}|${c}`)));
+      if (!choisis.size) continue;
+      const champs = { ...champsMiseAJour(m, choisis), updated_at: new Date().toISOString() };
+      if (Object.keys(champs).length > 1) {
+        let { error } = await supabase.from('animaux').update(champs).eq('id', id);
+        if (error?.message.includes('acquereur_contact_manuel')) {
+          delete (champs as Record<string, unknown>).acquereur_contact_manuel;
+          ({ error } = await supabase.from('animaux').update(champs).eq('id', id));
+        }
+        if (error) { erreurs.push(`${m.icad.nom} : ${error.message}`); continue; }
       }
-      if (error) { erreurs.push(`${m.icad.nom} : ${error.message}`); continue; }
-      // Sortie : l'historique de propriété du profil se clôt à la date de cession.
-      if (m.changements.some(c => c.champ === 'sortie')) {
-        await supabase.from('animaux_proprietes').update({ date_fin: m.icad.dateCession })
-          .eq('animal_id', m.fiche.id).eq('uid_proprio', user.uid).is('date_fin', null);
+      // Cession test vers un compte PetsMatch : annulée par le serveur
+      // (retrait de ce compte), acquéreur I-CAD en destinataire.
+      if (correctionCompte(m, choisis) && m.icad.acquereur) {
+        const r = await apiFetch('/api/icad/corriger-cession', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ animalId: id, acquereur: m.icad.acquereur, dateCession: choisis.has('sortie') ? m.icad.dateCession : null }),
+        });
+        if (!r.ok) { erreurs.push(`${m.icad.nom} : ${((await r.json()) as { error?: string }).error ?? 'correction impossible'}`); continue; }
+      } else {
+        // Sortie : la propriété du profil se clôt à la cession ; le registre suit.
+        if (choisis.has('sortie')) {
+          await supabase.from('animaux_proprietes').update({ date_fin: m.icad.dateCession })
+            .eq('animal_id', id).eq('uid_proprio', user.uid).is('date_fin', null);
+        }
+        if (estUuid(id) && (choisis.has('sortie') || choisis.has('acquereur'))) {
+          await supabase.from('registre_mouvements').update({
+            ...(choisis.has('sortie') ? { date_mouvement: m.icad.dateCession } : {}),
+            ...(choisis.has('acquereur') && m.icad.acquereur ? {
+              destinataire_nom: `${m.icad.acquereur.prenom} ${m.icad.acquereur.nom}`.trim(),
+              destinataire_qualite: 'particulier', destinataire_adresse: m.icad.acquereur.adresse,
+            } : {}),
+          }).eq('animal_id', id).eq('uid_eleveur', user.uid).eq('type', 'sortie');
+        }
       }
       majs++;
     }
@@ -138,20 +181,21 @@ export default function ImportIcadPage() {
             <div className="bg-white rounded-2xl border border-gray-100 p-4">
               <p className="text-sm font-bold text-[#1F2A2E] mb-2">Fiches existantes à mettre à jour ({analyse.majs.length})</p>
               {analyse.majs.length === 0 ? <p className="text-sm text-gray-400">Aucune.</p> : analyse.majs.map(m => (
-                <label key={m.fiche.id} className="flex items-start gap-3 py-3 border-t border-gray-50 first:border-0">
-                  <input type="checkbox" className="mt-1" checked={maj.has(String(m.fiche.id))} onChange={() => bascule(maj, setMaj, String(m.fiche.id))} />
-                  <span className="flex-1">
-                    <span className="block text-sm font-bold text-[#1F2A2E]">{m.fiche.nom || m.icad.nom}
-                      <span className="font-normal text-xs text-gray-500"> — reconnu par {m.par === 'puce' ? 'la puce' : 'le prénom et la date de naissance'}</span></span>
-                    <span className="block mt-1 space-y-0.5">
-                      {m.changements.map(c => (
-                        <span key={c.champ} className="block text-xs">
-                          <span className="font-semibold text-gray-700">{c.libelle} :</span> <span className="text-gray-500">{c.actuel}</span> → <span style={{ color: TEAL }}>{c.icad}</span>
-                        </span>
-                      ))}
-                    </span>
-                  </span>
-                </label>
+                <div key={m.fiche.id} className="py-3 border-t border-gray-50 first:border-0">
+                  <p className="text-sm font-bold text-[#1F2A2E]">{m.fiche.nom || m.icad.nom}
+                    <span className="font-normal text-xs text-gray-500"> — reconnu par {m.par === 'puce' ? 'la puce' : 'le prénom et la date de naissance'}</span></p>
+                  <div className="mt-1 space-y-1">
+                    {m.changements.map(c => {
+                      const k = `${m.fiche.id}|${c.champ}`;
+                      return (
+                        <label key={k} className="flex items-start gap-2 text-xs cursor-pointer">
+                          <input type="checkbox" className="mt-0.5" checked={maj.has(k)} onChange={() => bascule(maj, setMaj, k)} />
+                          <span><span className="font-semibold text-gray-700">{c.libelle} :</span> <span className="text-gray-500">{c.actuel}</span> → <span style={{ color: c.champ === 'acquereur' && m.fiche.uid_acquereur ? AMBRE : TEAL }}>{c.icad}</span></span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               ))}
             </div>
 
@@ -170,7 +214,7 @@ export default function ImportIcadPage() {
                           <td className="pr-2">{a.race} · {a.couleur}</td>
                           <td className="pr-2">{sexe(a.sexe)}</td>
                           <td className="pr-2">{libelleDate(a.dateNaissance)}</td>
-                          <td>{a.dateCession ? `Entré le ${libelleDate(a.dateEntree)}, sorti le ${libelleDate(a.dateCession)}${a.acquereur ? ` → ${a.acquereur.prenom} ${a.acquereur.nom}` : ''}` : `Présent depuis le ${libelleDate(a.dateEntree)}`}</td>
+                          <td>{`${neALElevage(a) ? "Né à l'élevage" : `Entré le ${libelleDate(entreeRegistre(a))}`}${a.dateCession ? `, sorti le ${libelleDate(a.dateCession)}${a.acquereur ? ` → ${a.acquereur.prenom} ${a.acquereur.nom}` : ''}` : ', présent'}`}</td>
                         </tr>
                       ))}
                     </tbody>

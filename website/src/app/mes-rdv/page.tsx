@@ -1,4 +1,5 @@
 'use client';
+import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -952,7 +953,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier }: {
   rdv: Rdv;
   tab: 'demandes' | 'a_venir' | 'historique';
   myUid: string;
@@ -966,6 +967,8 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
   /** Vétérinaire : historique des consultations du patient. */
   onHistorique?: () => void;
   onModifier?: () => void;
+  /** Photographe : dossier de la séance (le client est le propriétaire, pas de fiche santé). */
+  onDossier?: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const st      = STATUT_STYLE[rdv.statut] ?? { bg: '#F5F5F5', color: '#757575', label: rdv.statut };
@@ -1056,7 +1059,14 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
               📞 {rdv.client_telephone_manuel}
             </a>
           )}
-          {rdv.animal_id && (
+          {onDossier && (
+            <button onClick={onDossier}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              Dossier de la séance
+            </button>
+          )}
+          {rdv.animal_id && !onDossier && (
             <button onClick={() => onOpenAnimal?.(String(rdv.animal_id))}
               className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
               style={{ borderColor: '#6E9E57', color: '#6E9E57', fontFamily: 'Galey, sans-serif' }}>
@@ -1524,6 +1534,7 @@ export default function MesRdvPage() {
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
+  const [dossierRdv, setDossierRdv] = useState<Rdv | null>(null);
   const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null } | null>(null);
 
   const [aujourdhui, setAujourdhui] = useState<{ id: string; titre: string; date_debut: string; type: string }[]>([]);
@@ -1927,6 +1938,7 @@ export default function MesRdvPage() {
                   onOpenAnimal={openAnimalFiche}
                   onModifier={() => setModalModifier(rdv)}
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
+                  onDossier={catPro === 'photographe' && activeTab !== 'demandes' ? () => setDossierRdv(rdv) : undefined}
                 />
                 </div>
               ))}
@@ -1935,6 +1947,11 @@ export default function MesRdvPage() {
         )}
       </div>
 
+      {dossierRdv && (
+        <DossierSeanceModal rdv={dossierRdv as unknown as RdvDossier} nomClient={dossierRdv.clientName ?? dossierRdv.client_nom_manuel ?? 'Client'}
+          prestation={dossierRdv.motif?.trim() || 'Séance photo'} animal={dossierRdv.animal_nom_manuel ?? dossierRdv.animalNom}
+          depuisAgenda onClose={() => setDossierRdv(null)} onChanged={() => fetchRdvs()} />
+      )}
       {historiqueRdv?.animal_id && activeProfileId && (
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}
           profileId={activeProfileId} onClose={() => setHistoriqueRdv(null)} />

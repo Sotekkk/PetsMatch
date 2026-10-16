@@ -48,6 +48,24 @@ String _chiffres(Object? s) => (s?.toString() ?? '').replaceAll(RegExp(r'\D'), '
 String _jour(Object? s) { final t = s?.toString() ?? ''; return t.length >= 10 ? t.substring(0, 10) : t; }
 String _casse(String s) => s.toLowerCase().replaceAllMapped(RegExp(r"(^|[\s\-'])(\S)"), (m) => '${m[1]}${m[2]!.toUpperCase()}');
 String _casseLibelle(String s) => s.isEmpty ? '' : s[0].toUpperCase() + s.substring(1).toLowerCase();
+/// Entrée au registre : I-CAD donne la date d'identification (pose de la
+/// puce). Identifié dans les 4 mois suivant sa naissance = né à l'élevage :
+/// l'entrée est la date de naissance.
+String icadEntreeRegistre(IcadAnimal a) {
+  if (a.dateNaissance.isEmpty || a.dateEntree.isEmpty) return a.dateEntree.isNotEmpty ? a.dateEntree : a.dateNaissance;
+  final n = DateTime.tryParse(a.dateNaissance), e = DateTime.tryParse(a.dateEntree);
+  if (n == null || e == null) return a.dateEntree;
+  final ecart = e.difference(n).inDays;
+  return ecart >= 0 && ecart <= 120 ? a.dateNaissance : a.dateEntree;
+}
+bool icadNeALElevage(IcadAnimal a) => a.dateNaissance.isNotEmpty && icadEntreeRegistre(a) == a.dateNaissance;
+
+/// Mêmes mots, dans n'importe quel ordre (« NOM Prénom » ≈ « Prénom Nom »).
+bool _memesMots(Object? a, Object? b) {
+  List<String> m(Object? x) => _norm(x).split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList()..sort();
+  return m(a).join(' ') == m(b).join(' ');
+}
+
 String icadDate(String iso) {
   final d = DateTime.tryParse(iso.length >= 10 ? iso.substring(0, 10) : iso);
   return d == null ? '—' : DateFormat('dd/MM/yyyy').format(d);
@@ -147,15 +165,31 @@ IcadAnalyse analyserIcad(List<IcadAnimal> icad, List<Map<String, dynamic>> fiche
     if (a.dateNaissance.isNotEmpty && _jour(fiche['date_naissance']) != a.dateNaissance) {
       ch.add(IcadChangement('date_naissance', 'Naissance', icadDate(_jour(fiche['date_naissance'])), icadDate(a.dateNaissance), a.dateNaissance));
     }
-    if (a.dateEntree.isNotEmpty && _jour(fiche['date_entree']) != a.dateEntree) {
-      ch.add(IcadChangement('date_entree', 'Entrée (registre)', icadDate(_jour(fiche['date_entree'])), icadDate(a.dateEntree), a.dateEntree));
+    final entree = icadEntreeRegistre(a);
+    if (entree.isNotEmpty && _jour(fiche['date_entree']) != entree) {
+      ch.add(IcadChangement('date_entree', 'Entrée (registre)', icadDate(_jour(fiche['date_entree'])),
+          '${icadDate(entree)}${icadNeALElevage(a) ? " (naissance à l'élevage)" : ''}', entree));
     }
     if (a.dateCession.isNotEmpty) {
       final dejaSorti = fiche['statut'] == 'sorti' && _jour(fiche['date_sortie']) == a.dateCession;
       if (!dejaSorti) {
         ch.add(IcadChangement('sortie', 'Sortie (registre)',
             fiche['statut'] == 'sorti' ? 'Sorti le ${icadDate(_jour(fiche['date_sortie']))}' : 'Présent',
-            'Sorti le ${icadDate(a.dateCession)}${a.acquereur != null ? ' — ${a.acquereur!.prenom} ${a.acquereur!.nom}' : ''}', a.dateCession));
+            'Sorti le ${icadDate(a.dateCession)}', a.dateCession));
+      }
+      final acq = a.acquereur;
+      if (acq != null) {
+        final nomIcad = '${acq.prenom} ${acq.nom}'.trim();
+        if ((fiche['uid_acquereur']?.toString() ?? '').isNotEmpty) {
+          // Cession enregistrée vers un compte PetsMatch (cession test…) alors
+          // qu'I-CAD indique un particulier sans compte : à corriger.
+          ch.add(IcadChangement('acquereur', 'Acquéreur',
+              '${(fiche['_compte_acquereur']?.toString() ?? '').isNotEmpty ? fiche['_compte_acquereur'] : 'un compte'} (compte PetsMatch)',
+              '$nomIcad (particulier, sans compte) — la cession vers ce compte sera annulée', acq));
+        } else if (!_memesMots(fiche['destinataire_nom'], nomIcad)) {
+          final act = fiche['destinataire_nom']?.toString() ?? '';
+          ch.add(IcadChangement('acquereur', 'Acquéreur', act.isEmpty ? '—' : act, nomIcad, acq));
+        }
       }
     } else if (fiche['statut'] == 'sorti') {
       res.alertes.add('${a.nom} : I-CAD vous indique encore détenteur, mais la fiche est « sortie ». '
@@ -189,16 +223,27 @@ Map<String, dynamic> icadLigneNouvelle(IcadAnimal a) => {
       if (a.sexe.isNotEmpty) 'sexe': a.sexe,
       'race': a.race, 'couleur': a.couleur,
       if (a.dateNaissance.isNotEmpty) 'date_naissance': a.dateNaissance,
-      if (a.dateEntree.isNotEmpty) 'date_entree': a.dateEntree,
+      if (icadEntreeRegistre(a).isNotEmpty) 'date_entree': icadEntreeRegistre(a),
       'statut': a.dateCession.isNotEmpty ? 'sorti' : 'present',
       if (a.dateCession.isNotEmpty) ...icadChampsSortie(a),
     };
 
-Map<String, dynamic> icadChampsMiseAJour(IcadMiseAJour m) {
+/// La correction de l'acquéreur passe par le serveur quand la fiche est
+/// rattachée à un compte PetsMatch (retrait de ce compte).
+bool icadCorrectionCompte(IcadMiseAJour m, Set<String> choisis) =>
+    choisis.contains('acquereur') && (m.fiche['uid_acquereur']?.toString() ?? '').isNotEmpty;
+
+/// Champs animaux à écrire (côté client) pour les changements validés.
+Map<String, dynamic> icadChampsMiseAJour(IcadMiseAJour m, Set<String> choisis) {
   final out = <String, dynamic>{};
   for (final c in m.changements) {
+    if (!choisis.contains(c.champ)) continue;
     if (c.champ == 'sortie') {
-      out.addAll(icadChampsSortie(m.icad));
+      out.addAll({'statut': 'sorti', 'date_sortie': m.icad.dateCession});
+    } else if (c.champ == 'acquereur') {
+      if (icadCorrectionCompte(m, choisis) || m.icad.acquereur == null) continue;
+      final dest = icadChampsSortie(m.icad)..remove('statut')..remove('date_sortie');
+      out.addAll(dest);
     } else {
       out[c.champ] = c.valeur;
     }
