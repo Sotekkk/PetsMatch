@@ -146,7 +146,7 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
   };
 }
 
-/** E-mail du client : saisi sur la galerie, sinon son profil, sinon le rendez-vous. */
+/** E-mail du client : saisi sur la galerie, sinon son profil, le rendez-vous, puis l'e-mail de son compte PetsMatch. */
 export async function emailClientAlbum(album: AlbumRow): Promise<string | null> {
   if (album.client_email?.trim()) return album.client_email.trim();
   if (album.client_profile_id) {
@@ -157,6 +157,12 @@ export async function emailClientAlbum(album: AlbumRow): Promise<string | null> 
   if (album.rdv_id) {
     const { data } = await admin.from('rdv').select('client_email_manuel').eq('id', album.rdv_id).maybeSingle();
     const e = (data as { client_email_manuel?: string | null } | null)?.client_email_manuel?.trim();
+    if (e) return e;
+  }
+  // Client avec un compte PetsMatch : e-mail du compte.
+  if (album.client_uid) {
+    const { data } = await admin.from('users').select('email').eq('uid', album.client_uid).maybeSingle();
+    const e = (data as { email?: string | null } | null)?.email?.trim();
     if (e) return e;
   }
   return null;
