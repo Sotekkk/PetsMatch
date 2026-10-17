@@ -4,6 +4,8 @@
 // Chaque module garde son statut et peut être transmis au client :
 // devis, contrat, galerie, sélection du client (photos choisies), facture.
 // Miroir site : website/src/components/photographe/DossierSeanceModal.tsx.
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -18,7 +20,7 @@ import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
-import 'package:PetsMatch/utils/galeries_api.dart' show kStatutsGalerie;
+import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
 
@@ -175,6 +177,9 @@ class _DossierSeanceState extends State<_DossierSeance> {
   // saisies par le photographe sur le rendez-vous.
   String _tel = '', _email = '';
   String _prenom = '', _nom = '', _rue = '', _cp = '', _ville = '';
+  // Suite de la séance (sélection → paiement → retouche → livraison).
+  DateTime? _livraisonExp;
+  String? _livEnCours;
   /// Animaux de la séance (plusieurs possibles), pour les lignes de devis / facture.
   String get _animaux => (widget.animal ?? '').split('+').map((x) => x.trim()).where((x) => x.isNotEmpty).join(', ');
 
@@ -221,10 +226,16 @@ class _DossierSeanceState extends State<_DossierSeance> {
         _nbPhotos = (ph as List).length;
         _nbChoisies = ph.where((p) => p['selectionnee'] == true).length;
       } catch (_) {}
+      try {
+        final liv = await _supa.from('album_livraisons').select('expire_le').eq('album_id', _galerie!['id'])
+            .gt('expire_le', DateTime.now().toUtc().toIso8601String()).limit(1).maybeSingle();
+        _livraisonExp = DateTime.tryParse(liv?['expire_le']?.toString() ?? '')?.toLocal();
+      } catch (_) {}
     }
     try {
-      _facture = await _supa.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture')
-          .eq('source_rdv_id', id).neq('statut', 'annulee').order('created_at', ascending: false).limit(1).maybeSingle();
+      _facture = await _supa.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture, date_paiement, mode_paiement')
+          .eq('source_rdv_id', id).neq('statut', 'annulee').or('type_facture.is.null,type_facture.not.in.(acompte,avoir)')
+          .order('created_at', ascending: false).limit(1).maybeSingle();
     } catch (_) {}
     if (r['prestation_id'] != null) {
       try {
@@ -326,6 +337,176 @@ class _DossierSeanceState extends State<_DossierSeance> {
     await _notifier('facture_recue', 'Nouvelle facture — votre photographe',
         'Facture n° $numero · ${((f['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} €',
         {'facture_id': f['id'], if (f['pdf_url'] != null) 'url': f['pdf_url']});
+  }
+
+  // ── Suite de la séance ──
+  Future<void> _marquerPayee() async {
+    final f = _facture;
+    if (f == null) return;
+    final mode = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: Text('Réglée par', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+        for (final m in const ['Virement bancaire', 'Carte bancaire', 'Espèces', 'Chèque'])
+          ListTile(title: Text(m, style: const TextStyle(fontFamily: 'Galey')), onTap: () => Navigator.pop(ctx, m)),
+      ])),
+    );
+    if (mode == null) return;
+    final maj = {'statut': 'payee', 'mode_paiement': mode, 'date_paiement': DateTime.now().toUtc().toIso8601String()};
+    try {
+      await _supa.from('factures').update(maj).eq('id', f['id']);
+      setState(() => f.addAll(maj));
+      _snack('Paiement enregistré : la facture est acquittée');
+    } catch (e) {
+      _snack('Erreur : $e');
+    }
+  }
+
+  Future<void> _passerEnRetouche() async {
+    final g = _galerie;
+    if (g == null) return;
+    try {
+      await _supa.from('albums_photo').update({'statut': 'en_retouche', 'updated_at': DateTime.now().toUtc().toIso8601String()}).eq('id', g['id']);
+      setState(() => g['statut'] = 'en_retouche');
+      final clientUid = r['client_uid']?.toString() ?? '';
+      if (clientUid.isNotEmpty) {
+        await _supa.from('notifications').insert({
+          'uid': clientUid, 'type': 'galerie_disponible', 'title': 'Vos photos sont en retouche',
+          'body': '${widget.prestation} : votre photographe retouche les photos que vous avez choisies.',
+          if ((r['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': r['client_profile_id'],
+          'data': {'albumId': g['id']}, 'read': false,
+        });
+      }
+    } catch (e) {
+      _snack('Erreur : $e');
+    }
+  }
+
+  Future<void> _livrer({List<File>? deja, int? joursDeja, bool forcer = false}) async {
+    final g = _galerie;
+    if (g == null) return;
+    var fichiers = deja ?? const <File>[];
+    var jours = joursDeja ?? GaleriesApi.joursLivraisonDefaut;
+    if (deja == null) {
+      final res = await FilePicker.pickFiles(allowMultiple: true);
+      fichiers = (res?.files ?? []).where((f) => f.path != null).map((f) => File(f.path!)).toList();
+      if (fichiers.isEmpty || !mounted) return;
+      final choix = await showModalBottomSheet<int>(
+        context: context,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text('${fichiers.length} fichier${fichiers.length > 1 ? 's' : ''} — à télécharger sous',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+          for (final j in GaleriesApi.joursLivraison)
+            ListTile(title: Text('$j jours${j == GaleriesApi.joursLivraisonDefaut ? ' (conseillé)' : ''}', style: const TextStyle(fontFamily: 'Galey')),
+                onTap: () => Navigator.pop(ctx, j)),
+          const Padding(padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Text('500 Mo maximum. Le client reçoit un e-mail avec le lien, la date limite et la facture acquittée ; les fichiers sont ensuite supprimés.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey))),
+        ])),
+      );
+      if (choix == null) return;
+      jours = choix;
+    }
+    setState(() => _livEnCours = 'Préparation…');
+    try {
+      final email = await GaleriesApi.livrer(g['id'].toString(), fichiers, jours,
+          (t) { if (mounted) setState(() => _livEnCours = t); }, forcer: forcer);
+      _snack(email ? 'Livraison envoyée : le client a reçu l\'e-mail avec le lien et la date limite'
+          : 'Livraison publiée (aucun e-mail : adresse du client inconnue)');
+      if (mounted) setState(() { _livEnCours = null; _loading = true; });
+      await _charger();
+    } on FactureNonPayeeException catch (e) {
+      if (mounted) setState(() => _livEnCours = null);
+      if (!mounted) return;
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Facture non payée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('${e.message}\n\nLa livraison se fait normalement une fois la facture payée. Livrer quand même ?',
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Attendre le paiement')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Livrer quand même')),
+        ],
+      ));
+      if (ok == true) await _livrer(deja: fichiers, joursDeja: jours, forcer: true);
+    } catch (e) {
+      if (mounted) setState(() => _livEnCours = null);
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _relancer() async {
+    final g = _galerie;
+    if (g == null) return;
+    try {
+      final (notif, mail) = await GaleriesApi.relancerSelection(g['id'].toString());
+      _snack('Client relancé${mail ? ' par e-mail' : ''}${notif ? '${mail ? ' et' : ''} par notification' : ''}');
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Widget _etape(int n, String titre, bool fait, bool actif, String detail, Widget? action) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          CircleAvatar(radius: 12, backgroundColor: fait ? _vert : actif ? _teal : const Color(0xFFD1D5DB),
+              child: fait ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : Text('$n', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white))),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titre, style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700, color: fait || actif ? _ink : _muted)),
+            Text(detail, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: fait ? _vert : _muted)),
+            if (actif && action != null) Padding(padding: const EdgeInsets.only(top: 4), child: action),
+          ])),
+        ]),
+      );
+
+  Widget _suiteSeance() {
+    final g = _galerie!;
+    final f = _facture;
+    final selOk = g['selection_confirmee_le'] != null;
+    final payOk = f?['statut'] == 'payee';
+    final retOk = g['statut'] == 'en_retouche' || g['statut'] == 'livree';
+    final livOk = g['statut'] == 'livree';
+    final datePaie = DateTime.tryParse(f?['date_paiement']?.toString() ?? '')?.toLocal();
+    String eur(Object? v) => '${((v as num?) ?? 0).toStringAsFixed(0)} €';
+    ButtonStyle plein() => FilledButton.styleFrom(backgroundColor: _teal, visualDensity: VisualDensity.compact);
+    const t = TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE6E8E6))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('SUITE DE LA SÉANCE', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: Colors.grey.shade600, letterSpacing: 0.6)),
+        _etape(1, 'Sélection du client', selOk, !selOk,
+            selOk ? '$_nbChoisies photo${_nbChoisies > 1 ? 's' : ''} confirmée${_nbChoisies > 1 ? 's' : ''}'
+                : _nbChoisies > 0 ? '$_nbChoisies cochée${_nbChoisies > 1 ? 's' : ''}, pas encore confirmée' : 'En attente du client',
+            TextButton(onPressed: _relancer, style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                child: const Text('Relancer le client', style: TextStyle(fontFamily: 'Galey', color: _teal)))),
+        _etape(2, 'Paiement', payOk, selOk && !payOk,
+            payOk ? 'Payée${datePaie != null ? ' le ${DateFormat('dd/MM/yyyy').format(datePaie)}' : ''}${(f?['mode_paiement']?.toString() ?? '').isNotEmpty ? ' · ${f!['mode_paiement']}' : ''}'
+                : f != null ? 'Facture émise, ${eur(f['total_ttc'])} à régler' : 'Facture à émettre',
+            f != null
+                ? FilledButton(onPressed: _marquerPayee, style: plein(), child: const Text('Marquer payée', style: t))
+                : TextButton(onPressed: _facturer, style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                    child: const Text('Émettre la facture', style: TextStyle(fontFamily: 'Galey', color: _teal)))),
+        _etape(3, 'Retouche', retOk, selOk && !retOk,
+            retOk ? (livOk ? 'Terminée' : 'En cours') : payOk ? 'À lancer' : 'Après le paiement (ou dès maintenant si vous le souhaitez)',
+            FilledButton(onPressed: _passerEnRetouche, style: plein(), child: const Text('Passer en retouche', style: t))),
+        _etape(4, 'Livraison des photos finales', livOk, retOk && !livOk,
+            livOk ? (_livraisonExp != null ? 'Livrée · à télécharger avant le ${DateFormat('dd/MM/yyyy').format(_livraisonExp!)}' : 'Livrée')
+                : 'Fichiers retouchés, 500 Mo maximum',
+            FilledButton.icon(
+              onPressed: _livEnCours != null ? null : () => _livrer(),
+              style: plein(),
+              icon: const Icon(Icons.upload_file_outlined, size: 16),
+              label: Text(_livEnCours ?? 'Choisir les fichiers et livrer', style: t),
+            )),
+      ]),
+    );
   }
 
   // ── Lieu ──
@@ -463,6 +644,7 @@ class _DossierSeanceState extends State<_DossierSeance> {
         const SizedBox(height: 4),
         Text('Chaque élément garde son statut : une galerie livrée n\'est pas une facture payée.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+        if (!_loading && _galerie != null && _galerie!['statut'] != 'brouillon') _suiteSeance(),
         const SizedBox(height: 4),
         ListTile(contentPadding: EdgeInsets.zero, dense: true, leading: const Icon(Icons.place_outlined, color: _teal),
             title: Text(r['lieu_type'] == 'domicile' ? 'Modifier le lieu' : 'Préciser le lieu du shooting',

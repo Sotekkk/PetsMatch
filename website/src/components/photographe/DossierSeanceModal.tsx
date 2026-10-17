@@ -13,6 +13,7 @@ import { geocodeAddress } from '@/lib/geocoding';
 import { styleGalerie } from '@/lib/photographe';
 import ContactCanaux from '@/components/ContactCanaux';
 import LieuGoogleRecherche from '@/components/LieuGoogleRecherche';
+import { livrerFichiers, relancerSelection, FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, fmtTaille } from '@/lib/galeries-client';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -42,7 +43,8 @@ const eur = (n: number | null | undefined) => `${Math.round(Number(n) || 0)} €
 interface Devis { id: string; statut: string; total_ttc: number | null; token_acceptation: string | null }
 interface Contrat { id: string; token: string; statut: string }
 interface Galerie { id: string; statut: string | null; nb_photos_incluses?: number | null; prix_photo_supp?: number | null; selection_confirmee_le?: string | null }
-interface Facture { id: string; statut: string; total_ttc: number | null; pdf_url: string | null; numero_affichage?: string | null; numero_facture?: string | null }
+interface Facture { id: string; statut: string; total_ttc: number | null; pdf_url: string | null; numero_affichage?: string | null; numero_facture?: string | null; date_paiement?: string | null; mode_paiement?: string | null }
+const MODES_PAIEMENT = ['Virement bancaire', 'Carte bancaire', 'Espèces', 'Chèque'];
 
 export default function DossierSeanceModal({ rdv, nomClient, prestation, animal, depuisAgenda, onClose, onChanged }: {
   rdv: RdvDossier; nomClient: string; prestation: string; animal?: string | null; depuisAgenda?: boolean;
@@ -63,6 +65,12 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   const [lieuEdit, setLieuEdit] = useState<{ adresse: string; prevenir: boolean; lat: number | null; lng: number | null } | null>(null);
   // Coordonnées du client : son profil PetsMatch (à jour), sinon celles
   // saisies par le photographe sur le rendez-vous.
+  // Suite de la séance (sélection → paiement → retouche → livraison).
+  const [livraisonExp, setLivraisonExp] = useState<string | null>(null);
+  const [modePaiement, setModePaiement] = useState(MODES_PAIEMENT[0]);
+  const [joursLiv, setJoursLiv] = useState(JOURS_LIVRAISON_DEFAUT);
+  const [finals, setFinals] = useState<File[]>([]);
+  const [livEnCours, setLivEnCours] = useState('');
   const [coord, setCoord] = useState({ tel: '', email: '', prenom: '', nom: '', rue: '', cp: '', ville: '' });
   // Animaux de la séance (plusieurs possibles), pour les lignes de devis / facture.
   const animaux = (animal ?? '').split('+').map(x => x.trim()).filter(Boolean).join(', ');
@@ -80,7 +88,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
       supabase.from('devis').select('id, statut, total_ttc, token_acceptation').eq('rdv_id', rdv.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('documents_animaux').select('id, token, statut').eq('rdv_id', rdv.id).eq('type', 'contrat_prestation_photo').maybeSingle(),
       supabase.from('albums_photo').select('*').eq('rdv_id', rdv.id).maybeSingle(),
-      supabase.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture').eq('source_rdv_id', rdv.id).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture, date_paiement, mode_paiement, type_facture').eq('source_rdv_id', rdv.id).neq('statut', 'annulee').or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       rdv.prestation_id ? supabase.from('prestations_photographe').select('prix').eq('id', rdv.prestation_id).maybeSingle() : Promise.resolve({ data: null }),
     ]);
     setDevis(d.error ? null : d.data as Devis | null);
@@ -111,6 +119,9 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
       const { data: ph } = await supabase.from('album_photos').select('selectionnee').eq('album_id', gal.id);
       const l = (ph ?? []) as { selectionnee?: boolean }[];
       setNbPhotos(l.length); setNbChoisies(l.filter(x => x.selectionnee).length);
+      const { data: liv } = await supabase.from('album_livraisons').select('expire_le').eq('album_id', gal.id)
+        .gt('expire_le', new Date().toISOString()).limit(1).maybeSingle();
+      setLivraisonExp((liv as { expire_le?: string } | null)?.expire_le ?? null);
     }
     setNow(Date.now()); setLoading(false);
   }, [rdv.id, rdv.prestation_id, rdv.client_profile_id, rdv.lieu_type, rdv.adresse_depart]);
@@ -219,6 +230,54 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     `Facture n° ${facture.numero_affichage ?? facture.numero_facture ?? ''} · ${(Number(facture.total_ttc) || 0).toFixed(2)} €`,
     { facture_id: facture.id, ...(facture.pdf_url ? { url: facture.pdf_url } : {}) });
 
+  // ── Suite de la séance ──
+  async function marquerPayee() {
+    if (!facture) return;
+    const maj = { statut: 'payee', mode_paiement: modePaiement, date_paiement: new Date().toISOString() };
+    const { error } = await supabase.from('factures').update(maj).eq('id', facture.id);
+    if (error) { setMessage(error.message); return; }
+    setFacture({ ...facture, ...maj });
+    setMessage('Paiement enregistré : la facture est acquittée.');
+    onChanged?.();
+  }
+  async function passerEnRetouche() {
+    if (!galerie) return;
+    const { error } = await supabase.from('albums_photo').update({ statut: 'en_retouche', updated_at: new Date().toISOString() }).eq('id', galerie.id);
+    if (error) { setMessage(error.message); return; }
+    setGalerie({ ...galerie, statut: 'en_retouche' });
+    if (r.client_uid) {
+      await supabase.from('notifications').insert({
+        uid: r.client_uid, type: 'galerie_disponible', title: 'Vos photos sont en retouche',
+        body: `${prestation} : votre photographe retouche les photos que vous avez choisies.`,
+        ...(r.client_profile_id ? { profile_id: r.client_profile_id } : {}), data: { albumId: galerie.id }, read: false,
+      });
+    }
+    onChanged?.();
+  }
+  async function livrer(forcer = false) {
+    if (!galerie || !finals.length) return;
+    try {
+      const res = await livrerFichiers(galerie.id, finals, joursLiv, setLivEnCours, forcer);
+      setFinals([]); setLivEnCours('');
+      setMessage(res.email_envoye ? 'Livraison envoyée : le client a reçu l\'e-mail avec le lien et la date limite.' : 'Livraison publiée (aucun e-mail : adresse du client inconnue).');
+      await charger(); onChanged?.();
+    } catch (e) {
+      setLivEnCours('');
+      if (e instanceof FactureNonPayeeError) {
+        if (confirm(`${e.message}\n\nLa livraison se fait normalement une fois la facture payée. Livrer quand même ?`)) livrer(true);
+        return;
+      }
+      setMessage((e as Error).message);
+    }
+  }
+  async function relancer() {
+    if (!galerie) return;
+    try {
+      const res = await relancerSelection(galerie.id);
+      setMessage(`Client relancé${res.email_envoye ? ' par e-mail' : ''}${res.notifiee ? `${res.email_envoye ? ' et' : ''} par notification` : ''}.`);
+    } catch (e) { setMessage((e as Error).message); }
+  }
+
   async function enregistrerLieu() {
     if (!lieuEdit?.adresse.trim()) return;
     const adr = lieuEdit.adresse.trim();
@@ -292,6 +351,67 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
           )}
         </div>
         <p className="text-[11px] text-gray-400 mt-1">Chaque élément garde son statut : une galerie livrée n&apos;est pas une facture payée.</p>
+
+        {galerie && galerie.statut !== 'brouillon' && (() => {
+          const selOk = !!galerie.selection_confirmee_le;
+          const payOk = facture?.statut === 'payee';
+          const retOk = ['en_retouche', 'livree'].includes(galerie.statut ?? '');
+          const livOk = galerie.statut === 'livree';
+          const tailleFinals = finals.reduce((n, f) => n + f.size, 0);
+          const etape = (n: number, titre: string, fait: boolean, actif: boolean, detail: string, action?: React.ReactNode) => (
+            <div className="flex gap-3 py-2 border-t border-gray-100 first:border-t-0">
+              <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                style={{ background: fait ? VERT : actif ? TEAL : '#D1D5DB' }}>{fait ? '✓' : n}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold" style={{ color: fait || actif ? '#1E2025' : GRIS }}>{titre}</p>
+                <p className="text-xs" style={{ color: fait ? VERT : GRIS }}>{detail}</p>
+                {actif && action && <div className="mt-1.5">{action}</div>}
+              </div>
+            </div>
+          );
+          return (
+            <div className="mt-3 border border-gray-100 rounded-xl px-3 py-1">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-2">Suite de la séance</p>
+              {etape(1, 'Sélection du client', selOk, !selOk,
+                selOk ? `${nbChoisies} photo${nbChoisies > 1 ? 's' : ''} confirmée${nbChoisies > 1 ? 's' : ''}` : nbChoisies ? `${nbChoisies} cochée${nbChoisies > 1 ? 's' : ''}, pas encore confirmée` : 'En attente du client',
+                <button onClick={relancer} className="text-sm font-semibold" style={{ color: TEAL }}>Relancer le client</button>)}
+              {etape(2, 'Paiement', payOk, selOk && !payOk,
+                payOk ? `Payée${facture?.date_paiement ? ` le ${new Date(facture.date_paiement).toLocaleDateString('fr-FR')}` : ''}${facture?.mode_paiement ? ` · ${facture.mode_paiement}` : ''}`
+                  : facture ? `Facture émise, ${eur(facture.total_ttc)} à régler` : 'Facture à émettre',
+                facture ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={modePaiement} onChange={e => setModePaiement(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white">
+                      {MODES_PAIEMENT.map(m => <option key={m}>{m}</option>)}
+                    </select>
+                    <button onClick={marquerPayee} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white" style={{ background: TEAL }}>Marquer payée</button>
+                  </div>
+                ) : <button onClick={facturer} className="text-sm font-semibold" style={{ color: TEAL }}>Émettre la facture</button>)}
+              {etape(3, 'Retouche', retOk, selOk && !retOk,
+                retOk ? (livOk ? 'Terminée' : 'En cours') : payOk ? 'À lancer' : 'Après le paiement (ou dès maintenant si vous le souhaitez)',
+                <button onClick={passerEnRetouche} className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white" style={{ background: TEAL }}>Passer en retouche</button>)}
+              {etape(4, 'Livraison des photos finales', livOk, retOk && !livOk,
+                livOk ? (livraisonExp ? `Livrée · à télécharger avant le ${new Date(livraisonExp).toLocaleDateString('fr-FR')}` : 'Livrée') : 'Fichiers retouchés, 500 Mo maximum',
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-semibold cursor-pointer" style={{ color: TEAL }}>
+                    {finals.length ? `${finals.length} fichier${finals.length > 1 ? 's' : ''} (${fmtTaille(tailleFinals)})` : 'Choisir les fichiers retouchés…'}
+                    <input type="file" multiple className="hidden" onChange={e => { setFinals([...(e.target.files ?? [])]); e.target.value = ''; }} />
+                  </label>
+                  {tailleFinals > LIVRAISON_MAX && <p className="text-xs" style={{ color: ROUGE }}>Plus de 500 Mo : compressez ou faites deux livraisons.</p>}
+                  {finals.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select value={joursLiv} onChange={e => setJoursLiv(Number(e.target.value))} className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white">
+                        {JOURS_LIVRAISON.map(j => <option key={j} value={j}>À télécharger sous {j} jours</option>)}
+                      </select>
+                      <button onClick={() => livrer()} disabled={!!livEnCours || tailleFinals > LIVRAISON_MAX}
+                        className="px-3 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>
+                        {livEnCours || 'Livrer au client'}
+                      </button>
+                    </div>
+                  )}
+                </div>)}
+            </div>
+          );
+        })()}
         {message && <p className="text-sm mt-2" style={{ color: TEAL }}>{message}</p>}
 
         <div className="mt-2">

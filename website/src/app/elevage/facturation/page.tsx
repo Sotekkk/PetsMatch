@@ -144,6 +144,8 @@ export default function FacturationPage() {
   const hasFacturationAccess = isAssociation ? true
     : isPensionSource ? pensionPlan === 'premium'
     : isGardeSource ? gardePlan === 'premium'
+    // Photographe : Essentiel suffit pour la facturation ; Premium l'inclut (miroir Header).
+    : isOtherProfession && activeProfilType === 'photographe' ? ['essentiel', 'premium'].includes(otherPlanCode)
     : isOtherProfession ? otherPlanCode === (PROFESSION_TOP_TIER[activeProfilType] ?? 'premium')
     : planConfig.hasPremiumFeatures;
 

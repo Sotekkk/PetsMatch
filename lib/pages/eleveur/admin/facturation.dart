@@ -279,7 +279,11 @@ class _FacturationPageState extends State<FacturationPage> {
     if (_planLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator(color: _teal)));
     }
-    if (_planCode != _requiredTier && !widget.isAssociation) {
+    // Photographe : Essentiel suffit pour la facturation ; Premium l'inclut.
+    final planOk = User_Info.catPro == 'photographe'
+        ? const ['essentiel', 'premium'].contains(_planCode)
+        : _planCode == _requiredTier;
+    if (!planOk && !widget.isAssociation) {
       return Scaffold(
         backgroundColor: _bg,
         appBar: AppBar(
