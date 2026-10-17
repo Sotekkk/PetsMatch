@@ -22,6 +22,7 @@ export interface ContenuGalerie {
     /** Id de la photo de couverture (album_photos.id). */
     couverture_url: string | null; filigrane: boolean; partage_client: boolean;
     rdv_id?: string | null; client_uid?: string | null; client_profile_id?: string | null; client_email?: string | null;
+    relance_selection_le?: string | null;
     selection_confirmee_le: string | null; selection_commentaire: string | null; nb_photos_incluses: number | null; livree_le: string | null;
     prix_photo_supp?: number | null;
   };
@@ -223,6 +224,14 @@ export const PART_MAX = 45 * 1024 * 1024;
 export const LIVRAISON_MAX = 500 * 1024 * 1024;
 export const JOURS_LIVRAISON = [3, 7, 14];
 export const JOURS_LIVRAISON_DEFAUT = 7;
+
+/** Photographe : relance le client qui n'a pas confirmé sa sélection (notification + e-mail). */
+export async function relancerSelection(albumId: string): Promise<{ notifiee: boolean; email_envoye: boolean }> {
+  const r = await apiFetch(`/api/galeries/${albumId}/relancer`, { method: 'POST' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j as { error?: string }).error ?? 'Relance impossible');
+  return j as { notifiee: boolean; email_envoye: boolean };
+}
 
 /** Livraison refusée tant que la facture de la séance n'est pas payée. */
 export class FactureNonPayeeError extends Error {}

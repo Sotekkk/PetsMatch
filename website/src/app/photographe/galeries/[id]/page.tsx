@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useProfessionPlanCode } from '@/lib/use-plan';
 import { STATUTS_GALERIE } from '@/lib/photographe';
-import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, envoyerGalerie,
+import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, envoyerGalerie, relancerSelection,
   FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, type ContenuGalerie } from '@/lib/galeries-client';
 
 const TEAL = '#0C5C6C';
@@ -274,9 +274,24 @@ export default function GalerieStudioPage() {
                     className="text-xs font-semibold" style={{ color: TEAL }}>Rouvrir la sélection</button>
                 </>
               ) : (
+                <>
                 <p className="text-xs text-gray-500">
-                  {album.statut === 'partagee' ? `Ouverte : le client choisit ses photos (${nbSel} pour l'instant) puis confirme.` : 'La sélection s\'ouvre quand la galerie est partagée (statut « En attente de sélection »).'}
+                  {album.statut === 'partagee'
+                    ? (nbSel ? `${nbSel} photo${nbSel > 1 ? 's' : ''} cochée${nbSel > 1 ? 's' : ''} par le client, sélection pas encore confirmée.` : 'Ouverte : le client choisit ses photos puis confirme.')
+                    : 'La sélection s\'ouvre quand la galerie est partagée (statut « En attente de sélection »).'}
                 </p>
+                {album.statut === 'partagee' && !album.selection_confirmee_le && (
+                  <button onClick={async () => {
+                    try {
+                      const r = await relancerSelection(id);
+                      alert(`Client relancé${r.email_envoye ? ' par e-mail' : ''}${r.notifiee ? `${r.email_envoye ? ' et' : ''} par notification` : ''}.`);
+                      charger();
+                    } catch (e) { alert((e as Error).message); }
+                  }} className="text-xs font-semibold mt-1" style={{ color: TEAL }}>
+                    Relancer le client{album.relance_selection_le ? ` (dernière relance le ${new Date(album.relance_selection_le).toLocaleDateString('fr-FR')})` : ''}
+                  </button>
+                )}
+                </>
               )}
               <label className="flex items-center gap-2 text-sm pt-1">
                 <span className="flex-1 text-xs text-gray-600">Photos incluses dans la prestation</span>

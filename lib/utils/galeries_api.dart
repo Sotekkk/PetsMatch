@@ -216,6 +216,15 @@ class GaleriesApi {
   static const joursLivraison = [3, 7, 14];
   static const joursLivraisonDefaut = 7;
 
+  /// Photographe : relance le client qui n'a pas confirmé sa sélection
+  /// (notification + e-mail). Renvoie (notifié, e-mail envoyé).
+  static Future<(bool, bool)> relancerSelection(String albumId) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/relancer'), headers: await siteApiHeaders());
+    final j = _json(r);
+    if (r.statusCode != 200) throw Exception(j['error'] ?? 'Relance impossible');
+    return (j['notifiee'] == true, j['email_envoye'] == true);
+  }
+
   /// Photographe : envoie la galerie au client par e-mail (adresse enregistrée sur la galerie).
   static Future<void> envoyerGalerie(String albumId, String email, String message) async {
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/envoyer'),

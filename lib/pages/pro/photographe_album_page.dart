@@ -309,11 +309,33 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                 },
                 child: const Text('Rouvrir la sélection', style: TextStyle(fontFamily: 'Galey', color: _teal)),
               ),
-            ] else
+            ] else ...[
               Text(_album['statut'] == 'partagee'
-                  ? 'Ouverte : le client choisit ses photos ($_nbSel pour l\'instant) puis confirme.'
+                  ? (_nbSel > 0
+                      ? '$_nbSel photo${_nbSel > 1 ? 's' : ''} cochée${_nbSel > 1 ? 's' : ''} par le client, sélection pas encore confirmée.'
+                      : 'Ouverte : le client choisit ses photos puis confirme.')
                   : 'La sélection s\'ouvre quand la galerie est partagée (statut « En attente de sélection »).',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+              if (_album['statut'] == 'partagee')
+                TextButton(
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  onPressed: () async {
+                    try {
+                      final (notif, mail) = await GaleriesApi.relancerSelection(_albumId!);
+                      _snack('Client relancé${mail ? ' par e-mail' : ''}${notif ? '${mail ? ' et' : ''} par notification' : ''}');
+                      await _charger();
+                      setM(() {});
+                    } catch (e) {
+                      _snack(e.toString().replaceFirst('Exception: ', ''));
+                    }
+                  },
+                  child: Text(
+                      DateTime.tryParse(_album['relance_selection_le']?.toString() ?? '') != null
+                          ? 'Relancer le client (dernière relance le ${DateFormat('dd/MM').format(DateTime.parse(_album['relance_selection_le'].toString()).toLocal())})'
+                          : 'Relancer le client',
+                      style: const TextStyle(fontFamily: 'Galey', color: _teal)),
+                ),
+            ],
             const SizedBox(height: 8),
             TextField(
               controller: incluses, keyboardType: TextInputType.number,

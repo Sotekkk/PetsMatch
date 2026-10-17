@@ -105,6 +105,28 @@ exports.purgerLivraisonsPhoto = functions
             const ids = rows.map((r) => `"${r.id}"`).join(",");
             await httpRequest("DELETE", `/rest/v1/album_livraisons?id=in.(${ids})`);
         }
-        console.log(`[livraisons_photo] ${albumsRappel.length} rappel(s), ${rows.length} ZIP supprimé(s)`);
+        // 3. Sélection non confirmée : rappel au client (compte PetsMatch) tous
+        //    les 3 jours tant que la galerie est partagée sans sélection
+        //    confirmée (relance_selection_le, partagée avec le bouton du pro).
+        const ilYa3j = new Date(maintenant.getTime() - 3 * 86400000).toISOString();
+        const enAttente = await httpRequest("GET",
+            "/rest/v1/albums_photo?statut=eq.partagee&selection_confirmee_le=is.null&partage_client=eq.true" +
+            `&client_uid=not.is.null&partagee_le=lt.${encodeURIComponent(ilYa3j)}` +
+            `&or=(relance_selection_le.is.null,relance_selection_le.lt.${encodeURIComponent(ilYa3j)})` +
+            "&select=id,titre,client_uid,client_profile_id");
+        const aRelancer = Array.isArray(enAttente.body) ? enAttente.body : [];
+        for (const album of aRelancer) {
+            await httpRequest("POST", "/rest/v1/notifications", [{
+                uid: album.client_uid, type: "galerie_disponible", title: "Votre sélection de photos",
+                body: `« ${album.titre || "Séance photo"} » — choisissez vos photos puis confirmez votre sélection ` +
+                    "pour que votre photographe lance la retouche.",
+                ...(album.client_profile_id ? {profile_id: album.client_profile_id} : {}),
+                data: {albumId: album.id}, read: false,
+            }]);
+            await httpRequest("PATCH", `/rest/v1/albums_photo?id=eq.${album.id}`,
+                {relance_selection_le: maintenant.toISOString()});
+        }
+        console.log(`[livraisons_photo] ${albumsRappel.length} rappel(s), ${rows.length} ZIP supprimé(s), ` +
+            `${aRelancer.length} relance(s) de sélection`);
         return null;
     });
