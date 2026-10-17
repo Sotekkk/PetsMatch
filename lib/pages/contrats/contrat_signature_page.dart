@@ -556,6 +556,31 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   Future<void> _signerDocument(String role, String dataUrl) async {
     setState(() => _saving = true);
     try {
+      // Client / acquéreur : signature enregistrée par le serveur (route du
+      // site, comme /signer-contrat). Une écriture directe était refusée sans
+      // erreur par la sécurité de la table pour un client de prestation
+      // (metadata.client_uid) : notification partie, contrat resté « en
+      // attente ». La route notifie elle-même le professionnel.
+      if (role != 'eleveur') {
+        final r = await http.post(Uri.parse('$kSiteBaseUrl/api/contracts/${_doc!['id']}/sign'),
+            headers: await siteApiHeaders(), body: jsonEncode({'role': 'acquereur', 'signature': dataUrl}));
+        Map<String, dynamic> j;
+        try {
+          j = jsonDecode(r.body) as Map<String, dynamic>;
+        } on FormatException {
+          j = {'error': 'Service momentanément indisponible (${r.statusCode}).'};
+        }
+        if (r.statusCode != 200) throw Exception(j['error'] ?? 'Signature impossible');
+        _doc!['metadata'] = Map<String, dynamic>.from((j['metadata'] as Map?) ?? {});
+        _doc!['statut'] = j['statut'];
+        if (j['signe_le'] != null) _doc!['signe_le'] = j['signe_le'];
+        await _buildPdf();
+        if (mounted) {
+          setState(() {});
+          _snack(j['statut'] == 'signe' ? '✅ Contrat signé par les deux parties.' : '✍️ Signature enregistrée');
+        }
+        return;
+      }
       // Relire la version en base pour ne pas écraser la signature de l'autre
       // partie si elle a signé entre-temps (métadonnées locales périmées).
       final fresh = await _supa.from('documents_animaux')
