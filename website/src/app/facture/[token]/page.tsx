@@ -185,7 +185,12 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
         <button onClick={handlePrint} className="text-sm border border-gray-200 text-gray-600 px-4 py-2 rounded-xl hover:bg-gray-50">🖨️ PDF</button>
       </div>
 
-      {f.statut === 'payee' && <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700 font-medium">✅ Facture payée.</div>}
+      {f.statut === 'payee' && (() => {
+        const r = f as unknown as { date_paiement?: string | null; mode_paiement?: string | null };
+        return <div className="mb-4 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700 font-medium">
+          Facture acquittée{r.date_paiement ? ` le ${new Date(r.date_paiement).toLocaleDateString('fr-FR')}` : ''}{r.mode_paiement ? ` — ${r.mode_paiement}` : ''}.
+        </div>;
+      })()}
       {f.statut === 'annulee' && <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 font-medium">🚫 Facture annulée.</div>}
 
       <div id="facture-print-content" className="border border-gray-300 rounded-xl bg-white text-sm text-gray-800 p-8 space-y-6">

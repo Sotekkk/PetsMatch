@@ -190,8 +190,14 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   }
 
   // ── Facture ──
-  function facturer() {
+  async function facturer() {
     const supp = galerie?.nb_photos_incluses != null && galerie.prix_photo_supp ? Math.max(0, nbChoisies - galerie.nb_photos_incluses) : 0;
+    // Acompte déjà réglé pour cette séance : déduit (facture de solde).
+    const { data: acomptes } = await supabase.from('factures').select('total_ttc, numero_affichage, numero_facture')
+      .eq('source_rdv_id', r.id).eq('type_facture', 'acompte').eq('statut', 'payee');
+    const deductions = ((acomptes ?? []) as { total_ttc: number | null; numero_affichage?: string | null; numero_facture?: string | number | null }[])
+      .filter(a => Number(a.total_ttc) > 0)
+      .map(a => ({ description: `Acompte déjà réglé (facture n° ${a.numero_affichage ?? a.numero_facture ?? ''})`, quantite: 1, prixUnitaire: 0, prixTTC: -Number(a.total_ttc), tva: 20 }));
     try {
       // Tarifs affichés TTC : le HT est déduit selon le régime de TVA du pro.
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
@@ -203,6 +209,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         lignes: [
           { description: `${designation} — séance du ${jour(debut)}`, quantite: 1, prixUnitaire: 0, prixTTC: prix ?? 0, tva: 20 },
           ...(supp > 0 ? [{ description: 'Photos supplémentaires', quantite: supp, prixUnitaire: 0, prixTTC: Number(galerie!.prix_photo_supp), tva: 20 }] : []),
+          ...deductions,
         ],
       }));
     } catch { /* facture vierge */ }

@@ -21,11 +21,13 @@ export interface ContenuGalerie {
     id: string; titre: string | null; description: string | null; statut: string; date_seance: string | null;
     /** Id de la photo de couverture (album_photos.id). */
     couverture_url: string | null; filigrane: boolean; partage_client: boolean;
-    rdv_id?: string | null; client_uid?: string | null; client_profile_id?: string | null;
+    rdv_id?: string | null; client_uid?: string | null; client_profile_id?: string | null; client_email?: string | null;
     selection_confirmee_le: string | null; selection_commentaire: string | null; nb_photos_incluses: number | null; livree_le: string | null;
     prix_photo_supp?: number | null;
   };
-  livraison: { id: string; numero: number; nom: string; taille: number | null; nb: number | null; expire_le: string; telechargements?: number }[];
+  livraison: { id: string; numero: number; nom: string; taille: number | null; nb: number | null; expire_le: string; telechargements?: number; prolongee?: boolean }[];
+  /** Photographe : facture de la séance. */
+  facture?: { statut: string; numero: string; total_ttc: number } | null;
   studio: { nom: string; avatar: string | null };
   photos: PhotoGalerie[];
 }
@@ -217,6 +219,22 @@ export async function liensLivraison(albumId: string, token?: string): Promise<{
 
 /** Taille max d'une partie ZIP (limite d'envoi du stockage). */
 export const PART_MAX = 45 * 1024 * 1024;
+/** Volume max d'une livraison (stockage temporaire) et durées proposées. */
+export const LIVRAISON_MAX = 500 * 1024 * 1024;
+export const JOURS_LIVRAISON = [3, 7, 14];
+export const JOURS_LIVRAISON_DEFAUT = 7;
+
+/** Livraison refusée tant que la facture de la séance n'est pas payée. */
+export class FactureNonPayeeError extends Error {}
+
+/** Photographe : envoie la galerie au client par e-mail (adresse enregistrée sur la galerie). */
+export async function envoyerGalerie(albumId: string, email: string, message: string) {
+  const r = await apiFetch(`/api/galeries/${albumId}/envoyer`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, message }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j as { error?: string }).error ?? 'Envoi impossible');
+}
 
 function zipper(fichiers: Record<string, Uint8Array>): Promise<Uint8Array> {
   return new Promise((resolve, reject) => zip(fichiers, { level: 0 }, (e, d) => (e ? reject(e) : resolve(d))));
@@ -226,7 +244,10 @@ function zipper(fichiers: Record<string, Uint8Array>): Promise<Uint8Array> {
  *  navigateur (parties de 45 Mo max, fichiers déjà compressés : stockage
  *  sans recompression), envoyés au stockage temporaire privé, puis publiés
  *  avec une durée de disponibilité. */
-export async function livrerFichiers(albumId: string, files: File[], jours: number, onProgres: (t: string) => void) {
+export async function livrerFichiers(albumId: string, files: File[], jours: number, onProgres: (t: string) => void, forcer = false): Promise<{ email_envoye?: boolean }> {
+  if (files.reduce((n, f) => n + f.size, 0) > LIVRAISON_MAX) {
+    throw new Error('Livraison limitée à 500 Mo : compressez les fichiers (JPEG haute qualité) ou faites deux livraisons.');
+  }
   const groupes: File[][] = [];
   let courant: File[] = [], taille = 0;
   for (const f of files) {
@@ -235,9 +256,10 @@ export async function livrerFichiers(albumId: string, files: File[], jours: numb
   }
   if (courant.length) groupes.push(courant);
   const r = await apiFetch(`/api/galeries/${albumId}/livraison`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'preparer', parts: groupes.length }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'preparer', parts: groupes.length, forcer }),
   });
   const j = await r.json();
+  if (r.status === 409 && j.code === 'facture_non_payee') throw new FactureNonPayeeError(j.error);
   if (!r.ok) throw new Error(j.error ?? 'Livraison impossible');
   const cibles = j.parts as { path: string; token: string }[];
   const publies: { path: string; taille: number; nb: number }[] = [];
@@ -260,9 +282,11 @@ export async function livrerFichiers(albumId: string, files: File[], jours: numb
     publies.push({ path: cibles[i].path, taille: data.byteLength, nb: groupes[i].length });
   }
   const p = await apiFetch(`/api/galeries/${albumId}/livraison`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publier', parts: publies, jours }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'publier', parts: publies, jours, forcer }),
   });
-  if (!p.ok) throw new Error(((await p.json()) as { error?: string }).error ?? 'Publication impossible');
+  const pj = await p.json().catch(() => ({})) as { error?: string; email_envoye?: boolean };
+  if (!p.ok) throw new Error(pj.error ?? 'Publication impossible');
+  return pj;
 }
 
 export async function actionLivraison(albumId: string, action: 'prolonger' | 'supprimer', jours = 30) {

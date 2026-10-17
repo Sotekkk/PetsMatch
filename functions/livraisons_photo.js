@@ -3,7 +3,7 @@ const https = require("https");
 
 // Livraisons photo (galeries privées) — stockage TEMPORAIRE des ZIP de
 // fichiers finaux (bucket privé « livraisons », table album_livraisons) :
-//  • 3 jours avant l'expiration : le client (s'il a un compte) et le
+//  • la veille de l'expiration : le client (s'il a un compte) et le
 //    photographe sont prévenus une seule fois (rappel_envoye) ;
 //  • à l'expiration : ZIP supprimés du stockage + lignes supprimées.
 // Les aperçus de la galerie ne sont jamais touchés. Règle annoncée au client
@@ -53,11 +53,12 @@ exports.purgerLivraisonsPhoto = functions
     .timeZone("Europe/Paris")
     .onRun(async () => {
         const maintenant = new Date();
-        const dansTroisJours = new Date(maintenant.getTime() + 3 * 86400000).toISOString();
+        // Livraisons courtes (3 à 14 jours) : rappel la veille de la suppression.
+        const demain = new Date(maintenant.getTime() + 86400000).toISOString();
 
-        // 1. Rappels J-3 (une fois par galerie).
+        // 1. Rappels la veille (une fois par galerie).
         const aRappeler = await httpRequest("GET",
-            `/rest/v1/album_livraisons?rappel_envoye=eq.false&expire_le=lt.${encodeURIComponent(dansTroisJours)}` +
+            `/rest/v1/album_livraisons?rappel_envoye=eq.false&expire_le=lt.${encodeURIComponent(demain)}` +
             `&expire_le=gt.${encodeURIComponent(maintenant.toISOString())}&select=id,album_id,expire_le`);
         const rappels = Array.isArray(aRappeler.body) ? aRappeler.body : [];
         const albumsRappel = [...new Set(rappels.map((r) => r.album_id))];

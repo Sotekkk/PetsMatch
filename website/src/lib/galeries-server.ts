@@ -21,7 +21,7 @@ export interface AlbumRow {
   description?: string | null; statut?: string | null; date_seance?: string | null; couverture_url?: string | null;
   filigrane?: boolean | null; partage_client?: boolean | null; created_at: string; updated_at?: string | null;
   selection_confirmee_le?: string | null; selection_commentaire?: string | null; nb_photos_incluses?: number | null;
-  livree_le?: string | null; prix_photo_supp?: number | null;
+  livree_le?: string | null; prix_photo_supp?: number | null; client_email?: string | null;
 }
 export const BUCKET_LIVRAISONS = 'livraisons';
 
@@ -111,7 +111,7 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
   const studio = await nomStudio(album);
   // Livraison en cours (sans URL : le téléchargement passe par une URL
   // signée de 10 min, demandée au moment du clic).
-  const { data: liv } = await admin.from('album_livraisons').select('id, numero, nom_fichier, taille_octets, nb_fichiers, expire_le, telechargements')
+  const { data: liv } = await admin.from('album_livraisons').select('id, numero, nom_fichier, taille_octets, nb_fichiers, expire_le, telechargements, prolongee')
     .eq('album_id', id).gt('expire_le', new Date().toISOString()).order('numero');
 
   return {
@@ -124,7 +124,8 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
       nb_photos_incluses: album.nb_photos_incluses ?? null, livree_le: album.livree_le ?? null,
       prix_photo_supp: album.prix_photo_supp != null ? Number(album.prix_photo_supp) : null,
       // Données de gestion réservées au photographe.
-      ...(role === 'pro' ? { rdv_id: album.rdv_id, client_uid: album.client_uid, client_profile_id: album.client_profile_id } : {}),
+      ...(role === 'pro' ? { rdv_id: album.rdv_id, client_uid: album.client_uid, client_profile_id: album.client_profile_id,
+        client_email: await emailClientAlbum(album) } : {}),
     },
     studio,
     photos: photos.map(ph => ({
@@ -133,8 +134,70 @@ export async function contenuGalerie(album: AlbumRow, role: 'pro' | 'client') {
       largeur: ph.largeur, hauteur: ph.hauteur, ordre: ph.ordre, selectionnee: !!ph.selectionnee, aimee: !!ph.aimee,
       ...(role === 'pro' ? { nom_fichier: ph.nom_fichier, storage_path: ph.storage_path, favori: ph.favori } : {}),
     })).filter(ph => !!ph.url),
-    livraison: ((liv ?? []) as { id: string; numero: number; nom_fichier: string; taille_octets: number | null; nb_fichiers: number | null; expire_le: string; telechargements: number }[])
+    livraison: ((liv ?? []) as { id: string; numero: number; nom_fichier: string; taille_octets: number | null; nb_fichiers: number | null; expire_le: string; telechargements: number; prolongee?: boolean }[])
       .map(l => ({ id: l.id, numero: l.numero, nom: l.nom_fichier, taille: l.taille_octets, nb: l.nb_fichiers, expire_le: l.expire_le,
-        ...(role === 'pro' ? { telechargements: l.telechargements } : {}) })),
+        ...(role === 'pro' ? { telechargements: l.telechargements, prolongee: !!l.prolongee } : {}) })),
+    // Photographe : facture de la séance (paiement avant livraison).
+    ...(role === 'pro' ? { facture: await (async () => {
+      const f = await factureSeance(album);
+      return f ? { statut: String(f.statut ?? ''), numero: String(f.numero_affichage ?? f.numero_facture ?? ''), total_ttc: Number(f.total_ttc ?? 0) } : null;
+    })() } : {}),
   };
+}
+
+/** E-mail du client : saisi sur la galerie, sinon son profil, sinon le rendez-vous. */
+export async function emailClientAlbum(album: AlbumRow): Promise<string | null> {
+  if (album.client_email?.trim()) return album.client_email.trim();
+  if (album.client_profile_id) {
+    const { data } = await admin.from('user_profiles_complet').select('email_contact').eq('id', album.client_profile_id).maybeSingle();
+    const e = (data as { email_contact?: string | null } | null)?.email_contact?.trim();
+    if (e) return e;
+  }
+  if (album.rdv_id) {
+    const { data } = await admin.from('rdv').select('client_email_manuel').eq('id', album.rdv_id).maybeSingle();
+    const e = (data as { client_email_manuel?: string | null } | null)?.client_email_manuel?.trim();
+    if (e) return e;
+  }
+  return null;
+}
+
+/** Nom affiché du client (profil, sinon rendez-vous). */
+export async function nomClientAlbum(album: AlbumRow): Promise<string> {
+  if (album.client_profile_id) {
+    const { data } = await admin.from('user_profiles_complet').select('firstname, lastname').eq('id', album.client_profile_id).maybeSingle();
+    const p = data as { firstname?: string | null; lastname?: string | null } | null;
+    const n = `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
+    if (n) return n;
+  }
+  if (album.rdv_id) {
+    const { data } = await admin.from('rdv').select('client_nom_manuel').eq('id', album.rdv_id).maybeSingle();
+    const n = (data as { client_nom_manuel?: string | null } | null)?.client_nom_manuel?.trim();
+    if (n) return n;
+  }
+  return '';
+}
+
+/** Lien privé « client » actif jusqu'à au moins `jusquA` (créé ou prolongé au besoin). */
+export async function lienClientAlbum(albumId: string, jusquA: Date): Promise<string> {
+  const { data } = await admin.from('album_partage').select('id, token, expire_at')
+    .eq('album_id', albumId).eq('type', 'client').eq('actif', true).gt('expire_at', new Date().toISOString())
+    .order('expire_at', { ascending: false }).limit(1);
+  const l = (data ?? [])[0] as { id: string; token: string; expire_at: string } | undefined;
+  if (l) {
+    if (new Date(l.expire_at) < jusquA) await admin.from('album_partage').update({ expire_at: jusquA.toISOString() }).eq('id', l.id);
+    return l.token;
+  }
+  const { data: cree, error } = await admin.from('album_partage')
+    .insert({ album_id: albumId, type: 'client', expire_at: jusquA.toISOString(), actif: true }).select('token').single();
+  if (error || !cree) throw new Error(error?.message ?? 'Lien impossible');
+  return (cree as { token: string }).token;
+}
+
+/** Facture de la séance (hors acompte, avoir et annulée), la plus récente. */
+export async function factureSeance(album: AlbumRow): Promise<Record<string, unknown> | null> {
+  if (!album.rdv_id) return null;
+  const { data } = await admin.from('factures').select('*').eq('source_rdv_id', album.rdv_id)
+    .neq('statut', 'annulee').order('created_at', { ascending: false });
+  const l = ((data ?? []) as Record<string, unknown>[]).filter(f => f.type_facture !== 'acompte' && f.type_facture !== 'avoir');
+  return l[0] ?? null;
 }

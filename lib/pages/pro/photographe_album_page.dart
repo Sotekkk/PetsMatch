@@ -50,8 +50,16 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
   List<Map<String, dynamic>> _livraison = [];
   bool _filtreSel = false;
   String? _livEnCours;
+  final _emailClientCtrl = TextEditingController();
+  Map<String, dynamic>? _facture;
   final Set<String> _sel = {};
   (int, int)? _progres;
+
+  @override
+  void dispose() {
+    _emailClientCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -110,6 +118,8 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
       _studio = (c['studio'] as Map?)?['nom']?.toString() ?? '';
       _photos = List<Map<String, dynamic>>.from((c['photos'] as List).map((e) => Map<String, dynamic>.from(e as Map)));
       _livraison = List<Map<String, dynamic>>.from(((c['livraison'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)));
+      _facture = c['facture'] is Map ? Map<String, dynamic>.from(c['facture'] as Map) : null;
+      if (_emailClientCtrl.text.isEmpty) _emailClientCtrl.text = _album['client_email']?.toString() ?? '';
       _sel.removeWhere((id) => !_photos.any((p) => p['id'] == id));
       _liens = List<Map<String, dynamic>>.from(await _supa.from('album_partage').select('id, token, expire_at, actif')
           .eq('album_id', _albumId!).eq('type', 'client').order('created_at', ascending: false));
@@ -224,14 +234,32 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
 
   int get _nbSel => _photos.where((p) => p['selectionnee'] == true).length;
 
-  Future<void> _livrer(int jours) async {
-    final res = await FilePicker.pickFiles(allowMultiple: true);
-    final fichiers = (res?.files ?? []).where((f) => f.path != null).map((f) => File(f.path!)).toList();
+  Future<void> _livrer(int jours, {List<File>? deja, bool forcer = false}) async {
+    var fichiers = deja ?? const <File>[];
+    if (deja == null) {
+      final res = await FilePicker.pickFiles(allowMultiple: true);
+      fichiers = (res?.files ?? []).where((f) => f.path != null).map((f) => File(f.path!)).toList();
+    }
     if (fichiers.isEmpty) return;
     setState(() => _livEnCours = 'Préparation…');
     try {
-      await GaleriesApi.livrer(_albumId!, fichiers, jours, (t) { if (mounted) setState(() => _livEnCours = t); });
-      _snack('Livraison envoyée${_album['partage_client'] == true ? ' : votre client est prévenu' : ''}');
+      final email = await GaleriesApi.livrer(_albumId!, fichiers, jours, (t) { if (mounted) setState(() => _livEnCours = t); }, forcer: forcer);
+      _snack(email ? 'Livraison envoyée : votre client a reçu un e-mail avec le lien et la date limite'
+          : 'Livraison publiée. Aucun e-mail envoyé : renseignez l\'adresse du client dans les réglages de partage.');
+    } on FactureNonPayeeException catch (e) {
+      if (mounted) setState(() => _livEnCours = null);
+      if (!mounted) return;
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Facture non payée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('${e.message}\n\nLa livraison se fait normalement une fois la facture payée. Livrer quand même ?',
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Attendre le paiement')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Livrer quand même')),
+        ],
+      ));
+      if (ok == true) return _livrer(jours, deja: fichiers, forcer: true);
+      return;
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     }
@@ -239,9 +267,21 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
     _charger();
   }
 
+  Future<void> _envoyerParEmail(String message) async {
+    final email = _emailClientCtrl.text.trim();
+    if (email.isEmpty) { _snack('Renseignez l\'e-mail du client'); return; }
+    try {
+      await GaleriesApi.envoyerGalerie(_albumId!, email, message);
+      _snack('Galerie envoyée par e-mail à $email');
+      await _charger();
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   Future<void> _selectionEtLivraison() async {
     final incluses = TextEditingController(text: _album['nb_photos_incluses']?.toString() ?? '');
-    var jours = 30;
+    var jours = GaleriesApi.joursLivraisonDefaut;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -287,23 +327,30 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
               Text('$nbLivres fichiers · ${GaleriesApi.taille(_livraison.fold<num>(0, (n, l) => n + ((l['taille'] as num?) ?? 0)))} · ${_livraison.length} ZIP',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
               if (exp != null)
-                Text('Supprimés automatiquement le ${DateFormat('dd/MM/yyyy').format(exp)} (client et vous prévenus 3 jours avant).',
+                Text('Supprimés automatiquement le ${DateFormat('dd/MM/yyyy').format(exp)} (client et vous prévenus la veille).',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _rouge)),
               Text('Téléchargements par le client : $telech', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
               Row(children: [
-                TextButton(onPressed: () async {
-                  try { await GaleriesApi.actionLivraison(_albumId!, 'prolonger'); await _charger(); setM(() {}); } catch (e) { _snack(e.toString()); }
-                }, child: const Text('Prolonger de 30 jours', style: TextStyle(fontFamily: 'Galey', color: _teal))),
+                if (_livraison.first['prolongee'] != true)
+                  TextButton(onPressed: () async {
+                    try { await GaleriesApi.actionLivraison(_albumId!, 'prolonger'); await _charger(); setM(() {}); } catch (e) { _snack(e.toString()); }
+                  }, child: const Text('Prolonger de 7 jours (une fois)', style: TextStyle(fontFamily: 'Galey', color: _teal))),
                 TextButton(onPressed: () async {
                   try { await GaleriesApi.actionLivraison(_albumId!, 'supprimer'); await _charger(); setM(() {}); } catch (e) { _snack(e.toString()); }
                 }, child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: _rouge))),
               ]),
             ] else
               Text('Aucune livraison en cours.', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+            const SizedBox(height: 4),
+            Text(_facture == null
+                ? 'Aucune facture : émettez-la après la sélection du client (dossier de la séance).'
+                : 'Facture n° ${_facture!['numero']} : ${_facture!['statut'] == 'payee' ? 'payée (jointe acquittée à l\'e-mail de livraison)' : 'non payée — la livraison attend le paiement'}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _facture?['statut'] == 'payee' ? const Color(0xFF2E7D5E) : const Color(0xFFD97706))),
             if (_premium) ...[
               const SizedBox(height: 6),
+              const Text('À télécharger sous', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
               Wrap(spacing: 6, children: [
-                for (final j in [15, 30, 60])
+                for (final j in GaleriesApi.joursLivraison)
                   ChoiceChip(
                     label: Text('$j jours', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: jours == j ? Colors.white : _ink)),
                     selected: jours == j, showCheckmark: false, selectedColor: _teal,
@@ -319,8 +366,8 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               )),
               const SizedBox(height: 6),
-              Text('Fichiers regroupés en ZIP (45 Mo max par archive) dans un stockage temporaire privé : seul le client peut les télécharger, '
-                  'puis ils sont supprimés. La galerie passe en « Livrée » (sans la marquer payée).',
+              Text('500 Mo maximum, en ZIP (45 Mo par archive), dans un stockage temporaire privé. Le client reçoit un e-mail avec le lien, '
+                  'la date limite de téléchargement et la facture acquittée ; les fichiers sont ensuite supprimés.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
             ],
           ]),
@@ -330,6 +377,7 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
   }
 
   Future<void> _reglages() async {
+    final motCtrl = TextEditingController();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -353,6 +401,29 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
             Text('Une galerie livrée n\'est pas considérée comme payée.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
             const Divider(height: 28),
             const Text('Partage', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _emailClientCtrl, keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(labelText: 'E-mail du client', border: OutlineInputBorder(), isDense: true),
+            ),
+            const SizedBox(height: 6),
+            Builder(builder: (_) {
+              final mot = motCtrl;
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                TextField(controller: mot, maxLines: 2,
+                    decoration: const InputDecoration(labelText: 'Petit mot pour le client (facultatif)', border: OutlineInputBorder(), isDense: true)),
+                const SizedBox(height: 6),
+                FilledButton.icon(
+                  onPressed: !_premium || _photos.isEmpty ? null : () => apres(_envoyerParEmail(mot.text.trim())),
+                  style: FilledButton.styleFrom(backgroundColor: _teal),
+                  icon: const Icon(Icons.mail_outline, size: 18),
+                  label: const Text('Envoyer la galerie par e-mail', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                ),
+              ]);
+            }),
+            Text('Avec ou sans compte PetsMatch : le client choisit ses photos depuis le lien. La facture et la livraison lui seront envoyées à cette adresse.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            const SizedBox(height: 6),
             if (_album['client_uid'] != null)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero, activeThumbColor: _teal,

@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     await admin.from('notifications').insert({
       uid: album.pro_uid, type: 'galerie_selection_recue', title: 'Sélection reçue',
-      body: `Votre client a confirmé sa sélection de ${count} photo${count > 1 ? 's' : ''} — « ${album.titre ?? 'Séance photo'} ».`,
+      body: `Votre client a confirmé sa sélection de ${count} photo${count > 1 ? 's' : ''} — « ${album.titre ?? 'Séance photo'} ». Envoyez-lui la facture : la livraison se fait une fois payée.`,
       ...(album.pro_profile_id ? { profile_id: album.pro_profile_id } : {}),
       data: { albumId: id }, read: false,
     });

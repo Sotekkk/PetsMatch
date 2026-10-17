@@ -29,6 +29,14 @@ const List<(String, String)> kStatutsGalerie = [
   ('archivee', 'Archivée'),
 ];
 
+/// Livraison refusée tant que la facture de la séance n'est pas payée.
+class FactureNonPayeeException implements Exception {
+  final String message;
+  const FactureNonPayeeException(this.message);
+  @override
+  String toString() => message;
+}
+
 class GaleriesApi {
   /// Réponse JSON des routes du site ; une page HTML (route absente tant que
   /// le site n'est pas redéployé, erreur serveur) donne un message lisible.
@@ -203,11 +211,29 @@ class GaleriesApi {
 
   /// Taille max d'une archive (limite d'envoi du stockage).
   static const partMax = 45 * 1024 * 1024;
+  /// Volume max d'une livraison (stockage temporaire) et durées proposées.
+  static const livraisonMax = 500 * 1024 * 1024;
+  static const joursLivraison = [3, 7, 14];
+  static const joursLivraisonDefaut = 7;
+
+  /// Photographe : envoie la galerie au client par e-mail (adresse enregistrée sur la galerie).
+  static Future<void> envoyerGalerie(String albumId, String email, String message) async {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/envoyer'),
+        headers: await siteApiHeaders(), body: jsonEncode({'email': email, 'message': message}));
+    if (r.statusCode != 200) throw Exception(_json(r)['error'] ?? 'Envoi impossible');
+  }
 
   /// Photographe : regroupe les fichiers finaux en ZIP (45 Mo max chacun,
   /// sans recompression, écrits sur disque), les envoie au stockage
   /// temporaire privé puis publie la livraison.
-  static Future<void> livrer(String albumId, List<File> fichiers, int jours, void Function(String) progres) async {
+  /// Renvoie `email_envoye`. Lève [FactureNonPayeeException] tant que la
+  /// facture de la séance n'est pas payée (sauf [forcer]).
+  static Future<bool> livrer(String albumId, List<File> fichiers, int jours, void Function(String) progres, {bool forcer = false}) async {
+    var total = 0;
+    for (final f in fichiers) { total += await f.length(); }
+    if (total > livraisonMax) {
+      throw Exception('Livraison limitée à 500 Mo : compressez les fichiers (JPEG haute qualité) ou faites deux livraisons.');
+    }
     final groupes = <List<File>>[];
     var courant = <File>[];
     var taille = 0;
@@ -218,8 +244,9 @@ class GaleriesApi {
     }
     if (courant.isNotEmpty) groupes.add(courant);
     final r = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
-        headers: await siteApiHeaders(), body: jsonEncode({'action': 'preparer', 'parts': groupes.length}));
+        headers: await siteApiHeaders(), body: jsonEncode({'action': 'preparer', 'parts': groupes.length, 'forcer': forcer}));
     final j = _json(r);
+    if (r.statusCode == 409 && j['code'] == 'facture_non_payee') throw FactureNonPayeeException(j['error']?.toString() ?? '');
     if (r.statusCode != 200) throw Exception(j['error'] ?? 'Livraison impossible');
     final cibles = (j['parts'] as List).cast<Map<String, dynamic>>();
     final dossier = await getTemporaryDirectory();
@@ -253,8 +280,10 @@ class GaleriesApi {
       }
     }
     final p = await http.post(Uri.parse('$kSiteBaseUrl/api/galeries/$albumId/livraison'),
-        headers: await siteApiHeaders(), body: jsonEncode({'action': 'publier', 'parts': publies, 'jours': jours}));
-    if (p.statusCode != 200) throw Exception(_json(p)['error'] ?? 'Publication impossible');
+        headers: await siteApiHeaders(), body: jsonEncode({'action': 'publier', 'parts': publies, 'jours': jours, 'forcer': forcer}));
+    final pj = _json(p);
+    if (p.statusCode != 200) throw Exception(pj['error'] ?? 'Publication impossible');
+    return pj['email_envoye'] == true;
   }
 
   static Future<void> actionLivraison(String albumId, String action, {int jours = 30}) async {

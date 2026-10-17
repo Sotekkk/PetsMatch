@@ -12,7 +12,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useProfessionPlanCode } from '@/lib/use-plan';
 import { STATUTS_GALERIE } from '@/lib/photographe';
-import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, type ContenuGalerie } from '@/lib/galeries-client';
+import { chargerGalerie, importerPhotos, supprimerPhotos, supprimerGalerie, livrerFichiers, actionLivraison, fmtTaille, envoyerGalerie,
+  FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, type ContenuGalerie } from '@/lib/galeries-client';
 
 const TEAL = '#0C5C6C';
 const ROUGE = '#B3261E';
@@ -39,14 +40,18 @@ export default function GalerieStudioPage() {
   const [maintenant, setMaintenant] = useState(0);
   const [filtreSel, setFiltreSel] = useState(false);
   const [finals, setFinals] = useState<File[]>([]);
-  const [joursLiv, setJoursLiv] = useState(30);
+  const [joursLiv, setJoursLiv] = useState(JOURS_LIVRAISON_DEFAUT);
   const [livEnCours, setLivEnCours] = useState('');
+  const [emailClient, setEmailClient] = useState('');
+  const [messageEnvoi, setMessageEnvoi] = useState('');
+  const [envoi, setEnvoi] = useState<'' | 'envoi' | 'ok'>('');
 
   const charger = useCallback(async () => {
     try {
       const c = await chargerGalerie(id);
       if (c.role !== 'pro') { setErr('Galerie réservée au photographe.'); return; }
       setG(c); setTitre(c.album.titre ?? ''); setDescription(c.album.description ?? '');
+      setEmailClient(prev => prev || c.album.client_email || '');
       const { data } = await supabase.from('album_partage').select('id, token, expire_at, actif').eq('album_id', id).eq('type', 'client').order('created_at', { ascending: false });
       setLiens((data ?? []) as Lien[]);
       setMaintenant(Date.now());
@@ -139,13 +144,27 @@ export default function GalerieStudioPage() {
     else charger();
   }
 
-  async function livrer() {
+  async function livrer(forcer = false) {
     if (!finals.length) return;
     try {
-      await livrerFichiers(id, finals, joursLiv, setLivEnCours);
+      const r = await livrerFichiers(id, finals, joursLiv, setLivEnCours, forcer);
       setFinals([]); setLivEnCours('');
+      if (!r.email_envoye) alert("Livraison publiée. Aucun e-mail envoyé : renseignez l'adresse du client dans « Partage » puis prévenez-le.");
       charger();
-    } catch (e) { setLivEnCours(''); alert((e as Error).message); }
+    } catch (e) {
+      setLivEnCours('');
+      if (e instanceof FactureNonPayeeError) {
+        if (confirm(`${e.message}\n\nLa livraison se fait normalement une fois la facture payée. Livrer quand même ?`)) livrer(true);
+        return;
+      }
+      alert((e as Error).message);
+    }
+  }
+
+  async function envoyerParEmail() {
+    setEnvoi('envoi');
+    try { await envoyerGalerie(id, emailClient.trim(), messageEnvoi); setEnvoi('ok'); setMessageEnvoi(''); charger(); }
+    catch (e) { setEnvoi(''); alert((e as Error).message); }
   }
 
   if (err) return <p className="text-center py-24 text-sm text-gray-500">{err}</p>;
@@ -272,14 +291,19 @@ export default function GalerieStudioPage() {
               {livraison.length > 0 ? (
                 <div className="text-sm space-y-1">
                   <p>{livraison.reduce((n, l) => n + (l.nb ?? 0), 0)} fichiers · {fmtTaille(livraison.reduce((n, l) => n + (l.taille ?? 0), 0))} · {livraison.length} ZIP</p>
-                  <p className="text-xs" style={{ color: ROUGE }}>Supprimés automatiquement le {new Date(livraison[0].expire_le).toLocaleDateString('fr-FR')} (client et vous prévenus 3 jours avant).</p>
+                  <p className="text-xs" style={{ color: ROUGE }}>Supprimés automatiquement le {new Date(livraison[0].expire_le).toLocaleDateString('fr-FR')} (client et vous prévenus la veille).</p>
                   <p className="text-xs text-gray-500">Téléchargements par le client : {Math.max(...livraison.map(l => l.telechargements ?? 0))}</p>
                   <div className="flex gap-3 pt-1">
-                    <button onClick={async () => { try { await actionLivraison(id, 'prolonger', 30); charger(); } catch (e) { alert((e as Error).message); } }} className="text-xs font-semibold" style={{ color: TEAL }}>Prolonger de 30 jours</button>
+                    {!livraison[0].prolongee && (
+                      <button onClick={async () => { try { await actionLivraison(id, 'prolonger'); charger(); } catch (e) { alert((e as Error).message); } }} className="text-xs font-semibold" style={{ color: TEAL }}>Prolonger de 7 jours (une fois)</button>
+                    )}
                     <button onClick={async () => { if (!confirm('Supprimer la livraison ? Le client ne pourra plus télécharger les fichiers.')) return; try { await actionLivraison(id, 'supprimer'); charger(); } catch (e) { alert((e as Error).message); } }} className="text-xs font-semibold" style={{ color: ROUGE }}>Supprimer</button>
                   </div>
                 </div>
               ) : <p className="text-xs text-gray-500">Aucune livraison en cours.</p>}
+              <p className="text-xs" style={{ color: g.facture?.statut === 'payee' ? '#2E7D5E' : '#D97706' }}>
+                {g.facture ? `Facture n° ${g.facture.numero} : ${g.facture.statut === 'payee' ? 'payée (jointe acquittée à l\'e-mail de livraison)' : 'non payée — la livraison attend le paiement'}` : 'Aucune facture : émettez-la après la sélection du client (dossier de la séance).'}
+              </p>
               {premium && (
                 <div className="border-t border-gray-100 pt-2 space-y-2">
                   <label className="block text-xs font-semibold cursor-pointer" style={{ color: TEAL }}>
@@ -288,21 +312,37 @@ export default function GalerieStudioPage() {
                   </label>
                   {finals.length > 0 && (
                     <>
+                      {finals.reduce((n, f) => n + f.size, 0) > LIVRAISON_MAX && (
+                        <p className="text-xs" style={{ color: ROUGE }}>Plus de 500 Mo : compressez les fichiers (JPEG haute qualité) ou faites deux livraisons.</p>
+                      )}
                       <select value={joursLiv} onChange={e => setJoursLiv(Number(e.target.value))} className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm bg-white">
-                        <option value={15}>Disponible 15 jours</option><option value={30}>Disponible 30 jours</option><option value={60}>Disponible 60 jours</option>
+                        {JOURS_LIVRAISON.map(j => <option key={j} value={j}>À télécharger sous {j} jours</option>)}
                       </select>
-                      <button onClick={livrer} disabled={!!livEnCours} className="w-full py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>
+                      <button onClick={() => livrer()} disabled={!!livEnCours || finals.reduce((n, f) => n + f.size, 0) > LIVRAISON_MAX}
+                        className="w-full py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>
                         {livEnCours || 'Livrer au client'}
                       </button>
                     </>
                   )}
-                  <p className="text-[11px] text-gray-400">Fichiers regroupés en ZIP (45 Mo max par archive) dans un stockage temporaire privé : seul le client peut les télécharger, puis ils sont supprimés. La galerie passe en « Livrée » (sans la marquer payée).</p>
+                  <p className="text-[11px] text-gray-400">500 Mo maximum, en ZIP (45 Mo par archive), dans un stockage temporaire privé. Le client reçoit un e-mail avec le lien, la date limite de téléchargement et la facture acquittée ; les fichiers sont ensuite supprimés.</p>
                 </div>
               )}
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
               <p className="text-sm font-bold text-[#1F2A2E]">Partage</p>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-gray-600">E-mail du client</label>
+                <input type="email" value={emailClient} onChange={e => { setEmailClient(e.target.value); setEnvoi(''); }} placeholder="client@exemple.fr"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <textarea value={messageEnvoi} onChange={e => setMessageEnvoi(e.target.value)} rows={2} placeholder="Petit mot pour le client (facultatif)"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                <button onClick={envoyerParEmail} disabled={!premium || envoi === 'envoi' || !emailClient.trim() || !photos.length}
+                  className="w-full py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={{ background: TEAL }}>
+                  {envoi === 'envoi' ? 'Envoi…' : envoi === 'ok' ? 'Galerie envoyée' : 'Envoyer la galerie par e-mail'}
+                </button>
+                <p className="text-[11px] text-gray-400">Avec ou sans compte PetsMatch : le client choisit ses photos depuis le lien. La facture et la livraison lui seront envoyées à cette adresse.</p>
+              </div>
               {album.client_uid ? (
                 <label className="flex items-start gap-2 text-sm">
                   <input type="checkbox" checked={album.partage_client} onChange={e => partageClient(e.target.checked)} className="mt-0.5" />

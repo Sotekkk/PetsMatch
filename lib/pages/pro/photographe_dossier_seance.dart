@@ -280,7 +280,22 @@ class _DossierSeanceState extends State<_DossierSeance> {
   }
 
   // ── Facture ──
-  void _facturer() {
+  Future<void> _facturer() async {
+    // Acompte déjà réglé pour cette séance : déduit (facture de solde).
+    final deductions = <FacturePrefillLigne>[];
+    try {
+      final acomptes = await _supa.from('factures').select('total_ttc, numero_affichage, numero_facture')
+          .eq('source_rdv_id', r['id']).eq('type_facture', 'acompte').eq('statut', 'payee');
+      for (final a in acomptes as List) {
+        final m = (a['total_ttc'] as num?)?.toDouble() ?? 0;
+        if (m > 0) {
+          deductions.add(FacturePrefillLigne(
+              designation: 'Acompte déjà réglé (facture n° ${a['numero_affichage'] ?? a['numero_facture'] ?? ''})',
+              prixTTC: -m, quantite: 1, tauxTVA: 20));
+        }
+      }
+    } catch (_) {}
+    if (!mounted) return;
     final incluses = (_galerie?['nb_photos_incluses'] as num?)?.toInt();
     final prixSupp = (_galerie?['prix_photo_supp'] as num?)?.toDouble();
     final supp = incluses == null ? 0 : (_nbChoisies - incluses).clamp(0, 9999);
@@ -297,6 +312,7 @@ class _DossierSeanceState extends State<_DossierSeance> {
         FacturePrefillLigne(designation: '$_designation — séance du ${_jour(_debut)}', prixTTC: _prix ?? 0, quantite: 1, tauxTVA: 20),
         if (supp > 0 && prixSupp != null && prixSupp > 0)
           FacturePrefillLigne(designation: 'Photos supplémentaires', prixTTC: prixSupp, quantite: supp.toDouble(), tauxTVA: 20),
+        ...deductions,
       ],
       sourceRdvId: r['id'].toString(),
       sourceAnimalId: r['animal_id']?.toString(),

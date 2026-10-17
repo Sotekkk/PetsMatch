@@ -17,6 +17,8 @@ const WHITELISTED_PATHS = [
   // Lien de facture pension envoyé au propriétaire (token UUID) — doit rester
   // consultable même si le destinataire n'a pas l'accès bêta.
   '/facture-pension/',
+  // Facture envoyée par e-mail à un client sans compte (lien à jeton).
+  '/facture/',
   // Galeries photo ouvertes par lien privé (lien client du photographe, lien
   // « proches » partagé par le client) : destinataires sans accès bêta.
   '/album/',
