@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
@@ -769,7 +770,13 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     if (picked == null || picked.isEmpty || !mounted) return;
 
     final cadenceCtrl = TextEditingController();
-    DateTime? echeance;
+    // Durée : 2 semaines par défaut ; null = jusqu'à validation.
+    DateTime? echeance = DateTime.now().add(const Duration(days: kDureeDefautJours));
+    int? dureeJours = kDureeDefautJours;
+    // Réussites à obtenir (exercices sans étapes).
+    int nbValidations = 1;
+    final sansEtapes = picked.where((e) => ((e['etapes'] as List?) ?? const []).isEmpty).length;
+    final avecEtapes = picked.length - sansEtapes;
     String? objectifId;
     bool rappels = false;
 
@@ -797,20 +804,61 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 contentPadding: const EdgeInsets.all(12),
               ),
             ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final d = await showDatePicker(
-                  context: ctx, initialDate: DateTime.now().add(const Duration(days: 7)),
-                  firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)),
-                );
-                if (d != null) setSheet(() => echeance = d);
-              },
-              icon: const Icon(Icons.event_outlined, size: 16),
-              label: Text(echeance == null ? 'Échéance (facultatif)'
-                  : 'Échéance : ${echeance!.day}/${echeance!.month}/${echeance!.year}',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            ),
+            const SizedBox(height: 12),
+            const Text('Durée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final d in kDureesExercice)
+                ChoiceChip(
+                  label: Text(d.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                  selected: dureeJours == d.$2 && (d.$2 != null || echeance == null),
+                  selectedColor: _kOrange.withValues(alpha: 0.18),
+                  onSelected: (_) => setSheet(() {
+                    dureeJours = d.$2;
+                    echeance = d.$2 == null ? null : DateTime.now().add(Duration(days: d.$2!));
+                  }),
+                ),
+              ActionChip(
+                avatar: const Icon(Icons.event_outlined, size: 16),
+                label: Text(dureeJours == -1 && echeance != null
+                    ? "Jusqu'au ${echeance!.day}/${echeance!.month}"
+                    : 'Date…', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                onPressed: () async {
+                  final d = await showDatePicker(
+                    context: ctx, initialDate: echeance ?? DateTime.now().add(const Duration(days: 14)),
+                    firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)),
+                  );
+                  if (d != null) setSheet(() { echeance = d; dureeJours = -1; });
+                },
+              ),
+            ]),
+            Text(echeance == null
+                ? 'Rappels jusqu\'à ce que la famille valide l\'exercice.'
+                : 'Rappels jusqu\'au ${echeance!.day}/${echeance!.month}/${echeance!.year} ou jusqu\'à validation.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            if (sansEtapes > 0) ...[
+              const SizedBox(height: 12),
+              Text(avecEtapes > 0 ? 'Réussites à obtenir (exercices sans étapes)' : 'Réussites à obtenir',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, children: [
+                for (final n in const [1, 2, 3, 5, 7])
+                  ChoiceChip(
+                    label: Text(n == 1 ? '1 (une fois)' : '$n jours', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                    selected: nbValidations == n,
+                    selectedColor: _kOrange.withValues(alpha: 0.18),
+                    onSelected: (_) => setSheet(() => nbValidations = n),
+                  ),
+              ]),
+              Text('La famille valide une réussite par jour ; l\'exercice est terminé au total atteint.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+            ],
+            if (avecEtapes > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('${avecEtapes == 1 && picked.length == 1 ? 'Cet exercice a' : '$avecEtapes exercice${avecEtapes > 1 ? 's ont' : ' a'}'} des étapes : la famille les valide une à une.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+              ),
             if (_objectifs.isNotEmpty) ...[
               const SizedBox(height: 10),
               DropdownButtonFormField<String?>(
@@ -841,7 +889,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               onChanged: (v) => setSheet(() => rappels = v),
               title: const Text('Rappel quotidien à la famille',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: Text('Une notif chaque matin tant que l\'exercice n\'est pas fait',
+              subtitle: Text('Une notif chaque matin tant que l\'exercice n\'est pas terminé, pendant la durée choisie',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
             ),
             const SizedBox(height: 8),
@@ -875,7 +923,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         'description_snapshot': e['description'],
         'media_snapshot': e['media'] ?? [],
         if (cadenceCtrl.text.trim().isNotEmpty) 'cadence': cadenceCtrl.text.trim(),
-        if (echeance != null) 'echeance': echeance!.toIso8601String().substring(0, 10),
+        'echeance': echeance?.toIso8601String().substring(0, 10),
+        'etapes_snapshot': e['etapes'] ?? [],
+        'nb_validations': ((e['etapes'] as List?) ?? const []).isEmpty ? nbValidations : 1,
         'rappels_actifs': rappels,
       }).toList();
       await _supa.from('exercices_attribues').insert(rows);
@@ -1653,8 +1703,13 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                         done ? const Color(0xFF6E9E57) : Colors.grey.shade500),
                     if ((ex['cadence']?.toString() ?? '').isNotEmpty)
                       _pill(ex['cadence'].toString(), Colors.grey.shade500),
-                    if (ex['echeance'] != null)
-                      _pill('avant le ${_frDate(ex['echeance'].toString())}', const Color(0xFFD5573B)),
+                    // Progression (étapes / réussites) et durée.
+                    if (progressionExercice(ex).total > 1)
+                      _pill(progressionExercice(ex).etapes.isNotEmpty
+                          ? 'Étape ${progressionExercice(ex).faites}/${progressionExercice(ex).total}'
+                          : '${progressionExercice(ex).faites}/${progressionExercice(ex).total} réussites', _kOrange),
+                    if (libelleDureeExercice(ex) != null)
+                      _pill(libelleDureeExercice(ex)!, progressionExercice(ex).echue ? Colors.grey.shade500 : const Color(0xFFD5573B)),
                   ]),
                 ])),
                 IconButton(
@@ -1691,11 +1746,6 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         },
       ),
     );
-  }
-
-  String _frDate(String iso) {
-    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(iso);
-    return m == null ? iso : '${m[3]}/${m[2]}';
   }
 
   Widget _objectifsTab() {

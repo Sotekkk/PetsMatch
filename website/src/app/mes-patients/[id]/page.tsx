@@ -1,5 +1,6 @@
 'use client';
 
+import { progression, libelleDuree, echeanceDans, DUREES_EXERCICE, DUREE_DEFAUT_JOURS } from '@/lib/exercices-progression';
 import { SyntheseVet, SyntheseOsteo, DocumentsSantePro } from '@/components/animaux/SanteProTabs';
 import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
 import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal';
@@ -122,10 +123,11 @@ interface EducObjectif {
   id: string; libelle: string; categorie: string | null; statut: string; note: string | null; ordre: number;
   prioritaire?: boolean | null; difficultes?: string | null;
 }
-interface EducExercice { id: string; titre: string; description: string | null; media: unknown; }
+interface EducExercice { id: string; titre: string; description: string | null; media: unknown; etapes?: { titre: string }[] | null; }
 interface EducAttribue {
   id: string; titre_snapshot: string; description_snapshot?: string | null;
   cadence: string | null; echeance: string | null; statut: string; rappels_actifs: boolean;
+  etapes_snapshot?: { titre: string }[] | null; nb_validations?: number | null; validations?: string[] | null;
 }
 interface EducRetour {
   id: string; attribution_id: string; note: string | null;
@@ -585,7 +587,8 @@ function PatientDetailPageInner() {
   const [retours, setRetours] = useState<Record<string, EducRetour[]>>({});
   const [replyFor, setReplyFor] = useState<string | null>(null);
   const [replyNote, setReplyNote] = useState('');
-  const [attrPicker, setAttrPicker] = useState<{ ids: Set<string>; cadence: string; echeance: string; rappels: boolean } | null>(null);
+  // Durée : jours (null = jusqu'à validation, -1 = date choisie) ; nbValidations : réussites (exercices sans étapes).
+  const [attrPicker, setAttrPicker] = useState<{ ids: Set<string>; cadence: string; echeance: string; rappels: boolean; duree: number | null; nbValidations: number } | null>(null);
   const [savingAttr, setSavingAttr] = useState(false);
   const [showAddRapport, setShowAddRapport] = useState(false);
   const [rapportContenu, setRapportContenu] = useState('');
@@ -834,7 +837,7 @@ function PatientDetailPageInner() {
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('education_progression').select('*').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
-        supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
+        supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
         supabase.from('alimentations').select('id, type_ration, marque, gamme, niveau_activite, densite_calorique, notes').eq('animal_id', animalId).maybeSingle(),
         supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
@@ -1438,9 +1441,9 @@ function PatientDetailPageInner() {
   async function openAttrPicker() {
     if (!user?.uid) return;
     const { data } = await supabase.from('exercices_bibliotheque')
-      .select('id, titre, description, media').eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
+      .select('id, titre, description, media, etapes').eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
     setBiblio((data ?? []) as EducExercice[]);
-    setAttrPicker({ ids: new Set(), cadence: '', echeance: '', rappels: false });
+    setAttrPicker({ ids: new Set(), cadence: '', echeance: echeanceDans(DUREE_DEFAUT_JOURS) ?? '', rappels: false, duree: DUREE_DEFAUT_JOURS, nbValidations: 1 });
   }
 
   async function attribuerExercices() {
@@ -1455,6 +1458,8 @@ function PatientDetailPageInner() {
         titre_snapshot: b.titre, description_snapshot: b.description, media_snapshot: b.media ?? [],
         cadence: attrPicker.cadence.trim() || null,
         echeance: attrPicker.echeance || null,
+        etapes_snapshot: b.etapes ?? [],
+        nb_validations: (b.etapes ?? []).length ? 1 : attrPicker.nbValidations,
         rappels_actifs: attrPicker.rappels,
       })));
       if (ownerUid) {
@@ -1471,7 +1476,7 @@ function PatientDetailPageInner() {
       }
       setAttrPicker(null);
       const { data } = await supabase.from('exercices_attribues')
-        .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+        .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false });
       setAttribues((data ?? []) as EducAttribue[]);
     } finally {
       setSavingAttr(false);
@@ -2603,12 +2608,51 @@ function PatientDetailPageInner() {
                 <input value={attrPicker.cadence} onChange={e => setAttrPicker(p => p ? { ...p, cadence: e.target.value } : p)}
                   placeholder="Cadence (facultatif) — ex : 2 fois par jour"
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1" />
-                <input type="date" value={attrPicker.echeance} onChange={e => setAttrPicker(p => p ? { ...p, echeance: e.target.value } : p)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <p className="text-xs font-semibold text-gray-500 pt-1">Durée</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {DUREES_EXERCICE.map(d => (
+                    <button key={d.label} type="button" onClick={() => setAttrPicker(p => p ? { ...p, duree: d.jours, echeance: echeanceDans(d.jours) ?? '' } : p)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                      style={attrPicker.duree === d.jours ? { borderColor: '#EF6C00', color: '#EF6C00', background: '#EF6C0014' } : { borderColor: '#E5E7EB', color: '#6B7280' }}>
+                      {d.label}
+                    </button>
+                  ))}
+                  <input type="date" value={attrPicker.duree === -1 ? attrPicker.echeance : ''} aria-label="Jusqu'à une date"
+                    onChange={e => setAttrPicker(p => p ? { ...p, duree: e.target.value ? -1 : DUREE_DEFAUT_JOURS, echeance: e.target.value || (echeanceDans(DUREE_DEFAUT_JOURS) ?? '') } : p)}
+                    className="border border-gray-200 rounded-lg px-2 py-0.5 text-xs" />
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  {attrPicker.echeance ? `Rappels jusqu'au ${new Date(`${attrPicker.echeance}T12:00:00`).toLocaleDateString('fr-FR')} ou jusqu'à validation.` : "Rappels jusqu'à ce que la famille valide l'exercice."}
+                </p>
+                {(() => {
+                  const choisis = biblio.filter(b => attrPicker.ids.has(b.id));
+                  const sansEtapes = choisis.filter(b => !(b.etapes ?? []).length).length;
+                  const avecEtapes = choisis.length - sansEtapes;
+                  return (
+                    <>
+                      {sansEtapes > 0 && (
+                        <>
+                          <p className="text-xs font-semibold text-gray-500 pt-1">{avecEtapes ? 'Réussites à obtenir (exercices sans étapes)' : 'Réussites à obtenir'}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[1, 2, 3, 5, 7].map(n => (
+                              <button key={n} type="button" onClick={() => setAttrPicker(p => p ? { ...p, nbValidations: n } : p)}
+                                className="px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                                style={attrPicker.nbValidations === n ? { borderColor: '#EF6C00', color: '#EF6C00', background: '#EF6C0014' } : { borderColor: '#E5E7EB', color: '#6B7280' }}>
+                                {n === 1 ? '1 (une fois)' : `${n} jours`}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-[11px] text-gray-500">La famille valide une réussite par jour ; l&apos;exercice est terminé au total atteint.</p>
+                        </>
+                      )}
+                      {avecEtapes > 0 && <p className="text-[11px] text-gray-500">{avecEtapes} exercice{avecEtapes > 1 ? 's ont' : ' a'} des étapes : la famille les valide une à une.</p>}
+                    </>
+                  );
+                })()}
                 <label className="flex items-center gap-2 text-sm text-gray-600">
                   <input type="checkbox" checked={attrPicker.rappels}
                     onChange={e => setAttrPicker(p => p ? { ...p, rappels: e.target.checked } : p)} />
-                  Rappel quotidien à la famille tant que non fait
+                  Rappel quotidien à la famille pendant la durée, tant que non terminé
                 </label>
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setAttrPicker(null)} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
@@ -2629,9 +2673,16 @@ function PatientDetailPageInner() {
                       <div className="min-w-0">
                         <p className={`text-sm font-semibold ${a.statut === 'fait' ? 'line-through text-gray-400' : 'text-[#1F2A2E]'}`}>{a.titre_snapshot}</p>
                         <p className="text-xs text-gray-500">
-                          {a.statut === 'fait' ? '✓ Fait par la famille' : 'En attente'}
-                          {a.cadence ? ` · ${a.cadence}` : ''}
-                          {a.echeance ? ` · avant le ${new Date(a.echeance).toLocaleDateString('fr-FR')}` : ''}
+                          {(() => {
+                            const pr = progression(a);
+                            return [
+                              pr.termine ? '✓ Terminé par la famille' : pr.total > 1
+                                ? (pr.etapes.length ? `Étape ${pr.faites}/${pr.total}` : `${pr.faites}/${pr.total} réussites`)
+                                : 'En attente',
+                              a.cadence ?? '',
+                              libelleDuree(a) ?? '',
+                            ].filter(Boolean).join(' · ');
+                          })()}
                         </p>
                       </div>
                       {hasReportAccess && (

@@ -1,5 +1,6 @@
 'use client';
 
+import { progression, libelleDuree, majValidation } from '@/lib/exercices-progression';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { SterilisationCedee } from '@/components/animaux/SterilisationCedee';
 import { InviterAcquereurBouton } from '@/components/animaux/RecuperationAnimal';
@@ -1224,6 +1225,7 @@ interface EduExercice {
   media_snapshot: { type: string; url: string }[] | null;
   cadence: string | null; echeance: string | null; statut: string;
   rappels_actifs?: boolean; rappels_mutes?: boolean;
+  etapes_snapshot?: { titre: string }[] | null; nb_validations?: number | null; validations?: string[] | null;
 }
 interface EduRetour {
   id: string; attribution_id: string; note: string | null;
@@ -1258,7 +1260,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
         .select('id, libelle, categorie, statut, note, acquis_le')
         .eq('animal_id', animalId).order('ordre').order('created_at'),
       supabase.from('exercices_attribues')
-        .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut, rappels_actifs, rappels_mutes')
+        .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut, rappels_actifs, rappels_mutes, etapes_snapshot, nb_validations, validations')
         .eq('animal_id', animalId).order('assigned_at', { ascending: false }),
       supabase.from('forfaits_souscrits')
         .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut')
@@ -1288,11 +1290,12 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
 
   useEffect(() => { reload(); }, [reload]);
 
-  async function toggleExerciceFait(ex: EduExercice) {
-    const next = ex.statut === 'fait' ? 'a_faire' : 'fait';
-    setExercices(prev => prev.map(x => x.id === ex.id ? { ...x, statut: next } : x));
-    await supabase.from('exercices_attribues')
-      .update({ statut: next, updated_at: new Date().toISOString() }).eq('id', ex.id);
+  /** Valide l'étape suivante / la réussite du jour, ou annule la dernière. */
+  async function validerExercice(ex: EduExercice, action: 'valider' | 'annuler') {
+    const maj = majValidation(ex, action);
+    setExercices(prev => prev.map(x => x.id === ex.id ? { ...x, ...maj } : x));
+    const { error } = await supabase.from('exercices_attribues').update(maj).eq('id', ex.id);
+    if (error) setExercices(prev => prev.map(x => x.id === ex.id ? ex : x));
   }
 
   async function uploadRetourImg(file: File) {
@@ -1442,6 +1445,8 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
             {exercices.map(ex => {
               const done = ex.statut === 'fait';
               const media = ex.media_snapshot ?? [];
+              const pr = progression(ex);
+              const duree = libelleDuree(ex);
               return (
                 <div key={ex.id} className={`rounded-xl border p-3 ${done ? 'border-[#6E9E57]' : 'border-gray-100'}`}>
                   <div className="flex items-start justify-between gap-2">
@@ -1456,16 +1461,38 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
                           }}
                           className="text-sm">{ex.rappels_mutes ? '🔕' : '🔔'}</button>
                       )}
-                      <button onClick={() => toggleExerciceFait(ex)}
-                        className={`text-xs font-semibold ${done ? 'text-[#6E9E57]' : 'text-[#7B5EA7]'}`}>
-                        {done ? '✓ Fait' : 'Marquer fait'}
-                      </button>
+                      {done ? (
+                        <button onClick={() => validerExercice(ex, 'annuler')} title="Annuler la dernière validation" className="text-xs font-semibold text-[#6E9E57]">✓ Terminé</button>
+                      ) : pr.total === 1 && (
+                        <button onClick={() => validerExercice(ex, 'valider')} className="text-xs font-semibold text-[#7B5EA7]">Marquer fait</button>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     {ex.cadence && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{ex.cadence}</span>}
-                    {ex.echeance && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#D5573B]/10 text-[#D5573B]">avant le {new Date(ex.echeance).toLocaleDateString('fr-FR')}</span>}
+                    {pr.total > 1 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7B5EA7]/10 text-[#7B5EA7] font-semibold">{pr.etapes.length ? `Étape ${pr.faites}/${pr.total}` : `${pr.faites}/${pr.total} réussites`}</span>}
+                    {duree && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${pr.echue ? 'bg-gray-100 text-gray-500' : 'bg-[#D5573B]/10 text-[#D5573B]'}`}>{duree}</span>}
                   </div>
+                  {pr.etapes.length > 0 && (
+                    <ol className="mt-2 space-y-1">
+                      {pr.etapes.map((e, i) => (
+                        <li key={i} className="flex items-center gap-2 text-xs">
+                          <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-white shrink-0"
+                            style={{ background: i < pr.faites ? '#6E9E57' : i === pr.faites ? '#7B5EA7' : '#D1D5DB' }}>{i < pr.faites ? '✓' : i + 1}</span>
+                          <span className={i < pr.faites ? 'text-gray-400' : i === pr.faites ? 'font-semibold text-gray-800' : 'text-gray-600'}>{e.titre}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  {!done && pr.total > 1 && (
+                    <div className="flex items-center gap-3 mt-2">
+                      <button onClick={() => validerExercice(ex, 'valider')} disabled={!pr.peutValider}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50" style={{ background: '#7B5EA7' }}>
+                        {pr.etapes.length ? `Valider l'étape ${pr.faites + 1}` : pr.dejaAujourdhui ? "Réussite notée aujourd'hui" : "Réussi aujourd'hui"}
+                      </button>
+                      {pr.faites > 0 && <button onClick={() => validerExercice(ex, 'annuler')} className="text-xs text-gray-500">Annuler la dernière</button>}
+                    </div>
+                  )}
                   {ex.description_snapshot && <div className="text-xs text-gray-600 mt-1.5"><RichText value={ex.description_snapshot} /></div>}
                   {media.length > 0 && (
                     <div className="flex gap-2 mt-2 overflow-x-auto">

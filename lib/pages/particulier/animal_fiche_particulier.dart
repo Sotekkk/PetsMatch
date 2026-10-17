@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal;
 import 'package:PetsMatch/widgets/carnet/vermifuge_options.dart';
 import 'dart:async';
@@ -54,8 +55,11 @@ class AnimalFicheParticulierPage extends StatefulWidget {
   final String? animalId;
   final Map<String, dynamic>? initialData;
   final int initialTab; // 0=Identité 1=Carnet 2=Alimentation 3=Documents
+  /// Onglet dynamique à ouvrir dès qu'il apparaît (ex. 'Éducation' depuis
+  /// une notification d'exercice), prioritaire sur [initialTab].
+  final String? initialTabLabel;
 
-  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0});
+  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0, this.initialTabLabel});
 
   @override
   State<AnimalFicheParticulierPage> createState() => _AnimalFicheParticulierPageState();
@@ -503,8 +507,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _hasEducationRapports = hasRap;
       _hasDevis = hasDev;
       _syncTabs();
+      final cible = widget.initialTabLabel;
+      if (cible != null && !_ongletInitialOuvert) {
+        final i = _tabLabelList.indexOf(cible);
+        if (i >= 0 && i < _tabs.length) { _tabs.index = i; _ongletInitialOuvert = true; }
+      }
     });
   }
+  bool _ongletInitialOuvert = false;
 
   // Onglets dynamiques : Documents toujours présent ; Éducation / Pension &
   // Garde n'apparaissent que si l'animal a un suivi correspondant.
@@ -7627,14 +7637,16 @@ class _EducationTabPState extends State<_EducationTabP> {
     );
   }
 
-  Future<void> _toggleExerciceFait(Map<String, dynamic> ex) async {
-    final next = ex['statut'] == 'fait' ? 'a_faire' : 'fait';
-    setState(() => ex['statut'] = next);
+  /// Valide l'étape suivante / la réussite du jour, ou annule la dernière.
+  Future<void> _validerExercice(Map<String, dynamic> ex, {required bool valider}) async {
+    final maj = majValidationExercice(ex, valider: valider);
+    final avant = Map<String, dynamic>.from(ex);
+    setState(() => ex.addAll(maj));
     try {
-      await _supa.from('exercices_attribues')
-          .update({'statut': next, 'updated_at': DateTime.now().toIso8601String()})
-          .eq('id', ex['id']);
-    } catch (_) {}
+      await _supa.from('exercices_attribues').update(maj).eq('id', ex['id']);
+    } catch (_) {
+      if (mounted) setState(() => ex..clear()..addAll(avant));
+    }
   }
 
   Future<void> _toggleRappelMute(Map<String, dynamic> ex) async {
@@ -7649,6 +7661,7 @@ class _EducationTabPState extends State<_EducationTabP> {
     final media = (ex['media_snapshot'] is List)
         ? (ex['media_snapshot'] as List).whereType<Map>().toList() : const [];
     final done = ex['statut']?.toString() == 'fait';
+    final prog = progressionExercice(ex);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -7668,19 +7681,61 @@ class _EducationTabPState extends State<_EducationTabP> {
               tooltip: ex['rappels_mutes'] == true ? 'Réactiver les rappels' : 'Mettre les rappels en pause',
               onPressed: () => _toggleRappelMute(ex),
             ),
-          TextButton(
-            onPressed: () => _toggleExerciceFait(ex),
-            child: Text(done ? '✓ Fait' : 'Marquer fait',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    color: done ? const Color(0xFF6E9E57) : _kPurpleEdu, fontWeight: FontWeight.w600)),
-          ),
+          if (done)
+            TextButton(
+              onPressed: () => _validerExercice(ex, valider: false),
+              child: const Text('✓ Terminé', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: Color(0xFF6E9E57), fontWeight: FontWeight.w600)),
+            )
+          else if (prog.etapes.isEmpty && prog.total == 1)
+            TextButton(
+              onPressed: () => _validerExercice(ex, valider: true),
+              child: const Text('Marquer fait', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: _kPurpleEdu, fontWeight: FontWeight.w600)),
+            ),
         ]),
-        Wrap(spacing: 6, children: [
+        Wrap(spacing: 6, runSpacing: 4, children: [
           if ((ex['cadence']?.toString() ?? '').isNotEmpty)
             _exoPill(ex['cadence'].toString(), Colors.grey.shade500),
-          if (ex['echeance'] != null)
-            _exoPill('avant le ${_frShort(ex['echeance'].toString())}', const Color(0xFFD5573B)),
+          if (prog.total > 1)
+            _exoPill(prog.etapes.isNotEmpty ? 'Étape ${prog.faites}/${prog.total}' : '${prog.faites}/${prog.total} réussites', _kPurpleEdu),
+          if (libelleDureeExercice(ex) != null)
+            _exoPill(libelleDureeExercice(ex)!, prog.echue ? Colors.grey.shade500 : const Color(0xFFD5573B)),
         ]),
+        // Étapes : validées une à une, dans l'ordre.
+        if (prog.etapes.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          for (int i = 0; i < prog.etapes.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                Icon(i < prog.faites ? Icons.check_circle : Icons.radio_button_unchecked, size: 18,
+                    color: i < prog.faites ? const Color(0xFF6E9E57) : (i == prog.faites ? _kPurpleEdu : Colors.grey.shade400)),
+                const SizedBox(width: 8),
+                Expanded(child: Text('${i + 1}. ${prog.etapes[i]}', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                    fontWeight: i == prog.faites ? FontWeight.w700 : FontWeight.w400,
+                    color: i < prog.faites ? Colors.grey.shade500 : const Color(0xFF1F2A2E)))),
+              ]),
+            ),
+        ],
+        if (!done && (prog.etapes.isNotEmpty || prog.total > 1))
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(children: [
+              FilledButton(
+                onPressed: prog.peutValider ? () => _validerExercice(ex, valider: true) : null,
+                style: FilledButton.styleFrom(backgroundColor: _kPurpleEdu, visualDensity: VisualDensity.compact),
+                child: Text(prog.etapes.isNotEmpty ? "Valider l'étape ${prog.faites + 1}"
+                    : prog.dejaAujourdhui ? 'Réussite notée aujourd\'hui' : 'Réussi aujourd\'hui',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+              if (prog.faites > 0)
+                TextButton(
+                  onPressed: () => _validerExercice(ex, valider: false),
+                  child: Text('Annuler la dernière', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                ),
+            ]),
+          ),
         if ((ex['description_snapshot']?.toString() ?? '').isNotEmpty) ...[
           const SizedBox(height: 6),
           RichTextView(ex['description_snapshot'].toString(),
@@ -7918,11 +7973,6 @@ class _EducationTabPState extends State<_EducationTabP> {
         decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
         child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: color, fontWeight: FontWeight.w600)),
       );
-
-  String _frShort(String iso) {
-    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(iso);
-    return m == null ? iso : '${m[3]}/${m[2]}';
-  }
 
   void _openImage(String url) {
     showDialog(

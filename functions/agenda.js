@@ -622,6 +622,8 @@ exports.sendExerciceReminders = functions
             `or=(echeance.is.null,echeance.gte.${todayStr})`);
 
         for (const ex of exos) {
+            // Réussite / étape déjà validée aujourd'hui : pas de rappel.
+            if (Array.isArray(ex.validations) && ex.validations.includes(todayStr)) continue;
             const dedupKey = `exo_reminder_${ex.id}_${todayStr}`;
             const existing = await supabaseSelect("notifs_sent",
                 `key=eq.${encodeURIComponent(dedupKey)}`);

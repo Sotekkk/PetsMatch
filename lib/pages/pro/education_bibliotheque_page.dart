@@ -67,6 +67,11 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
     final newImages = <File>[];
     final newVideos = <File>[];
     bool saving = false;
+    // Étapes (facultatif) : validées une à une par la famille.
+    final etapes = <TextEditingController>[
+      for (final e in ((existing?['etapes'] as List?) ?? const []).whereType<Map>())
+        TextEditingController(text: e['titre']?.toString() ?? ''),
+    ];
 
     await showModalBottomSheet(
       context: context,
@@ -128,6 +133,35 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
                 onChanged: (v) => setSheet(() => categorie = v),
               ),
               const SizedBox(height: 12),
+              const Text('Étapes (facultatif)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              const Text('Pour un exercice progressif : la famille valide chaque étape, dans l\'ordre.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey)),
+              const SizedBox(height: 6),
+              for (int i = 0; i < etapes.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    Text('${i + 1}.', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextField(
+                      controller: etapes[i],
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: i == 0 ? 'Ex : à 2 m, sans distraction' : 'Étape suivante',
+                        isDense: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    )),
+                    IconButton(icon: const Icon(Icons.close, size: 18), tooltip: 'Retirer',
+                        onPressed: () => setSheet(() => etapes.removeAt(i))),
+                  ]),
+                ),
+              TextButton.icon(
+                onPressed: () => setSheet(() => etapes.add(TextEditingController())),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Ajouter une étape', style: TextStyle(fontFamily: 'Galey')),
+              ),
+              const SizedBox(height: 12),
               // Médias
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (int i = 0; i < media.length; i++)
@@ -187,6 +221,10 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
                       'description': descOut.isEmpty ? null : descOut,
                       'categorie': categorie,
                       'media': media,
+                      'etapes': [
+                        for (final c in etapes)
+                          if (c.text.trim().isNotEmpty) {'titre': c.text.trim()},
+                      ],
                     };
                     if (existing == null) {
                       await _supa.from('exercices_bibliotheque').insert({

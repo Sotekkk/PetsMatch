@@ -595,9 +595,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (url != null) await ouvrirDocument(context, url);
       return;
     }
-    // Suivi éducatif (rapport de séance, objectif atteint, exercices) — propriétaire
+    // Exercices attribués / rappels → onglet Éducation de la fiche, là où la
+    // famille les voit et les marque faits (pas la liste des comptes rendus).
+    if (type == 'education_exercice_assigne' || type == 'education_exercice_rappel') {
+      final animalId = data is Map ? data['animalId']?.toString() : null;
+      if (animalId != null && animalId.isNotEmpty) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFicheParticulierPage(animalId: animalId, initialTabLabel: 'Éducation'),
+        ));
+      }
+      return;
+    }
+    // Suivi éducatif (rapport de séance, objectif atteint, bilan) — propriétaire
     if (type == 'education_rapport' || type == 'education_objectif_acquis' ||
-        type == 'education_exercice_assigne' || type == 'education_exercice_rappel' ||
         type == 'education_bilan' || type == 'education_forfait_bas' ||
         type == 'education_attestation') {
       final animalId  = data is Map ? data['animalId']  as String? : null;

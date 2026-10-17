@@ -17,6 +17,8 @@ const ORANGE = '#EF6C00';
 interface Exercice {
   id: string; titre: string; description: string | null;
   media: { type: string; url: string }[]; categorie: string | null;
+  /** Étapes validées une à une par la famille (facultatif). */
+  etapes?: { titre: string }[] | null;
 }
 
 export default function BibliothequeExercicesPage() {
@@ -25,7 +27,7 @@ export default function BibliothequeExercicesPage() {
   const activeProfileId = useActiveProfile();
   const [exercices, setExercices] = useState<Exercice[]>([]);
   const [busy, setBusy] = useState(true);
-  const [form, setForm] = useState<{ id?: string; titre: string; description: string; categorie: string; media: { type: string; url: string }[] } | null>(null);
+  const [form, setForm] = useState<{ id?: string; titre: string; description: string; categorie: string; media: { type: string; url: string }[]; etapes: string[] } | null>(null);
   const [viewing, setViewing] = useState<Exercice | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -33,7 +35,7 @@ export default function BibliothequeExercicesPage() {
     if (!user?.uid) return;
     setBusy(true);
     const { data } = await supabase.from('exercices_bibliotheque')
-      .select('id, titre, description, media, categorie')
+      .select('id, titre, description, media, categorie, etapes')
       .eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
     setExercices((data ?? []) as Exercice[]);
     setBusy(false);
@@ -66,6 +68,7 @@ export default function BibliothequeExercicesPage() {
         description: form.description.trim() || null,
         categorie: form.categorie || null,
         media: form.media,
+        etapes: form.etapes.map(t => t.trim()).filter(Boolean).map(titre => ({ titre })),
       };
       if (form.id) {
         await supabase.from('exercices_bibliotheque').update(payload).eq('id', form.id);
@@ -90,7 +93,7 @@ export default function BibliothequeExercicesPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Bibliothèque d&apos;exercices</h1>
-        <button onClick={() => setForm({ titre: '', description: '', categorie: '', media: [] })}
+        <button onClick={() => setForm({ titre: '', description: '', categorie: '', media: [], etapes: [] })}
           className="text-white rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: ORANGE }}>+ Exercice</button>
       </div>
       <p className="text-sm text-gray-500 mb-4">Créez vos exercices une fois (texte + photos/vidéos), attribuez-les ensuite à vos familles depuis la fiche d&apos;un animal suivi.</p>
@@ -110,6 +113,22 @@ export default function BibliothequeExercicesPage() {
             <option value="">Catégorie (optionnel)…</option>
             {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
+          <div>
+            <p className="text-sm font-semibold text-[#1F2A2E]">Étapes (facultatif)</p>
+            <p className="text-xs text-gray-500 mb-1.5">Pour un exercice progressif : la famille valide chaque étape, dans l&apos;ordre.</p>
+            {form.etapes.map((t, i) => (
+              <div key={i} className="flex items-center gap-2 mb-1.5">
+                <span className="text-sm font-bold w-5">{i + 1}.</span>
+                <input value={t} onChange={e => setForm(f => f ? { ...f, etapes: f.etapes.map((x, j) => (j === i ? e.target.value : x)) } : f)}
+                  placeholder={i === 0 ? 'Ex : à 2 m, sans distraction' : 'Étape suivante'}
+                  className="flex-1 border border-gray-200 rounded-xl px-3 py-1.5 text-sm" />
+                <button type="button" onClick={() => setForm(f => f ? { ...f, etapes: f.etapes.filter((_, j) => j !== i) } : f)}
+                  className="text-gray-400 hover:text-red-500 text-lg leading-none px-1" aria-label="Retirer">×</button>
+              </div>
+            ))}
+            <button type="button" onClick={() => setForm(f => f ? { ...f, etapes: [...f.etapes, ''] } : f)}
+              className="text-xs font-semibold text-[#EF6C00]">+ Ajouter une étape</button>
+          </div>
           <div className="flex flex-wrap gap-2">
             {form.media.map((m, i) => (
               <div key={i} className="relative w-16 h-16 rounded-lg bg-gray-100 overflow-hidden">
@@ -164,7 +183,7 @@ export default function BibliothequeExercicesPage() {
                 {e.description && <div className="text-xs text-gray-600 mt-0.5 line-clamp-2"><RichText value={e.description} /></div>}
               </button>
               <div className="flex gap-1 shrink-0">
-                <button onClick={() => setForm({ id: e.id, titre: e.titre, description: e.description ?? '', categorie: e.categorie ?? '', media: e.media })}
+                <button onClick={() => setForm({ id: e.id, titre: e.titre, description: e.description ?? '', categorie: e.categorie ?? '', media: e.media, etapes: (e.etapes ?? []).map(x => x.titre) })}
                   className="text-gray-300 hover:text-gray-500">✏️</button>
                 <button onClick={() => remove(e.id)} className="text-gray-300 hover:text-red-400">🗑</button>
               </div>
@@ -185,7 +204,7 @@ export default function BibliothequeExercicesPage() {
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <button onClick={() => { setForm({ id: viewing.id, titre: viewing.titre, description: viewing.description ?? '', categorie: viewing.categorie ?? '', media: viewing.media }); setViewing(null); }}
+                <button onClick={() => { setForm({ id: viewing.id, titre: viewing.titre, description: viewing.description ?? '', categorie: viewing.categorie ?? '', media: viewing.media, etapes: (viewing.etapes ?? []).map(x => x.titre) }); setViewing(null); }}
                   className="text-xs font-semibold text-[#EF6C00]">Modifier</button>
                 <button onClick={() => setViewing(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
               </div>
@@ -194,6 +213,11 @@ export default function BibliothequeExercicesPage() {
               {viewing.description
                 ? <div className="text-sm text-[#1F2A2E]"><RichText value={viewing.description} /></div>
                 : <p className="text-sm text-gray-400">Pas de déroulé.</p>}
+              {(viewing.etapes ?? []).length > 0 && (
+                <ol className="list-decimal pl-5 text-sm text-[#1F2A2E] space-y-0.5">
+                  {(viewing.etapes ?? []).map((e, i) => <li key={i}>{e.titre}</li>)}
+                </ol>
+              )}
               {viewing.media.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {viewing.media.map((m, i) => (
