@@ -33,7 +33,7 @@ export default function PhotographeDashboardPage() {
       const now = new Date();
       const startOfMonth = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1)).toISOString();
 
-      const [shootingsRes, facturesRes, rdvsMoisRes, profilRes] = await Promise.all([
+      const [shootingsRes, facturesRes, rdvsMoisRes, profilRes, facturesCommunesRes] = await Promise.all([
         supabase.from('rdv').select('id').eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId || '').eq('statut', 'termine'),
         supabase.from('photographe_factures').select('montant_total').eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId || '').eq('statut', 'payee'),
         supabase.from('rdv').select('lat_depart, lng_depart')
@@ -42,6 +42,8 @@ export default function PhotographeDashboardPage() {
         activeProfileId
           ? supabase.from('user_profiles_complet').select('lat, lng, note_moyenne, nb_avis').eq('id', activeProfileId).maybeSingle()
           : Promise.resolve({ data: null }),
+        // Factures émises depuis la facturation commune (dossier de séance).
+        supabase.from('factures').select('total_ttc').eq('profile_id', activeProfileId || '').eq('statut', 'payee'),
       ]);
 
       const shootings = shootingsRes.data ?? [];
@@ -49,7 +51,9 @@ export default function PhotographeDashboardPage() {
       const rdvsMois = rdvsMoisRes.data ?? [];
       const profil = profilRes.data as { lat: number | null; lng: number | null; note_moyenne: number | null; nb_avis: number | null } | null;
 
-      const caTotal = factures.reduce((s, f) => s + (Number(f.montant_total) || 0), 0);
+      // CA encaissé : factures payées (table commune, avoirs déduits) + anciennes factures photographe.
+      const caTotal = factures.reduce((s, f) => s + (Number(f.montant_total) || 0), 0)
+        + (facturesCommunesRes.data ?? []).reduce((s, f) => s + (Number((f as { total_ttc: number | null }).total_ttc) || 0), 0);
 
       let km = 0;
       if (profil?.lat != null && profil?.lng != null) {

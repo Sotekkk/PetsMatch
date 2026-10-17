@@ -2423,6 +2423,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// une seule fois (pas de relance si un avis existe déjà ou si la notif a
   /// déjà été envoyée pour ce RDV).
   Future<void> _demanderAvis(Map<String, dynamic> rdv, String clientUid) async {
+    // Photographe : l'avis est demandé à la livraison des photos (le
+    // travail n'est pas terminé à la fin de la séance).
+    if (AgendaContexte.catPro == 'photographe') return;
     try {
       final supa = Supabase.instance.client;
       final proUid = AgendaContexte.uid;

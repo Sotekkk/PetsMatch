@@ -302,8 +302,12 @@ class _PhotographeClientsPageState extends State<PhotographeClientsPage> with Si
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => DraggableScrollableSheet(
         expand: false, initialChildSize: 0.7, maxChildSize: 0.95,
-        builder: (ctx, sc) => ListView(controller: sc, padding: const EdgeInsets.fromLTRB(20, 16, 20, 24), children: [
-          Text(_nomClient(r0), style: const TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.w700, color: _ink)),
+        builder: (ctx, sc) => ListView(controller: sc, padding: const EdgeInsets.fromLTRB(8, 8, 20, 24), children: [
+          Row(children: [
+            IconButton(icon: const Icon(Icons.arrow_back, color: _ink), tooltip: 'Retour', onPressed: () => Navigator.pop(ctx)),
+            Expanded(child: Text(_nomClient(r0), style: const TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.w700, color: _ink))),
+          ]),
+          Padding(padding: const EdgeInsets.only(left: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (tel.isNotEmpty || mail.isNotEmpty)
             Text([tel, mail].where((x) => x.isNotEmpty).join(' · '), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
           const SizedBox(height: 8),
@@ -321,6 +325,7 @@ class _PhotographeClientsPageState extends State<PhotographeClientsPage> with Si
                 if (t.isNotEmpty) '${t.length} à traiter',
               ].join(' · '));
             }),
+          ])),
         ]),
       ),
     );

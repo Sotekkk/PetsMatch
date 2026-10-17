@@ -581,7 +581,12 @@ class _DossierSeanceState extends State<_DossierSeance> {
     return SafeArea(child: SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(context).viewInsets.bottom),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(widget.prestation, style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _ink)),
+        Row(children: [
+          IconButton(icon: const Icon(Icons.arrow_back, color: _ink), tooltip: 'Retour', visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36, minHeight: 36), onPressed: () => Navigator.pop(context)),
+          const SizedBox(width: 4),
+          Expanded(child: Text(widget.prestation, style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _ink))),
+        ]),
         const SizedBox(height: 2),
         Text('${widget.nomClient} · ${_jour(_debut)} à ${_hm(_debut)} · ${(r['duree_minutes'] as num?)?.toInt() ?? 60} min',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),

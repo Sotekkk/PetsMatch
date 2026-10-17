@@ -1690,7 +1690,8 @@ export default function MesRdvPage() {
     // Séance terminée → invite la famille à laisser un avis (une seule fois :
     // pas de relance si un avis existe déjà ou si la notif a déjà été postée).
     try {
-      if (user && rdv.client_uid) {
+      // Photographe : l'avis est demandé à la livraison des photos, pas en fin de séance.
+      if (user && rdv.client_uid && catPro !== 'photographe') {
         let avisQ = supabase.from('avis_pro').select('id')
           .eq('pro_uid', user.uid).eq('client_uid', rdv.client_uid);
         if (rdv.pro_profile_id) avisQ = avisQ.eq('pro_profile_id', rdv.pro_profile_id);

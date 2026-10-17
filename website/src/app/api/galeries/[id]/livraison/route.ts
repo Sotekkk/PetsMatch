@@ -123,6 +123,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         data: { albumId: id }, read: false,
       });
     }
+    // Demande d'avis : une fois le travail livré (pas en fin de séance), une
+    // seule fois (pas d'avis existant ni de demande déjà envoyée pour ce rdv).
+    const urlAvis = `${SITE_URL}/services/pro/${album.pro_uid}?avis=1${album.pro_profile_id ? `&profileId=${album.pro_profile_id}` : ''}`;
+    let avisDejaLaisse = false;
+    if (album.client_uid) {
+      let q = admin.from('avis_pro').select('id').eq('pro_uid', album.pro_uid).eq('client_uid', album.client_uid);
+      if (album.pro_profile_id) q = q.eq('pro_profile_id', album.pro_profile_id);
+      avisDejaLaisse = !!(await q.limit(1).maybeSingle()).data;
+      const { data: dejaDemande } = await admin.from('notifications').select('id').eq('uid', album.client_uid).eq('type', 'avis_demande')
+        .contains('data', { album_id: id }).limit(1).maybeSingle();
+      if (!avisDejaLaisse && !dejaDemande) {
+        const proNom = (await nomStudio(album)).nom || 'votre photographe';
+        await admin.from('notifications').insert({
+          uid: album.client_uid, type: 'avis_demande', title: 'Votre avis compte',
+          body: `Vos photos sont livrées : comment s'est passée votre expérience avec ${proNom} ? Laissez un avis.`,
+          ...(album.client_profile_id ? { profile_id: album.client_profile_id } : {}),
+          data: { album_id: id, rdv_id: album.rdv_id, pro_uid: album.pro_uid, ...(album.pro_profile_id ? { pro_profile_id: album.pro_profile_id } : {}),
+            pro_nom: proNom, url: `/services/pro/${album.pro_uid}?avis=1${album.pro_profile_id ? `&profileId=${album.pro_profile_id}` : ''}` },
+          read: false,
+        });
+      }
+    }
     // E-mail au client (avec ou sans compte) : lien de téléchargement, date
     // limite, facture acquittée en pièce jointe si elle est payée.
     let emailEnvoye = false;
@@ -150,6 +172,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             `<strong>${echapperHtml(studio)}</strong> vous livre ${nb ? `vos ${nb} photo${nb > 1 ? 's' : ''}` : 'vos photos'} de la séance « ${echapperHtml(album.titre ?? 'Séance photo')} », en haute définition.`,
             `Ouvrez la galerie et touchez « Télécharger » : ${parts.length > 1 ? `${parts.length} archives ZIP` : 'une archive ZIP'} à enregistrer sur votre ordinateur ou votre téléphone.`,
             ...(pieces.length ? ['Votre facture acquittée est jointe à cet e-mail.'] : []),
+            ...(avisDejaLaisse ? [] : [`Satisfait(e) de vos photos ? Votre avis aide ${echapperHtml(studio)} : <a href="${urlAvis}" style="color:#0C5C6C;font-weight:600;">laisser un avis</a>.`]),
           ],
           alerte: `À télécharger avant le <strong>${dateLimite}</strong>. Passé cette date, les fichiers sont définitivement supprimés de nos serveurs : pensez à les enregistrer dès maintenant.`,
           bouton: { label: 'Télécharger mes photos', url },

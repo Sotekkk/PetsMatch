@@ -50,6 +50,8 @@ class _PhotographeDashboardPageState extends State<PhotographeDashboardPage> {
         pid.isNotEmpty
             ? _supa.from('user_profiles_complet').select('lat, lng, note_moyenne, nb_avis').eq('id', pid).maybeSingle()
             : Future<Map<String, dynamic>?>.value(null),
+        // Factures émises depuis la facturation commune (dossier de séance).
+        _supa.from('factures').select('total_ttc, type_facture').eq('profile_id', pid).eq('statut', 'payee'),
       ]);
 
       final shootings = results[0] as List;
@@ -57,7 +59,11 @@ class _PhotographeDashboardPageState extends State<PhotographeDashboardPage> {
       final rdvsMois = results[2] as List;
       final profil = results[3] as Map<String, dynamic>?;
 
-      final ca = factures.fold<double>(0, (s, f) => s + ((f['montant_total'] as num?)?.toDouble() ?? 0));
+      // CA encaissé : factures payées (table commune, avoirs déduits) +
+      // anciennes factures photographe.
+      final facturesCommunes = results[4] as List;
+      final ca = factures.fold<double>(0, (s, f) => s + ((f['montant_total'] as num?)?.toDouble() ?? 0))
+          + facturesCommunes.fold<double>(0, (s, f) => s + ((f['total_ttc'] as num?)?.toDouble() ?? 0));
 
       double kmTotal = 0;
       final proLat = (profil?['lat'] as num?)?.toDouble();

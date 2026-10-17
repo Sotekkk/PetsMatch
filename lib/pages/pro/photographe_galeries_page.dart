@@ -173,12 +173,14 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
     }
   }
 
+  bool _correspond(Map g, String filtre) {
+    final s = g['statut']?.toString() ?? 'brouillon';
+    return filtre == 'tous' ? true : filtre == 'en_cours' ? !const {'livree', 'archivee'}.contains(s) : s == filtre;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final visibles = _galeries.where((g) {
-      final s = g['statut']?.toString() ?? 'brouillon';
-      return _filtre == 'tous' ? true : _filtre == 'en_cours' ? !const {'livree', 'archivee'}.contains(s) : s == _filtre;
-    }).toList();
+    final visibles = _galeries.where((g) => _correspond(g, _filtre)).toList();
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
@@ -210,20 +212,23 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
                           child: const Text('Voir les abonnements', style: TextStyle(fontFamily: 'Galey', color: _teal))),
                     ]),
                   ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: [
-                    for (final f in [('en_cours', 'En cours'), ...kStatutsGalerie, ('tous', 'Toutes')])
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          label: Text(f.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _filtre == f.$1 ? Colors.white : _ink)),
-                          selected: _filtre == f.$1, showCheckmark: false, selectedColor: _teal, backgroundColor: Colors.white,
-                          side: BorderSide(color: _filtre == f.$1 ? _teal : Colors.grey.shade300),
-                          onSelected: (_) => setState(() => _filtre = f.$1),
-                        ),
-                      ),
-                  ]),
+                // Filtre : liste déroulante (plus lisible qu'une rangée de pastilles à faire défiler).
+                DropdownButtonFormField<String>(
+                  initialValue: _filtre,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Afficher',
+                    labelStyle: const TextStyle(fontFamily: 'Galey'),
+                    filled: true, fillColor: Colors.white, isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  items: [
+                    for (final f in [('en_cours', 'Galeries en cours'), ...kStatutsGalerie, ('tous', 'Toutes les galeries')])
+                      DropdownMenuItem(value: f.$1, child: Text(
+                          '${f.$2} (${f.$1 == 'tous' ? _galeries.length : _galeries.where((g) => _correspond(g, f.$1)).length})',
+                          style: const TextStyle(fontFamily: 'Galey'))),
+                  ],
+                  onChanged: (v) { if (v != null) setState(() => _filtre = v); },
                 ),
                 const SizedBox(height: 10),
                 if (visibles.isEmpty)
