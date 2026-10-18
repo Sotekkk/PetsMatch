@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/garde_acceptation.dart' show apresAcceptationGarde;
@@ -18,7 +19,6 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
-import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
@@ -1937,105 +1937,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
-  // Toiletteur — génère (ou récupère) le contrat de prestation, même
-  // principe que _genererContratPhoto.
+  // Toiletteur — contrat de prestation (toilettage_dossier_seance.dart).
   Future<void> _genererContratToilettage(Map<String, dynamic> rdv) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return;
-    final planCode = await PlanService.getPlanCode(uid, profilType: 'toilettage');
-    if (planCode == 'free') {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Signature — Abonnement requis',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            content: const Text('La signature électronique de contrats est disponible à partir de l\'abonnement Pro.',
-                style: TextStyle(fontFamily: 'Galey')),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ToilettageAbonnementPage()));
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
-                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
-    }
     try {
-      final supa = Supabase.instance.client;
-      final existing = await supa
-          .from('documents_animaux')
-          .select('token')
-          .eq('rdv_id', rdv['id'])
-          .eq('type', 'contrat_prestation_toilettage')
-          .maybeSingle();
-
-      String? token = existing?['token'] as String?;
-      if (token == null) {
-        Map<String, dynamic>? prestation;
-        final prestationId = rdv['prestation_id']?.toString();
-        if (prestationId != null && prestationId.isNotEmpty) {
-          prestation = await supa.from('prestations_toilettage')
-              .select('nom, prix_base')
-              .eq('id', prestationId).maybeSingle();
-        }
-        final row = await supa.from('documents_animaux').insert({
-          'uid_eleveur': uid,
-          if (AgendaContexte.profileId.isNotEmpty) 'pro_profile_id': AgendaContexte.profileId,
-          'animal_id': rdv['animal_id'],
-          'rdv_id': rdv['id'],
-          'type': 'contrat_prestation_toilettage',
-          'titre': 'Contrat de prestation toilettage — ${rdv['_client_name'] ?? ''}',
-          'statut': 'en_attente',
-          'metadata': {
-            'client_nom': rdv['_client_name'],
-            'prestation_nom': prestation?['nom'] ?? rdv['motif'],
-            // Prix calculé à la réservation (grille espèce / gabarit du
-            // catalogue), sinon prix de base de la prestation.
-            'prix_total': (rdv['prix_calcule'] ?? prestation?['prix_base'])?.toString(),
-          },
-        }).select('token').single();
-        token = row['token'] as String?;
-        final clientUid = rdv['client_uid']?.toString();
-        if (clientUid != null && clientUid.isNotEmpty && token != null) {
-          try {
-            await supa.from('notifications').insert({
-              'uid': clientUid,
-              'type': 'contrat_invite',
-              'title': '✂️ Contrat de prestation à signer',
-              'body': 'Votre toiletteur vous envoie un contrat de prestation — vérifiez et signez',
-              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
-              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
-              'read': false,
-            });
-          } catch (_) {}
-        }
-      } else {
-        await supa.from('documents_animaux')
-            .update({'statut': 'en_attente'})
-            .eq('rdv_id', rdv['id'])
-            .eq('type', 'contrat_prestation_toilettage');
-      }
-      if (token == null) return;
-      if (mounted) {
-        await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => ContratSignaturePage(token: token),
-        ));
-      }
+      await genererContratToilettage(context, rdv, uid: uid, profileId: AgendaContexte.profileId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
       }
     }
   }
@@ -2199,18 +2111,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     ));
   }
 
-  // Toiletteur — facture via le moteur commun (montant pré-rempli depuis
-  // prix_calcule si disponible).
+  // Toiletteur — facture (prix TTC, client et animal préremplis).
   Future<void> _facturerToilettage(Map<String, dynamic> rdv) async {
-    final prixCalcule = (rdv['prix_calcule'] as num?)?.toDouble() ?? 0;
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => CreerFacturePage(
-        clientNom: rdv['_client_name']?.toString(),
-        lignesPrefill: [
-          FacturePrefillLigne(designation: 'Prestation de toilettage', prixHT: prixCalcule, tauxTVA: 20),
-        ],
-      ),
-    ));
+    await facturerToilettage(context, rdv, nomClient: rdv['_client_name']?.toString());
   }
 
   // Garde / pet-sitting — facture d'une prestation (promenade / garde-journée)
@@ -4769,7 +4672,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // pet-sitter (pas d'ordonnance → « Envoyer des nouvelles », ci-dessous).
           // Ostéo / physio (sante) : pas de CR vétérinaire — leur compte rendu
           // de séance passe par onSuiviMorpho (Soins & Rééducation).
-          onCompteRendu: (showProTools && !const {'education', 'garde', 'sante', 'photographe'}.contains(AgendaContexte.catPro))
+          // Toiletteur : compte rendu de toilettage dans le dossier de la séance.
+          onCompteRendu: (showProTools && !const {'education', 'garde', 'sante', 'photographe', 'toilettage'}.contains(AgendaContexte.catPro))
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
@@ -4864,7 +4768,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   prestation: (rdv['motif']?.toString() ?? '').trim().isEmpty ? 'Séance photo' : rdv['motif'].toString().trim(),
                   animal: rdv['animal_nom_manuel']?.toString() ?? rdv['_animal_nom']?.toString(),
                   depuisAgenda: true)
-              : null,
+              : AgendaContexte.catPro == 'toilettage' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition'
+                  ? () => showDossierToilettage(context, rdv,
+                      nomClient: rdv['_client_name']?.toString() ?? 'Client',
+                      prestation: (rdv['motif']?.toString() ?? '').trim().isEmpty ? 'Toilettage' : rdv['motif'].toString().trim(),
+                      animal: rdv['_animal_nom']?.toString() ?? rdv['animal_nom_manuel']?.toString(),
+                      depuisAgenda: true, onChanged: _loadRdvs)
+                  : null,
           onFiche: (showProTools && AgendaContexte.catPro == 'toilettage' && hasAnimal)
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => ToilettageFicheClientPage(

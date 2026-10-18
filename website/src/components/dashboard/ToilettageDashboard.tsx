@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { Kpi, Section, Badge, PhotoAnimal, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
 import SeanceToilettageModal from '@/components/toilettage/SeanceToilettageModal';
+import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 
 const TEAL = '#0C5C6C';
 const VERT = '#2E7D5E';
@@ -68,6 +69,7 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
   const [factures, setFactures] = useState<Set<string>>(new Set());
   const [fiche, setFiche] = useState<Rdv | null>(null);
   const [seanceRdv, setSeanceRdv] = useState<Rdv | null>(null);
+  const [dossierId, setDossierId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const planningRef = useRef<HTMLDivElement>(null);
 
@@ -312,12 +314,14 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
                     sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
                       nomClient: nomClient(fiche), sourceRdvId: fiche.id, sourceAnimalId: fiche.animal_id ?? undefined,
                       clientUid: fiche.client_uid ?? undefined, clientProfileId: fiche.client_profile_id ?? undefined,
-                      lignes: [{ description: `${prestation(fiche)} — ${nomAnimal(fiche)}`, quantite: 1, prixUnitaire: Number(prix) || 0, tva: 20 }],
+                      // Prix TTC affiché : le HT est déduit selon le régime de TVA du pro.
+                      lignes: [{ description: `${prestation(fiche)} — ${nomAnimal(fiche)}`, quantite: 1, prixUnitaire: 0, prixTTC: Number(prix) || 0, tva: 20 }],
                     }));
                   } catch { /* facture vierge */ }
                   window.location.href = '/elevage/facturation';
                 })}
                 {factures.has(fiche.id) && <Link href="/elevage/facturation" className="block py-2 text-sm font-semibold text-[#0C5C6C]">Prestation facturée — voir la facturation</Link>}
+                {bouton('Dossier de la séance (compte rendu, contrat, facture)', () => { setDossierId(fiche.id); setFiche(null); })}
                 {fiche.animal_id && ['enCours', 'pret', 'termine'].includes(e) && bouton('Fiche technique de la prestation', () => { setSeanceRdv(fiche); setFiche(null); })}
                 {fiche.animal_id && <Link href={`/mes-patients/${fiche.animal_id}`} className="block py-2 text-sm font-semibold text-[#0C5C6C]">Fiche animal et consignes</Link>}
                 <Link href={`/mes-rdv?onglet=a_venir&rdv=${fiche.id}`} className="block py-2 text-sm font-semibold text-[#0C5C6C]">Voir le rendez-vous dans l&apos;agenda</Link>
@@ -326,6 +330,10 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
             </div>
           </div>
         );
+      })()}
+      {dossierId && (() => {
+        const d = rdvs.find(x => x.id === dossierId);
+        return d ? <DossierToilettageModal rdvId={d.id} nomClient={nomClient(d)} animal={nomAnimal(d)} onClose={() => setDossierId(null)} onChanged={charger} /> : null;
       })()}
       {seanceRdv?.animal_id && uid && pid && (
         <SeanceToilettageModal animalId={seanceRdv.animal_id} animalNom={nomAnimal(seanceRdv)} proUid={uid} profileId={pid}

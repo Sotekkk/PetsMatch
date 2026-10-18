@@ -859,6 +859,105 @@ Future<Uint8List> contratPhotoPdfBytes({
   return pdf.save();
 }
 
+// ─── CONTRAT DE PRESTATION TOILETTAGE ─────────────────────────────────────────
+// ⚠️ Contenu à garder aligné sur website/src/lib/contrat-toilettage.ts.
+
+Future<Uint8List> contratToilettagePdfBytes({
+  required Map<String, dynamic> prestataire,
+  String clientNom = '', String clientContact = '',
+  String animal = '', DateTime? datePrestation, String lieu = '',
+  String prestationNom = '', double prixTotal = 0, String notes = '',
+  String? sigPrestataire, String? sigClient, String villeSignature = '',
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final p = _parties(prestataire);
+  final today = _fmt(DateTime.now());
+  final prix = '${prixTotal.toStringAsFixed(2).replaceAll('.', ',')} €';
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text('CONTRAT DE PRESTATION DE TOILETTAGE',
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
+      pw.SizedBox(height: 16),
+
+      pw.Text('ENTRE LES SOUSSIGNÉS :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Prestataire', p.eleveurNom),
+      _line('Demeurant à', p.eleveurAdresse),
+      _line('Téléphone', p.eleveurTel),
+      _line('SIRET', p.eleveurSiret),
+      _line('Email', p.eleveurEmail),
+      pw.SizedBox(height: 8),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Client', clientNom.trim().isEmpty ? null : clientNom.trim()),
+      _line('Contact', clientContact.trim().isEmpty ? null : clientContact.trim()),
+
+      pw.SizedBox(height: 10),
+      pw.Text('Objet du contrat', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _line('Prestation', prestationNom.trim().isEmpty ? 'à définir' : prestationNom.trim()),
+      _line('Animal', animal.trim().isEmpty ? null : animal.trim()),
+      _line('Date de la prestation', datePrestation != null ? _fmt(datePrestation) : null),
+      _line('Lieu', lieu.trim().isEmpty ? 'à convenir' : lieu.trim()),
+      _line('Prix', prix),
+
+      pw.Text('Article 1 : Déroulement de la prestation', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Prestataire s'engage à réaliser la prestation de toilettage décrite ci-dessus dans les règles de l'art, avec le "
+          "souci du bien-être et de la sécurité de l'animal. Le Client s'engage à récupérer l'animal à l'heure convenue."),
+
+      pw.Text("Article 2 : État de santé et comportement de l'animal", style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Client s'engage à signaler au Prestataire, avant toute prestation, tout problème de santé, allergie, traitement en "
+          "cours, antécédent comportemental (agressivité, anxiété) ou toute particularité de l'animal susceptible d'affecter le "
+          "déroulement de la séance. Le Prestataire se réserve le droit d'interrompre ou de refuser une prestation si l'état de "
+          "l'animal le justifie, sans que cela ne donne lieu à remboursement de l'acompte le cas échéant."),
+
+      pw.Text("Article 3 : Constat de l'état de l'animal", style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Prestataire examine l'animal à son arrivée et signale au Client toute anomalie constatée (nœuds importants, "
+          "lésions cutanées, parasites, etc.) pouvant nécessiter une prestation adaptée ou un tarif complémentaire, accepté "
+          "préalablement par le Client."),
+
+      pw.Text('Article 4 : Modalités financières', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le prix indiqué ci-dessus est dû à l'issue de la prestation, sauf acompte convenu à la réservation. En cas "
+          "d'annulation moins de 24 h avant le rendez-vous, un acompte éventuellement versé peut être conservé par le Prestataire."),
+
+      pw.Text('Article 5 : Responsabilité', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Prestataire met en œuvre tous les moyens nécessaires pour assurer la sécurité de l'animal pendant la prestation. "
+          "Le Client demeure responsable des informations transmises sur l'état de santé et le comportement de son animal ; "
+          "toute omission engageant sa responsabilité en cas d'incident."),
+
+      if (notes.trim().isNotEmpty) ...[
+        pw.Text('Article 6 : Notes complémentaires', style: _artTitle()),
+        pw.SizedBox(height: 3),
+        _para(notes.trim()),
+      ],
+
+      pw.SizedBox(height: 16),
+      pw.Text(villeSignature.trim().isEmpty
+          ? 'Fait le $today.'
+          : 'Fait à ${villeSignature.trim()}, le $today.', style: _body()),
+      pw.SizedBox(height: 8),
+      _copyBanner('Contrat établi en deux exemplaires originaux, un pour chaque partie.'),
+      pw.Row(children: [
+        _signBlock('Le Prestataire', p.eleveurNom, signature: sigPrestataire),
+        pw.SizedBox(width: 16),
+        _signBlock('Le Client', clientNom, signature: sigClient),
+      ]),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today - PetsMatch', style: _small())),
+    ],
+  ));
+
+  return pdf.save();
+}
+
 // ─── CONTRAT DE PRESTATION D'ÉDUCATION ────────────────────────────────────────
 // ⚠️ Contenu à garder aligné sur website/src/lib/contrat-education.ts.
 

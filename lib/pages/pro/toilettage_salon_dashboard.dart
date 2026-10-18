@@ -8,6 +8,7 @@
 // Scopé au profil actif (pro_profile_id).
 
 import 'package:PetsMatch/pages/pro/toilettage_seance_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, facturerToilettage;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -18,7 +19,7 @@ import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage, CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 
 const _teal = kDashTeal;
@@ -159,16 +160,11 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
 
   /// Facture pré-remplie depuis la prestation (prix calculé à la réservation
   /// selon l'espèce / le gabarit, sinon prix de base du catalogue).
-  void _facturer(Map<String, dynamic> r) {
-    final prix = (r['prix_calcule'] as num?)?.toDouble() ?? _prixPrestations[r['prestation_id']?.toString()] ?? 0;
-    _go(CreerFacturePage(
-      clientNom: _nomClient(r),
-      lignesPrefill: [FacturePrefillLigne(designation: '${_prestation(r)} — ${_nomAnimal(r)}', prixHT: prix, quantite: 1, tauxTVA: 20)],
-      sourceRdvId: r['id'].toString(),
-      sourceAnimalId: r['animal_id']?.toString(),
-      clientUid: r['client_uid']?.toString(),
-      clientProfileId: r['client_profile_id']?.toString(),
-    ));
+  /// Prix TTC affiché (HT déduit selon le régime de TVA), client et animal
+  /// préremplis (toilettage_dossier_seance.dart).
+  Future<void> _facturer(Map<String, dynamic> r) async {
+    await facturerToilettage(context, r, nomClient: _nomClient(r), animal: _nomAnimal(r));
+    if (mounted) _charger();
   }
 
   // ── Sélections ──────────────────────────────────────────────────────────
@@ -335,6 +331,10 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
           if (r['animal_id'] != null && const {EtapeToilettage.enCours, EtapeToilettage.pret, EtapeToilettage.termine}.contains(e))
             action(ctx, Icons.description_outlined, 'Fiche technique de la prestation', () => _go(ToilettageSeancePage(
                 animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r), rdv: {...r, '_prestation': _prestation(r)}))),
+          action(ctx, Icons.folder_open_outlined, 'Dossier de la séance (compte rendu, contrat, facture)', () async {
+            await showDossierToilettage(context, r, nomClient: _nomClient(r), prestation: _prestation(r), animal: _nomAnimal(r));
+            if (mounted) _charger();
+          }),
           if (r['animal_id'] != null)
             action(ctx, Icons.assignment_outlined, 'Fiche animal et consignes', () => _go(ToilettageFicheClientPage(
                 animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r), rdvId: r['id'].toString()))),

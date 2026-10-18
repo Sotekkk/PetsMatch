@@ -20,11 +20,11 @@ export interface SeanceToilettage {
   date_seance: string; duree_minutes: number | null; travaux: string[] | null;
   longueur_coupe: string | null; zones: string | null; finition: string | null; produits: string | null;
   cooperation: string | null; sensibilites: string | null; difficultes: string | null; precautions: string | null;
-  observations: string | null; compte_rendu: string | null; partage_proprietaire: boolean;
+  observations: string | null; compte_rendu: string | null; conseils_pelage?: string | null; partage_proprietaire: boolean;
 }
 interface Photo { id: string; type: string; url: string; rdv_id: string | null }
 
-const CHAMPS = ['longueur_coupe', 'zones', 'finition', 'produits', 'sensibilites', 'difficultes', 'precautions', 'observations', 'compte_rendu'] as const;
+const CHAMPS = ['longueur_coupe', 'zones', 'finition', 'produits', 'sensibilites', 'difficultes', 'precautions', 'observations', 'compte_rendu', 'conseils_pelage'] as const;
 type Champ = typeof CHAMPS[number];
 
 export default function SeanceToilettageModal({ animalId, animalNom, proUid, profileId, rdv, seance, prestation, onClose, onSaved }: {
@@ -237,6 +237,7 @@ export default function SeanceToilettageModal({ animalId, animalNom, proUid, pro
             </>)}</div>
             <div className="bg-white rounded-2xl">{section('Compte rendu pour le propriétaire', <>
               {champ('compte_rendu', 'Compte rendu court', 4)}
+              {champ('conseils_pelage', 'Conseils de soin du pelage (brossage, produits, prochain toilettage conseillé…)', 4)}
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={partage} onChange={e => setPartage(e.target.checked)} className="mt-0.5" />
                 <span>Partager avec le propriétaire

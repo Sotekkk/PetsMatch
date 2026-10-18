@@ -2502,7 +2502,7 @@ function AnimalFichePageInner() {
   // Bilans morphologiques (ex-onglet Morphologie) : carnet › Comptes rendus
   // Soins & Rééducation (comptes rendus de séance partagés) — cartes + filtres
   // Comptes rendus de toilettage que le salon a choisi de partager.
-  const [toilettagesCr, setToilettagesCr] = useState<{ id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; _pro?: string }[]>([]);
+  const [toilettagesCr, setToilettagesCr] = useState<{ id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; conseils_pelage?: string | null; finition?: string | null; produits?: string | null; _pro?: string }[]>([]);
   const [morphos, setMorphos] = useState<{ id: string; date: string; type_suivi: string; source?: string | null; intitule?: string | null; _pro?: string; _categorie?: string }[]>([]);
   const [filtreSoins, setFiltreSoins] = useState('tous');
   const [addDocOpen, setAddDocOpen] = useState<string|null>(null);
@@ -2652,9 +2652,9 @@ function AnimalFichePageInner() {
       };
     }));
     {
-      const { data: tg } = await supabase.from('seances_toilettage').select('id, date_seance, travaux, compte_rendu, pro_profile_id')
+      const { data: tg } = await supabase.from('seances_toilettage').select('*')
         .eq('animal_id', id).eq('partage_proprietaire', true).order('date_seance', { ascending: false });
-      const rows = (tg ?? []) as { id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; pro_profile_id: string | null }[];
+      const rows = (tg ?? []) as { id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; conseils_pelage?: string | null; finition?: string | null; produits?: string | null; pro_profile_id: string | null }[];
       const pids = [...new Set(rows.map(r => r.pro_profile_id).filter((x): x is string => !!x))];
       const noms: Record<string, string> = {};
       if (pids.length) {
@@ -5215,7 +5215,15 @@ function AnimalFichePageInner() {
                   <div key={t.id} className="px-4 py-3 border-t border-gray-50">
                     <p className="text-xs text-gray-500">{[new Date(t.date_seance).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }), t._pro].filter(Boolean).join(' — ')}</p>
                     {(t.travaux ?? []).length > 0 && <p className="text-sm font-semibold text-[#1F2A2E]">{(t.travaux ?? []).map(labelTravail).join(', ')}</p>}
+                    {t.finition && <p className="text-xs text-gray-600 mt-0.5">Finition : {t.finition}</p>}
+                    {t.produits && <p className="text-xs text-gray-600">Produits utilisés : {t.produits}</p>}
                     {t.compte_rendu && <p className="text-sm text-gray-700 whitespace-pre-line mt-0.5">{t.compte_rendu}</p>}
+                    {t.conseils_pelage && (
+                      <div className="mt-2 rounded-xl bg-[#F1F7F8] px-3 py-2">
+                        <p className="text-xs font-bold text-[#0C5C6C]">Conseils de soin du pelage</p>
+                        <p className="text-sm text-gray-700 whitespace-pre-line">{t.conseils_pelage}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

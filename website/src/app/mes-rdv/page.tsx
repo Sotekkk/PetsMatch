@@ -1,5 +1,6 @@
 'use client';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
+import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -1535,6 +1536,7 @@ export default function MesRdvPage() {
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
   const [dossierRdv, setDossierRdv] = useState<Rdv | null>(null);
+  const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
   const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null } | null>(null);
 
   const [aujourdhui, setAujourdhui] = useState<{ id: string; titre: string; date_debut: string; type: string }[]>([]);
@@ -1939,7 +1941,9 @@ export default function MesRdvPage() {
                   onOpenAnimal={openAnimalFiche}
                   onModifier={() => setModalModifier(rdv)}
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
-                  onDossier={catPro === 'photographe' && activeTab !== 'demandes' ? () => setDossierRdv(rdv) : undefined}
+                  onDossier={activeTab === 'demandes' ? undefined
+                    : catPro === 'photographe' ? () => setDossierRdv(rdv)
+                    : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}
                 />
                 </div>
               ))}
@@ -1952,6 +1956,10 @@ export default function MesRdvPage() {
         <DossierSeanceModal rdv={dossierRdv as unknown as RdvDossier} nomClient={dossierRdv.clientName ?? dossierRdv.client_nom_manuel ?? 'Client'}
           prestation={dossierRdv.motif?.trim() || 'Séance photo'} animal={dossierRdv.animal_nom_manuel ?? dossierRdv.animalNom}
           depuisAgenda onClose={() => setDossierRdv(null)} onChanged={() => fetchRdvs()} />
+      )}
+      {dossierToilettage && (
+        <DossierToilettageModal rdvId={dossierToilettage.id} nomClient={dossierToilettage.clientName ?? dossierToilettage.client_nom_manuel ?? 'Client'}
+          animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs()} />
       )}
       {historiqueRdv?.animal_id && activeProfileId && (
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}

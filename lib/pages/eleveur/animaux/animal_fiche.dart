@@ -13737,9 +13737,26 @@ class _ToilettageProprietaireCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(travaux, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E))),
         ],
+        for (final (k, label) in const [('finition', 'Finition'), ('produits', 'Produits utilisés')])
+          if ((seance[k]?.toString() ?? '').trim().isNotEmpty)
+            Padding(padding: const EdgeInsets.only(top: 4), child: Text('$label : ${seance[k].toString().trim()}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700))),
         if ((seance['compte_rendu']?.toString() ?? '').trim().isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(seance['compte_rendu'].toString().trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
+        ],
+        if ((seance['conseils_pelage']?.toString() ?? '').trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: const Color(0xFFF1F7F8), borderRadius: BorderRadius.circular(10)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Conseils de soin du pelage', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12.5, color: Color(0xFF0C5C6C))),
+              const SizedBox(height: 2),
+              Text(seance['conseils_pelage'].toString().trim(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
+            ]),
+          ),
         ],
       ]),
     );

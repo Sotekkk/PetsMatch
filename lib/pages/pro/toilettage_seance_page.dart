@@ -41,7 +41,7 @@ class _ToilettageSeancePageState extends State<ToilettageSeancePage> {
   bool _partage = false;
   DateTime _date = DateTime.now();
   final _c = {
-    for (final k in ['longueur_coupe', 'zones', 'finition', 'produits', 'sensibilites', 'difficultes', 'precautions', 'observations', 'compte_rendu', 'duree'])
+    for (final k in ['longueur_coupe', 'zones', 'finition', 'produits', 'sensibilites', 'difficultes', 'precautions', 'observations', 'compte_rendu', 'conseils_pelage', 'duree'])
       k: TextEditingController(),
   };
   List<Map<String, dynamic>> _photos = [];
@@ -184,6 +184,7 @@ class _ToilettageSeancePageState extends State<ToilettageSeancePage> {
         'precautions': _v('precautions'),
         'observations': _v('observations'),
         'compte_rendu': _v('compte_rendu'),
+        'conseils_pelage': _v('conseils_pelage'),
         'partage_proprietaire': _partage,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
@@ -366,6 +367,7 @@ class _ToilettageSeancePageState extends State<ToilettageSeancePage> {
               ]),
               _section('Compte rendu pour le propriétaire', [
                 _champ('compte_rendu', 'Compte rendu court', lignes: 4),
+                _champ('conseils_pelage', 'Conseils de soin du pelage (brossage, produits, prochain toilettage conseillé…)', lignes: 4),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   value: _partage,
