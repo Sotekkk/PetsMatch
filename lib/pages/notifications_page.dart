@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
@@ -350,6 +351,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return;
       }
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage(initialTabIndex: 0)));
+      return;
+    }
+    // Consignes avant un rendez-vous : le client les remplit ; le pro voit le rdv.
+    if (type == 'rdv_consignes') {
+      final rdvId = data is Map ? data['rdv_id']?.toString() : null;
+      if (rdvId != null) await Navigator.push(context, MaterialPageRoute(builder: (_) => RdvConsignesPage(rdvId: rdvId)));
+      return;
+    }
+    if (type == 'rdv_consignes_recues') {
+      final rdvId = data is Map ? data['rdv_id']?.toString() : null;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => ProAgendaPage(initialTabIndex: 1, focusRdvId: rdvId)));
       return;
     }
     if (type == 'rdv_confirme' || type == 'rdv_refuse' || type == 'rdv_annule' || type == 'rdv_modifie') {

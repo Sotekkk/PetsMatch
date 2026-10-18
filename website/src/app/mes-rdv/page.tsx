@@ -1985,7 +1985,12 @@ export default function MesRdvPage() {
       {modalAccepter && (
         <AccepterModal rdv={modalAccepter} proName={proName}
           onClose={() => setModalAccepter(null)}
-          onDone={ok => { const r = modalAccepter; setModalAccepter(null); fetchRdvs(); if (ok && catPro === 'garde') setApresAcceptation([r]); }} />
+          onDone={ok => {
+            const r = modalAccepter; setModalAccepter(null); fetchRdvs();
+            if (ok && catPro === 'garde') setApresAcceptation([r]);
+            // Toiletteur : le client est invité à préciser ses consignes (notification + e-mail).
+            if (ok && catPro === 'toilettage') apiFetch('/api/rdv/consignes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'demander', rdvId: r.id }) }).catch(() => {});
+          }} />
       )}
       {modalModifier && (
         <ModifierModal rdv={modalModifier} proName={proName} activeProfileId={activeProfileId ?? ''}

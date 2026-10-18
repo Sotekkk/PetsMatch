@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
@@ -368,6 +369,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           content: Text("Ce vétérinaire n'est pas libre à cette heure : le RDV reste attribué comme avant.",
               style: TextStyle(fontFamily: 'Galey'))));
       }
+    }
+    // Toiletteur : le client est invité à préciser ses consignes (notification
+    // + e-mail avec lien personnel), une seule fois à la confirmation.
+    if (update['statut'] == 'confirme' && AgendaContexte.catPro == 'toilettage'
+        && rdv['consignes'] == null && rdv['consignes_demandees_le'] == null) {
+      ConsignesApi.demander(rdvId).catchError((_) => (notifie: false, email: false));
     }
   }
 

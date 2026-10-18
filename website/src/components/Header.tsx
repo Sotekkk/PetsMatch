@@ -937,6 +937,10 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'rdv_contre_proposition':
     case 'rdv_annule_client':
       return '/mes-rdv';
+    case 'rdv_consignes':
+      return d.url ?? '/agenda';
+    case 'rdv_consignes_recues':
+      return d.rdv_id ? `/mes-rdv?onglet=a_venir&rdv=${d.rdv_id}` : '/mes-rdv';
     case 'rdv_confirme':
     case 'rdv_modifie':
     case 'rdv_refuse':

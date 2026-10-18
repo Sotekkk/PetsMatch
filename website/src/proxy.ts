@@ -23,6 +23,8 @@ const WHITELISTED_PATHS = [
   // « proches » partagé par le client) : destinataires sans accès bêta.
   '/album/',
   '/galerie-proches/',
+  // Consignes avant un rendez-vous (lien personnel envoyé par e-mail).
+  '/consignes/',
   // Pages légales — doivent être accessibles sans connexion ni mot de passe
   // bêta (exigence Google Play/App Store, cf. rejet "Invalid Privacy policy" :
   // le robot de review n'a pas l'accès bêta).

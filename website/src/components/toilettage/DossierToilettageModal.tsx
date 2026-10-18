@@ -10,6 +10,9 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ContactCanaux from '@/components/ContactCanaux';
 import SeanceToilettageModal, { type RdvSeance } from '@/components/toilettage/SeanceToilettageModal';
+import ConsignesRdvForm from '@/components/ConsignesRdvForm';
+import { apiFetch } from '@/lib/api-fetch';
+import { reponsesAffichables } from '@/lib/consignes-rdv';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -22,6 +25,7 @@ interface RdvRow {
   animal_id: string | null; animal_nom_manuel?: string | null; client_uid: string | null; client_profile_id: string | null;
   prestation_id: string | null; prix_calcule?: number | null; pro_uid?: string; pro_profile_id?: string | null; employe_id?: string | null;
   client_telephone_manuel?: string | null; client_email_manuel?: string | null;
+  consignes?: Record<string, string> | null; consignes_le?: string | null; consignes_demandees_le?: string | null;
 }
 interface Seance { id: string; compte_rendu: string | null; partage_proprietaire: boolean }
 interface Contrat { id: string; token: string; statut: string }
@@ -46,6 +50,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [coord, setCoord] = useState({ tel: '', email: '', prenom: '', nom: '', rue: '', cp: '', ville: '' });
   const [modePaiement, setModePaiement] = useState(MODES_PAIEMENT[0]);
   const [ouvrirCr, setOuvrirCr] = useState(false);
+  const [saisirConsignes, setSaisirConsignes] = useState(false);
   const [message, setMessage] = useState('');
   const [now, setNow] = useState(0);
 
@@ -127,6 +132,15 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     onChanged?.();
   }
 
+  async function demanderConsignes() {
+    if (!r) return;
+    const res = await apiFetch('/api/rdv/consignes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'demander', rdvId: r.id }) });
+    const j = await res.json().catch(() => ({})) as { error?: string; notifie?: boolean; email_envoye?: boolean };
+    if (!res.ok) { setMessage(j.error ?? 'Demande impossible'); return; }
+    setMessage(`Consignes demandées${j.email_envoye ? ' par e-mail' : ''}${j.notifie ? `${j.email_envoye ? ' et' : ''} par notification` : ''}.`);
+    charger();
+  }
+
   function facturer() {
     if (!r) return;
     try {
@@ -174,6 +188,17 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
             !seance ? (passee ? AMBRE : GRIS) : seance.partage_proprietaire ? VERT : AMBRE,
             [btn(seance ? 'Ouvrir' : 'Rédiger', () => r.animal_id ? setOuvrirCr(true) : setMessage('Animal non renseigné sur le rendez-vous.')),
               ...(crRedige && !seance?.partage_proprietaire && r.client_uid ? [btn('Partager', partagerCr)] : [])])}
+          {ligne('Consignes',
+            r.consignes_le ? `Reçues le ${new Date(r.consignes_le).toLocaleDateString('fr-FR')}` : r.consignes_demandees_le ? `Demandées le ${new Date(r.consignes_demandees_le).toLocaleDateString('fr-FR')}, en attente` : 'Non demandées',
+            r.consignes_le ? VERT : r.consignes_demandees_le ? AMBRE : GRIS,
+            r.consignes_le ? [] : [btn(r.consignes_demandees_le ? 'Relancer' : 'Demander', demanderConsignes), btn('Saisir', () => setSaisirConsignes(true))])}
+          {r.consignes_le && reponsesAffichables('toilettage', r.consignes).length > 0 && (
+            <div className="rounded-xl bg-[#F1F7F8] px-3 py-2 mb-1.5 space-y-1">
+              {reponsesAffichables('toilettage', r.consignes).map(x => (
+                <p key={x.label} className="text-xs"><span className="font-bold text-[#0C5C6C]">{x.label} : </span><span className="text-gray-700 whitespace-pre-line">{x.valeur}</span></p>
+              ))}
+            </div>
+          )}
           {ligne('Contrat',
             !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
             !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
@@ -209,6 +234,14 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         </div>
         <button onClick={onClose} className="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
+      {saisirConsignes && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={e => { e.stopPropagation(); setSaisirConsignes(false); }}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-lg p-5 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <ConsignesRdvForm rdvId={r.id} onSaved={() => { setSaisirConsignes(false); charger(); }} />
+            <button onClick={() => setSaisirConsignes(false)} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
+          </div>
+        </div>
+      )}
       {ouvrirCr && r.animal_id && user && pid && (
         <div onClick={e => e.stopPropagation()}>
           <SeanceToilettageModal animalId={r.animal_id} animalNom={animalNom || 'Animal'} proUid={r.pro_uid || user.uid} profileId={pid}

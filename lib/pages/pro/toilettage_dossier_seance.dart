@@ -16,6 +16,8 @@ import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_seance_page.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
+import 'package:PetsMatch/utils/consignes_rdv.dart';
+import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -187,7 +189,7 @@ class _DossierToilettage extends StatefulWidget {
 class _DossierToilettageState extends State<_DossierToilettage> {
   final _supa = Supabase.instance.client;
   bool _loading = true;
-  Map<String, dynamic>? _seance, _contrat, _facture;
+  Map<String, dynamic>? _seance, _contrat, _facture, _consignes;
   Map<String, String> _coord = {};
 
   Map<String, dynamic> get r => widget.rdv;
@@ -207,6 +209,7 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     final id = r['id'];
     _coord = await coordonneesClientRdv(r);
     try { _seance = await _supa.from('seances_toilettage').select().eq('rdv_id', id).maybeSingle(); } catch (_) {}
+    try { _consignes = await _supa.from('rdv').select('consignes, consignes_le, consignes_demandees_le').eq('id', id).maybeSingle(); } catch (_) {}
     try {
       _contrat = await _supa.from('documents_animaux').select('id, token, statut')
           .eq('rdv_id', id).eq('type', 'contrat_prestation_toilettage').maybeSingle();
@@ -262,6 +265,40 @@ class _DossierToilettageState extends State<_DossierToilettage> {
     } catch (e) {
       _snack('Erreur : $e');
     }
+  }
+
+  // ── Consignes du client ──
+  Future<void> _demanderConsignes() async {
+    try {
+      final res = await ConsignesApi.demander(r['id'].toString());
+      _snack('Consignes demandées${res.email ? ' par e-mail' : ''}${res.notifie ? '${res.email ? ' et' : ''} par notification' : ''}');
+      if (mounted) { setState(() => _loading = true); _charger(); }
+    } catch (e) {
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  void _voirConsignes() {
+    final rep = reponsesConsignes('toilettage', _consignes?['consignes'] as Map?);
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Consignes du client${_animalNom.isNotEmpty ? ' — $_animalNom' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _ink)),
+          const SizedBox(height: 10),
+          for (final (label, valeur) in rep) ...[
+            Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
+            Text(valeur, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _ink)),
+            const SizedBox(height: 8),
+          ],
+          Text('À reporter si besoin dans la fiche toilettage de l\'animal (consignes permanentes du salon).',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        ]),
+      )),
+    );
   }
 
   // ── Facture ──
@@ -340,6 +377,21 @@ class _DossierToilettageState extends State<_DossierToilettage> {
                         (s == null ? 'Rédiger' : 'Ouvrir', _ouvrirCompteRendu),
                         if (crRedige && !crPartage && aCompte) ('Partager', _partagerCompteRendu),
                       ]),
+                  Builder(builder: (_) {
+                    final recues = DateTime.tryParse(_consignes?['consignes_le']?.toString() ?? '')?.toLocal();
+                    final demandees = DateTime.tryParse(_consignes?['consignes_demandees_le']?.toString() ?? '')?.toLocal();
+                    return _ligne('Consignes',
+                        recues != null ? 'Reçues le ${DateFormat('dd/MM').format(recues)}'
+                            : demandees != null ? 'Demandées le ${DateFormat('dd/MM').format(demandees)}, en attente' : 'Non demandées',
+                        recues != null ? _vert : demandees != null ? _ambre : _muted,
+                        [
+                          if (recues != null) ('Voir', _voirConsignes)
+                          else ...[
+                            (demandees != null ? 'Relancer' : 'Demander', _demanderConsignes),
+                            ('Saisir', () => _go(RdvConsignesPage(rdvId: r['id'].toString()))),
+                          ],
+                        ]);
+                  }),
                   _ligne('Contrat',
                       ct == null ? 'Non généré' : ct['statut'] == 'signe' ? 'Signé'
                           : ct['statut'] == 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
