@@ -1,5 +1,6 @@
 'use client';
 
+import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, majValidation } from '@/lib/exercices-progression';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { SterilisationCedee } from '@/components/animaux/SterilisationCedee';
@@ -44,7 +45,7 @@ interface Animal {
   date_naissance?: string; couleur?: string; couleur_yeux?: string; identification?: string;
   num_sire?: string; carte_immatriculation?: string; livret_signaletique?: string;
   sterilise?: boolean; description?: string; notes?: string; photo_url?: string;
-  statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string;
+  statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string | number | null;
   pedigree?: boolean; pedigree_lof?: string; pedigree_numero?: string; club_registre?: string; pedigree_url?: string;
   nom_pere?: string; puce_pere?: string; race_pere?: string;
   nom_mere?: string; puce_mere?: string; race_mere?: string; date_naissance_mere?: string;
@@ -3055,7 +3056,7 @@ function AnimalFichePageInner() {
         carte_immatriculation: animal.espece === 'cheval' ? (animal.carte_immatriculation || undefined) : undefined,
         livret_signaletique: animal.espece === 'cheval' ? (animal.livret_signaletique || undefined) : undefined,
         description: animal.description, notes: animal.notes,
-        type_poil: animal.type_poil, taille: animal.taille, poids: animal.poids,
+        type_poil: animal.type_poil, taille: animal.taille, poids: poidsKg(animal.poids),
         pedigree: animal.pedigree, pedigree_lof: animal.pedigree_lof, pedigree_numero: animal.pedigree_numero,
         club_registre: animal.club_registre, pedigree_url: animal.pedigree_url,
         passeport_europeen: animal.passeport_europeen,
@@ -4206,7 +4207,7 @@ function AnimalFichePageInner() {
                 {showPoil && <SelectField label="Type de poil" value={animal.type_poil??''} onChange={v=>set('type_poil',v)}
                   options={[{value:'',label:'—'}, ...[...TYPES_POIL, ...(animal.espece==='chien' ? ['Dur'] : [])].map(t=>({value:t,label:t}))]} />}
                 {showTaille && <Field label={animal.espece==='cheval'?'Taille au garrot (cm)':'Taille (cm)'} value={animal.taille??''} onChange={v=>set('taille',v)} />}
-                {animal.espece!=='oiseau' && <Field label="Poids (kg)" value={animal.poids??''} onChange={v=>set('poids',v)} />}
+                {animal.espece!=='oiseau' && <Field label="Poids (kg)" value={animal.poids != null ? String(animal.poids) : ''} onChange={v=>set('poids',v)} />}
                 <Field label="Description" value={animal.description??''} onChange={v=>set('description',v)} rows={3} />
                 <Field label="Notes" value={animal.notes??''} onChange={v=>set('notes',v)} rows={2} />
               </>
@@ -5233,7 +5234,7 @@ function AnimalFichePageInner() {
           dateNaissance={animal.date_naissance}
           nom={animal.nom}
           userId={animal.uid_eleveur ?? ownerUid ?? user?.uid ?? ''}
-          poidsFiche={animal.poids}
+          poidsFiche={animal.poids != null ? String(animal.poids) : undefined}
         />
       )}
 

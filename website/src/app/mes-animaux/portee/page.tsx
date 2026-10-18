@@ -1,5 +1,6 @@
 'use client';
 
+import { poidsKg } from '@/lib/poids';
 import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -269,7 +270,7 @@ export default function PorteePage() {
         couleur_yeux:        a.couleur_yeux?.trim()          || null,
         type_poil:           a.type_poil?.trim()             || null,
         taille:              a.taille?.trim()                || null,
-        poids:               a.poids?.trim()                 || null,
+        poids:               poidsKg(a.poids),
         sterilise:           a.sterilise ?? false,
         passeport_europeen:  a.passeport_europeen?.trim()    || null,
         notes:               a.notes?.trim()                 || null,

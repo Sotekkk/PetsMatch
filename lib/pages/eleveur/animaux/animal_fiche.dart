@@ -1,4 +1,5 @@
 import 'package:share_plus/share_plus.dart';
+import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal, inviterAcquereur;
 import 'package:PetsMatch/pages/pro/toilettage_constantes.dart' show labelTravailToilettage;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
@@ -1329,7 +1330,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'carte_immatriculation': _espece == 'cheval' ? _carteImmatCtrl.text.trim() : null,
         'livret_signaletique':   _espece == 'cheval' ? _livretCtrl.text.trim() : null,
         'taille':              _tailleCtrl.text.trim(),
-        'poids':               _poidsCtrl.text.trim(),
+        'poids':               poidsKg(_poidsCtrl.text),
         'nom_pere':            _nomPereCtrl.text.trim(),
         'puce_pere':           _pucePereCtrl.text.trim(),
         'race_pere':           _racePereCtrl.text.trim(),

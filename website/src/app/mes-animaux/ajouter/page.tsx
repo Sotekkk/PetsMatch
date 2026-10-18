@@ -1,5 +1,6 @@
 'use client';
 
+import { poidsKg } from '@/lib/poids';
 import FicheAnimal from '@/app/mes-animaux/[id]/page';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
@@ -138,7 +139,7 @@ function AjouterAnimalEmploye() {
         couleur_yeux:       couleurYeux.trim()     || null,
         type_poil:          typePoil             || null,
         taille:             taille               || null,
-        poids:              poids                || null,
+        poids:              poidsKg(poids),
         sterilise,
         passeport_europeen: passeport.trim()     || null,
         description:        description.trim()   || null,

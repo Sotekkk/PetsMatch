@@ -133,6 +133,8 @@ class _PhotographePortfolioPageState extends State<PhotographePortfolioPage> {
       builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => SafeArea(child: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Align(alignment: Alignment.centerLeft, child: IconButton(icon: const Icon(Icons.arrow_back, color: _ink), tooltip: 'Retour', visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36, minHeight: 36), onPressed: () => Navigator.pop(ctx))),
           ClipRRect(borderRadius: BorderRadius.circular(12),
               child: Image.network(it['url'].toString(), height: 180, fit: BoxFit.contain)),
           const SizedBox(height: 12),

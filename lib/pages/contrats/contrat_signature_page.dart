@@ -301,7 +301,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     final meta = (_doc?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
     // Le contrat de garde « cadre » (par client) et certains contrats d'éducation
     // / santé (prestation générale, sans animal précisé) ne sont pas rattachés à un animal.
-    final animalRequired = type != 'contrat_garde' && type != 'contrat_education' && type != 'contrat_sante';
+    final animalRequired = type != 'contrat_garde' && type != 'contrat_education' && type != 'contrat_sante'
+        && type != 'contrat_prestation_photo';
     if ((animalRequired && _animal == null) || _eleveur == null) { _pdfBytes = null; return; }
     final sigElv = meta['signature_eleveur'] as String?;
     final sigAcq = meta['signature_acquereur'] as String?;
@@ -447,6 +448,42 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           dateValidite: m('date_validite').isNotEmpty ? DateTime.tryParse(m('date_validite')) : null,
           notes: m('notes'),
           sigPrestataire: sigElv, sigClient: sigAcq,
+          villeSignature: ville,
+        );
+      } else if (type == 'contrat_prestation_photo') {
+        // Séance (rdv) + prestation : date, lieu, animaux, prix, acompte, délai.
+        Map<String, dynamic>? rdv;
+        Map<String, dynamic>? prest;
+        final rdvId = _doc?['rdv_id']?.toString();
+        if (rdvId != null && rdvId.isNotEmpty) {
+          try {
+            rdv = await _supa.from('rdv').select('date_heure, adresse_depart, animal_nom_manuel, prestation_id, client_email_manuel, client_telephone_manuel')
+                .eq('id', rdvId).maybeSingle();
+            final pid = rdv?['prestation_id']?.toString();
+            if (pid != null && pid.isNotEmpty) {
+              prest = await _supa.from('prestations_photographe').select('nom, prix, delai_livraison_jours, acompte_pourcentage').eq('id', pid).maybeSingle();
+            }
+          } catch (_) {}
+        }
+        var animaux = (rdv?['animal_nom_manuel']?.toString() ?? '').trim();
+        if (animaux.isEmpty) animaux = (_animal?['nom']?.toString() ?? '').trim();
+        final contact = [m('client_email'), rdv?['client_email_manuel']?.toString() ?? '', rdv?['client_telephone_manuel']?.toString() ?? '']
+            .map((x) => x.trim()).where((x) => x.isNotEmpty).toSet().join(' · ');
+        final adresse = (rdv?['adresse_depart']?.toString() ?? '').trim();
+        _pdfBytes = await contratPhotoPdfBytes(
+          photographe: _eleveur!,
+          clientNom: m('client_nom'),
+          clientContact: contact,
+          animaux: animaux.replaceAll(' + ', ', '),
+          dateShooting: DateTime.tryParse(rdv?['date_heure']?.toString() ?? m('date_shooting'))?.toLocal(),
+          lieu: adresse.isNotEmpty ? adresse : m('lieu'),
+          prestationNom: m('prestation_nom').isNotEmpty ? m('prestation_nom') : (prest?['nom']?.toString() ?? ''),
+          prixTotal: double.tryParse(m('prix_total').replaceAll(',', '.')) ?? (prest?['prix'] as num?)?.toDouble() ?? 0,
+          acomptePourcentage: int.tryParse(m('acompte_pourcentage')) ?? (prest?['acompte_pourcentage'] as num?)?.toInt() ?? 30,
+          delaiLivraisonJours: (prest?['delai_livraison_jours'] as num?)?.toInt(),
+          autorisationImages: m('autorisation_images'),
+          notes: m('notes'),
+          sigPhotographe: sigElv, sigClient: sigAcq,
           villeSignature: ville,
         );
       } else {

@@ -294,7 +294,12 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
         return SafeArea(child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Sélection du client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            Row(children: [
+              IconButton(icon: const Icon(Icons.arrow_back, color: _ink), tooltip: 'Retour', visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36, minHeight: 36), onPressed: () => Navigator.pop(ctx)),
+              const SizedBox(width: 4),
+              const Expanded(child: Text('Sélection du client', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink))),
+            ]),
             const SizedBox(height: 6),
             if (confirmee != null) ...[
               Text('$_nbSel photo${_nbSel > 1 ? 's' : ''} choisie${_nbSel > 1 ? 's' : ''}, confirmée le ${DateFormat('dd/MM/yyyy').format(confirmee)}.',
@@ -411,7 +416,12 @@ class _PhotographeAlbumPageState extends State<PhotographeAlbumPage> {
         return SafeArea(child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Statut', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink)),
+            Row(children: [
+              IconButton(icon: const Icon(Icons.arrow_back, color: _ink), tooltip: 'Retour', visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36, minHeight: 36), onPressed: () => Navigator.pop(ctx)),
+              const SizedBox(width: 4),
+              const Expanded(child: Text('Statut', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _ink))),
+            ]),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
               initialValue: kStatutsGalerie.any((s) => s.$1 == _album['statut']) ? _album['statut'] as String : 'brouillon',

@@ -738,6 +738,127 @@ Future<Uint8List> contratGardePdfBytes({
   return pdf.save();
 }
 
+// ─── CONTRAT DE PRESTATION PHOTO ──────────────────────────────────────────────
+// ⚠️ Contenu à garder aligné sur website/src/lib/contrat-photographe.ts.
+
+/// Clause de diffusion des images selon le choix du photographe (metadata.autorisation_images).
+String clauseDiffusionPhoto(String choix) {
+  switch (choix) {
+    case 'aucune':
+      return "Le Photographe s'interdit toute diffusion des photos réalisées (book, site, réseaux sociaux, portfolio PetsMatch).";
+    case 'book_reseaux':
+      return "Le Client autorise le Photographe à présenter une sélection des photos dans son book professionnel, sur son site, "
+          "ses réseaux sociaux et son portfolio PetsMatch. Toute photo sur laquelle une personne est identifiable ne sera diffusée "
+          "qu'avec l'autorisation écrite de cette personne.";
+    default:
+      return "Le Photographe conserve le droit de présenter les photos dans son book professionnel et son portfolio PetsMatch, "
+          "sauf refus exprès du Client. Toute photo sur laquelle une personne est identifiable ne sera diffusée qu'avec "
+          "l'autorisation écrite de cette personne.";
+  }
+}
+
+Future<Uint8List> contratPhotoPdfBytes({
+  required Map<String, dynamic> photographe,
+  String clientNom = '', String clientContact = '',
+  String animaux = '', DateTime? dateShooting, String lieu = '',
+  String prestationNom = '', double prixTotal = 0, int acomptePourcentage = 30, int? delaiLivraisonJours,
+  String autorisationImages = '', String notes = '',
+  String? sigPhotographe, String? sigClient, String villeSignature = '',
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final p = _parties(photographe);
+  final today = _fmt(DateTime.now());
+  String eur(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
+  final montantAcompte = (prixTotal * acomptePourcentage).round() / 100;
+  final solde = ((prixTotal - montantAcompte) * 100).round() / 100;
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text('CONTRAT DE PRESTATION PHOTOGRAPHIQUE ANIMALIÈRE',
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
+      pw.SizedBox(height: 16),
+
+      pw.Text('ENTRE LES SOUSSIGNÉS :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Photographe', p.eleveurNom),
+      _line('Demeurant à', p.eleveurAdresse),
+      _line('Téléphone', p.eleveurTel),
+      _line('SIRET', p.eleveurSiret),
+      _line('Email', p.eleveurEmail),
+      pw.SizedBox(height: 8),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Client', clientNom.trim().isEmpty ? null : clientNom.trim()),
+      _line('Contact', clientContact.trim().isEmpty ? null : clientContact.trim()),
+
+      pw.SizedBox(height: 10),
+      pw.Text('Objet du contrat', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _line('Prestation', prestationNom.trim().isEmpty ? 'à définir' : prestationNom.trim()),
+      _line('Animal(aux)', animaux.trim().isEmpty ? null : animaux.trim()),
+      _line('Date du shooting', dateShooting != null ? _fmt(dateShooting) : null),
+      _line('Lieu', lieu.trim().isEmpty ? 'à convenir' : lieu.trim()),
+      _line('Délai de livraison', delaiLivraisonJours != null && delaiLivraisonJours > 0 ? '$delaiLivraisonJours jours' : 'à convenir'),
+      _line('Prix total', eur(prixTotal)),
+      _line('Acompte ($acomptePourcentage %)', eur(montantAcompte)),
+      _line('Solde à la livraison', eur(solde)),
+
+      pw.Text('Article 1 : Déroulement de la prestation', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Photographe s'engage à réaliser la prestation décrite ci-dessus à la date et au lieu convenus. Le Client "
+          "s'engage à assurer la présence et la sécurité de l'animal pendant toute la durée de la séance."),
+
+      pw.Text('Article 2 : Livraison des photos', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Les photos retenues sont livrées dans le délai indiqué ci-dessus, via une galerie numérique en ligne. Le nombre "
+          "de photos livrées est celui convenu dans la prestation choisie ; des photos supplémentaires peuvent être proposées "
+          "en option moyennant supplément."),
+
+      pw.Text("Article 3 : Droits d'usage des photos", style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Client bénéficie d'un droit d'usage privé et non commercial des photos livrées (impression, réseaux sociaux "
+          "personnels). Toute utilisation commerciale requiert l'accord écrit préalable du Photographe. "
+          "${clauseDiffusionPhoto(autorisationImages)}"),
+
+      pw.Text('Article 4 : Modalités financières', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Un acompte de $acomptePourcentage % du montant total est exigé à la réservation pour confirmer la prestation. "
+          "Le solde est dû à la livraison des photos. En cas d'annulation moins de 48 h avant la date convenue, l'acompte "
+          "est conservé. Un déplacement au-delà du forfait inclus donne lieu à un supplément kilométrique facturé en sus."),
+
+      pw.Text('Article 5 : Responsabilité', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le Photographe ne peut être tenu responsable en cas d'annulation liée au comportement de l'animal rendant la "
+          "séance impossible ; l'acompte reste dans ce cas acquis. Le Client demeure seul responsable des dommages causés "
+          "par son animal pendant la séance."),
+
+      if (notes.trim().isNotEmpty) ...[
+        pw.Text('Article 6 : Notes complémentaires', style: _artTitle()),
+        pw.SizedBox(height: 3),
+        _para(notes.trim()),
+      ],
+
+      pw.SizedBox(height: 16),
+      pw.Text(villeSignature.trim().isEmpty
+          ? 'Fait le $today.'
+          : 'Fait à ${villeSignature.trim()}, le $today.', style: _body()),
+      pw.SizedBox(height: 8),
+      _copyBanner('Contrat établi en deux exemplaires originaux, un pour chaque partie.'),
+      pw.Row(children: [
+        _signBlock('Le Photographe', p.eleveurNom, signature: sigPhotographe),
+        pw.SizedBox(width: 16),
+        _signBlock('Le Client', clientNom, signature: sigClient),
+      ]),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today - PetsMatch', style: _small())),
+    ],
+  ));
+
+  return pdf.save();
+}
+
 // ─── CONTRAT DE PRESTATION D'ÉDUCATION ────────────────────────────────────────
 // ⚠️ Contenu à garder aligné sur website/src/lib/contrat-education.ts.
 

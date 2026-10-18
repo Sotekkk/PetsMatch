@@ -105,7 +105,12 @@ class _PhotographeGaleriesPageState extends State<PhotographeGaleriesPage> {
       builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => Padding(
         padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + MediaQuery.of(ctx).viewInsets.bottom),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Nouvelle galerie', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _ink)),
+          Row(children: [
+            IconButton(icon: const Icon(Icons.arrow_back, color: _ink), tooltip: 'Retour', visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 36, minHeight: 36), onPressed: () => Navigator.pop(ctx)),
+            const SizedBox(width: 4),
+            const Expanded(child: Text('Nouvelle galerie', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: _ink))),
+          ]),
           const SizedBox(height: 12),
           DropdownButtonFormField<String?>(
             initialValue: rdvId,

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:google_maps_webservice/places.dart';
+import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
@@ -1856,7 +1857,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   double _prixAffiche(Map<String, dynamic> p) {
     if (widget.isToilettage) {
       final espece = _selectedAnimal?['espece']?.toString() ?? '';
-      final poids = (_selectedAnimal?['poids'] as num?)?.toDouble();
+      final poids = poidsKg(_selectedAnimal?['poids']);
       return prixPourAnimal(p, espece, poids);
     }
     return (p['prix'] as num?)?.toDouble() ?? 0;

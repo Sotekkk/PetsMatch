@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/reproducteurs.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -366,7 +367,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         'couleur_yeux':        e.value.couleurYeux.text.trim(),
         'type_poil':           e.value.typePoil.isEmpty ? null : e.value.typePoil,
         'taille':              e.value.taille.text.trim().isEmpty ? null : e.value.taille.text.trim(),
-        'poids':               e.value.poids.text.trim().isEmpty ? null : e.value.poids.text.trim(),
+        'poids':               poidsKg(e.value.poids.text),
         'sterilise':           e.value.sterilise,
         'passeport_europeen':  e.value.passeport.text.trim().isEmpty ? null : e.value.passeport.text.trim(),
         'notes':               e.value.notes.text.trim().isEmpty ? null : e.value.notes.text.trim(),

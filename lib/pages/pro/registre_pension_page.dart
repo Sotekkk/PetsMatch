@@ -7,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:http/http.dart' as http;
@@ -3457,7 +3458,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         if (animalId != null && animalId.isNotEmpty) {
           final animal = await Supabase.instance.client.from('animaux')
               .select('poids').eq('id', animalId).maybeSingle();
-          poids = (animal?['poids'] as num?)?.toDouble();
+          poids = poidsKg(animal?['poids']);
         }
         Map? tranche;
         for (final t in tranches) {

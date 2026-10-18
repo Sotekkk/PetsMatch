@@ -1,5 +1,6 @@
 'use client';
 
+import { poidsKg } from '@/lib/poids';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -126,7 +127,7 @@ export default function NouvelAnimalAssoPage() {
         couleur_yeux:      couleurYeux.trim()     || null,
         type_poil:         typePoil             || null,
         taille:            taille               || null,
-        poids:             poids                || null,
+        poids:             poidsKg(poids),
         sterilise,
         description:       description.trim()   || null,
         photo_url:         photoUrl             || null,

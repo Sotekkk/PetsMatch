@@ -12,6 +12,8 @@ async function notify(opts: {
   uid?: string | null; email?: string | null;
   type: string; title: string; body: string;
   data?: Record<string, unknown>; profileType?: string;
+  /** Profil destinataire exact (prioritaire sur profileType). */
+  profileId?: string | null;
 }) {
   try {
     let uid = opts.uid ?? undefined;
@@ -20,11 +22,15 @@ async function notify(opts: {
       uid = u?.uid as string | undefined;
     }
     if (!uid) return;
-    const { data: prof } = await supabase.from('user_profiles').select('id')
-      .eq('uid', uid).eq('profile_type', opts.profileType || 'particulier').maybeSingle();
+    let profileId = opts.profileId ?? null;
+    if (!profileId) {
+      const { data: prof } = await supabase.from('user_profiles').select('id')
+        .eq('uid', uid).eq('profile_type', opts.profileType || 'particulier').maybeSingle();
+      profileId = (prof?.id as string | undefined) ?? null;
+    }
     await supabase.from('notifications').insert({
       uid, type: opts.type, title: opts.title, body: opts.body,
-      data: opts.data ?? {}, ...(prof?.id ? { profile_id: prof.id } : {}), read: false,
+      data: opts.data ?? {}, ...(profileId ? { profile_id: profileId } : {}), read: false,
     });
   } catch { /* notif best-effort */ }
 }
@@ -166,6 +172,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     })();
     const acqEmail = meta.acquereur_email as string | undefined;
+    // Profils exacts : émetteur du contrat (photographe, garde…) et client
+    // d'une prestation (metadata.client_uid / client_profile_id) — jamais un
+    // autre profil du même compte (ex. l'élevage).
+    const proProfileId = (doc.pro_profile_id as string | null) ?? null;
+    const clientUid = (meta.client_uid as string | undefined) ?? null;
+    const clientProfileId = ((meta.client_profile_id ?? meta.acquereur_profile_id) as string | undefined) ?? null;
+    const notifierClient = async (type: string, title: string, body: string) => {
+      if (clientUid) await notify({ uid: clientUid, profileId: clientProfileId, type, title, body, data: { token: id } });
+      else if (acqEmail) await notify({ email: acqEmail, type, title, body, data: { token: id } });
+    };
     const acqNom   = (meta.acquereur_nom as string | undefined) || partieAcquereurDefaut;
     const titre    = doc.titre ?? 'le contrat';
 
@@ -177,11 +193,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const finalized = bothSigned && !isCessionType;
     if (finalized) {
       const complet = `${titre} est désormais signé par les deux parties.`;
-      await notify({ uid: doc.uid_eleveur, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, profileType: isAdoption ? 'association' : 'eleveur', data: { token: id } });
-      if (acqEmail) await notify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, data: { token: id } });
+      await notify({ uid: doc.uid_eleveur, profileId: proProfileId, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, profileType: isAdoption ? 'association' : proProfileType, data: { token: id } });
+      await notifierClient('contrat_signe_complet', '✅ Contrat signé !', complet);
     } else if (bothSigned) {
       await notify({
-        uid: doc.uid_eleveur, type: 'contrat_signe_acquereur',
+        uid: doc.uid_eleveur, profileId: proProfileId, type: 'contrat_signe_acquereur',
         title: '✍️ Contrat signé — à confirmer',
         body: `${acqNom} a signé ${titre}. Confirmez la cession pour transférer l'animal.`,
         profileType: proProfileType,
@@ -189,14 +205,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
     } else if (role === 'acquereur') {
       await notify({
-        uid: doc.uid_eleveur, type: 'contrat_signe_acquereur',
+        uid: doc.uid_eleveur, profileId: proProfileId, type: 'contrat_signe_acquereur',
         title: '✍️ Signature reçue',
         body: `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
         profileType: proProfileType,
         data: { token: id, ...(doc.animal_id ? { animalId: doc.animal_id } : {}) },
       });
-    } else if (acqEmail) {
-      await notify({ email: acqEmail, type: 'contrat_signe_eleveur', title: `✍️ ${partieVendeur} a signé`, body: `${partieVendeur} a signé ${titre} — à vous de signer pour finaliser.`, data: { token: id } });
+    } else {
+      await notifierClient('contrat_signe_eleveur', `✍️ ${partieVendeur} a signé`, `${partieVendeur} a signé ${titre} — à vous de signer pour finaliser.`);
     }
 
     // Devis d'éducation : la signature du client vaut acceptation du devis.

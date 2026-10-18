@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal;
 import 'package:PetsMatch/widgets/carnet/vermifuge_options.dart';
@@ -721,7 +722,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'livret_signaletique': _espece == 'cheval' && _livretCtrl.text.trim().isNotEmpty ? _livretCtrl.text.trim() : null,
         'type_poil': _typePoil,
         'taille': _tailleCtrl.text.trim().isEmpty ? null : double.tryParse(_tailleCtrl.text.trim()),
-        'poids': _poidsCtrl.text.trim().isEmpty ? null : double.tryParse(_poidsCtrl.text.trim()),
+        'poids': poidsKg(_poidsCtrl.text),
         'pedigree': _pedigree,
         'pedigree_lof': _pedigreeLof,
         'club_registre': _clubRegistreCtrl.text.trim().isEmpty ? null : _clubRegistreCtrl.text.trim(),

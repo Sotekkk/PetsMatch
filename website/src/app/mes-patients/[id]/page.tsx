@@ -1,5 +1,6 @@
 'use client';
 
+import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, echeanceDans, DUREES_EXERCICE, DUREE_DEFAUT_JOURS } from '@/lib/exercices-progression';
 import { SyntheseVet, SyntheseOsteo, DocumentsSantePro } from '@/components/animaux/SanteProTabs';
 import ProAnimalEntete from '@/components/animaux/ProAnimalEntete';
@@ -1198,7 +1199,7 @@ function PatientDetailPageInner() {
         // Pesée du jour → courbe de poids + poids de la fiche.
         if (poidsCr != null && !isNaN(poidsCr)) {
           await supabase.from('poids').insert({ id: `${Date.now()}`, animal_id: animalId, valeur: poidsCr, date: new Date().toISOString(), notes: 'Consultation' });
-          await supabase.from('animaux').update({ poids: String(poidsCr) }).eq('id', animalId);
+          await supabase.from('animaux').update({ poids: poidsCr }).eq('id', animalId);
           setAnimal(a => a ? { ...a, poids: poidsCr } : a);
         }
         const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
@@ -1212,7 +1213,8 @@ function PatientDetailPageInner() {
         }
       } else if (addingType === 'mesure') {
         const updates: Record<string, number> = {};
-        if (formPoids.trim()) updates.poids = parseFloat(formPoids);
+        const kgSaisi = poidsKg(formPoids);
+        if (kgSaisi != null) updates.poids = kgSaisi;
         if (formTaille.trim()) updates.taille = parseFloat(formTaille);
         if (Object.keys(updates).length > 0) {
           await supabase.from('animaux').update(updates).eq('id', animalId);

@@ -310,7 +310,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             'animal_id': animalId, 'valeur': poids,
             'date': DateTime.now().toIso8601String(), 'notes': 'Consultation',
           });
-          await _supa.from('animaux').update({'poids': _fmtPoids(poids)}).eq('id', animalId);
+          await _supa.from('animaux').update({'poids': poids}).eq('id', animalId);
         } catch (_) {}
       }
       if (statut == 'valide') {
