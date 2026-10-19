@@ -64,33 +64,34 @@ class _PensionDashboardState extends State<PensionDashboard> {
     if (uid == null) { setState(() => _loading = false); return; }
     final now = DateTime.now();
     final jour = DateTime(now.year, now.month, now.day);
-    try {
+    // Requêtes indépendantes lancées en parallèle (une erreur = liste vide).
+    Future<List<Map<String, dynamic>>> sur(Future<dynamic> f) async {
+      try { return _liste(await f); } catch (_) { return []; }
+    }
+    final pid = User_Info.activeProfileId;
+    var qd = _supa.from('pension_demandes').select().eq('pro_uid', uid).eq('statut', 'demande');
+    if (pid.isNotEmpty) qd = qd.eq('pro_profile_id', pid);
+    var qt = _supa.from('taches_elevage').select().eq('profil_source', 'pension').neq('statut', 'fait')
+        .lte('date', _iso(jour));
+    qt = pid.isNotEmpty ? qt.eq('eleveur_profile_id', pid) : qt.eq('uid_eleveur', uid);
+    final r = await Future.wait([
       // En pension + séjours à venir (30 j) — terminés exclus.
-      _sejours = _liste(await _supa.from('pension_entrees').select()
+      sur(_supa.from('pension_entrees').select()
           .eq('pro_uid', uid).eq('statut', 'en_pension')
-          .lte('date_entree', _iso(jour.add(const Duration(days: 30)))).order('date_entree'))
-          .where(sejourDuProfil).toList();
-    } catch (_) {}
-    try {
-      var qd = _supa.from('pension_demandes').select().eq('pro_uid', uid).eq('statut', 'demande');
-      if (User_Info.activeProfileId.isNotEmpty) qd = qd.eq('pro_profile_id', User_Info.activeProfileId);
-      _demandes = _liste(await qd.order('date_arrivee'));
-    } catch (_) { _demandes = []; }
-    try {
-      _logements = _liste(await _supa.from('enclos_chenil').select().eq('uid_eleveur', uid).order('nom'));
-    } catch (_) { _logements = []; }
-    try {
-      final pid = User_Info.activeProfileId;
-      var q = _supa.from('taches_elevage').select().eq('profil_source', 'pension').neq('statut', 'fait')
-          .lte('date', _iso(jour));
-      q = pid.isNotEmpty ? q.eq('eleveur_profile_id', pid) : q.eq('uid_eleveur', uid);
-      _taches = _liste(await q.order('date'));
-    } catch (_) { _taches = []; }
-    try {
-      _incidents = _liste(await _supa.from('pension_updates').select()
+          .lte('date_entree', _iso(jour.add(const Duration(days: 30)))).order('date_entree')),
+      sur(qd.order('date_arrivee')),
+      sur(_supa.from('enclos_chenil').select().eq('uid_eleveur', uid).order('nom')),
+      sur(qt.order('date')),
+      // colonne incident (migration_garde_compte_rendu_express.sql)
+      sur(_supa.from('pension_updates').select()
           .eq('pro_uid', uid).eq('incident', true)
-          .gte('created_at', jour.subtract(const Duration(days: 2)).toUtc().toIso8601String()));
-    } catch (_) { _incidents = []; } // colonne incident (migration_garde_compte_rendu_express.sql)
+          .gte('created_at', jour.subtract(const Duration(days: 2)).toUtc().toIso8601String())),
+    ]);
+    _sejours = r[0].where(sejourDuProfil).toList();
+    _demandes = r[1];
+    _logements = r[2];
+    _taches = r[3];
+    _incidents = r[4];
     final ids = {for (final s in _sejours) if (s['animal_id'] != null) s['animal_id'].toString()};
     try {
       if (ids.isNotEmpty) {
@@ -189,7 +190,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
           childAspectRatio: large ? 2.1 : 1.65,
           children: [
             DashKpi(valeur: presents.length, label: 'Animaux présents', icon: Icons.pets_outlined,
-                onTap: () => _go(const FichesPensionPage())),
+                onTap: () => _go(const RegistrePensionPage(initialMouvement: 'presents'))),
             DashKpi(valeur: _arrivees.length, label: "Arrivées aujourd'hui", icon: Icons.login_rounded, teinte: _vert,
                 actif: _aConfirmer.isNotEmpty, onTap: () => _go(const RegistrePensionPage(initialMouvement: 'arrivees'))),
             DashKpi(valeur: _departs.length, label: "Départs aujourd'hui", icon: Icons.logout_rounded, teinte: _violet,
@@ -403,7 +404,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
         (_date(a['date_sortie_prevue']) ?? DateTime(2100)).compareTo(_date(b['date_sortie_prevue']) ?? DateTime(2100)));
     return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       DashTitre('Animaux présents', icone: Icons.pets_outlined, compteur: tri.length,
-          trailing: DashLien('Tous', onTap: () => _go(const FichesPensionPage()))),
+          trailing: DashLien('Tous', onTap: () => _go(const RegistrePensionPage(initialMouvement: 'presents')))),
       const SizedBox(height: 4),
       if (tri.isEmpty)
         const Padding(padding: EdgeInsets.symmetric(vertical: 8),
@@ -521,7 +522,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
             tuile(Icons.add_circle_outline, 'Nouvelle réservation', () => _go(const RegistrePensionPage())),
             tuile(Icons.calendar_view_week_outlined, 'Planning des hébergements', () => _go(const PensionPlanningPage())),
             tuile(Icons.swap_horiz_rounded, 'Entrées / sorties', () => _go(const PensionEntreeSortiePage())),
-            tuile(Icons.pets_outlined, 'Animaux présents', () => _go(const FichesPensionPage())),
+            tuile(Icons.pets_outlined, 'Animaux présents', () => _go(const RegistrePensionPage(initialMouvement: 'presents'))),
           ],
         );
       }),

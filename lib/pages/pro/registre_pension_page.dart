@@ -27,8 +27,8 @@ import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
 import 'package:PetsMatch/utils/user_lookup.dart';
 
 class RegistrePensionPage extends StatefulWidget {
-  /// 'arrivees' / 'departs' : ouvre la page filtrée sur les mouvements du jour
-  /// (cartes « Arrivées / Départs aujourd'hui » de l'accueil).
+  /// 'presents' / 'arrivees' / 'departs' : ouvre la page filtrée (cartes
+  /// « Animaux présents / Arrivées / Départs aujourd'hui » de l'accueil).
   final String? initialMouvement;
   const RegistrePensionPage({super.key, this.initialMouvement});
 
@@ -168,7 +168,14 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
 
   List<Map<String, dynamic>> get _filtered {
     var list = _entrees;
-    if (_mouvement == 'arrivees') {
+    // Présents : en pension et déjà arrivés (les séjours réservés à venir sont exclus).
+    if (_mouvement == 'presents') {
+      final auj = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      list = list.where((d) {
+        final e = d['date_entree']?.toString() ?? '';
+        return d['statut'] == 'en_pension' && e.isNotEmpty && e.substring(0, e.length < 10 ? e.length : 10).compareTo(auj) <= 0;
+      }).toList();
+    } else if (_mouvement == 'arrivees') {
       list = list.where((d) => (d['date_entree']?.toString() ?? '').startsWith(_jourIso)).toList();
     } else if (_mouvement == 'departs') {
       list = list.where((d) => (d['date_sortie_prevue']?.toString() ?? '').startsWith(_jourIso)
@@ -1078,9 +1085,10 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         _filterChip('Tous les séjours', null, _mouvement, (v) => setState(() => _mouvement = v)),
+        _filterChip('Présents', 'presents', _mouvement, (v) => setState(() => _mouvement = v)),
         _filterChip('Arrivées', 'arrivees', _mouvement, (v) => setState(() => _mouvement = v)),
         _filterChip('Départs', 'departs', _mouvement, (v) => setState(() => _mouvement = v)),
-        if (_mouvement != null)
+        if (_mouvement == 'arrivees' || _mouvement == 'departs')
           OutlinedButton.icon(
             onPressed: () async {
               final d = await showDatePicker(context: context, initialDate: _jourMvt,

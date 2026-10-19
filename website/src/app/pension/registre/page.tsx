@@ -75,14 +75,14 @@ export default function RegistrePensionPage() {
   const [showNonFacturees, setShowNonFacturees] = useState(false);
   // Mouvements d'un jour (cartes « Arrivées / Départs aujourd'hui » de
   // l'accueil, ?mouvement=arrivees|departs) : '' = tous les séjours.
-  const [mouvement, setMouvement] = useState<'' | 'arrivees' | 'departs'>('');
+  const [mouvement, setMouvement] = useState<'' | 'presents' | 'arrivees' | 'departs'>('');
   const [jourMvt, setJourMvt] = useState('');
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get('mouvement');
     const d = new Date();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setJourMvt(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-    if (m === 'arrivees' || m === 'departs') { setMouvement(m); setTab('tous'); }
+    if (m === 'presents' || m === 'arrivees' || m === 'departs') { setMouvement(m); setTab('tous'); }
   }, []);
 
 
@@ -208,6 +208,8 @@ export default function RegistrePensionPage() {
   let filtered = entrees;
   if (tab !== 'tous') filtered = filtered.filter(e => e.statut === tab);
   if (filterEspece) filtered = filtered.filter(e => e.espece === filterEspece);
+  // Présents : en pension et déjà arrivés (les séjours réservés à venir sont exclus).
+  if (mouvement === 'presents' && jourMvt) filtered = filtered.filter(e => e.statut === 'en_pension' && (e.date_entree ?? '').slice(0, 10) <= jourMvt);
   if (mouvement === 'arrivees' && jourMvt) filtered = filtered.filter(e => (e.date_entree ?? '').startsWith(jourMvt));
   if (mouvement === 'departs' && jourMvt) filtered = filtered.filter(e => (e.date_sortie_prevue ?? '').startsWith(jourMvt) || (e.date_sortie_effective ?? '').startsWith(jourMvt));
 
@@ -286,7 +288,7 @@ export default function RegistrePensionPage() {
       {/* Contenu */}
       <div style={{ maxWidth: 900, margin: '24px auto', padding: '0 16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16, fontFamily: 'Galey, sans-serif' }}>
-          {([['', 'Tous les séjours'], ['arrivees', 'Arrivées'], ['departs', 'Départs']] as const).map(([v, lib]) => (
+          {([['', 'Tous les séjours'], ['presents', 'Présents'], ['arrivees', 'Arrivées'], ['departs', 'Départs']] as const).map(([v, lib]) => (
             <button key={v} onClick={() => { setMouvement(v); if (v) setTab('tous'); }}
               style={{ padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${mouvement === v ? TEAL : '#D1D5DB'}`,
@@ -294,7 +296,7 @@ export default function RegistrePensionPage() {
               {lib}
             </button>
           ))}
-          {mouvement && (
+          {(mouvement === 'arrivees' || mouvement === 'departs') && (
             <input type="date" value={jourMvt} onChange={e => setJourMvt(e.target.value)}
               style={{ padding: '5px 10px', borderRadius: 20, border: '1px solid #D1D5DB', fontSize: 12.5, color: '#1F2A2E' }} />
           )}
