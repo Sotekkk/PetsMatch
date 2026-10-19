@@ -27,7 +27,10 @@ import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
 import 'package:PetsMatch/utils/user_lookup.dart';
 
 class RegistrePensionPage extends StatefulWidget {
-  const RegistrePensionPage({super.key});
+  /// 'arrivees' / 'departs' : ouvre la page filtrée sur les mouvements du jour
+  /// (cartes « Arrivées / Départs aujourd'hui » de l'accueil).
+  final String? initialMouvement;
+  const RegistrePensionPage({super.key, this.initialMouvement});
 
   @override
   State<RegistrePensionPage> createState() => _RegistrePensionPageState();
@@ -48,6 +51,10 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   bool _loading                            = true;
   String? _filterEspece;
   String? _filterStatut;
+  // Mouvements d'un jour : 'arrivees' (date d'entrée) / 'departs' (sortie
+  // prévue ou effective) ; null = tous les séjours.
+  String? _mouvement;
+  DateTime _jourMvt = DateTime.now();
 
   // Alertes facturation (Phase 2 item 2/4)
   Set<String> _entreesFacturees            = {}; // entree_id ayant au moins une facture
@@ -59,6 +66,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   @override
   void initState() {
     super.initState();
+    _mouvement = widget.initialMouvement;
     _load();
   }
 
@@ -156,8 +164,16 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     }
   }
 
+  String get _jourIso => DateFormat('yyyy-MM-dd').format(_jourMvt);
+
   List<Map<String, dynamic>> get _filtered {
     var list = _entrees;
+    if (_mouvement == 'arrivees') {
+      list = list.where((d) => (d['date_entree']?.toString() ?? '').startsWith(_jourIso)).toList();
+    } else if (_mouvement == 'departs') {
+      list = list.where((d) => (d['date_sortie_prevue']?.toString() ?? '').startsWith(_jourIso)
+          || (d['date_sortie_effective']?.toString() ?? '').startsWith(_jourIso)).toList();
+    }
     if (_filterEspece != null) list = list.where((d) => d['espece'] == _filterEspece).toList();
     if (_filterStatut != null) list = list.where((d) => d['statut'] == _filterStatut).toList();
     return list;
@@ -998,6 +1014,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
           : Column(children: [
+              _buildMouvements(),
               _buildAlertesFacturation(),
               Expanded(child: filtered.isEmpty
               ? _buildEmpty()
@@ -1050,6 +1067,33 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                 ),
               ),
             ]),
+    );
+  }
+
+  // Filtre des mouvements du jour : arrivées / départs, date au choix.
+  Widget _buildMouvements() {
+    final now = DateTime.now();
+    final estAujourdhui = DateUtils.isSameDay(_jourMvt, now);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        _filterChip('Tous les séjours', null, _mouvement, (v) => setState(() => _mouvement = v)),
+        _filterChip('Arrivées', 'arrivees', _mouvement, (v) => setState(() => _mouvement = v)),
+        _filterChip('Départs', 'departs', _mouvement, (v) => setState(() => _mouvement = v)),
+        if (_mouvement != null)
+          OutlinedButton.icon(
+            onPressed: () async {
+              final d = await showDatePicker(context: context, initialDate: _jourMvt,
+                  firstDate: DateTime(now.year - 2), lastDate: DateTime(now.year + 2), locale: const Locale('fr', 'FR'));
+              if (d != null) setState(() => _jourMvt = d);
+            },
+            icon: const Icon(Icons.event_outlined, size: 16),
+            label: Text(estAujourdhui ? "Aujourd'hui" : DateFormat('EEE d MMM', 'fr_FR').format(_jourMvt),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            style: OutlinedButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+          ),
+      ]),
     );
   }
 

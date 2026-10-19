@@ -34,6 +34,14 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const [erreur, setErreur] = useState('');
   const [aujourdhui, setAujourdhui] = useState('');
 
+  // Fiche créée dans un autre onglet (« Créer la fiche de mon animal ») : liste rechargée au retour.
+  const [rechargement, setRechargement] = useState(0);
+  useEffect(() => {
+    const auRetour = () => setRechargement(n => n + 1);
+    window.addEventListener('focus', auRetour);
+    return () => window.removeEventListener('focus', auRetour);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -47,7 +55,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
       }
       setAujourdhui(new Date().toISOString().slice(0, 10));
     })();
-  }, [user, pid]);
+  }, [user, pid, rechargement]);
 
   useEffect(() => {
     if (!user) return;
@@ -102,7 +110,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
           <>
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1">Animal</label>
-              {animaux.length === 0 ? <p className="text-sm text-gray-500">Ajoutez d&apos;abord votre animal dans « Mes animaux ».</p> : (
+              {animaux.length === 0 ? <p className="text-sm text-gray-500">Créez d&apos;abord la fiche de votre animal : la pension y trouvera sa santé et son alimentation.</p> : (
                 <select value={animalId} onChange={e => { setAnimalId(e.target.value); setEssai(''); setDejaVenu(null); setPremier(null); setHebergement(null); }} className={`${champ} bg-white`}>
                   <option value="">Choisir…</option>
                   {animaux.map(a => <option key={a.id} value={a.id}>{a.nom ?? 'Animal'}</option>)}
@@ -137,6 +145,9 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
                 </div>
               </div>
             )}
+            <a href="/mes-animaux/ajouter" target="_blank" rel="noopener" className="inline-block text-sm font-semibold" style={{ color: couleur }}>
+              + {animaux.length === 0 ? 'Créer la fiche de mon animal' : 'Ajouter un autre animal'}
+            </a>
             <div className="grid grid-cols-2 gap-2">
               <div><label className="block text-xs font-semibold text-gray-600 mb-1">Arrivée</label>
                 <input type="date" min={aujourdhui} value={arrivee} onChange={e => setArrivee(e.target.value)} className={champ} /></div>

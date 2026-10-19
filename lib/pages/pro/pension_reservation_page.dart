@@ -14,6 +14,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey, pensionTarifEquin, pensionPrixNuit;
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 
 const _ink = Color(0xFF1F2A2E);
 
@@ -72,6 +73,14 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     } catch (_) {}
     await _infosPension();
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Fiche animal créée depuis la réservation, puis liste rechargée.
+  Future<void> _ajouterAnimal() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const AnimalFicheParticulierPage()));
+    if (!mounted) return;
+    setState(() => _loading = true);
+    await _charger();
   }
 
   Future<void> _infosPension() async {
@@ -193,7 +202,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
               Text(widget.proName, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
               _titre('Animal'),
               if (_animaux.isEmpty)
-                Text('Ajoutez d\'abord votre animal dans « Mes animaux ».', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))
+                Text("Créez d'abord la fiche de votre animal : la pension y trouvera sa santé et son alimentation.",
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))
               else
                 Wrap(spacing: 8, runSpacing: 8, children: [
                   for (final a in _animaux)
@@ -229,6 +239,13 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                     ),
                 ]),
               ],
+              Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+                onPressed: _ajouterAnimal,
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(_animaux.isEmpty ? 'Créer la fiche de mon animal' : 'Ajouter un autre animal',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: TextButton.styleFrom(foregroundColor: _c, padding: EdgeInsets.zero),
+              )),
               _titre('Dates du séjour'),
               OutlinedButton.icon(
                 onPressed: _choisirDates,

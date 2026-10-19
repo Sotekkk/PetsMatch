@@ -160,8 +160,8 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi valeur={presents.length} label="Animaux présents" icone="patte" href="/pension/registre" />
-              <Kpi valeur={arrivees.length} label="Arrivées aujourd'hui" icone="fleche" teinte={VERT} actif={aConfirmer.length > 0} href="/pension/entree-sortie" />
-              <Kpi valeur={departs.length} label="Départs aujourd'hui" icone="fleche" teinte={VIOLET} href="/pension/entree-sortie" />
+              <Kpi valeur={arrivees.length} label="Arrivées aujourd'hui" icone="fleche" teinte={VERT} actif={aConfirmer.length > 0} href="/pension/registre?mouvement=arrivees" />
+              <Kpi valeur={departs.length} label="Départs aujourd'hui" icone="fleche" teinte={VIOLET} href="/pension/registre?mouvement=departs" />
               <Kpi valeur={logements.length ? occupes.size : presents.length}
                 label={logements.length ? `Occupés / ${logements.length} hébergements` : 'Occupation (sans box)'}
                 icone="logement" teinte={AMBRE} href="/pension/planning" />

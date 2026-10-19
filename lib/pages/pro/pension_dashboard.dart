@@ -191,9 +191,9 @@ class _PensionDashboardState extends State<PensionDashboard> {
             DashKpi(valeur: presents.length, label: 'Animaux présents', icon: Icons.pets_outlined,
                 onTap: () => _go(const FichesPensionPage())),
             DashKpi(valeur: _arrivees.length, label: "Arrivées aujourd'hui", icon: Icons.login_rounded, teinte: _vert,
-                actif: _aConfirmer.isNotEmpty, onTap: () => _go(const PensionEntreeSortiePage())),
+                actif: _aConfirmer.isNotEmpty, onTap: () => _go(const RegistrePensionPage(initialMouvement: 'arrivees'))),
             DashKpi(valeur: _departs.length, label: "Départs aujourd'hui", icon: Icons.logout_rounded, teinte: _violet,
-                onTap: () => _go(const PensionEntreeSortiePage())),
+                onTap: () => _go(const RegistrePensionPage(initialMouvement: 'departs'))),
             // Occupation : hébergements configurés, sinon animaux présents seuls (pension familiale).
             DashKpi(valeur: _logements.isEmpty ? presents.length : _logementsOccupes.length,
                 label: _logements.isEmpty ? 'Occupation (sans box)' : 'Occupés / ${_logements.length} hébergements',
