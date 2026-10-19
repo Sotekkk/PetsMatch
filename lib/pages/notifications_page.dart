@@ -27,6 +27,8 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+import 'package:PetsMatch/pages/pro/pension_dashboard.dart';
+import 'package:PetsMatch/pages/pro/pension_reservation_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
@@ -357,6 +359,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'rdv_consignes') {
       final rdvId = data is Map ? data['rdv_id']?.toString() : null;
       if (rdvId != null) await Navigator.push(context, MaterialPageRoute(builder: (_) => RdvConsignesPage(rdvId: rdvId)));
+      return;
+    }
+    // Séjours en pension : la pension voit ses demandes sur son accueil ; le client sa liste.
+    if (type == 'pension_demande_sejour' || type == 'pension_demande_annulee') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => Scaffold(
+        backgroundColor: const Color(0xFFF6F7F5),
+        appBar: AppBar(title: const Text('Accueil pension', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        body: const SingleChildScrollView(padding: EdgeInsets.all(16), child: PensionDashboard()),
+      )));
+      return;
+    }
+    if (type == 'pension_sejour_accepte' || type == 'pension_sejour_refuse') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSejoursPensionPage()));
       return;
     }
     if (type == 'rdv_consignes_recues') {

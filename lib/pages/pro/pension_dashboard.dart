@@ -227,7 +227,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
   // Alertes ---------------------------------------------------------------
 
   // Demandes de séjour ------------------------------------------------------
-  Future<void> _decider(Map<String, dynamic> d, bool accepter) async {
+  Future<void> _decider(Map<String, dynamic> d, bool accepter, {bool forcer = false}) async {
     String? motif;
     if (!accepter) {
       final ctrl = TextEditingController();
@@ -245,8 +245,25 @@ class _PensionDashboardState extends State<PensionDashboard> {
     }
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
-          body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'accepter': accepter, if (motif != null) 'motif': motif}));
+          body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true}));
       if (!mounted) return;
+      // Hébergements pleins sur une partie du séjour : accepter quand même ?
+      if (r.statusCode == 409 && accepter && !forcer) {
+        Map j = {};
+        try { j = jsonDecode(r.body) as Map; } catch (_) {}
+        if (j['complet'] == true) {
+          final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+            title: const Text('Pension complète', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: Text('${j['error']}\nAccepter quand même ce séjour ?', style: const TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+              TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Accepter quand même')),
+            ],
+          ));
+          if (ok == true) await _decider(d, true, forcer: true);
+          return;
+        }
+      }
       if (r.statusCode != 200) {
         String m = 'Action impossible';
         try { m = (jsonDecode(r.body) as Map)['error']?.toString() ?? m; } catch (_) {}

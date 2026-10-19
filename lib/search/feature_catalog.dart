@@ -6,6 +6,7 @@
 // ⚠️ À garder synchronisé avec les tiroirs : eleveur_nav.dart,
 // particulier_nav.dart, association_nav.dart, communaute_hub_page.dart.
 
+import 'package:PetsMatch/pages/pro/pension_reservation_page.dart' show MesSejoursPensionPage;
 import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_clients_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/icad_import_page.dart';
@@ -792,6 +793,13 @@ List<QuickAction> _all(BuildContext ctx) => [
     keywords: ['facturation', 'comptabilité'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
     visible: () => _catPro == 'taxi_animalier', open: (c) => _push(c, const FacturationPage()),
+  ),
+
+  QuickAction(
+    label: 'Mes séjours en pension',
+    keywords: ['pension', 'séjour', 'réservation', 'vacances', 'demande de séjour'],
+    icon: Icons.night_shelter_outlined, group: 'Mon profil',
+    visible: () => _particulier, open: (c) => _push(c, const MesSejoursPensionPage()),
   ),
 
   QuickAction(

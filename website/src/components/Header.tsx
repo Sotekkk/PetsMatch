@@ -625,6 +625,7 @@ const MENU_PARTICULIER = [
       { href: '/mes-animaux-acquis',  label: 'Mes Animaux Acquis', icon: '🤝' },
       { href: '/agenda',              label: 'Mon Agenda',         icon: '🗓️' },
       { href: '/mes-taches',          label: 'Mes tâches',         icon: '✅' },
+      { href: '/mes-sejours',         label: 'Mes séjours en pension', icon: '🏡' },
       { href: '/mes-galeries',        label: 'Mes galeries photo', icon: '🖼️' },
       { href: '/demande-influenceur', label: 'Badge Influenceur',  icon: '⭐' },
     ],
@@ -675,6 +676,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/photographe/clients': ['clients', 'suivi', 'a traiter', 'travail', 'facture', 'contrat', 'devis', 'selection', 'retouche'],
   '/photographe/portfolio': ['portfolio', 'realisations', 'book', 'photos publiques', 'vitrine', 'couverture'],
   '/photographe/galeries': ['galerie', 'galeries', 'photos clients', 'livraison', 'selection', 'partage', 'album', 'apercus'],
+  '/mes-sejours': ['pension', 'sejour', 'reservation', 'vacances', 'demande de sejour'],
   '/mes-galeries': ['galerie', 'photos', 'photographe', 'seance photo', 'album'],
   '/mes-animaux': ['carnet de sante', 'sante', 'vaccins', 'vaccination', 'vermifuge', 'antiparasitaire', 'poids', 'courbe de poids', 'fiche animal', 'mes betes', 'chiens', 'chats', 'chirurgie', 'hospitalisation', 'traitement', 'allergie', 'radio'],
   '/elevage/agenda': ['calendrier', 'rendez-vous', 'planning', 'agenda'],
@@ -939,6 +941,13 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return '/mes-rdv';
     case 'rdv_consignes':
       return d.url ?? '/agenda';
+    // Séjours en pension : la pension voit ses demandes sur son accueil ; le client sa liste.
+    case 'pension_demande_sejour':
+    case 'pension_demande_annulee':
+      return '/';
+    case 'pension_sejour_accepte':
+    case 'pension_sejour_refuse':
+      return '/mes-sejours';
     case 'rdv_consignes_recues':
       return d.rdv_id ? `/mes-rdv?onglet=a_venir&rdv=${d.rdv_id}` : '/mes-rdv';
     case 'rdv_confirme':

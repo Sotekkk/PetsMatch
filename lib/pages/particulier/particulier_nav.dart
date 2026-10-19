@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/pension_reservation_page.dart' show MesSejoursPensionPage;
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:PetsMatch/services/factures_non_vues.dart';
@@ -235,6 +236,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const AnimauxAcquisPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes séjours en pension',
+                      icon: Icons.night_shelter_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesSejoursPensionPage(),
                         ));
                       },
                     ),

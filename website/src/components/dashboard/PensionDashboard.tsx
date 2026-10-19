@@ -83,7 +83,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     charger();
   }, [uid, charger]);
 
-  async function decider(d: Demande, accepter: boolean) {
+  async function decider(d: Demande, accepter: boolean, forcer = false) {
     let motif: string | null = null;
     if (!accepter) {
       motif = window.prompt('Motif pour le client (facultatif) : complet à ces dates…', '');
@@ -91,9 +91,14 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     }
     setDecision(d.id);
     const r = await apiFetch('/api/pension/sejour', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'decider', demandeId: d.id, accepter, ...(motif ? { motif } : {}) }) });
-    const j = await r.json().catch(() => ({})) as { error?: string };
+      body: JSON.stringify({ action: 'decider', demandeId: d.id, accepter, ...(motif ? { motif } : {}), ...(forcer ? { forcer: true } : {}) }) });
+    const j = await r.json().catch(() => ({})) as { error?: string; complet?: boolean };
     setDecision('');
+    // Hébergements pleins sur une partie du séjour : accepter quand même ?
+    if (r.status === 409 && j.complet && accepter && !forcer) {
+      if (window.confirm(`${j.error}\nAccepter quand même ce séjour ?`)) decider(d, true, true);
+      return;
+    }
     if (!r.ok) { window.alert(j.error ?? 'Action impossible'); return; }
     charger();
   }

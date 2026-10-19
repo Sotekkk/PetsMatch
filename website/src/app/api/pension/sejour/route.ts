@@ -7,8 +7,10 @@ import { requireUser } from '@/lib/server-auth';
 //       tarifs publics), premier séjour de cet animal chez elle ?
 //  POST { pensionProfileId, animalId, dateArrivee, dateDepart, essaiDate?, message?, profileId? }
 //       (client) → demande (pension_demandes) + accès à la fiche pour la pension.
-//  POST { action: 'decider', demandeId, accepter, motif? } (pension) → séjour
-//       (+ essai) créés dans pension_entrees, ou refus ; client prévenu.
+//  POST { action: 'decider', demandeId, accepter, motif?, forcer? } (pension) →
+//       séjour (+ essai) créés dans pension_entrees, ou refus ; client prévenu.
+//       Sans `forcer`, 409 { complet, jours } si un jour du séjour dépasse la
+//       capacité des hébergements (enclos_chenil).
 //  POST { action: 'annuler', demandeId } (client) → demande annulée.
 const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '', { auth: { persistSession: false } });
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
@@ -30,6 +32,33 @@ async function estProprio(uid: string, animalId: string) {
   if ((data ?? []).length) return true;
   const { data: a } = await admin.from('animaux').select('uid_proprietaire').eq('id', animalId).maybeSingle();
   return (a as { uid_proprietaire?: string | null } | null)?.uid_proprietaire === uid;
+}
+
+/** Jours (nuits) du séjour où les hébergements sont déjà pleins. Sans
+ *  hébergement configuré (pension familiale), aucune limite connue. */
+async function joursComplets(proUid: string, proProfileId: string | null, jours: string[]) {
+  const { data: lg } = await admin.from('enclos_chenil').select('capacite').eq('uid_eleveur', proUid);
+  const logements = (lg ?? []) as { capacite: number | null }[];
+  if (!logements.length || !jours.length) return { capacite: 0, complets: [] as { jour: string; occupes: number }[] };
+  const capacite = logements.reduce((t, l) => t + (l.capacite ?? 1), 0);
+  const tri = [...jours].sort();
+  const { data: en } = await admin.from('pension_entrees').select('date_entree, date_sortie_prevue, pro_profile_id')
+    .eq('pro_uid', proUid).eq('statut', 'en_pension').lte('date_entree', tri[tri.length - 1]);
+  const entrees = ((en ?? []) as { date_entree: string; date_sortie_prevue: string | null; pro_profile_id: string | null }[])
+    .filter(e => !proProfileId || !e.pro_profile_id || e.pro_profile_id === proProfileId);
+  const occupe = (e: { date_entree: string; date_sortie_prevue: string | null }, j: string) =>
+    e.date_entree <= j && (!e.date_sortie_prevue || e.date_sortie_prevue > j || (e.date_sortie_prevue === e.date_entree && j === e.date_entree));
+  const complets = tri.map(j => ({ jour: j, occupes: entrees.filter(e => occupe(e, j)).length })).filter(x => x.occupes >= capacite);
+  return { capacite, complets };
+}
+
+/** Nuits du séjour (le jour du départ n'est pas compté ; séjour d'un jour = ce jour). */
+function nuitsDuSejour(arrivee: string, depart: string) {
+  const out: string[] = [];
+  const d = new Date(`${arrivee}T12:00:00Z`);
+  const fin = new Date(`${depart}T12:00:00Z`);
+  while (d < fin && out.length < 400) { out.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
+  return out.length ? out : [arrivee];
 }
 
 async function estGestionnaire(proUid: string, uid: string) {
@@ -56,7 +85,7 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const b = await req.json().catch(() => ({})) as {
     action?: string; pensionProfileId?: string; animalId?: string; dateArrivee?: string; dateDepart?: string; essaiDate?: string | null;
-    message?: string; profileId?: string | null; demandeId?: string; accepter?: boolean; motif?: string;
+    message?: string; profileId?: string | null; demandeId?: string; accepter?: boolean; motif?: string; forcer?: boolean;
   };
   const maintenant = new Date().toISOString();
 
@@ -77,6 +106,17 @@ export async function POST(req: NextRequest) {
       await notifClient('pension_sejour_refuse', 'Séjour non accepté',
         `Votre demande de séjour pour ${d.animal_nom ?? 'votre animal'} (${fr(d.date_arrivee as string)} → ${fr(d.date_depart as string)}) n'a pas pu être acceptée.${motif ? ` ${motif}` : ''}`);
       return NextResponse.json({ ok: true });
+    }
+    // Places libres : la pension peut accepter quand même (surbooking assumé).
+    if (!b.forcer) {
+      const jours = [...nuitsDuSejour(d.date_arrivee as string, d.date_depart as string), ...(d.essai_date ? [d.essai_date] : [])];
+      const { capacite, complets } = await joursComplets(d.pro_uid as string, d.pro_profile_id, jours);
+      if (complets.length) {
+        return NextResponse.json({
+          error: `Complet ${complets.length > 1 ? 'les' : 'le'} ${complets.slice(0, 5).map(c => fr(c.jour)).join(', ')}${complets.length > 5 ? '…' : ''} (${capacite} place${capacite > 1 ? 's' : ''}).`,
+          complet: true, capacite, jours: complets,
+        }, { status: 409 });
+      }
     }
     // Séjour (et essai) dans le registre, avec la fiche et les coordonnées du client.
     const { data: an } = await admin.from('animaux').select('nom, espece, race, identification, photo_url').eq('id', d.animal_id as string).maybeSingle();

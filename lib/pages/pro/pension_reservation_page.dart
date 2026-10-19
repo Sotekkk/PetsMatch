@@ -144,9 +144,18 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
         title: const Text('Demande envoyée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         content: Text('${widget.proName} va étudier votre demande de séjour. Vous serez prévenu dès qu\'elle sera acceptée.',
             style: const TextStyle(fontFamily: 'Galey')),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-      ));
-      if (mounted) Navigator.pop(context, true);
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Voir mes demandes')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      )).then((voir) {
+        if (!mounted) return;
+        if (voir == true) {
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MesSejoursPensionPage()));
+        } else {
+          Navigator.pop(context, true);
+        }
+      });
     } catch (e) {
       if (mounted) {
         setState(() => _envoi = false);
@@ -231,6 +240,132 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                 child: Text('Demander plutôt une visite de la pension', style: TextStyle(fontFamily: 'Galey', color: _c)),
               ),
             ]),
+    );
+  }
+}
+
+/// Client — mes demandes de séjour en pension (statut, annulation tant que la
+/// pension n'a pas répondu). Miroir site : /mes-sejours.
+class MesSejoursPensionPage extends StatefulWidget {
+  const MesSejoursPensionPage({super.key});
+  @override
+  State<MesSejoursPensionPage> createState() => _MesSejoursPensionPageState();
+}
+
+class _MesSejoursPensionPageState extends State<MesSejoursPensionPage> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _demandes = [];
+  final Map<String, String> _pensions = {};
+  bool _loading = true;
+  String? _enCours;
+  static const _c = Color(0xFF0C5C6C);
+
+  @override
+  void initState() {
+    super.initState();
+    _charger();
+  }
+
+  Future<void> _charger() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    try {
+      var q = _supa.from('pension_demandes').select().eq('client_uid', uid);
+      // Profil actif : ses demandes (les anciennes sans profil restent visibles).
+      if (User_Info.activeProfileId.isNotEmpty) {
+        q = q.or('client_profile_id.eq.${User_Info.activeProfileId},client_profile_id.is.null');
+      }
+      _demandes = List<Map<String, dynamic>>.from(await q.order('date_arrivee', ascending: false));
+      final ids = {for (final d in _demandes) if (d['pro_profile_id'] != null) d['pro_profile_id'].toString()}.toList();
+      if (ids.isNotEmpty) {
+        for (final p in await _supa.from('user_profiles').select('id, nom').inFilter('id', ids)) {
+          _pensions[p['id'].toString()] = p['nom']?.toString() ?? 'Pension';
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _annuler(Map<String, dynamic> d) async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Annuler la demande ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('La pension sera prévenue que vous annulez la demande pour ${d['animal_nom'] ?? 'votre animal'}.',
+          style: const TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Non')),
+        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Annuler la demande')),
+      ],
+    ));
+    if (ok != true) return;
+    setState(() => _enCours = d['id'].toString());
+    try {
+      final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
+          body: jsonEncode({'action': 'annuler', 'demandeId': d['id']}));
+      if (r.statusCode != 200) {
+        String m = 'Annulation impossible';
+        try { m = (jsonDecode(r.body) as Map)['error']?.toString() ?? m; } catch (_) {}
+        throw Exception(m);
+      }
+      await _charger();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+    }
+    if (mounted) setState(() => _enCours = null);
+  }
+
+  (String, Color) _statut(String s) => switch (s) {
+        'acceptee' => ('Confirmé', const Color(0xFF2E7D5E)),
+        'refusee' => ('Non accepté', const Color(0xFFB3261E)),
+        'annulee' => ('Annulé', Colors.grey),
+        _ => ('En attente de la pension', const Color(0xFFD97706)),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final f = DateFormat('d MMM yyyy', 'fr_FR');
+    String jour(dynamic v) { final d = DateTime.tryParse(v?.toString() ?? ''); return d == null ? '' : f.format(d); }
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      appBar: AppBar(backgroundColor: _c, foregroundColor: Colors.white, elevation: 0,
+          title: const Text('Mes séjours en pension', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _c))
+          : _demandes.isEmpty
+              ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(
+                  "Aucune demande de séjour. Réservez depuis la fiche d'une pension dans l'annuaire des pros.",
+                  textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600))))
+              : RefreshIndicator(
+                  onRefresh: _charger,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _demandes.length,
+                    separatorBuilder: (_, __) => const Divider(height: 24),
+                    itemBuilder: (_, i) {
+                      final d = _demandes[i];
+                      final (lib, coul) = _statut(d['statut']?.toString() ?? '');
+                      final id = d['id'].toString();
+                      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Expanded(child: Text('${d['animal_nom'] ?? 'Animal'} · ${_pensions[d['pro_profile_id']?.toString()] ?? 'Pension'}',
+                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14.5, color: _ink))),
+                          Text(lib, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12.5, color: coul)),
+                        ]),
+                        const SizedBox(height: 2),
+                        Text('Du ${jour(d['date_arrivee'])} au ${jour(d['date_depart'])}'
+                            '${d['essai_date'] != null ? ' · essai le ${jour(d['essai_date'])}' : ''}',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+                        if (d['statut'] == 'refusee' && (d['motif_refus']?.toString() ?? '').isNotEmpty)
+                          Text('Motif : ${d['motif_refus']}', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+                        if (d['statut'] == 'demande')
+                          Align(alignment: Alignment.centerLeft, child: TextButton(
+                            onPressed: _enCours == id ? null : () => _annuler(d),
+                            style: TextButton.styleFrom(padding: EdgeInsets.zero, foregroundColor: const Color(0xFFB3261E)),
+                            child: Text(_enCours == id ? 'Annulation…' : 'Annuler la demande',
+                                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                          )),
+                      ]);
+                    },
+                  ),
+                ),
     );
   }
 }

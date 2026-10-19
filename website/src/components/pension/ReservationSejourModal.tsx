@@ -88,6 +88,7 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
         {etat === 'ok' ? (
           <>
             <p className="text-sm text-gray-700">Demande envoyée. {pensionNom} va l&apos;étudier ; vous serez prévenu dès qu&apos;elle sera acceptée.</p>
+            <a href="/mes-sejours" className="block text-center text-sm font-semibold" style={{ color: couleur }}>Voir mes demandes</a>
             <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-semibold text-white" style={{ background: couleur }}>Fermer</button>
           </>
         ) : (
