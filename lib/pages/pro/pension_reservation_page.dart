@@ -12,7 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/site_api.dart';
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, pensionTarifPourKey, pensionTarifEquin, pensionPrixNuit;
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 
 const _ink = Color(0xFF1F2A2E);
@@ -37,6 +37,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
   DateTime? _essai;
   Map<String, dynamic>? _pension;
   bool? _premierSejour;
+  // Sans historique chez cette pension : l'animal est-il déjà venu ? (null = pas répondu)
+  bool? _dejaVenu;
+  // Équidés : hébergement souhaité ('box' / 'pre').
+  String? _hebergement;
   bool _loading = true, _envoi = false;
 
   Color get _c => widget.categoryColor;
@@ -84,7 +88,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     } catch (_) {}
   }
 
-  bool get _essaiRequis => _pension?['essai_requis'] == true && _premierSejour == true;
+  bool get _questionNouveau => _premierSejour == true;
+  bool get _equin => pensionTarifEquin(pensionTarifKeyForEspece(_animal?['espece']?.toString()));
+  bool get _essaiRequis => _pension?['essai_requis'] == true && _premierSejour == true && _dejaVenu == false;
 
   /// Estimation : nuits × prix/nuit de l'espèce (tarifs publics de la pension).
   String? get _estimation {
@@ -93,8 +99,9 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     final key = pensionTarifKeyForEspece(_animal!['espece']?.toString());
     if (key == null) return null;
     final t = pensionTarifPourKey((tarifs['especes'] as List?) ?? const [], key);
-    final prix = (t?['prix_seul'] as num?)?.toDouble();
-    if (prix == null || prix <= 0) return null;
+    if (t == null) return null;
+    final prix = pensionPrixNuit(t, hebergement: _hebergement);
+    if (prix <= 0) return null;
     final nuits = _dates!.end.difference(_dates!.start).inDays;
     if (nuits <= 0) return null;
     return '$nuits nuit${nuits > 1 ? 's' : ''} × ${prix.toStringAsFixed(0)} € = ${(nuits * prix).toStringAsFixed(0)} € environ (hors réductions et options)';
@@ -123,6 +130,10 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
 
   Future<void> _envoyer() async {
     if (_animal == null || _dates == null) return;
+    if (_questionNouveau && _dejaVenu == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Indiquez si votre animal est déjà venu dans cette pension.')));
+      return;
+    }
     if (_essaiRequis && _essai == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Cette pension demande un essai avant le premier séjour : choisissez sa date.")));
       return;
@@ -132,6 +143,8 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(), body: jsonEncode({
         'pensionProfileId': _pid, 'animalId': _animal!['id'], 'dateArrivee': f.format(_dates!.start), 'dateDepart': f.format(_dates!.end),
+        if (_questionNouveau) 'dejaVenu': _dejaVenu,
+        if (_equin && _hebergement != null) 'hebergement': _hebergement,
         if (_essaiRequis && _essai != null) 'essaiDate': f.format(_essai!),
         'message': _message.text.trim(),
         if (User_Info.activeProfileId.isNotEmpty) 'profileId': User_Info.activeProfileId,
@@ -188,12 +201,34 @@ class _PensionReservationPageState extends State<PensionReservationPage> {
                       label: Text(a['nom']?.toString() ?? 'Animal', style: TextStyle(fontFamily: 'Galey', color: _animal?['id'] == a['id'] ? Colors.white : _ink)),
                       selected: _animal?['id'] == a['id'], showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
                       onSelected: (_) async {
-                        setState(() { _animal = a; _premierSejour = null; _essai = null; });
+                        setState(() { _animal = a; _premierSejour = null; _dejaVenu = null; _essai = null; _hebergement = null; });
                         await _infosPension();
                         if (mounted) setState(() {});
                       },
                     ),
                 ]),
+              if (_questionNouveau) ...[
+                _titre('${_animal?['nom'] ?? 'Votre animal'} est-il déjà venu dans cette pension ?'),
+                Wrap(spacing: 8, children: [
+                  for (final (v, lib) in [(false, 'Non, nouveau pensionnaire'), (true, 'Oui, il est déjà venu')])
+                    ChoiceChip(
+                      label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _dejaVenu == v ? Colors.white : _ink)),
+                      selected: _dejaVenu == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
+                      onSelected: (_) => setState(() { _dejaVenu = v; if (v) _essai = null; }),
+                    ),
+                ]),
+              ],
+              if (_equin) ...[
+                _titre('Hébergement souhaité'),
+                Wrap(spacing: 8, children: [
+                  for (final (v, lib) in [('box', 'Box'), ('pre', 'Pré')])
+                    ChoiceChip(
+                      label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _hebergement == v ? Colors.white : _ink)),
+                      selected: _hebergement == v, showCheckmark: false, selectedColor: _c, backgroundColor: Colors.white,
+                      onSelected: (_) => setState(() => _hebergement = _hebergement == v ? null : v),
+                    ),
+                ]),
+              ],
               _titre('Dates du séjour'),
               OutlinedButton.icon(
                 onPressed: _choisirDates,

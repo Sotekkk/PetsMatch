@@ -1411,7 +1411,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <a href="/toilettage/prestations" className="text-sm font-semibold text-[#0C5C6C]">Gérer mes prestations et tarifs →</a>
             </div>
           )}
-          {!['education', 'veterinaire', 'sante', 'garde', 'toilettage'].includes(catPro) && (
+          {!['education', 'veterinaire', 'sante', 'garde', 'toilettage', 'pension'].includes(catPro) && (
             <Field label="Tarifs">
               <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
                 rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />

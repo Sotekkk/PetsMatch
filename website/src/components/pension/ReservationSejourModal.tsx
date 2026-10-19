@@ -8,11 +8,10 @@ import { supabase } from '@/lib/supabase';
 import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { pensionPrixNuit, pensionTarifEquin, pensionTarifKeyForEspece, pensionTarifPourKey, type EspeceTarif } from '@/lib/pension-especes';
 
 interface Animal { id: string; nom: string | null; espece: string | null }
-interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; tarifs: { especes?: { espece: string; prix_seul?: number }[] } | null }
-
-const CLE_ESPECE: Record<string, string> = { chien: 'chien', chiens: 'chien', chat: 'chat', chats: 'chat', lapin: 'lapin', cheval: 'cheval', equide: 'cheval', nac: 'nac' };
+interface InfosPension { nom: string; essai_requis: boolean; essai_info: string | null; tarifs: { especes?: EspeceTarif[] } | null }
 
 export default function ReservationSejourModal({ pensionProfileId, pensionNom, couleur, onClose, onVisite }: {
   pensionProfileId: string; pensionNom: string; couleur: string; onClose: () => void; onVisite?: () => void;
@@ -27,6 +26,10 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
   const [message, setMessage] = useState('');
   const [infos, setInfos] = useState<InfosPension | null>(null);
   const [premier, setPremier] = useState<boolean | null>(null);
+  // Sans historique chez cette pension : l'animal est-il déjà venu ? (null = pas répondu)
+  const [dejaVenu, setDejaVenu] = useState<boolean | null>(null);
+  // Équidés : hébergement souhaité.
+  const [hebergement, setHebergement] = useState<'box' | 'pre' | null>(null);
   const [etat, setEtat] = useState<'' | 'envoi' | 'ok'>('');
   const [erreur, setErreur] = useState('');
   const [aujourdhui, setAujourdhui] = useState('');
@@ -54,22 +57,26 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
       .catch(() => {});
   }, [user, pensionProfileId, animalId]);
 
-  const essaiRequis = !!infos?.essai_requis && premier === true;
+  const questionNouveau = premier === true;
+  const essaiRequis = !!infos?.essai_requis && premier === true && dejaVenu === false;
   const nuits = arrivee && depart ? Math.round((new Date(depart).getTime() - new Date(arrivee).getTime()) / 86400000) : 0;
   const animal = animaux.find(a => a.id === animalId);
-  const cle = CLE_ESPECE[(animal?.espece ?? '').toLowerCase()] ?? (animal?.espece ?? '').toLowerCase();
-  const prix = infos?.tarifs?.especes?.find(e => e.espece === cle)?.prix_seul;
+  const cle = pensionTarifKeyForEspece(animal?.espece);
+  const equin = pensionTarifEquin(cle);
+  const tarif = cle ? pensionTarifPourKey(infos?.tarifs?.especes ?? [], cle) : undefined;
+  const prix = tarif ? pensionPrixNuit(tarif, { hebergement }) : 0;
   const estimation = prix && nuits > 0 ? `${nuits} nuit${nuits > 1 ? 's' : ''} × ${prix} € = ${nuits * prix} € environ (hors réductions et options)` : '';
 
   async function envoyer() {
     setErreur('');
     if (!animalId || !arrivee || !depart) { setErreur('Choisissez l\'animal et les dates du séjour.'); return; }
     if (depart < arrivee) { setErreur('La date de départ doit suivre l\'arrivée.'); return; }
+    if (questionNouveau && dejaVenu === null) { setErreur('Indiquez si votre animal est déjà venu dans cette pension.'); return; }
     if (essaiRequis && (!essai || essai >= arrivee)) { setErreur('Choisissez une date d\'essai avant l\'arrivée.'); return; }
     setEtat('envoi');
     const r = await apiFetch('/api/pension/sejour', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pensionProfileId, animalId, dateArrivee: arrivee, dateDepart: depart, ...(essaiRequis ? { essaiDate: essai } : {}),
+      body: JSON.stringify({ pensionProfileId, animalId, dateArrivee: arrivee, dateDepart: depart, ...(questionNouveau ? { dejaVenu } : {}), ...(equin && hebergement ? { hebergement } : {}), ...(essaiRequis ? { essaiDate: essai } : {}),
         message, ...(pid ? { profileId: pid } : {}) }),
     });
     const j = await r.json().catch(() => ({})) as { error?: string };
@@ -96,12 +103,40 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1">Animal</label>
               {animaux.length === 0 ? <p className="text-sm text-gray-500">Ajoutez d&apos;abord votre animal dans « Mes animaux ».</p> : (
-                <select value={animalId} onChange={e => { setAnimalId(e.target.value); setEssai(''); }} className={`${champ} bg-white`}>
+                <select value={animalId} onChange={e => { setAnimalId(e.target.value); setEssai(''); setDejaVenu(null); setPremier(null); setHebergement(null); }} className={`${champ} bg-white`}>
                   <option value="">Choisir…</option>
                   {animaux.map(a => <option key={a.id} value={a.id}>{a.nom ?? 'Animal'}</option>)}
                 </select>
               )}
             </div>
+            {questionNouveau && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">{animal?.nom ?? 'Votre animal'} est-il déjà venu dans cette pension ?</label>
+                <div className="flex flex-wrap gap-2">
+                  {([[false, 'Non, nouveau pensionnaire'], [true, 'Oui, il est déjà venu']] as const).map(([v, lib]) => (
+                    <button key={lib} type="button" onClick={() => { setDejaVenu(v); if (v) setEssai(''); }}
+                      className="px-3 py-1.5 rounded-full text-sm border"
+                      style={dejaVenu === v ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
+                      {lib}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {equin && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Hébergement souhaité</label>
+                <div className="flex flex-wrap gap-2">
+                  {([['box', 'Box'], ['pre', 'Pré']] as const).map(([v, lib]) => (
+                    <button key={v} type="button" onClick={() => setHebergement(h => (h === v ? null : v))}
+                      className="px-3 py-1.5 rounded-full text-sm border"
+                      style={hebergement === v ? { background: couleur, color: '#fff', borderColor: couleur } : { borderColor: '#E5E7EB', color: '#1F2A2E' }}>
+                      {lib}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div><label className="block text-xs font-semibold text-gray-600 mb-1">Arrivée</label>
                 <input type="date" min={aujourdhui} value={arrivee} onChange={e => setArrivee(e.target.value)} className={champ} /></div>

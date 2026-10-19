@@ -22,7 +22,7 @@ interface Sejour extends SejourPension {
   date_entree: string; date_sortie_prevue: string | null; statut: string; pro_profile_id?: string | null;
   arrivee_reelle_le?: string | null;
 }
-interface Demande { id: string; animal_id: string; animal_nom: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
+interface Demande { id: string; animal_id: string; animal_nom: string | null; nouveau_pensionnaire?: boolean | null; hebergement?: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
 interface Logement { id: string; nom: string; capacite: number | null }
 interface Tache { id: string; titre: string | null; date: string; animal_id: string | null; animal_nom: string | null }
 interface Animal { id: string; nom: string | null; photo_url: string | null }
@@ -54,7 +54,7 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     let tq = supabase.from('taches_elevage').select('id, titre, date, animal_id, animal_nom').eq('profil_source', 'pension')
       .neq('statut', 'fait').lte('date', iso(jour));
     tq = pid ? tq.eq('eleveur_profile_id', pid) : tq.eq('uid_eleveur', uid);
-    let dq = supabase.from('pension_demandes').select('id, animal_id, animal_nom, date_arrivee, date_depart, essai_date, message')
+    let dq = supabase.from('pension_demandes').select('id, animal_id, animal_nom, date_arrivee, date_depart, essai_date, message, nouveau_pensionnaire, hebergement')
       .eq('pro_uid', uid).eq('statut', 'demande');
     if (pid) dq = dq.eq('pro_profile_id', pid);
     const dRes = await dq.order('date_arrivee');
@@ -176,8 +176,11 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
                   {demandes.map(d => (
                     <div key={d.id} className="py-2.5 flex flex-wrap items-center gap-2">
                       <div className="flex-1 min-w-[180px]">
-                        <p className="text-sm font-bold text-[#1E2025]">{d.animal_nom ?? 'Animal'}</p>
-                        <p className="text-xs text-gray-500">Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}</p>
+                        <p className="text-sm font-bold text-[#1E2025]">{d.animal_nom ?? 'Animal'}
+                          {d.nouveau_pensionnaire === true && <span className="font-semibold text-xs text-[#D97706]"> · nouveau pensionnaire</span>}
+                          {d.nouveau_pensionnaire === false && <span className="font-normal text-xs text-gray-500"> · déjà venu (selon le client)</span>}
+                        </p>
+                        <p className="text-xs text-gray-500">Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}{d.hebergement === 'box' ? ' · box' : d.hebergement === 'pre' ? ' · pré' : ''}</p>
                         {d.message && <p className="text-xs text-gray-500 italic">« {d.message} »</p>}
                       </div>
                       <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>

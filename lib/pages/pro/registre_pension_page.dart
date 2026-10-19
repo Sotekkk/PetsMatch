@@ -22,7 +22,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
-    show pensionTarifKeyForEspece, pensionTarifPourKey, especeMatchesLogement,
+    show pensionTarifKeyForEspece, pensionTarifPourKey, especeMatchesLogement, pensionPrixNuit,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
 import 'package:PetsMatch/utils/user_lookup.dart';
 
@@ -3445,10 +3445,16 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         if (key == null) return;
         final match = pensionTarifPourKey(especesTarifs, key);
         if (match == null) return;
-        prixNuit = seul
-            ? (match['prix_seul'] as num?)?.toDouble() ?? 0
-            : (match['prix_partage'] as num?)?.toDouble() ??
-              (match['prix_seul'] as num?)?.toDouble() ?? 0;
+        // Équidés : box ou pré selon le type du logement occupé.
+        String? typeLogement;
+        final logementId = widget.entree['logement_id']?.toString();
+        if (logementId != null && logementId.isNotEmpty) {
+          try {
+            final lg = await Supabase.instance.client.from('enclos_chenil').select('type').eq('id', logementId).maybeSingle();
+            typeLogement = lg?['type']?.toString();
+          } catch (_) {}
+        }
+        prixNuit = pensionPrixNuit(match, seul: seul, hebergement: typeLogement);
       } else {
         // Rétro-compat : ancien modèle tranches de poids.
         final tranches = (config['tranches_poids'] as List?) ?? [];

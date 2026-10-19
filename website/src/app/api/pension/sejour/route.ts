@@ -5,8 +5,10 @@ import { requireUser } from '@/lib/server-auth';
 // Pension — réservation de séjour par le client (demande à accepter).
 //  GET  ?pensionProfileId=&animalId= (client) → infos pension (essai exigé,
 //       tarifs publics), premier séjour de cet animal chez elle ?
-//  POST { pensionProfileId, animalId, dateArrivee, dateDepart, essaiDate?, message?, profileId? }
+//  POST { pensionProfileId, animalId, dateArrivee, dateDepart, dejaVenu?, essaiDate?, message?, profileId? }
 //       (client) → demande (pension_demandes) + accès à la fiche pour la pension.
+//       Sans historique chez cette pension, le client dit si l'animal est déjà
+//       venu (`dejaVenu`) ; l'essai n'est exigé que pour un nouveau pensionnaire.
 //  POST { action: 'decider', demandeId, accepter, motif?, forcer? } (pension) →
 //       séjour (+ essai) créés dans pension_entrees, ou refus ; client prévenu.
 //       Sans `forcer`, 409 { complet, jours } si un jour du séjour dépasse la
@@ -84,7 +86,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
   if (auth instanceof NextResponse) return auth;
   const b = await req.json().catch(() => ({})) as {
-    action?: string; pensionProfileId?: string; animalId?: string; dateArrivee?: string; dateDepart?: string; essaiDate?: string | null;
+    action?: string; pensionProfileId?: string; animalId?: string; dateArrivee?: string; dateDepart?: string; essaiDate?: string | null; dejaVenu?: boolean | null; hebergement?: string | null;
     message?: string; profileId?: string | null; demandeId?: string; accepter?: boolean; motif?: string; forcer?: boolean;
   };
   const maintenant = new Date().toISOString();
@@ -135,7 +137,8 @@ export async function POST(req: NextRequest) {
       statut: 'en_pension',
     };
     const { data: ent, error } = await admin.from('pension_entrees').insert({
-      ...base, date_entree: d.date_arrivee, date_sortie_prevue: d.date_depart, notes: d.message ? `Message du client : ${d.message}` : null,
+      ...base, date_entree: d.date_arrivee, date_sortie_prevue: d.date_depart,
+      notes: [d.hebergement ? `Hébergement souhaité : ${d.hebergement === 'pre' ? 'pré' : 'box'}` : '', d.message ? `Message du client : ${d.message}` : ''].filter(Boolean).join('\n') || null,
     }).select('id').single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     let essaiId: string | null = null;
@@ -173,8 +176,13 @@ export async function POST(req: NextRequest) {
   const aujourdhui = maintenant.slice(0, 10);
   if ((b.dateArrivee as string) < aujourdhui) return NextResponse.json({ error: 'La date d\'arrivée est passée.' }, { status: 400 });
   const premier = await premierSejour(p.uid, b.animalId);
+  if (premier && typeof b.dejaVenu !== 'boolean') {
+    return NextResponse.json({ error: 'Indiquez si votre animal est déjà venu dans cette pension.' }, { status: 400 });
+  }
+  // null = historique connu chez la pension (pas un nouveau pensionnaire).
+  const nouveau: boolean | null = premier ? !b.dejaVenu : null;
   let essai: string | null = null;
-  if (p.pension_essai_requis && premier) {
+  if (p.pension_essai_requis && nouveau) {
     if (!JOUR.test(b.essaiDate ?? '') || (b.essaiDate as string) >= (b.dateArrivee as string) || (b.essaiDate as string) < aujourdhui) {
       return NextResponse.json({ error: 'Cette pension demande un essai avant le premier séjour : choisissez une date d\'essai avant l\'arrivée.' }, { status: 400 });
     }
@@ -190,7 +198,7 @@ export async function POST(req: NextRequest) {
   const { data: dem, error } = await admin.from('pension_demandes').insert({
     pro_uid: p.uid, pro_profile_id: p.id, client_uid: auth.uid, client_profile_id: profil, animal_id: b.animalId,
     animal_nom: a?.nom ?? null, espece: a?.espece ?? null, date_arrivee: b.dateArrivee, date_depart: b.dateDepart,
-    essai_date: essai, message: (b.message ?? '').trim().slice(0, 1000) || null,
+    essai_date: essai, nouveau_pensionnaire: nouveau, hebergement: b.hebergement === 'box' || b.hebergement === 'pre' ? b.hebergement : null, message: (b.message ?? '').trim().slice(0, 1000) || null,
   }).select('id').single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   // La pension consulte la fiche de l'animal (santé, alimentation) pour préparer le séjour.
@@ -204,7 +212,7 @@ export async function POST(req: NextRequest) {
   }
   await admin.from('notifications').insert({
     uid: p.uid, profile_id: p.id, type: 'pension_demande_sejour', title: 'Nouvelle demande de séjour',
-    body: `${a?.nom ?? 'Un animal'} : du ${fr(b.dateArrivee as string)} au ${fr(b.dateDepart as string)}${essai ? ` (essai proposé le ${fr(essai)})` : ''}.`,
+    body: `${a?.nom ?? 'Un animal'}${nouveau === true ? ' (nouveau pensionnaire)' : nouveau === false ? ' (déjà venu selon le client)' : ''} : du ${fr(b.dateArrivee as string)} au ${fr(b.dateDepart as string)}${essai ? `, essai proposé le ${fr(essai)}` : ''}.`,
     data: { demande_id: (dem as { id: string }).id }, read: false,
   });
   return NextResponse.json({ ok: true, demandeId: (dem as { id: string }).id, essai_requis: !!essai });

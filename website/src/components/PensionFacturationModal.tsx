@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
-import { pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
+import { pensionPrixNuit, pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
 import { type PensionFactureEmetteur } from '@/lib/pension-facture-html';
 
 const TEAL = '#0C5C6C';
@@ -67,7 +67,14 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         if (!key) return;
         const match = pensionTarifPourKey(config.especes, key);
         if (!match) return;
-        prixNuit = (seul ? match.prix_seul : (match.prix_partage ?? match.prix_seul)) ?? 0;
+        // Équidés : box ou pré selon le type du logement occupé.
+        let typeLogement: string | null = null;
+        const logementId = (entree as { logement_id?: string | null }).logement_id;
+        if (logementId) {
+          const { data: lg } = await supabase.from('enclos_chenil').select('type').eq('id', logementId).maybeSingle();
+          typeLogement = (lg as { type?: string | null } | null)?.type ?? null;
+        }
+        prixNuit = pensionPrixNuit(match, { seul, hebergement: typeLogement });
       } else if (Array.isArray(config.tranches_poids) && config.tranches_poids.length > 0) {
         // Rétro-compat : ancien modèle tranches de poids.
         const tranches = config.tranches_poids;

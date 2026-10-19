@@ -103,6 +103,23 @@ Map? pensionTarifPourKey(List especesTarifs, String key) {
   return find(key) ?? find(pensionGroupe(key));
 }
 
+/// Équidés : tarif au box ou au pré (au lieu de seul / partagé).
+bool pensionTarifEquin(String? key) => key == 'cheval' || key == 'ane';
+
+/// Prix par nuit d'un tarif d'espèce. Équidés : box ou pré selon
+/// l'hébergement (`enclos_chenil.type` ou choix du client) ; sinon seul /
+/// partagé.
+double pensionPrixNuit(Map t, {bool seul = true, String? hebergement}) {
+  double? n(String k) { final v = (t[k] as num?)?.toDouble(); return v != null && v > 0 ? v : null; }
+  final box = n('prix_box'), pre = n('prix_pre');
+  if (box != null || pre != null) {
+    final h = (hebergement ?? '').toLowerCase();
+    final auPre = h.contains('pre') || h.contains('pré') || h.contains('paddock');
+    return (auPre ? (pre ?? box) : (box ?? pre)) ?? 0;
+  }
+  return seul ? (n('prix_seul') ?? 0) : (n('prix_partage') ?? n('prix_seul') ?? 0);
+}
+
 /// La pension a-t-elle coché une espèce couvrant ce tarif ?
 bool pensionTarifAccepte(String key, Iterable<String> acceptees) => acceptees.any((a) {
   final k = pensionTarifKeyForEspece(a);
@@ -244,10 +261,15 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
         if (e is! Map) continue;
         final k = e['espece']?.toString() ?? '';
         if (k.isEmpty) continue;
-        prixParEspece[k] = {
-          'seul': e['prix_seul']?.toString() ?? '',
-          'partage': e['prix_partage']?.toString() ?? '',
-        };
+        prixParEspece[k] = pensionTarifEquin(k)
+            ? {
+                'seul': (e['prix_box'] ?? (e['prix_pre'] == null ? e['prix_seul'] : null))?.toString() ?? '',
+                'partage': e['prix_pre']?.toString() ?? '',
+              }
+            : {
+                'seul': e['prix_seul']?.toString() ?? '',
+                'partage': e['prix_partage']?.toString() ?? '',
+              };
       }
     } else {
       // Rétro-compat : ancien modèle tranches_poids -> on reprend le prix
@@ -318,6 +340,12 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
           .map((e) {
         final seul = double.tryParse(e.prixSeul.text.replaceAll(',', '.'))
             ?? double.tryParse(e.prixPartage.text.replaceAll(',', '.')) ?? 0;
+        if (pensionTarifEquin(e.key)) {
+          // Équidés : box / pré ; prix_seul repris pour les anciens lecteurs.
+          final box = double.tryParse(e.prixSeul.text.replaceAll(',', '.'));
+          final pre = double.tryParse(e.prixPartage.text.replaceAll(',', '.'));
+          return {'espece': e.key, 'prix_box': box, 'prix_pre': pre, 'prix_seul': seul, 'prix_partage': seul};
+        }
         final partage = double.tryParse(e.prixPartage.text.replaceAll(',', '.')) ?? seul;
         return {'espece': e.key, 'prix_seul': seul, 'prix_partage': partage};
       }).toList();
@@ -528,8 +556,6 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     ),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        Text(e.emoji, style: const TextStyle(fontSize: 18)),
-        const SizedBox(width: 8),
         Text(e.label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
         const SizedBox(width: 8),
         if (e.accepte)
@@ -544,13 +570,13 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
         Expanded(child: TextField(
           controller: e.prixSeul,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Prix seul (€/nuit)', isDense: true, border: OutlineInputBorder()),
+          decoration: InputDecoration(labelText: pensionTarifEquin(e.key) ? 'Box (€/nuit)' : 'Prix seul (€/nuit)', isDense: true, border: const OutlineInputBorder()),
         )),
         const SizedBox(width: 8),
         Expanded(child: TextField(
           controller: e.prixPartage,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Prix partagé (€/nuit)', isDense: true, border: OutlineInputBorder()),
+          decoration: InputDecoration(labelText: pensionTarifEquin(e.key) ? 'Pré (€/nuit)' : 'Prix partagé (€/nuit)', isDense: true, border: const OutlineInputBorder()),
         )),
       ]),
     ]),

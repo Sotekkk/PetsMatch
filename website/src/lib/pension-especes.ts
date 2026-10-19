@@ -147,6 +147,27 @@ export interface EspeceTarif {
   espece: string;
   prix_seul: number;
   prix_partage: number;
+  /** Équidés : au box / au pré (prix_seul = repli pour les anciens lecteurs). */
+  prix_box?: number | null;
+  prix_pre?: number | null;
+}
+
+/** Équidés : tarif au box ou au pré (au lieu de seul / partagé). */
+export function pensionTarifEquin(key?: string | null): boolean {
+  return key === 'cheval' || key === 'ane';
+}
+
+/** Prix par nuit d'un tarif d'espèce. Équidés : box ou pré selon
+ *  l'hébergement (`enclos_chenil.type` ou choix du client) ; sinon seul / partagé. */
+export function pensionPrixNuit(t: Partial<EspeceTarif>, opts: { seul?: boolean; hebergement?: string | null } = {}): number {
+  const n = (v?: number | null) => (v != null && v > 0 ? v : null);
+  const box = n(t.prix_box), pre = n(t.prix_pre);
+  if (box != null || pre != null) {
+    const h = (opts.hebergement ?? '').toLowerCase();
+    const auPre = h.includes('pre') || h.includes('pré') || h.includes('paddock');
+    return (auPre ? (pre ?? box) : (box ?? pre)) ?? 0;
+  }
+  return (opts.seul !== false ? n(t.prix_seul) : (n(t.prix_partage) ?? n(t.prix_seul))) ?? 0;
 }
 
 export interface TarifsPension {

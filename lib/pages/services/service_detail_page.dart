@@ -14,7 +14,7 @@ import 'package:PetsMatch/pages/pro/education_reservation_page.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, kPensionEspeceFermeLegacy;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces, kPensionEspeceFermeLegacy, pensionTarifEquin;
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:intl/intl.dart';
@@ -487,6 +487,15 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         if (e is Map && e['espece'] == sp['key']) { match = e; break; }
       }
       if (match == null) continue;
+      // Équidés : box / pré.
+      final box = (match['prix_box'] as num?)?.toDouble(), pre = (match['prix_pre'] as num?)?.toDouble();
+      if (pensionTarifEquin(sp['key']) && ((box ?? 0) > 0 || (pre ?? 0) > 0)) {
+        out.add((sp['label']!, [
+          if ((box ?? 0) > 0) 'Box ${box!.toStringAsFixed(0)} €',
+          if ((pre ?? 0) > 0) 'Pré ${pre!.toStringAsFixed(0)} €',
+        ].join(' · ')));
+        continue;
+      }
       final seul = (match['prix_seul'] as num?)?.toDouble() ?? 0;
       if (seul <= 0) continue;
       final partage = (match['prix_partage'] as num?)?.toDouble();
@@ -1221,7 +1230,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
 
           // Tarifs (texte libre — sauf éducateur, qui a une grille structurée)
           // Éducateur / vétérinaire / ostéo-kiné : grille de tarifs structurée, pas le texte libre.
-          if (_tarifs.isNotEmpty && !const {'education', 'veterinaire', 'sante', 'garde', 'toilettage'}.contains(_proData?['cat_pro'])) ...[
+          if (_tarifs.isNotEmpty && !const {'education', 'veterinaire', 'sante', 'garde', 'toilettage', 'pension'}.contains(_proData?['cat_pro'])) ...[
             const SizedBox(height: 12),
             _card(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

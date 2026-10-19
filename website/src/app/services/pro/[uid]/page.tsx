@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
-import { PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY } from '@/lib/pension-especes';
+import { PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY, pensionTarifEquin } from '@/lib/pension-especes';
 import { gardeMotifLabel, ACCES_LOGEMENT, accesLogementLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 import ReservationSejourModal from '@/components/pension/ReservationSejourModal';
@@ -84,7 +84,7 @@ interface ProData {
   autre_domicile_lng?: number | null;
   latitude?: number | null; longitude?: number | null; lat?: number | null; lng?: number | null;
   tarifs_pension?: {
-    especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
+    especes?: { espece: string; prix_seul: number; prix_partage?: number; prix_box?: number | null; prix_pre?: number | null }[];
     afficher_public?: boolean;
   };
 }
@@ -1559,6 +1559,17 @@ function ProDetailContent() {
                 <div className="space-y-1.5">
                   {[...PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY].map(sp => {
                     const t = (pro.tarifs_pension!.especes ?? []).find(e => e.espece === sp.key);
+                    // Équidés : box / pré.
+                    if (t && pensionTarifEquin(sp.key) && ((t.prix_box ?? 0) > 0 || (t.prix_pre ?? 0) > 0)) {
+                      return (
+                        <div key={sp.key} className="flex items-center gap-2 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          <span className="flex-1 text-[#1E2025] font-medium">{sp.label}</span>
+                          <span className="font-bold text-[#0C5C6C]">
+                            {[(t.prix_box ?? 0) > 0 ? `Box ${t.prix_box!.toFixed(0)} €` : '', (t.prix_pre ?? 0) > 0 ? `Pré ${t.prix_pre!.toFixed(0)} €` : ''].filter(Boolean).join(' · ')}
+                          </span>
+                        </div>
+                      );
+                    }
                     if (!t || !(t.prix_seul > 0)) return null;
                     const partage = t.prix_partage;
                     return (
@@ -1632,7 +1643,7 @@ function ProDetailContent() {
                 <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.education_bilan_description}</p>
               </div>
             )}
-            {pro.tarifs && !['education', 'veterinaire', 'sante', 'garde', 'toilettage'].includes(pro.cat_pro) && (
+            {pro.tarifs && !['education', 'veterinaire', 'sante', 'garde', 'toilettage', 'pension'].includes(pro.cat_pro) && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
                 <p className="text-sm text-gray-600 leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.tarifs}</p>

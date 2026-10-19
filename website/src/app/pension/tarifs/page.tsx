@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
-import { PENSION_ESPECES, pensionGroupe, pensionTarifAccepte, type TarifsPension } from '@/lib/pension-especes';
+import { PENSION_ESPECES, pensionGroupe, pensionTarifAccepte, pensionTarifEquin, type TarifsPension } from '@/lib/pension-especes';
 
 interface EspeceRow {
   key: string;
@@ -73,7 +73,11 @@ export default function PensionTarifsPage() {
     const prixByKey: Record<string, { seul: string; partage: string }> = {};
     if (Array.isArray(t?.especes)) {
       for (const e of t.especes) {
-        prixByKey[e.espece] = {
+        // Équidés : box / pré.
+        prixByKey[e.espece] = pensionTarifEquin(e.espece) ? {
+          seul: e.prix_box != null ? String(e.prix_box) : e.prix_pre == null && e.prix_seul != null ? String(e.prix_seul) : '',
+          partage: e.prix_pre != null ? String(e.prix_pre) : '',
+        } : {
           seul: e.prix_seul != null ? String(e.prix_seul) : '',
           partage: e.prix_partage != null ? String(e.prix_partage) : '',
         };
@@ -121,8 +125,14 @@ export default function PensionTarifsPage() {
     setSaved(false);
 
     const especesOut = especes
-      .filter(e => e.prixSeul.trim() !== '')
+      .filter(e => e.prixSeul.trim() !== '' || (pensionTarifEquin(e.key) && e.prixPartage.trim() !== ''))
       .map(e => {
+        if (pensionTarifEquin(e.key)) {
+          // Équidés : box / pré ; prix_seul repris pour les anciens lecteurs.
+          const box = num(e.prixSeul), pre = num(e.prixPartage);
+          const base = box ?? pre ?? 0;
+          return { espece: e.key, prix_box: box, prix_pre: pre, prix_seul: base, prix_partage: base };
+        }
         const seul = num(e.prixSeul) ?? 0;
         return { espece: e.key, prix_seul: seul, prix_partage: num(e.prixPartage) ?? seul };
       });
@@ -212,7 +222,6 @@ export default function PensionTarifsPage() {
             return (
               <div key={e.key} className="border border-gray-100 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">{e.emoji}</span>
                   <span className="font-galey font-bold text-sm text-[#1E2025]">{e.label}</span>
                   {e.accepte && (
                     <span className="text-[10px] font-galey font-bold px-2 py-0.5 rounded-full bg-[#6E9E57]/12 text-[#6E9E57]">
@@ -221,10 +230,10 @@ export default function PensionTarifsPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <input placeholder="Prix seul (€/nuit)" value={e.prixSeul} inputMode="decimal"
+                  <input placeholder={pensionTarifEquin(e.key) ? 'Box (€/nuit)' : 'Prix seul (€/nuit)'} value={e.prixSeul} inputMode="decimal"
                     onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixSeul: ev.target.value } : x))}
                     className={`${inputCls} flex-1 min-w-[140px]`} />
-                  <input placeholder="Prix partagé (€/nuit)" value={e.prixPartage} inputMode="decimal"
+                  <input placeholder={pensionTarifEquin(e.key) ? 'Pré (€/nuit)' : 'Prix partagé (€/nuit)'} value={e.prixPartage} inputMode="decimal"
                     onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixPartage: ev.target.value } : x))}
                     className={`${inputCls} flex-1 min-w-[140px]`} />
                 </div>

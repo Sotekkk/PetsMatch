@@ -289,9 +289,11 @@ class _PensionDashboardState extends State<PensionDashboard> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(d['animal_nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+              Text('${d['animal_nom'] ?? 'Animal'}${d['nouveau_pensionnaire'] == true ? ' · nouveau pensionnaire' : d['nouveau_pensionnaire'] == false ? ' · déjà venu (selon le client)' : ''}',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
               Text('Du ${_jm(d['date_arrivee'])} au ${_jm(d['date_depart'])}'
-                  '${d['essai_date'] != null ? ' · essai le ${_jm(d['essai_date'])}' : ''}',
+                  '${d['essai_date'] != null ? ' · essai le ${_jm(d['essai_date'])}' : ''}'
+                  '${d['hebergement'] == 'box' ? ' · box' : d['hebergement'] == 'pre' ? ' · pré' : ''}',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
               if ((d['message']?.toString() ?? '').isNotEmpty)
                 Text('« ${d['message']} »', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted)),

@@ -1125,7 +1125,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // L'éducateur, le vétérinaire, l'ostéo/kiné et le pet-sitter ont une grille
                   // de tarifs structurée (prestations fixes + libres) — le
                   // champ libre ferait doublon.
-                  if (!const {'education', 'veterinaire', 'sante', 'garde', 'toilettage'}.contains(_catPro)) ...[
+                  if (!const {'education', 'veterinaire', 'sante', 'garde', 'toilettage', 'pension'}.contains(_catPro)) ...[
                     const SizedBox(height: 12),
                     _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
                   ],
