@@ -52,11 +52,13 @@ export default function DemandesAccesPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    // Repli (profil actif inconnu) : le profil pension / pet-sitter du compte —
+    // jamais is_main (souvent l'élevage : ses accès s'affichaient ici).
     let proProfileId = activeProfileId || null;
     if (!proProfileId) {
-      const { data: mainProfile } = await supabase.from('user_profiles_complet')
-        .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
-      proProfileId = mainProfile?.id ?? null;
+      const { data: proProfile } = await supabase.from('user_profiles_complet')
+        .select('id').eq('uid', user.uid).in('profile_type', ['pension', 'garde']).limit(1).maybeSingle();
+      proProfileId = proProfile?.id ?? null;
     }
     if (!proProfileId) { setDemandes([]); setLoading(false); return; }
     const { data } = await supabase.from('animal_access')

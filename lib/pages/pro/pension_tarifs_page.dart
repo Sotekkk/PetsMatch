@@ -193,6 +193,9 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   bool _loading = true;
   bool _saving = false;
   bool _afficherPublic = false;
+  // Essai obligatoire avant le premier séjour (réservation en ligne).
+  bool _essaiRequis = false;
+  final _essaiInfo = TextEditingController();
   bool _showAutresEspeces = false;
   final List<_EspeceTarifCtrl> _especes = [];
   final List<_ReductionCtrl> _reductions = [];
@@ -218,6 +221,11 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
       if (pid.isNotEmpty) {
         final row = await _supa.from('user_profiles_complet')
             .select('tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
+        try {
+          final e = await _supa.from('user_profiles').select('pension_essai_requis, pension_essai_info').eq('id', pid).maybeSingle();
+          _essaiRequis = e?['pension_essai_requis'] == true;
+          _essaiInfo.text = e?['pension_essai_info']?.toString() ?? '';
+        } catch (_) {}
         final data = row?['tarifs_pension'];
         if (data is Map) tarifs = Map<String, dynamic>.from(data);
         if (row?['especes_acceptees'] is List) {
@@ -330,6 +338,12 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
           'afficher_public': _afficherPublic,
         },
       }).eq('id', pid);
+      try {
+        await _supa.from('user_profiles').update({
+          'pension_essai_requis': _essaiRequis,
+          'pension_essai_info': _essaiInfo.text.trim().isEmpty ? null : _essaiInfo.text.trim(),
+        }).eq('id', pid);
+      } catch (_) {}
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -379,6 +393,32 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                     subtitle: Text('Les clients verront le prix par nuit et par espèce dans l\'annuaire des pros.',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                   ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _essaiRequis ? _green.withValues(alpha: 0.4) : const Color(0xFFEEEEEE)),
+                  ),
+                  child: Column(children: [
+                    SwitchListTile.adaptive(
+                      value: _essaiRequis,
+                      onChanged: (v) => setState(() => _essaiRequis = v),
+                      activeColor: _green,
+                      title: const Text('Essai obligatoire avant le premier séjour',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                      subtitle: Text("À la réservation en ligne, le client propose une date d'essai (une journée) avant le premier séjour de son animal.",
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                    ),
+                    if (_essaiRequis)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: TextField(controller: _essaiInfo, maxLines: 2, minLines: 1,
+                            decoration: const InputDecoration(labelText: 'Précisions pour le client (facultatif)',
+                                hintText: 'Ex : journée de 9 h à 17 h, tarif 20 €', border: OutlineInputBorder(), isDense: true)),
+                      ),
+                  ]),
                 ),
                 const SizedBox(height: 20),
                 const Text('Prix par espèce',

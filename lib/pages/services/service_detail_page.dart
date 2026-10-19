@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/pro/pension_reservation_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_portfolio_page.dart' show portfolioPublic;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/utils/tarifs_veto.dart';
@@ -1413,7 +1414,15 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           child: ElevatedButton.icon(
             onPressed: _acceptNewClients
                 ? () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => _proData?['cat_pro'] == 'education'
+                    builder: (_) => _proData?['cat_pro'] == 'pension'
+                        // Pension : réservation d'un séjour (dates), visite en option.
+                        ? PensionReservationPage(
+                            proUid: widget.proUid,
+                            proProfileId: widget.profileTableId,
+                            proName: _nomStructure,
+                            categoryColor: widget.categoryColor,
+                          )
+                        : _proData?['cat_pro'] == 'education'
                         ? EducationReservationPage(
                             proUid: widget.proUid,
                             proName: _nomStructure,

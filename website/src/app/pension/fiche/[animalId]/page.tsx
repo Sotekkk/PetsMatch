@@ -153,12 +153,13 @@ export default function AnimalFichePensionWebPage() {
     if (!user || !animalId) return;
     setLoading(true);
 
-    // Vérifier l'accès — animal_access, résolu via le profil principal si activeProfileId absent
+    // Vérifier l'accès — animal_access du profil actif ; repli sur le profil
+    // pension / pet-sitter du compte, jamais is_main (accès d'un autre profil).
     let proProfileId: string | null = activeProfileId || null;
     if (!proProfileId) {
-      const { data: mainProfile } = await supabase.from('user_profiles_complet')
-        .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
-      proProfileId = mainProfile?.id ?? null;
+      const { data: proProfile } = await supabase.from('user_profiles_complet')
+        .select('id').eq('uid', user.uid).in('profile_type', ['pension', 'garde']).limit(1).maybeSingle();
+      proProfileId = proProfile?.id ?? null;
     }
     let { data: acc } = proProfileId
       ? await supabase.from('animal_access').select('statut')

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ArriveeDepartModal, { type SejourPension } from '@/components/pension/ArriveeDepartModal';
@@ -21,6 +22,7 @@ interface Sejour extends SejourPension {
   date_entree: string; date_sortie_prevue: string | null; statut: string; pro_profile_id?: string | null;
   arrivee_reelle_le?: string | null;
 }
+interface Demande { id: string; animal_id: string; animal_nom: string | null; date_arrivee: string; date_depart: string; essai_date: string | null; message: string | null }
 interface Logement { id: string; nom: string; capacite: number | null }
 interface Tache { id: string; titre: string | null; date: string; animal_id: string | null; animal_nom: string | null }
 interface Animal { id: string; nom: string | null; photo_url: string | null }
@@ -41,6 +43,9 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   const [animaux, setAnimaux] = useState<Record<string, Animal>>({});
   const [action, setAction] = useState<{ sejour: Sejour; mode: 'arrivee' | 'depart' } | null>(null);
   const [now, setNow] = useState(() => new Date());
+  // Demandes de séjour des clients (à accepter / refuser).
+  const [demandes, setDemandes] = useState<Demande[]>([]);
+  const [decision, setDecision] = useState('');
 
   const charger = useCallback(async () => {
     if (!uid) return;
@@ -49,6 +54,11 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     let tq = supabase.from('taches_elevage').select('id, titre, date, animal_id, animal_nom').eq('profil_source', 'pension')
       .neq('statut', 'fait').lte('date', iso(jour));
     tq = pid ? tq.eq('eleveur_profile_id', pid) : tq.eq('uid_eleveur', uid);
+    let dq = supabase.from('pension_demandes').select('id, animal_id, animal_nom, date_arrivee, date_depart, essai_date, message')
+      .eq('pro_uid', uid).eq('statut', 'demande');
+    if (pid) dq = dq.eq('pro_profile_id', pid);
+    const dRes = await dq.order('date_arrivee');
+    setDemandes(dRes.error ? [] : (dRes.data ?? []) as Demande[]);
     const [sRes, lRes, tRes, iRes] = await Promise.all([
       supabase.from('pension_entrees').select('*').eq('pro_uid', uid).eq('statut', 'en_pension')
         .lte('date_entree', iso(new Date(jour.getTime() + 30 * 86400000))).order('date_entree'),
@@ -72,6 +82,21 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [uid, charger]);
+
+  async function decider(d: Demande, accepter: boolean) {
+    let motif: string | null = null;
+    if (!accepter) {
+      motif = window.prompt('Motif pour le client (facultatif) : complet à ces dates…', '');
+      if (motif === null) return;
+    }
+    setDecision(d.id);
+    const r = await apiFetch('/api/pension/sejour', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'decider', demandeId: d.id, accepter, ...(motif ? { motif } : {}) }) });
+    const j = await r.json().catch(() => ({})) as { error?: string };
+    setDecision('');
+    if (!r.ok) { window.alert(j.error ?? 'Action impossible'); return; }
+    charger();
+  }
 
   const jour = iso(now);
   const presents = sejours.filter(s => s.date_entree <= jour);
@@ -138,6 +163,26 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
             </div>
             {logements.length > 0 && capacite > 0 && (
               <p className="text-xs text-gray-500 -mt-2">{presents.length} animal{presents.length > 1 ? 'aux' : ''} pour une capacité de {capacite} place{capacite > 1 ? 's' : ''}</p>
+            )}
+
+            {demandes.length > 0 && (
+              <Section titre="Demandes de séjour" icone={<Icone nom="calendrier" taille={18} />} compteur={demandes.length}>
+                <div className="divide-y divide-gray-100">
+                  {demandes.map(d => (
+                    <div key={d.id} className="py-2.5 flex flex-wrap items-center gap-2">
+                      <div className="flex-1 min-w-[180px]">
+                        <p className="text-sm font-bold text-[#1E2025]">{d.animal_nom ?? 'Animal'}</p>
+                        <p className="text-xs text-gray-500">Du {jm(d.date_arrivee)} au {jm(d.date_depart)}{d.essai_date ? ` · essai le ${jm(d.essai_date)}` : ''}</p>
+                        {d.message && <p className="text-xs text-gray-500 italic">« {d.message} »</p>}
+                      </div>
+                      <Link href={`/pension/fiche/${d.animal_id}`} className="text-xs font-semibold text-[#0C5C6C]">Fiche</Link>
+                      <button disabled={decision === d.id} onClick={() => decider(d, false)} className="text-xs font-semibold text-gray-500 px-2 py-1">Refuser</button>
+                      <button disabled={decision === d.id} onClick={() => decider(d, true)}
+                        className="text-xs font-bold text-white rounded-full px-3 py-1.5 disabled:opacity-50" style={{ background: VERT }}>Accepter</button>
+                    </div>
+                  ))}
+                </div>
+              </Section>
             )}
 
             {alertes.length > 0 && (

@@ -35,6 +35,9 @@ export default function PensionTarifsPage() {
   const [especes, setEspeces] = useState<EspeceRow[]>([]);
   const [reductions, setReductions] = useState<Reduction[]>([]);
   const [afficherPublic, setAfficherPublic] = useState(false);
+  // Essai obligatoire avant le premier séjour (réservation en ligne).
+  const [essaiRequis, setEssaiRequis] = useState(false);
+  const [essaiInfo, setEssaiInfo] = useState('');
   const [showAutres, setShowAutres] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,6 +65,9 @@ export default function PensionTarifsPage() {
     const t = (data?.tarifs_pension ?? null) as (TarifsPension & { afficher_public?: boolean }) | null;
     const acceptees = new Set((data?.especes_acceptees as string[] | undefined) ?? []);
     setAfficherPublic(t?.afficher_public === true);
+    const { data: es } = await supabase.from('user_profiles').select('pension_essai_requis, pension_essai_info').eq('id', pid).maybeSingle();
+    setEssaiRequis((es as { pension_essai_requis?: boolean } | null)?.pension_essai_requis === true);
+    setEssaiInfo((es as { pension_essai_info?: string | null } | null)?.pension_essai_info ?? '');
 
     // Prix déjà saisis, par key.
     const prixByKey: Record<string, { seul: string; partage: string }> = {};
@@ -132,6 +138,9 @@ export default function PensionTarifsPage() {
     await supabase.from('user_profiles')
       .update({ tarifs_pension: { especes: especesOut, reductions_long_sejour, afficher_public: afficherPublic } })
       .eq('id', profileId);
+    await supabase.from('user_profiles')
+      .update({ pension_essai_requis: essaiRequis, pension_essai_info: essaiInfo.trim() || null })
+      .eq('id', profileId);
 
     setSaving(false);
     setSaved(true);
@@ -165,6 +174,22 @@ export default function PensionTarifsPage() {
           </span>
         </span>
       </label>
+
+      <div className={`bg-white rounded-2xl shadow-sm p-4 border ${essaiRequis ? 'border-[#6E9E57]/40' : 'border-gray-100'}`}>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" className="mt-1" checked={essaiRequis} onChange={e => setEssaiRequis(e.target.checked)} />
+          <span>
+            <span className="block font-galey font-semibold text-sm text-[#1E2025]">Essai obligatoire avant le premier séjour</span>
+            <span className="block font-galey text-xs text-gray-500 mt-0.5">
+              À la réservation en ligne, le client propose une date d&apos;essai (une journée) avant le premier séjour de son animal.
+            </span>
+          </span>
+        </label>
+        {essaiRequis && (
+          <input value={essaiInfo} onChange={e => setEssaiInfo(e.target.value)} placeholder="Précisions pour le client (facultatif) : journée de 9 h à 17 h, tarif 20 €"
+            className={`${inputCls} mt-3`} />
+        )}
+      </div>
 
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
         <div>

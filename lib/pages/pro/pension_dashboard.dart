@@ -18,6 +18,10 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/utils/site_api.dart';
 
 const _teal = kDashTeal;
 const _ink = kDashInk;
@@ -40,6 +44,8 @@ class _PensionDashboardState extends State<PensionDashboard> {
   List<Map<String, dynamic>> _logements = [];
   List<Map<String, dynamic>> _taches = [];
   List<Map<String, dynamic>> _incidents = [];
+  // Demandes de séjour des clients (à accepter / refuser).
+  List<Map<String, dynamic>> _demandes = [];
   final Map<String, Map<String, dynamic>> _animaux = {};
 
   @override
@@ -65,6 +71,11 @@ class _PensionDashboardState extends State<PensionDashboard> {
           .lte('date_entree', _iso(jour.add(const Duration(days: 30)))).order('date_entree'))
           .where(sejourDuProfil).toList();
     } catch (_) {}
+    try {
+      var qd = _supa.from('pension_demandes').select().eq('pro_uid', uid).eq('statut', 'demande');
+      if (User_Info.activeProfileId.isNotEmpty) qd = qd.eq('pro_profile_id', User_Info.activeProfileId);
+      _demandes = _liste(await qd.order('date_arrivee'));
+    } catch (_) { _demandes = []; }
     try {
       _logements = _liste(await _supa.from('enclos_chenil').select().eq('uid_eleveur', uid).order('nom'));
     } catch (_) { _logements = []; }
@@ -158,6 +169,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
     return LayoutBuilder(builder: (context, c) {
       final large = c.maxWidth >= 860;
       final gauche = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _demandesSection(),
         _alertesSection(),
         _entreesSortiesSection(),
         const SizedBox(height: 16),
@@ -213,6 +225,73 @@ class _PensionDashboardState extends State<PensionDashboard> {
   }
 
   // Alertes ---------------------------------------------------------------
+
+  // Demandes de séjour ------------------------------------------------------
+  Future<void> _decider(Map<String, dynamic> d, bool accepter) async {
+    String? motif;
+    if (!accepter) {
+      final ctrl = TextEditingController();
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Refuser la demande', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(controller: ctrl, maxLines: 3, decoration: const InputDecoration(
+            hintText: 'Motif pour le client (facultatif) : complet à ces dates…', border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Refuser')),
+        ],
+      ));
+      if (ok != true) return;
+      motif = ctrl.text.trim();
+    }
+    try {
+      final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
+          body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'accepter': accepter, if (motif != null) 'motif': motif}));
+      if (!mounted) return;
+      if (r.statusCode != 200) {
+        String m = 'Action impossible';
+        try { m = (jsonDecode(r.body) as Map)['error']?.toString() ?? m; } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(accepter
+          ? 'Séjour accepté : il est au planning et le client est prévenu' : 'Demande refusée, le client est prévenu')));
+      setState(() => _loading = true);
+      _charger();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
+  Widget _demandesSection() {
+    if (_demandes.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        DashTitre('Demandes de séjour', icone: Icons.mark_email_unread_outlined, compteur: _demandes.length),
+        for (final d in _demandes)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(d['animal_nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+              Text('Du ${_jm(d['date_arrivee'])} au ${_jm(d['date_depart'])}'
+                  '${d['essai_date'] != null ? ' · essai le ${_jm(d['essai_date'])}' : ''}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
+              if ((d['message']?.toString() ?? '').isNotEmpty)
+                Text('« ${d['message']} »', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted)),
+              Row(children: [
+                FilledButton(onPressed: () => _decider(d, true), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
+                    child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
+                const SizedBox(width: 8),
+                TextButton(onPressed: () => _decider(d, false), child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey'))),
+                const Spacer(),
+                TextButton(onPressed: () => _go(AnimalFichePensionPage(animalId: d['animal_id'].toString(), animalNom: d['animal_nom']?.toString() ?? 'Animal')),
+                    child: const Text('Fiche', style: TextStyle(fontFamily: 'Galey'))),
+              ]),
+            ]),
+          ),
+      ])),
+    );
+  }
 
   Widget _alertesSection() {
     final retard = _taches.where((t) => (_date(t['date'])?.isBefore(_jour) ?? false)).toList();

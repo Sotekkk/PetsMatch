@@ -118,10 +118,12 @@ class _FichesPensionPageState extends State<FichesPensionPage> {
     try {
       // Accès approuvés — scopés par profil ACTIF, pas "is_main" du compte
       // (pension est souvent un profil secondaire, is_main pointe ailleurs).
+      // Repli (profil actif inconnu) : le profil pension / pet-sitter du
+      // compte — jamais is_main (souvent l'élevage : ses accès s'affichaient ici).
       var proProfileId = User_Info.activeProfileId;
       if (proProfileId.isEmpty) {
         final proProfile = await _supa.from('user_profiles_complet')
-            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+            .select('id').eq('uid', _uid).inFilter('profile_type', ['pension', 'garde']).limit(1).maybeSingle();
         proProfileId = proProfile?['id'] as String? ?? '';
       }
       if (proProfileId.isEmpty) {

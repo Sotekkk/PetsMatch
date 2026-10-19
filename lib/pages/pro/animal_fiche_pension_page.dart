@@ -86,12 +86,14 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
       // Vérifier l'accès avant de charger quoi que ce soit — animal_access
       // doit être 'active' (validé par le propriétaire), sinon la fiche
       // santé/alimentation reste inaccessible même en lecture.
+      // Repli (profil actif inconnu) : le profil pension / pet-sitter du
+      // compte — jamais is_main (souvent l'élevage, accès d'un autre profil).
       var proProfileId = User_Info.activeProfileId;
       if (proProfileId.isEmpty) {
         final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-        final mainProfile = myUid.isEmpty ? null : await _supa.from('user_profiles_complet')
-            .select('id').eq('uid', myUid).eq('is_main', true).maybeSingle();
-        proProfileId = mainProfile?['id'] as String? ?? '';
+        final proProfile = myUid.isEmpty ? null : await _supa.from('user_profiles_complet')
+            .select('id').eq('uid', myUid).inFilter('profile_type', ['pension', 'garde']).limit(1).maybeSingle();
+        proProfileId = proProfile?['id'] as String? ?? '';
       }
       final acc = proProfileId.isEmpty ? null : await _supa.from('animal_access')
           .select('statut').eq('animal_id', widget.animalId).eq('pro_profile_id', proProfileId)

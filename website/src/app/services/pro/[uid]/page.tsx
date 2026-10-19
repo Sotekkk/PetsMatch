@@ -14,6 +14,7 @@ import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge
 import { PENSION_ESPECES, PENSION_ESPECE_FERME_LEGACY } from '@/lib/pension-especes';
 import { gardeMotifLabel, ACCES_LOGEMENT, accesLogementLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
+import ReservationSejourModal from '@/components/pension/ReservationSejourModal';
 import AvisPro from '@/components/AvisPro';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
@@ -201,6 +202,8 @@ function ProDetailContent() {
   // RDV
   const [showRdv, setShowRdv] = useState(false);
   const [showEducationReservation, setShowEducationReservation] = useState(false);
+  // Pension : réservation d'un séjour (dates) au lieu d'un rendez-vous.
+  const [showSejour, setShowSejour] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   // Plages occupées + clinique vétérinaire (praticiens, salles) — miroir appli.
@@ -1472,7 +1475,7 @@ function ProDetailContent() {
             💬 Contacter
           </Link>
           <button
-            onClick={() => { if (pro.cat_pro === 'education') { if (!user) { router.push('/connexion'); return; } setShowEducationReservation(true); } else { openRdv(); } }}
+            onClick={() => { if (pro.cat_pro === 'education' || (pro.cat_pro === 'pension' && pro.profileTableId)) { if (!user) { router.push('/connexion'); return; } if (pro.cat_pro === 'pension') setShowSejour(true); else setShowEducationReservation(true); } else { openRdv(); } }}
             disabled={!pro.accept_new_clients}
             className="flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50"
             style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>
@@ -1766,6 +1769,10 @@ function ProDetailContent() {
       </div>
 
       {/* ── Modal RDV ── */}
+      {showSejour && pro.profileTableId && (
+        <ReservationSejourModal pensionProfileId={pro.profileTableId} pensionNom={pro.name} couleur={catColor}
+          onClose={() => setShowSejour(false)} onVisite={() => { setShowSejour(false); openRdv(); }} />
+      )}
       {showEducationReservation && (
         <EducationReservationModal
           proUid={pro.uid}
