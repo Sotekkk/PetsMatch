@@ -1,5 +1,6 @@
 'use client';
 
+import RattachementClients from '@/components/RattachementClients';
 import { resoudreEmployeur, type EmployeurContexte } from '@/lib/employeur-contexte';
 import { miseBasDeReference, FILTRE_GESTATIONS_MISE_BAS, COLONNES_GESTATIONS_MISE_BAS } from '@/lib/chaleurs-etat';
 import { estEnChaleurs, chaleursAVerifier } from '@/lib/chaleurs-etat';
@@ -893,6 +894,8 @@ function MesAnimauxPageInner() {
   return (
     <>
     <div className="max-w-5xl mx-auto px-4 py-8">
+      {/* Fiches créées par un professionnel pour ce client sans appli : à rattacher. */}
+      {!estEmploye && <RattachementClients onRattache={() => window.location.reload()} />}
       {/* En-tête */}
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>

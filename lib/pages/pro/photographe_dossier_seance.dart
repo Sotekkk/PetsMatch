@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show Facturation
 import 'package:PetsMatch/utils/galeries_api.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
+import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show envoyerContratParEmail;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -125,10 +126,14 @@ Future<void> genererContratPhoto(BuildContext context, Map<String, dynamic> rdv,
   await Navigator.push(context, MaterialPageRoute(builder: (_) => ContratSignaturePage(token: token!)));
 }
 
-/// (Ré)envoie au client l'invitation à signer le contrat.
+/// (Ré)envoie au client l'invitation à signer le contrat : notification s'il a
+/// un compte, sinon e-mail avec le lien personnel.
 Future<void> transmettreContrat(Map<String, dynamic> rdv, String token) async {
   final clientUid = rdv['client_uid']?.toString();
-  if (clientUid == null || clientUid.isEmpty) return;
+  if (clientUid == null || clientUid.isEmpty) {
+    await envoyerContratParEmail(rdv, token, titre: 'Contrat de prestation photo');
+    return;
+  }
   try {
     await Supabase.instance.client.from('notifications').insert({
       'uid': clientUid,
@@ -624,7 +629,12 @@ class _DossierSeanceState extends State<_DossierSeance> {
                           })
                         else ...[
                           ('Voir', () => _go(ContratSignaturePage(token: ct['token'].toString()))),
-                          if (ct['statut'] != 'signe' && aCompte) ('Renvoyer', () async { await transmettreContrat(r, ct['token'].toString()); _snack('Transmis au client'); }),
+                          if (ct['statut'] != 'signe' && aCompte) ('Renvoyer', () async { await transmettreContrat(r, ct['token'].toString()); _snack('Transmis au client'); })
+                          else if (ct['statut'] != 'signe')
+                            ('Envoyer par e-mail', () async {
+                              final ok = await envoyerContratParEmail(r, ct['token'].toString(), titre: 'Contrat de prestation photo', nomClient: widget.nomClient);
+                              _snack(ok ? 'Contrat envoyé par e-mail' : 'Adresse e-mail du client inconnue');
+                            }),
                         ],
                       ]),
                   _ligne('Galerie',

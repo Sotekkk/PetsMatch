@@ -16,8 +16,10 @@ const ESPECES = [['chien', 'Chien'], ['chat', 'Chat'], ['cheval', 'Cheval / équ
 
 interface Client { id: string; nom: string; prenom: string | null; telephone: string | null; email: string | null }
 
-export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree }: {
+export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree, estClinique = true }: {
   cliniqueProfileId: string; onClose: () => void; onCree: (animalId: string) => void;
+  /** Vocabulaire : « patient » (vétérinaire) ou « client » (toiletteur, maréchal-ferrant, ostéopathe, éducateur). */
+  estClinique?: boolean;
 }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [rechercheClient, setRechercheClient] = useState('');
@@ -82,8 +84,10 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
       <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-3 max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
         <div>
-          <h2 className="font-bold text-lg text-[#1E2025]">🏥 Nouveau patient</h2>
-          <p className="text-xs text-gray-400 mt-0.5">Pour un animal dont le propriétaire n&apos;a pas PetsMatch. Il pourra rattacher la fiche à son compte plus tard.</p>
+          <h2 className="font-bold text-lg text-[#1E2025]">{estClinique ? 'Nouveau patient' : 'Nouveau client'}</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{estClinique
+            ? 'Pour un animal dont le propriétaire n\'a pas PetsMatch. Il pourra rattacher la fiche à son compte plus tard.'
+            : 'Pour un client qui n\'a pas PetsMatch : contrat, facture et demandes lui sont envoyés par e-mail, avec une invitation à créer son compte.'}</p>
         </div>
 
         <p className={titre}>Propriétaire</p>
@@ -162,7 +166,7 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">Annuler</button>
           <button onClick={() => creer()} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
-            {saving ? '…' : 'Créer le patient'}
+            {saving ? '…' : estClinique ? 'Créer le patient' : 'Créer le client'}
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/rattachement_clients.dart';
 import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -86,6 +87,10 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     _fetchProfile();
     _fetchAnimaux();
     _fetchAlertes();
+    // Fiches créées par un pro pour ce client (sans appli) : proposition de rattachement.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) proposerRattachementClients(context, onRattache: _fetchAnimaux);
+    });
 
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _bioCtrl.addListener(() => setState(() => _bioModified = _bioCtrl.text != _initBio));

@@ -19,6 +19,10 @@ const WHITELISTED_PATHS = [
   '/facture-pension/',
   // Facture envoyée par e-mail à un client sans compte (lien à jeton).
   '/facture/',
+  // Contrat à signer et devis à accepter, envoyés par e-mail à un client
+  // sans compte (liens à jeton).
+  '/signer-contrat/',
+  '/devis/',
   // Galeries photo ouvertes par lien privé (lien client du photographe, lien
   // « proches » partagé par le client) : destinataires sans accès bêta.
   '/album/',

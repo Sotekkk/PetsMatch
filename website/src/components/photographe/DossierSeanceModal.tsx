@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { geocodeAddress } from '@/lib/geocoding';
 import { styleGalerie } from '@/lib/photographe';
+import { envoyerContratParEmail } from '@/lib/contrat-email';
 import ContactCanaux from '@/components/ContactCanaux';
 import LieuGoogleRecherche from '@/components/LieuGoogleRecherche';
 import { livrerFichiers, relancerSelection, FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, fmtTaille } from '@/lib/galeries-client';
@@ -180,8 +181,16 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
     await transmettreContrat(c.token);
     onChanged?.();
   }
-  const transmettreContrat = (token: string) => notifier('contrat_invite', 'Contrat de prestation à signer',
-    'Votre photographe vous envoie le contrat de votre séance — vérifiez et signez', { token, url: `/signer-contrat/${token}` });
+  // Notification si le client a un compte, sinon e-mail avec le lien personnel.
+  const transmettreContrat = async (token: string) => {
+    if (r.client_uid) {
+      return notifier('contrat_invite', 'Contrat de prestation à signer',
+        'Votre photographe vous envoie le contrat de votre séance — vérifiez et signez', { token, url: `/signer-contrat/${token}` });
+    }
+    const ok = await envoyerContratParEmail({ email: coord.email, clientNom: nomClient, proProfileId: pid, token, titre: 'Contrat de prestation photo' });
+    setMessage(ok ? 'Contrat envoyé au client par e-mail.' : 'Adresse e-mail du client inconnue : transmettez le contrat autrement.');
+    return ok;
+  };
 
   // ── Galerie ──
   async function ouvrirGalerie() {
@@ -324,7 +333,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
                 !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
                 !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
                 !contrat ? [btn('Générer et envoyer', () => setDiffusion(''))]
-                  : [btn('Voir', () => router.push(`/signer-contrat/${contrat.token}`)), ...(contrat.statut !== 'signe' && r.client_uid ? [btn('Renvoyer', () => transmettreContrat(contrat.token))] : [])])}
+                  : [btn('Voir', () => router.push(`/signer-contrat/${contrat.token}`)), ...(contrat.statut !== 'signe' ? [btn(r.client_uid ? 'Renvoyer' : 'Envoyer par e-mail', () => { transmettreContrat(contrat.token); })] : [])])}
               {diffusion !== null && !contrat && (
                 <div className="bg-gray-50 rounded-xl p-3 my-1 space-y-1.5">
                   <p className="text-xs font-semibold text-gray-600">Diffusion des photos par vous (écrite dans le contrat) :</p>

@@ -3,8 +3,11 @@
 // soin du pelage, partagé au propriétaire), contrat de prestation, facture.
 // Pas de compte rendu vétérinaire ni d'ordonnance. Chaque module garde son
 // statut. Miroir site : website/src/components/toilettage/DossierToilettageModal.tsx.
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
@@ -50,6 +53,33 @@ Future<Map<String, String>> coordonneesClientRdv(Map<String, dynamic> rdv) async
     out['ville'] = premier([prof?['ville'], prof?['ville_pro']]);
   } catch (_) {}
   return out;
+}
+
+/// Client sans compte : envoie le contrat à signer par e-mail (lien à jeton,
+/// sans compte) via /api/contrat/notify-email. Renvoie false si aucune adresse.
+Future<bool> envoyerContratParEmail(Map<String, dynamic> rdv, String token, {String? titre, String? nomClient}) async {
+  final coord = await coordonneesClientRdv(rdv);
+  final email = (coord['email'] ?? '').trim();
+  if (email.isEmpty) return false;
+  var proNom = '';
+  try {
+    final p = await Supabase.instance.client.from('user_profiles_complet').select('nom, firstname, lastname')
+        .eq('id', rdv['pro_profile_id'] ?? '').maybeSingle();
+    proNom = (p?['nom']?.toString() ?? '').trim().isNotEmpty ? p!['nom'].toString().trim() : '${p?['firstname'] ?? ''} ${p?['lastname'] ?? ''}'.trim();
+  } catch (_) {}
+  try {
+    final r = await http.post(Uri.parse('$kSiteBaseUrl/api/contrat/notify-email'), headers: await siteApiHeaders(), body: jsonEncode({
+      'email': email,
+      'client_nom': [coord['prenom'], coord['nom']].where((x) => (x ?? '').isNotEmpty).join(' ').isNotEmpty
+          ? [coord['prenom'], coord['nom']].where((x) => (x ?? '').isNotEmpty).join(' ') : (nomClient ?? rdv['_client_name']?.toString() ?? ''),
+      'pro_nom': proNom.isEmpty ? 'Votre professionnel' : proNom,
+      if (titre != null) 'titre': titre,
+      'signing_url': '$kSiteBaseUrl/signer-contrat/$token',
+    }));
+    return r.statusCode == 200;
+  } catch (_) {
+    return false;
+  }
 }
 
 /// Prix TTC de la prestation : calculé à la réservation (grille espèce /
@@ -130,6 +160,9 @@ Future<void> genererContratToilettage(BuildContext context, Map<String, dynamic>
           'read': false,
         });
       } catch (_) {}
+    } else if (token != null) {
+      // Client sans compte : contrat à signer par e-mail (lien personnel).
+      await envoyerContratParEmail(rdv, token, titre: 'Contrat de prestation toilettage', nomClient: nomClient);
     }
   }
   if (token == null || !ouvrir || !context.mounted) return;
@@ -407,7 +440,12 @@ class _DossierToilettageState extends State<_DossierToilettage> {
                           if (ct['statut'] != 'signe' && aCompte)
                             ('Renvoyer', () => _notifier('contrat_invite', 'Contrat de prestation à signer',
                                 'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez',
-                                {'token': ct['token'], 'url': '$kSiteBaseUrl/signer-contrat/${ct['token']}'})),
+                                {'token': ct['token'], 'url': '$kSiteBaseUrl/signer-contrat/${ct['token']}'}))
+                          else if (ct['statut'] != 'signe')
+                            ('Envoyer par e-mail', () async {
+                              final ok = await envoyerContratParEmail(r, ct['token'].toString(), titre: 'Contrat de prestation toilettage', nomClient: widget.nomClient);
+                              _snack(ok ? 'Contrat envoyé par e-mail' : 'Adresse e-mail du client inconnue');
+                            }),
                         ],
                       ]),
                   _ligne('Facture',

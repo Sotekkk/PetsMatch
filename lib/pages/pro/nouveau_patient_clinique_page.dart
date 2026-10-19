@@ -21,7 +21,10 @@ const kEspecesPatient = [
 class NouveauPatientCliniquePage extends StatefulWidget {
   /// Profil de la clinique.
   final String cliniqueProfileId;
-  const NouveauPatientCliniquePage({super.key, required this.cliniqueProfileId});
+  /// Vocabulaire : « patient » (vétérinaire) ou « client » (toiletteur,
+  /// maréchal-ferrant, ostéopathe, éducateur — même fichier clients).
+  final bool estClinique;
+  const NouveauPatientCliniquePage({super.key, required this.cliniqueProfileId, this.estClinique = true});
 
   @override
   State<NouveauPatientCliniquePage> createState() => _NouveauPatientCliniquePageState();
@@ -166,11 +169,14 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
         backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
-        title: const Text('Nouveau patient', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(widget.estClinique ? 'Nouveau patient' : 'Nouveau client', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
-        const Text('Pour un animal dont le propriétaire n\'a pas PetsMatch. Il pourra rattacher la fiche à son compte plus tard.',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF6F767B))),
+        Text(widget.estClinique
+            ? 'Pour un animal dont le propriétaire n\'a pas PetsMatch. Il pourra rattacher la fiche à son compte plus tard.'
+            : 'Pour un client qui n\'a pas PetsMatch : contrat, facture et demandes lui sont envoyés par e-mail, avec une invitation '
+              'à créer son compte. Il pourra ensuite rattacher la fiche de son animal à son compte.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF6F767B))),
         _titre('Propriétaire'),
         if (_clients.isNotEmpty) ...[
           Autocomplete<Map<String, dynamic>>(
@@ -270,7 +276,7 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
           child: _saving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Text('Créer le patient', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              : Text(widget.estClinique ? 'Créer le patient' : 'Créer le client', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
         )),
       ]),
     );

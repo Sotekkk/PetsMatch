@@ -13,6 +13,7 @@ import SeanceToilettageModal, { type RdvSeance } from '@/components/toilettage/S
 import ConsignesRdvForm from '@/components/ConsignesRdvForm';
 import { apiFetch } from '@/lib/api-fetch';
 import { reponsesAffichables } from '@/lib/consignes-rdv';
+import { envoyerContratParEmail } from '@/lib/contrat-email';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -127,8 +128,14 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
     if (error) { setMessage(error.message); return; }
     const c = data as Contrat;
     setContrat(c);
-    await notifier('contrat_invite', 'Contrat de prestation à signer', 'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez',
-      { token: c.token, url: `/signer-contrat/${c.token}` });
+    if (r.client_uid) {
+      await notifier('contrat_invite', 'Contrat de prestation à signer', 'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez',
+        { token: c.token, url: `/signer-contrat/${c.token}` });
+    } else {
+      // Client sans compte : contrat à signer par e-mail (lien personnel).
+      const ok = await envoyerContratParEmail({ email: coord.email, clientNom: nomClient, proProfileId: pid, token: c.token, titre: 'Contrat de prestation toilettage' });
+      setMessage(ok ? 'Contrat envoyé au client par e-mail.' : 'Contrat créé — adresse e-mail du client inconnue.');
+    }
     onChanged?.();
   }
 
@@ -205,7 +212,11 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
             !contrat ? [btn('Générer et envoyer', genererContrat)]
               : [btn('Voir', () => router.push(`/signer-contrat/${contrat.token}`)),
                 ...(contrat.statut !== 'signe' && r.client_uid ? [btn('Renvoyer', () => notifier('contrat_invite', 'Contrat de prestation à signer',
-                  'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez', { token: contrat.token, url: `/signer-contrat/${contrat.token}` }))] : [])])}
+                  'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez', { token: contrat.token, url: `/signer-contrat/${contrat.token}` }))] : []),
+                ...(contrat.statut !== 'signe' && !r.client_uid ? [btn('Envoyer par e-mail', async () => {
+                  const ok = await envoyerContratParEmail({ email: coord.email, clientNom: nomClient, proProfileId: pid, token: contrat.token, titre: 'Contrat de prestation toilettage' });
+                  setMessage(ok ? 'Contrat envoyé par e-mail.' : 'Adresse e-mail du client inconnue.');
+                })] : [])])}
           {ligne('Facture',
             !facture ? (passee ? 'À émettre' : 'Non facturée')
               : facture.statut === 'payee' ? `Payée${facture.date_paiement ? ` le ${new Date(facture.date_paiement).toLocaleDateString('fr-FR')}` : ''} · ${eur(facture.total_ttc)}`

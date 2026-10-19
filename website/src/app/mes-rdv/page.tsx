@@ -1,5 +1,6 @@
 'use client';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
+import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
@@ -576,11 +577,15 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [salles, setSalles] = useState<{ id: string; nom: string }[]>([]);
   const [praticien, setPraticien] = useState(initial?.praticien ?? '');
   const [salle, setSalle] = useState(initial?.salle ?? '');
-  // Clinique : patient créé par la clinique (propriétaire hors appli) → RDV rattaché à sa fiche.
+  // Fichier clients (patients de la clinique, clients sans appli du toiletteur,
+  // maréchal-ferrant, ostéopathe, éducateur) → RDV rattaché à la fiche.
   const [patients, setPatients] = useState<{ animalId: string; animalNom: string; clientNom: string; tel: string; email: string }[]>([]);
   const [patientId, setPatientId] = useState('');
+  const [nouveauClient, setNouveauClient] = useState(false);
+  const [rechargerFichier, setRechargerFichier] = useState(0);
+  const fichierClients = ['veterinaire', 'toilettage', 'marechal_ferrant', 'sante', 'education', 'garde', 'pension'].includes(catPro);
   useEffect(() => {
-    if (catPro !== 'veterinaire' || !profileId) return;
+    if (!fichierClients || !profileId) return;
     (async () => {
       const { data: g } = await supabase.from('animal_access').select('animal_id').eq('pro_profile_id', profileId).eq('statut', 'active');
       const ids = (g ?? []).map(x => x.animal_id as string);
@@ -594,7 +599,15 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
         return { animalId: x.id, animalNom: x.nom ?? '', clientNom: c ? `${c.prenom ?? ''} ${c.nom}`.trim() : '', tel: c?.telephone ?? '', email: c?.email ?? '' };
       }).sort((a, b) => a.animalNom.localeCompare(b.animalNom)));
     })();
-  }, [catPro, profileId]);
+  }, [fichierClients, profileId, rechargerFichier]);
+
+  // Fiche créée depuis « Nouveau client » : sélectionnée d'office.
+  useEffect(() => {
+    if (!patientId) return;
+    const p = patients.find(x => x.animalId === patientId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (p) { setAnimalNom(p.animalNom); setClientNom(p.clientNom); setClientTel(p.tel); setClientEmail(p.email); }
+  }, [patients, patientId]);
 
   useEffect(() => {
     if (catPro !== 'veterinaire' || !profileId) return;
@@ -682,6 +695,11 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           body: JSON.stringify({ email: clientEmail.trim(), client_nom: clientNom.trim(), pro_nom: proName,
             date_heure: dh.toISOString(), motif: motif.trim() || null, duree_minutes: duree }),
         }).catch(() => {});
+        // Toiletteur : demande de consignes par e-mail (lien personnel, sans compte).
+        if (catPro === 'toilettage') {
+          apiFetch('/api/rdv/consignes', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'demander', rdvId }) }).catch(() => {});
+        }
       }
       onDone();
     } catch (e) {
@@ -703,8 +721,17 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           <p className="text-xs text-gray-400 mt-0.5">Pour un client qui appelle. Le RDV est ajouté directement confirmé.</p>
         </div>
 
+        {fichierClients && !linked && (
+          <button type="button" onClick={() => setNouveauClient(true)} className="text-sm font-semibold" style={{ color: '#0C5C6C' }}>
+            + {catPro === 'veterinaire' ? 'Nouveau patient (propriétaire sans appli)' : 'Nouveau client (sans appli)'}
+          </button>
+        )}
+        {nouveauClient && profileId && (
+          <NouveauPatientModal cliniqueProfileId={profileId} estClinique={catPro === 'veterinaire'} onClose={() => setNouveauClient(false)}
+            onCree={id => { setNouveauClient(false); setPatientId(id); setRechargerFichier(n => n + 1); }} />
+        )}
         {patients.length > 0 && !linked && (
-          <div><label className={label}>Patient de la clinique</label>
+          <div><label className={label}>{catPro === 'veterinaire' ? 'Patient de la clinique' : 'Client de mon fichier'}</label>
             <select value={patientId} className={`${champ} bg-white`} onChange={e => {
               const p = patients.find(x => x.animalId === e.target.value);
               setPatientId(e.target.value);

@@ -1,4 +1,5 @@
 import 'package:PetsMatch/utils/consignes_rdv.dart';
+import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart' show NouveauPatientCliniquePage;
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
@@ -2769,7 +2770,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 18),
 
-              if (_estClinique && linkedUid == null) ...[
+              if (_fichierClients && linkedUid == null) ...[
                 OutlinedButton.icon(
                   onPressed: () async {
                     final p = await _choisirPatientClinique();
@@ -2782,11 +2783,35 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       clientEmailCtrl.text = p['email'] as String? ?? '';
                     });
                   },
-                  icon: const Icon(Icons.local_hospital_outlined, size: 18),
-                  label: Text(patientAnimalId == null ? 'Choisir un patient de la clinique' : 'Patient : ${animalNomCtrl.text} — changer',
+                  icon: Icon(_estClinique ? Icons.local_hospital_outlined : Icons.contacts_outlined, size: 18),
+                  label: Text(patientAnimalId == null
+                      ? (_estClinique ? 'Choisir un patient de la clinique' : 'Choisir un client de mon fichier')
+                      : '${_estClinique ? 'Patient' : 'Client'} : ${animalNomCtrl.text} — changer',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                   style: OutlinedButton.styleFrom(foregroundColor: _teal, minimumSize: const Size(double.infinity, 44),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                ),
+                // Client sans appli : fiche client + animal créée par le pro
+                // (même fichier que les patients de la clinique).
+                TextButton.icon(
+                  onPressed: () async {
+                    final id = await Navigator.push<String?>(context, MaterialPageRoute(
+                        builder: (_) => NouveauPatientCliniquePage(cliniqueProfileId: _resolveProProfileId(), estClinique: _estClinique)));
+                    if (id == null || id.isEmpty) return;
+                    final p = await _patientParAnimal(id);
+                    if (p == null) return;
+                    setModal(() {
+                      patientAnimalId = p['animal_id'] as String?;
+                      animalNomCtrl.text = p['animal_nom'] as String? ?? '';
+                      clientNomCtrl.text = p['client_nom'] as String? ?? '';
+                      clientTelCtrl.text = p['telephone'] as String? ?? '';
+                      clientEmailCtrl.text = p['email'] as String? ?? '';
+                    });
+                  },
+                  icon: const Icon(Icons.person_add_alt_outlined, size: 18),
+                  label: Text(_estClinique ? 'Nouveau patient (propriétaire sans appli)' : 'Nouveau client (sans appli)',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  style: TextButton.styleFrom(foregroundColor: _teal),
                 ),
                 const SizedBox(height: 12),
               ],
@@ -3086,7 +3111,28 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     );
   }
 
-  /// Patients créés par la clinique (fiche + client) — recherche par nom de
+  /// Métiers qui tiennent un fichier clients (clients sans appli).
+  bool get _fichierClients => _estClinique
+      || const {'toilettage', 'marechal_ferrant', 'sante', 'education', 'garde', 'pension'}.contains(AgendaContexte.catPro);
+
+  /// Client du fichier pour un animal qu'on vient de créer.
+  Future<Map<String, dynamic>?> _patientParAnimal(String animalId) async {
+    try {
+      final a = await Supabase.instance.client.from('animaux').select('id, nom, client_clinique_id').eq('id', animalId).maybeSingle();
+      if (a == null) return null;
+      final c = a['client_clinique_id'] == null ? null
+          : await Supabase.instance.client.from('clients_clinique').select('nom, prenom, telephone, email').eq('id', a['client_clinique_id']).maybeSingle();
+      return {
+        'animal_id': a['id'].toString(), 'animal_nom': a['nom'] ?? '',
+        'client_nom': '${c?['prenom'] ?? ''} ${c?['nom'] ?? ''}'.trim(),
+        'telephone': c?['telephone'] ?? '', 'email': c?['email'] ?? '',
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Patients / clients créés par le pro (fiche + client) — recherche par nom de
   /// l'animal ou du client. Renvoie animal_id, animal_nom, client_nom, telephone, email.
   Future<Map<String, dynamic>?> _choisirPatientClinique() async {
     final pid = _resolveProProfileId();
@@ -3116,7 +3162,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (!mounted) return null;
     if (patients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Aucun patient créé par la clinique (Mes patients → Nouveau patient).', style: TextStyle(fontFamily: 'Galey')),
+          content: Text('Aucun client dans votre fichier : utilisez « Nouveau client (sans appli) ».', style: TextStyle(fontFamily: 'Galey')),
           behavior: SnackBarBehavior.floating));
       return null;
     }
@@ -3224,6 +3270,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             if (pid.isNotEmpty) 'pro_profile_id': pid,
           });
         } catch (_) {}
+      }
+      // Toiletteur, client sans compte : demande de consignes par e-mail
+      // (lien personnel) — un client avec compte la reçoit à la confirmation.
+      if (!linked && clientEmail.isNotEmpty && AgendaContexte.catPro == 'toilettage') {
+        ConsignesApi.demander(inserted['id'].toString()).catchError((_) => (notifie: false, email: false));
       }
       if (!linked && clientEmail.isNotEmpty) {
         // Email de confirmation + invitation à rejoindre PetsMatch.
