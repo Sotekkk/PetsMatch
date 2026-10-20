@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 
 class PensionDocumentsPage extends StatefulWidget {
   const PensionDocumentsPage({super.key});
@@ -11,33 +13,26 @@ class PensionDocumentsPage extends StatefulWidget {
   State<PensionDocumentsPage> createState() => _PensionDocumentsPageState();
 }
 
-class _PensionDocumentsPageState extends State<PensionDocumentsPage>
-    with SingleTickerProviderStateMixin {
+// Contrats seulement : les factures de la pension sont dans Facturation.
+class _PensionDocumentsPageState extends State<PensionDocumentsPage> {
   static const _teal = Color(0xFF0C5C6C);
   static const _bg   = Color(0xFFF8F8F6);
 
-  late TabController _tabController;
   bool _loading  = false;
   bool _uploading = false;
 
   // Stockage privé Supabase (bucket `documents`) :
   // pension_documents/<uid>/contrats|factures/<nom>. Chemins complets.
   List<String> _contrats = [];
-  List<String> _factures = [];
+  // Contrats d'hébergement des séjours (documents_animaux), signés ou non.
+  List<Map<String, dynamic>> _contratsSejour = [];
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _loadDocuments();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadDocuments() async {
@@ -50,13 +45,15 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
         return items.where((f) => f.id != null).map((f) => '$base/${f.name}').toList();
       }
       final contrats = await lister('contrats');
-      final factures = await lister('factures');
-      if (mounted) {
-        setState(() {
-          _contrats = contrats;
-          _factures = factures;
-        });
-      }
+      try {
+        var q = Supabase.instance.client.from('documents_animaux')
+            .select('id, titre, statut, token, created_at, signe_le, pro_profile_id, metadata')
+            .eq('uid_eleveur', _uid).eq('type', 'contrat_hebergement');
+        final pid = User_Info.activeProfileId;
+        if (pid.isNotEmpty) q = q.or('pro_profile_id.eq.$pid,pro_profile_id.is.null');
+        _contratsSejour = List<Map<String, dynamic>>.from(await q.order('created_at', ascending: false));
+      } catch (_) { _contratsSejour = []; }
+      if (mounted) setState(() => _contrats = contrats);
     } catch (_) {
       // folders may not exist yet
     } finally {
@@ -209,6 +206,41 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     );
   }
 
+  Widget _contratSejourItem(Map<String, dynamic> c) {
+    final meta = (c['metadata'] as Map?) ?? {};
+    final statut = c['statut']?.toString() ?? 'brouillon';
+    final (lib, coul) = switch (statut) {
+      'signe' => ('Signé', const Color(0xFF2E7D5E)),
+      'partiellement_signe' => ('Signé en partie', const Color(0xFF2563EB)),
+      'en_attente' => ('À signer', const Color(0xFFD97706)),
+      'refuse' => ('Refusé', const Color(0xFFB3261E)),
+      _ => ('Brouillon', Colors.grey),
+    };
+    final client = (meta['client_nom'] ?? meta['acquereur_nom'])?.toString() ?? '';
+    final dates = [meta['date_entree'], meta['date_sortie_prevue']].where((x) => (x?.toString() ?? '').isNotEmpty)
+        .map((x) { final d = DateTime.tryParse(x.toString()); return d == null ? '' : '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}'; })
+        .join(' → ');
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
+      child: ListTile(
+        leading: const Icon(Icons.description_outlined, color: _teal),
+        title: Text(c['titre']?.toString() ?? "Contrat d'hébergement",
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5)),
+        subtitle: Text([client, dates].where((x) => x.isNotEmpty).join(' · '),
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        trailing: Text(lib, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: coul)),
+        onTap: () async {
+          final token = c['token']?.toString();
+          if (token == null) return;
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => ContratSignaturePage(token: token)));
+          _loadDocuments();
+        },
+      ),
+    );
+  }
+
   Widget _buildContratsTab() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     return RefreshIndicator(
@@ -234,6 +266,16 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
             ),
           ),
           const SizedBox(height: 20),
+          if (_contratsSejour.isNotEmpty) ...[
+            Text('Contrats de séjour', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            for (final c in _contratsSejour) _contratSejourItem(c),
+            const SizedBox(height: 20),
+            Text('Documents ajoutés', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+          ],
           if (_contrats.isEmpty) ...[
             const SizedBox(height: 40),
             Center(child: Icon(Icons.folder_open_outlined, size: 56, color: Colors.grey.shade300)),
@@ -264,48 +306,6 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
     );
   }
 
-  Widget _buildFacturesTab() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    return RefreshIndicator(
-      onRefresh: _loadDocuments,
-      child: _factures.isEmpty
-          ? ListView(
-              padding: const EdgeInsets.all(32),
-              children: [
-                const SizedBox(height: 40),
-                Center(child: Icon(Icons.receipt_long_outlined, size: 56, color: Colors.grey.shade300)),
-                const SizedBox(height: 12),
-                Center(
-                  child: Text('Aucune facture générée',
-                      style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
-                ),
-                const SizedBox(height: 6),
-                Center(
-                  child: Text(
-                    'Les factures générées depuis le registre apparaîtront automatiquement ici',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400),
-                  ),
-                ),
-              ],
-            )
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  '${_factures.length} facture${_factures.length > 1 ? 's' : ''}',
-                  style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 12,
-                      color: Colors.grey.shade500, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                ..._factures.map((r) => _buildDocItem(r, canDelete: false)),
-              ],
-            ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -319,27 +319,8 @@ class _PensionDocumentsPageState extends State<PensionDocumentsPage>
             style: TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700,
                 fontSize: 18, color: Color(0xFF1F2A2E))),
-        bottom: TabBar(
-          controller: _tabController,
-          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
-          unselectedLabelStyle: const TextStyle(fontFamily: 'Galey'),
-          labelColor: _teal,
-          unselectedLabelColor: const Color(0xFF6F767B),
-          indicatorColor: _teal,
-          indicatorSize: TabBarIndicatorSize.label,
-          tabs: const [
-            Tab(text: 'Contrats'),
-            Tab(text: 'Factures'),
-          ],
-        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildContratsTab(),
-          _buildFacturesTab(),
-        ],
-      ),
+      body: _buildContratsTab(),
     );
   }
 }

@@ -62,7 +62,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     try {
       final sel = _supa
           .from('documents_animaux')
-          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
+          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
       // Destinataire d'un contrat : acquéreur (vente/cession) OU client
       // (prestation de garde/pet-sitting → metadata.client_uid / client_email).
       final rows = await (uid != null
@@ -91,6 +91,14 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
         if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;
         return target == activePid;
       }).toList();
+      // Nom du prestataire (profil émetteur exact) pour un titre parlant.
+      final pids = {for (final d in filtered) if ((d['pro_profile_id']?.toString() ?? '').isNotEmpty) d['pro_profile_id'].toString()}.toList();
+      if (pids.isNotEmpty) {
+        try {
+          final noms = {for (final p in await _supa.from('user_profiles').select('id, nom').inFilter('id', pids)) p['id'].toString(): p['nom']?.toString() ?? ''};
+          for (final d in filtered) { d['_prestataire'] = noms[d['pro_profile_id']?.toString()]; }
+        } catch (_) {}
+      }
       List<Map<String, dynamic>> certs = [];
       try {
         final cr = await _supa.from('certificats_engagement')
@@ -204,13 +212,19 @@ class _DocCard extends StatelessWidget {
   const _DocCard({required this.doc, required this.onRefresh});
 
   static const _typeLabel = {
-    'contrat_vente':       '🤝 Contrat de vente',
-    'contrat_reservation': '🐾 Contrat de réservation',
-    'certificat_cession':  '📋 Certificat de cession',
-    'contrat_garde':       '🏠 Contrat de prestation',
-    'contrat_pension':     '🏨 Contrat de pension',
-    'contrat_education':   '🎓 Contrat d\'éducation',
-    'contrat_sante':       '🩺 Contrat de soins',
+    'contrat_vente':       'Contrat de vente',
+    'contrat_reservation': 'Contrat de réservation',
+    'certificat_cession':  'Certificat de cession',
+    'contrat_garde':       'Contrat de garde',
+    'contrat_pension':     'Contrat de pension',
+    'contrat_hebergement': "Contrat d'hébergement",
+    'contrat_education':   "Contrat d'éducation",
+    'contrat_sante':       'Contrat de soins',
+    'contrat_prestation_photo':      'Contrat de séance photo',
+    'contrat_prestation_toilettage': 'Contrat de toilettage',
+    'contrat_prestation_marechal':   'Contrat de maréchalerie',
+    'contrat_adoption':    "Contrat d'adoption",
+    'contrat_saillie':     'Contrat de saillie',
   };
 
   Future<void> _refuse(BuildContext context) async {
@@ -321,7 +335,8 @@ class _DocCard extends StatelessWidget {
           // Titre + badge
           Row(children: [
             Expanded(
-              child: Text(_titre(type, doc['titre'] as String?),
+              child: Text(_titre(type, doc['titre'] as String?, doc['_prestataire'] as String?,
+                  (animal?['nom'] ?? meta['animal_nom'])?.toString()),
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
             ),
             _StatutBadge(statut: statut),
@@ -433,11 +448,12 @@ class _DocCard extends StatelessWidget {
     );
   }
 
-  static String _titre(String type, String? titre) {
+  /// « Contrat d'hébergement — Pension de merveilles — Azur » : on sait ce que
+  /// c'est sans l'ouvrir.
+  static String _titre(String type, String? titre, String? prestataire, String? animalNom) {
     final label = _typeLabel[type];
-    if (label != null) return label;
-    if (titre != null && titre.trim().isNotEmpty) return titre.trim();
-    return '📄 Document';
+    if (label == null) return (titre != null && titre.trim().isNotEmpty) ? titre.trim() : 'Contrat';
+    return [label, prestataire, animalNom].map((x) => (x ?? '').trim()).where((x) => x.isNotEmpty).toSet().join(' — ');
   }
 
   String _fmt(DateTime d) =>

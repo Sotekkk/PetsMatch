@@ -23,10 +23,18 @@ interface DocRow {
 }
 
 const TYPE_LABEL: Record<string, string> = {
-  contrat_vente:       '🤝 Contrat de vente',
-  contrat_reservation: '🐾 Contrat de réservation',
-  certificat_cession:  '📋 Certificat de cession',
+  contrat_vente: 'Contrat de vente', contrat_reservation: 'Contrat de réservation', certificat_cession: 'Certificat de cession',
+  contrat_garde: 'Contrat de garde', contrat_pension: 'Contrat de pension', contrat_hebergement: "Contrat d'hébergement",
+  contrat_education: "Contrat d'éducation", contrat_sante: 'Contrat de soins', contrat_prestation_photo: 'Contrat de séance photo',
+  contrat_prestation_toilettage: 'Contrat de toilettage', contrat_prestation_marechal: 'Contrat de maréchalerie',
+  contrat_adoption: "Contrat d'adoption", contrat_saillie: 'Contrat de saillie',
 };
+// « Contrat d'hébergement — Pension de merveilles — Azur » : on sait ce que c'est sans l'ouvrir.
+function titreContrat(type: string, titre: string | null | undefined, prestataire?: string | null, animalNom?: string | null) {
+  const label = TYPE_LABEL[type];
+  if (!label) return titre?.trim() || 'Contrat';
+  return [...new Set([label, prestataire, animalNom].map(x => (x ?? '').trim()).filter(Boolean))].join(' — ');
+}
 
 const STATUT: Record<string, { label: string; cls: string }> = {
   brouillon:          { label: 'Brouillon',                  cls: 'bg-gray-100 text-gray-500' },
@@ -43,6 +51,7 @@ export default function MesContratsPage() {
   const { user, loading } = useAuth();
   const activePid = useActiveProfile();
   const router = useRouter();
+  const [prestataires, setPrestataires] = useState<Record<string, string>>({});
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [fetching, setFetching] = useState(true);
   const [refuseModal, setRefuseModal] = useState<{ id: string; token: string | null } | null>(null);
@@ -58,7 +67,7 @@ export default function MesContratsPage() {
     const email = user?.email ?? '-';
     supabase
       .from('documents_animaux')
-      .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
+      .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, pro_profile_id, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
       // Destinataire : acquéreur (vente/cession) OU client d'une prestation
       // (garde, photographe… → metadata.client_uid / client_email), comme l'appli.
       .or(`metadata->>acquereur_email.eq.${email},uid_acquereur.eq.${user?.uid ?? '-'},metadata->>acquereur_uid.eq.${user?.uid ?? '-'},metadata->>client_uid.eq.${user?.uid ?? '-'},metadata->>client_email.eq.${email}`)
@@ -80,6 +89,13 @@ export default function MesContratsPage() {
         });
         setDocs(rows);
         setFetching(false);
+        // Nom du prestataire (profil émetteur exact) pour le titre.
+        const pids = [...new Set(rows.map(r => (r as { pro_profile_id?: string | null }).pro_profile_id).filter(Boolean) as string[])];
+        if (pids.length) {
+          supabase.from('user_profiles').select('id, nom').in('id', pids).then(({ data: ps }) => {
+            setPrestataires(Object.fromEntries(((ps ?? []) as { id: string; nom: string | null }[]).map(p => [p.id, p.nom ?? ''])));
+          });
+        }
         // ?doc=<token> depuis une notif → ouvrir directement la signature
         const wantToken = new URLSearchParams(window.location.search).get('doc');
         if (wantToken && rows.some(r => r.token === wantToken)) {
@@ -136,7 +152,8 @@ export default function MesContratsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-[#1F2A2E] text-sm">
-                      {TYPE_LABEL[doc.type] ?? '📄 Document'}
+                      {titreContrat(doc.type, doc.titre, prestataires[(doc as { pro_profile_id?: string | null }).pro_profile_id ?? ''],
+                        animal?.nom ?? (doc.metadata?.animal_nom as string | undefined))}
                     </p>
                     {animal && (
                       <p className="text-xs text-gray-500 mt-0.5">
