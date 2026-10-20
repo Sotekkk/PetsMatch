@@ -133,8 +133,8 @@ async function supabaseInsertReturning(table, rows) {
 }
 
 /**
- * Notifie toute pension ayant un accès actif à la fiche de cet animal
- * (push + notification), et lui crée une copie ("miroir") de la tâche dans
+ * Notifie la pension où l'animal séjourne ce jour-là (séjour en cours dans
+ * pension_entrees) (push + notification), et lui crée une copie ("miroir") de la tâche dans
  * son propre calendrier — la tâche d'origine reste chez le propriétaire.
  * Quand la pension valide sa copie (voir mes-taches / pension_mes_taches),
  * l'originale est marquée faite et le propriétaire est notifié.
@@ -149,13 +149,18 @@ async function notifyAndMirrorPension({
     tacheOriginaleId, tacheDate, tacheHeure, tacheNotes, animalNom,
 }) {
     try {
-        const accesRows = await supabaseGet(
-            `animal_access?animal_id=eq.${animalId}&statut=eq.active&select=pro_profile_id`,
+        // Uniquement les pensions où l'animal séjourne CE jour-là (séjour en
+        // cours : arrivé, départ pas encore passé) — plus de rappel en dehors
+        // du séjour, même si l'accès à la fiche reste actif.
+        const jour = tacheDate || dateStr(0);
+        const sejours = await supabaseGet(
+            `pension_entrees?animal_id=eq.${encodeURIComponent(animalId)}&statut=eq.en_pension` +
+            `&date_entree=lte.${jour}&or=(date_sortie_prevue.gte.${jour},date_sortie_prevue.is.null)` +
+            "&select=pro_profile_id",
         );
-        if (!Array.isArray(accesRows) || accesRows.length === 0) return;
-        for (const acces of accesRows) {
-            const proProfileId = acces.pro_profile_id;
-            if (!proProfileId) continue;
+        if (!Array.isArray(sejours) || sejours.length === 0) return;
+        const pensions = [...new Set(sejours.map((x) => x.pro_profile_id).filter(Boolean))];
+        for (const proProfileId of pensions) {
             const proProfile = await supabaseGet(
                 `user_profiles?id=eq.${proProfileId}&select=uid,profile_type`,
             );

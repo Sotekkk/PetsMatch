@@ -163,8 +163,8 @@ export default function ReservationSejourModal({ pensionProfileId, pensionNom, c
               </div>
             )}
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Message pour la pension (facultatif)</label>
-              <textarea value={message} onChange={e => setMessage(e.target.value)} rows={2} placeholder="Habitudes, horaires d'arrivée, besoins particuliers…" className={`${champ} resize-none`} />
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Consignes pour le séjour (facultatif)</label>
+              <textarea value={message} onChange={e => setMessage(e.target.value)} rows={2} placeholder="Traitement à donner, habitudes, horaires d'arrivée…" className={`${champ} resize-none`} />
             </div>
             <p className="text-[11px] text-gray-400">La pension aura accès à la fiche de votre animal (santé, alimentation) pour préparer le séjour.</p>
             {erreur && <p className="text-sm text-[#B3261E]">{erreur}</p>}

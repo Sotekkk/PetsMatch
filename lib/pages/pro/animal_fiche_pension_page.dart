@@ -43,6 +43,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
 
   // Health
   List<Map<String, dynamic>> _vaccinations    = [];
+  bool _peutModifierSante = false;
   List<Map<String, dynamic>> _vermifuges      = [];
   List<Map<String, dynamic>> _antiparasitaires = [];
   List<Map<String, dynamic>> _traitements     = [];
@@ -96,13 +97,15 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         proProfileId = proProfile?['id'] as String? ?? '';
       }
       final acc = proProfileId.isEmpty ? null : await _supa.from('animal_access')
-          .select('statut').eq('animal_id', widget.animalId).eq('pro_profile_id', proProfileId)
+          .select('statut, permissions').eq('animal_id', widget.animalId).eq('pro_profile_id', proProfileId)
           .eq('statut', 'active').maybeSingle();
       if (acc == null) {
         if (mounted) setState(() { _hasAccess = false; _loading = false; });
         return;
       }
       _hasAccess = true;
+      // Compléter vermifuges / antiparasitaires : seulement si le propriétaire l'a autorisé.
+      _peutModifierSante = (acc['permissions'] as List?)?.contains('write_health') == true;
 
       final results = await Future.wait([
         _supa.from('animaux').select('*').eq('id', widget.animalId).single(),
@@ -524,8 +527,8 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                         chirurgies: _chirurgies,
                         poids: _poids,
                         fmtDate: _fmtDate,
-                        onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
-                        onAddAntiparasitaire: ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe),
+                        onAddVermifuge: _peutModifierSante ? ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe) : null,
+                        onAddAntiparasitaire: _peutModifierSante ? ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe) : null,
                       )
           : _AlimentationTab(alimentation: _alimentation, alimentationSejour: _sejourActuel?['alimentation_sejour'])),
     ]);
@@ -810,8 +813,9 @@ class _SanteTab extends StatelessWidget {
   final List<Map<String, dynamic>> chirurgies;
   final List<Map<String, dynamic>> poids;
   final String Function(String?) fmtDate;
-  final void Function({Map<String, dynamic>? renouvellementDe}) onAddVermifuge;
-  final void Function({Map<String, dynamic>? renouvellementDe}) onAddAntiparasitaire;
+  /// null = lecture seule (pas d'autorisation « modifier la santé » du propriétaire).
+  final void Function({Map<String, dynamic>? renouvellementDe})? onAddVermifuge;
+  final void Function({Map<String, dynamic>? renouvellementDe})? onAddAntiparasitaire;
 
   const _SanteTab({
     required this.vaccinations,
@@ -823,8 +827,8 @@ class _SanteTab extends StatelessWidget {
     required this.chirurgies,
     required this.poids,
     required this.fmtDate,
-    required this.onAddVermifuge,
-    required this.onAddAntiparasitaire,
+    this.onAddVermifuge,
+    this.onAddAntiparasitaire,
   });
 
   @override
@@ -848,13 +852,13 @@ class _SanteTab extends StatelessWidget {
           color: SanteCouleurs.vermifuges,
           icon: Icons.pest_control_outlined,
           items: vermifuges,
-          onAdd: () => onAddVermifuge(),
+          onAdd: onAddVermifuge == null ? null : () => onAddVermifuge!(),
           buildRow: (v) => _MedRow(
             label: v['produit']?.toString() ?? '',
             sub: v['dosage']?.toString() ?? v['remarques']?.toString(),
             date: fmtDate(v['date'] as String?),
             extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
-            onRappel: () => onAddVermifuge(renouvellementDe: v),
+            onRappel: onAddVermifuge == null ? null : () => onAddVermifuge!(renouvellementDe: v),
           ),
         ),
         _HealthSection(
@@ -862,13 +866,13 @@ class _SanteTab extends StatelessWidget {
           color: SanteCouleurs.antiparasitaires,
           icon: Icons.bug_report_outlined,
           items: antiparasitaires,
-          onAdd: () => onAddAntiparasitaire(),
+          onAdd: onAddAntiparasitaire == null ? null : () => onAddAntiparasitaire!(),
           buildRow: (a) => _MedRow(
             label: a['produit']?.toString() ?? '',
             sub: a['type']?.toString(),
             date: fmtDate(a['date'] as String?),
             extra: a['date_rappel'] != null ? 'Rappel : ${fmtDate(a['date_rappel'] as String?)}' : null,
-            onRappel: () => onAddAntiparasitaire(renouvellementDe: a),
+            onRappel: onAddAntiparasitaire == null ? null : () => onAddAntiparasitaire!(renouvellementDe: a),
           ),
         ),
         _HealthSection(

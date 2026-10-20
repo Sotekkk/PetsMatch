@@ -120,6 +120,10 @@ export async function POST(req: NextRequest) {
         }, { status: 409 });
       }
     }
+    // Verrou : un seul « Accepter » passe (double clic, deux appareils).
+    const { data: verrou } = await admin.from('pension_demandes').update({ statut: 'acceptee', decide_le: maintenant })
+      .eq('id', d.id).eq('statut', 'demande').select('id');
+    if (!(verrou ?? []).length) return NextResponse.json({ error: 'Demande déjà traitée' }, { status: 409 });
     // Séjour (et essai) dans le registre, avec la fiche et les coordonnées du client.
     const { data: an } = await admin.from('animaux').select('nom, espece, race, identification, photo_url').eq('id', d.animal_id as string).maybeSingle();
     const a = an as { nom?: string | null; espece?: string | null; race?: string | null; identification?: string | null; photo_url?: string | null } | null;
@@ -138,17 +142,22 @@ export async function POST(req: NextRequest) {
     };
     const { data: ent, error } = await admin.from('pension_entrees').insert({
       ...base, date_entree: d.date_arrivee, date_sortie_prevue: d.date_depart,
+      // Consignes du client (traitement, habitudes…) → consignes du séjour.
+      ...(d.message ? { consignes_sejour: d.message } : {}),
       notes: [d.hebergement ? `Hébergement souhaité : ${d.hebergement === 'pre' ? 'pré' : 'box'}` : '', d.message ? `Message du client : ${d.message}` : ''].filter(Boolean).join('\n') || null,
     }).select('id').single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      await admin.from('pension_demandes').update({ statut: 'demande', decide_le: null }).eq('id', d.id);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
     let essaiId: string | null = null;
     if (d.essai_date) {
       const { data: es } = await admin.from('pension_entrees').insert({
-        ...base, date_entree: d.essai_date, date_sortie_prevue: d.essai_date, notes: 'Essai avant le premier séjour',
+        ...base, date_entree: d.essai_date, date_sortie_prevue: d.essai_date, notes: 'Essai avant le premier séjour', essai: true,
       }).select('id').single();
       essaiId = (es as { id?: string } | null)?.id ?? null;
     }
-    await admin.from('pension_demandes').update({ statut: 'acceptee', decide_le: maintenant, entree_id: (ent as { id: string }).id, essai_entree_id: essaiId }).eq('id', d.id);
+    await admin.from('pension_demandes').update({ entree_id: (ent as { id: string }).id, essai_entree_id: essaiId }).eq('id', d.id);
     await notifClient('pension_sejour_accepte', 'Séjour confirmé',
       `${d.animal_nom ?? 'Votre animal'} est attendu du ${fr(d.date_arrivee as string)} au ${fr(d.date_depart as string)}.${d.essai_date ? ` Essai le ${fr(d.essai_date)}.` : ''}`);
     return NextResponse.json({ ok: true });

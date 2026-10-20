@@ -1394,7 +1394,7 @@ class _PensionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nom          = entree['animal_nom']?.toString() ?? '—';
+    final nom          = '${entree['animal_nom'] ?? '—'}${entree['essai'] == true ? ' · essai' : ''}';
     final espece       = entree['espece']?.toString() ?? '';
     final race         = entree['race']?.toString() ?? '';
     final puce         = entree['puce']?.toString() ?? '';

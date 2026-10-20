@@ -411,7 +411,7 @@ export default function RegistrePensionPage() {
                 }}>
                   <span style={{ fontSize: 18 }}>{espEmoji(e.espece)}</span>
                   <div style={{ flex: 1 }}>
-                    <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 13, color: '#1E2025' }}>{e.animal_nom}</p>
+                    <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 13, color: '#1E2025' }}>{e.animal_nom}{(e as { essai?: boolean }).essai ? ' · essai' : ''}</p>
                     <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 11, color: '#9ca3af' }}>
                       {fmtDate(e.date_entree)} → {fmtDate(e.date_sortie_effective)} · {e.proprietaire_nom ?? '—'}
                     </p>

@@ -46,6 +46,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
   List<Map<String, dynamic>> _incidents = [];
   // Demandes de séjour des clients (à accepter / refuser).
   List<Map<String, dynamic>> _demandes = [];
+  String? _decisionEnCours;
   final Map<String, Map<String, dynamic>> _animaux = {};
 
   @override
@@ -207,6 +208,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
 
   // Demandes de séjour ------------------------------------------------------
   Future<void> _decider(Map<String, dynamic> d, bool accepter, {bool forcer = false}) async {
+    if (_decisionEnCours == d['id'].toString() && !forcer) return;
     String? motif;
     if (!accepter) {
       final ctrl = TextEditingController();
@@ -222,10 +224,12 @@ class _PensionDashboardState extends State<PensionDashboard> {
       if (ok != true) return;
       motif = ctrl.text.trim();
     }
+    setState(() => _decisionEnCours = d['id'].toString());
     try {
       final r = await http.post(Uri.parse('$kSiteBaseUrl/api/pension/sejour'), headers: await siteApiHeaders(),
           body: jsonEncode({'action': 'decider', 'demandeId': d['id'], 'accepter': accepter, if (motif != null) 'motif': motif, if (forcer) 'forcer': true}));
       if (!mounted) return;
+      setState(() => _decisionEnCours = null);
       // Hébergements pleins sur une partie du séjour : accepter quand même ?
       if (r.statusCode == 409 && accepter && !forcer) {
         Map j = {};
@@ -254,7 +258,10 @@ class _PensionDashboardState extends State<PensionDashboard> {
       setState(() => _loading = true);
       _charger();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      if (mounted) {
+        setState(() => _decisionEnCours = null);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
     }
   }
 
@@ -277,7 +284,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
               if ((d['message']?.toString() ?? '').isNotEmpty)
                 Text('« ${d['message']} »', style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _muted)),
               Row(children: [
-                FilledButton(onPressed: () => _decider(d, true), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
+                FilledButton(onPressed: _decisionEnCours == d['id'].toString() ? null : () => _decider(d, true), style: FilledButton.styleFrom(backgroundColor: _vert, visualDensity: VisualDensity.compact),
                     child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
                 const SizedBox(width: 8),
                 TextButton(onPressed: () => _decider(d, false), child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey'))),

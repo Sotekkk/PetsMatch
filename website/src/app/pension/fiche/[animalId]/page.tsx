@@ -140,6 +140,8 @@ export default function AnimalFichePensionWebPage() {
   const [alimentation, setAlimentation]   = useState<Alimentation | null>(null);
   const [pensionEntry, setPensionEntry]   = useState<PensionEntry | null>(null);
   const [hasAccess, setHasAccess]         = useState(false);
+  // Compléter vermifuges / antiparasitaires : seulement si le propriétaire l'a autorisé.
+  const [peutModifierSante, setPeutModifierSante] = useState(false);
   const [loading, setLoading]             = useState(true);
 
 
@@ -162,7 +164,7 @@ export default function AnimalFichePensionWebPage() {
       proProfileId = proProfile?.id ?? null;
     }
     let { data: acc } = proProfileId
-      ? await supabase.from('animal_access').select('statut')
+      ? await supabase.from('animal_access').select('statut, permissions')
           .eq('animal_id', animalId).eq('pro_profile_id', proProfileId).eq('statut', 'active').maybeSingle()
       : { data: null };
 
@@ -178,7 +180,7 @@ export default function AnimalFichePensionWebPage() {
         const allowedEleveurProfileIds = new Set((perms ?? []).map(p => p.eleveur_profile_id));
         for (const emp of emplois) {
           if (!emp.eleveur_profile_id || !allowedEleveurProfileIds.has(emp.eleveur_profile_id)) continue;
-          const { data: employerAcc } = await supabase.from('animal_access').select('statut')
+          const { data: employerAcc } = await supabase.from('animal_access').select('statut, permissions')
             .eq('animal_id', animalId).eq('pro_profile_id', emp.eleveur_profile_id).eq('statut', 'active').maybeSingle();
           if (employerAcc) { acc = employerAcc; proProfileId = emp.eleveur_profile_id; break; }
         }
@@ -187,6 +189,7 @@ export default function AnimalFichePensionWebPage() {
 
     if (!acc) { setHasAccess(false); setLoading(false); return; }
     setHasAccess(true);
+    setPeutModifierSante(((acc as { permissions?: string[] | null }).permissions ?? []).includes('write_health'));
 
     const [
       { data: a }, { data: vac }, { data: ver }, { data: api },
@@ -422,6 +425,7 @@ export default function AnimalFichePensionWebPage() {
             antipara={antipara}
             traitements={traitements}
             poids={poids}
+            peutModifier={peutModifierSante}
             onPoidsAdded={() => load()}
           />
         )}
@@ -533,7 +537,9 @@ function IdentiteTab({ animal }: { animal: Animal | null }) {
 
 // ── Onglet Santé (lecture + ajout poids) ─────────────────────────────────────
 
-function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, traitements, poids, onPoidsAdded }: {
+function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, traitements, poids, peutModifier, onPoidsAdded }: {
+  /** false = lecture seule (pas d'autorisation « modifier la santé » du propriétaire). */
+  peutModifier: boolean;
   animalId: string;
   allergies: MedRecord[];
   vaccinations: MedRecord[];
@@ -592,7 +598,7 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
         <HealthSectionHeader title="Vermifugations" color={GREEN} icon="💊" count={vermifuges.length}
-          onAdd={() => { setRenouvellementDe(undefined); setOpenTraitementForm(openTraitementForm === 'vermifuges' ? null : 'vermifuges'); }} />
+          onAdd={peutModifier ? () => { setRenouvellementDe(undefined); setOpenTraitementForm(openTraitementForm === 'vermifuges' ? null : 'vermifuges'); } : undefined} />
         {openTraitementForm === 'vermifuges' && (
           <TraitementAddForm type="vermifuges" initial={renouvellementDe}
             onCancel={() => { setOpenTraitementForm(null); setRenouvellementDe(undefined); }}
@@ -604,7 +610,7 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
           <div key={v.id ?? i} style={{ borderBottom: i < vermifuges.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
             <MedRow label={String(v.produit ?? '')} date={fmtDate(v.date as string)}
               extra={v.date_rappel ? `Rappel : ${fmtDate(v.date_rappel as string)}` : undefined}
-              onRappel={() => { setRenouvellementDe(v); setOpenTraitementForm('vermifuges'); }} />
+              onRappel={peutModifier ? () => { setRenouvellementDe(v); setOpenTraitementForm('vermifuges'); } : undefined} />
           </div>
         ))}
       </div>
@@ -612,7 +618,7 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
       <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
         boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
         <HealthSectionHeader title="Antiparasitaires" color="#f57c00" icon="🐛" count={antipara.length}
-          onAdd={() => { setRenouvellementDe(undefined); setOpenTraitementForm(openTraitementForm === 'antiparasitaires' ? null : 'antiparasitaires'); }} />
+          onAdd={peutModifier ? () => { setRenouvellementDe(undefined); setOpenTraitementForm(openTraitementForm === 'antiparasitaires' ? null : 'antiparasitaires'); } : undefined} />
         {openTraitementForm === 'antiparasitaires' && (
           <TraitementAddForm type="antiparasitaires" initial={renouvellementDe}
             onCancel={() => { setOpenTraitementForm(null); setRenouvellementDe(undefined); }}
@@ -624,7 +630,7 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
           <div key={a.id ?? i} style={{ borderBottom: i < antipara.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
             <MedRow label={String(a.produit ?? '')} sub={String(a.type ?? '')} date={fmtDate(a.date as string)}
               extra={a.date_rappel ? `Rappel : ${fmtDate(a.date_rappel as string)}` : undefined}
-              onRappel={() => { setRenouvellementDe(a); setOpenTraitementForm('antiparasitaires'); }} />
+              onRappel={peutModifier ? () => { setRenouvellementDe(a); setOpenTraitementForm('antiparasitaires'); } : undefined} />
           </div>
         ))}
       </div>
