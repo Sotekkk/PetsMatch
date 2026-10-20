@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { clientDuSejour } from '@/lib/client-pension';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
 import { pensionPrixNuit, pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
 import { type PensionFactureEmetteur } from '@/lib/pension-facture-html';
@@ -120,7 +121,7 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
   // envoi email + notification) — mêmes lignes que celles calculées ci-dessus
   // (pension/nuit, acompte, TVA…), déposées en sessionStorage le temps de la
   // navigation (voir /elevage/facturation).
-  function continuer() {
+  async function continuer() {
     if (tarifNum <= 0) { setError('Renseignez un tarif par nuit.'); return; }
     const dateSortie = entree.date_sortie_effective ?? entree.date_sortie_prevue;
     const desc = `Pension du ${fmtIso(entree.date_entree)} au ${fmtIso(dateSortie)} — ${entree.animal_nom ?? ''}`;
@@ -131,10 +132,16 @@ export function PensionFacturationModal({ entree, proProfileId, pensionNom, onCl
         : { description: desc, quantite: nuitsNum, prixUnitaire: tarifNum, tva },
       ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1, prixUnitaire: suppNum, tva }] : []),
     ];
+    // Client du séjour (demande, sinon propriétaire de la fiche — profil exact).
+    const c = await clientDuSejour(supabase, entree as unknown as Record<string, unknown>);
     const prefill = {
-      nomClient: entree.proprietaire_nom ?? '',
-      emailClient: entree.proprietaire_email ?? '',
-      telClient: entree.proprietaire_contact ?? '',
+      nomClient: c.nom || (entree.proprietaire_nom ?? ''),
+      prenomClient: c.prenom || undefined,
+      emailClient: c.email || (entree.proprietaire_email ?? ''),
+      telClient: c.tel || (entree.proprietaire_contact ?? ''),
+      rueClient: c.rue || undefined, cpClient: c.cp || undefined, villeClient: c.ville || undefined,
+      clientUid: c.uid ?? undefined, clientProfileId: c.profileId ?? undefined,
+      sourceAnimalId: entree.animal_id ?? undefined,
       note: isAcompte
         ? `Total du séjour : ${fmt(total)} — solde de ${fmt(total - montantFacture)} facturé à la sortie.`
         : '',

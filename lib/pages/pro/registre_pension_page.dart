@@ -20,12 +20,12 @@ import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/utils/client_pension.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, pensionTarifPourKey, especeMatchesLogement, pensionPrixNuit,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
-import 'package:PetsMatch/utils/user_lookup.dart';
 
 class RegistrePensionPage extends StatefulWidget {
   /// 'presents' / 'arrivees' / 'departs' : ouvre la page filtrée (cartes
@@ -609,41 +609,13 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     final arrhesPct = (reglement?['arrhes_pct'] as num?)?.toDouble() ?? 0;
     final soldeMoment = reglement?['solde']?.toString() == 'depart' ? 'depart' : 'arrivee';
 
-    // Client : le séjour, sinon la demande de séjour (profil du client).
-    String? clientUid, clientProfileId;
-    var clientNom = t(e['proprietaire_nom']);
-    var clientAdresse = t(e['proprietaire_adresse']);
-    final contacts = <String>{
-      if (t(e['proprietaire_contact']).isNotEmpty) t(e['proprietaire_contact']),
-      if (t(e['proprietaire_email']).isNotEmpty) t(e['proprietaire_email']),
-    };
-    if (clientNom.isEmpty || contacts.isEmpty || clientAdresse.isEmpty) {
-      try {
-        final dem = await _supa.from('pension_demandes').select('client_uid, client_profile_id')
-            .or('entree_id.eq.${e['id']},essai_entree_id.eq.${e['id']}').limit(1).maybeSingle();
-        final cpid = t(dem?['client_profile_id']);
-        if (t(dem?['client_uid']).isNotEmpty) clientUid = t(dem?['client_uid']);
-        if (cpid.isNotEmpty) clientProfileId = cpid;
-        if (cpid.isNotEmpty) {
-          final cp = await _supa.from('user_profiles_complet')
-              .select('firstname, lastname, nom, phone_number, email_contact, rue, code_postal, ville').eq('id', cpid).maybeSingle();
-          if (clientNom.isEmpty) {
-            clientNom = '${t(cp?['firstname'])} ${t(cp?['lastname'])}'.trim();
-            if (clientNom.isEmpty) clientNom = t(cp?['nom']);
-          }
-          if (clientAdresse.isEmpty) {
-            clientAdresse = [cp?['rue'], cp?['code_postal'], cp?['ville']].map(t).where((x) => x.isNotEmpty).join(' ');
-          }
-          if (contacts.isEmpty) {
-            contacts.addAll([t(cp?['phone_number']), t(cp?['email_contact'])].where((x) => x.isNotEmpty));
-          }
-        }
-      } catch (_) {}
-    }
+    // Client du séjour (demande, sinon propriétaire de la fiche — profil exact).
+    final client = await clientDuSejour(e);
+    final clientUid = client.uid, clientProfileId = client.profileId;
+    final clientNom = client.nomComplet, clientAdresse = client.adresse;
 
     final esp = t(e['espece']), race = t(e['race']);
-    final email = contacts.firstWhere((x) => x.contains('@'), orElse: () => '');
-    final tel = contacts.firstWhere((x) => !x.contains('@'), orElse: () => '');
+    final email = client.email, tel = client.tel;
     final arrondi = (double v) => (v * 100).roundToDouble() / 100;
     final snapshot = <String, dynamic>{
       'client_nom': clientNom.isEmpty ? null : clientNom,
@@ -3806,26 +3778,11 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     setState(() => _continuing = true);
     try {
       final e = widget.entree;
-      final supa = Supabase.instance.client;
 
-      // Compte PetsMatch du propriétaire (email) — permet au moteur commun de
-      // pré-remplir ses coordonnées et de lui envoyer la facture (email +
-      // notification in-app), comme pour les autres profils.
-      final ownerEmail = (e['proprietaire_email'] ?? '').toString().trim();
-      String? ownerUid;
-      if (ownerEmail.isNotEmpty) {
-        final row = await trouverUtilisateurParEmail(ownerEmail);
-        ownerUid = row?['uid'] as String?;
-      }
+      // Client du séjour (demande de séjour, sinon propriétaire de la fiche —
+      // profil exact, un élevage reste l'élevage) et ses coordonnées.
+      final client = await clientDuSejour(e);
       final animalId = e['animal_id']?.toString();
-      String? ownerProfileId;
-      if (animalId != null && animalId.isNotEmpty) {
-        final propRow = await supa.from('animaux_proprietes')
-            .select('profile_id_proprio').eq('animal_id', animalId)
-            .filter('date_fin', 'is', null).order('date_debut', ascending: false)
-            .limit(1).maybeSingle();
-        ownerProfileId = propRow?['profile_id_proprio'] as String?;
-      }
 
       String fmtDate(String? iso) {
         final d = DateTime.tryParse(iso ?? '');
@@ -3852,11 +3809,15 @@ class _FacturationSheetState extends State<_FacturationSheet> {
       Navigator.pop(context); // ferme la feuille de saisie
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => CreerFacturePage(
-          clientNom: e['proprietaire_nom'] as String?,
-          clientEmail: ownerEmail.isNotEmpty ? ownerEmail : null,
-          clientTel: e['proprietaire_contact'] as String?,
-          clientUid: ownerUid,
-          clientProfileId: ownerProfileId,
+          clientNom: client.nom.isEmpty ? null : client.nom,
+          clientPrenom: client.prenom.isEmpty ? null : client.prenom,
+          clientEmail: client.email.isEmpty ? null : client.email,
+          clientTel: client.tel.isEmpty ? null : client.tel,
+          clientRue: client.rue.isEmpty ? null : client.rue,
+          clientCp: client.cp.isEmpty ? null : client.cp,
+          clientVille: client.ville.isEmpty ? null : client.ville,
+          clientUid: client.uid,
+          clientProfileId: client.profileId,
           sourceAnimalId: animalId,
           sourcePensionEntreeId: e['id']?.toString(),
           typeFacture: _isAcompte ? 'acompte' : null,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireUser } from '@/lib/server-auth';
+import { adresseClient, clientDuSejour, nomComplet } from '@/lib/client-pension';
 import { pensionPrixNuit, pensionTarifKeyForEspece, pensionTarifPourKey, type TarifsPension } from '@/lib/pension-especes';
 
 // Pension — contrat d'hébergement d'un séjour (documents_animaux,
@@ -33,33 +34,14 @@ export async function POST(req: NextRequest) {
   if (!(await estGestionnaire(proUid, auth.uid))) return NextResponse.json({ error: 'Réservé à la pension' }, { status: 403 });
   const animalId = txt(e.animal_id);
 
-  // Client : demande de séjour acceptée, sinon propriétaire principal de la fiche.
-  let clientUid: string | null = null, clientProfileId: string | null = null;
-  const { data: dem } = await admin.from('pension_demandes').select('client_uid, client_profile_id')
-    .or(`entree_id.eq.${e.id},essai_entree_id.eq.${e.id}`).limit(1).maybeSingle();
-  if (dem) { clientUid = (dem as Ligne).client_uid as string; clientProfileId = ((dem as Ligne).client_profile_id as string) ?? null; }
-  if (!clientUid && animalId) {
-    const { data: pr } = await admin.from('animaux_proprietes').select('uid_proprio, profile_id_proprio, role_proprio')
-      .eq('animal_id', animalId).is('date_fin', null).order('role_proprio', { ascending: false }).limit(1).maybeSingle();
-    if (pr && (pr as Ligne).uid_proprio !== proUid) {
-      clientUid = (pr as Ligne).uid_proprio as string; clientProfileId = ((pr as Ligne).profile_id_proprio as string) ?? null;
-    }
-  }
-  let cp: Ligne | null = null;
-  if (clientProfileId) {
-    const { data } = await admin.from('user_profiles_complet').select('firstname, lastname, nom, phone_number, email_contact, rue, code_postal, ville').eq('id', clientProfileId).maybeSingle();
-    cp = data as Ligne | null;
-  }
-  let emailCompte: string | null = null;
-  if (clientUid) {
-    const { data } = await admin.from('users').select('email').eq('uid', clientUid).maybeSingle();
-    emailCompte = txt((data as Ligne | null)?.email);
-  }
-  const contactSejour = txt(e.proprietaire_contact);
-  const clientNom = txt(e.proprietaire_nom) ?? (`${txt(cp?.firstname) ?? ''} ${txt(cp?.lastname) ?? ''}`.trim() || txt(cp?.nom));
-  const clientEmail = txt(e.proprietaire_email) ?? (contactSejour?.includes('@') ? contactSejour : null) ?? txt(cp?.email_contact) ?? emailCompte;
-  const clientTel = (contactSejour && !contactSejour.includes('@') ? contactSejour : null) ?? txt(cp?.phone_number);
-  const clientAdresse = txt(e.proprietaire_adresse) ?? ([cp?.rue, cp?.code_postal, cp?.ville].map(txt).filter(Boolean).join(' ') || null);
+  // Client du séjour (demande, sinon propriétaire de la fiche — profil exact :
+  // un élevage reste l'élevage) et ses coordonnées (profil, compte, séjour).
+  const client = await clientDuSejour(admin, e, proUid);
+  const clientUid = client.uid, clientProfileId = client.profileId;
+  const clientNom = nomComplet(client) || null;
+  const clientEmail = client.email || null;
+  const clientTel = client.tel || null;
+  const clientAdresse = adresseClient(client) || null;
 
   // Hébergement + tarif du séjour (tarifs par espèce, box / pré, réductions séjour long).
   let logementNom: string | null = null, logementType: string | null = null;
