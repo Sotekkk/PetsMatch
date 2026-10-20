@@ -120,11 +120,6 @@ class _PensionDashboardState extends State<PensionDashboard> {
 
   String _nom(Map<String, dynamic> s) =>
       (_animaux[s['animal_id']?.toString()]?['nom'] ?? s['animal_nom'] ?? 'Animal').toString();
-  String? _photo(Map<String, dynamic> s) => _animaux[s['animal_id']?.toString()]?['photo_url']?.toString();
-  String _logement(Map<String, dynamic> s) {
-    final l = _logements.where((x) => x['id'].toString() == s['logement_id']?.toString()).firstOrNull;
-    return l == null ? 'Sans hébergement attribué' : l['nom'].toString();
-  }
   String _jm(dynamic v) { final d = _date(v); return d == null ? '' : DateFormat('dd/MM').format(d); }
 
   /// Capacité : somme des capacités des hébergements (1 par défaut).
@@ -143,16 +138,6 @@ class _PensionDashboardState extends State<PensionDashboard> {
     if (mounted) _charger();
   }
 
-  void _fiche(Map<String, dynamic> s) {
-    final id = s['animal_id']?.toString();
-    if (id == null || id.isEmpty) { _go(const RegistrePensionPage()); return; }
-    _go(AnimalFichePensionPage(animalId: id, animalNom: _nom(s)));
-  }
-
-  Future<void> _arrivee(Map<String, dynamic> s) async {
-    if (await confirmerArriveePension(context, s)) _charger();
-  }
-
   Future<void> _depart(Map<String, dynamic> s) async {
     if (await enregistrerDepartPension(context, s)) _charger();
   }
@@ -169,18 +154,9 @@ class _PensionDashboardState extends State<PensionDashboard> {
     final cap = _capacite;
     return LayoutBuilder(builder: (context, c) {
       final large = c.maxWidth >= 860;
-      final gauche = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _demandesSection(),
-        _alertesSection(),
-        _entreesSortiesSection(),
-        const SizedBox(height: 16),
-        _presentsSection(presents),
-      ]);
-      final droite = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _tachesSection(),
-        const SizedBox(height: 16),
-        _occupationSection(presents),
-      ]);
+      // Arrivées / départs et animaux présents : cartes du haut (pas de bloc en doublon).
+      final gauche = _tachesSection();
+      final droite = _occupationSection(presents);
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         GridView.count(
           crossAxisCount: large ? 4 : 2,
@@ -208,11 +184,13 @@ class _PensionDashboardState extends State<PensionDashboard> {
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted)),
           ),
         const SizedBox(height: 16),
+        _demandesSection(),
+        _alertesSection(),
         if (large)
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(flex: 3, child: gauche),
+            Expanded(child: gauche),
             const SizedBox(width: 16),
-            Expanded(flex: 2, child: droite),
+            Expanded(child: droite),
           ])
         else ...[
           gauche,
@@ -347,93 +325,6 @@ class _PensionDashboardState extends State<PensionDashboard> {
           ),
       ])),
     );
-  }
-
-  // Arrivées et départs ---------------------------------------------------
-
-  Widget _entreesSortiesSection() {
-    Widget ligne(Map<String, dynamic> s, bool arrivee) {
-      final fait = arrivee ? s['arrivee_reelle_le'] != null : false;
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(children: [
-          Icon(arrivee ? Icons.login_rounded : Icons.logout_rounded, size: 18, color: arrivee ? _vert : _violet),
-          const SizedBox(width: 8),
-          DashPhotoAnimal(url: _photo(s), taille: 32),
-          const SizedBox(width: 10),
-          Expanded(child: InkWell(
-            onTap: () => _fiche(s),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(_nom(s), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _ink)),
-              Text([
-                (s['proprietaire_nom']?.toString() ?? '').trim(),
-                _logement(s),
-                if (fait) 'arrivé à ${hmFr(DateTime.parse(s['arrivee_reelle_le'].toString()).toLocal())}',
-              ].where((x) => x.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _muted)),
-            ]),
-          )),
-          if (arrivee && fait)
-            const DashBadge('Arrivé', fg: _vert, bg: Color(0xFFE7F3EC))
-          else
-            TextButton(
-              onPressed: () => arrivee ? _arrivee(s) : _depart(s),
-              child: Text(arrivee ? 'Enregistrer l\'arrivée' : 'Enregistrer le départ',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
-            ),
-        ]),
-      );
-    }
-    final arr = _arrivees, dep = _departs;
-    return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      DashTitre('Arrivées et départs du jour', icone: Icons.swap_horiz_rounded, compteur: arr.length + dep.length,
-          trailing: DashLien('Entrées / sorties', onTap: () => _go(const PensionEntreeSortiePage()))),
-      const SizedBox(height: 4),
-      if (arr.isEmpty && dep.isEmpty)
-        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text("Aucune arrivée ni aucun départ prévu aujourd'hui.", style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
-      for (final s in arr) ligne(s, true),
-      for (final s in dep) ligne(s, false),
-    ]));
-  }
-
-  // Animaux présents ------------------------------------------------------
-
-  Widget _presentsSection(List<Map<String, dynamic>> presents) {
-    final tri = [...presents]..sort((a, b) =>
-        (_date(a['date_sortie_prevue']) ?? DateTime(2100)).compareTo(_date(b['date_sortie_prevue']) ?? DateTime(2100)));
-    return DashCarte(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      DashTitre('Animaux présents', icone: Icons.pets_outlined, compteur: tri.length,
-          trailing: DashLien('Tous', onTap: () => _go(const RegistrePensionPage(initialMouvement: 'presents')))),
-      const SizedBox(height: 4),
-      if (tri.isEmpty)
-        const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Aucun animal en pension.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))),
-      for (final s in tri.take(8))
-        InkWell(
-          onTap: () => _fiche(s),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: Row(children: [
-              DashPhotoAnimal(url: _photo(s), taille: 36),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(_nom(s), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5, color: _ink)),
-                Text('${_logement(s)}${_jm(s['date_sortie_prevue']).isNotEmpty ? ' · départ le ${_jm(s['date_sortie_prevue'])}' : ''}',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted)),
-                if ((s['consignes_sejour']?.toString() ?? '').trim().isNotEmpty)
-                  Text(s['consignes_sejour'].toString().split('\n').first, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: _ambre, fontWeight: FontWeight.w600)),
-              ])),
-              Builder(builder: (_) {
-                final n = _taches.where((t) => t['animal_id']?.toString() == s['animal_id']?.toString()).length;
-                return n == 0 ? const SizedBox.shrink() : DashBadge('$n tâche${n > 1 ? 's' : ''}', fg: _ambre, bg: const Color(0xFFFFF4DC));
-              }),
-            ]),
-          ),
-        ),
-    ]));
   }
 
   // Tâches et soins -------------------------------------------------------

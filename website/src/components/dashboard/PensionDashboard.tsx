@@ -10,7 +10,7 @@ import { apiFetch } from '@/lib/api-fetch';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import ArriveeDepartModal, { type SejourPension } from '@/components/pension/ArriveeDepartModal';
-import { Kpi, Section, Badge, PhotoAnimal, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
+import { Kpi, Section, EnteteAccueil, Tuile, Icone } from '@/components/dashboard/kit';
 
 const TEAL = '#0C5C6C';
 const VERT = '#2E7D5E';
@@ -29,7 +29,6 @@ interface Animal { id: string; nom: string | null; photo_url: string | null }
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const jm = (s?: string | null) => s ? new Date(s).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '';
-const hm = (s: string) => new Date(s).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 export default function PensionDashboard({ nom, avatar }: { nom: string; avatar: string | null }) {
   const { user } = useAuth();
@@ -111,9 +110,6 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
   const aCloturer = sejours.filter(s => s.date_sortie_prevue && s.date_sortie_prevue < jour);
   const enRetard = taches.filter(t => t.date < jour);
   const nomA = (s: Sejour) => (s.animal_id && animaux[s.animal_id]?.nom) || s.animal_nom || 'Animal';
-  const photo = (s: Sejour) => (s.animal_id ? animaux[s.animal_id]?.photo_url : null) ?? null;
-  const logementNom = (s: Sejour) => logements.find(l => l.id === s.logement_id)?.nom ?? 'Sans hébergement attribué';
-  const ficheHref = (s: Sejour) => s.animal_id ? `/pension/fiche/${s.animal_id}` : '/pension/registre';
   const occupes = new Set(presents.map(s => s.logement_id).filter(Boolean) as string[]);
   const reserves = new Set(sejours.filter(s => s.date_entree > jour && s.logement_id && !occupes.has(s.logement_id)).map(s => s.logement_id as string));
   const capacite = logements.reduce((t, l) => t + (l.capacite ?? 1), 0);
@@ -122,26 +118,6 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     ...(enRetard.length ? [{ cle: 'taches', texte: `${enRetard.length} tâche${enRetard.length > 1 ? 's' : ''} en retard (soins, traitements…)`, href: '/mes-taches' }] : []),
     ...incidents.map(i => ({ cle: `i${i.id}`, texte: `Incident signalé${i.note ? ` : ${i.note}` : ''}`, href: '/pension/registre' })),
   ];
-
-  const ligneES = (s: Sejour, arrivee: boolean) => {
-    const fait = arrivee && !!s.arrivee_reelle_le;
-    return (
-      <div key={`${arrivee ? 'a' : 'd'}${s.id}`} className="flex items-center gap-2.5 py-1.5">
-        <span style={{ color: arrivee ? VERT : VIOLET }}><Icone nom="fleche" taille={16} /></span>
-        <PhotoAnimal url={photo(s)} taille={32} />
-        <Link href={ficheHref(s)} className="flex-1 min-w-0">
-          <span className="block text-sm font-bold text-[#1E2025] truncate">{nomA(s)}</span>
-          <span className="block text-xs text-gray-500 truncate">
-            {[s.proprietaire_nom, logementNom(s), fait ? `arrivé à ${hm(s.arrivee_reelle_le!)}` : ''].filter(Boolean).join(' · ')}
-          </span>
-        </Link>
-        {fait ? <Badge texte="Arrivé" fg={VERT} bg="#E7F3EC" /> : (
-          <button onClick={() => setAction({ sejour: s, mode: arrivee ? 'arrivee' : 'depart' })}
-            className="text-xs font-bold text-[#0C5C6C] whitespace-nowrap">{arrivee ? "Enregistrer l'arrivée" : 'Enregistrer le départ'}</button>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -209,37 +185,9 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
               </Section>
             )}
 
-            <div className="grid lg:grid-cols-5 gap-5 items-start">
-              <div className="lg:col-span-3 space-y-5">
-                <Section titre="Arrivées et départs du jour" icone={<Icone nom="fleche" taille={18} />} compteur={arrivees.length + departs.length}
-                  action={<Link href="/pension/entree-sortie" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Entrées / sorties →</Link>}>
-                  {arrivees.length + departs.length === 0
-                    ? <p className="text-sm text-gray-400">Aucune arrivée ni aucun départ prévu aujourd&apos;hui.</p>
-                    : <div>{arrivees.map(s => ligneES(s, true))}{departs.map(s => ligneES(s, false))}</div>}
-                </Section>
-                <Section titre="Animaux présents" icone={<Icone nom="patte" taille={18} />} compteur={presents.length}
-                  action={<Link href="/pension/registre" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Tous →</Link>}>
-                  {presents.length === 0 ? <p className="text-sm text-gray-400">Aucun animal en pension.</p> : (
-                    <div className="space-y-1">
-                      {[...presents].sort((a, b) => (a.date_sortie_prevue ?? '9').localeCompare(b.date_sortie_prevue ?? '9')).slice(0, 8).map(s => {
-                        const n = taches.filter(t => t.animal_id === s.animal_id).length;
-                        return (
-                          <Link key={s.id} href={ficheHref(s)} className="flex items-center gap-2.5 py-1.5 hover:bg-gray-50 rounded-lg">
-                            <PhotoAnimal url={photo(s)} taille={36} />
-                            <span className="flex-1 min-w-0">
-                              <span className="block text-sm font-bold text-[#1E2025] truncate">{nomA(s)}</span>
-                              <span className="block text-xs text-gray-500 truncate">{logementNom(s)}{s.date_sortie_prevue ? ` · départ le ${jm(s.date_sortie_prevue)}` : ''}</span>
-                              {s.consignes_sejour && <span className="block text-xs font-semibold truncate" style={{ color: AMBRE }}>{s.consignes_sejour.split('\n')[0]}</span>}
-                            </span>
-                            {n > 0 && <Badge texte={`${n} tâche${n > 1 ? 's' : ''}`} fg={AMBRE} bg="#FFF4DC" />}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Section>
-              </div>
-              <div className="lg:col-span-2 space-y-5">
+            {/* Arrivées / départs et animaux présents : cartes du haut (pas de bloc en doublon). */}
+            <div className="grid lg:grid-cols-2 gap-5 items-start">
+              <div className="contents">
                 <Section titre="Tâches et soins à faire" icone={<Icone nom="valide" taille={18} />} compteur={taches.length}
                   action={<Link href="/mes-taches" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Mes tâches →</Link>}>
                   {taches.length === 0 ? <p className="text-sm text-gray-400">Rien à faire pour l&apos;instant.</p> : (
