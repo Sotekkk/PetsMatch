@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntreeModal';
 import { PensionJournal } from '@/components/PensionJournal';
+import ArriveeDepartModal from '@/components/pension/ArriveeDepartModal';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import { thumbUrl } from '@/lib/upload-media';
 import { apiFetch } from '@/lib/api-fetch';
@@ -71,6 +72,9 @@ export default function RegistrePensionPage() {
   const [filterEspece, setFilterEspece] = useState('');
   const [showFilter, setShowFilter]     = useState(false);
   const [journalFor, setJournalFor]     = useState<PensionEntree | null>(null);
+  // Arrivée / sortie : fiche complète, puis suite (contrat, facture).
+  const [arriveeDepart, setArriveeDepart] = useState<{ entree: PensionEntree; mode: 'arrivee' | 'depart' } | null>(null);
+  const [suiteArrivee, setSuiteArrivee] = useState<PensionEntree | null>(null);
   const [facturationFor, setFacturationFor] = useState<PensionEntree | null>(null);
   const [showNonFacturees, setShowNonFacturees] = useState(false);
   // Mouvements d'un jour (cartes « Arrivées / Départs aujourd'hui » de
@@ -145,10 +149,16 @@ export default function RegistrePensionPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function marquerSorti(id: string) {
-    const today = new Date().toISOString().split('T')[0];
-    await supabase.from('pension_entrees').update({ statut: 'sorti', date_sortie_effective: today }).eq('id', id);
-    setEntrees(prev => prev.map(e => e.id === id ? { ...e, statut: 'sorti', date_sortie_effective: today } : e));
+  // Après l'arrivée : contrat / facture ; après la sortie : facture si pas encore faite.
+  function apresArriveeDepart() {
+    const ad = arriveeDepart;
+    setArriveeDepart(null);
+    load();
+    if (!ad) return;
+    if (ad.mode === 'arrivee') { setSuiteArrivee(ad.entree); return; }
+    if (!entreesFacturees.has(ad.entree.id) && window.confirm(`Le séjour de ${ad.entree.animal_nom} n'est pas encore facturé. Facturer maintenant ?`)) {
+      setFacturationFor(ad.entree);
+    }
   }
 
   // Export CSV
@@ -355,7 +365,9 @@ export default function RegistrePensionPage() {
                   isFacture={entreesFacturees.has(e.id)}
                   logementNom={e.logement_id ? logementNoms[e.logement_id] : undefined}
                   onEdit={() => setEditEntree(e)}
-                  onSorti={() => marquerSorti(e.id)}
+                  onArrivee={e.statut === 'en_pension' && !(e as { arrivee_reelle_le?: string | null }).arrivee_reelle_le
+                    ? () => setArriveeDepart({ entree: e, mode: 'arrivee' }) : undefined}
+                  onSorti={() => setArriveeDepart({ entree: e, mode: 'depart' })}
                   onJournal={() => setJournalFor(e)}
                   onFacturer={() => setFacturationFor(e)}
                   onContrat={() => router.push('/pension/contrat')}
@@ -383,6 +395,23 @@ export default function RegistrePensionPage() {
           onClose={() => setEditEntree(null)}
           onSaved={() => { setEditEntree(null); load(); }}
         />
+      )}
+      {arriveeDepart && (
+        <ArriveeDepartModal sejour={arriveeDepart.entree} mode={arriveeDepart.mode} uid={user.uid}
+          onClose={() => setArriveeDepart(null)} onDone={apresArriveeDepart} />
+      )}
+      {suiteArrivee && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
+          onClick={e => e.target === e.currentTarget && setSuiteArrivee(null)}>
+          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 480, padding: '16px 8px 24px', fontFamily: 'Galey, sans-serif' }}>
+            <p style={{ margin: '0 16px 8px', fontWeight: 700, fontSize: 15, color: '#1E2025' }}>Arrivée de {suiteArrivee.animal_nom} enregistrée</p>
+            <ActionRow icon="" label="Faire signer le contrat" color={PURPLE}
+              onClick={() => { setSuiteArrivee(null); router.push('/pension/contrat'); }} />
+            <ActionRow icon="" label="Facturer (acompte ou séjour)" color={TEAL}
+              onClick={() => { const e = suiteArrivee; setSuiteArrivee(null); setFacturationFor(e); }} />
+            <ActionRow icon="" label="Plus tard" color="#6b7280" onClick={() => setSuiteArrivee(null)} />
+          </div>
+        </div>
       )}
       {journalFor && (
         <PensionJournal
@@ -485,7 +514,8 @@ export default function RegistrePensionPage() {
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, onEdit, onSorti, onJournal, onFacturer, onContrat }: {
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, onEdit, onArrivee, onSorti, onJournal, onFacturer, onContrat }: {
+  onArrivee?: () => void;
   entree: PensionEntree;
   animalId?: string;
   photoUrl?: string;
@@ -692,10 +722,15 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
               </span>
               <button onClick={() => setShowActions(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af' }}>×</button>
             </div>
-            <ActionRow icon="📸" label="Journal" color={GREEN}
-              onClick={() => { setShowActions(false); onJournal(); }} />
+            {/* Dans l'ordre du séjour : arrivée (+ contrat), suivi, facture, sortie. */}
+            {onArrivee && (
+              <ActionRow icon="" label="Enregistrer l'arrivée" color={GREEN}
+                onClick={() => { setShowActions(false); onArrivee(); }} />
+            )}
             <ActionRow icon="📄" label="Contrat à signer" color={PURPLE}
               onClick={() => { setShowActions(false); onContrat(); }} />
+            <ActionRow icon="📸" label="Journal" color={GREEN}
+              onClick={() => { setShowActions(false); onJournal(); }} />
             {canReclamation && (
               <ActionRow icon="🔗" label={claimSent ? 'Lien de réclamation envoyé' : 'Envoyer le lien de réclamation'}
                 color={claimSent ? GREEN : PURPLE} disabled={sendingClaim || claimSent}
@@ -705,7 +740,7 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
               color={isFacture ? GREEN : TEAL}
               onClick={() => { setShowActions(false); onFacturer(); }} />
             {inPension && (
-              <ActionRow icon="🚪" label="Marquer sorti" color={TEAL}
+              <ActionRow icon="" label="Enregistrer la sortie" color={TEAL}
                 onClick={() => { setShowActions(false); onSorti(); }} />
             )}
           </div>

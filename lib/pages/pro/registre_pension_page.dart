@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFactur
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
+import 'package:PetsMatch/pages/pro/pension_arrivee_depart.dart' show confirmerArriveePension, enregistrerDepartPension;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, pensionTarifPourKey, especeMatchesLogement, pensionPrixNuit,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
@@ -319,17 +320,72 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
 
   // ── Marquer sorti ──────────────────────────────────────────────────────────
 
+  /// Arrivée : fiche d'arrivée (heure, déposant, hébergement, apports,
+  /// consignes), puis enchaînement contrat / signature / facture d'acompte.
+  Future<void> _enregistrerArrivee(Map<String, dynamic> entree) async {
+    if (!await confirmerArriveePension(context, entree) || !mounted) return;
+    await _load();
+    if (!mounted) return;
+    final suite = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+          child: Align(alignment: Alignment.centerLeft, child: Text(
+              'Arrivée de ${entree['animal_nom'] ?? "l'animal"} enregistrée',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+        ),
+        for (final (cle, icone, lib) in [
+          ('signature', Icons.draw_outlined, 'Faire signer le contrat'),
+          ('contrat', Icons.description_outlined, 'Contrat PDF'),
+          ('facture', Icons.receipt_long_outlined, 'Facturer (acompte ou séjour)'),
+        ])
+          ListTile(
+            leading: Icon(icone, color: _teal),
+            title: Text(lib, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            onTap: () => Navigator.pop(ctx, cle),
+          ),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Plus tard', style: TextStyle(fontFamily: 'Galey'))),
+        const SizedBox(height: 8),
+      ])),
+    );
+    if (!mounted) return;
+    if (suite == 'signature') {
+      _genererContratSignature(entree);
+    } else if (suite == 'contrat') {
+      _genererContrat(entree);
+    } else if (suite == 'facture') {
+      _genererFacture(entree);
+    }
+  }
+
+  /// Sortie : fiche de départ (heure, personne qui récupère, restitutions,
+  /// règlement), puis facture du séjour si pas encore faite, puis accès à la fiche.
   Future<void> _marquerSorti(Map<String, dynamic> entree) async {
-    final now     = DateTime.now();
-    final dateStr = DateFormat('yyyy-MM-dd').format(now);
-    await _supa.from('pension_entrees').update({
-      'statut': 'sorti',
-      'date_sortie_effective': dateStr,
-    }).eq('id', entree['id']);
+    if (!await enregistrerDepartPension(context, entree) || !mounted) return;
+    if (!_entreesFacturees.contains(entree['id'].toString())) {
+      final facturer = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Facturer le séjour ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: Text('Le séjour de ${entree['animal_nom'] ?? "l'animal"} n\'est pas encore facturé.',
+              style: const TextStyle(fontFamily: 'Galey')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(backgroundColor: _teal), child: const Text('Facturer')),
+          ],
+        ),
+      );
+      if (facturer == true && mounted) await _genererFacture(entree);
+      if (!mounted) return;
+    }
 
     // Proposer de révoquer l'accès lecture
     final puce     = (entree['puce'] ?? '').toString().replaceAll(RegExp(r'[\s\-]'), '');
-    final animalId = _puceToAnimalId[puce];
+    final animalId = (entree['animal_id'] as String?) ?? _puceToAnimalId[puce];
     if (animalId != null && mounted) {
       final revoke = await showDialog<bool>(
         context: context,
@@ -1059,6 +1115,9 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                             animalNom: e['animal_nom'] as String?,
                           ),
                         )) : null,
+                        onArrivee: e['statut'] == 'en_pension' && e['arrivee_reelle_le'] == null
+                            ? () => _enregistrerArrivee(e)
+                            : null,
                         onSorti: e['statut'] == 'en_pension'
                             ? () => _marquerSorti(e)
                             : null,
@@ -1306,6 +1365,7 @@ class _PensionCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onFicheTap;
   final VoidCallback? onSorti;
+  final VoidCallback? onArrivee;
   final VoidCallback? onContrat;
   final VoidCallback? onSignature;
   final VoidCallback? onFacture;
@@ -1326,6 +1386,7 @@ class _PensionCard extends StatelessWidget {
     this.onLongPress,
     this.onFicheTap,
     this.onSorti,
+    this.onArrivee,
     this.onContrat,
     this.onSignature,
     this.onFacture,
@@ -1336,7 +1397,7 @@ class _PensionCard extends StatelessWidget {
   });
 
   bool get _hasActions =>
-      onSorti != null || onContrat != null || onSignature != null ||
+      onSorti != null || onArrivee != null || onContrat != null || onSignature != null ||
       onFacture != null || onEnvoyerLien != null || onJournal != null;
 
   void _showActionsSheet(BuildContext context) {
@@ -1373,9 +1434,11 @@ class _PensionCard extends StatelessWidget {
                 ),
               ),
               const Divider(height: 1),
-              tile(Icons.photo_camera_back_outlined, 'Journal', onJournal, color: _green),
+              // Dans l'ordre du séjour : arrivée (+ contrat), suivi, facture, sortie.
+              tile(Icons.login_rounded, "Enregistrer l'arrivée", onArrivee, color: _green),
               tile(Icons.description_outlined, 'Contrat', onContrat, color: _purple),
               tile(Icons.draw_outlined, 'Signature en ligne', onSignature),
+              tile(Icons.photo_camera_back_outlined, 'Journal', onJournal, color: _green),
               tile(Icons.link_rounded, 'Lien de réclamation', onEnvoyerLien, color: _purple),
               tile(
                 factureFaite ? Icons.check_circle_outline : Icons.receipt_long_outlined,
@@ -1383,7 +1446,7 @@ class _PensionCard extends StatelessWidget {
                 onFacture,
                 color: factureFaite ? _green : _teal,
               ),
-              tile(Icons.logout_rounded, 'Marquer sorti', onSorti),
+              tile(Icons.logout_rounded, 'Enregistrer la sortie', onSorti),
               const SizedBox(height: 8),
             ]),
           ),
