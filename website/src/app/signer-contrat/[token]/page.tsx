@@ -660,7 +660,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     // Vérifier qu'il y a bien une signature (non-blanc)
     const ctx = canvas.getContext('2d');
     const imgData = ctx?.getImageData(0, 0, canvas.width, canvas.height);
-    const hasInk = imgData && Array.from(imgData.data).some((v, i) => i % 4 === 3 && v > 0);
+    // Parcours direct des pixels (Array.from copiait des millions de valeurs : lent sur mobile).
+    let hasInk = false;
+    if (imgData) for (let i = 3; i < imgData.data.length; i += 4) { if (imgData.data[i] > 0) { hasInk = true; break; } }
     if (!hasInk) { alert('Veuillez dessiner votre signature avant de valider.'); return; }
 
     setSaving(role);
@@ -1076,7 +1078,15 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
                 }
                 // Fermer si popup ; sinon rediriger (timeout laisse le temps au close)
                 window.close();
-                setTimeout(() => { window.location.href = '/elevage/contrat'; }, 300);
+                // Retour selon la partie : le client → ses contrats ; le pro → la
+                // page de son métier (plus jamais l'espace élevage d'office).
+                const retourPro: Record<string, string> = {
+                  contrat_hebergement: '/pension/registre', contrat_garde: '/mes-rdv', contrat_prestation_photo: '/mes-rdv',
+                  contrat_prestation_toilettage: '/mes-rdv', contrat_prestation_marechal: '/mes-rdv', contrat_education: '/mes-rdv',
+                  contrat_sante: '/mes-rdv',
+                };
+                const retour = !isOwner ? '/mes-contrats' : (retourPro[doc?.type ?? ''] ?? '/elevage/contrat');
+                setTimeout(() => { window.location.href = retour; }, 300);
               }}
               className="flex items-center gap-2 bg-[#6E9E57] hover:bg-[#5a8a45] text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
               ✅ Valider et fermer
