@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { apiFetch } from '@/lib/api-fetch';
 import { supabase } from '@/lib/supabase';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { usePensionPlan } from '@/lib/use-plan';
@@ -72,32 +73,26 @@ export default function PensionContratPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Contrat créé côté serveur avec toutes les données du séjour (client, tarif, total).
   async function genererContrat(e: Entree) {
     if (!user) return;
     setGenerating(e.id);
-    const { data } = await supabase.from('documents_animaux').insert({
-      uid_eleveur: user.uid,
-      pension_entree_id: e.id,
-      type: 'contrat_hebergement',
-      titre: `Contrat d'hébergement — ${e.animal_nom}`,
-      statut: 'brouillon',
-      metadata: {
-        arrhes_pourcentage: arrhesDefaut || null,
-        logement_nom: e.logement_id ? logements[e.logement_id] : null,
-      },
-    }).select('id, token').single();
+    const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entreeId: e.id }) });
     setGenerating(null);
-    if (data) load();
+    if (!r.ok) { const j = await r.json().catch(() => ({})) as { error?: string }; alert(j.error ?? 'Contrat impossible'); return; }
+    load();
   }
 
   async function transmettre(entreeId: string) {
     const doc = docs[entreeId];
     const entree = entrees.find(e => e.id === entreeId);
     if (!user || !doc?.token || !entree) return;
-    await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', doc.id);
+    // Données du contrat rafraîchies + notification au client s'il a un compte.
+    const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entreeId, transmettre: true }) });
+    const j = await r.json().catch(() => ({})) as { client_notifie?: boolean };
     const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
     const contact = entree.proprietaire_contact?.trim();
-    if (contact?.includes('@')) {
+    if (!j.client_notifie && contact?.includes('@')) {
       const targetUser = await trouverUtilisateurParEmail(contact);
       if (targetUser?.uid) {
         const pensionNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'La pension';

@@ -20,10 +20,18 @@ export interface PensionInfo {
 }
 
 export interface DataContratPension {
-  tarifNuit?: string;
+  tarifNuit?: string | number;
   arrhesPourcentage?: number;
   logementNom?: string;
   notes?: string;
+  /** Séjour : nombre de nuits, réduction séjour long (%) et total estimé. */
+  nbNuits?: number;
+  reductionPct?: number;
+  prixTotal?: number;
+  clientEmail?: string;
+  clientTel?: string;
+  clientAdresse?: string;
+  puce?: string;
 }
 
 const CSS = `
@@ -78,6 +86,10 @@ export function generateContratHebergementHTML(
   const today = new Date().toLocaleDateString('fr-FR');
   const arrhes = data.arrhesPourcentage ?? 0;
   const tarif = data.tarifNuit ? `${data.tarifNuit} €/nuit` : 'à convenir';
+  const total = data.prixTotal
+    ? `${data.prixTotal.toFixed(2).replace('.', ',')} €${data.nbNuits ? ` (${data.nbNuits} nuit${data.nbNuits > 1 ? 's' : ''}${data.reductionPct ? `, réduction ${data.reductionPct} %` : ''})` : ''}`
+    : '';
+  const contactClient = [data.clientTel, data.clientEmail ?? entree.proprietaire_contact].filter(Boolean).join(' — ');
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><title>Contrat d'hébergement — ${entree.animal_nom}</title>
@@ -100,16 +112,19 @@ export function generateContratHebergementHTML(
 
 <div class="parties">
   <b>${entree.proprietaire_nom || 'Le Propriétaire'}</b>, ci-après désigné « le Propriétaire »<br>
-  ${entree.proprietaire_contact ? 'Contact : ' + entree.proprietaire_contact : ''}
+  ${data.clientAdresse ? data.clientAdresse + '<br>' : ''}
+  ${contactClient ? 'Contact : ' + contactClient : ''}
 </div>
 
 <h2>Objet du contrat</h2>
 <table class="info-table">
   <tr><td>Animal</td><td>${entree.animal_nom} ${entree.espece ? '(' + entree.espece + (entree.race ? ' — ' + entree.race : '') + ')' : ''}</td></tr>
+  ${data.puce ? `<tr><td>Identification</td><td>${data.puce}</td></tr>` : ''}
   <tr><td>Logement</td><td>${data.logementNom || 'à définir à l\'admission'}</td></tr>
   <tr><td>Date d'entrée</td><td>${fmt(entree.date_entree)}</td></tr>
   <tr><td>Date de sortie prévue</td><td>${fmt(entree.date_sortie_prevue)}</td></tr>
   <tr><td>Tarif</td><td>${tarif}</td></tr>
+  ${total ? `<tr><td>Montant du séjour</td><td>${total}</td></tr>` : ''}
   <tr><td>Arrhes à la réservation</td><td>${arrhes > 0 ? arrhes + ' % du montant total' : 'aucune'}</td></tr>
 </table>
 

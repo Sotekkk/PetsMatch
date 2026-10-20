@@ -958,6 +958,122 @@ Future<Uint8List> contratToilettagePdfBytes({
   return pdf.save();
 }
 
+// ─── CONTRAT D'HÉBERGEMENT EN PENSION ─────────────────────────────────────────
+// ⚠️ Contenu à garder aligné sur website/src/lib/contrat-pension.ts.
+
+Future<Uint8List> contratPensionPdfBytes({
+  required Map<String, dynamic> prestataire,
+  String clientNom = '', String clientContact = '', String clientAdresse = '',
+  String animal = '', String puce = '', String logement = '',
+  DateTime? dateEntree, DateTime? dateSortie,
+  double tarifNuit = 0, int? nbNuits, double reductionPct = 0, double prixTotal = 0,
+  int arrhesPourcentage = 0, String notes = '',
+  String? sigPrestataire, String? sigClient, String villeSignature = '',
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final p = _parties(prestataire);
+  final today = _fmt(DateTime.now());
+  String euros(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
+  final total = prixTotal > 0
+      ? '${euros(prixTotal)}${nbNuits != null ? ' ($nbNuits nuit${nbNuits > 1 ? 's' : ''}${reductionPct > 0 ? ', réduction ${reductionPct.toStringAsFixed(0)} %' : ''})' : ''}'
+      : null;
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text("CONTRAT D'HÉBERGEMENT EN PENSION ANIMALIÈRE",
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
+      pw.SizedBox(height: 16),
+
+      pw.Text('ENTRE LES SOUSSIGNÉS :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('La Pension', p.eleveurNom),
+      _line('Demeurant à', p.eleveurAdresse),
+      _line('Téléphone', p.eleveurTel),
+      _line('SIRET', p.eleveurSiret),
+      _line('Email', p.eleveurEmail),
+      pw.SizedBox(height: 8),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Propriétaire', clientNom.trim().isEmpty ? null : clientNom.trim()),
+      _line('Adresse', clientAdresse.trim().isEmpty ? null : clientAdresse.trim()),
+      _line('Contact', clientContact.trim().isEmpty ? null : clientContact.trim()),
+
+      pw.SizedBox(height: 10),
+      pw.Text('Objet du contrat', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _line('Animal', animal.trim().isEmpty ? null : animal.trim()),
+      _line('Identification', puce.trim().isEmpty ? null : puce.trim()),
+      _line('Logement', logement.trim().isEmpty ? "à définir à l'admission" : logement.trim()),
+      _line("Date d'entrée", dateEntree != null ? _fmt(dateEntree) : null),
+      _line('Date de sortie prévue', dateSortie != null ? _fmt(dateSortie) : null),
+      _line('Tarif', tarifNuit > 0 ? '${euros(tarifNuit)} / nuit' : 'à convenir'),
+      _line('Montant du séjour', total),
+      _line('Arrhes à la réservation', arrhesPourcentage > 0 ? '$arrhesPourcentage % du montant total' : 'aucune'),
+
+      pw.Text("Article 1 : Conditions d'admission", style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("L'animal est admis sous réserve d'être à jour de ses vaccinations obligatoires et traitements antiparasitaires. "
+          "Le propriétaire s'engage à fournir tout document sanitaire demandé par la pension à l'admission. En cas de maladie "
+          "contagieuse déclarée, la pension se réserve le droit de refuser l'accueil."),
+      pw.Text("Article 2 : Soins vétérinaires d'urgence", style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("En cas d'urgence médicale, la pension est autorisée à faire appel au vétérinaire de garde sans délai. Les frais "
+          "vétérinaires engagés sont intégralement à la charge du propriétaire et feront l'objet d'une facturation. Le "
+          "propriétaire sera contacté dès que possible."),
+      pw.Text('Article 3 : Responsabilité civile', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("La pension est couverte par une assurance responsabilité civile professionnelle. Le propriétaire demeure seul "
+          "responsable des dommages causés par son animal à des tiers, à d'autres animaux ou aux installations de la pension."),
+      pw.Text('Article 4 : Comportement et sécurité', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Le propriétaire certifie que l'animal est sociable et ne présente pas de comportement agressif connu. Tout "
+          "antécédent de morsure, d'attaque ou de comportement dangereux doit être déclaré à l'admission."),
+      pw.Text('Article 5 : Alimentation', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("L'alimentation standard est assurée par la pension. Tout régime spécifique doit être signalé à l'admission et "
+          "accompagné des aliments nécessaires fournis par le propriétaire."),
+      pw.Text('Article 6 : Modalités financières', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("${arrhesPourcentage > 0 ? 'Un acompte de $arrhesPourcentage % du montant total est exigé à la réservation pour confirmer le séjour. ' : ''}"
+          "Le solde est dû à l'admission. En cas d'annulation moins de 48 h avant la date d'entrée, l'acompte est conservé. "
+          "Tout séjour commencé est dû dans son intégralité."),
+      pw.Text('Article 7 : Prolongation et sortie', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("Toute prolongation de séjour doit être signalée au préalable et fera l'objet d'une facturation complémentaire. "
+          "L'animal non récupéré dans les 72 h suivant la date de sortie prévue, sans contact du propriétaire, pourra être "
+          "confié à la SPA ou à une autorité compétente aux frais du propriétaire."),
+      pw.Text('Article 8 : Force majeure et responsabilité médicale', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para("La pension ne peut être tenue responsable du décès ou de la maladie d'un animal survenant malgré les soins "
+          "appropriés, ni en cas de force majeure. La pension s'engage à mettre tout en œuvre pour assurer le bien-être et la "
+          "sécurité de l'animal confié."),
+      if (notes.trim().isNotEmpty) ...[
+        pw.Text('Article 9 : Notes complémentaires', style: _artTitle()),
+        pw.SizedBox(height: 3),
+        _para(notes.trim()),
+      ],
+
+      pw.SizedBox(height: 16),
+      pw.Text(villeSignature.trim().isEmpty
+          ? 'Fait le $today.'
+          : 'Fait à ${villeSignature.trim()}, le $today.', style: _body()),
+      pw.SizedBox(height: 8),
+      _copyBanner('Contrat établi en deux exemplaires originaux, un pour chaque partie.'),
+      pw.Row(children: [
+        _signBlock('La Pension', p.eleveurNom, signature: sigPrestataire),
+        pw.SizedBox(width: 16),
+        _signBlock('Le Propriétaire', clientNom, signature: sigClient),
+      ]),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today - PetsMatch', style: _small())),
+    ],
+  ));
+
+  return pdf.save();
+}
+
 // ─── CONTRAT DE PRESTATION D'ÉDUCATION ────────────────────────────────────────
 // ⚠️ Contenu à garder aligné sur website/src/lib/contrat-education.ts.
 

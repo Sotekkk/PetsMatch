@@ -212,8 +212,20 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           .select('animal_nom, espece, race, proprietaire_nom, proprietaire_contact, date_entree, date_sortie_prevue')
           .eq('id', data.pension_entree_id)
           .maybeSingle();
+        // Photographie du contrat (route /api/pension/contrat) : lisible par le
+        // client, qui n'a pas accès au séjour (RLS) ; séjour en repli.
+        const s = (k: string) => { const v = (meta as Record<string, unknown>)[k]; return v == null || v === '' ? undefined : String(v); };
+        const n = (k: string) => { const v = Number((meta as Record<string, unknown>)[k]); return Number.isFinite(v) && v > 0 ? v : undefined; };
         generatedHtml = generateContratHebergementHTML(
-          entree ?? { animal_nom: meta.acquereur_nom ?? '' },
+          {
+            animal_nom: s('animal_nom') ?? entree?.animal_nom ?? '',
+            espece: s('espece') ?? entree?.espece ?? undefined,
+            race: s('race') ?? entree?.race ?? undefined,
+            proprietaire_nom: s('client_nom') ?? entree?.proprietaire_nom ?? undefined,
+            proprietaire_contact: entree?.proprietaire_contact ?? undefined,
+            date_entree: s('date_entree') ?? entree?.date_entree ?? undefined,
+            date_sortie_prevue: s('date_sortie_prevue') ?? entree?.date_sortie_prevue ?? undefined,
+          },
           {
             nom: elvNom,
             adresse: profil?.adress_elevage ?? profil?.adress ?? '',
@@ -222,10 +234,12 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             siret: profil?.siret ?? '',
           },
           {
-            tarifNuit: meta.tarif_nuit,
-            arrhesPourcentage: meta.arrhes_pourcentage ? Number(meta.arrhes_pourcentage) : undefined,
-            logementNom: meta.logement_nom,
-            notes: meta.notes,
+            tarifNuit: s('tarif_nuit'),
+            arrhesPourcentage: n('arrhes_pourcentage'),
+            logementNom: s('logement_nom'),
+            notes: s('notes'),
+            nbNuits: n('nb_nuits'), reductionPct: n('reduction_pct'), prixTotal: n('prix_total'),
+            clientEmail: s('client_email'), clientTel: s('client_tel'), clientAdresse: s('client_adresse'), puce: s('puce'),
           },
         );
       } else if (data.type === 'contrat_garde') {

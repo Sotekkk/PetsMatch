@@ -531,34 +531,26 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       return;
     }
     try {
-      // Réutilise un contrat existant pour ce séjour si déjà créé.
-      final existing = await _supa
-          .from('documents_animaux')
-          .select('token')
-          .eq('pension_entree_id', e['id'])
-          .eq('type', 'contrat_hebergement')
-          .maybeSingle();
-
-      String? token = existing?['token'] as String?;
-      if (token == null) {
-        final row = await _supa.from('documents_animaux').insert({
-          'uid_eleveur': uid,
-          'pension_entree_id': e['id'],
-          'type': 'contrat_hebergement',
-          'titre': 'Contrat d\'hébergement — ${e['animal_nom'] ?? ''}',
-          'statut': 'en_attente',
-          'metadata': {
-            'logement_nom': null,
-          },
-        }).select('token').single();
-        token = row['token'] as String?;
-      } else {
-        await _supa.from('documents_animaux')
-            .update({'statut': 'en_attente'})
-            .eq('pension_entree_id', e['id'])
-            .eq('type', 'contrat_hebergement');
-      }
+      final token = await _preparerContrat(e);
       if (token == null) return;
+      // Transmis au client : à signer + notification (sur son profil).
+      final doc = await _supa.from('documents_animaux').select('statut, metadata').eq('token', token).maybeSingle();
+      if (doc?['statut'] == 'brouillon') {
+        await _supa.from('documents_animaux').update({'statut': 'en_attente'}).eq('token', token);
+      }
+      final meta = (doc?['metadata'] as Map?) ?? {};
+      final clientUid = meta['client_uid']?.toString();
+      if (clientUid != null && clientUid.isNotEmpty) {
+        try {
+          await _supa.from('notifications').insert({
+            'uid': clientUid,
+            if ((meta['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': meta['client_profile_id'],
+            'type': 'contrat_invite', 'title': 'Contrat à signer',
+            'body': "${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'La pension'} vous envoie le contrat d'hébergement de ${e['animal_nom'] ?? 'votre animal'} : vérifiez et signez",
+            'data': {'token': token, 'url': '/signer-contrat/$token'}, 'read': false,
+          });
+        } catch (_) {}
+      }
       if (mounted) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => ContratSignaturePage(token: token),
@@ -571,227 +563,134 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     }
   }
 
-  Future<void> _genererContrat(Map<String, dynamic> e) async {
-    final pdf      = pw.Document();
-    final font     = await PdfGoogleFonts.robotoRegular();
-    final fontBold = await PdfGoogleFonts.robotoBold();
-    final fmt      = DateFormat('dd/MM/yyyy');
-    final logo     = pw.MemoryImage(
-        (await rootBundle.load('assets/Logo_petsmatch_fond_blanc.png'))
-            .buffer.asUint8List());
+  /// Contrat d'hébergement du séjour : créé / mis à jour depuis l'appli avec
+  /// toutes les données (client, animal, dates, logement, tarif / nuit, total),
+  /// puis ouvert dans la visionneuse des contrats (lecture + signature), comme
+  /// les contrats d'élevage. Les signatures déjà posées sont conservées.
+  Future<String?> _preparerContrat(Map<String, dynamic> e) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    final pid = User_Info.activeProfileId;
+    String t(dynamic v) => (v?.toString() ?? '').trim();
+    Map<String, dynamic>? up;
+    try {
+      up = await _supa.from('user_profiles_complet')
+          .select('tarifs_pension')
+          .eq('id', pid).maybeSingle();
+    } catch (_) {}
+    // Logement + tarif (tarifs par espèce, box / pré, réductions séjour long).
+    String logementNom = '', logementType = '';
+    if (t(e['logement_id']).isNotEmpty) {
+      try {
+        final lg = await _supa.from('enclos_chenil').select('nom, type').eq('id', e['logement_id']).maybeSingle();
+        logementNom = t(lg?['nom']); logementType = t(lg?['type']);
+      } catch (_) {}
+    }
+    final debut = DateTime.tryParse(t(e['date_entree']));
+    final fin = DateTime.tryParse(t(e['date_sortie_prevue']));
+    final nuits = debut != null && fin != null ? fin.difference(debut).inDays.clamp(1, 3650) : null;
+    double tarifNuit = 0, reduction = 0;
+    final tp = up?['tarifs_pension'];
+    if (tp is Map) {
+      final key = pensionTarifKeyForEspece(t(e['espece']));
+      final tarif = key == null ? null : pensionTarifPourKey((tp['especes'] as List?) ?? const [], key);
+      if (tarif != null) {
+        tarifNuit = pensionPrixNuit(tarif, seul: e['seul_dans_logement'] != false, hebergement: logementType);
+      }
+      for (final r in (tp['reductions_long_sejour'] as List?) ?? const []) {
+        if (r is Map && nuits != null && nuits >= ((r['min_nuits'] as num?)?.toInt() ?? 0)) {
+          reduction = (r['pourcentage'] as num?)?.toDouble() ?? 0;
+        }
+      }
+    }
+    final total = tarifNuit > 0 && nuits != null ? tarifNuit * nuits * (1 - reduction / 100) : 0.0;
 
-    final pensionNom = User_Info.nameElevage.isNotEmpty
-        ? User_Info.nameElevage
-        : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-
-    String fmtIso(String? iso) {
-      if (iso == null || iso.isEmpty) return '—';
-      final dt = DateTime.tryParse(iso);
-      return dt != null ? fmt.format(dt) : '—';
+    // Client : le séjour, sinon la demande de séjour (profil du client).
+    String? clientUid, clientProfileId;
+    var clientNom = t(e['proprietaire_nom']);
+    var clientAdresse = t(e['proprietaire_adresse']);
+    final contacts = <String>{
+      if (t(e['proprietaire_contact']).isNotEmpty) t(e['proprietaire_contact']),
+      if (t(e['proprietaire_email']).isNotEmpty) t(e['proprietaire_email']),
+    };
+    if (clientNom.isEmpty || contacts.isEmpty || clientAdresse.isEmpty) {
+      try {
+        final dem = await _supa.from('pension_demandes').select('client_uid, client_profile_id')
+            .or('entree_id.eq.${e['id']},essai_entree_id.eq.${e['id']}').limit(1).maybeSingle();
+        final cpid = t(dem?['client_profile_id']);
+        if (t(dem?['client_uid']).isNotEmpty) clientUid = t(dem?['client_uid']);
+        if (cpid.isNotEmpty) clientProfileId = cpid;
+        if (cpid.isNotEmpty) {
+          final cp = await _supa.from('user_profiles_complet')
+              .select('firstname, lastname, nom, phone_number, email_contact, rue, code_postal, ville').eq('id', cpid).maybeSingle();
+          if (clientNom.isEmpty) {
+            clientNom = '${t(cp?['firstname'])} ${t(cp?['lastname'])}'.trim();
+            if (clientNom.isEmpty) clientNom = t(cp?['nom']);
+          }
+          if (clientAdresse.isEmpty) {
+            clientAdresse = [cp?['rue'], cp?['code_postal'], cp?['ville']].map(t).where((x) => x.isNotEmpty).join(' ');
+          }
+          if (contacts.isEmpty) {
+            contacts.addAll([t(cp?['phone_number']), t(cp?['email_contact'])].where((x) => x.isNotEmpty));
+          }
+        }
+      } catch (_) {}
     }
 
-    pw.Widget _section(String title, List<List<String>> rows) => pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Container(
-          width: double.infinity,
-          padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0C5C6C)),
-          child: pw.Text(title,
-              style: pw.TextStyle(font: fontBold, fontSize: 9, color: PdfColors.white)),
-        ),
-        pw.Container(
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
-          ),
-          child: pw.Column(children: rows.map((row) => pw.Container(
-            decoration: const pw.BoxDecoration(
-              border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.3)),
-            ),
-            padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            child: pw.Row(children: [
-              pw.SizedBox(width: 120,
-                  child: pw.Text(row[0], style: pw.TextStyle(font: fontBold, fontSize: 8,
-                      color: PdfColors.grey700))),
-              pw.Expanded(child: pw.Text(row[1],
-                  style: pw.TextStyle(font: font, fontSize: 8))),
-            ]),
-          )).toList()),
-        ),
-        pw.SizedBox(height: 14),
-      ],
-    );
+    final esp = t(e['espece']), race = t(e['race']);
+    final email = contacts.firstWhere((x) => x.contains('@'), orElse: () => '');
+    final tel = contacts.firstWhere((x) => !x.contains('@'), orElse: () => '');
+    final arrondi = (double v) => (v * 100).roundToDouble() / 100;
+    final snapshot = <String, dynamic>{
+      'client_nom': clientNom.isEmpty ? null : clientNom,
+      'client_email': email.isEmpty ? null : email, 'client_tel': tel.isEmpty ? null : tel,
+      'client_adresse': clientAdresse.isEmpty ? null : clientAdresse,
+      'client_uid': clientUid, 'client_profile_id': clientProfileId,
+      'acquereur_nom': clientNom.isEmpty ? null : clientNom, 'acquereur_email': email.isEmpty ? null : email,
+      'animal_nom': t(e['animal_nom']), 'espece': esp.isEmpty ? null : esp, 'race': race.isEmpty ? null : race,
+      'puce': t(e['puce']).isEmpty ? null : t(e['puce']),
+      'date_entree': t(e['date_entree']).isEmpty ? null : t(e['date_entree']),
+      'date_sortie_prevue': t(e['date_sortie_prevue']).isEmpty ? null : t(e['date_sortie_prevue']),
+      'logement_nom': logementNom.isEmpty ? null : logementNom,
+      'tarif_nuit': tarifNuit > 0 ? tarifNuit : null, 'nb_nuits': nuits,
+      'reduction_pct': reduction > 0 ? reduction : null, 'prix_total': total > 0 ? arrondi(total) : null,
+      'notes': _clauseSpecifique(esp),
+    };
+    try {
+      final ex = await _supa.from('documents_animaux').select('id, token, metadata')
+          .eq('pension_entree_id', e['id']).eq('type', 'contrat_hebergement').limit(1).maybeSingle();
+      if (ex != null) {
+        await _supa.from('documents_animaux').update({
+          'metadata': {...((ex['metadata'] as Map?) ?? {}), ...snapshot},
+          if (pid.isNotEmpty) 'pro_profile_id': pid,
+          if (clientUid != null) 'uid_acquereur': clientUid,
+          if (clientProfileId != null) 'acquereur_profile_id': clientProfileId,
+        }).eq('id', ex['id']);
+        return ex['token']?.toString();
+      }
+      final row = await _supa.from('documents_animaux').insert({
+        'uid_eleveur': uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
+        'pension_entree_id': e['id'],
+        if (t(e['animal_id']).isNotEmpty) 'animal_id': e['animal_id'],
+        'type': 'contrat_hebergement',
+        'titre': "Contrat d'hébergement — ${t(e['animal_nom'])}",
+        'statut': 'brouillon',
+        'metadata': snapshot,
+        if (clientUid != null) 'uid_acquereur': clientUid,
+        if (clientProfileId != null) 'acquereur_profile_id': clientProfileId,
+      }).select('token').single();
+      return row['token']?.toString();
+    } catch (err) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Contrat impossible : $err')));
+      return null;
+    }
+  }
 
-    pdf.addPage(pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(32),
-      build: (ctx) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        // En-tête
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Image(logo, width: 40, height: 40),
-          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-            pw.Text('CONTRAT DE PENSION',
-                style: pw.TextStyle(font: fontBold, fontSize: 14, color: const PdfColor.fromInt(0xFF0C5C6C))),
-            pw.Text(pensionNom,
-                style: pw.TextStyle(font: fontBold, fontSize: 10, color: PdfColors.grey700)),
-            pw.Text('Date : ${fmt.format(DateTime.now())}',
-                style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-          ]),
-        ]),
-        pw.SizedBox(height: 6),
-        pw.Divider(thickness: 1, color: const PdfColor.fromInt(0xFF0C5C6C)),
-        pw.SizedBox(height: 16),
-
-        // Animal
-        _section('ANIMAL', [
-          ['Nom', e['animal_nom']?.toString() ?? '—'],
-          ['Espèce', _espLabel(e['espece']?.toString() ?? '')],
-          ['Race', e['race']?.toString().isNotEmpty == true ? e['race'] : '—'],
-          ['N° de puce', e['puce']?.toString().isNotEmpty == true ? e['puce'] : '—'],
-        ]),
-
-        // Propriétaire
-        _section('PROPRIÉTAIRE / CLIENT', [
-          ['Nom', e['proprietaire_nom']?.toString().isNotEmpty == true ? e['proprietaire_nom'] : '—'],
-          ['Téléphone', e['proprietaire_contact']?.toString().isNotEmpty == true ? e['proprietaire_contact'] : '—'],
-          ['Email', e['proprietaire_email']?.toString().isNotEmpty == true ? e['proprietaire_email'] : '—'],
-        ]),
-
-        // Séjour
-        _section('SÉJOUR', [
-          ['Date d\'entrée', fmtIso(e['date_entree'] as String?)],
-          ['Sortie prévue', fmtIso(e['date_sortie_prevue'] as String?)],
-          ['Statut', e['statut'] == 'en_pension' ? 'En pension' : 'Sorti(e)'],
-        ]),
-
-        // Notes
-        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0C5C6C)),
-            child: pw.Text('NOTES / CONDITIONS PARTICULIÈRES',
-                style: pw.TextStyle(font: fontBold, fontSize: 9, color: PdfColors.white)),
-          ),
-          pw.Container(
-            width: double.infinity,
-            height: 60,
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
-            ),
-            padding: const pw.EdgeInsets.all(8),
-            child: pw.Text(
-              e['notes']?.toString().isNotEmpty == true ? e['notes'] : ' ',
-              style: pw.TextStyle(font: font, fontSize: 8),
-            ),
-          ),
-        ]),
-        pw.SizedBox(height: 24),
-
-        // Signatures
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('Signature du propriétaire',
-                style: pw.TextStyle(font: fontBold, fontSize: 8, color: PdfColors.grey700)),
-            pw.SizedBox(height: 4),
-            pw.Text('(précédée de « Lu et approuvé »)',
-                style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey500)),
-            pw.SizedBox(height: 40),
-            pw.Container(width: 180, height: 0.5, color: PdfColors.grey400),
-          ]),
-          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('Signature de la pension',
-                style: pw.TextStyle(font: fontBold, fontSize: 8, color: PdfColors.grey700)),
-            pw.SizedBox(height: 44),
-            pw.Container(width: 180, height: 0.5, color: PdfColors.grey400),
-          ]),
-        ]),
-
-        pw.Spacer(),
-        pw.Divider(thickness: 0.3, color: PdfColors.grey300),
-        pw.Center(child: pw.Text('Document généré via PetsMatch · petsmatchapp.com',
-            style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey400))),
-      ]),
-    ));
-
-    // ── Page 2 : Conditions générales ────────────────────────────────────
-    final espece = e['espece']?.toString() ?? '';
-
-    final clauseSpecifique = _clauseSpecifique(espece);
-
-    final articles = [
-      ('Art. 1 – Conditions d\'admission',
-       'L\'animal est admis sous réserve d\'être à jour de ses vaccinations obligatoires et traitements antiparasitaires. '
-       'Le propriétaire s\'engage à fournir tout document sanitaire demandé par la pension à l\'admission. '
-       'En cas de maladie contagieuse déclarée, la pension se réserve le droit de refuser l\'accueil.'),
-      ('Art. 2 – Soins vétérinaires d\'urgence',
-       'En cas d\'urgence médicale, la pension est autorisée à faire appel au vétérinaire de garde sans délai. '
-       'Les frais vétérinaires engagés sont intégralement à la charge du propriétaire et feront l\'objet d\'une facturation. '
-       'Le propriétaire sera contacté dès que possible.'),
-      ('Art. 3 – Responsabilité civile',
-       'La pension est couverte par une assurance responsabilité civile professionnelle. '
-       'Le propriétaire demeure seul responsable des dommages causés par son animal à des tiers, à d\'autres animaux ou aux installations de la pension. '
-       'Une attestation d\'assurance responsabilité civile peut être demandée.'),
-      ('Art. 4 – Comportement & sécurité',
-       'Le propriétaire certifie que l\'animal est sociable et ne présente pas de comportement agressif connu. '
-       'Tout antécédent de morsure, d\'attaque ou de comportement dangereux doit être déclaré à l\'admission. '
-       'La pension se réserve le droit de mettre fin au séjour en cas de danger avéré pour les autres animaux ou le personnel.'),
-      ('Art. 5 – Alimentation',
-       'L\'alimentation standard est assurée par la pension. Tout régime spécifique (pathologie, allergie, prescription vétérinaire) '
-       'doit être signalé à l\'admission et accompagné des aliments nécessaires fournis par le propriétaire. '
-       'La pension décline toute responsabilité en cas d\'information incomplète sur le régime de l\'animal.'),
-      ('Art. 6 – Modalités financières',
-       'Un acompte de 30 % du montant total peut être exigé à la réservation pour confirmer le séjour. '
-       'Le solde est dû à l\'admission. En cas d\'annulation moins de 48 h avant la date d\'entrée, l\'acompte est conservé. '
-       'Tout séjour commencé est dû dans son intégralité.'),
-      ('Art. 7 – Prolongation & sortie',
-       'Toute prolongation de séjour doit être signalée au préalable et fera l\'objet d\'une facturation complémentaire. '
-       'L\'animal non récupéré dans les 72 h suivant la date de sortie prévue, sans contact du propriétaire, '
-       'pourra être confié à la SPA ou à une autorité compétente aux frais du propriétaire.'),
-      ('Art. 8 – Force majeure & responsabilité médicale',
-       'La pension ne peut être tenue responsable du décès ou de la maladie d\'un animal survenant malgré les soins appropriés, '
-       'ni en cas de force majeure (épizootie, catastrophe naturelle, panne de courant…). '
-       'La pension s\'engage à mettre tout en œuvre pour assurer le bien-être et la sécurité de l\'animal confié.'),
-      if (clauseSpecifique != null) ('Art. 9 – Disposition spécifique (${_espLabel(espece)})', clauseSpecifique),
-    ];
-
-    pdf.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(32),
-      header: (_) => pw.Column(children: [
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Text('CONDITIONS GÉNÉRALES DE PENSION',
-              style: pw.TextStyle(font: fontBold, fontSize: 10, color: const PdfColor.fromInt(0xFF0C5C6C))),
-          pw.Text(pensionNom,
-              style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-        ]),
-        pw.SizedBox(height: 4),
-        pw.Divider(thickness: 0.5, color: const PdfColor.fromInt(0xFF0C5C6C)),
-        pw.SizedBox(height: 8),
-      ]),
-      footer: (_) => pw.Column(children: [
-        pw.Divider(thickness: 0.3, color: PdfColors.grey300),
-        pw.Center(child: pw.Text('Document généré via PetsMatch · petsmatchapp.com',
-            style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey400))),
-      ]),
-      build: (_) => [
-        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: articles.map((art) => pw.Padding(
-            padding: const pw.EdgeInsets.only(bottom: 12),
-            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text(art.$1,
-                  style: pw.TextStyle(font: fontBold, fontSize: 8,
-                      color: const PdfColor.fromInt(0xFF0C5C6C))),
-              pw.SizedBox(height: 3),
-              pw.Text(art.$2,
-                  style: pw.TextStyle(font: font, fontSize: 7.5,
-                      color: PdfColors.grey800, lineSpacing: 1.5)),
-            ]),
-          )).toList(),
-        ),
-      ],
-    ));
-
-    await Printing.layoutPdf(onLayout: (_) async => pdf.save());
+  Future<void> _genererContrat(Map<String, dynamic> e) async {
+    final token = await _preparerContrat(e);
+    if (token == null || !mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => ContratSignaturePage(token: token)));
   }
 
   // ── Supprimer entrée ──────────────────────────────────────────────────────

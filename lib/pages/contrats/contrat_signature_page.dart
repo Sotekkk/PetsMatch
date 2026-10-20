@@ -302,7 +302,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     // Le contrat de garde « cadre » (par client) et certains contrats d'éducation
     // / santé (prestation générale, sans animal précisé) ne sont pas rattachés à un animal.
     final animalRequired = type != 'contrat_garde' && type != 'contrat_education' && type != 'contrat_sante'
-        && type != 'contrat_prestation_photo' && type != 'contrat_prestation_toilettage';
+        && type != 'contrat_prestation_photo' && type != 'contrat_prestation_toilettage'
+        && type != 'contrat_hebergement';
     if ((animalRequired && _animal == null) || _eleveur == null) { _pdfBytes = null; return; }
     final sigElv = meta['signature_eleveur'] as String?;
     final sigAcq = meta['signature_acquereur'] as String?;
@@ -484,6 +485,47 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           autorisationImages: m('autorisation_images'),
           notes: m('notes'),
           sigPhotographe: sigElv, sigClient: sigAcq,
+          villeSignature: ville,
+        );
+      } else if (type == 'contrat_hebergement') {
+        // Photographie du contrat (route /api/pension/contrat) ; séjour en repli
+        // (lisible par la pension seulement).
+        Map<String, dynamic>? entree;
+        final entreeId = _doc?['pension_entree_id']?.toString();
+        if (entreeId != null && entreeId.isNotEmpty) {
+          try {
+            entree = await _supa.from('pension_entrees')
+                .select('animal_nom, espece, race, puce, proprietaire_nom, proprietaire_contact, date_entree, date_sortie_prevue')
+                .eq('id', entreeId).maybeSingle();
+          } catch (_) {}
+        }
+        String v(String metaKey, [String? entreeKey]) {
+          final x = m(metaKey);
+          return x.isNotEmpty ? x : (entree?[entreeKey ?? metaKey]?.toString() ?? '').trim();
+        }
+        double d(String k) => double.tryParse(m(k).replaceAll(',', '.')) ?? 0;
+        final esp = v('espece'), race = v('race');
+        var animal = v('animal_nom');
+        if (animal.isNotEmpty && esp.isNotEmpty) animal = '$animal ($esp${race.isNotEmpty ? ' — $race' : ''})';
+        final contact = [m('client_tel'), m('client_email').isNotEmpty ? m('client_email') : (entree?['proprietaire_contact']?.toString() ?? '')]
+            .map((x) => x.trim()).where((x) => x.isNotEmpty).toSet().join(' · ');
+        _pdfBytes = await contratPensionPdfBytes(
+          prestataire: _eleveur!,
+          clientNom: v('client_nom', 'proprietaire_nom'),
+          clientContact: contact,
+          clientAdresse: m('client_adresse'),
+          animal: animal,
+          puce: v('puce'),
+          logement: m('logement_nom'),
+          dateEntree: DateTime.tryParse(v('date_entree')),
+          dateSortie: DateTime.tryParse(v('date_sortie_prevue')),
+          tarifNuit: d('tarif_nuit'),
+          nbNuits: int.tryParse(m('nb_nuits')),
+          reductionPct: d('reduction_pct'),
+          prixTotal: d('prix_total'),
+          arrhesPourcentage: d('arrhes_pourcentage').round(),
+          notes: m('notes'),
+          sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,
         );
       } else if (type == 'contrat_prestation_toilettage') {
