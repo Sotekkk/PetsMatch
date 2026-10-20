@@ -149,6 +149,14 @@ export default function RegistrePensionPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Contrat du séjour (créé / mis à jour côté serveur) ouvert dans la page du contrat.
+  async function ouvrirContrat(e: PensionEntree) {
+    const r = await apiFetch('/api/pension/contrat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entreeId: e.id }) });
+    const j = await r.json().catch(() => ({})) as { token?: string; error?: string };
+    if (!r.ok || !j.token) { alert(j.error ?? 'Contrat impossible'); return; }
+    router.push(`/signer-contrat/${j.token}`);
+  }
+
   // Après l'arrivée : contrat / facture ; après la sortie : facture si pas encore faite.
   function apresArriveeDepart() {
     const ad = arriveeDepart;
@@ -370,7 +378,7 @@ export default function RegistrePensionPage() {
                   onSorti={() => setArriveeDepart({ entree: e, mode: 'depart' })}
                   onJournal={() => setJournalFor(e)}
                   onFacturer={() => setFacturationFor(e)}
-                  onContrat={() => router.push('/pension/contrat')}
+                  onContrat={() => { void ouvrirContrat(e); }}
                 />
               );
             })}
@@ -406,7 +414,7 @@ export default function RegistrePensionPage() {
           <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 480, padding: '16px 8px 24px', fontFamily: 'Galey, sans-serif' }}>
             <p style={{ margin: '0 16px 8px', fontWeight: 700, fontSize: 15, color: '#1E2025' }}>Arrivée de {suiteArrivee.animal_nom} enregistrée</p>
             <ActionRow icon="" label="Faire signer le contrat" color={PURPLE}
-              onClick={() => { setSuiteArrivee(null); router.push('/pension/contrat'); }} />
+              onClick={() => { const e = suiteArrivee; setSuiteArrivee(null); void ouvrirContrat(e); }} />
             <ActionRow icon="" label="Facturer (acompte ou séjour)" color={TEAL}
               onClick={() => { const e = suiteArrivee; setSuiteArrivee(null); setFacturationFor(e); }} />
             <ActionRow icon="" label="Plus tard" color="#6b7280" onClick={() => setSuiteArrivee(null)} />

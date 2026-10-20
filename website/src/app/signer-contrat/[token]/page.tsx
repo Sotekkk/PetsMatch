@@ -240,6 +240,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             notes: s('notes'),
             nbNuits: n('nb_nuits'), reductionPct: n('reduction_pct'), prixTotal: n('prix_total'),
             clientEmail: s('client_email'), clientTel: s('client_tel'), clientAdresse: s('client_adresse'), puce: s('puce'),
+            arrhesMontant: n('arrhes_montant'), soldeMoment: s('solde_moment'),
           },
         );
       } else if (data.type === 'contrat_garde') {

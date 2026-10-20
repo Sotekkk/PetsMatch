@@ -214,6 +214,11 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   bool _essaiRequis = false;
   final _essaiInfo = TextEditingController();
   bool _showAutresEspeces = false;
+  // Règlement du séjour (repris dans le contrat) : arrhes à la réservation
+  // (facultatives) et moment du solde.
+  bool _arrhes = false;
+  final _arrhesPct = TextEditingController(text: '30');
+  String _solde = 'arrivee';
   final List<_EspeceTarifCtrl> _especes = [];
   final List<_ReductionCtrl> _reductions = [];
 
@@ -252,6 +257,13 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     } catch (_) {}
 
     _afficherPublic = tarifs?['afficher_public'] == true;
+    final reglement = tarifs?['reglement'];
+    if (reglement is Map) {
+      final pct = (reglement['arrhes_pct'] as num?)?.toDouble() ?? 0;
+      _arrhes = pct > 0;
+      if (pct > 0) _arrhesPct.text = pct.toStringAsFixed(pct == pct.roundToDouble() ? 0 : 1);
+      _solde = reglement['solde']?.toString() == 'depart' ? 'depart' : 'arrivee';
+    }
 
     // Prix déjà saisis, par key d'espèce.
     final prixParEspece = <String, Map<String, String>>{};
@@ -364,6 +376,10 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
           'especes': especes,
           'reductions_long_sejour': reductions,
           'afficher_public': _afficherPublic,
+          'reglement': {
+            'arrhes_pct': _arrhes ? (double.tryParse(_arrhesPct.text.replaceAll(',', '.')) ?? 0) : null,
+            'solde': _solde,
+          },
         },
       }).eq('id', pid);
       try {
@@ -495,6 +511,45 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                   onPressed: () => setState(() => _reductions.add(_ReductionCtrl())),
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('Ajouter une réduction', style: TextStyle(fontFamily: 'Galey')),
+                ),
+                const SizedBox(height: 24),
+                const Text('Règlement du séjour',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 4),
+                Text("Repris dans le contrat d'hébergement. Les arrhes confirment la réservation : si le client "
+                    "annule, elles restent acquises à la pension ; si la pension annule, elle les rembourse au double.",
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  child: Column(children: [
+                    SwitchListTile.adaptive(
+                      value: _arrhes,
+                      onChanged: (v) => setState(() => _arrhes = v),
+                      activeColor: _green,
+                      title: const Text('Demander des arrhes à la réservation',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                    ),
+                    if (_arrhes)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: TextField(controller: _arrhesPct, keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Arrhes (% du séjour)', helperText: 'Souvent 25 à 30 %',
+                                isDense: true, border: OutlineInputBorder())),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                        Text(_arrhes ? 'Solde réglé :' : 'Séjour réglé :', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                        for (final (v, lib) in [('arrivee', "à l'arrivée"), ('depart', 'au départ')])
+                          ChoiceChip(
+                            label: Text(lib, style: TextStyle(fontFamily: 'Galey', color: _solde == v ? Colors.white : Colors.black87)),
+                            selected: _solde == v, showCheckmark: false, selectedColor: _teal, backgroundColor: Colors.white,
+                            onSelected: (_) => setState(() => _solde = v),
+                          ),
+                      ]),
+                    ),
+                  ]),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(width: double.infinity, child: ElevatedButton(

@@ -967,13 +967,14 @@ Future<Uint8List> contratPensionPdfBytes({
   String animal = '', String puce = '', String logement = '',
   DateTime? dateEntree, DateTime? dateSortie,
   double tarifNuit = 0, int? nbNuits, double reductionPct = 0, double prixTotal = 0,
-  int arrhesPourcentage = 0, String notes = '',
+  int arrhesPourcentage = 0, double arrhesMontant = 0, String soldeMoment = 'arrivee', String notes = '',
   String? sigPrestataire, String? sigClient, String villeSignature = '',
 }) async {
   final pdf = pw.Document(theme: await _pdfTheme());
   final p = _parties(prestataire);
   final today = _fmt(DateTime.now());
   String euros(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
+  final moment = soldeMoment == 'depart' ? "au départ de l'animal" : "à l'arrivée de l'animal";
   final total = prixTotal > 0
       ? '${euros(prixTotal)}${nbNuits != null ? ' ($nbNuits nuit${nbNuits > 1 ? 's' : ''}${reductionPct > 0 ? ', réduction ${reductionPct.toStringAsFixed(0)} %' : ''})' : ''}'
       : null;
@@ -1010,7 +1011,9 @@ Future<Uint8List> contratPensionPdfBytes({
       _line('Date de sortie prévue', dateSortie != null ? _fmt(dateSortie) : null),
       _line('Tarif', tarifNuit > 0 ? '${euros(tarifNuit)} / nuit' : 'à convenir'),
       _line('Montant du séjour', total),
-      _line('Arrhes à la réservation', arrhesPourcentage > 0 ? '$arrhesPourcentage % du montant total' : 'aucune'),
+      _line('Arrhes à la réservation', arrhesPourcentage > 0
+          ? '$arrhesPourcentage % du montant total${arrhesMontant > 0 ? ', soit ${euros(arrhesMontant)}' : ''}' : 'aucune'),
+      _line(arrhesPourcentage > 0 ? 'Solde' : 'Règlement du séjour', moment),
 
       pw.Text("Article 1 : Conditions d'admission", style: _artTitle()),
       pw.SizedBox(height: 3),
@@ -1036,9 +1039,12 @@ Future<Uint8List> contratPensionPdfBytes({
           "accompagné des aliments nécessaires fournis par le propriétaire."),
       pw.Text('Article 6 : Modalités financières', style: _artTitle()),
       pw.SizedBox(height: 3),
-      _para("${arrhesPourcentage > 0 ? 'Un acompte de $arrhesPourcentage % du montant total est exigé à la réservation pour confirmer le séjour. ' : ''}"
-          "Le solde est dû à l'admission. En cas d'annulation moins de 48 h avant la date d'entrée, l'acompte est conservé. "
-          "Tout séjour commencé est dû dans son intégralité."),
+      _para(arrhesPourcentage > 0
+          ? "Des arrhes de $arrhesPourcentage % du montant total${arrhesMontant > 0 ? ' (${euros(arrhesMontant)})' : ''} sont versées à la "
+            "réservation pour confirmer le séjour. En cas d'annulation par le propriétaire, elles restent acquises à la pension ; "
+            "en cas d'annulation par la pension, elles sont restituées au double (article L214-1 du Code de la consommation). "
+            "Le solde est réglé $moment. Tout séjour commencé est dû dans son intégralité."
+          : "Le montant du séjour est réglé $moment. Tout séjour commencé est dû dans son intégralité."),
       pw.Text('Article 7 : Prolongation et sortie', style: _artTitle()),
       pw.SizedBox(height: 3),
       _para("Toute prolongation de séjour doit être signalée au préalable et fera l'objet d'une facturation complémentaire. "

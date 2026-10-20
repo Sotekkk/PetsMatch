@@ -524,6 +524,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           reductionPct: d('reduction_pct'),
           prixTotal: d('prix_total'),
           arrhesPourcentage: d('arrhes_pourcentage').round(),
+          arrhesMontant: d('arrhes_montant'),
+          soldeMoment: m('solde_moment'),
           notes: m('notes'),
           sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,

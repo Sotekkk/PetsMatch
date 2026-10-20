@@ -604,6 +604,10 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       }
     }
     final total = tarifNuit > 0 && nuits != null ? tarifNuit * nuits * (1 - reduction / 100) : 0.0;
+    // Règlement (Tarifs) : arrhes facultatives + moment du solde.
+    final reglement = tp is Map ? tp['reglement'] as Map? : null;
+    final arrhesPct = (reglement?['arrhes_pct'] as num?)?.toDouble() ?? 0;
+    final soldeMoment = reglement?['solde']?.toString() == 'depart' ? 'depart' : 'arrivee';
 
     // Client : le séjour, sinon la demande de séjour (profil du client).
     String? clientUid, clientProfileId;
@@ -655,6 +659,9 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       'tarif_nuit': tarifNuit > 0 ? tarifNuit : null, 'nb_nuits': nuits,
       'reduction_pct': reduction > 0 ? reduction : null, 'prix_total': total > 0 ? arrondi(total) : null,
       'notes': _clauseSpecifique(esp),
+      'arrhes_pourcentage': arrhesPct > 0 ? arrhesPct : null,
+      'arrhes_montant': arrhesPct > 0 && total > 0 ? arrondi(total * arrhesPct / 100) : null,
+      'solde_moment': soldeMoment,
     };
     try {
       final ex = await _supa.from('documents_animaux').select('id, token, metadata')

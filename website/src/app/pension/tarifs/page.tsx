@@ -34,6 +34,10 @@ export default function PensionTarifsPage() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [especes, setEspeces] = useState<EspeceRow[]>([]);
   const [reductions, setReductions] = useState<Reduction[]>([]);
+  // Règlement du séjour (repris dans le contrat) : arrhes facultatives + moment du solde.
+  const [arrhes, setArrhes] = useState(false);
+  const [arrhesPct, setArrhesPct] = useState('30');
+  const [solde, setSolde] = useState<'arrivee' | 'depart'>('arrivee');
   const [afficherPublic, setAfficherPublic] = useState(false);
   // Essai obligatoire avant le premier séjour (réservation en ligne).
   const [essaiRequis, setEssaiRequis] = useState(false);
@@ -110,6 +114,10 @@ export default function PensionTarifsPage() {
     })).sort((a, b) => (a.accepte === b.accepte ? 0 : a.accepte ? -1 : 1));
 
     setEspeces(rows);
+    const reg = (t as { reglement?: { arrhes_pct?: number | null; solde?: string } } | null)?.reglement;
+    setArrhes((reg?.arrhes_pct ?? 0) > 0);
+    if ((reg?.arrhes_pct ?? 0) > 0) setArrhesPct(String(reg!.arrhes_pct));
+    setSolde(reg?.solde === 'depart' ? 'depart' : 'arrivee');
     setReductions(((t?.reductions_long_sejour ?? []) as { min_nuits?: number; pourcentage?: number }[]).map(m => ({
       minNuits: m.min_nuits != null ? String(m.min_nuits) : '',
       pourcentage: m.pourcentage != null ? String(m.pourcentage) : '',
@@ -146,7 +154,8 @@ export default function PensionTarifsPage() {
       .sort((a, b) => a.min_nuits - b.min_nuits);
 
     await supabase.from('user_profiles')
-      .update({ tarifs_pension: { especes: especesOut, reductions_long_sejour, afficher_public: afficherPublic } })
+      .update({ tarifs_pension: { especes: especesOut, reductions_long_sejour, afficher_public: afficherPublic,
+        reglement: { arrhes_pct: arrhes ? (num(arrhesPct) ?? 0) : null, solde } } })
       .eq('id', profileId);
     await supabase.from('user_profiles')
       .update({ pension_essai_requis: essaiRequis, pension_essai_info: essaiInfo.trim() || null })
@@ -274,6 +283,35 @@ export default function PensionTarifsPage() {
           className="text-sm font-galey font-semibold text-teal-700 border border-teal-200 rounded-full px-4 py-1.5 hover:bg-teal-50 transition-colors">
           + Ajouter une réduction
         </button>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3 border border-teal-100">
+        <div>
+          <h2 className="font-bold font-galey text-teal-800">Règlement du séjour</h2>
+          <p className="text-xs font-galey text-gray-500 mt-1">
+            Repris dans le contrat d&apos;hébergement. Les arrhes confirment la réservation : si le client annule, elles restent acquises
+            à la pension ; si la pension annule, elle les rembourse au double.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-sm font-galey cursor-pointer">
+          <input type="checkbox" checked={arrhes} onChange={e => setArrhes(e.target.checked)} />
+          Demander des arrhes à la réservation
+        </label>
+        {arrhes && (
+          <div className="flex items-center gap-2">
+            <input value={arrhesPct} onChange={e => setArrhesPct(e.target.value)} inputMode="decimal" className={`${inputCls} w-28`} />
+            <span className="text-sm font-galey text-gray-600">% du séjour (souvent 25 à 30 %)</span>
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 text-sm font-galey">
+          <span>{arrhes ? 'Solde réglé :' : 'Séjour réglé :'}</span>
+          {([['arrivee', "à l'arrivée"], ['depart', 'au départ']] as const).map(([v, lib]) => (
+            <button key={v} type="button" onClick={() => setSolde(v)}
+              className={`px-3 py-1 rounded-full border ${solde === v ? 'bg-teal-700 text-white border-teal-700' : 'border-gray-200 text-gray-700'}`}>
+              {lib}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

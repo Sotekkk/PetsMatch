@@ -32,6 +32,9 @@ export interface DataContratPension {
   clientTel?: string;
   clientAdresse?: string;
   puce?: string;
+  /** Règlement : montant des arrhes et moment du solde ('arrivee' / 'depart'). */
+  arrhesMontant?: number;
+  soldeMoment?: string;
 }
 
 const CSS = `
@@ -86,6 +89,8 @@ export function generateContratHebergementHTML(
   const today = new Date().toLocaleDateString('fr-FR');
   const arrhes = data.arrhesPourcentage ?? 0;
   const tarif = data.tarifNuit ? `${data.tarifNuit} €/nuit` : 'à convenir';
+  const euros = (v: number) => `${v.toFixed(2).replace('.', ',')} €`;
+  const moment = data.soldeMoment === 'depart' ? "au départ de l'animal" : "à l'arrivée de l'animal";
   const total = data.prixTotal
     ? `${data.prixTotal.toFixed(2).replace('.', ',')} €${data.nbNuits ? ` (${data.nbNuits} nuit${data.nbNuits > 1 ? 's' : ''}${data.reductionPct ? `, réduction ${data.reductionPct} %` : ''})` : ''}`
     : '';
@@ -125,7 +130,8 @@ export function generateContratHebergementHTML(
   <tr><td>Date de sortie prévue</td><td>${fmt(entree.date_sortie_prevue)}</td></tr>
   <tr><td>Tarif</td><td>${tarif}</td></tr>
   ${total ? `<tr><td>Montant du séjour</td><td>${total}</td></tr>` : ''}
-  <tr><td>Arrhes à la réservation</td><td>${arrhes > 0 ? arrhes + ' % du montant total' : 'aucune'}</td></tr>
+  <tr><td>Arrhes à la réservation</td><td>${arrhes > 0 ? arrhes + ' % du montant total' + (data.arrhesMontant ? ', soit ' + euros(data.arrhesMontant) : '') : 'aucune'}</td></tr>
+  <tr><td>${arrhes > 0 ? 'Solde' : 'Règlement du séjour'}</td><td>${moment}</td></tr>
 </table>
 
 <h2>Conditions générales de pension</h2>
@@ -146,7 +152,9 @@ export function generateContratHebergementHTML(
 <div class="block">L'alimentation standard est assurée par la pension. Tout régime spécifique doit être signalé à l'admission et accompagné des aliments nécessaires fournis par le propriétaire.</div>
 
 <div class="art-title">Art. 6 – Modalités financières</div>
-<div class="block">${arrhes > 0 ? `Un acompte de ${arrhes} % du montant total est exigé à la réservation pour confirmer le séjour. ` : ''}Le solde est dû à l'admission. En cas d'annulation moins de 48 h avant la date d'entrée, l'acompte est conservé. Tout séjour commencé est dû dans son intégralité.</div>
+<div class="block">${arrhes > 0
+    ? `Des arrhes de ${arrhes} % du montant total${data.arrhesMontant ? ` (${euros(data.arrhesMontant)})` : ''} sont versées à la réservation pour confirmer le séjour. En cas d'annulation par le propriétaire, elles restent acquises à la pension ; en cas d'annulation par la pension, elles sont restituées au double (article L214-1 du Code de la consommation). Le solde est réglé ${moment}.`
+    : `Le montant du séjour est réglé ${moment}.`} Tout séjour commencé est dû dans son intégralité.</div>
 
 <div class="art-title">Art. 7 – Prolongation & sortie</div>
 <div class="block">Toute prolongation de séjour doit être signalée au préalable et fera l'objet d'une facturation complémentaire. L'animal non récupéré dans les 72 h suivant la date de sortie prévue, sans contact du propriétaire, pourra être confié à la SPA ou à une autorité compétente aux frais du propriétaire.</div>

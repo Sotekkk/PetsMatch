@@ -88,6 +88,11 @@ export async function POST(req: NextRequest) {
   let reduction = 0;
   for (const r of (tarifs as Tarifs | null)?.reductions_long_sejour ?? []) if (nuits && nuits >= (r.min_nuits ?? 0)) reduction = r.pourcentage ?? 0;
   const total = tarifNuit > 0 && nuits ? Math.round(tarifNuit * nuits * (1 - reduction / 100) * 100) / 100 : null;
+  // Règlement (Tarifs) : arrhes facultatives + moment du solde ; ancien réglage en repli.
+  const reglement = (tarifs as (Tarifs & { reglement?: { arrhes_pct?: number | null; solde?: string } }) | null)?.reglement;
+  if (reglement) arrhes = (reglement.arrhes_pct ?? 0) > 0 ? Number(reglement.arrhes_pct) : null;
+  const soldeMoment = reglement?.solde === 'depart' ? 'depart' : 'arrivee';
+  const arrhesMontant = arrhes && total ? Math.round(total * arrhes) / 100 : null;
 
   const snapshot: Ligne = {
     client_nom: clientNom, client_email: clientEmail, client_tel: clientTel, client_adresse: clientAdresse,
@@ -97,6 +102,7 @@ export async function POST(req: NextRequest) {
     date_entree: debut, date_sortie_prevue: fin, essai: e.essai === true,
     logement_nom: logementNom, tarif_nuit: tarifNuit > 0 ? tarifNuit : null, nb_nuits: nuits,
     reduction_pct: reduction || null, prix_total: total, arrhes_pourcentage: arrhes,
+    arrhes_montant: arrhesMontant, solde_moment: soldeMoment,
     consignes_sejour: txt(e.consignes_sejour),
   };
 
