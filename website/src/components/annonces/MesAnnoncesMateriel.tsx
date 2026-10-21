@@ -80,14 +80,11 @@ export default function MesAnnoncesMateriel({ statut = 'toutes', onCompte }: { s
     return (
       <div className={`bg-white rounded-2xl p-8 text-center ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
         <span className="w-11 h-11 mx-auto mb-2 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="caisse" /></span>
-        <p className="text-sm text-gray-500 mb-3">
+        {/* Pas de bouton ici : « Publier une annonce » (bouton principal de
+            Mes annonces) propose déjà « Matériel & équipements ». */}
+        <p className="text-sm text-gray-500">
           {statut === 'toutes' ? 'Aucune annonce de matériel ou d’équipement pour le moment.' : 'Aucune annonce de matériel avec ce statut.'}
         </p>
-        {statut === 'toutes' && (
-          <Link href="/annonces/creer-objet" className="inline-block bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors">
-            Publier du matériel
-          </Link>
-        )}
       </div>
     );
   }

@@ -155,10 +155,8 @@ class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
                   : 'Aucune annonce de matériel avec ce statut.',
               textAlign: TextAlign.center,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
-          if (widget.statut == 'all') ...[
-            const SizedBox(height: 12),
-            DashBoutonPilule(label: 'Publier du matériel', icon: Icons.add, onTap: () => _create()),
-          ],
+          // Pas de bouton ici : « Publier une annonce » (bouton principal de
+          // Mes annonces) propose déjà « Matériel & équipements ».
         ]),
       );
     }
