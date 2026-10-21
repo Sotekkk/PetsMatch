@@ -420,7 +420,15 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
   Future<void> _resendVerificationEmail() async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null && !user.emailVerified) {
-      await user.sendEmailVerification();
+      // Renvoi par le serveur (l'envoi direct échoue souvent en silence).
+      final err = await changerEmailInscription(await user.getIdToken() ?? '', user.email ?? '');
+      if (err != null) {
+        try { await user.sendEmailVerification(); } catch (_) {}
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+            'E-mail renvoyé à ${user.email}. Pensez à regarder dans les indésirables.')));
+      }
       setState(() {
         _isResendEnabled = false;
         Future.delayed(Duration(minutes: 1), () {

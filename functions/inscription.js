@@ -185,7 +185,10 @@ exports.changerEmailInscription = functions
                 res.status(400).json({error: "Ce compte est déjà validé."}); return;
             }
             if ((moi.email || "").toLowerCase() === email) {
-                res.json({ok: true}); return;
+                // Même adresse : simple renvoi du lien de validation.
+                const lien = await admin.auth().generateEmailVerificationLink(email);
+                const envoye = await envoyerValidation(email, lien, m[1]);
+                res.json({ok: true, envoye}); return;
             }
             try {
                 const autre = await admin.auth().getUserByEmail(email);

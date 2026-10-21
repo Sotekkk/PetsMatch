@@ -59,14 +59,15 @@ function VerifierEmail() {
   async function renvoyer() {
     const u = auth.currentUser;
     if (!u) return;
-    try {
-      await sendEmailVerification(u);
-      setMessage('E-mail renvoyé. Pensez à regarder dans les spams.');
-      setAttente(DELAI_RENVOI_S);
-    } catch {
-      setMessage('Trop de demandes : réessayez dans quelques minutes.');
-      setAttente(DELAI_RENVOI_S);
+    // Renvoi par le serveur (l'envoi direct du navigateur échoue souvent en silence).
+    const err = await changerEmailInscription(await u.getIdToken(), u.email ?? '');
+    if (err) {
+      try { await sendEmailVerification(u); setMessage('E-mail renvoyé. Pensez à regarder dans les spams.'); }
+      catch { setMessage('Trop de demandes : réessayez dans quelques minutes.'); }
+    } else {
+      setMessage(`E-mail renvoyé à ${u.email}. Pensez à regarder dans les spams.`);
     }
+    setAttente(DELAI_RENVOI_S);
   }
 
   async function verifierMaintenant() {
