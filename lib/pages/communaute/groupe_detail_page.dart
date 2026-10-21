@@ -335,6 +335,47 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     }
   }
 
+  /// Publication en attente de validation : l'auteur le voit, l'équipe la publie ou la refuse.
+  Widget _bandeauAttente(Map<String, dynamic> post) {
+    final id = post['id'].toString();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: const Color(0xFFFFB74D).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+      child: Row(children: [
+        const Icon(Icons.hourglass_top, size: 16, color: Color(0xFFFFB74D)),
+        const SizedBox(width: 8),
+        Expanded(child: Text(_canModerate ? 'Publication à valider' : 'En attente de validation par un admin',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFFFFB74D)))),
+        if (_canModerate) ...[
+          TextButton(onPressed: () => _refuserPost(id),
+              child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', color: Colors.white70))),
+          FilledButton(onPressed: () => _publierPost(id),
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2E7D5E), visualDensity: VisualDensity.compact),
+              child: const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        ],
+      ]),
+    );
+  }
+
+  Future<void> _publierPost(String postId) async {
+    try {
+      await _supa.from('groupe_posts').update({'statut': 'publie'}).eq('id', postId);
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
+  Future<void> _refuserPost(String postId) async {
+    try {
+      await _supa.from('groupe_posts').delete().eq('id', postId);
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
   Future<void> _toggleLike(String postId) async {
     if (_uid.isEmpty || !_isMember) return;
     final liked = _myLikes.contains(postId);
@@ -512,7 +553,13 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         isProOrElevage: _currentUserIsPro,
       ),
     );
-    if (created == true) _load();
+    if (created == true) {
+      if (_groupe['validation_publications'] == true && !_canModerate && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Publication envoyée : elle sera visible après validation par un admin.')));
+      }
+      _load();
+    }
   }
 
   Future<void> _showLikes(String postId) async {
@@ -796,7 +843,9 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                               delegate: SliverChildBuilderDelegate(
                                 (_, i) => Padding(
                                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                                  child: _PostCard(
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                                  if (_posts[i]['statut'] == 'en_attente') _bandeauAttente(_posts[i]),
+                                  _PostCard(
                                     post: _posts[i],
                                     isLiked: _myLikes.contains(_posts[i]['id']?.toString()),
                                     isAdmin: _canModerate,
@@ -812,6 +861,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                                     onReport: () => _signalerPost(_posts[i]),
                                     onShowLikes: () => _showLikes(_posts[i]['id'].toString()),
                                   ),
+                                  ]),
                                 ),
                                 childCount: _posts.length,
                               ),
@@ -2250,6 +2300,21 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
 
   // Signalements
   List<Map<String, dynamic>> _signalements = [];
+  final Map<String, Map<String, dynamic>> _postsSignales = {};
+
+  void _voirPublication(Map<String, dynamic> post) {
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF0E2A30),
+      title: const Text('Publication signalée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+      content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        if ((post['image_url']?.toString() ?? '').isNotEmpty)
+          ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(post['image_url'].toString(), fit: BoxFit.cover)),
+        const SizedBox(height: 10),
+        Text(post['contenu']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white)),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer'))],
+    ));
+  }
   bool _loadingSignalements = true;
 
   // Infos groupe
@@ -2373,6 +2438,14 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
         for (final p in (pd as List)) {
           _profils[p['uid'].toString()] = _toProfileMap(Map<String, dynamic>.from(p));
         }
+      }
+      // Publications signalées (texte, photo, auteur) pour juger sur pièce.
+      final ids = rows.where((r) => r['target_type'] == 'groupe_post').map((r) => r['target_id'].toString()).toSet().toList();
+      if (ids.isNotEmpty) {
+        try {
+          final ps = await _supa.from('groupe_posts').select('id, contenu, image_url, auteur_uid, created_at').inFilter('id', ids);
+          for (final p in (ps as List)) { _postsSignales[p['id'].toString()] = Map<String, dynamic>.from(p); }
+        } catch (_) {}
       }
       if (mounted) setState(() { _signalements = rows; _loadingSignalements = false; });
     } catch (_) {
@@ -2536,6 +2609,32 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
                       fontFamily: 'Galey', fontSize: 12.5,
                       color: Colors.white.withValues(alpha: 0.85))),
             ],
+            if (_postsSignales[postId] != null) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () => _voirPublication(_postsSignales[postId]!),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10)),
+                  child: Row(children: [
+                    if ((_postsSignales[postId]!['image_url']?.toString() ?? '').isNotEmpty) ...[
+                      ClipRRect(borderRadius: BorderRadius.circular(6),
+                          child: Image.network(_postsSignales[postId]!['image_url'].toString(), width: 44, height: 44, fit: BoxFit.cover)),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(child: Text(
+                        (_postsSignales[postId]!['contenu']?.toString() ?? '').trim().isEmpty ? 'Photo' : _postsSignales[postId]!['contenu'].toString(),
+                        maxLines: 3, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.white))),
+                    const SizedBox(width: 6),
+                    const Text('Voir', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _tealC)),
+                  ]),
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 6),
+              Text('Publication déjà supprimée', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.white.withValues(alpha: 0.5))),
+            ],
             const SizedBox(height: 4),
             Text('Signalé par ${_profileName(reporter)}',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white60)),
@@ -2657,8 +2756,42 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
             style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: color, fontWeight: FontWeight.w700)),
       );
 
+  late bool _valAdhesion = widget.groupe['validation_adhesion'] != false;
+  late bool _valPublications = widget.groupe['validation_publications'] == true;
+
+  Future<void> _majReglage(String col, bool v) async {
+    try {
+      await _supa.from('groupes').update({col: v}).eq('id', widget.groupe['id']);
+      widget.groupe[col] = v;
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
+  Widget _reglagesGroupe() {
+    final prive = widget.groupe['prive'] == true;
+    Widget ligne(String titre, String sous, bool v, ValueChanged<bool>? onChanged) => SwitchListTile.adaptive(
+          value: v, onChanged: onChanged, activeColor: _tealC, dense: true,
+          title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5, color: Colors.white)),
+          subtitle: Text(sous, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.white.withValues(alpha: 0.6))),
+        );
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12)),
+      child: Column(children: [
+        ligne('Valider les nouveaux membres',
+            prive ? 'Toujours actif pour un groupe privé' : 'Tout le monde peut lire ; publier demande votre accord',
+            prive || _valAdhesion,
+            prive ? null : (v) { setState(() => _valAdhesion = v); _majReglage('validation_adhesion', v); }),
+        ligne('Valider chaque publication', "Les publications des membres attendent votre accord avant d'être visibles",
+            _valPublications, (v) { setState(() => _valPublications = v); _majReglage('validation_publications', v); }),
+      ]),
+    );
+  }
+
   Widget _buildReglesTab() {
     return Column(children: [
+      _reglagesGroupe(),
       Expanded(
         child: _regles.isEmpty
             ? Center(child: Text('Aucune règle définie',

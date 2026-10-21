@@ -816,7 +816,11 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'groupe_demande':
     case 'groupe_accepte':
     case 'groupe_refuse':
-      return d.groupe_id ? `/communaute/groupes/${d.groupe_id}` : '/communaute/groupes';
+    case 'groupe_post_attente':
+    case 'groupe_post_publie':
+    case 'groupe_post_refuse':
+    case 'groupe_signalement':
+      return d.groupe_id ? `/communaute/groupes/${d.groupe_id}${d.post_id ? `#post-${d.post_id}` : ''}` : '/communaute/groupes';
     case 'like':
       return d.annonceId
         ? `/annonces/${d.annonceId}${d.bebeIndex != null && d.bebeIndex !== '' ? `?bebe=${d.bebeIndex}` : ''}`

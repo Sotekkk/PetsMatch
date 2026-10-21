@@ -77,12 +77,15 @@ function ProfileAvatar({ profile, size = 36 }: { profile?: UserProfile; size?: n
 interface Groupe {
   id: string; nom: string; description: string; type: string;
   prive: boolean; createur_uid: string; regles: string[]; validation_adhesion?: boolean | null;
+  validation_publications?: boolean | null;
   avatar_url?: string; photo_cover_url?: string;
 }
 interface Post {
   id: string; groupe_id: string; auteur_uid: string; contenu: string;
   like_count: number; comment_count: number; epingle: boolean; created_at: string;
   image_url?: string;
+  /** 'en_attente' : visible par l'auteur et l'équipe seulement, à valider. */
+  statut?: string;
 }
 interface Commentaire {
   id: string; post_id: string; auteur_uid: string; contenu: string; created_at: string;
@@ -159,6 +162,7 @@ export default function GroupeDetailPage() {
 
   // Admin state
   const [showAdmin, setShowAdmin] = useState(false);
+  const [postsSignales, setPostsSignales] = useState<Record<string, { id: string; contenu: string | null; image_url: string | null }>>({});
   const [adminTab, setAdminTab] = useState<'membres' | 'demandes' | 'signalements' | 'regles' | 'photos'>('membres');
   const [membres, setMembres] = useState<{ user_uid: string; role: string; statut: string }[]>([]);
   const [signalements, setSignalements] = useState<{ id: string; reporter_uid: string; target_id: string; raison: string; description: string | null }[]>([]);
@@ -337,6 +341,7 @@ export default function GroupeDetailPage() {
       }).select().single();
       if (data) {
         setPosts(prev => [data as Post, ...prev]);
+        if ((data as Post).statut === 'en_attente') alert('Publication envoyée : elle sera visible après validation par un admin.');
         if (user.uid && !userProfiles[user.uid]) {
           const { data: me } = await supabase.from('user_profiles_complet')
             .select('uid, firstname, lastname, avatar_url, profile_type, nom')
@@ -420,6 +425,12 @@ export default function GroupeDetailPage() {
       .order('created_at', { ascending: false });
     const rows = (data ?? []) as { id: string; reporter_uid: string; target_id: string; raison: string; description: string | null }[];
     setSignalements(rows);
+    // Publications signalées (texte, photo) pour juger sur pièce.
+    const ids = [...new Set(rows.map(r => r.target_id))];
+    if (ids.length) {
+      const { data: ps } = await supabase.from('groupe_posts').select('id, contenu, image_url').in('id', ids);
+      setPostsSignales(Object.fromEntries(((ps ?? []) as { id: string; contenu: string | null; image_url: string | null }[]).map(p => [p.id, p])));
+    }
     const missing = [...new Set(rows.map(s => s.reporter_uid))].filter(u => !userProfiles[u]);
     if (missing.length > 0) {
       const { data: pd } = await supabase.from('user_profiles_complet')
@@ -431,6 +442,33 @@ export default function GroupeDetailPage() {
         setUserProfiles(prev => ({ ...prev, ...np }));
       }
     }
+  }
+
+  // Lien de notification (#post-<id>) : défilement jusqu'à la publication une fois le fil chargé.
+  useEffect(() => {
+    const h = window.location.hash;
+    if (!h.startsWith('#post-') || posts.length === 0) return;
+    const el = document.getElementById(h.slice(1));
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [posts]);
+
+  async function publierPost(postId: string) {
+    await supabase.from('groupe_posts').update({ statut: 'publie' }).eq('id', postId);
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, statut: 'publie' } : p));
+  }
+  async function refuserPost(postId: string) {
+    await supabase.from('groupe_posts').delete().eq('id', postId);
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  }
+  async function majReglage(col: 'validation_adhesion' | 'validation_publications', v: boolean) {
+    const { error } = await supabase.from('groupes').update({ [col]: v }).eq('id', id);
+    if (error) { alert(error.message); return; }
+    setGroupe(prev => prev ? { ...prev, [col]: v } : null);
+  }
+  // Aller à la publication signalée dans le fil (fermeture du panneau d'administration).
+  function allerAuPost(postId: string) {
+    setShowAdmin(false);
+    setTimeout(() => document.getElementById(`post-${postId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
   }
 
   async function traiterSignalement(sigId: string, opts: { deletePost?: boolean; postId?: string } = {}) {
@@ -805,7 +843,18 @@ export default function GroupeDetailPage() {
               const displayName = profileName(profile, isMe);
 
               return (
-                <div key={post.id} className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${post.epingle ? 'border-[#00ACC1]/40' : 'border-gray-100'}`}>
+                <div key={post.id} id={`post-${post.id}`} className={`bg-white rounded-2xl shadow-sm border overflow-hidden ${post.epingle ? 'border-[#00ACC1]/40' : 'border-gray-100'}`}>
+                  {post.statut === 'en_attente' && (
+                    <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      <span className="flex-1 text-xs font-semibold text-amber-700">{canModerate ? 'Publication à valider' : 'En attente de validation par un admin'}</span>
+                      {canModerate && (
+                        <>
+                          <button onClick={() => refuserPost(post.id)} className="text-xs font-semibold text-gray-500 px-2 py-1">Refuser</button>
+                          <button onClick={() => publierPost(post.id)} className="text-xs font-bold text-white bg-[#2E7D5E] rounded-full px-3 py-1">Publier</button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   <div className="p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <ProfileAvatar profile={profile} size={36} />
@@ -1111,6 +1160,19 @@ export default function GroupeDetailPage() {
                       <div key={s.id} className="border border-orange-200 bg-orange-50 rounded-xl p-3">
                         <p className="text-sm font-bold text-red-700" style={{ fontFamily: 'Galey, sans-serif' }}>{RAISON[s.raison] ?? s.raison}</p>
                         {s.description && <p className="text-sm text-gray-700 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>{s.description}</p>}
+                        {postsSignales[s.target_id] ? (
+                          <button onClick={() => allerAuPost(s.target_id)}
+                            className="mt-2 w-full flex items-center gap-2 text-left bg-white border border-orange-100 rounded-lg p-2 hover:bg-orange-100/40">
+                            {postsSignales[s.target_id].image_url && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={postsSignales[s.target_id].image_url!} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                            )}
+                            <span className="flex-1 min-w-0 text-xs text-gray-700 line-clamp-3">{postsSignales[s.target_id].contenu?.trim() || 'Photo'}</span>
+                            <span className="text-xs font-bold text-[#00ACC1] whitespace-nowrap">Voir la publication</span>
+                          </button>
+                        ) : (
+                          <p className="text-xs text-gray-400 mt-1">Publication déjà supprimée</p>
+                        )}
                         <p className="text-xs text-gray-400 mt-1">Signalé par {profileName(reporter)}</p>
                         <div className="flex gap-2 mt-2">
                           <button onClick={() => traiterSignalement(s.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold border border-gray-300 text-gray-600">Ignorer</button>
@@ -1123,6 +1185,21 @@ export default function GroupeDetailPage() {
               )}
               {adminTab === 'regles' && (
                 <div className="p-4 flex flex-col gap-3">
+                  <div className="border border-gray-100 rounded-xl p-3 flex flex-col gap-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    <label className={`flex items-start gap-3 ${groupe?.prive ? 'opacity-60' : 'cursor-pointer'}`}>
+                      <input type="checkbox" className="mt-1 w-4 h-4 accent-[#00ACC1]" disabled={!!groupe?.prive}
+                        checked={!!groupe?.prive || groupe?.validation_adhesion !== false}
+                        onChange={e => majReglage('validation_adhesion', e.target.checked)} />
+                      <span><span className="block text-sm font-semibold text-gray-700">Valider les nouveaux membres</span>
+                        <span className="block text-xs text-gray-400">{groupe?.prive ? 'Toujours actif pour un groupe privé' : 'Tout le monde peut lire ; publier demande votre accord'}</span></span>
+                    </label>
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input type="checkbox" className="mt-1 w-4 h-4 accent-[#00ACC1]" checked={groupe?.validation_publications === true}
+                        onChange={e => majReglage('validation_publications', e.target.checked)} />
+                      <span><span className="block text-sm font-semibold text-gray-700">Valider chaque publication</span>
+                        <span className="block text-xs text-gray-400">Les publications des membres attendent votre accord avant d&apos;être visibles</span></span>
+                    </label>
+                  </div>
                   {editRegles.map((r, i) => (
                     <div key={i} className="flex items-start gap-2">
                       <span className="w-6 h-6 rounded-full bg-[#00ACC1] text-white text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
