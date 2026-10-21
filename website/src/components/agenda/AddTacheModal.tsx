@@ -61,7 +61,7 @@ export async function loadMembres(uid: string, profilSource: 'eleveur' | 'associ
   return membres;
 }
 
-export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDate, animaux, membres, onClose, onSaved, onEmployeCreated }: {
+export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDate, animaux, membres, assigneInitial, onClose, onSaved, onEmployeCreated }: {
   /** Propriétaire de l'élevage (uid_eleveur écrit sur la tâche/l'employé créé). */
   uid: string;
   /** Identité réelle de la personne connectée (défaut : `uid`) — sert
@@ -74,6 +74,8 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   /** Animaux de l'élevage ; absents = chargés au 1er choix « Animal » / « Portée ». */
   animaux?: AnimalOption[];
   membres: MembreOption[];
+  /** Personne pré-sélectionnée dans « Attribuer à » (miroir appli : initialEmployeUid). */
+  assigneInitial?: string;
   onClose: () => void;
   onSaved: () => void;
   onEmployeCreated: () => void;
@@ -95,11 +97,11 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   const today = new Date().toISOString().split('T')[0];
   const [titre, setTitre] = useState('');
   const [date, setDate] = useState(selectedDate ?? today);
-  const [heure, setHeure] = useState('');
+  const [heure, setHeure] = useState('08:00');
   // Sur plusieurs jours : une tâche par jour (miroir appli : _plusieursJours).
   const [plusieursJours, setPlusieursJours] = useState(false);
   const [dateFin, setDateFin] = useState('');
-  const [assigneUid, setAssigneUid] = useState('');
+  const [assigneUid, setAssigneUid] = useState(assigneInitial ?? '');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [showAddEmploye, setShowAddEmploye] = useState(false);
@@ -134,7 +136,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   async function save() {
     if (!titre.trim() || !date) return;
     if (rattachement === 'animal' && animauxCharges && animauxDispo.length === 0) {
-      alert('Aucun animal actuellement pris en charge : choisissez « Aucun ».');
+      alert('Aucun animal actuellement pris en charge : choisissez « Aucun » ou un autre rattachement.');
       return;
     }
     setSaving(true);
@@ -303,14 +305,16 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
               <button type="button" onClick={() => setShowAddEmploye(v => !v)}
                 className="text-xs font-semibold text-teal-700 hover:text-teal-800">+ Nouvel employé</button>
             </div>
-            <select className={champ} value={assigneUid} onChange={e => setAssigneUid(e.target.value)}>
-              <option value="">Personne</option>
-              {membres.map(m => (
-                <option key={m.uid} value={m.uid}>
-                  {m.nom} {m.type === 'moi' ? '(Vous)' : m.type === 'benevole' ? '(Bénévole)' : '(Employé)'}
-                </option>
-              ))}
-            </select>
+            {membres.length > 0 ? (
+              <select className={champ} value={assigneUid} onChange={e => setAssigneUid(e.target.value)}>
+                <option value="">Personne</option>
+                {membres.map(m => (
+                  <option key={m.uid} value={m.uid}>{m.nom}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-[12.5px] text-gray-400">Aucun employé pour le moment</p>
+            )}
             {showAddEmploye && (
               <AddEmployeInline
                 uid={uid} profileId={profileId} profilSource={profilSource}
@@ -324,11 +328,13 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
           <div>
             <label className={libelle}>Rattachement (optionnel)</label>
             <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-xl">
-              {([['aucun', 'Aucun'], ['animal', 'Animal'], ['portee', 'Portée']] as const).map(([v, l]) => {
-                const indispo = !!animauxCharges && ((v === 'animal' && animauxDispo.length === 0) || (v === 'portee' && portees.length === 0));
+              {(profilSource === 'pension'
+                ? [['aucun', 'Aucun'], ['animal', 'Animal']] as const
+                : [['aucun', 'Aucun'], ['animal', 'Animal'], ['portee', 'Portée']] as const).map(([v, l]) => {
+                const indispo = !!animauxCharges && v === 'portee' && portees.length === 0;
                 return (
                   <button key={v} type="button" disabled={indispo} onClick={() => { setRattachement(v); if (v !== 'aucun') chargerAnimaux(); }}
-                    title={indispo ? (v === 'portee' ? 'Aucune portée' : 'Aucun animal actuellement pris en charge') : undefined}
+                    title={indispo ? 'Aucune portée' : undefined}
                     className={`py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-35 ${
                       rattachement === v ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     {l}
@@ -342,7 +348,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
             {rattachement === 'animal' && !chargementAnimaux && animauxCharges && animauxDispo.length === 0 && (
               <p className="text-xs text-gray-400 mt-2">Aucun animal actuellement pris en charge</p>
             )}
-            {rattachement === 'animal' && !chargementAnimaux && (
+            {rattachement === 'animal' && !chargementAnimaux && !(animauxCharges && animauxDispo.length === 0) && (
               <MultiSelectRattachement
                 placeholder="Choisir des animaux…"
                 recherche="Rechercher un animal…"
@@ -374,7 +380,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
           <div>
             <label className={libelle}>Note (optionnel)</label>
             <textarea className={`${champ} resize-none`} rows={3}
-              placeholder="Consignes, détails… Ex : après réception de la commande, compter les sacs et mettre à jour les stocks."
+              placeholder="Consignes, détails…"
               value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
         </div>

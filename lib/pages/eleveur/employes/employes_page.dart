@@ -2021,7 +2021,10 @@ class _TachesTabState extends State<_TachesTab> {
               myUid: _uid,
               // Profil exact de la structure (animaux de ce profil seulement).
               profileId: _ownerProfileId,
-              profilSource: 'eleveur',
+              // Type du profil de l'écran : une tâche créée ici par une
+              // association est bien une tâche de l'association (avant :
+              // « eleveur », donc absente de la liste « Mon équipe »).
+              profilSource: _profileType,
               // Même fenêtre « Nouvelle tâche » que l'Agenda
               employes: [
                 for (final e in _employes)

@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { Icone } from '@/components/dashboard/kit';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
+import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -53,8 +54,6 @@ interface UserProfile {
   phone_number?: string | null;
 }
 
-interface Animal { id: string; nom: string; espece?: string | null; }
-interface Enclos { id: string; nom: string; }
 
 interface MembreEquipe {
   id: string;
@@ -969,194 +968,65 @@ function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, on
   );
 }
 
-// ── Modal assignation de tâche ────────────────────────────────────────────────
+// ── Assignation de tâche : même fenêtre « Nouvelle tâche » que l'appli ─────
+// (AddTacheSheet, miroir AddTacheModal), personne pré-sélectionnée.
 
-function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
-  uid: string; assigneeUid: string; assigneeName: string; onClose: () => void;
+function AssignTaskModal({ uid, assigneeUid, onClose }: {
+  uid: string; assigneeUid: string; assigneeName?: string; onClose: () => void;
 }) {
+  const { user } = useAuth();
   const { id: activeProfileId } = useActiveProfileState();
-  const today = new Date().toISOString().split('T')[0];
-  const [animaux, setAnimaux] = useState<Animal[]>([]);
-  const [enclos, setEnclos] = useState<Enclos[]>([]);
-  const [form, setForm] = useState({
-    titre: '', date: today, notes: '',
-    cible: 'aucun' as 'aucun' | 'animal' | 'enclos',
-    animal_id: '', enclos_id: '',
-  });
-  const [saving, setSaving] = useState(false);
+  const [animaux, setAnimaux] = useState<AnimalOption[] | null>(null);
+  const [membres, setMembres] = useState<MembreOption[] | null>(null);
 
   // Animaux encore pris en charge par CE profil d'association (au refuge ou
   // en famille d'accueil). Un même uid Firebase peut porter plusieurs profils
   // (élevage + association) : possédés en propre (is_association=true) + reçus
   // par cession encore en cours (animaux_proprietes.profile_id_proprio, sans
   // date_fin). Adoptés / transférés / décédés écartés, historique intact.
-  // Relu à l'enregistrement pour bloquer un animal adopté entre-temps.
-  const chargerAnimauxEligibles = useCallback(async (): Promise<Animal[]> => {
-    const { data: ownedData } = await supabase.from('animaux').select('id, nom, espece, statut')
+  // La fenêtre revérifie l'animal à l'enregistrement (adopté entre-temps).
+  const chargerAnimauxEligibles = useCallback(async (): Promise<AnimalOption[]> => {
+    const { data: ownedData } = await supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut')
       .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
-    const owned = ((ownedData ?? []) as (Animal & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a));
+    const owned = ((ownedData ?? []) as (AnimalOption & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a));
     const ownedIds = new Set(owned.map(a => a.id));
 
-    let received: Animal[] = [];
+    let received: AnimalOption[] = [];
     if (activeProfileId) {
       const { data: byProfile } = await supabase.from('animaux_proprietes')
         .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId).is('date_fin', null);
       const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
       if (ids.length > 0) {
-        const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', ids).order('nom');
-        received = (data ?? []) as Animal[];
+        const { data } = await supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').in('id', ids).order('nom');
+        received = (data ?? []) as AnimalOption[];
       }
     }
     return [...owned, ...received];
   }, [uid, activeProfileId]);
 
+  const chargerMembres = useCallback(() => {
+    loadMembres(uid, 'association', user?.uid).then(setMembres);
+  }, [uid, user?.uid]);
+
   useEffect(() => {
     chargerAnimauxEligibles().then(setAnimaux);
-    supabase.from('chenil_enclos').select('id, nom').eq('uid_eleveur', uid).order('nom')
-      .then(({ data }) => setEnclos((data ?? []) as Enclos[]));
-  }, [uid, chargerAnimauxEligibles]);
+    chargerMembres();
+  }, [chargerAnimauxEligibles, chargerMembres]);
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!form.titre.trim() || !form.date) return;
-    if (form.cible === 'animal' && animaux.length === 0) {
-      alert('Aucun animal actuellement pris en charge : choisissez « Rien » ou « Box ».');
-      return;
-    }
-    setSaving(true);
-    // Animal adopté / cédé entre l'ouverture du formulaire et la validation :
-    // assignation bloquée, liste actualisée.
-    if (form.cible === 'animal' && form.animal_id) {
-      const frais = await chargerAnimauxEligibles();
-      if (!frais.some(a => a.id === form.animal_id)) {
-        const nom = animaux.find(a => a.id === form.animal_id)?.nom ?? 'Cet animal';
-        setAnimaux(frais);
-        setForm(f => ({ ...f, animal_id: '' }));
-        setSaving(false);
-        alert(`${nom} n'est plus pris en charge par l'association (adopté, cédé ou sorti) : la liste a été actualisée, choisissez un autre animal.`);
-        return;
-      }
-    }
-    const { data: assigneeProfile } = await supabase.from('user_profiles_complet')
-      .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
-    const payload: Record<string, unknown> = {
-      uid_eleveur: uid,
-      ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
-      titre: form.titre.trim(),
-      date: form.date,
-      statut: 'a_faire',
-      assigne_a: assigneeUid,
-      assigne_profile_id: assigneeProfile?.id ?? null,
-      profil_source: 'association',
-      notes: form.notes.trim() || null,
-      animal_id: form.cible === 'animal' && form.animal_id ? form.animal_id : null,
-    };
-    if (form.cible === 'enclos' && form.enclos_id) {
-      const e = enclos.find(x => x.id === form.enclos_id);
-      if (e) payload.notes = `${payload.notes ? payload.notes + '\n' : ''}Enclos: ${e.nom}`;
-    }
-    const { data: inserted, error } = await supabase.from('taches_elevage').insert(payload).select().single();
-    setSaving(false);
-    if (error) { alert(`Erreur: ${error.message}`); return; }
-    if (assigneeUid) {
-      const { data: assigneeProfile } = await supabase.from('user_profiles_complet')
-        .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
-      await supabase.from('notifications').insert({
-        uid: assigneeUid, type: 'tache',
-        title: 'Nouvelle tâche assignée',
-        body: form.titre.trim(),
-        ...(assigneeProfile?.id ? { profile_id: assigneeProfile.id } : {}),
-        data: { eleveurUid: uid, tacheId: (inserted as { id: string }).id },
-        read: false,
-      });
-    }
-    onClose();
-  }
-
+  if (!animaux || !membres) return null;
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="font-bold font-galey text-gray-800">Assigner une tâche</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">×</button>
-        </div>
-        <p className="text-sm text-[#0C5C6C] font-galey font-semibold">→ {assigneeName}</p>
-        <form onSubmit={save} className="space-y-3">
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Titre *</label>
-            <input required value={form.titre} onChange={e => setForm({ ...form, titre: e.target.value })}
-              placeholder="Ex: Nettoyage, Soins, Promenade…" className={inp} />
-          </div>
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Date *</label>
-            <input type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} className={inp} />
-          </div>
-
-          {/* Lien animal ou box */}
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Concerne</label>
-            <div className="flex gap-2">
-              {(['aucun', 'animal', 'enclos'] as const).map(v => (
-                <button key={v} type="button"
-                  onClick={() => setForm({ ...form, cible: v, animal_id: '', enclos_id: '' })}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-galey font-semibold border transition-colors ${form.cible === v ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                  {v === 'aucun' ? 'Rien' : v === 'animal' ? 'Animal' : 'Box'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {form.cible === 'animal' && animaux.length > 0 && (
-            <div>
-              <label className="text-xs font-galey text-gray-500 mb-1 block">Animal</label>
-              <select value={form.animal_id} onChange={e => setForm({ ...form, animal_id: e.target.value })} className={inp}>
-                <option value="">— Sélectionner —</option>
-                {animaux.map(a => (
-                  <option key={a.id} value={a.id}>{a.nom}{a.espece ? ` (${a.espece})` : ''}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {form.cible === 'animal' && animaux.length === 0 && (
-            <p className="text-xs text-gray-400 font-galey">Aucun animal actuellement pris en charge</p>
-          )}
-
-          {form.cible === 'enclos' && enclos.length > 0 && (
-            <div>
-              <label className="text-xs font-galey text-gray-500 mb-1 block">Box / Enclos</label>
-              <select value={form.enclos_id} onChange={e => setForm({ ...form, enclos_id: e.target.value })} className={inp}>
-                <option value="">— Sélectionner —</option>
-                {enclos.map(enc => (
-                  <option key={enc.id} value={enc.id}>{enc.nom}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {form.cible === 'enclos' && enclos.length === 0 && (
-            <p className="text-xs text-gray-400 font-galey">Aucun box/enclos configuré dans le chenil.</p>
-          )}
-
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Notes</label>
-            <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-              placeholder="Instructions supplémentaires…" className={inp + ' w-full resize-none'} />
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button type="submit" disabled={saving}
-              className="flex-1 bg-[#0C5C6C] text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
-              {saving ? 'Enregistrement…' : 'Assigner'}
-            </button>
-            <button type="button" onClick={onClose}
-              className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm font-galey hover:bg-gray-50">
-              Annuler
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <AddTacheModal
+      uid={uid}
+      myUid={user?.uid}
+      profileId={activeProfileId}
+      profilSource="association"
+      animaux={animaux}
+      membres={membres}
+      assigneInitial={assigneeUid}
+      onClose={onClose}
+      onSaved={onClose}
+      onEmployeCreated={chargerMembres}
+    />
   );
 }
 
