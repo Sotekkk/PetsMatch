@@ -229,6 +229,11 @@ const AuthContext = createContext<AuthContextType>({
   refreshUserData: async () => {},
 });
 
+/** Compte utilisable : e-mail validé, ou connexion Google / Apple. */
+function estCompteValide(u: User): boolean {
+  return u.emailVerified || !u.providerData.some(p => p.providerId === 'password');
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -288,7 +293,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(auth, async (brut) => {
+      // E-mail pas encore validé (compte e-mail / mot de passe) : pas encore
+      // connecté pour le site — ni menu, ni profil, ni guide. Les pages
+      // d'inscription / validation lisent auth.currentUser directement.
+      const u = brut && estCompteValide(brut) ? brut : null;
       setUser(u);
       if (u) {
         await fetchProfiles(u.uid);
@@ -304,8 +313,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, [fetchProfiles]);
 
+  // Après validation de l'e-mail (pas d'événement Firebase) : le compte devient connecté.
   const refreshUserData = useCallback(async () => {
-    if (user) await fetchProfiles(user.uid);
+    const u = auth.currentUser;
+    if (u && estCompteValide(u)) {
+      setUser(u);
+      await fetchProfiles(u.uid);
+    } else if (user) {
+      await fetchProfiles(user.uid);
+    }
   }, [user, fetchProfiles]);
 
   return (

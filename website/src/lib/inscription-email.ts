@@ -14,3 +14,20 @@ export async function libererEmailInscription(email: string): Promise<boolean> {
     return false;
   }
 }
+
+const CHANGER_URL = 'https://europe-west1-petsmatch-eb96d.cloudfunctions.net/changerEmailInscription';
+
+/** Adresse mal saisie (compte pas encore validé) : changée tout de suite sur le
+ *  même compte. Retourne un message d'erreur, ou null si c'est fait. */
+export async function changerEmailInscription(jeton: string, email: string): Promise<string | null> {
+  try {
+    const r = await fetch(CHANGER_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jeton}` },
+      body: JSON.stringify({ email: email.trim() }),
+    });
+    if (r.ok) return null;
+    return ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Changement impossible. Réessayez.';
+  } catch {
+    return 'Pas de connexion. Réessayez.';
+  }
+}

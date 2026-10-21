@@ -1,5 +1,6 @@
 import 'package:PetsMatch/utils/annuaire_filtres.dart' show normaliserEspecesPro;
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/inscription_email.dart';
 import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
@@ -459,7 +460,13 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Session expirée, reconnectez-vous.');
-      await user.verifyBeforeUpdateEmail(newEmail);
+      // Adresse changée tout de suite sur le même compte (informations gardées),
+      // puis nouvel e-mail de validation à la bonne adresse.
+      final jeton = await user.getIdToken();
+      final err = await changerEmailInscription(jeton ?? '', newEmail);
+      if (err != null) throw Exception(err);
+      await user.reload();
+      try { await FirebaseAuth.instance.currentUser?.sendEmailVerification(); } catch (_) {}
       User_Info.email = newEmail;
       if (!mounted) return;
       setState(() {
@@ -490,7 +497,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
       setState(() { _emailError = msg; _savingEmail = false; });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _emailError = 'Erreur : $e'; _savingEmail = false; });
+      setState(() { _emailError = e.toString().replaceFirst('Exception: ', ''); _savingEmail = false; });
     }
   }
 

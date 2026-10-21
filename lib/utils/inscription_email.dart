@@ -19,3 +19,21 @@ Future<bool> libererEmailInscription(String email) async {
     return false;
   }
 }
+
+const _kChangerUrl = 'https://europe-west1-petsmatch-eb96d.cloudfunctions.net/changerEmailInscription';
+
+/// Adresse mal saisie (compte pas encore validé) : changée tout de suite sur le
+/// même compte (informations gardées). Retourne un message d'erreur, ou null.
+Future<String?> changerEmailInscription(String jeton, String email) async {
+  try {
+    final r = await http.post(Uri.parse(_kChangerUrl),
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $jeton'},
+        body: jsonEncode({'email': email.trim()})).timeout(const Duration(seconds: 20));
+    if (r.statusCode == 200) return null;
+    try { return (jsonDecode(r.body) as Map)['error']?.toString() ?? 'Changement impossible. Réessayez.'; } catch (_) {
+      return 'Changement impossible. Réessayez.';
+    }
+  } catch (_) {
+    return 'Pas de connexion. Réessayez.';
+  }
+}

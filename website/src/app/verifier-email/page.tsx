@@ -4,7 +4,8 @@
 // automatique de la validation, rappel des spams.
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { sendEmailVerification, signOut, verifyBeforeUpdateEmail } from 'firebase/auth';
+import { sendEmailVerification, signOut } from 'firebase/auth';
+import { changerEmailInscription } from '@/lib/inscription-email';
 import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -113,15 +114,14 @@ function VerifierEmail() {
                   <button onClick={async () => {
                     const u = auth.currentUser; const mail = nouvelEmail.trim();
                     if (!u || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) { setMessage("Cette adresse n'est pas valide."); return; }
-                    try {
-                      await verifyBeforeUpdateEmail(u, mail);
-                      setAdresseEnvoi(mail); setEdition(false);
-                      setMessage(`Lien de validation envoyé à ${mail}. Vos informations sont conservées.`);
-                    } catch (e) {
-                      const c = (e as { code?: string }).code;
-                      setMessage(c === 'auth/email-already-in-use' ? 'Cette adresse est déjà utilisée par un autre compte.'
-                        : c === 'auth/requires-recent-login' ? 'Reconnectez-vous puis réessayez.' : 'Changement impossible. Réessayez.');
-                    }
+                    setMessage('Changement en cours…');
+                    // Adresse changée tout de suite sur le même compte, puis nouvel e-mail de validation.
+                    const err = await changerEmailInscription(await u.getIdToken(), mail);
+                    if (err) { setMessage(err); return; }
+                    try { await u.reload(); } catch { /* */ }
+                    try { if (auth.currentUser) await sendEmailVerification(auth.currentUser); } catch { /* renvoi possible */ }
+                    setAdresseEnvoi(mail); setEdition(false);
+                    setMessage(`Adresse corrigée : un lien de validation a été envoyé à ${mail}. Vos informations sont conservées.`);
                   }} className="px-4 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold">Valider</button>
                 </div>
               ) : (

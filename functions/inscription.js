@@ -37,6 +37,24 @@ function estAbandonne(user) {
     return fournisseurs.length === 0 || fournisseurs.every((p) => p === "password");
 }
 
+function supabasePatch(path, body) {
+    return new Promise((resolve) => {
+        const url = new URL(`${SUPABASE_URL}${path}`);
+        const data = JSON.stringify(body);
+        const req = https.request({
+            hostname: url.hostname, path: url.pathname + (url.search || ""), method: "PATCH",
+            headers: {
+                "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data), ...SUPABASE_AUTH_HEADERS,
+            },
+        }, (res) => {
+            res.on("data", () => {}); res.on("end", () => resolve(res.statusCode));
+        });
+        req.on("error", () => resolve(0));
+        req.write(data);
+        req.end();
+    });
+}
+
 async function supprimerCompte(user) {
     const uid = encodeURIComponent(user.uid);
     await supabaseDelete(`/rest/v1/user_profiles?uid=eq.${uid}`);
@@ -106,4 +124,58 @@ exports.purgerInscriptionsAbandonnees = functions
         } while (page);
         console.log(`[inscription] ${purges} inscription(s) abandonnée(s) purgée(s)`);
         return null;
+    });
+
+// Adresse mal saisie à l'inscription (compte pas encore validé) : l'adresse est
+// changée tout de suite sur le MÊME compte (toutes les informations gardées),
+// puis l'appli / le site renvoie l'e-mail de validation à la nouvelle adresse.
+// Appelant identifié par son jeton Firebase (Authorization: Bearer).
+exports.changerEmailInscription = functions
+    .region("europe-west1")
+    .https.onRequest(async (req, res) => {
+        res.set("Access-Control-Allow-Origin", "*");
+        res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+        res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        if (req.method === "OPTIONS") {
+            res.status(204).send(""); return;
+        }
+        if (req.method !== "POST") {
+            res.status(405).json({error: "POST attendu"}); return;
+        }
+        const m = String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i);
+        const email = String((req.body && req.body.email) || "").trim().toLowerCase();
+        if (!m) {
+            res.status(401).json({error: "Session expirée : reconnectez-vous."}); return;
+        }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            res.status(400).json({error: "Cette adresse n'est pas valide."}); return;
+        }
+        try {
+            const {uid} = await admin.auth().verifyIdToken(m[1]);
+            const moi = await admin.auth().getUser(uid);
+            if (!estAbandonne(moi)) {
+                res.status(400).json({error: "Ce compte est déjà validé."}); return;
+            }
+            if ((moi.email || "").toLowerCase() === email) {
+                res.json({ok: true}); return;
+            }
+            try {
+                const autre = await admin.auth().getUserByEmail(email);
+                if (autre.uid !== uid) {
+                    if (!estAbandonne(autre)) {
+                        res.status(409).json({error: "Cette adresse est déjà utilisée par un autre compte."}); return;
+                    }
+                    await supprimerCompte(autre);
+                }
+            } catch (e) {
+                if (e.code !== "auth/user-not-found") throw e;
+            }
+            await admin.auth().updateUser(uid, {email, emailVerified: false});
+            await supabasePatch(`/rest/v1/users?uid=eq.${encodeURIComponent(uid)}`, {email});
+            console.log(`[inscription] adresse corrigée avant validation uid=${uid}`);
+            res.json({ok: true});
+        } catch (e) {
+            console.error("[inscription] changerEmailInscription:", e.message);
+            res.status(500).json({error: "Changement impossible. Réessayez."});
+        }
     });

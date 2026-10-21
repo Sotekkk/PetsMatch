@@ -113,3 +113,4 @@ exports.parseCarnetDocument = parseCarnetDocumentFunctions.parseCarnetDocument;
 // Inscriptions jamais validées : adresse libérée à la nouvelle tentative + purge quotidienne.
 exports.libererEmailInscription = inscriptionFunctions.libererEmailInscription;
 exports.purgerInscriptionsAbandonnees = inscriptionFunctions.purgerInscriptionsAbandonnees;
+exports.changerEmailInscription = inscriptionFunctions.changerEmailInscription;
