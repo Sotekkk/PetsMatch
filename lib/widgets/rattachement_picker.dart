@@ -5,20 +5,26 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/protocoles.dart' show estHorsPriseEnCharge;
 
 const _teal = Color(0xFF0C5C6C);
 const _dark = Color(0xFF1F2A2E);
 
 /// Animaux de l'élevage (propriété directe + reçus par cession), triés par nom.
 /// Chargés seulement quand l'utilisateur choisit « Animal » ou « Portée ».
+/// Seuls les animaux encore pris en charge (refuge, famille d'accueil…) :
+/// un animal de la structure adopté / cédé / transféré / décédé, ou reçu
+/// puis recédé (propriété close), n'est plus proposé — ses tâches passées
+/// restent intactes. L'animal d'un particulier garde son statut chez lui.
 Future<List<Map<String, dynamic>>> chargerAnimauxRattachement(String uid, String? profileId) async {
   final supa = Supabase.instance.client;
   var q = supa.from('animaux')
-      .select('id, nom, espece, race, portee_id, nom_mere')
+      .select('id, nom, espece, race, portee_id, nom_mere, statut, uid_eleveur')
       .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
   if (profileId != null && profileId.isNotEmpty) q = q.eq('profile_id', profileId);
   final direct = List<Map<String, dynamic>>.from(
       (await q as List).map((e) => Map<String, dynamic>.from(e as Map)));
+  direct.removeWhere((a) => a['uid_eleveur'] == uid && estHorsPriseEnCharge(a));
   var ownQ = supa.from('animaux_proprietes').select('animal_id').eq('uid_proprio', uid).isFilter('date_fin', null);
   if (profileId != null && profileId.isNotEmpty) ownQ = ownQ.eq('profile_id_proprio', profileId);
   final ownIds = (await ownQ as List).map((r) => r['animal_id']?.toString()).whereType<String>().toSet();

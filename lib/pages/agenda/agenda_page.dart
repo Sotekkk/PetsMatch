@@ -3471,6 +3471,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
       profileId: pid.isNotEmpty ? pid : null,
       current: _selectedAnimaux,
       accentColor: const Color(0xFFD97706),
+      seulementPrisEnCharge: true,
     );
     if (result != null && mounted) setState(() => _selectedAnimaux = result);
   }
@@ -3785,23 +3786,30 @@ class AddTacheSheetState extends State<AddTacheSheet> {
     if (_dispo != null || _chargementDispo) return;
     setState(() => _chargementDispo = true);
     try {
-      if (widget.profilSource == 'pension') {
-        // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
-        final rows = await Supabase.instance.client.from('pension_entrees')
-            .select('id, animal_nom, espece')
-            .eq('pro_uid', widget.uid).eq('statut', 'en_pension').order('animal_nom');
-        _dispo = (rows as List).map((r) => <String, dynamic>{
-          'id': r['id'], 'nom': r['animal_nom'], 'espece': r['espece'],
-        }).toList();
-      } else {
-        final pid = (widget.profileId ?? User_Info.activeProfileId);
-        _dispo = await chargerAnimauxRattachement(widget.uid, pid.isNotEmpty ? pid : null);
-      }
+      _dispo = await _animauxEligibles();
     } catch (_) {
       _dispo = [];
     }
     if (mounted) setState(() => _chargementDispo = false);
   }
+
+  /// Animaux actuellement pris en charge, rechargés tels quels à
+  /// l'enregistrement pour vérifier que la sélection est toujours valable.
+  Future<List<Map<String, dynamic>>> _animauxEligibles() async {
+    if (widget.profilSource == 'pension') {
+      // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
+      final rows = await Supabase.instance.client.from('pension_entrees')
+          .select('id, animal_nom, espece')
+          .eq('pro_uid', widget.uid).eq('statut', 'en_pension').order('animal_nom');
+      return (rows as List).map((r) => <String, dynamic>{
+        'id': r['id'], 'nom': r['animal_nom'], 'espece': r['espece'],
+      }).toList();
+    }
+    final pid = (widget.profileId ?? User_Info.activeProfileId);
+    return chargerAnimauxRattachement(widget.uid, pid.isNotEmpty ? pid : null);
+  }
+
+  bool get _aucunAnimalEligible => _rattachement == 'animal' && _dispo != null && _dispo!.isEmpty;
 
   Future<void> _choisirRattachement(String mode) async {
     setState(() => _rattachement = mode);
@@ -3812,6 +3820,7 @@ class AddTacheSheetState extends State<AddTacheSheet> {
   }
 
   Future<void> _ouvrirSelection() async {
+    if (_aucunAnimalEligible) return;
     if (_rattachement == 'animal') {
       final items = (_dispo ?? []).map((a) => ItemRattachement(
             a['id'].toString(), (a['nom'] ?? '').toString(),
@@ -3831,9 +3840,38 @@ class AddTacheSheetState extends State<AddTacheSheet> {
     }
   }
 
+  void _message(String texte) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texte)));
+
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
+    if (_aucunAnimalEligible) {
+      _message('Aucun animal actuellement pris en charge : choisissez « Aucun » ou un autre rattachement.');
+      return;
+    }
     setState(() => _saving = true);
+    // Un animal adopté / cédé entre l'ouverture du formulaire et la
+    // validation : assignation bloquée, liste actualisée.
+    if (_rattachement == 'animal' && _animalIds.isNotEmpty) {
+      try {
+        final frais = await _animauxEligibles();
+        final valides = frais.map((a) => a['id'].toString()).toSet();
+        final partis = (_dispo ?? const <Map<String, dynamic>>[])
+            .where((a) => _animalIds.contains(a['id']?.toString()) && !valides.contains(a['id']?.toString()))
+            .map((a) => (a['nom'] ?? '').toString()).toList();
+        if (partis.isNotEmpty) {
+          if (!mounted) return;
+          setState(() {
+            _dispo = frais;
+            _animalIds = _animalIds.where(valides.contains).toList();
+            _saving = false;
+          });
+          _message('${partis.join(', ')} ${partis.length > 1 ? "ne sont plus pris en charge" : "n'est plus pris en charge"} '
+              '(adopté, cédé ou sorti) : la liste a été actualisée, vérifiez la sélection.');
+          return;
+        }
+      } catch (_) {}
+    }
     try {
       final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
       final supa = Supabase.instance.client;
@@ -4010,6 +4048,8 @@ class AddTacheSheetState extends State<AddTacheSheet> {
             Expanded(child: Text(
               _chargementDispo
                   ? 'Chargement…'
+                  : _aucunAnimalEligible
+                      ? 'Aucun animal actuellement pris en charge'
                   : n == 0
                       ? (_rattachement == 'animal' ? 'Choisir des animaux…' : 'Choisir des portées…')
                       : _rattachement == 'animal'

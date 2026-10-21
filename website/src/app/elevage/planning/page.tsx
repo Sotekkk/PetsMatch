@@ -6,7 +6,7 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
   PERIMETRES, CATEGORIES, REF_EVENTS, actesSuggeresPour, TRANCHES_LABELS,
-  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, type Perimetre,
+  perimetreDe, perimetreLabel, cibleTypePour, acteDepuisSaisie, estHorsPriseEnCharge, type Perimetre,
 } from '@/lib/protocoles';
 import { ouvrirFicheProtocole } from '@/lib/protocole-pdf';
 import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
@@ -1258,11 +1258,18 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
   // Animaux chargés seulement pour le périmètre « animal » (sélection par défaut)
   useEffect(() => {
     if (perimetre !== 'animal' || profilSource === 'garde') return;
-    let q = supabase.from('animaux').select('id, nom, espece').eq('uid_eleveur', uid);
+    let q = supabase.from('animaux').select('id, nom, espece, statut').eq('uid_eleveur', uid);
     if (profileId) q = q.eq('profile_id', profileId) as typeof q;
     (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
       .order('nom')
-      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string }[]));
+      .then(({ data }) => {
+        // Seuls les animaux encore pris en charge (pas adoptés, cédés…) ;
+        // un animal par défaut parti depuis n'est plus retenu.
+        const actifs = ((data ?? []) as { id: string; nom: string; espece?: string; statut?: string | null }[])
+          .filter(a => !estHorsPriseEnCharge(a));
+        setAnimaux(actifs);
+        setAnimalIds(prev => prev.filter(id => actifs.some(a => a.id === id)));
+      });
   }, [uid, profileId, profilSource, perimetre]);
 
   const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
@@ -1768,11 +1775,18 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
       })();
       return;
     }
-    let q = supabase.from('animaux').select('id, nom, espece, photo_url').eq('uid_eleveur', uid);
+    let q = supabase.from('animaux').select('id, nom, espece, photo_url, statut').eq('uid_eleveur', uid);
     if (profileId) q = q.eq('profile_id', profileId) as typeof q;
     (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
       .order('nom')
-      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null }[]));
+      .then(({ data }) => {
+        // Seuls les animaux encore pris en charge (pas adoptés, cédés…) ;
+        // un animal par défaut du protocole parti depuis n'est plus coché.
+        const actifs = ((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null; statut?: string | null }[])
+          .filter(a => !estHorsPriseEnCharge(a));
+        setAnimaux(actifs);
+        setAnimalIds(prev => prev.filter(id => actifs.some(a => a.id === id)));
+      });
   }, [uid, needsAnimal, profilSource, profileId]);
 
   // Un protocole créé par un employé (autorisé) s'auto-attribue à ce
@@ -1806,30 +1820,32 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         }
       } else if (cibleType === 'gestantes') {
         const { data: gestations } = await supabase.from('gestations')
-          .select('animal_id, date_prevue, animaux(nom)').eq('uid_eleveur', uid).is('date_mise_bas', null);
-        for (const g of (gestations ?? []) as unknown as { animal_id: string; date_prevue: string | null; animaux: { nom: string }[] | null }[]) {
-          const animalNom = Array.isArray(g.animaux) ? g.animaux[0]?.nom : undefined;
+          .select('animal_id, date_prevue, animaux(nom, statut)').eq('uid_eleveur', uid).is('date_mise_bas', null);
+        for (const g of (gestations ?? []) as unknown as { animal_id: string; date_prevue: string | null; animaux: { nom: string; statut?: string | null }[] | { nom: string; statut?: string | null } | null }[]) {
+          const anim = Array.isArray(g.animaux) ? g.animaux[0] : g.animaux;
+          if (anim && estHorsPriseEnCharge(anim)) continue;
+          const animalNom = anim?.nom;
           targets.push({ animal_id: g.animal_id, date_base: g.date_prevue ?? dateRef, animal_nom: animalNom });
         }
       } else if (cibleType === 'bebes') {
         const sixMoisAgo = toISODate(addDays(new Date(), -183));
-        let q = supabase.from('animaux').select('id, nom, date_naissance').eq('uid_eleveur', uid).gte('date_naissance', sixMoisAgo);
+        let q = supabase.from('animaux').select('id, nom, date_naissance, statut').eq('uid_eleveur', uid).gte('date_naissance', sixMoisAgo);
         if (template.espece) q = q.eq('espece', template.espece);
         if (profileId) q = q.eq('profile_id', profileId) as typeof q;
         q = profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false') as typeof q;
         const { data: babies } = await q;
-        for (const b of (babies ?? []) as { id: string; nom: string; date_naissance: string | null }[]) {
+        for (const b of ((babies ?? []) as { id: string; nom: string; date_naissance: string | null; statut?: string | null }[]).filter(x => !estHorsPriseEnCharge(x))) {
           targets.push({ animal_id: b.id, date_base: b.date_naissance ?? dateRef, animal_nom: b.nom });
         }
       } else {
-        let q = supabase.from('animaux').select('id, nom').eq('uid_eleveur', uid);
+        let q = supabase.from('animaux').select('id, nom, statut').eq('uid_eleveur', uid);
         if (template.espece) q = q.eq('espece', template.espece);
         if (cibleType === 'males') q = q.eq('sexe', 'male');
         if (cibleType === 'femelles') q = q.eq('sexe', 'femelle');
         if (profileId) q = q.eq('profile_id', profileId) as typeof q;
         q = profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false') as typeof q;
         const { data: all } = await q;
-        for (const a of (all ?? []) as { id: string; nom: string }[]) {
+        for (const a of ((all ?? []) as { id: string; nom: string; statut?: string | null }[]).filter(x => !estHorsPriseEnCharge(x))) {
           targets.push({ animal_id: a.id, date_base: dateRef, animal_nom: a.nom });
         }
       }

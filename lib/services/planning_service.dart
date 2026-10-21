@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe;
+import 'package:PetsMatch/utils/protocoles.dart' show perimetreDe, estHorsPriseEnCharge;
 
 class PlanningService {
   static final _supa = Supabase.instance.client;
@@ -332,8 +332,10 @@ class PlanningService {
     switch (cibleType) {
       case 'individuel':
         if (forcedAnimalIds != null && forcedAnimalIds.isNotEmpty) {
-          final rows = await _supa.from('animaux').select('id, nom').inFilter('id', forcedAnimalIds);
-          return (rows as List).map((a) => {
+          final rows = await _supa.from('animaux').select('id, nom, statut, uid_eleveur').inFilter('id', forcedAnimalIds);
+          // Pas de nouveau protocole pour un animal de la structure parti
+          // depuis (adopté, cédé…) ; un animal client garde son statut.
+          return (rows as List).where((a) => a['uid_eleveur'] != uid || !estHorsPriseEnCharge(a)).map((a) => {
             'animal_id': a['id'] as String?,
             'animal_nom': a['nom'] as String?,
             'date_ref': dateReference,
@@ -344,12 +346,12 @@ class PlanningService {
       case 'cheptel':
       case 'males':
       case 'femelles': {
-        var q = _supa.from('animaux').select('id, nom').eq('uid_eleveur', uid);
+        var q = _supa.from('animaux').select('id, nom, statut').eq('uid_eleveur', uid);
         if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
         if (cibleType == 'males')   q = q.eq('sexe', 'male');
         if (cibleType == 'femelles') q = q.eq('sexe', 'femelle');
         final rows = await q.order('nom');
-        return (rows as List).map((a) => {
+        return (rows as List).where((a) => !estHorsPriseEnCharge(a)).map((a) => {
           'animal_id': a['id'] as String?,
           'animal_nom': a['nom'] as String?,
           'date_ref': dateReference,
@@ -359,11 +361,12 @@ class PlanningService {
       case 'gestantes': {
         // Charger toutes les gestations en cours (sans date_mise_bas)
         var q = _supa.from('gestations')
-            .select('id, animal_id, date_mise_bas, date_prevue, animaux(nom, espece)')
+            .select('id, animal_id, date_mise_bas, date_prevue, animaux(nom, espece, statut)')
             .eq('uid_eleveur', uid)
             .filter('date_mise_bas', 'is', null);  // gestations en cours
         final rows = await q.order('date_prevue');
-        return (rows as List).map((g) {
+        return (rows as List).where((g) =>
+            !estHorsPriseEnCharge(g['animaux'] as Map<String, dynamic>? ?? {})).map((g) {
           final datePrevue = DateTime.tryParse(g['date_prevue'] as String? ?? '') ?? dateReference;
           final anim = g['animaux'] as Map<String, dynamic>? ?? {};
           return {
@@ -377,7 +380,7 @@ class PlanningService {
       case 'bebes': {
         // Animaux nés récemment (< 6 mois) ou selon age_min_semaines
         var q = _supa.from('animaux')
-            .select('id, nom, date_naissance')
+            .select('id, nom, date_naissance, statut')
             .eq('uid_eleveur', uid)
             .not('date_naissance', 'is', null);
         if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
@@ -386,7 +389,7 @@ class PlanningService {
         return (rows as List)
             .where((a) {
               final dn = DateTime.tryParse(a['date_naissance'] as String? ?? '');
-              return dn != null && dn.isAfter(sixMoisPasse);
+              return dn != null && dn.isAfter(sixMoisPasse) && !estHorsPriseEnCharge(a);
             })
             .map((a) {
               final dn = DateTime.tryParse(a['date_naissance'] as String? ?? '') ?? dateReference;
@@ -402,13 +405,14 @@ class PlanningService {
         // Femelles dont la mise bas date de moins de 8 semaines
         final cutoff = DateTime.now().subtract(const Duration(days: 56)).toIso8601String().split('T').first;
         final gestRows = await _supa.from('gestations')
-            .select('animal_id, date_mise_bas, animaux(nom, espece)')
+            .select('animal_id, date_mise_bas, animaux(nom, espece, statut)')
             .eq('uid_eleveur', uid)
             .not('date_mise_bas', 'is', null)
             .gte('date_mise_bas', cutoff);
         return (gestRows as List).where((g) {
-          if (espece == null || espece.isEmpty) return true;
           final anim = g['animaux'] as Map<String, dynamic>? ?? {};
+          if (estHorsPriseEnCharge(anim)) return false;
+          if (espece == null || espece.isEmpty) return true;
           return anim['espece'] == espece;
         }).map((g) {
           final dateMiseBas = DateTime.tryParse(g['date_mise_bas'] as String? ?? '') ?? dateReference;

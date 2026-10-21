@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
+import { estHorsPriseEnCharge } from '@/lib/protocoles';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 
 function displayNameFromProfile(
@@ -1086,7 +1087,7 @@ export default function AgendaElevagePage() {
     if (!user) return;
     const ownerUid = await resolveEffectiveUid();
     setMembresAssign(await loadMembres(ownerUid, profilSource, user.uid));
-    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', ownerUid);
+    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut').eq('uid_eleveur', ownerUid);
     ownedQuery = profilSource === 'association' ? ownedQuery.eq('is_association', true) : ownedQuery;
     const ownedRes = await ownedQuery.order('nom');
     const owned = (ownedRes.data ?? []) as AnimalOption[];
@@ -1094,11 +1095,13 @@ export default function AgendaElevagePage() {
     let received: AnimalOption[] = [];
     if (activeProfileId) {
       const { data: byProfile } = await supabase.from('animaux_proprietes')
-        .select('animal_id').eq('uid_proprio', user.uid).eq('profile_id_proprio', activeProfileId);
+        .select('animal_id, date_fin').eq('uid_proprio', user.uid).eq('profile_id_proprio', activeProfileId);
       const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
+      // Reçu puis cédé à nouveau (propriété close) : plus pris en charge.
+      const ouverts = new Set((byProfile ?? []).filter(r => !r.date_fin).map(r => r.animal_id as string));
       if (ids.length > 0) {
         const { data } = await supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').in('id', ids).order('nom');
-        received = (data ?? []) as AnimalOption[];
+        received = ((data ?? []) as AnimalOption[]).map(a => ouverts.has(a.id) ? a : { ...a, horsCharge: true });
       }
     }
     setAnimaux([...owned, ...received]);
@@ -1863,7 +1866,12 @@ export default function AgendaElevagePage() {
           profileId={activeProfileId}
           profilSource={profilSource}
           selectedDate={selectedDate}
-          animaux={animaux}
+          // Nouvelle tâche : seuls les animaux encore pris en charge (les
+          // anciennes tâches des animaux adoptés restent liées à leur fiche).
+          animaux={animaux.filter(a => {
+            const x = a as { statut?: string | null; horsCharge?: boolean };
+            return !x.horsCharge && !estHorsPriseEnCharge(x);
+          })}
           membres={membresAssign}
           onClose={() => setShowAddTache(false)}
           onSaved={() => { setShowAddTache(false); load(); loadMonth(); }}

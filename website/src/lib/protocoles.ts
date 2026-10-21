@@ -2,6 +2,16 @@
 // partagés par la page Protocoles et la fiche PDF.
 // Miroir app : lib/utils/protocoles.dart.
 
+/** Statuts d'un animal qui n'est plus pris en charge par la structure
+ *  (cédé / adopté / transféré / décédé) : il n'est plus proposé pour un
+ *  NOUVEAU protocole. Ses fiches, anciens protocoles et historiques restent
+ *  intacts et consultables. Miroir app : kStatutsHorsPriseEnCharge. */
+export const STATUTS_HORS_PRISE_EN_CHARGE = ['sorti', 'adopte', 'transfere', 'decede'];
+
+export function estHorsPriseEnCharge(a: { statut?: string | null }): boolean {
+  return STATUTS_HORS_PRISE_EN_CHARGE.includes(a.statut ?? '');
+}
+
 export interface EtapeProtocole {
   id?: string;
   type_acte: string;

@@ -124,8 +124,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   Future<void> _loadDefaultAnimaux(List<String> ids) async {
     try {
       final rows = await Supabase.instance.client.from('animaux')
-          .select('id, nom, espece, photo_url').inFilter('id', ids);
-      if (mounted) setState(() => _selectedAnimaux = List<Map<String, dynamic>>.from(rows));
+          .select('id, nom, espece, photo_url, statut').inFilter('id', ids);
+      // Un animal par défaut parti depuis (adopté, cédé…) n'est plus proposé.
+      if (mounted) setState(() => _selectedAnimaux = List<Map<String, dynamic>>.from(rows)
+          .where((a) => !estHorsPriseEnCharge(a)).toList());
     } catch (_) {}
   }
 
@@ -135,6 +137,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     final result = await AnimalPickerSheet.pickMany(
       context, uid: uid, profileId: pid.isNotEmpty ? pid : null,
       current: _selectedAnimaux, accentColor: _teal, showPortees: false,
+      seulementPrisEnCharge: true,
     );
     if (result != null && mounted) setState(() => _selectedAnimaux = result);
   }

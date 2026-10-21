@@ -34,6 +34,7 @@
 //   ALTER TABLE employes ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}';
 
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/rattachement_picker.dart' show chargerAnimauxRattachement;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -1610,7 +1611,10 @@ class _TachesTabState extends State<_TachesTab> {
   List<Map<String, dynamic>> _taches      = [];
   List<Map<String, dynamic>> _planTaches  = [];
   List<Map<String, dynamic>> _employes    = [];
+  // Animaux encore pris en charge par le profil (choix d'une tâche) ; les
+  // noms des tâches passées sont résolus à part (animalNoms).
   List<Map<String, dynamic>> _animaux     = [];
+  String? _ownerProfileId;
   bool _showDone = false;
   String get _profileType => widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
 
@@ -1711,6 +1715,9 @@ class _TachesTabState extends State<_TachesTab> {
           .eq('uid_eleveur', ownerUid)
           .not('statut', 'in', '(sorti,decede)')
           .order('nom');
+      // Choix d'animaux d'une tâche : même règle que la nouvelle tâche
+      // (profil exact, adoptés / cédés / décédés écartés).
+      final animauxEligibles = await chargerAnimauxRattachement(ownerUid, eleveurProfileId);
 
       // Resolve assignee names via profile_id ou uid
       final Map<String, String> uidToNom = {};
@@ -1830,7 +1837,8 @@ class _TachesTabState extends State<_TachesTab> {
         _taches     = taches;
         _planTaches = planTaches;
         _employes   = employes;
-        _animaux    = List<Map<String, dynamic>>.from(animauxRaw);
+        _animaux    = animauxEligibles;
+        _ownerProfileId = eleveurProfileId;
         _loading    = false;
       });
       debugPrint('DEBUG_TACHES OK _taches.length=${_taches.length} _planTaches.length=${_planTaches.length}');
@@ -1898,6 +1906,7 @@ class _TachesTabState extends State<_TachesTab> {
         tache: tache,
         employes: _employes,
         animaux: _animaux,
+        rechargerAnimaux: () => chargerAnimauxRattachement(_ownerUid ?? _uid, _ownerProfileId),
         teal: widget.teal, dark: widget.dark,
       ),
     );
@@ -2010,6 +2019,8 @@ class _TachesTabState extends State<_TachesTab> {
               day: DateTime.now(),
               uid: _ownerUid ?? _uid,
               myUid: _uid,
+              // Profil exact de la structure (animaux de ce profil seulement).
+              profileId: _ownerProfileId,
               profilSource: 'eleveur',
               // Même fenêtre « Nouvelle tâche » que l'Agenda
               employes: [
@@ -3242,9 +3253,11 @@ class _Badge extends StatelessWidget {
 class _EditTacheSheet extends StatefulWidget {
   final Map<String, dynamic> tache;
   final List<Map<String, dynamic>> employes, animaux;
+  /// Animaux encore pris en charge, relus à l'enregistrement.
+  final Future<List<Map<String, dynamic>>> Function() rechargerAnimaux;
   final Color teal, dark;
   const _EditTacheSheet({required this.tache, required this.employes, required this.animaux,
-      required this.teal, required this.dark});
+      required this.rechargerAnimaux, required this.teal, required this.dark});
   @override
   State<_EditTacheSheet> createState() => _EditTacheSheetState();
 }
@@ -3256,6 +3269,8 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
   late DateTime _date;
   TimeOfDay? _heure;
   late Set<String> _selectedAnimalIds;
+  late List<Map<String, dynamic>> _animaux;
+  Set<String> _animauxConserves = {};
   String? _selectedEmployeUid;
   bool _saving = false;
 
@@ -3271,7 +3286,11 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
       _heure = TimeOfDay(hour: int.tryParse(parts[0]) ?? 0, minute: int.tryParse(parts[1]) ?? 0);
     }
     final ids = (widget.tache['animaux_ids'] as List<dynamic>?)?.map((e) => e.toString()).toSet() ?? {};
-    _selectedAnimalIds = ids.where((id) => widget.animaux.any((a) => a['id'].toString() == id)).toSet();
+    _animaux = widget.animaux;
+    _selectedAnimalIds = ids.where((id) => _animaux.any((a) => a['id'].toString() == id)).toSet();
+    // Animal déjà lié à la tâche mais plus pris en charge (adopté…) : il
+    // reste attaché (historique), sans pouvoir être choisi à nouveau.
+    _animauxConserves = ids.difference(_selectedAnimalIds);
     _selectedEmployeUid = widget.tache['assigne_a'] as String?;
     if (_selectedEmployeUid != null &&
         !widget.employes.any((e) => e['uid_employe'] == _selectedEmployeUid)) {
@@ -3282,6 +3301,27 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
+    // Un animal adopté / cédé entre l'ouverture et la validation : bloqué.
+    if (_selectedAnimalIds.isNotEmpty) {
+      try {
+        final frais = await widget.rechargerAnimaux();
+        final valides = frais.map((a) => a['id'].toString()).toSet();
+        final partis = _animaux.where((a) => _selectedAnimalIds.contains(a['id'].toString())
+            && !valides.contains(a['id'].toString())).map((a) => (a['nom'] ?? '').toString()).toList();
+        if (partis.isNotEmpty) {
+          if (!mounted) return;
+          setState(() {
+            _animaux = frais;
+            _selectedAnimalIds.retainAll(valides);
+            _saving = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+              '${partis.join(', ')} ${partis.length > 1 ? "ne sont plus pris en charge" : "n'est plus pris en charge"} '
+              '(adopté, cédé ou sorti) : la liste a été actualisée, vérifiez la sélection.')));
+          return;
+        }
+      } catch (_) {}
+    }
     final heureStr = _heure != null
         ? '${_heure!.hour.toString().padLeft(2, '0')}:${_heure!.minute.toString().padLeft(2, '0')}:00'
         : null;
@@ -3290,7 +3330,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
         'titre': _titreCtrl.text.trim(),
         'date':  _date.toIso8601String().split('T').first,
         'heure': heureStr,
-        'animaux_ids': _selectedAnimalIds.toList(),
+        'animaux_ids': [..._selectedAnimalIds, ..._animauxConserves],
         'animal_id':  null,
         'assigne_a':  _selectedEmployeUid,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
@@ -3387,7 +3427,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            if (widget.animaux.isNotEmpty) ...[
+            if (_animaux.isNotEmpty) ...[
               GestureDetector(
                 onTap: () async {
                   final sel = Set<String>.from(_selectedAnimalIds);
@@ -3400,7 +3440,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
                             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                         content: SizedBox(
                           width: double.maxFinite,
-                          child: ListView(shrinkWrap: true, children: widget.animaux.map((a) {
+                          child: ListView(shrinkWrap: true, children: _animaux.map((a) {
                             final id = a['id'].toString();
                             return CheckboxListTile(
                               value: sel.contains(id),
@@ -3441,7 +3481,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
                     if (_selectedAnimalIds.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Wrap(spacing: 4, runSpacing: 4, children: _selectedAnimalIds.map((id) {
-                        final a = widget.animaux.firstWhere((a) => a['id'].toString() == id, orElse: () => {});
+                        final a = _animaux.firstWhere((a) => a['id'].toString() == id, orElse: () => {});
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(color: widget.teal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { estHorsPriseEnCharge } from '@/lib/protocoles';
 
 export interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; }
 export interface MembreOption { uid: string; nom: string; type: 'employe' | 'benevole' | 'moi'; }
@@ -83,11 +84,12 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
   async function chargerAnimaux() {
     if (animauxCharges || chargementAnimaux) return;
     setChargementAnimaux(true);
-    let q = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere')
-      .eq('uid_eleveur', uid).not('statut', 'in', '(sorti,decede)');
+    // Seuls les animaux encore pris en charge (adoptés, cédés… écartés).
+    let q = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut')
+      .eq('uid_eleveur', uid);
     if (profileId) q = q.eq('profile_id', profileId);
     const { data } = await q.order('nom');
-    setAnimauxCharges((data ?? []) as AnimalOption[]);
+    setAnimauxCharges(((data ?? []) as (AnimalOption & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a)));
     setChargementAnimaux(false);
   }
   const today = new Date().toISOString().split('T')[0];
@@ -131,7 +133,27 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
 
   async function save() {
     if (!titre.trim() || !date) return;
+    if (rattachement === 'animal' && animauxCharges && animauxDispo.length === 0) {
+      alert('Aucun animal actuellement pris en charge : choisissez « Aucun ».');
+      return;
+    }
     setSaving(true);
+
+    // Animal adopté / cédé entre l'ouverture du formulaire et la validation :
+    // assignation bloquée, liste actualisée.
+    if (idsCibles.length > 0) {
+      const { data: etats } = await supabase.from('animaux').select('id, nom, statut, uid_eleveur').in('id', idsCibles);
+      const partis = ((etats ?? []) as { id: string; nom: string; statut?: string | null; uid_eleveur?: string | null }[])
+        .filter(a => a.uid_eleveur === uid && estHorsPriseEnCharge(a));
+      if (partis.length > 0) {
+        const ids = new Set(partis.map(a => a.id));
+        setAnimauxCharges(animauxDispo.filter(a => !ids.has(a.id)));
+        setAnimalIds(prev => prev.filter(id => !ids.has(id)));
+        setSaving(false);
+        alert(`${partis.map(a => a.nom).join(', ')} ${partis.length > 1 ? 'ne sont plus pris en charge' : "n'est plus pris en charge"} (adopté, cédé ou sorti) : la liste a été actualisée, vérifiez la sélection.`);
+        return;
+      }
+    }
 
     const isSelf = assigneUid === (myUid ?? uid);
     let assigneProfileId: string | null = null;
@@ -306,7 +328,7 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
                 const indispo = !!animauxCharges && ((v === 'animal' && animauxDispo.length === 0) || (v === 'portee' && portees.length === 0));
                 return (
                   <button key={v} type="button" disabled={indispo} onClick={() => { setRattachement(v); if (v !== 'aucun') chargerAnimaux(); }}
-                    title={indispo ? (v === 'portee' ? 'Aucune portée' : 'Aucun animal') : undefined}
+                    title={indispo ? (v === 'portee' ? 'Aucune portée' : 'Aucun animal actuellement pris en charge') : undefined}
                     className={`py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-35 ${
                       rattachement === v ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                     {l}
@@ -316,6 +338,9 @@ export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDat
             </div>
             {rattachement !== 'aucun' && chargementAnimaux && (
               <p className="text-xs text-gray-400 mt-2">Chargement…</p>
+            )}
+            {rattachement === 'animal' && !chargementAnimaux && animauxCharges && animauxDispo.length === 0 && (
+              <p className="text-xs text-gray-400 mt-2">Aucun animal actuellement pris en charge</p>
             )}
             {rattachement === 'animal' && !chargementAnimaux && (
               <MultiSelectRattachement

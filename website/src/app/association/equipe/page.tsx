@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { Icone } from '@/components/dashboard/kit';
+import { estHorsPriseEnCharge } from '@/lib/protocoles';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -984,39 +985,58 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    async function loadAnimaux() {
-      // Un même uid Firebase peut porter plusieurs profils (élevage +
-      // association) — ne garder que les animaux réellement de CE profil :
-      // possédés en propre (is_association=true) + reçus par cession
-      // (animaux_proprietes.profile_id_proprio), sinon un animal du profil
-      // élevage apparaît aussi dans le picker de tâche association.
-      const { data: ownedData } = await supabase.from('animaux').select('id, nom, espece')
-        .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
-      const owned = (ownedData ?? []) as Animal[];
-      const ownedIds = new Set(owned.map(a => a.id));
+  // Animaux encore pris en charge par CE profil d'association (au refuge ou
+  // en famille d'accueil). Un même uid Firebase peut porter plusieurs profils
+  // (élevage + association) : possédés en propre (is_association=true) + reçus
+  // par cession encore en cours (animaux_proprietes.profile_id_proprio, sans
+  // date_fin). Adoptés / transférés / décédés écartés, historique intact.
+  // Relu à l'enregistrement pour bloquer un animal adopté entre-temps.
+  const chargerAnimauxEligibles = useCallback(async (): Promise<Animal[]> => {
+    const { data: ownedData } = await supabase.from('animaux').select('id, nom, espece, statut')
+      .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
+    const owned = ((ownedData ?? []) as (Animal & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a));
+    const ownedIds = new Set(owned.map(a => a.id));
 
-      let received: Animal[] = [];
-      if (activeProfileId) {
-        const { data: byProfile } = await supabase.from('animaux_proprietes')
-          .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId);
-        const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
-        if (ids.length > 0) {
-          const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', ids).order('nom');
-          received = (data ?? []) as Animal[];
-        }
+    let received: Animal[] = [];
+    if (activeProfileId) {
+      const { data: byProfile } = await supabase.from('animaux_proprietes')
+        .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId).is('date_fin', null);
+      const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
+      if (ids.length > 0) {
+        const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', ids).order('nom');
+        received = (data ?? []) as Animal[];
       }
-      setAnimaux([...owned, ...received]);
     }
-    loadAnimaux();
+    return [...owned, ...received];
+  }, [uid, activeProfileId]);
+
+  useEffect(() => {
+    chargerAnimauxEligibles().then(setAnimaux);
     supabase.from('chenil_enclos').select('id, nom').eq('uid_eleveur', uid).order('nom')
       .then(({ data }) => setEnclos((data ?? []) as Enclos[]));
-  }, [uid, activeProfileId]);
+  }, [uid, chargerAnimauxEligibles]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!form.titre.trim() || !form.date) return;
+    if (form.cible === 'animal' && animaux.length === 0) {
+      alert('Aucun animal actuellement pris en charge : choisissez « Rien » ou « Box ».');
+      return;
+    }
     setSaving(true);
+    // Animal adopté / cédé entre l'ouverture du formulaire et la validation :
+    // assignation bloquée, liste actualisée.
+    if (form.cible === 'animal' && form.animal_id) {
+      const frais = await chargerAnimauxEligibles();
+      if (!frais.some(a => a.id === form.animal_id)) {
+        const nom = animaux.find(a => a.id === form.animal_id)?.nom ?? 'Cet animal';
+        setAnimaux(frais);
+        setForm(f => ({ ...f, animal_id: '' }));
+        setSaving(false);
+        alert(`${nom} n'est plus pris en charge par l'association (adopté, cédé ou sorti) : la liste a été actualisée, choisissez un autre animal.`);
+        return;
+      }
+    }
     const { data: assigneeProfile } = await supabase.from('user_profiles_complet')
       .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
     const payload: Record<string, unknown> = {
@@ -1096,6 +1116,10 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
                 ))}
               </select>
             </div>
+          )}
+
+          {form.cible === 'animal' && animaux.length === 0 && (
+            <p className="text-xs text-gray-400 font-galey">Aucun animal actuellement pris en charge</p>
           )}
 
           {form.cible === 'enclos' && enclos.length > 0 && (

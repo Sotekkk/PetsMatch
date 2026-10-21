@@ -1,6 +1,15 @@
 // Protocoles (plan_templates) — périmètre, libellés et calcul des dates.
 // Miroir site : website/src/lib/protocoles.ts — garder les deux synchronisés.
 
+/// Statuts d'un animal qui n'est plus pris en charge par la structure
+/// (cédé / adopté / transféré / décédé) : il n'est plus proposé pour un
+/// NOUVEAU protocole, un nouveau soin ou une nouvelle tâche. Ses fiches,
+/// anciens protocoles et historiques restent intacts et consultables.
+const kStatutsHorsPriseEnCharge = {'sorti', 'adopte', 'transfere', 'decede'};
+
+bool estHorsPriseEnCharge(Map<String, dynamic> a) =>
+    kStatutsHorsPriseEnCharge.contains((a['statut'] ?? '').toString());
+
 /// 'animal' | 'portee' | 'cheptel' | 'categorie' | 'locaux'
 const kPerimetres = <(String, String, String)>[
   ('animal',    'Un ou plusieurs animaux', 'Choisis maintenant ou au moment d’appliquer'),

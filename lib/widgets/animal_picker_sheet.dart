@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/protocoles.dart' show estHorsPriseEnCharge;
 
 // ── Shared animal picker bottom sheet ────────────────────────────────────────
 // multiSelect=true  → returns List<Map> (checkboxes + Confirmer button)
@@ -17,6 +18,9 @@ class AnimalPickerSheet extends StatefulWidget {
   final List<Map<String, dynamic>> initialSelected;
   final Color accentColor;
   final bool showPortees;
+  /// Ne propose que les animaux encore pris en charge par la structure
+  /// (ses animaux adoptés, cédés, transférés ou décédés sont écartés).
+  final bool seulementPrisEnCharge;
 
   const AnimalPickerSheet({
     super.key,
@@ -27,6 +31,7 @@ class AnimalPickerSheet extends StatefulWidget {
     this.initialSelected = const [],
     this.accentColor = const Color(0xFF0C5C6C),
     this.showPortees = true,
+    this.seulementPrisEnCharge = false,
   }) : assert(uid != null || preloaded != null, 'Provide uid or preloaded');
 
   /// Single-select convenience: opens sheet and returns the chosen animal or null.
@@ -66,6 +71,7 @@ class AnimalPickerSheet extends StatefulWidget {
     List<Map<String, dynamic>> current = const [],
     Color accentColor = const Color(0xFF0C5C6C),
     bool showPortees = true,
+    bool seulementPrisEnCharge = false,
   }) async {
     final result = await showModalBottomSheet<dynamic>(
       context: context,
@@ -79,6 +85,7 @@ class AnimalPickerSheet extends StatefulWidget {
         initialSelected: current,
         accentColor: accentColor,
         showPortees: showPortees,
+        seulementPrisEnCharge: seulementPrisEnCharge,
       ),
     );
     if (result is List) return List<Map<String, dynamic>>.from(result);
@@ -129,7 +136,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       final pid = widget.profileId;
 
       var q = supa.from('animaux')
-          .select('id, nom, espece, race, photo_url, portee_id, nom_mere')
+          .select('id, nom, espece, race, photo_url, portee_id, nom_mere, statut, uid_eleveur')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid != null && pid.isNotEmpty) q = q.eq('profile_id', pid);
       final directRows = await q;
@@ -152,6 +159,12 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
         viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
       }
 
+      // Animal de la structure parti (adopté, cédé…) : plus proposé. Ses
+      // historiques restent intacts ; l'animal d'un particulier (statut
+      // « adopté » chez lui) n'est pas concerné.
+      if (widget.seulementPrisEnCharge) {
+        direct.removeWhere((a) => a['uid_eleveur'] == uid && estHorsPriseEnCharge(a));
+      }
       final rows = [...direct, ...viaCession]..sort((a, b) => (a['nom']?.toString() ?? '').compareTo(b['nom']?.toString() ?? ''));
       if (mounted) {
         setState(() {

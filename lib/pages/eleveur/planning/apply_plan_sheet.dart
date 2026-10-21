@@ -115,13 +115,18 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
       final supa = Supabase.instance.client;
       final espece = widget.template['espece'] as String?;
       final pid = widget.eleveurProfileIdOverride ?? User_Info.activeProfileId;
-      var q = supa.from('animaux').select('id, nom, espece, sexe, photo_url').eq('uid_eleveur', widget.uid);
+      var q = supa.from('animaux').select('id, nom, espece, sexe, photo_url, statut').eq('uid_eleveur', widget.uid);
       if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
       if (pid.isNotEmpty) q = q.eq('profile_id', pid);
       final rows = await q.order('nom');
+      // Seuls les animaux encore pris en charge (pas adoptés, cédés…).
+      final actifs = List<Map<String, dynamic>>.from(rows).where((a) => !estHorsPriseEnCharge(a)).toList();
       if (mounted) {
         setState(() {
-          _animaux = List<Map<String, dynamic>>.from(rows);
+          _animaux = actifs;
+          // Un animal par défaut du protocole parti depuis n'est plus coché.
+          final ids = actifs.map((a) => a['id'].toString()).toSet();
+          _selectedIds.removeWhere((id) => !ids.contains(id));
           _loadingRefs = false;
         });
       }
