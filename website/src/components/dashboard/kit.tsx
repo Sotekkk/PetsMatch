@@ -57,6 +57,7 @@ const TRACES: Record<string, React.ReactNode> = {
   renouveler: <><path d="M20 11a8 8 0 00-14.3-4.9L4 8" /><path d="M4 4v4h4M4 13a8 8 0 0014.3 4.9L20 16" /><path d="M20 20v-4h-4" /></>,
   corbeille: <><path d="M4 7h16M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13M9 7V4h6v3" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
+  points: <><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></>,
   caisse: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M3 11h18M9 7V5h6v2M7 15h2M15 15h2" /></>,
   sac: <><path d="M6 8h12l-1 12H7z" /><path d="M9 8V6a3 3 0 016 0v2" /></>,
   enveloppe: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></>,

@@ -59,6 +59,8 @@ import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/widgets/conge_date_range_sheet.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart' show AddTacheSheet;
 
+part 'equipe_association_tab.dart';
+
 // ─── Libellé de structure pour les notifications d'invitation ────────────────
 
 const _structureLabels = <String, String>{
@@ -155,7 +157,7 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final title = widget.isAssociation
-        ? 'Employés & Bénévoles'
+        ? 'Équipe'
         : widget.profileType == 'veterinaire' ? 'Mon équipe' : 'Employés';
     return Scaffold(
       backgroundColor: _bg,
@@ -185,8 +187,12 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
       body: TabBarView(
         controller: _tab,
         children: [
-          _EmployesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
-              isAssociation: widget.isAssociation, profileType: widget.profileType),
+          // Association : vue Équipe dédiée (filtres, recherche, statut),
+          // miroir de la page /association/equipe du site.
+          widget.isAssociation
+              ? _EquipeAssociationTab(teal: _teal, dark: _dark, bg: _bg)
+              : _EmployesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
+                  isAssociation: widget.isAssociation, profileType: widget.profileType),
           _TachesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
               isAssociation: widget.isAssociation, profileType: widget.profileType),
           _CongesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
@@ -1557,7 +1563,9 @@ class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Saisir un employé',
+            Text(widget.profilSource == 'association'
+                    ? (widget.type == 'benevole' ? 'Nouveau bénévole' : 'Nouvel employé')
+                    : 'Saisir un employé',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
             const SizedBox(height: 16),
             Row(children: [
@@ -2350,24 +2358,7 @@ class _CongesTabState extends State<_CongesTab> {
   }
 
   Future<void> _repondre(Map<String, dynamic> conge, bool approuve) async {
-    await _supa.from('employe_conges')
-        .update({'statut': approuve ? 'approuve' : 'refuse'}).eq('id', conge['id']);
-    final employe = conge['_employe'] as Map<String, dynamic>?;
-    final employeUid = employe?['uid_employe'] as String?;
-    if (employeUid != null) {
-      final employeProfileId = employe?['employe_profile_id'] as String?;
-      await _supa.from('notifications').insert({
-        'uid':   employeUid,
-        'type':  'conge_reponse',
-        'title': approuve ? 'Congé approuvé' : 'Congé refusé',
-        'body':  approuve
-            ? 'Votre demande de congé du ${_fmt(conge['date_debut'] as String?)} au ${_fmt(conge['date_fin'] as String?)} a été approuvée.'
-            : 'Votre demande de congé du ${_fmt(conge['date_debut'] as String?)} au ${_fmt(conge['date_fin'] as String?)} a été refusée.',
-        if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
-        'data':  {'congeId': conge['id'].toString(), 'approved': approuve},
-        'read':  false,
-      });
-    }
+    await repondreConge(_supa, conge, approuve, _fmt);
     _load();
   }
 
@@ -2485,8 +2476,9 @@ class _CongeCard extends StatelessWidget {
   final String Function(String?) fmt;
   final VoidCallback? onApprouver;
   final VoidCallback? onRefuser;
+  final VoidCallback? onSupprimer;
   const _CongeCard({required this.conge, required this.nom, required this.dark, required this.teal,
-      required this.fmt, this.onApprouver, this.onRefuser});
+      required this.fmt, this.onApprouver, this.onRefuser, this.onSupprimer});
 
   @override
   Widget build(BuildContext context) {
@@ -2512,6 +2504,13 @@ class _CongeCard extends StatelessWidget {
             decoration: BoxDecoration(color: style.bg, borderRadius: BorderRadius.circular(8)),
             child: Text(style.label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: style.color)),
           ),
+          if (onSupprimer != null)
+            IconButton(
+              tooltip: 'Supprimer',
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.close_rounded, size: 18, color: Colors.grey.shade500),
+              onPressed: onSupprimer,
+            ),
         ]),
         const SizedBox(height: 4),
         Text('${fmt(conge['date_debut'] as String?)} → ${fmt(conge['date_fin'] as String?)}',
@@ -5913,6 +5912,29 @@ class _CommentBubble extends StatelessWidget {
 }
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
+
+/// Approuve / refuse un congé et prévient l'employé (onglet Congés et congés
+/// d'un membre). `conge['_employe']` = la ligne employes de la relation.
+Future<void> repondreConge(SupabaseClient supa, Map<String, dynamic> conge, bool approuve, String Function(String?) fmt) async {
+  await supa.from('employe_conges')
+      .update({'statut': approuve ? 'approuve' : 'refuse'}).eq('id', conge['id']);
+  final employe = conge['_employe'] as Map<String, dynamic>?;
+  final employeUid = employe?['uid_employe'] as String?;
+  if (employeUid != null && employeUid.isNotEmpty) {
+    final employeProfileId = employe?['employe_profile_id'] as String?;
+    await supa.from('notifications').insert({
+      'uid':   employeUid,
+      'type':  'conge_reponse',
+      'title': approuve ? 'Congé approuvé' : 'Congé refusé',
+      'body':  approuve
+          ? 'Votre demande de congé du ${fmt(conge['date_debut'] as String?)} au ${fmt(conge['date_fin'] as String?)} a été approuvée.'
+          : 'Votre demande de congé du ${fmt(conge['date_debut'] as String?)} au ${fmt(conge['date_fin'] as String?)} a été refusée.',
+      if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
+      'data':  {'congeId': conge['id'].toString(), 'approved': approuve},
+      'read':  false,
+    });
+  }
+}
 
 Widget _empty(String title, String subtitle) => Center(
   child: Padding(

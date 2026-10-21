@@ -2,12 +2,18 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { Icone } from '@/components/dashboard/kit';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
+
+// Équipe de l'association active (employés + bénévoles). Miroir appli :
+// _EquipeAssociationTab (employes_page.dart) — mêmes filtres, mêmes
+// libellés, mêmes actions. Toutes les lectures / écritures passent par le
+// profil d'association actif (eleveur_profile_id), jamais par le seul uid.
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -17,30 +23,6 @@ interface Tache {
   date?: string;
   statut?: string;
   animal_nom?: string;
-}
-
-interface Benevole {
-  id: string;
-  uid_employe?: string;
-  employe_profile_id?: string | null;
-  prenom: string;
-  nom: string;
-  email?: string;
-  telephone?: string;
-  notes?: string;
-  actif: boolean;
-  photo?: string | null;
-  taches?: Tache[];
-}
-
-interface Employe {
-  id: string;
-  uid_employe: string;
-  employe_profile_id?: string | null;
-  actif: boolean;
-  nom: string;
-  photo?: string | null;
-  taches?: Tache[];
 }
 
 interface UserProfile {
@@ -53,7 +35,6 @@ interface UserProfile {
   profile_picture_url_elevage: string | null;
   phone_number?: string | null;
 }
-
 
 interface MembreEquipe {
   id: string;
@@ -70,132 +51,120 @@ interface MembreEquipe {
   taches?: Tache[];
 }
 
-const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey focus:outline-none focus:outline-none focus:border-[#0C5C6C]';
+type FiltreRole = 'tous' | 'employe' | 'benevole';
+type FiltreStatut = 'actifs' | 'inactifs' | 'tous';
 
-// Charge les tâches depuis plan_taches ET taches_elevage pour un uid_employe
-async function fetchTachesPersonne(uid_employe: string, uid_eleveur: string): Promise<Tache[]> {
-  const [planRes, tacheRes] = await Promise.all([
-    supabase.from('plan_taches')
-      .select('id, label, type_acte, date_prevue, statut, animal_nom')
-      .eq('assigned_to', uid_employe)
-      .eq('uid_eleveur', uid_eleveur)
-      .eq('profil_source', 'association')
-      .neq('statut', 'fait')
-      .order('date_prevue'),
-    supabase.from('taches_elevage')
-      .select('id, titre, date, statut, animal_id')
-      .eq('assigne_a', uid_employe)
-      .eq('uid_eleveur', uid_eleveur)
-      .eq('profil_source', 'association')
-      .neq('statut', 'fait')
-      .order('date'),
-  ]);
+const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-galey bg-white focus:outline-none focus:border-[#0C5C6C]';
+const btnContour = 'inline-flex items-center justify-center gap-1.5 h-10 px-4 rounded-lg border text-sm font-galey font-semibold transition-colors';
+
+// Tâches en cours d'une personne POUR l'association active : plan_taches +
+// taches_elevage, rattachées au profil (les anciennes tâches sans profil
+// restent comptées via uid_eleveur + profil_source).
+async function fetchTachesPersonne(uidEmploye: string, uidEleveur: string, profileId: string | null): Promise<Tache[]> {
+  let planQ = supabase.from('plan_taches')
+    .select('id, label, type_acte, date_prevue, statut, animal_nom')
+    .eq('assigned_to', uidEmploye).eq('uid_eleveur', uidEleveur)
+    .eq('profil_source', 'association').neq('statut', 'fait');
+  let tacheQ = supabase.from('taches_elevage')
+    .select('id, titre, date, statut, animal_nom')
+    .eq('assigne_a', uidEmploye).eq('uid_eleveur', uidEleveur)
+    .eq('profil_source', 'association').neq('statut', 'fait');
+  if (profileId) {
+    planQ = planQ.or(`eleveur_profile_id.eq.${profileId},eleveur_profile_id.is.null`);
+    tacheQ = tacheQ.or(`eleveur_profile_id.eq.${profileId},eleveur_profile_id.is.null`);
+  }
+  const [planRes, tacheRes] = await Promise.all([planQ.order('date_prevue'), tacheQ.order('date')]);
 
   const planTaches: Tache[] = (planRes.data ?? []).map((t: { id: string; label?: string; type_acte?: string; date_prevue?: string; statut?: string; animal_nom?: string }) => ({
-    id: `plan_${t.id}`,
-    label: t.label || t.type_acte || 'Tâche',
-    date: t.date_prevue,
-    statut: t.statut,
-    animal_nom: t.animal_nom,
+    id: `plan_${t.id}`, label: t.label || t.type_acte || 'Tâche',
+    date: t.date_prevue, statut: t.statut, animal_nom: t.animal_nom,
   }));
-
-  const tachesArr: Tache[] = (tacheRes.data ?? []).map((t: { id: string; titre?: string; date?: string; statut?: string }) => ({
-    id: `tache_${t.id}`,
-    label: t.titre || 'Tâche',
-    date: t.date,
-    statut: t.statut,
+  const tachesArr: Tache[] = (tacheRes.data ?? []).map((t: { id: string; titre?: string; date?: string; statut?: string; animal_nom?: string }) => ({
+    id: `tache_${t.id}`, label: t.titre || 'Tâche',
+    date: t.date, statut: t.statut, animal_nom: t.animal_nom ?? undefined,
   }));
-
   return [...planTaches, ...tachesArr];
 }
 
-// ── Page principale ───────────────────────────────────────────────────────────
+const nomMembre = (m: MembreEquipe) =>
+  `${m.prenom} ${m.nom}`.trim() || (m.type === 'benevole' ? 'Bénévole' : 'Employé');
+
+const resumeTaches = (n: number) => n === 0 ? 'Aucune tâche' : `${n} tâche${n > 1 ? 's' : ''} en cours`;
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function EquipeWebPage() {
   const { user } = useAuth();
   const uid = user?.uid ?? '';
   const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
-
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold font-galey text-[#1F2A2E] mb-6">Équipe</h1>
-      {profileLoaded && <EquipeUnifiee uid={uid} profileId={profileId} />}
-    </div>
-  );
+  // key = profil : un changement de profil repart d'un état vide (aucun
+  // résultat du profil précédent ne reste affiché).
+  return profileLoaded && uid ? <EquipeUnifiee key={profileId ?? 'principal'} uid={uid} profileId={profileId} /> : null;
 }
 
-// ── Vue unifiée équipe ────────────────────────────────────────────────────────
+// ── Vue équipe ────────────────────────────────────────────────────────────────
 
 function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | null }) {
   const [membres, setMembres] = useState<MembreEquipe[]>([]);
+  const [nomAsso, setNomAsso] = useState('');
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [showAddEmploye, setShowAddEmploye] = useState(false);
-  const [showAddBenevole, setShowAddBenevole] = useState(false);
-  const [showFormBenevole, setShowFormBenevole] = useState(false);
-  const [showFormEmploye, setShowFormEmploye] = useState(false);
+  const [menuOuvert, setMenuOuvert] = useState<string | null>(null);
+  const [ajout, setAjout] = useState(false);
+  const [recherchePetsMatch, setRecherchePetsMatch] = useState<'employe' | 'benevole' | null>(null);
   const [editing, setEditing] = useState<MembreEquipe | null>(null);
   const [assigning, setAssigning] = useState<MembreEquipe | null>(null);
   const [congeFor, setCongeFor] = useState<MembreEquipe | null>(null);
-  const [form, setForm] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
-  const [formEmploye, setFormEmploye] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
-  const [saving, setSaving] = useState(false);
+  const [role, setRole] = useState<FiltreRole>('tous');
+  const [statut, setStatut] = useState<FiltreStatut>('actifs');
+  const [recherche, setRecherche] = useState('');
 
   const load = useCallback(async () => {
-    if (!uid) return;
     setLoading(true);
     setDbError(null);
     try {
-      // Requête par eleveur_profile_id si disponible, sinon uid_eleveur
-      let q = supabase.from('employes').select('*').eq('actif', true).eq('profil_source', 'association').order('created_at');
-      if (profileId) {
-        q = q.eq('eleveur_profile_id', profileId) as typeof q;
-      } else {
-        q = q.eq('uid_eleveur', uid) as typeof q;
-      }
-      const { data: rows, error } = await q;
+      // Actifs ET inactifs (filtre « Statut ») de l'association active.
+      let q = supabase.from('employes').select('*').eq('profil_source', 'association').order('created_at');
+      q = profileId ? q.eq('eleveur_profile_id', profileId) : q.eq('uid_eleveur', uid);
+      const [{ data: rows, error }, { data: asso }] = await Promise.all([
+        q,
+        profileId
+          ? supabase.from('user_profiles_complet').select('nom').eq('id', profileId).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      if (error) { setDbError(`${error.message} (${error.code})`); return; }
+      setNomAsso(((asso as { nom?: string } | null)?.nom ?? '').trim());
 
-      if (error) { setDbError(`${error.message} (${error.code})`); setLoading(false); return; }
-
-      const result: MembreEquipe[] = [];
-      for (const row of (rows ?? [])) {
+      const result = await Promise.all((rows ?? []).map(async (row): Promise<MembreEquipe> => {
         const isBenevole = row.type === 'benevole';
         let nom = row.nom ?? '';
         let prenom = row.prenom ?? '';
         let photo: string | null = null;
-        let email = row.email ?? undefined;
-        const telephone = row.telephone ?? undefined;
         let taches: Tache[] = [];
-
         if (row.uid_employe) {
-          const { data: p } = await supabase.from('user_profiles_complet')
-            .select('firstname, lastname, nom, profile_label, avatar_url, profile_picture_url_pro')
-            .eq('uid', row.uid_employe)
-            .eq('profile_type', 'particulier')
-            .maybeSingle();
-
-          const fullNom = p?.profile_label?.trim()
-            || p?.nom?.trim()
+          const [{ data: p }, t] = await Promise.all([
+            supabase.from('user_profiles_complet')
+              .select('firstname, lastname, nom, profile_label, avatar_url, profile_picture_url_pro')
+              .eq('uid', row.uid_employe).eq('profile_type', 'particulier').maybeSingle(),
+            fetchTachesPersonne(row.uid_employe, uid, profileId),
+          ]);
+          const fullNom = p?.profile_label?.trim() || p?.nom?.trim()
             || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim()
             || (isBenevole ? 'Bénévole' : 'Employé');
           prenom = fullNom.split(' ')[0] ?? fullNom;
           nom = fullNom.split(' ').slice(1).join(' ') || '';
           photo = p?.avatar_url || p?.profile_picture_url_pro || null;
-          taches = await fetchTachesPersonne(row.uid_employe, uid);
+          taches = t;
         }
-
-        result.push({
-          id: row.id,
-          uid_employe: row.uid_employe ?? undefined,
+        return {
+          id: row.id, uid_employe: row.uid_employe ?? undefined,
           employe_profile_id: row.employe_profile_id ?? null,
           type: isBenevole ? 'benevole' : 'employe',
-          nom, prenom, email, telephone,
-          notes: row.notes ?? undefined,
-          actif: row.actif ?? true,
-          photo, taches,
-        });
-      }
+          nom, prenom, email: row.email ?? undefined, telephone: row.telephone ?? undefined,
+          notes: row.notes ?? undefined, actif: row.actif ?? true, photo, taches,
+        };
+      }));
       setMembres(result);
     } finally {
       setLoading(false);
@@ -204,239 +173,380 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
 
   useEffect(() => { load(); }, [load]);
 
-  const handleAddBenevoleManuel = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uid || !form.prenom.trim() || !form.nom.trim()) return;
-    setSaving(true);
-    const { error } = await supabase.from('employes').insert({
-      uid_eleveur: uid, prenom: form.prenom.trim(), nom: form.nom.trim(),
-      email: form.email.trim() || null, telephone: form.telephone.trim() || null,
-      notes: form.notes.trim() || null, actif: true, type: 'benevole', profil_source: 'association',
-      ...(profileId ? { eleveur_profile_id: profileId } : {}),
-    });
-    setSaving(false);
-    if (error) { alert(`Erreur: ${error.message}`); return; }
-    setForm({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
-    setShowFormBenevole(false);
-    load();
-  };
+  // Menu « … » : fermé au clic extérieur ou avec Échap.
+  useEffect(() => {
+    if (!menuOuvert) return;
+    const fermer = () => setMenuOuvert(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') fermer(); };
+    document.addEventListener('click', fermer);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('click', fermer); document.removeEventListener('keydown', onKey); };
+  }, [menuOuvert]);
 
-  const handleAddEmployeManuel = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uid || !formEmploye.prenom.trim() || !formEmploye.nom.trim()) return;
-    setSaving(true);
-    const { error } = await supabase.from('employes').insert({
-      uid_eleveur: uid, prenom: formEmploye.prenom.trim(), nom: formEmploye.nom.trim(),
-      email: formEmploye.email.trim() || null, telephone: formEmploye.telephone.trim() || null,
-      notes: formEmploye.notes.trim() || null, actif: true, type: 'employe', profil_source: 'association',
-      ...(profileId ? { eleveur_profile_id: profileId } : {}),
-    });
-    setSaving(false);
-    if (error) { alert(`Erreur: ${error.message}`); return; }
-    setFormEmploye({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
-    setShowFormEmploye(false);
-    load();
-  };
-
-  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string, employeProfileId?: string | null) => {
-    await supabase.from('employes').update({ actif: !actif }).eq('id', id);
-    if (actif && uidEmploye) {
+  // Désactiver : la personne perd l'accès à l'équipe (miroir appli), ses
+  // tâches et congés restent dans l'historique. Réactiver la remet en place.
+  const desactiver = async (m: MembreEquipe) => {
+    if (!confirm(`Désactiver ${nomMembre(m)} ? La personne n'aura plus accès à l'équipe. Ses tâches et congés restent dans l'historique.`)) return;
+    await supabase.from('employes').update({ actif: false }).eq('id', m.id);
+    if (m.employe_profile_id) {
+      await supabase.from('animaux')
+        .update({ chaleurs_responsable_uid: null, chaleurs_responsable_profile_id: null })
+        .eq('chaleurs_responsable_profile_id', m.employe_profile_id);
+    }
+    if (m.uid_employe) {
       await supabase.from('notifications').insert({
-        uid: uidEmploye, type: 'employee_revoked',
-        title: 'Statut bénévole modifié',
-        body: 'Votre statut de bénévole a été désactivé',
-        ...(employeProfileId ? { profile_id: employeProfileId } : {}),
-        data: {},
+        uid: m.uid_employe, type: 'employee_revoked',
+        title: 'Accès retiré',
+        body: `Vous avez été retiré de l'équipe de ${nomAsso || "l'association"}`,
+        ...(m.employe_profile_id ? { profile_id: m.employe_profile_id } : {}),
+        data: { eleveurUid: uid },
         read: false,
       });
     }
     load();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce membre ?')) return;
-    await supabase.from('employes').delete().eq('id', id);
+  const reactiver = async (m: MembreEquipe) => {
+    await supabase.from('employes').update({ actif: true }).eq('id', m.id);
     load();
   };
 
-  const actifs   = membres.filter(m => m.actif);
-  const inactifs = membres.filter(m => !m.actif);
+  const supprimer = async (m: MembreEquipe) => {
+    if (!confirm(`Supprimer ${nomMembre(m)} de l'équipe ? Cette action est définitive.`)) return;
+    await supabase.from('employes').delete().eq('id', m.id);
+    load();
+  };
+
+  // Filtres : statut + recherche d'abord (compteurs des onglets), puis rôle.
+  const q = recherche.trim().toLowerCase();
+  const visibles = membres.filter(m =>
+    (statut === 'tous' || (statut === 'actifs' ? m.actif : !m.actif)) &&
+    (!q || `${m.prenom} ${m.nom} ${m.email ?? ''} ${m.telephone ?? ''}`.toLowerCase().includes(q)));
+  const compte = {
+    tous: visibles.length,
+    employe: visibles.filter(m => m.type === 'employe').length,
+    benevole: visibles.filter(m => m.type === 'benevole').length,
+  };
+  const liste = role === 'tous' ? visibles : visibles.filter(m => m.type === role);
 
   const renderCard = (m: MembreEquipe) => {
-    const displayName = `${m.prenom} ${m.nom}`.trim() || (m.type === 'benevole' ? 'Bénévole' : 'Employé');
+    const displayName = nomMembre(m);
     const isOpen = expanded[m.id] ?? false;
     const taches = m.taches ?? [];
-
     return (
-      <div key={m.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
-          onClick={() => m.uid_employe && setExpanded(prev => ({ ...prev, [m.id]: !isOpen }))}>
-          <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
-            {m.photo
-              ? <Image src={m.photo} alt={displayName} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-              : <span className="font-bold font-galey text-sm text-[#0C5C6C]">{displayName[0]?.toUpperCase() ?? '?'}</span>}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-semibold font-galey text-gray-900 text-sm truncate">{displayName}</p>
-              {/* Flag type */}
-              <span className={`text-xs px-2 py-0.5 rounded-full font-galey font-semibold ${m.type === 'benevole' ? 'bg-purple-100 text-purple-700' : 'bg-teal-100 text-[#0C5C6C]'}`}>
-                {m.type === 'benevole' ? 'Bénévole' : 'Employé'}
-              </span>
+      <div key={m.id} className="bg-white rounded-xl border border-gray-200/80 shadow-[0_1px_3px_rgba(16,24,40,0.05)]">
+        <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <button type="button" onClick={() => setExpanded(prev => ({ ...prev, [m.id]: !isOpen }))}
+            aria-expanded={isOpen}
+            className="flex items-center gap-4 flex-1 min-w-0 text-left">
+            <div className="w-14 h-14 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {m.photo
+                ? <Image src={m.photo} alt={displayName} width={56} height={56} className="w-full h-full object-cover" unoptimized />
+                : <span className="font-bold font-galey text-lg text-[#0C5C6C]">{displayName[0]?.toUpperCase() ?? '?'}</span>}
             </div>
-            <div className="flex items-center gap-3 text-xs text-gray-500 font-galey">
-              {m.email && <span>{m.email}</span>}
-              {m.telephone && <span>{m.telephone}</span>}
-            </div>
-            {m.uid_employe && (
-              <p className="text-xs text-gray-400 font-galey mt-0.5">
-                {taches.length === 0 ? 'Aucune tâche' : `${taches.length} tâche${taches.length > 1 ? 's' : ''} en cours`}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="font-semibold font-galey text-[#1F2A2E] text-base truncate">{displayName}</p>
+                <span className="text-xs px-2 py-0.5 rounded-md font-galey font-semibold bg-[#E8F4F6] text-[#0C5C6C]">
+                  {m.type === 'benevole' ? 'Bénévole' : 'Employé'}
+                </span>
+                {!m.actif && (
+                  <span className="text-xs px-2 py-0.5 rounded-md font-galey font-semibold bg-gray-100 text-gray-600">Inactif</span>
+                )}
+              </div>
+              {(m.telephone || m.email) && (
+                <p className="text-sm text-gray-600 font-galey mt-0.5 truncate">
+                  {[m.telephone, m.email].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              <p className="text-sm text-gray-500 font-galey mt-0.5">
+                {m.uid_employe ? resumeTaches(taches.length) : 'Sans compte PetsMatch'}
               </p>
-            )}
-          </div>
-          {m.uid_employe && <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>}
-          {m.uid_employe && (
-            <button onClick={ev => { ev.stopPropagation(); setAssigning(m); }}
-              className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
-              + Tâche
-            </button>
-          )}
-          <button onClick={ev => { ev.stopPropagation(); setCongeFor(m); }}
-            className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
-            Congé
+            </div>
+            <Icone nom="fleche" taille={16} className={`text-gray-400 flex-shrink-0 transition-transform ${isOpen ? '-rotate-90' : 'rotate-90'}`} />
           </button>
-          <button onClick={ev => { ev.stopPropagation(); setEditing(m); }}
-            className="text-gray-500 hover:text-[#0C5C6C] px-1.5 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors" aria-label="Modifier" title="Modifier"><Icone nom="crayon" taille={15} /></button>
-          <button onClick={ev => { ev.stopPropagation(); handleDelete(m.id); }}
-            className="text-gray-400 hover:text-red-600 px-1" aria-label="Supprimer" title="Supprimer"><Icone nom="corbeille" taille={15} /></button>
+
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:flex-shrink-0">
+            {m.uid_employe && m.actif && (
+              <button type="button" onClick={() => setAssigning(m)}
+                className={`${btnContour} border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6]`}>
+                <Icone nom="plus" taille={15} /> Tâche
+              </button>
+            )}
+            <button type="button" onClick={() => setCongeFor(m)}
+              className={`${btnContour} border-gray-300 text-gray-700 hover:bg-gray-50`}>
+              Congé
+            </button>
+            <button type="button" onClick={() => setEditing(m)} aria-label="Modifier" title="Modifier"
+              className="w-10 h-10 inline-flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 hover:text-[#0C5C6C]">
+              <Icone nom="crayon" taille={18} />
+            </button>
+            <div className="relative">
+              <button type="button" aria-label="Plus d'actions" title="Plus d'actions" aria-haspopup="menu" aria-expanded={menuOuvert === m.id}
+                onClick={e => { e.stopPropagation(); setMenuOuvert(menuOuvert === m.id ? null : m.id); }}
+                className="w-10 h-10 inline-flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100">
+                <Icone nom="points" taille={18} />
+              </button>
+              {menuOuvert === m.id && (
+                <div role="menu" onClick={e => e.stopPropagation()}
+                  className="absolute right-0 top-11 z-20 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-1">
+                  {m.actif ? (
+                    <button role="menuitem" onClick={() => { setMenuOuvert(null); desactiver(m); }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-galey text-gray-700 hover:bg-gray-50">Désactiver</button>
+                  ) : (
+                    <button role="menuitem" onClick={() => { setMenuOuvert(null); reactiver(m); }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-galey text-gray-700 hover:bg-gray-50">Réactiver</button>
+                  )}
+                  <button role="menuitem" onClick={() => { setMenuOuvert(null); supprimer(m); }}
+                    className="w-full text-left px-4 py-2.5 text-sm font-galey text-red-600 hover:bg-red-50">Supprimer</button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        {isOpen && m.uid_employe && (
-          <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
-            {taches.length === 0
-              ? <p className="text-xs text-gray-400 text-center py-2 font-galey">Aucune tâche assignée</p>
-              : taches.map(t => <TacheRow key={t.id} t={t} />)}
+        {isOpen && (
+          <div className="border-t border-gray-100 bg-gray-50/70 px-4 sm:px-5 py-4 space-y-3 rounded-b-xl">
+            <div className="grid sm:grid-cols-3 gap-3 text-sm font-galey">
+              <div><p className="text-xs text-gray-500">Téléphone</p><p className="text-[#1F2A2E]">{m.telephone || 'Non renseigné'}</p></div>
+              <div><p className="text-xs text-gray-500">Email</p><p className="text-[#1F2A2E] break-all">{m.email || 'Non renseigné'}</p></div>
+              <div><p className="text-xs text-gray-500">Notes</p><p className="text-[#1F2A2E] whitespace-pre-line">{m.notes || 'Aucune note'}</p></div>
+            </div>
+            {m.uid_employe && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 font-galey">Tâches en cours</p>
+                {taches.length === 0
+                  ? <p className="text-sm text-gray-500 font-galey">Aucune tâche</p>
+                  : taches.map(t => <TacheRow key={t.id} t={t} />)}
+              </div>
+            )}
           </div>
         )}
       </div>
     );
   };
 
-  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
-
   return (
-    <div className="space-y-4">
-      {dbError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-galey break-all">
-          {dbError} — uid: {uid || '(vide)'}
-        </div>
-      )}
+    <div className="space-y-6">
+      <nav aria-label="Fil d'Ariane" className="text-sm font-galey text-gray-500">
+        <Link href="/association" className="hover:text-[#0C5C6C]">Mon association</Link>
+        <span className="mx-2">/</span>
+        <span className="text-[#1F2A2E]">Équipe</span>
+      </nav>
 
-      {/* Boutons d'ajout — deux méthodes pour chaque fonction : recherche PetsMatch ou saisie manuelle */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-galey font-semibold text-gray-400 uppercase tracking-wide w-full sm:w-auto">Employés</span>
-          <button onClick={() => setShowAddEmploye(true)}
-            className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
-            Chercher sur PetsMatch
-          </button>
-          <button onClick={() => setShowFormEmploye(!showFormEmploye)}
-            className="border border-[#0C5C6C]/40 text-[#0C5C6C] px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#E8F4F6] transition-colors">
-            + Ajouter manuellement
-          </button>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold font-galey text-[#1F2A2E]">Équipe</h1>
+          <p className="text-gray-600 font-galey mt-1">Gérez les employés et les bénévoles de votre association.</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-galey font-semibold text-gray-400 uppercase tracking-wide w-full sm:w-auto">Bénévoles</span>
-          <button onClick={() => setShowAddBenevole(true)}
-            className="bg-purple-600 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-700 transition-colors">
-            Chercher sur PetsMatch
-          </button>
-          <button onClick={() => setShowFormBenevole(!showFormBenevole)}
-            className="border border-purple-400 text-purple-600 px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-purple-50 transition-colors">
-            + Ajouter manuellement
-          </button>
-        </div>
+        <button type="button" onClick={() => setAjout(true)}
+          className="inline-flex items-center justify-center gap-2 h-12 px-5 rounded-xl bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-galey font-semibold transition-colors w-full sm:w-auto">
+          <Icone nom="plus" taille={18} /> Ajouter un membre
+        </button>
       </div>
 
-      {showFormEmploye && (
-        <form onSubmit={handleAddEmployeManuel} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-[#0C5C6C]/20">
-          <h2 className="font-bold font-galey text-[#1F2A2E]">Nouvel employé</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <input placeholder="Prénom *" required value={formEmploye.prenom} onChange={e => setFormEmploye({ ...formEmploye, prenom: e.target.value })} className={inp} />
-            <input placeholder="Nom *" required value={formEmploye.nom} onChange={e => setFormEmploye({ ...formEmploye, nom: e.target.value })} className={inp} />
-            <input placeholder="Email" type="email" value={formEmploye.email} onChange={e => setFormEmploye({ ...formEmploye, email: e.target.value })} className={inp} />
-            <input placeholder="Téléphone" value={formEmploye.telephone} onChange={e => setFormEmploye({ ...formEmploye, telephone: e.target.value })} className={inp} />
-          </div>
-          <textarea placeholder="Notes" rows={2} value={formEmploye.notes} onChange={e => setFormEmploye({ ...formEmploye, notes: e.target.value })} className={inp + ' resize-none'} />
-          <div className="flex gap-3">
-            <button type="submit" disabled={saving} className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
-              {saving ? 'Enregistrement…' : 'Ajouter'}
-            </button>
-            <button type="button" onClick={() => setShowFormEmploye(false)} className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
-              Annuler
-            </button>
-          </div>
-        </form>
+      {dbError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-galey break-all">{dbError}</div>
       )}
 
-      {showFormBenevole && (
-        <form onSubmit={handleAddBenevoleManuel} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-purple-100">
-          <h2 className="font-bold font-galey text-purple-800">Nouveau bénévole</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <input placeholder="Prénom *" required value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} />
-            <input placeholder="Nom *" required value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} />
-            <input placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={inp} />
-            <input placeholder="Téléphone" value={form.telephone} onChange={e => setForm({ ...form, telephone: e.target.value })} className={inp} />
-          </div>
-          <textarea placeholder="Notes" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className={inp + ' resize-none'} />
-          <div className="flex gap-3">
-            <button type="submit" disabled={saving} className="bg-purple-600 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-700 disabled:opacity-50">
-              {saving ? 'Enregistrement…' : 'Ajouter'}
-            </button>
-            <button type="button" onClick={() => setShowFormBenevole(false)} className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
-              Annuler
-            </button>
-          </div>
-        </form>
-      )}
+      <div role="tablist" className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {([['tous', 'Tous'], ['employe', 'Employés'], ['benevole', 'Bénévoles']] as const).map(([v, l]) => (
+          <button key={v} type="button" role="tab" aria-selected={role === v} onClick={() => setRole(v)}
+            className={`-mb-px px-4 sm:px-6 py-3 font-galey text-[15px] whitespace-nowrap border-b-2 transition-colors ${
+              role === v ? 'border-[#0C5C6C] text-[#0C5C6C] font-semibold' : 'border-transparent text-gray-600 hover:text-[#1F2A2E]'}`}>
+            {l} ({compte[v]})
+          </button>
+        ))}
+      </div>
 
-      {/* Liste actifs */}
-      {actifs.length === 0 && inactifs.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <p className="font-galey">Aucun membre dans votre équipe</p>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <label className="relative flex-1 sm:max-w-md">
+          <span className="sr-only">Rechercher un membre</span>
+          <Icone nom="recherche" taille={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={recherche} onChange={e => setRecherche(e.target.value)} placeholder="Rechercher un membre"
+            className={`${inp} h-12 pl-11`} />
+        </label>
+        <label className="sm:w-56">
+          <span className="sr-only">Statut</span>
+          <select value={statut} onChange={e => setStatut(e.target.value as FiltreStatut)} className={`${inp} h-12`}>
+            <option value="actifs">Actifs</option>
+            <option value="inactifs">Inactifs</option>
+            <option value="tous">Tous les statuts</option>
+          </select>
+        </label>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
+      ) : membres.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200/80 p-10 text-center font-galey">
+          <p className="font-semibold text-[#1F2A2E]">Aucun membre dans votre équipe</p>
+          <p className="text-sm text-gray-500 mt-1">Ajoutez un employé ou un bénévole avec « Ajouter un membre ».</p>
+        </div>
+      ) : liste.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200/80 p-10 text-center font-galey">
+          <p className="font-semibold text-[#1F2A2E]">Aucun membre ne correspond à votre recherche</p>
+          <p className="text-sm text-gray-500 mt-1">Modifiez la recherche ou les filtres.</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {actifs.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-galey text-gray-400 uppercase tracking-wide">Actifs ({actifs.length})</p>
-              {actifs.map(m => renderCard(m))}
-            </div>
-          )}
-          {inactifs.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-galey text-gray-400 uppercase tracking-wide">Inactifs ({inactifs.length})</p>
-              {inactifs.map(m => renderCard(m))}
-            </div>
-          )}
-        </div>
+        <div className="space-y-3">{liste.map(renderCard)}</div>
       )}
 
-      {showAddEmploye && <AddPetsMatchModal uid={uid} eleveurProfileId={profileId} type="employe" onClose={() => { setShowAddEmploye(false); load(); }} />}
-      {showAddBenevole && <AddPetsMatchModal uid={uid} eleveurProfileId={profileId} type="benevole" onClose={() => { setShowAddBenevole(false); load(); }} />}
-      {editing && (
-        editing.type === 'benevole'
-          ? <EditBenevoleModal benevole={{ ...editing, id: editing.id, prenom: editing.prenom, nom: editing.nom, actif: editing.actif }} onClose={() => { setEditing(null); load(); }} />
-          : <EditEmployeModal employe={{ id: editing.id, uid_employe: editing.uid_employe!, nom: `${editing.prenom} ${editing.nom}`.trim(), actif: editing.actif }} onClose={() => { setEditing(null); load(); }} />
+      {ajout && (
+        <AjoutMembreModal uid={uid} profileId={profileId}
+          onChercher={type => { setAjout(false); setRecherchePetsMatch(type); }}
+          onClose={ajoute => { setAjout(false); if (ajoute) load(); }} />
       )}
+      {recherchePetsMatch && (
+        <AddPetsMatchModal uid={uid} eleveurProfileId={profileId} type={recherchePetsMatch}
+          onClose={() => { setRecherchePetsMatch(null); load(); }} />
+      )}
+      {editing && <EditMembreModal membre={editing} onClose={() => { setEditing(null); load(); }} />}
       {assigning && assigning.uid_employe && (
         <AssignTaskModal uid={uid} assigneeUid={assigning.uid_employe}
-          assigneeName={`${assigning.prenom} ${assigning.nom}`.trim()}
           onClose={() => { setAssigning(null); load(); }} />
       )}
-      {congeFor && (
-        <CongeModal membre={congeFor} myUid={uid} onClose={() => setCongeFor(null)} />
-      )}
+      {congeFor && <CongeModal membre={congeFor} myUid={uid} onClose={() => setCongeFor(null)} />}
+    </div>
+  );
+}
+
+// ── Ajouter un membre : rôle, puis recherche PetsMatch ou saisie manuelle ────
+// Miroir appli : _showAddChoiceSheet + AddEmployeManuelSheet (mêmes champs).
+
+function AjoutMembreModal({ uid, profileId, onChercher, onClose }: {
+  uid: string; profileId: string | null;
+  onChercher: (type: 'employe' | 'benevole') => void;
+  onClose: (ajoute: boolean) => void;
+}) {
+  const [type, setType] = useState<'employe' | 'benevole'>('employe');
+  const [manuel, setManuel] = useState(false);
+  const [form, setForm] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
+  const [saving, setSaving] = useState(false);
+
+  const ajouter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.prenom.trim() || !form.nom.trim()) return;
+    setSaving(true);
+    const { error } = await supabase.from('employes').insert({
+      uid_eleveur: uid, prenom: form.prenom.trim(), nom: form.nom.trim(),
+      email: form.email.trim() || null, telephone: form.telephone.trim() || null,
+      notes: form.notes.trim() || null, actif: true, type, profil_source: 'association',
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
+    });
+    setSaving(false);
+    if (error) { alert(`Erreur : ${error.message}`); return; }
+    onClose(true);
+  };
+
+  const roles = [['employe', 'Employé', 'personne'], ['benevole', 'Bénévole', 'coeur']] as const;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => onClose(false)}>
+      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <h2 className="font-bold font-galey text-[#1F2A2E]">
+            {manuel ? (type === 'benevole' ? 'Nouveau bénévole' : 'Nouvel employé') : 'Ajouter un membre'}
+          </h2>
+          <button onClick={() => onClose(false)} aria-label="Fermer" className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        {!manuel ? (
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {roles.map(([v, l, ic]) => (
+                <button key={v} type="button" onClick={() => setType(v)} aria-pressed={type === v}
+                  className={`flex flex-col items-center gap-1.5 py-3 rounded-xl border font-galey font-semibold transition-colors ${
+                    type === v ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6]'}`}>
+                  <Icone nom={ic} taille={20} /> {l}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => onChercher(type)}
+              className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] font-galey font-semibold hover:bg-[#E8F4F6]">
+              <Icone nom="recherche" taille={18} /> Chercher sur PetsMatch
+            </button>
+            <button type="button" onClick={() => setManuel(true)}
+              className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-galey font-semibold">
+              <Icone nom="crayon" taille={18} /> Ajouter manuellement
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={ajouter} className="p-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <input placeholder="Prénom *" required value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} />
+              <input placeholder="Nom *" required value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} />
+            </div>
+            <input placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={inp} />
+            <input placeholder="Téléphone" value={form.telephone} onChange={e => setForm({ ...form, telephone: e.target.value })} className={inp} />
+            <textarea placeholder="Notes" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className={`${inp} resize-none`} />
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setManuel(false)}
+                className="flex-1 h-11 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-galey">Retour</button>
+              <button type="submit" disabled={saving}
+                className="flex-[1.4] h-11 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white rounded-xl text-sm font-galey font-semibold">
+                {saving ? 'Enregistrement…' : 'Ajouter'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Modifier un membre ────────────────────────────────────────────────────────
+// Prénom / nom modifiables pour un membre saisi à la main (ceux d'un compte
+// PetsMatch viennent de son profil). Miroir appli : _EditMembreSheet.
+
+function EditMembreModal({ membre, onClose }: { membre: MembreEquipe; onClose: () => void }) {
+  const [form, setForm] = useState({
+    prenom: membre.prenom, nom: membre.nom,
+    email: membre.email ?? '', telephone: membre.telephone ?? '', notes: membre.notes ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    await supabase.from('employes').update({
+      ...(!membre.uid_employe ? { prenom: form.prenom.trim() || null, nom: form.nom.trim() || null } : {}),
+      email: form.email.trim() || null,
+      telephone: form.telephone.trim() || null,
+      notes: form.notes.trim() || null,
+    }).eq('id', membre.id);
+    setSaving(false);
+    onClose();
+  }
+
+  const libelle = 'text-xs font-semibold text-gray-500 mb-1 block font-galey';
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <h2 className="font-bold font-galey text-[#1F2A2E] truncate">Modifier — {nomMembre(membre)}</h2>
+          <button onClick={onClose} aria-label="Fermer" className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+        <form onSubmit={save} className="p-5 space-y-3">
+          {!membre.uid_employe && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={libelle}>Prénom</label><input value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} /></div>
+              <div><label className={libelle}>Nom</label><input value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} /></div>
+            </div>
+          )}
+          <div><label className={libelle}>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={inp} /></div>
+          <div><label className={libelle}>Téléphone</label><input value={form.telephone} onChange={e => setForm({ ...form, telephone: e.target.value })} className={inp} /></div>
+          <div><label className={libelle}>Notes</label><textarea rows={3} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className={`${inp} resize-none`} /></div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 h-11 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-galey">Annuler</button>
+            <button type="submit" disabled={saving}
+              className="flex-[1.4] h-11 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white rounded-xl text-sm font-galey font-semibold">
+              {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -564,330 +674,6 @@ function CongeModal({ membre, myUid, onClose }: { membre: MembreEquipe; myUid: s
   );
 }
 
-// ── Onglet Employés (conservé pour compatibilité interne) ─────────────────────
-
-function EmployesTab({ uid }: { uid: string }) {
-  const [employes, setEmployes] = useState<Employe[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [editing, setEditing] = useState<Employe | null>(null);
-  const [assigning, setAssigning] = useState<Employe | null>(null);
-
-  const load = useCallback(async () => {
-    if (!uid) return;
-    setLoading(true);
-    try {
-      const { data: rows } = await supabase
-        .from('employes').select('*').eq('uid_eleveur', uid).eq('actif', true)
-        .or('profil_source.eq.association,profil_source.is.null')
-        .or('type.is.null,type.neq.benevole')
-        .order('created_at');
-
-      const result: Employe[] = [];
-      for (const e of (rows ?? [])) {
-        const { data: u } = await supabase.from('users_complet')
-          .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
-          .eq('uid', e.uid_employe).maybeSingle();
-        const p = u as UserProfile | null;
-        const nom = p?.is_elevage
-          ? (p.name_elevage?.trim() || 'Élevage')
-          : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Utilisateur';
-        const photo = p?.is_elevage ? p.profile_picture_url_elevage : p?.profile_picture_url;
-        const taches = await fetchTachesPersonne(e.uid_employe, uid);
-        result.push({ id: e.id, uid_employe: e.uid_employe, employe_profile_id: e.employe_profile_id ?? null, actif: e.actif, nom, photo, taches });
-      }
-      setEmployes(result);
-    } finally {
-      setLoading(false);
-    }
-  }, [uid]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function revoquer(emp: Employe) {
-    if (!confirm(`Retirer ${emp.nom} de votre équipe ?`)) return;
-    await supabase.from('employes').update({ actif: false }).eq('id', emp.id);
-    await supabase.from('notifications').insert({
-      uid: emp.uid_employe, type: 'employee_revoked',
-      title: 'Accès retiré',
-      body: `Vous avez été retiré de l'équipe`,
-      ...(emp.employe_profile_id ? { profile_id: emp.employe_profile_id } : {}),
-      data: { eleveurUid: uid },
-      read: false,
-    });
-    load();
-  }
-
-  if (loading) return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
-
-  return (
-    <div className="space-y-3">
-      {employes.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <p className="font-galey">Aucun employé dans votre équipe</p>
-          <p className="text-sm mt-1">Invitez des utilisateurs PetsMatch pour leur assigner des tâches.</p>
-        </div>
-      ) : employes.map(e => {
-        const isOpen = expanded[e.id] ?? false;
-        const pendingTaches = e.taches ?? [];
-        return (
-          <div key={e.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => setExpanded(prev => ({ ...prev, [e.id]: !isOpen }))}>
-              <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
-                {e.photo
-                  ? <Image src={e.photo} alt={e.nom} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-                  : <span className="text-[#0C5C6C] font-bold text-sm">{e.nom[0]?.toUpperCase()}</span>}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold font-galey text-gray-800 text-sm truncate">{e.nom}</p>
-                <p className="text-xs text-gray-400 font-galey">
-                  {pendingTaches.length === 0 ? 'Aucune tâche' : `${pendingTaches.length} tâche${pendingTaches.length > 1 ? 's' : ''} en cours`}
-                </p>
-              </div>
-              <span className="text-gray-400 text-xs mr-1">{isOpen ? '▲' : '▼'}</span>
-              <button onClick={ev => { ev.stopPropagation(); setAssigning(e); }}
-                className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
-                + Tâche
-              </button>
-              <button onClick={ev => { ev.stopPropagation(); setEditing(e); }}
-                className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors" aria-label="Modifier" title="Modifier">
-                <Icone nom="crayon" taille={15} />
-              </button>
-              <button onClick={ev => { ev.stopPropagation(); revoquer(e); }}
-                className="text-xs text-red-400 hover:text-red-600 font-galey px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">
-                Révoquer
-              </button>
-            </div>
-
-            {isOpen && (
-              <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
-                {pendingTaches.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-2 font-galey">Aucune tâche assignée</p>
-                ) : pendingTaches.map(t => <TacheRow key={t.id} t={t} />)}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <button onClick={() => setShowAdd(true)}
-        className="w-full flex items-center justify-center gap-2 bg-[#0C5C6C] text-white font-galey font-semibold py-3 rounded-xl hover:bg-[#094F5D] transition-colors text-sm">
-        + Inviter un employé
-      </button>
-
-      {showAdd && <AddPetsMatchModal uid={uid} eleveurProfileId={null} type="employe" onClose={() => { setShowAdd(false); load(); }} />}
-      {editing && <EditEmployeModal employe={editing} onClose={() => { setEditing(null); load(); }} />}
-      {assigning && (
-        <AssignTaskModal uid={uid} assigneeUid={assigning.uid_employe} assigneeName={assigning.nom}
-          onClose={() => { setAssigning(null); load(); }} />
-      )}
-    </div>
-  );
-}
-
-// ── Onglet Bénévoles ──────────────────────────────────────────────────────────
-
-function BenevolesTab({ uid }: { uid: string }) {
-  const [benevoles, setBenevoles] = useState<Benevole[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showPetsMatch, setShowPetsMatch] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Benevole | null>(null);
-  const [assigning, setAssigning] = useState<Benevole | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [form, setForm] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
-  const [saving, setSaving] = useState(false);
-  const [dbError, setDbError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!uid) return;
-    setLoading(true);
-    setDbError(null);
-    try {
-      const { data: rows, error } = await supabase
-        .from('employes').select('*').eq('uid_eleveur', uid)
-        .eq('type', 'benevole').order('created_at', { ascending: false });
-
-      if (error) { setDbError(`Lecture: ${error.message} (code: ${error.code})`); setLoading(false); return; }
-
-      const result: Benevole[] = [];
-      for (const row of (rows ?? [])) {
-        if (row.uid_employe) {
-          const { data: u } = await supabase.from('users_complet')
-            .select('firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage, phone_number')
-            .eq('uid', row.uid_employe).maybeSingle();
-          const p = u as Omit<UserProfile, 'uid'> | null;
-          const nom = p?.is_elevage
-            ? (p.name_elevage?.trim() || 'Élevage')
-            : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Bénévole';
-          const photo = p?.is_elevage ? p.profile_picture_url_elevage : p?.profile_picture_url;
-          const taches = await fetchTachesPersonne(row.uid_employe, uid);
-          result.push({
-            id: row.id, uid_employe: row.uid_employe, employe_profile_id: row.employe_profile_id ?? null, actif: row.actif ?? true,
-            prenom: nom.split(' ')[0] ?? nom, nom: nom.split(' ').slice(1).join(' ') || '',
-            email: row.email, telephone: row.telephone || p?.phone_number || undefined,
-            notes: row.notes, photo, taches,
-          });
-        } else {
-          result.push({
-            id: row.id, actif: row.actif ?? true,
-            prenom: row.prenom ?? '', nom: row.nom ?? '',
-            email: row.email, telephone: row.telephone, notes: row.notes,
-          });
-        }
-      }
-      setBenevoles(result);
-    } finally {
-      setLoading(false);
-    }
-  }, [uid]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!uid || !form.prenom.trim() || !form.nom.trim()) return;
-    setSaving(true);
-    const { error } = await supabase.from('employes').insert({
-      uid_eleveur: uid,
-      prenom: form.prenom.trim(), nom: form.nom.trim(),
-      email: form.email.trim() || null,
-      telephone: form.telephone.trim() || null,
-      notes: form.notes.trim() || null,
-      actif: true, type: 'benevole',
-      profil_source: 'association',
-    });
-    setSaving(false);
-    if (error) { alert(`Erreur ajout: ${error.message} (${error.code})`); return; }
-    setForm({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
-    setShowForm(false);
-    load();
-  };
-
-  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string, employeProfileId?: string | null) => {
-    await supabase.from('employes').update({ actif: !actif }).eq('id', id);
-    if (actif && uidEmploye) {
-      await supabase.from('notifications').insert({
-        uid: uidEmploye, type: 'employee_revoked',
-        title: 'Statut bénévole modifié',
-        body: 'Votre statut de bénévole a été désactivé',
-        ...(employeProfileId ? { profile_id: employeProfileId } : {}),
-        data: {},
-        read: false,
-      });
-    }
-    load();
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce bénévole ?')) return;
-    await supabase.from('employes').delete().eq('id', id);
-    load();
-  };
-
-  const actifs   = benevoles.filter(b => b.actif);
-  const inactifs = benevoles.filter(b => !b.actif);
-
-  return (
-    <div className="space-y-4">
-      {dbError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 font-galey break-all">
-          {dbError}
-          <br /><span className="text-red-400">uid: {uid || '(vide – non connecté?)'}</span>
-        </div>
-      )}
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => setShowPetsMatch(true)}
-          className="bg-[#0C5C6C] text-white px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] transition-colors">
-          Chercher sur PetsMatch
-        </button>
-        <button onClick={() => setShowForm(!showForm)}
-          className="border border-[#0C5C6C] text-[#0C5C6C] px-4 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#E8F4F6] transition-colors">
-          + Saisir manuellement
-        </button>
-      </div>
-
-      {showForm && (
-        <form onSubmit={handleAdd} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-[#0C5C6C]/20">
-          <h2 className="font-bold font-galey text-[#1F2A2E]">Nouveau bénévole</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <input placeholder="Prénom *" required value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} />
-            <input placeholder="Nom *" required value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} />
-            <input placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={inp} />
-            <input placeholder="Téléphone" value={form.telephone} onChange={e => setForm({ ...form, telephone: e.target.value })} className={inp} />
-          </div>
-          <textarea placeholder="Notes" rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-            className={inp + ' w-full resize-none'} />
-          <div className="flex gap-3">
-            <button type="submit" disabled={saving}
-              className="bg-[#0C5C6C] text-white px-6 py-2 rounded-lg text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
-              {saving ? 'Enregistrement…' : 'Ajouter'}
-            </button>
-            <button type="button" onClick={() => setShowForm(false)}
-              className="text-gray-500 px-6 py-2 rounded-lg text-sm font-galey border border-gray-200 hover:bg-gray-50">
-              Annuler
-            </button>
-          </div>
-        </form>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
-      ) : benevoles.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <p className="font-galey">Aucun bénévole enregistré</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {actifs.length > 0 && (
-            <div>
-              <h2 className="font-bold font-galey text-[#0C5C6C] mb-3">Actifs ({actifs.length})</h2>
-              <div className="space-y-2">
-                {actifs.map(b => (
-                  <BenevoleCard key={b.id} b={b} uid={uid}
-                    isOpen={expanded[b.id] ?? false}
-                    onToggleOpen={() => setExpanded(prev => ({ ...prev, [b.id]: !(prev[b.id] ?? false) }))}
-                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe, b.employe_profile_id)}
-                    onEdit={() => setEditing(b)}
-                    onDelete={() => handleDelete(b.id)}
-                    onAssign={() => setAssigning(b)} />
-                ))}
-              </div>
-            </div>
-          )}
-          {inactifs.length > 0 && (
-            <div>
-              <h2 className="font-bold font-galey text-gray-400 mb-3">Inactifs ({inactifs.length})</h2>
-              <div className="space-y-2">
-                {inactifs.map(b => (
-                  <BenevoleCard key={b.id} b={b} uid={uid}
-                    isOpen={expanded[b.id] ?? false}
-                    onToggleOpen={() => setExpanded(prev => ({ ...prev, [b.id]: !(prev[b.id] ?? false) }))}
-                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe, b.employe_profile_id)}
-                    onEdit={() => setEditing(b)}
-                    onDelete={() => handleDelete(b.id)}
-                    onAssign={() => setAssigning(b)} />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showPetsMatch && <AddPetsMatchModal uid={uid} eleveurProfileId={null} type="benevole" onClose={() => { setShowPetsMatch(false); load(); }} />}
-      {editing && <EditBenevoleModal benevole={editing} onClose={() => { setEditing(null); load(); }} />}
-      {assigning && assigning.uid_employe && (
-        <AssignTaskModal uid={uid}
-          assigneeUid={assigning.uid_employe}
-          assigneeName={`${assigning.prenom} ${assigning.nom}`.trim()}
-          onClose={() => { setAssigning(null); load(); }} />
-      )}
-    </div>
-  );
-}
-
 // ── Ligne tâche ───────────────────────────────────────────────────────────────
 
 function TacheRow({ t }: { t: Tache }) {
@@ -906,64 +692,6 @@ function TacheRow({ t }: { t: Tache }) {
           {t.animal_nom && <span className="text-xs text-[#0C5C6C] font-galey">{t.animal_nom}</span>}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Card bénévole (expansible) ────────────────────────────────────────────────
-
-function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, onDelete, onAssign }: {
-  b: Benevole; uid: string; isOpen: boolean;
-  onToggleOpen: () => void; onToggle: () => void; onEdit: () => void; onDelete: () => void; onAssign: () => void;
-}) {
-  const displayName = `${b.prenom} ${b.nom}`.trim() || 'Bénévole';
-  const taches = b.taches ?? [];
-
-  return (
-    <div className={`bg-white rounded-xl shadow-sm border overflow-hidden ${b.actif ? 'border-gray-100' : 'border-gray-100 opacity-60'}`}>
-      <div className="p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors" onClick={onToggleOpen}>
-        <div className="w-10 h-10 rounded-full bg-[#E8F4F6] flex items-center justify-center flex-shrink-0 overflow-hidden">
-          {b.photo
-            ? <Image src={b.photo} alt={displayName} width={40} height={40} className="w-full h-full object-cover" unoptimized />
-            : <span className={`font-bold font-galey text-sm ${b.actif ? 'text-[#0C5C6C]' : 'text-gray-400'}`}>{displayName[0]?.toUpperCase() ?? '?'}</span>}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="font-semibold font-galey text-gray-900 truncate text-sm">{displayName}</p>
-            {b.uid_employe && <span className="text-xs bg-[#E8F4F6] text-[#0C5C6C] px-1.5 py-0.5 rounded font-galey">PetsMatch</span>}
-          </div>
-          <div className="flex items-center gap-3 text-xs text-gray-500 font-galey">
-            {b.email && <span>{b.email}</span>}
-            {b.telephone && <span>{b.telephone}</span>}
-          </div>
-          {b.uid_employe && (
-            <p className="text-xs text-gray-400 font-galey mt-0.5">
-              {taches.length === 0 ? 'Aucune tâche' : `${taches.length} tâche${taches.length > 1 ? 's' : ''} en cours`}
-            </p>
-          )}
-        </div>
-        {b.uid_employe && <span className="text-gray-400 text-xs">{isOpen ? '▲' : '▼'}</span>}
-        {b.uid_employe && (
-          <button onClick={ev => { ev.stopPropagation(); onAssign(); }}
-            className="text-xs text-[#0C5C6C] hover:text-[#0C5C6C] font-galey px-2 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors">
-            + Tâche
-          </button>
-        )}
-        <button onClick={ev => { ev.stopPropagation(); onToggle(); }}
-          className={`text-xs px-2 py-1 rounded-full font-galey font-semibold transition-colors ${b.actif ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-          {b.actif ? 'Actif' : 'Inactif'}
-        </button>
-        <button onClick={ev => { ev.stopPropagation(); onEdit(); }} className="text-gray-500 hover:text-[#0C5C6C] px-1.5 py-1 rounded-lg hover:bg-[#E8F4F6] transition-colors" aria-label="Modifier" title="Modifier"><Icone nom="crayon" taille={15} /></button>
-        <button onClick={ev => { ev.stopPropagation(); onDelete(); }} className="text-gray-400 hover:text-red-600 px-1" aria-label="Supprimer" title="Supprimer"><Icone nom="corbeille" taille={15} /></button>
-      </div>
-
-      {isOpen && b.uid_employe && (
-        <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
-          {taches.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-2 font-galey">Aucune tâche assignée — cliquez + Tâche pour en ajouter</p>
-          ) : taches.map(t => <TacheRow key={t.id} t={t} />)}
-        </div>
-      )}
     </div>
   );
 }
@@ -1066,9 +794,12 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
   async function ajouter(u: UserProfile) {
     setAdding(u.uid);
     try {
-      const { data: existing } = await supabase.from('employes')
-        .select('id, actif').eq('uid_eleveur', uid).eq('uid_employe', u.uid)
-        .eq('profil_source', 'association').maybeSingle();
+      // Déjà membre de CETTE association (profil actif), pas d'une autre
+      // structure de la même personne.
+      let existingQ = supabase.from('employes')
+        .select('id, actif').eq('uid_employe', u.uid).eq('profil_source', 'association');
+      existingQ = eleveurProfileId ? existingQ.eq('eleveur_profile_id', eleveurProfileId) : existingQ.eq('uid_eleveur', uid);
+      const { data: existing } = await existingQ.maybeSingle();
       if (existing) {
         if ((existing as { actif: boolean }).actif) { alert('Cette personne est déjà dans votre équipe.'); setAdding(null); return; }
         await supabase.from('employes').update({ actif: true }).eq('id', (existing as { id: string }).id);
@@ -1148,114 +879,3 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
   );
 }
 
-// ── Modal édition employé ─────────────────────────────────────────────────────
-
-function EditEmployeModal({ employe, onClose }: { employe: Employe; onClose: () => void }) {
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    supabase.from('employes').select('notes').eq('id', employe.id).maybeSingle()
-      .then(({ data }) => {
-        if (data) { setNotes((data as { notes?: string }).notes ?? ''); }
-      });
-  }, [employe.id]);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    await supabase.from('employes').update({ notes: notes.trim() || null }).eq('id', employe.id);
-    setSaving(false);
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold font-galey text-gray-800">Notes — {employe.nom}</h3>
-        <form onSubmit={save} className="space-y-3">
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Notes internes</label>
-            <textarea rows={4} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes visibles uniquement par vous…" className={inp + ' w-full resize-none'} />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="flex-1 bg-[#0C5C6C] text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
-            </button>
-            <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm font-galey hover:bg-gray-50">
-              Annuler
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ── Modal édition bénévole ────────────────────────────────────────────────────
-
-function EditBenevoleModal({ benevole, onClose }: { benevole: Benevole; onClose: () => void }) {
-  const [form, setForm] = useState({
-    prenom: benevole.prenom, nom: benevole.nom,
-    email: benevole.email ?? '', telephone: benevole.telephone ?? '', notes: benevole.notes ?? '',
-  });
-  const [saving, setSaving] = useState(false);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    await supabase.from('employes').update({
-      prenom: form.prenom.trim() || null,
-      nom:    form.nom.trim()    || null,
-      email:  form.email.trim()  || null,
-      telephone: form.telephone.trim() || null,
-      notes: form.notes.trim()   || null,
-    }).eq('id', benevole.id);
-    setSaving(false);
-    onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold font-galey text-gray-800">
-          Modifier — {`${benevole.prenom} ${benevole.nom}`.trim() || 'Bénévole'}
-        </h3>
-        <form onSubmit={save} className="space-y-3">
-          {!benevole.uid_employe && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-galey text-gray-500 mb-1 block">Prénom</label>
-                <input value={form.prenom} onChange={e => setForm({ ...form, prenom: e.target.value })} className={inp} />
-              </div>
-              <div>
-                <label className="text-xs font-galey text-gray-500 mb-1 block">Nom</label>
-                <input value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} className={inp} />
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Email</label>
-            <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} className={inp} />
-          </div>
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Téléphone</label>
-            <input value={form.telephone} onChange={e => setForm({ ...form, telephone: e.target.value })} className={inp} />
-          </div>
-          <div>
-            <label className="text-xs font-galey text-gray-500 mb-1 block">Notes</label>
-            <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className={inp + ' w-full resize-none'} />
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="flex-1 bg-[#0C5C6C] text-white py-2 rounded-xl text-sm font-galey font-semibold hover:bg-[#094F5D] disabled:opacity-50">
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
-            </button>
-            <button type="button" onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2 rounded-xl text-sm font-galey hover:bg-gray-50">
-              Annuler
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}

@@ -1068,6 +1068,28 @@ export default function Header() {
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
+  // Sélecteur de profils et menu de navigation : deux menus indépendants
+  // (ouvrir l'un ferme l'autre). Refs pour la fermeture au clic extérieur.
+  const profilRef = useRef<HTMLDivElement>(null);
+  const profilMobileRef = useRef<HTMLDivElement>(null);
+  const panneauProfilMobileRef = useRef<HTMLDivElement>(null);
+  const menuMobileBoutonRef = useRef<HTMLButtonElement>(null);
+  const menuMobileRef = useRef<HTMLDivElement>(null);
+  function basculerProfils() {
+    const ouvrir = !profileSwitcherOpen;
+    setDropdownOpen(false); setMenuOpen(false); setBellOpen(false);
+    setProfileSwitcherOpen(ouvrir);
+  }
+  function basculerMenu() {
+    const ouvrir = !dropdownOpen;
+    setProfileSwitcherOpen(false); setBellOpen(false);
+    setDropdownOpen(ouvrir);
+  }
+  function basculerMenuMobile() {
+    const ouvrir = !menuOpen;
+    setProfileSwitcherOpen(false);
+    setMenuOpen(ouvrir);
+  }
   const router = useRouter();
   const pathname = usePathname();
   const { plan: eleveurPlan } = usePlan();
@@ -1498,9 +1520,18 @@ export default function Header() {
       if (guestMoreRef.current && !guestMoreRef.current.contains(e.target as Node)) {
         setGuestMoreOpen(false);
       }
+      const dans = (r: React.RefObject<HTMLElement | null>) => !!r.current && r.current.contains(e.target as Node);
+      if (!dans(profilRef) && !dans(profilMobileRef) && !dans(panneauProfilMobileRef)) setProfileSwitcherOpen(false);
+      if (!dans(menuMobileBoutonRef) && !dans(menuMobileRef)) setMenuOpen(false);
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      setProfileSwitcherOpen(false); setDropdownOpen(false); setMenuOpen(false);
+      setBellOpen(false); setGuestMoreOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => { document.removeEventListener('mousedown', handleClick); document.removeEventListener('keydown', handleKey); };
   }, []);
 
   async function handleSignOut() {
@@ -1636,7 +1667,11 @@ export default function Header() {
       <span className="relative inline-flex flex-shrink-0" style={{ width: taille, height: taille }}>
         <span className="w-full h-full rounded-full overflow-hidden bg-white border border-gray-200 flex items-center justify-center">
           {url ? (
-            <Image src={url} alt="" width={taille} height={taille} className="w-full h-full object-contain" />
+            // Cadre rond : un logo rectangulaire « contain » touchait le
+            // cercle et perdait ses coins. Marge = carré inscrit (≈ 15 %).
+            <span className="w-full h-full flex items-center justify-center" style={{ padding: Math.max(2, Math.round(taille * 0.15)) }}>
+              <Image src={url} alt="" width={taille} height={taille} className="w-full h-full object-contain" />
+            </span>
           ) : (
             <span className="text-[#0C5C6C] font-bold" style={{ fontSize: Math.round(taille * 0.38) }}>{(nom[0] ?? '?').toUpperCase()}</span>
           )}
@@ -1664,13 +1699,6 @@ export default function Header() {
           <p className="text-[#1F2A2E] font-bold text-[15px] leading-snug line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{effectiveDisplayName}</p>
           <p className="text-gray-500 text-sm">{typeLabel(effectiveType)}</p>
         </div>
-        <button type="button" onClick={() => setProfileSwitcherOpen(!profileSwitcherOpen)}
-          title="Changer de profil" aria-label="Changer de profil" aria-expanded={profileSwitcherOpen}
-          className="w-10 h-10 rounded-lg text-gray-500 hover:bg-gray-100 flex items-center justify-center flex-shrink-0">
-          <svg className={`w-5 h-5 transition-transform ${profileSwitcherOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
       </div>
     );
   }
@@ -1679,11 +1707,8 @@ export default function Header() {
   function ProfileSwitcherPanel({ onClose }: { onClose: () => void }) {
     return (
       <div className="py-2">
-        <div className="px-4 pt-1 pb-2 flex items-center justify-between">
+        <div className="px-4 pt-1 pb-2">
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mes profils</span>
-          <button onClick={() => setProfileSwitcherOpen(false)} className="h-8 px-2 rounded-md text-sm font-semibold text-[#0C5C6C] hover:bg-[#E8F4F6]">
-            Retour au menu
-          </button>
         </div>
 
         {/* Liste plate de tous les profils */}
@@ -1723,7 +1748,7 @@ export default function Header() {
 
         {/* Ajouter un profil */}
         <Link href="/profil/ajouter"
-          onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}
+          onClick={onClose}
           className="flex items-center gap-3 px-4 min-h-[52px] mt-1 border-t border-gray-200 text-[#0C5C6C] hover:bg-[#E8F4F6] transition-colors">
           <span className="w-10 h-10 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M12 5v14m7-7H5" /></svg>
@@ -1747,7 +1772,9 @@ export default function Header() {
         </Link>
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
+        {/* min-w-0 : la navigation ne repousse jamais la cloche ni le sélecteur
+            hors de l'écran ; si elle manque de place, elle défile. */}
+        <nav className={`hidden md:flex items-center gap-1 flex-1 min-w-0 justify-center ${!loading && user ? 'overflow-x-auto [scrollbar-width:none]' : ''}`}>
           {(loading || !user) ? (
             <>
               {NAV_GUEST_PRIMARY.map((l) => (
@@ -1832,7 +1859,7 @@ export default function Header() {
             {/* ── Cloche notifications ── */}
             <div className="relative" ref={bellRef}>
               <button
-                onClick={() => setBellOpen(!bellOpen)}
+                onClick={() => { setProfileSwitcherOpen(false); setDropdownOpen(false); setBellOpen(!bellOpen); }}
                 className="relative w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
@@ -1974,28 +2001,45 @@ export default function Header() {
               )}
             </div>
 
-            {/* ── Avatar + dropdown ── */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full pl-2 pr-3 py-1.5 transition-colors">
-                <AvatarProfil url={effectiveAvatar} nom={effectiveDisplayName} taille={28}
+            {/* ── Sélecteur de profils (liste des profils uniquement) ── */}
+            <div className="relative" ref={profilRef}>
+              <button type="button" onClick={basculerProfils}
+                aria-haspopup="menu" aria-expanded={profileSwitcherOpen} title="Changer de profil"
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 rounded-full pl-1.5 pr-3 py-1 transition-colors">
+                <AvatarProfil url={effectiveAvatar} nom={effectiveDisplayName} taille={30}
                   pastilles={activeProfileId
                     ? <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[#6E9E57] rounded-full ring-2 ring-[#0C5C6C]" aria-hidden />
                     : undefined} />
-                <span className="text-white text-sm font-medium truncate max-w-[100px]">{effectiveDisplayName}</span>
-                <svg className={`w-4 h-4 text-white/70 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span className="text-white text-sm font-medium truncate max-w-[120px] hidden lg:block">{effectiveDisplayName}</span>
+                <svg className={`w-4 h-4 text-white/70 transition-transform ${profileSwitcherOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
+              {profileSwitcherOpen && (
+                <div role="menu" className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                  <div className="max-h-[70vh] overflow-y-auto overscroll-contain">
+                    <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
+                  </div>
+                </div>
+              )}
+            </div>
 
+            {/* ── Menu de navigation (sans la liste des profils) ── */}
+            <div className="relative" ref={dropdownRef}>
+              <button type="button" onClick={basculerMenu}
+                aria-haspopup="menu" aria-expanded={dropdownOpen} aria-label="Menu" title="Menu"
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  {dropdownOpen
+                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />}
+                </svg>
+              </button>
               {dropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
                   <EnteteMenu />
                   <div className="max-h-[70vh] overflow-y-auto overscroll-contain">
-                    {profileSwitcherOpen
-                      ? <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
-                      : <MenuPro onNavigate={() => setDropdownOpen(false)} />}
+                    <MenuPro onNavigate={() => setDropdownOpen(false)} />
                   </div>
                 </div>
               )}
@@ -2038,7 +2082,17 @@ export default function Header() {
               )}
             </Link>
           )}
-          <button className="text-white p-1" onClick={() => setMenuOpen(!menuOpen)}>
+          {!loading && user && (
+            <div ref={profilMobileRef}>
+              <button type="button" onClick={basculerProfils}
+                aria-haspopup="menu" aria-expanded={profileSwitcherOpen} aria-label="Changer de profil" title="Changer de profil"
+                className="w-9 h-9 rounded-full flex items-center justify-center">
+                <AvatarProfil url={effectiveAvatar} nom={effectiveDisplayName} taille={32} />
+              </button>
+            </div>
+          )}
+          <button ref={menuMobileBoutonRef} type="button" aria-label="Menu" aria-expanded={menuOpen}
+            className="text-white w-9 h-9 flex items-center justify-center" onClick={basculerMenuMobile}>
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {menuOpen
                 ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2049,8 +2103,16 @@ export default function Header() {
       </div>
 
       {/* Mobile menu */}
+      {/* Sélecteur de profils mobile : liste des profils uniquement */}
+      {profileSwitcherOpen && user && (
+        <div ref={panneauProfilMobileRef} role="menu"
+          className="md:hidden bg-white max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain shadow-lg" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
+        </div>
+      )}
+
       {menuOpen && (
-        <div className="md:hidden bg-[#094F5D] px-4 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div ref={menuMobileRef} className="md:hidden bg-[#094F5D] px-4 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {/* Nav links */}
           <div className="space-y-0.5 pt-2">
             {navLinks.map((l) => (
@@ -2066,9 +2128,7 @@ export default function Header() {
           {!loading && user ? (
             <div className="mt-3 -mx-4 bg-white">
               <EnteteMenu />
-              {profileSwitcherOpen
-                ? <ProfileSwitcherPanel onClose={() => setProfileSwitcherOpen(false)} />
-                : <MenuPro onNavigate={() => setMenuOpen(false)} />}
+              <MenuPro onNavigate={() => setMenuOpen(false)} />
             </div>
           ) : !loading && (
             <div className="pt-3 flex gap-3">
