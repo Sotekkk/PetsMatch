@@ -2,5 +2,7 @@
     <color name="colorPrimary">#6200EE</color>
     <color name="colorPrimaryDark">#3700B3</color>
     <color name="colorAccent">#03DAC5</color>
+    <!-- Teinte de la petite icône des notifications (vert PetsMatch) -->
+    <color name="notification_color">#0C5C6C</color>
     <!-- Autres définitions de couleurs -->
 </resources>

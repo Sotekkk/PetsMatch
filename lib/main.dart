@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'dart:io';
 import 'package:flutter_stripe/flutter_stripe.dart';
@@ -118,12 +119,23 @@ Future<void> basculerVersProfil(Map<String, dynamic> profil, {Widget? ouvrir}) a
 /// bascule (à la manière de Facebook) au lieu de naviguer silencieusement
 /// sur le mauvais profil. Retourne true si le profil actif au retour est
 /// bien le profil visé par la notif (bascule acceptée, ou déjà actif).
-Future<bool> _confirmAndSwitchProfile(String recipientProfileId) async {
-  if (recipientProfileId.isEmpty || recipientProfileId == User_Info.activeProfileId) return true;
+Future<bool> _confirmAndSwitchProfile(String recipientProfileId, {bool sansDemander = false}) async {
+  if (recipientProfileId.isEmpty) return true;
+  // Appli lancée par la notification : les profils ne sont pas encore chargés
+  // (sinon on restait sur le profil principal). On les attend (10 s max).
+  for (var i = 0; i < 50 && User_Info.availableProfiles.isEmpty; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  if (recipientProfileId == User_Info.activeProfileId) return true;
   final target = User_Info.availableProfiles
       .where((p) => p['id']?.toString() == recipientProfileId)
       .firstOrNull;
-  if (target == null) return true; // profil introuvable (pas encore chargé) : on ne bloque pas la navigation
+  if (target == null) return true; // profil introuvable : on ne bloque pas la navigation
+  // Notification touchée : elle concerne CE profil → on y va directement.
+  if (sansDemander) {
+    await basculerVersProfil(target);
+    return true;
+  }
 
   final navCtx = navigatorKey.currentContext;
   if (navCtx == null) return false;
@@ -171,9 +183,9 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
   // Si la notif est destinée à un profil secondaire spécifique, on propose de
   // basculer dessus (comme Facebook) plutôt que de naviguer silencieusement
   // sur le mauvais profil, ou pire, sur le profil actif sans rapport.
-  final recipientProfileId = data['recipient_profile_id'] as String? ?? '';
+  final recipientProfileId = data['recipient_profile_id'] as String? ?? data['profile_id'] as String? ?? '';
   if (recipientProfileId.isNotEmpty) {
-    final switched = await _confirmAndSwitchProfile(recipientProfileId);
+    final switched = await _confirmAndSwitchProfile(recipientProfileId, sansDemander: true);
     if (!switched) {
       // Refus : on ouvre la liste de notifs génériques sur le profil actif
       // plutôt que de risquer une navigation en contexte incohérent.
@@ -185,11 +197,12 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
   // Message de chat : ouvre directement la conversation plutôt que la
   // page Notifications générique.
   final type = data['type'] as String?;
-  final conversationId = data['conversationId'] as String? ?? '';
+  final conversationId = data['conversationId'] as String? ?? data['conversation_id'] as String? ?? '';
+  final nav = navigatorKey.currentState ?? ctx;
   if ((type == 'chat_message' || type == 'message') && conversationId.isNotEmpty) {
     final otherUid = await resolveConversationOtherUid(conversationId);
     if (otherUid != null) {
-      ctx.push(MaterialPageRoute(
+      nav.push(MaterialPageRoute(
         builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
       ));
       return;
@@ -310,9 +323,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
               importance: Importance.max,
               priority: Priority.high,
               tag: tag,
+              // Petite icône = silhouette du logo (blanche, teintée) ; grande icône = logo couleur.
+              icon: 'ic_notification',
+              color: const Color(0xFF0C5C6C),
+              largeIcon: const DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
             ),
           ),
-          payload: message.data['conversationId'],
+          payload: jsonEncode(message.data),
         );
       } catch (_) {}
     }
@@ -804,7 +821,7 @@ Future<void> main() async {
 
   // Initialiser les notifications locales
   const AndroidInitializationSettings initializationSettingsAndroid =
-      AndroidInitializationSettings('@mipmap/ic_launcher');
+      AndroidInitializationSettings('@drawable/ic_notification');
   final DarwinInitializationSettings initializationSettingsIOS =
       DarwinInitializationSettings(
           requestAlertPermission: true,
@@ -825,7 +842,16 @@ Future<void> main() async {
         // flutterLocalNotificationsPlugin.show plus bas) — ouvre directement
         // la conversation au tap, comme _handleNotifNavigation pour les
         // notifs OS natives (onMessageOpenedApp).
-        final conversationId = response.payload;
+        final payload = response.payload;
+        // Payload = données du message (profil destinataire compris) → même
+        // traitement qu'une notification système (bascule de profil puis écran).
+        if (payload != null && payload.startsWith('{')) {
+          try {
+            await _handleNotifNavigation(Map<String, dynamic>.from(jsonDecode(payload) as Map));
+            return;
+          } catch (_) {}
+        }
+        final conversationId = payload;
         if (conversationId != null && conversationId.isNotEmpty) {
           final ctx = navigatorKey.currentState;
           final otherUid = await resolveConversationOtherUid(conversationId);
@@ -864,9 +890,12 @@ Future<void> main() async {
             importance: Importance.max,
             priority: Priority.high,
             tag: tag,
+            icon: 'ic_notification',
+            color: const Color(0xFF0C5C6C),
+            largeIcon: const DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
           ),
         ),
-        payload: message.data['conversationId'],
+        payload: jsonEncode(message.data),
       );
     }
   });
@@ -874,6 +903,16 @@ Future<void> main() async {
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
     _handleNotifNavigation(message.data);
   });
+
+  // App lancée en touchant une notification affichée par l'appli elle-même.
+  try {
+    final lancement = await flutterLocalNotificationsPlugin.getNotificationAppLaunchDetails();
+    final pl = lancement?.notificationResponse?.payload;
+    if ((lancement?.didNotificationLaunchApp ?? false) && pl != null && pl.startsWith('{')) {
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _handleNotifNavigation(Map<String, dynamic>.from(jsonDecode(pl) as Map)));
+    }
+  } catch (_) {}
 
   // App ouverte depuis une notif (état terminé)
   final initialMsg = await FirebaseMessaging.instance.getInitialMessage();

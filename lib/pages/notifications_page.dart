@@ -194,6 +194,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       for (final n in (data as List)) {
         final pid = (n['profile_id'] as String?) ?? '';
         if (pid.isEmpty || pid == activeProfileId || !miens.contains(pid) || n['read'] == true) continue;
+        // Même exclusion que la liste : les likes / mentions Pets Social vont dans le cœur du fil.
+        final t = n['type'] as String? ?? '';
+        if (t == 'social_like' || t == 'social_mention' || t == 'story_like') continue;
         autres[pid] = (autres[pid] ?? 0) + 1;
       }
       if (mounted) setState(() {
