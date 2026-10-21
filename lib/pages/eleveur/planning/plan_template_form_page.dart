@@ -71,7 +71,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       _isGarde ? (p.$1 == 'animal' || p.$1 == 'locaux') : _isPension ? p.$1 != 'portee' : true).toList();
 
   List<(String, String)> get _categoriesDispo => kCategoriesProtocole.where((c) =>
-      !(_isAssociation && c.$1 == 'gestantes') && !(_isPension && c.$1 == 'bebes')).toList();
+      !(_isAssociation && c.$1 == 'gestantes')
+      // Pension : accueil ponctuel, pas de reproduction (ni bébés ni femelles allaitantes).
+      && !(_isPension && (c.$1 == 'bebes' || c.$1 == 'allaitantes'))).toList();
 
   List<(String, String, String)> get _refEventsDispo => kRefEvents.where((r) {
     if ((_isAssociation || _isGarde) && (r.$1 == 'saillie' || r.$1 == 'mise_bas')) return false;

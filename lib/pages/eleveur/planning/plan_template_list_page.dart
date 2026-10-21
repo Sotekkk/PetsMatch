@@ -12,7 +12,14 @@ import 'package:PetsMatch/pages/eleveur/animaux/protocole_chaleur_page.dart';
 
 class PlanTemplateListPage extends StatefulWidget {
   final bool isAssociation;
-  final String profilSource;
+  final String? _profilSource;
+  /// Profil des protocoles. Sans précision, une pension (ou une garde)
+  /// active ouvre ses propres protocoles — pas ceux d'un éleveur — pour que
+  /// les choix propres à l'élevage (« Naissance »…) ne lui soient pas proposés.
+  String get profilSource => _profilSource
+      ?? (isAssociation ? 'association'
+          : (User_Info.activeType == 'pension' || User_Info.activeType == 'garde') ? User_Info.activeType
+          : 'eleveur');
   // Contexte "employé agissant pour un employeur" : quand renseigné, les
   // protocoles sont ceux de cet employeur (pas de l'utilisateur connecté),
   // et la création/édition est soumise à employePerms.
@@ -29,7 +36,7 @@ class PlanTemplateListPage extends StatefulWidget {
     this.employerProfileId,
     this.employerNom,
     this.employePerms = const {},
-  }) : profilSource = profilSource ?? (isAssociation ? 'association' : 'eleveur');
+  }) : _profilSource = profilSource;
 
   @override
   State<PlanTemplateListPage> createState() => _PlanTemplateListPageState();

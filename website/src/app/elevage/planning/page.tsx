@@ -13,6 +13,7 @@ import { SANTE_COULEURS, SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
+import { useTypeProfilActif } from '@/hooks/useTypeProfilActif';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -233,8 +234,13 @@ function PlanningPageInner() {
   const employerUid = searchParams.get('employerUid');
   const employerProfileId = searchParams.get('employerProfileId');
   const employerNom = searchParams.get('employerNom');
+  // Sans paramètre, une pension (ou une garde) active ouvre ses propres
+  // protocoles — pas ceux d'un éleveur (pas de « Naissance » pour une pension).
+  const { type: typeProfilActif } = useTypeProfilActif();
   const profilSource = searchParams.get('profilSource')
-    ?? (pathname.startsWith('/association') ? 'association' : 'eleveur');
+    ?? (pathname.startsWith('/association') ? 'association'
+      : typeProfilActif === 'pension' || typeProfilActif === 'garde' ? typeProfilActif
+      : 'eleveur');
   const targetUid = employerUid || user?.uid || '';
   const targetProfileId = employerProfileId || profileId;
   // Nom de la structure (en-tête / pied de la fiche PDF des protocoles)
