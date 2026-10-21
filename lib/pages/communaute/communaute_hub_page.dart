@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/pages/promenades/promenades_page.dart';
 import 'package:PetsMatch/pages/communaute/forum_page.dart';
+import 'package:PetsMatch/pages/communaute/groupes_page.dart';
 import 'package:PetsMatch/pages/evenements/evenements_page.dart';
 import 'package:PetsMatch/pages/explorer/explorer_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
@@ -36,12 +37,21 @@ class _CommunauteSection {
 }
 
 const _sections = <_CommunauteSection>[
+  // Comme le site : Forum (sujets de discussion) et Groupes (communautés à
+  // rejoindre) sont deux entrées distinctes.
+  _CommunauteSection(
+    icon: Icons.forum_outlined,
+    label: 'Forum',
+    subtitle: 'Échangez avec la communauté sur tous les sujets',
+    color: Color(0xFF1565C0),
+    tags: ['Sujets', 'Entraide', 'Conseils'],
+  ),
   _CommunauteSection(
     icon: Icons.people_alt_outlined,
-    label: 'PetFriends',
-    subtitle: 'Le réseau social des passionnés d\'animaux',
-    color: Color(0xFFFF5DA2),
-    tags: ['Fil d\'actualité', 'Groupes', 'Forums', 'Amis', 'Badges'],
+    label: 'Groupes',
+    subtitle: 'Rejoignez des groupes par espèce, race ou région',
+    color: Color(0xFF6A1B9A),
+    tags: ['Recherche par nom ou thème', 'Publications', 'Membres'],
   ),
   _CommunauteSection(
     icon: Icons.pets_outlined,
@@ -270,8 +280,11 @@ class CommunauteHubPage extends StatelessWidget {
   static void _navigate(BuildContext context, _CommunauteSection section) {
     Widget page;
     switch (section.label) {
-      case 'PetFriends':
+      case 'Forum':
         page = const ForumPage();
+        break;
+      case 'Groupes':
+        page = const GroupesPage();
         break;
       case 'Balades & Rencontres':
         page = const PromenadePage();
