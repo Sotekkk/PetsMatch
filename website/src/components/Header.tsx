@@ -49,24 +49,18 @@ interface UserProfile {
 // reste la liste à plat, utilisée telle quelle pour le menu mobile (liste
 // verticale, pas de contrainte de largeur).
 const NAV_GUEST_PRIMARY = [
-  { href: '/annonces',   label: 'Annonces' },
-  { href: '/elevages',   label: 'Élevages' },
+  { href: '/annonces',   label: 'Trouver un animal' },
   { href: '/services',   label: 'Annuaire' },
   { href: '/communaute', label: 'Communauté' },
   { href: '/tarifs',     label: 'Tarifs' },
 ];
 const NAV_GUEST_MORE = [
   { href: '/annonces/objets', label: 'Matériel & équipements' },
-  { href: '/adoptions',      label: '💚 Adoptions' },
-  { href: '/associations',   label: 'Associations' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
 ];
 const NAV_GUEST = [
-  { href: '/annonces',       label: 'Annonces' },
+  { href: '/annonces',       label: 'Trouver un animal' },
   { href: '/annonces/objets', label: 'Matériel & équipements' },
-  { href: '/adoptions',      label: '💚 Adoptions' },
-  { href: '/elevages',       label: 'Élevages' },
-  { href: '/associations',   label: 'Associations' },
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Annuaire' },
   { href: '/communaute',     label: 'Communauté' },
@@ -75,45 +69,39 @@ const NAV_GUEST = [
 
 const NAV_ELEVEUR = [
   { href: '/mes-animaux',             label: 'Mes Animaux' },
-  { href: '/annonces/publier',        label: 'Publier une annonce' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
   { href: '/services',                label: 'Annuaire des professionnels' },
-  { href: '/tarifs',                  label: 'Tarifs' },
 ];
 
 // NAV spécifique profils pro secondaires (pas d'élevage)
 const NAV_PRO = [
   { href: '/',                     label: 'Accueil' },
   { href: '/communaute',           label: 'Communauté' },
-  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_PENSION = [
   { href: '/',                     label: 'Accueil' },
   { href: '/pension/registre',     label: 'Registre' },
   { href: '/pension/chenil',       label: 'Logements / Chenil' },
-  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_VET = [
   { href: '/',                     label: 'Accueil' },
-  { href: '/adoptions', label: '💚 Adoptions' },
+  { href: '/annonces',             label: 'Trouver un animal' },
   { href: '/agenda',               label: 'Agenda' },
   { href: '/mes-patients',         label: 'Patients' },
   { href: '/messages',             label: 'Messages' },
-  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_PARTICULIER = [
   { href: '/',                     label: 'Accueil' },
   { href: '/mes-animaux',          label: 'Mes Animaux' },
-  { href: '/annonces',             label: 'Annonces' },
+  { href: '/annonces',             label: 'Trouver un animal' },
   { href: '/annonces/objets',      label: 'Matériel & équipements' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
   { href: '/communaute',           label: 'Communauté' },
   { href: '/services',             label: 'Annuaire des professionnels' },
-  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_ASSOCIATION = [
@@ -123,7 +111,6 @@ const NAV_ASSOCIATION = [
   { href: '/association/agenda',       label: 'Agenda' },
   { href: '/animaux-perdus',           label: 'Animaux perdus' },
   { href: '/services',                 label: 'Annuaire des professionnels' },
-  { href: '/tarifs',                   label: 'Tarifs' },
 ];
 
 // ── Menu drawer items (miroir des drawers de l'app) ──────────────────────────
@@ -180,7 +167,6 @@ const MENU_ELEVEUR = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -219,7 +205,6 @@ const MENU_VET = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -264,7 +249,6 @@ const MENU_MARECHAL = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -303,7 +287,6 @@ const MENU_PRO = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -352,7 +335,6 @@ const MENU_PENSION = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
   {
@@ -414,7 +396,6 @@ const MENU_GARDE = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -458,7 +439,6 @@ const MENU_EDUCATION = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -504,7 +484,6 @@ const MENU_PHOTOGRAPHE = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -548,7 +527,6 @@ const MENU_TOILETTAGE = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -611,7 +589,6 @@ const MENU_ASSOCIATION = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -664,7 +641,6 @@ const MENU_PARTICULIER = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
-      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -1271,8 +1247,14 @@ export default function Header() {
     : abonnementHref ?? (effectiveIsEleveur ? '/abonnement' : null);
   // « Guide de démarrage » dans la section Mon Profil de chaque menu
   // (miroir appli : menu particulier + Paramètres) — rouvre l'onboarding.
+  // « Tarifs et abonnement » : page des tarifs ouverte sur les offres du
+  // profil actif (déplacée depuis « Annuaire & Communauté »). Miroir appli :
+  // entrée du même nom dans « Mon Profil » (eleveur_nav.dart).
+  const tarifsHref = `/tarifs?metier=${effectiveType}`;
   const withGuide = withVetoClinique.map(sec => sec.section === 'Mon Profil'
-    ? { ...sec, items: [...sec.items, { href: '/guide', label: 'Guide de démarrage', icon: '🚩' }] }
+    ? { ...sec, items: [...sec.items,
+        { href: tarifsHref, label: 'Tarifs et abonnement', icon: '💶' },
+        { href: '/guide', label: 'Guide de démarrage', icon: '🚩' }] }
     : sec);
   const withAchats = withGuide.map(sec => ({
     ...sec,
@@ -1280,20 +1262,22 @@ export default function Header() {
       ? { ...it, href: `/mes-achats?abo=${encodeURIComponent(aboHrefAchats)}` }
       : it),
   }));
-  // Menu « Annonces » unique (animaux + matériel & équipements), pour tous
-  // les profils : il remplace l'ancienne section « Annonces » du profil et
+  // Menu « Annonces » unique — Mes annonces, Trouver un animal, Matériel &
+  // équipements (miroir appli : menu_annonces.dart) — pour tous les profils : il remplace l'ancienne section « Annonces » du profil et
   // l'ancien bloc « Petites annonces (matériel) ». Les entrées propres à un
   // profil qui n'en font pas partie (ex. Adoptions, Associations) sont
   // conservées à la suite ; « Mes annonces » pointe vers la page du profil.
+  // Pas d'entrée « Publier une annonce » : on publie depuis « Mes annonces »
+  // (bouton unique, choix du type dont le matériel). Miroir appli : menu_annonces.dart.
   const droitsAnn = droitsAnnonces(effectiveType);
   const itemsAnnonces = [
     { href: droitsAnn.mesAnnonces, label: 'Mes annonces',           icon: '📋' },
-    { href: '/annonces/publier',   label: 'Publier une annonce',    icon: '➕' },
-    { href: '/annonces',           label: 'Trouver un compagnon',   icon: '❤️' },
+    // Animaux, élevages et associations en onglets, avec Liste / Fil / Carte.
+    { href: '/annonces',           label: 'Trouver un animal',      icon: '❤️' },
+    // Consultation du matériel des autres ; le sien se gère dans Mes annonces.
     { href: '/annonces/objets',    label: 'Matériel & équipements', icon: '📦' },
-    { href: '/elevages',           label: 'Carte des élevages',     icon: '🗺️' },
   ];
-  const REMPLACES = new Set(['/mes-annonces', '/annonces/creer', '/annonces/creer-cheval', '/association/annonces', '/association/annonces/creer', '/mes-annonces-materiel', '/annonces/creer-objet']);
+  const REMPLACES = new Set(['/mes-annonces', '/annonces/publier', '/elevages', '/associations', '/adoptions', '/annonces/feed', '/annonces/carte', '/annonces/creer', '/annonces/creer-cheval', '/association/annonces', '/association/annonces/creer', '/mes-annonces-materiel', '/annonces/creer-objet']);
   const ancienneAnnonces = withAchats.find(sec => sec.section === 'Annonces');
   const sectionAnnonces = {
     section: 'Annonces',
@@ -1338,6 +1322,7 @@ export default function Header() {
       if (l.href === '/') continue;
       add(l.href, l.label.replace(/^[^\p{L}]+\s*/u, ''), 'Navigation', '🧭');
     }
+    add('/annonces/publier', 'Publier une annonce', 'Annonces', '➕');
     add('/favoris', 'Mes interactions', 'Mon Profil', '❤️');
     add('/messages', 'Messages', 'Mon Profil', '💬');
     add('/mes-taches', 'Mes tâches', 'Mon Profil', '✅');
@@ -1556,7 +1541,7 @@ export default function Header() {
   }
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname.startsWith(href);
+    href === '/' ? pathname === '/' : pathname.startsWith(href.split('?')[0]);
 
   // ── Menu professionnel : présentation commune (ordinateur + mobile) ───────
   // Purement visuel : mêmes sections, entrées, ordre, destinations et droits.
@@ -1648,6 +1633,12 @@ export default function Header() {
             <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={onNavigate}
               className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
               <span className="text-[#0C5C6C]"><IconeMenu code="👤" /></span> Mon Profil
+            </Link>
+          )}
+          {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+            <Link href={tarifsHref} onClick={onNavigate}
+              className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
+              <span className="text-[#0C5C6C]"><IconeMenu code="💶" /></span> Tarifs et abonnement
             </Link>
           )}
           {!effectiveIsEleveur && (

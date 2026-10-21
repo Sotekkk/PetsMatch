@@ -131,7 +131,7 @@ exports.sendChaleursNotifications = functions
             "&sterilise=eq.false" +
             "&statut=not.in.(sorti,decede)" +
             "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours,date_naissance," +
-            "chaleurs_responsable_uid,chaleurs_responsable_profile_id");
+            "chaleurs_responsable_uid,chaleurs_responsable_profile_id,profile_id");
 
         if (!animaux.length) {
             console.log("sendChaleursNotifications: aucune femelle active.");
@@ -176,6 +176,11 @@ exports.sendChaleursNotifications = functions
         const profileIdByAnimal = {};
         for (const p of proprietesRaw) {
             if (p.profile_id_proprio) profileIdByAnimal[p.animal_id] = p.profile_id_proprio;
+        }
+        // Sans ligne de propriété : profil de l'élevage de l'animal (sinon la
+        // notification, sans profil, s'affiche dans TOUS les profils du compte).
+        for (const a of animaux) {
+            if (!profileIdByAnimal[a.id] && a.profile_id) profileIdByAnimal[a.id] = a.profile_id;
         }
 
         const lastChaleur = {};

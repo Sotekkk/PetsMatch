@@ -1,11 +1,16 @@
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart' show BandeauTrouverAnimal, SelecteurModes;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AssociationsListPage extends StatefulWidget {
-  const AssociationsListPage({super.key});
+  /// Onglet Associations de « Trouver un animal » : pas d'AppBar, modes Liste / Carte.
+  final bool embedded;
+  /// Ouverture directe en carte (ancien accès « Carte des associations »).
+  final bool carte;
+  const AssociationsListPage({super.key, this.embedded = false, this.carte = false});
 
   @override
   State<AssociationsListPage> createState() => _AssociationsListPageState();
@@ -17,7 +22,7 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
   List<Map<String, dynamic>> _all      = [];
   List<Map<String, dynamic>> _filtered = [];
   bool   _loading  = true;
-  bool   _showMap  = false;
+  late bool _showMap = widget.carte;
   String _search   = '';
 
   final _searchCtrl = TextEditingController();
@@ -98,6 +103,21 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return Column(children: [
+        Container(
+          color: _teal,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: _champRecherche(),
+        ),
+        BandeauTrouverAnimal(modes: SelecteurModes(
+          modes: const [SelecteurModes.liste, SelecteurModes.carte],
+          actif: _showMap ? 'carte' : 'liste',
+          onChange: (m) => setState(() => _showMap = m == 'carte'),
+        )),
+        Expanded(child: _corps()),
+      ]);
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
       appBar: AppBar(
@@ -117,7 +137,15 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
           preferredSize: const Size.fromHeight(56),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: TextField(
+            child: _champRecherche(),
+          ),
+        ),
+      ),
+      body: _corps(),
+    );
+  }
+
+  Widget _champRecherche() => TextField(
               controller: _searchCtrl,
               onChanged: (v) => setState(() { _search = v; _applyFilter(); }),
               style: const TextStyle(color: Colors.white, fontFamily: 'Galey'),
@@ -135,11 +163,9 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
-            ),
-          ),
-        ),
-      ),
-      body: _loading
+            );
+
+  Widget _corps() => _loading
           ? const Center(child: CircularProgressIndicator())
           : _showMap
               ? _AssociationMapView(assos: _filtered, onTap: (a) => _openDetail(context, a))
@@ -160,9 +186,7 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
                           onTap: () => _openDetail(context, _filtered[i]),
                         ),
                       ),
-                    ),
-    );
-  }
+                    );
 }
 
 // ─── Carte ────────────────────────────────────────────────────────────────────

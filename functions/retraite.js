@@ -119,6 +119,11 @@ exports.sendRetraiteReminders = functions
                 if (p.profile_id_proprio) profileIdByAnimal[p.animal_id] = p.profile_id_proprio;
             }
         }
+        // Sans ligne de propriété : profil de l'élevage de l'animal (sinon la
+        // notification, sans profil, s'affiche dans TOUS les profils du compte).
+        for (const a of animaux) {
+            if (!profileIdByAnimal[a.id] && a.profile_id) profileIdByAnimal[a.id] = a.profile_id;
+        }
 
         for (const animal of animaux) {
             if (!animal.uid_eleveur || !animal.date_naissance) continue;

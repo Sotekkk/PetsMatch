@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
+import TrouverAnimalNav from '@/components/annonces/TrouverAnimalNav';
 import type { AssoMapItem } from '@/components/AssociationsMap';
 
 const AssociationsMap = dynamic(() => import('@/components/AssociationsMap'), {
@@ -34,6 +35,9 @@ export default function AssociationsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
   const [view, setView]       = useState<'liste' | 'carte'>('liste');
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('vue') === 'carte') setView('carte');
+  }, []);
 
   useEffect(() => {
     // user_profiles : profile_type='association' — on ne sélectionne PAS name_elevage
@@ -83,38 +87,8 @@ export default function AssociationsPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-[#1F2A2E] font-galey mb-1">
-            Associations & Refuges
-          </h1>
-          <p className="text-gray-500 text-sm font-galey">
-            {filtered.length} association{filtered.length !== 1 ? 's' : ''}
-            {view === 'carte' && withCoords.length < filtered.length
-              ? ` · ${withCoords.length} sur la carte` : ''}
-          </p>
-        </div>
-        {/* Toggle liste / carte */}
-        <div className="flex bg-gray-100 rounded-xl p-1">
-          {(['liste', 'carte'] as const).map(v => (
-            <button key={v} onClick={() => setView(v)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors font-galey ${
-                view === v ? 'bg-white text-[#1F2A2E] shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}>
-              {v === 'liste' ? (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
-                </svg>
-              )}
-              {v === 'liste' ? 'Liste' : 'Carte'}
-            </button>
-          ))}
-        </div>
-      </div>
+      <TrouverAnimalNav onglet="associations" mode={view} onMode={m => setView(m === 'carte' ? 'carte' : 'liste')}
+        compteur={`${filtered.length} association${filtered.length !== 1 ? 's' : ''}${view === 'carte' && withCoords.length < filtered.length ? ` · ${withCoords.length} sur la carte` : ''}`} />
 
       {/* Recherche */}
       <input

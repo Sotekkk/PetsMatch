@@ -141,6 +141,9 @@ function TarifsInner() {
 
   const metierParam = searchParams.get('metier');
   const metier = METIERS.some(m => m.key === metierParam) ? metierParam! : 'eleveur';
+  // Ouverte depuis « Mon Profil » d'une association ou d'un particulier :
+  // uniquement l'offre de ce profil (pas les formules professionnelles).
+  const seul = metierParam === 'association' || metierParam === 'particulier' ? metierParam : null;
 
   useEffect(() => {
     supabase.from('plans_tarifaires').select('*').eq('actif', true)
@@ -167,7 +170,8 @@ function TarifsInner() {
 
       <div className="max-w-5xl mx-auto px-4 py-10">
         {/* Particulier (sans mention de prix) & association (gratuit) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-14">
+        <div className={`grid grid-cols-1 gap-5 mb-14 ${seul ? 'max-w-md mx-auto' : 'sm:grid-cols-2'}`}>
+          {seul !== 'association' && (
           <div className="rounded-2xl border-2 border-[#6E9E57] bg-white p-6">
             <h2 className="font-['Galey'] font-bold text-xl text-[#1F2A2E] mb-4">Particulier</h2>
             <ul className="space-y-2 text-sm text-gray-700">
@@ -184,6 +188,8 @@ function TarifsInner() {
               ))}
             </ul>
           </div>
+          )}
+          {seul !== 'particulier' && (
           <div className="rounded-2xl border-2 border-[#6E9E57] bg-white p-6">
             <h2 className="font-['Galey'] font-bold text-xl text-[#1F2A2E] mb-1">Association</h2>
             <p className="text-2xl font-bold text-[#6E9E57] mb-4">Gratuit</p>
@@ -200,8 +206,10 @@ function TarifsInner() {
               ))}
             </ul>
           </div>
+          )}
         </div>
 
+        {!seul && (<>
         {/* Sélecteur métier */}
         <h2 className="font-['Galey'] font-bold text-2xl text-[#1F2A2E] text-center mb-2">Professionnels</h2>
         <p className="text-center text-[#D97706] font-semibold text-sm mb-6">
@@ -315,6 +323,7 @@ function TarifsInner() {
             })}
           </div>
         )}
+        </>)}
 
         {/* Contact */}
         <div className="text-center border-t border-gray-200 pt-10">

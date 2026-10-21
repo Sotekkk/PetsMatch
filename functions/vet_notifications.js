@@ -81,7 +81,7 @@ exports.notifyOwnerVetEntry = functions
         let animals;
         try {
             animals = await supabaseGet(
-                `animaux?id=eq.${encodeURIComponent(animalId)}&select=nom,uid_eleveur,uid_proprietaire`,
+                `animaux?id=eq.${encodeURIComponent(animalId)}&select=nom,uid_eleveur,uid_proprietaire,profile_id`,
             );
         } catch (e) {
             console.error("notifyOwnerVetEntry: fetch animal error", e);
@@ -104,6 +104,8 @@ exports.notifyOwnerVetEntry = functions
             );
             if (propRows?.[0]) profileId = propRows[0].profile_id_proprio;
         } catch (_) {/* pas bloquant */}
+        // Animal de l'élevage sans ligne de propriété : profil de l'élevage.
+        if (!profileId && animal.uid_eleveur === ownerUid && animal.profile_id) profileId = animal.profile_id;
 
         const labels = {
             vaccin: "une vaccination",

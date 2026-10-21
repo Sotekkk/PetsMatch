@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
+import TrouverAnimalNav from '@/components/annonces/TrouverAnimalNav';
+import { typesAnnonce, typeDepuisParams, correspondType, type TypeAnnonce } from '@/lib/trouver-animal';
 
 interface RawBebe {
   nom?: string;
@@ -56,11 +59,6 @@ const ESPECE_LABEL: Record<string, string> = {
   tous: 'Toutes espèces', chien: 'Chien', chat: 'Chat', cheval: 'Cheval', lapin: 'Lapin',
   oiseau: 'Oiseau', reptile: 'Reptile', autre: 'Autre',
 };
-const TYPES = [
-  { value: 'tous', label: 'Tous' },
-  { value: 'vente', label: 'Compagnon' },
-  { value: 'saillie', label: 'Saillie' },
-];
 const BREED_FILES: Record<string, string> = {
   chien: 'dog_breeds', chat: 'cat_breeds', cheval: 'horse_breeds',
   lapin: 'rabbit_breeds', oiseau: 'bird_breeds', nac: 'nac_breeds',
@@ -68,32 +66,36 @@ const BREED_FILES: Record<string, string> = {
   reptile: 'nac_breeds',
 };
 
+// « Trouver un animal », onglet Animaux, vue Liste. Les filtres viennent de
+// l'URL (anciens liens ?source= / ?type= compris) et sont repris par Fil et Carte.
 export default function AnnoncesPage() {
+  return <Suspense><AnnoncesListe /></Suspense>;
+}
+
+function AnnoncesListe() {
+  const searchParams = useSearchParams();
   const { user, userData, activeProfileId } = useAuth();
   const isEleveur = userData?.isElevage === true;
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [eleveurVerifs, setEleveurVerifs] = useState<Record<string, EleveurVerif>>({});
   const [loading, setLoading] = useState(true);
-  const [filtreEspece, setFiltreEspece] = useState('tous');
-  const [filtreType, setFiltreType] = useState('tous');
+  const [filtreEspece, setFiltreEspece] = useState(() => searchParams.get('espece') ?? 'tous');
+  const [typeAnnonce, setTypeAnnonce] = useState<TypeAnnonce>(() => typeDepuisParams(searchParams));
   const [search, setSearch] = useState('');
 
   // Advanced filters
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [filtreRace, setFiltreRace] = useState('');
-  const [filtrePays, setFiltrePays] = useState('');
-  const [filtreRegion, setFiltreRegion] = useState('');
-  const [filtreDept, setFiltreDept] = useState('');
-  const [filtreVille, setFiltreVille] = useState('');
+  const [filtreRace, setFiltreRace] = useState(() => searchParams.get('race') ?? '');
+  const [filtrePays, setFiltrePays] = useState(() => searchParams.get('pays') ?? '');
+  const [filtreRegion, setFiltreRegion] = useState(() => searchParams.get('region') ?? '');
+  const [filtreDept, setFiltreDept] = useState(() => searchParams.get('dept') ?? '');
+  const [filtreVille, setFiltreVille] = useState(() => searchParams.get('ville') ?? '');
 
   // Race autocomplete
   const [breeds, setBreeds] = useState<string[]>([]);
   const [raceSugg, setRaceSugg] = useState<string[]>([]);
   const [showRaceSugg, setShowRaceSugg] = useState(false);
   const raceRef = useRef<HTMLDivElement>(null);
-
-  // Likes
-  const [source, setSource] = useState<'eleveurs' | 'associations'>('eleveurs');
 
   // Likes
   const [likedKeys, setLikedKeys] = useState<Set<string>>(new Set());
@@ -203,12 +205,9 @@ export default function AnnoncesPage() {
     // chargé pour le badge « vérifié », on le réutilise comme filtre).
     const verif = a.uid_eleveur ? eleveurVerifs[a.uid_eleveur] : undefined;
     if (verif && !['actif', 'validated'].includes(verif.statut_pro || '')) return false;
-    const isAsso = a.profil_source === 'association';
-    if (source === 'eleveurs' && isAsso) return false;
-    if (source === 'associations' && !isAsso) return false;
+    // Type : « Adoption » n'affiche jamais de saillie ; saillies réservées aux éleveurs.
+    if (!correspondType(a, typeAnnonce, isEleveur)) return false;
     if (filtreEspece !== 'tous' && a.espece?.toLowerCase() !== filtreEspece) return false;
-    if (filtreType === 'saillie' && a.type_vente !== 'saillie') return false;
-    if (filtreType === 'vente' && a.type_vente === 'saillie') return false;
     if (search && !`${a.titre ?? ''} ${a.race ?? ''} ${a.ville_eleveur ?? ''}`.toLowerCase().includes(search.toLowerCase())) return false;
     if (filtreRace && !a.race?.toLowerCase().includes(filtreRace.toLowerCase())) return false;
     if (filtrePays && a.pays_eleveur && !a.pays_eleveur.toLowerCase().includes(filtrePays.toLowerCase())) return false;
@@ -239,44 +238,9 @@ export default function AnnoncesPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-[#1F2A2E] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Annonces</h1>
-          <p className="text-gray-500 text-sm">
-            {filtered.length} annonce{filtered.length !== 1 ? 's' : ''} · {source === 'associations' ? 'Associations & refuges' : 'Éleveurs certifiés'}
-          </p>
-        </div>
-        <div className="flex gap-2 flex-shrink-0">
-          <Link href={`/annonces/carte?${new URLSearchParams(Object.fromEntries(Object.entries({source,espece:filtreEspece,type:filtreType,race:filtreRace,pays:filtrePays,region:filtreRegion,dept:filtreDept,ville:filtreVille}).filter(([,v])=>v&&v!=='tous'))).toString()}`}
-            className="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1F2A2E] text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
-            <span className="text-base">🗺️</span> Carte
-          </Link>
-          <Link href={`/annonces/feed?source=${source}`}
-            className="flex items-center gap-2 bg-[#1F2A2E] hover:bg-[#0C5C6C] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
-            <span className="text-base">▶</span> Feed
-          </Link>
-        </div>
-      </div>
-
-      {/* Onglets Éleveurs / Associations */}
-      <div className="flex gap-2 mb-6">
-        <button onClick={() => setSource('eleveurs')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-galey font-semibold border transition-all ${
-            source === 'eleveurs'
-              ? 'bg-[#1F2A2E] text-white border-[#1F2A2E]'
-              : 'bg-white text-gray-600 border-gray-200 hover:border-[#1F2A2E]'
-          }`}>
-          🏠 Éleveurs
-        </button>
-        <button onClick={() => setSource('associations')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-galey font-semibold border transition-all ${
-            source === 'associations'
-              ? 'bg-teal-700 text-white border-teal-700'
-              : 'bg-white text-gray-600 border-gray-200 hover:border-teal-700'
-          }`}>
-          💚 Associations (Adoption)
-        </button>
-      </div>
+      <TrouverAnimalNav onglet="animaux" mode="liste"
+        filtres={{ type: typeAnnonce, espece: filtreEspece, race: filtreRace, pays: filtrePays, region: filtreRegion, dept: filtreDept, ville: filtreVille }}
+        compteur={`${filtered.length} annonce${filtered.length !== 1 ? 's' : ''}`} />
 
       {/* Filtres */}
       <div className="flex flex-col gap-3 mb-8">
@@ -308,19 +272,17 @@ export default function AnnoncesPage() {
           </button>
         </div>
 
-        {/* Type chips — uniquement pour les éleveurs */}
-        {source === 'eleveurs' && (
-          <div className="flex gap-2 flex-wrap">
-            {TYPES.map((t) => (
-              <button key={t.value} onClick={() => setFiltreType(t.value)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                  filtreType === t.value ? 'bg-[#6E9E57] text-white border-[#6E9E57]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#6E9E57]'
-                }`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Type d'annonce (miroir appli : ChipsTypeAnnonce) */}
+        <div className="flex gap-2 flex-wrap" role="group" aria-label="Type d'annonce">
+          {typesAnnonce(isEleveur).map((t) => (
+            <button key={t.value} onClick={() => setTypeAnnonce(t.value)} aria-pressed={typeAnnonce === t.value}
+              className={`px-4 py-1.5 rounded-full text-sm transition-colors border ${
+                typeAnnonce === t.value ? 'bg-[#E8F4F6] text-[#0C5C6C] border-[#0C5C6C] font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C] font-medium'
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
 
         {/* Espèce chips */}
         <div className="flex gap-2 flex-wrap">
@@ -447,7 +409,7 @@ export default function AnnoncesPage() {
         <div className="flex justify-center py-20">
           <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : filtreType === 'saillie' && !isEleveur ? (
+      ) : typeAnnonce === 'saillie' && !isEleveur ? (
         <div className="flex flex-col items-center justify-center py-20 text-center px-6">
           <div className="text-5xl mb-4">🔒</div>
           <h3 className="font-bold text-[#1F2A2E] text-lg mb-2">Réservé aux éleveurs professionnels</h3>

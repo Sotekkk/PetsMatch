@@ -13,10 +13,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
-import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/message.dart';
@@ -250,38 +247,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => page));
                     },
-                    extras: [
-                      _DrawerSubItem(
-                      label: 'Annonces d\'adoption',
-                      icon: Icons.pets_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesPublicPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                      _DrawerSubItem(
-                      label: 'Fil adoption associations',
-                      icon: Icons.favorite_border,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesFeedPage(isAssociationFeed: true),
-                        ));
-                      },
-                    ),
-                      _DrawerSubItem(
-                      label: 'Carte des associations',
-                      icon: Icons.map_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AssociationsListPage(),
-                        ));
-                      },
-                    ),
-                    ],
                   ),
                 ),
                 _DrawerSection(

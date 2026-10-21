@@ -10,6 +10,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { typeDepuisParams, typeVenteDe, sourceDe, paramsAnimaux } from '@/lib/trouver-animal';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -212,9 +213,12 @@ function FeedPageContent() {
   }, [activeProfileId, userData, authLoading]);
 
   const [step, setStep] = useState<'filters' | 'feed'>('filters');
-  const [filtreEspece, setFiltreEspece] = useState('tous');
-  const [filtreType, setFiltreType] = useState('tous');
-  const initialSource = (searchParams.get('source') ?? 'eleveurs') as 'eleveurs' | 'associations' | 'tous';
+  // Filtres repris de « Trouver un animal » (type commun ou anciens ?source=).
+  const avecType = searchParams.has('type') || searchParams.has('source');
+  const typeCommun = typeDepuisParams(searchParams);
+  const [filtreEspece, setFiltreEspece] = useState(() => searchParams.get('espece') ?? 'tous');
+  const [filtreType, setFiltreType] = useState<string>(() => typeVenteDe(typeCommun));
+  const initialSource: 'eleveurs' | 'associations' | 'tous' = avecType ? sourceDe(typeCommun) : 'eleveurs';
   const [filtreSource, setFiltreSource] = useState<'eleveurs' | 'associations' | 'tous'>(initialSource);
 
   const pendingIndex = useRef<number | null>(null);
@@ -338,6 +342,11 @@ function FeedPageContent() {
     setLoading(false);
     setStep('feed');
   }, [filtreEspece, filtreType, filtreSource, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Ouvert depuis « Trouver un animal » : le fil démarre avec ses filtres.
+  useEffect(() => {
+    if (searchParams.get('demarrer') === '1' && !sessionStorage.getItem('feedJump') && !sessionStorage.getItem('feedReturn')) loadFeed();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Restaurer depuis messages ────────────────────────────────────────────────
 
@@ -573,7 +582,8 @@ function FeedPageContent() {
       <div className="min-h-screen bg-[#F5F5F0] flex flex-col">
         <div className="max-w-lg mx-auto w-full px-4 py-10 flex-1 flex flex-col">
           <div className="mb-8">
-            <Link href="/annonces" className="text-sm text-[#0C5C6C] hover:underline">← Annonces</Link>
+            <Link href={`/annonces?${paramsAnimaux({ type: filtreSource === 'associations' ? 'adoption' : filtreType === 'saillie' ? 'saillie' : filtreType === 'vente' ? 'compagnie' : 'tous', espece: filtreEspece })}`}
+              className="text-sm text-[#0C5C6C] hover:underline">← Trouver un animal</Link>
             <h1 className="text-2xl font-bold text-[#1F2A2E] mt-3" style={{ fontFamily: 'Galey, sans-serif' }}>
               Fil d&apos;actualité
             </h1>

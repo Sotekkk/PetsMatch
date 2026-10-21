@@ -198,6 +198,11 @@ class AnnoncesFeedPage extends StatefulWidget {
   final String? initialAnnonceId;
   final int?    initialBebeIndex;
   final bool    isAssociationFeed;
+  /// « Trouver un animal », type « Tous » : éleveurs ET associations.
+  final bool    toutesSources;
+  /// Ouvert depuis « Trouver un animal » avec ses filtres : le fil démarre
+  /// directement (pas de second écran de choix).
+  final bool    demarrer;
 
   const AnnoncesFeedPage({
     super.key,
@@ -207,6 +212,8 @@ class AnnoncesFeedPage extends StatefulWidget {
     this.initialAnnonceId,
     this.initialBebeIndex,
     this.isAssociationFeed = false,
+    this.toutesSources = false,
+    this.demarrer = false,
   });
 
   @override
@@ -261,7 +268,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadRaces(_espece));
     }
     // Auto-démarrage si on vient d'une notification ou "Animaux similaires"
-    if (widget.initialAnnonceId != null || widget.initialRace != null) {
+    if (widget.demarrer || widget.initialAnnonceId != null || widget.initialRace != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeed());
     }
   }
@@ -297,7 +304,9 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           .from('annonces')
           .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source, boost_until')
           .eq('statut', 'disponible');
-      if (widget.isAssociationFeed) {
+      if (widget.toutesSources) {
+        // éleveurs et associations
+      } else if (widget.isAssociationFeed) {
         q = q.eq('profil_source', 'association');
       } else {
         q = q.or('profil_source.is.null,profil_source.neq.association');

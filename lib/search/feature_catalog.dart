@@ -54,7 +54,6 @@ import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
@@ -113,6 +112,7 @@ import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
+import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart';
 import 'package:PetsMatch/pages/association/profil_association_edit.dart';
 
 // ── Contexte de profil ───────────────────────────────────────────────────────
@@ -356,35 +356,35 @@ List<QuickAction> _all(BuildContext ctx) => [
 
   // ── Annonces / adoption (recherche) — commun particulier & pros ─────────────
   QuickAction(
-    label: 'Trouver un compagnon',
-    keywords: ['adopter', 'chiot', 'chaton', 'annonces', 'à vendre', 'portée', 'acheter un chien'],
+    label: 'Trouver un animal',
+    keywords: ['trouver un compagnon', 'adopter', 'chiot', 'chaton', 'annonces', 'à vendre', 'portée', 'acheter un chien'],
     icon: Icons.pets_outlined, group: 'Annonces',
-    visible: () => true, open: (c) => _push(c, const TrouverCompagnonPage()),
+    visible: () => true, open: (c) => _push(c, const TrouverAnimalPage()),
   ),
   QuickAction(
     label: 'Annonces d\'adoption (associations)',
     keywords: ['refuge', 'adoption', 'sos', 'à adopter', 'chien de refuge'],
     icon: Icons.favorite_border, group: 'Annonces',
-    visible: () => true, open: (c) => _push(c, const AnnoncesAssoFeedPage()),
+    visible: () => true, open: (c) => _push(c, const TrouverAnimalPage(type: 'adoption')),
   ),
   QuickAction(
     label: 'Carte des élevages',
     keywords: ['éleveurs', 'près de chez moi', 'trouver un élevage'],
     icon: Icons.map_outlined, group: 'Annonces',
-    visible: () => true, open: (c) => _push(c, const EleveurListPage()),
+    visible: () => true, open: (c) => _push(c, const TrouverAnimalPage(onglet: 'elevages')),
   ),
   QuickAction(
     label: 'Carte des associations',
     keywords: ['refuges', 'spa', 'près de chez moi'],
     icon: Icons.map_outlined, group: 'Annonces',
-    visible: () => true, open: (c) => _push(c, const AssociationsListPage()),
+    visible: () => true, open: (c) => _push(c, const TrouverAnimalPage(onglet: 'associations')),
   ),
   QuickAction(
     label: 'Saillie',
     keywords: ['étalon', 'reproduction', 'mâle disponible', 'monte'],
     icon: Icons.diversity_1_outlined, group: 'Annonces',
     visible: () => _eleveur,
-    open: (c) => _push(c, const AnnoncesPublicPage(typeFilter: 'saillie')),
+    open: (c) => _push(c, const TrouverAnimalPage(type: 'saillie')),
   ),
   QuickAction(
     label: 'Publier une annonce cheval',
@@ -504,7 +504,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _eleveur, open: (c) => _push(c, const FacturationPage()),
   ),
   QuickAction(
-    label: 'Mon abonnement',
+    label: 'Tarifs et abonnement',
     keywords: ['premium', 'formule', 'plan', 'passer premium', 'tarifs', 'paiement'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _eleveur, open: (c) => _push(c, const AbonnementPage()),
@@ -607,7 +607,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'pension', open: (c) => _push(c, const PlanTemplateListPage()),
   ),
   QuickAction(
-    label: 'Mon abonnement (pension)',
+    label: 'Tarifs et abonnement (pension)',
     keywords: ['premium', 'formule', 'plan', 'passer premium'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _catPro == 'pension', open: (c) => _push(c, const PensionAbonnementPage()),
@@ -665,7 +665,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'education', open: (c) => _push(c, const EducationContratsPage()),
   ),
   QuickAction(
-    label: 'Ma formule (éducateur)',
+    label: 'Tarifs et abonnement (éducateur)',
     keywords: ['abonnement', 'premium', 'plan', 'passer premium'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _catPro == 'education', open: (c) => _push(c, const EducationAbonnementPage()),
@@ -686,7 +686,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     open: (c) => _push(c, const VetPatientsPage()),
   ),
   QuickAction(
-    label: 'Mon abonnement (vétérinaire/santé)',
+    label: 'Tarifs et abonnement (vétérinaire/santé)',
     keywords: ['abonnement', 'premium', 'plan', 'formule', 'passer avancé', 'passer clinique'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _catPro == 'veterinaire' || _catPro == 'sante' || _catPro == 'marechal_ferrant',
@@ -733,7 +733,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'garde', open: (c) => _push(c, const PlanTemplateListPage()),
   ),
   QuickAction(
-    label: 'Mon abonnement (garde)',
+    label: 'Tarifs et abonnement (garde)',
     keywords: ['premium', 'formule', 'plan'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _catPro == 'garde', open: (c) => _push(c, const GardeAbonnementPage()),
@@ -841,7 +841,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'photographe', open: (c) => _push(c, const FacturationPage()),
   ),
   QuickAction(
-    label: 'Mon abonnement (photo)',
+    label: 'Tarifs et abonnement (photo)',
     keywords: ['abonnement', 'premium', 'plan', 'formule', 'passer essentiel'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _catPro == 'photographe', open: (c) => _push(c, const PhotographeAbonnementPage()),
@@ -891,7 +891,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'toilettage', open: (c) => _push(c, const ToilettageDashboardPage()),
   ),
   QuickAction(
-    label: 'Mon abonnement (toilettage)',
+    label: 'Tarifs et abonnement (toilettage)',
     keywords: ['premium', 'formule', 'plan'],
     icon: Icons.workspace_premium_outlined, group: 'Mon profil',
     visible: () => _catPro == 'toilettage', open: (c) => _push(c, const ToilettageAbonnementPage()),

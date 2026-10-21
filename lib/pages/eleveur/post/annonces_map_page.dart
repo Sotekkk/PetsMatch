@@ -9,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AnnoncesMapPage extends StatefulWidget {
   final String typeFilter; // 'compagnon' | 'saillie'
+  /// 'tous' | 'eleveurs' | 'associations' (adoption) — même recherche que la liste.
+  final String source;
   final String espece;
   final String race;
   final String pays;
@@ -18,6 +20,7 @@ class AnnoncesMapPage extends StatefulWidget {
   const AnnoncesMapPage({
     super.key,
     this.typeFilter = 'compagnon',
+    this.source = 'tous',
     this.espece = 'tous',
     this.race = '',
     this.pays = '',
@@ -80,6 +83,11 @@ class _AnnoncesMapPageState extends State<AnnoncesMapPage> {
 
     for (final raw in rows) {
       final data = _norm(Map<String, dynamic>.from(raw));
+
+      // Source (éleveurs / associations)
+      final estAsso = raw['profil_source'] == 'association';
+      if (widget.source == 'associations' && !estAsso) continue;
+      if (widget.source == 'eleveurs' && estAsso) continue;
 
       // Type filter
       final typeVente = (data['typeVente'] as String?) ?? '';

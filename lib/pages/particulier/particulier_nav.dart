@@ -8,8 +8,6 @@ import 'package:PetsMatch/pages/particulier/particulier_home.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/association/associations_list_page.dart';
-import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
@@ -344,28 +342,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => page));
                     },
-                    extras: [
-                      _DrawerSubItem(
-                      label: 'Annonces d\'adoption',
-                      icon: Icons.favorite_border,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnnoncesAssoFeedPage(),
-                        ));
-                      },
-                    ),
-                      _DrawerSubItem(
-                      label: 'Carte des associations',
-                      icon: Icons.map_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AssociationsListPage(),
-                        ));
-                      },
-                    ),
-                    ],
                   ),
                 ),
                 if (_isEmploye)

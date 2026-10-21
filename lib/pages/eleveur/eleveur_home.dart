@@ -21,7 +21,6 @@ import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
@@ -56,6 +55,7 @@ import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EleveurHomePage extends StatefulWidget {
@@ -1016,7 +1016,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       ],
       if (!isVet && !isPension && !isGenericPro) ...[
         _QuickTile(icon: Icons.home_work_outlined, label: 'Élevages', color: const Color(0xFF5B8648),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EleveurListPage()))),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrouverAnimalPage(onglet: 'elevages')))),
         _QuickTile(icon: Icons.storefront_outlined, label: 'Services', color: const Color(0xFF5F9EAA),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()))),
       ],
@@ -1050,7 +1050,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         const SizedBox(height: 12),
         GestureDetector(
           onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
+              MaterialPageRoute(builder: (_) => const TrouverAnimalPage())),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(

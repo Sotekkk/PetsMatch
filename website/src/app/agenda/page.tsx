@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile, useProfileSource } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 import { typeFromMotif } from '@/lib/agenda-type';
+import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -538,7 +539,10 @@ export default function AgendaPage() {
       setPendingRdvs([]);
     }
 
-    const list = (data ?? []) as AgendaEvent[];
+    // Cloisonnement : les rappels d'un animal d'un autre profil du compte
+    // (ex. vaccins de l'élevage enregistrés sous l'association) restent dans
+    // l'agenda de ce profil-là. Miroir de agenda_page.dart::_load.
+    const list = await sansAutresProfils((data ?? []) as AgendaEvent[], activeProfileId, uid);
 
     // Co-propriété : les événements liés à un animal dont je suis
     // co-propriétaire actif (RDV véto/comportementaliste/ostéo, rappels
@@ -613,7 +617,7 @@ export default function AgendaPage() {
     // _loadTasks (d1/d2, p1/p2) pour garder les deux plateformes alignées.
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
-    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source,eleveur_profile_id';
+    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source,eleveur_profile_id,animal_id';
     const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source,eleveur_profile_id';
 
     let d1Res: { data: unknown[] | null } = { data: [] };
@@ -622,6 +626,10 @@ export default function AgendaPage() {
         ? await supabase.from('taches_elevage').select(manuelCols)
             .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
         : { data: [] as unknown[] };
+      // Cloisonnement : pas de tâche rattachée à un autre profil du compte.
+      if (activeProfileId) {
+        d1Res = { data: await sansAutresProfils((d1Res.data ?? []) as { animal_id?: unknown; eleveur_profile_id?: string | null }[], activeProfileId, uid) };
+      }
       if (!activeProfileId || (d1Res.data ?? []).length === 0) {
         const ownerUid = await resolveEffectiveUid();
         d1Res = taskProfilSource === 'eleveur'

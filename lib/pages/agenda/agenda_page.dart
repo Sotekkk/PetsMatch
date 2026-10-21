@@ -11,6 +11,7 @@ import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/widgets/rattachement_picker.dart';
+import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
@@ -448,9 +449,13 @@ class _AgendaPageState extends State<AgendaPage> {
           }
         }
       }
+      // Cloisonnement : les rappels d'un animal d'un autre profil du compte
+      // (ex. vaccins de l'élevage enregistrés sous l'association) restent
+      // dans l'agenda de ce profil-là.
+      final propres = await sansAnimauxAutresProfils(deduped, pid);
       filtered
         ..clear()
-        ..addAll(deduped);
+        ..addAll(propres);
 
       // Co-propriété : les événements liés à un animal dont je suis
       // co-propriétaire actif (RDV véto/comportementaliste/ostéo, rappels
@@ -588,9 +593,16 @@ class _AgendaPageState extends State<AgendaPage> {
         // cogérant qui emprunte ce profil (elevage_cogerants) a un uid
         // Firebase différent du gérant, cf. commentaire sur agenda_events.
         d1 = await _supa.from('taches_elevage')
-            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id')
+            .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,eleveur_profile_id')
             .gte('date', from).lte('date', to)
             .eq('profile_id', pid);
+        // Cloisonnement : une tâche rattachée à un autre profil du compte
+        // (eleveur_profile_id, ou animal de ce profil) n'est pas affichée ici.
+        d1 = await sansAnimauxAutresProfils([
+          for (final t in d1 as List)
+            if ((t['eleveur_profile_id']?.toString() ?? '').isEmpty || t['eleveur_profile_id'].toString() == pid)
+              Map<String, dynamic>.from(t)
+        ], pid);
         if ((d1 as List).isEmpty) {
           // Repli sur les lignes legacy sans profile_id (avant l'ajout de
           // cette colonne) — scopées par l'uid RÉEL du gérant (pas la

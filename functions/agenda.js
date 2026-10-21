@@ -436,6 +436,9 @@ exports.sendMiseBasReminders = functions
                         `animal_id=eq.${g.animal_id}&uid_proprio=eq.${animal.uid_eleveur}&date_fin=is.null`);
                     if (propRows[0]) profileId = propRows[0].profile_id_proprio;
                 } catch (_) {/* pas bloquant */}
+                // Animal de l'élevage sans ligne de propriété : profil de l'élevage
+                // (sinon la notification, sans profil, s'affiche dans TOUS les profils).
+                if (!profileId && animal.profile_id) profileId = animal.profile_id;
 
                 const animalNom = animal.nom || "votre femelle";
                 const miseBas = new Date(g.date_prevue).toLocaleDateString("fr-FR", {
@@ -546,6 +549,9 @@ async function sendOverdueMiseBasReminders() {
                 `animal_id=eq.${g.animal_id}&uid_proprio=eq.${animal.uid_eleveur}&date_fin=is.null`);
             if (propRows[0]) profileId = propRows[0].profile_id_proprio;
         } catch (_) {/* pas bloquant */}
+        // Animal de l'élevage sans ligne de propriété : profil de l'élevage
+        // (sinon la notification, sans profil, s'affiche dans TOUS les profils).
+        if (!profileId && animal.profile_id) profileId = animal.profile_id;
 
         const animalNom = animal.nom || "votre femelle";
         const joursRetard = Math.round((new Date(todayStr) - new Date(g.date_prevue)) / 86400000);

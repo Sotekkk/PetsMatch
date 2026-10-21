@@ -7,6 +7,7 @@ import { SANTE_COULEUR_ACTE } from '@/lib/sante-couleurs';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { estHorsPriseEnCharge } from '@/lib/protocoles';
+import { sansAutresProfils } from '@/lib/cloisonnement-profils';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 
 function displayNameFromProfile(
@@ -99,6 +100,7 @@ interface AgendaEventLite {
   id: number | string;
   titre: string;
   date_debut: string;
+  animal_id?: number | string | null;
 }
 
 interface RoutineGroupe {
@@ -1154,7 +1156,7 @@ export default function AgendaElevagePage() {
       // Rappels agenda_events du jour (chaleurs J-7/J-1, mise-bas, RDV...) —
       // absents jusqu'ici de cette page, qui n'affichait que des tâches.
       activeProfileId
-        ? supabase.from('agenda_events').select('id,titre,date_debut').eq('pro_profile_id', activeProfileId)
+        ? supabase.from('agenda_events').select('id,titre,date_debut,animal_id').eq('pro_profile_id', activeProfileId)
             .gte('date_debut', `${selectedDate}T00:00:00`).lte('date_debut', `${selectedDate}T23:59:59`)
         : supabase.from('agenda_events').select('id,titre,date_debut').eq('uid', user.uid)
             .or('pro_profile_id.is.null,pro_profile_id.eq.')
@@ -1191,11 +1193,13 @@ export default function AgendaElevagePage() {
     const allR = [...(r1.data ?? []), ...(r2.data ?? []), ...overdueR] as Routine[];
     const routinesList = allR.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
     const seenT = new Set<string>();
-    const allT = [...(tm.data ?? []), ...overdueT] as TacheManuelle[];
+    // Cloisonnement : rien d'un autre profil du compte (ex. tâches et rappels
+    // de l'élevage enregistrés sous l'association).
+    const allT = await sansAutresProfils([...(tm.data ?? []), ...overdueT] as TacheManuelle[], activeProfileId, user.uid);
     const tachesList = allT.filter(t => { if (seenT.has(t.id)) return false; seenT.add(t.id); return true; });
     setRoutines(routinesList);
     setTachesM(tachesList);
-    setDayEvents((evRes.data ?? []) as AgendaEventLite[]);
+    setDayEvents(await sansAutresProfils((evRes.data ?? []) as AgendaEventLite[], activeProfileId, user.uid));
     const profileIds = [...new Set([
       ...routinesList.map(r => r.valide_par_profile_id),
       ...tachesList.map(t => t.fait_par_profile_id),
@@ -1219,10 +1223,10 @@ export default function AgendaElevagePage() {
             .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)
         : supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
             .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
-      withProfileFilter(() => supabase.from('taches_elevage').select('date')
+      withProfileFilter(() => supabase.from('taches_elevage').select('date,animal_id,eleveur_profile_id')
         .gte('date', from).lte('date', to)),
       activeProfileId
-        ? supabase.from('agenda_events').select('date_debut').eq('pro_profile_id', activeProfileId)
+        ? supabase.from('agenda_events').select('date_debut,animal_id').eq('pro_profile_id', activeProfileId)
             .gte('date_debut', `${from}T00:00:00`).lte('date_debut', `${to}T23:59:59`)
         : supabase.from('agenda_events').select('date_debut').eq('uid', user.uid)
             .or('pro_profile_id.is.null,pro_profile_id.eq.')
@@ -1235,8 +1239,10 @@ export default function AgendaElevagePage() {
     };
     [...(r1.data ?? []), ...(r2.data ?? [])].forEach((r: { date_prevue: string; type_acte?: string }) =>
       addC(r.date_prevue.split('T')[0], ACTE_COLOR[r.type_acte ?? ''] ?? '#9E9E9E'));
-    ((tm.data ?? []) as { date: string }[]).forEach(t => addC(t.date, '#6E9E57'));
-    ((evRes.data ?? []) as { date_debut: string }[]).forEach(e => addC(e.date_debut.split('T')[0], '#E91E63'));
+    (await sansAutresProfils((tm.data ?? []) as { date: string; animal_id?: unknown; eleveur_profile_id?: string | null }[], activeProfileId, user.uid))
+      .forEach(t => addC(t.date, '#6E9E57'));
+    (await sansAutresProfils((evRes.data ?? []) as { date_debut: string; animal_id?: unknown }[], activeProfileId, user.uid))
+      .forEach(e => addC(e.date_debut.split('T')[0], '#E91E63'));
     setMonthDates(new Map([...map.entries()].map(([d, s]) => [d, [...s]])));
   }, [user, focusedYear, focusedMois, activeProfileId, withProfileFilter]);
 

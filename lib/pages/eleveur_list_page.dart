@@ -10,6 +10,7 @@ import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart' show BandeauTrouverAnimal, SelecteurModes;
 import 'package:flutter/services.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -61,7 +62,9 @@ const _breedAssets = <String, String>{
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class EleveurListPage extends StatefulWidget {
-  const EleveurListPage({super.key});
+  /// Onglet Élevages de « Trouver un animal » : pas d'AppBar, modes Liste / Carte.
+  final bool embedded;
+  const EleveurListPage({super.key, this.embedded = false});
   @override
   State<EleveurListPage> createState() => _EleveurListPageState();
 }
@@ -214,6 +217,29 @@ class _EleveurListPageState extends State<EleveurListPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return Column(children: [
+        Container(
+          color: _teal,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: Row(children: [
+            Expanded(child: _SearchBarWidget(
+              controller: _searchCtrl,
+              hint: 'Rechercher un élevage...',
+              onChanged: (v) => setState(() => _search = v),
+            )),
+            const SizedBox(width: 8),
+            _FilterButton(count: _activeFilterCount, onTap: _openFilterSheet),
+          ]),
+        ),
+        BandeauTrouverAnimal(modes: SelecteurModes(
+          modes: const [SelecteurModes.liste, SelecteurModes.carte],
+          actif: _mapView ? 'carte' : 'liste',
+          onChange: (m) => setState(() => _mapView = m == 'carte'),
+        )),
+        Expanded(child: _corps()),
+      ]);
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
       appBar: AppBar(
@@ -253,7 +279,11 @@ class _EleveurListPageState extends State<EleveurListPage> {
           ),
         ),
       ),
-      body: Column(children: [
+      body: _corps(),
+    );
+  }
+
+  Widget _corps() => Column(children: [
         // ── Filtres actifs ──────────────────────────────────────────────────
         if (_activeFilterCount > 0)
           Container(
@@ -333,9 +363,7 @@ class _EleveurListPageState extends State<EleveurListPage> {
                   },
                 ),
         ),
-      ]),
-    );
-  }
+      ]);
 }
 
 // ─── Feuille de filtres ───────────────────────────────────────────────────────

@@ -22,15 +22,13 @@ import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/pages/nature/natural_places_page.dart';
-import 'package:PetsMatch/pages/association/associations_list_page.dart';
-import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 // Eleveur pages
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/widgets/tarifs_abonnement.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
@@ -247,18 +245,6 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           label: 'Annonces',
           children: entreesMenuAnnonces(
             ouvrir: _push,
-            extras: [
-              _DrawerSubItem(
-              label: "Annonces d'adoption",
-              icon: Icons.favorite_border,
-              onTap: () => _push(const AnnoncesAssoFeedPage()),
-            ),
-              _DrawerSubItem(
-              label: 'Carte des associations',
-              icon: Icons.map_outlined,
-              onTap: () => _push(const AssociationsListPage()),
-            ),
-            ],
           ),
         ),
         if (_isEmploye)
@@ -396,13 +382,6 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             label: 'Annonces',
             children: entreesMenuAnnonces(
               ouvrir: _push,
-              extras: [
-                _DrawerSubItem(
-                label: 'Saillie',
-                icon: Icons.diversity_1_outlined,
-                onTap: () => _push(const AnnoncesPublicPage(typeFilter: 'saillie')),
-              ),
-              ],
             ),
           ),
         ],
@@ -570,6 +549,12 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                       : null)
               : const ProfilEleveurEditPage()),
         ),
+        if (aTarifsAbonnement())
+          _DrawerItem(
+            icon: Icons.workspace_premium_outlined,
+            label: 'Tarifs et abonnement',
+            onTap: () => _push(pageTarifsAbonnement()),
+          ),
         if (User_Info.isPro) ...[
           const Divider(height: 8),
           _DrawerItem(

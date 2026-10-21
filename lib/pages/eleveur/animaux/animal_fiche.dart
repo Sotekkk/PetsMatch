@@ -1,5 +1,6 @@
 import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal, inviterAcquereur;
 import 'package:PetsMatch/pages/pro/toilettage_constantes.dart' show labelTravailToilettage;
@@ -5636,7 +5637,7 @@ class _ReproListState extends State<_ReproList> {
           'animal_id':      int.tryParse(widget.animalId),
           'notes':          'Gestation confirmée',
           'gestation_id':   id,
-          'pro_profile_id': User_Info.activeProfileId,
+          'pro_profile_id': await profilPourAnimal(widget.animalId),
         };
         if (existing != null) {
           await supa.from('agenda_events').update(eventData).eq('id', existing['id']);
@@ -9300,7 +9301,9 @@ Future<void> _scheduleRappelAgenda({
     // Ne jamais écrire une chaîne vide : les vues agenda filtrent par
     // pro_profile_id = activeProfileId, une chaîne vide ne matche jamais
     // rien et rend le rappel invisible partout.
-    var proProfileId = User_Info.activeProfileId;
+    // Profil propriétaire de l'animal (un rappel de l'élevage reste dans
+    // l'agenda de l'élevage, même créé depuis l'association).
+    var proProfileId = await profilPourAnimal(animalId);
     if (proProfileId.isEmpty) {
       try {
         final row = await Supabase.instance.client.from('user_profiles_complet')
@@ -14657,6 +14660,7 @@ Future<void> _scheduleTraitementDailyReminders({
     animalNom = (a?['nom'] as String?) ?? '';
   } catch (_) {}
   final titre = 'Traitement${animalNom.isNotEmpty ? " $animalNom" : ""} — $nom';
+  final proProfileId = await profilPourAnimal(animalId);
   final events = <Map<String, dynamic>>[];
   var day = DateTime(dateDebut.year, dateDebut.month, dateDebut.day);
   final end = DateTime(dateFin.year, dateFin.month, dateFin.day);
@@ -14667,7 +14671,7 @@ Future<void> _scheduleTraitementDailyReminders({
       'type':           'medication',
       'date_debut':     DateTime(day.year, day.month, day.day, 8, 0).toUtc().toIso8601String(),
       'animal_id':      int.tryParse(animalId),
-      'pro_profile_id': User_Info.activeProfileId,
+      'pro_profile_id': proProfileId,
     });
     day = day.add(const Duration(days: 1));
   }

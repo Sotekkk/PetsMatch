@@ -275,7 +275,7 @@ exports.sendSanteReminders = functions
                 // Récupère les rappels du jour avec les infos de l'animal (éleveur ou particulier)
                 const rows = await supabaseGet(
                     `${table}?date_rappel=eq.${targetDate}` +
-                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)`,
+                    `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id)`,
                 );
                 if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -303,6 +303,9 @@ exports.sendSanteReminders = functions
                         );
                         if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
                     } catch (_) {/* pas bloquant */}
+                    // Animal de l'élevage sans ligne de propriété : profil de l'élevage
+                    // (sinon la notification, sans profil, s'affiche dans TOUS les profils).
+                    if (!profileId && animal.uid_eleveur === uid && animal.profile_id) profileId = animal.profile_id;
 
                     const produit = row[nomField] || label;
                     const cle = `${uid}|${profileId || ""}|${String(produit).trim().toLowerCase()}`;
@@ -426,7 +429,7 @@ async function sendOverdueSanteReminders(digest) {
         // qu'un enregistrement plus récent a déjà pris le relais de l'ancien.
         const rows = await supabaseGet(
             `${table}?date_rappel=not.is.null` +
-            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)`,
+            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id)`,
         );
         if (!Array.isArray(rows) || rows.length === 0) continue;
 
@@ -473,6 +476,9 @@ async function sendOverdueSanteReminders(digest) {
                 );
                 if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
             } catch (_) {/* pas bloquant */}
+            // Animal de l'élevage sans ligne de propriété : profil de l'élevage
+            // (sinon la notification, sans profil, s'affiche dans TOUS les profils).
+            if (!profileId && animal.uid_eleveur === uid && animal.profile_id) profileId = animal.profile_id;
 
             const title = `⚠️ ${label} en retard — ${nomAnimal}`;
             const body = `${produit} pour ${nomAnimal} devait être fait il y a ${joursRetard} ` +
@@ -597,7 +603,7 @@ exports.sendTraitementReminders = functions
                 const r = await supabaseGet(
                     `${table}?rappel_actif=eq.true` +
                     `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
-                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)",
+                    "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire,profile_id)",
                 );
                 if (Array.isArray(r)) {
                     for (const x of r) {
@@ -650,6 +656,9 @@ exports.sendTraitementReminders = functions
                 );
                 if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
             } catch (_) {/* pas bloquant */}
+            // Animal de l'élevage sans ligne de propriété : profil de l'élevage
+            // (sinon la notification, sans profil, s'affiche dans TOUS les profils).
+            if (!profileId && animal.uid_eleveur === uid && animal.profile_id) profileId = animal.profile_id;
 
             const nomSoin = row.nom || "Traitement";
             const cle = [uid, profileId || "", row._table, nomSoin.toLowerCase(), row.posologie || "", heureDue]

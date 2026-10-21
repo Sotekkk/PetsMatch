@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
@@ -199,8 +200,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         if (t == 'social_like' || t == 'social_mention' || t == 'story_like') continue;
         autres[pid] = (autres[pid] ?? 0) + 1;
       }
+      // Cloisonnement : un ancien rappel sans profil destinataire qui
+      // concerne un animal d'un autre profil du compte n'est pas affiché ici.
+      final propres = await notifsSansAutresProfils(List<Map<String, dynamic>>.from(filtered), activeProfileId);
       if (mounted) setState(() {
-        _notifs = List<Map<String, dynamic>>.from(filtered);
+        _notifs = propres;
         _autresProfils = autres;
         _loading = false;
       });
@@ -2118,7 +2122,7 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
       final ownerUid = await _resolveOwnerUid();
       final data = await _supa
           .from('notifications')
-          .select('id, profile_id, profile_type, type')
+          .select('id, profile_id, profile_type, type, data')
           .or(ownerUid != _uid ? 'uid.eq.$_uid,uid.eq.$ownerUid' : 'uid.eq.$_uid')
           .eq('read', false);
       final currentType = _currentBadgeProfileType;
@@ -2127,14 +2131,15 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
       // prime s'il est renseigné, sinon repli sur profile_type. Likes/
       // mentions Pets Social exclus : affichés dans le cœur, pas ici (cf.
       // _fetch()).
-      final count = (data as List).where((n) {
+      final visibles = (data as List).where((n) {
         final type = n['type'] as String? ?? '';
         if (type == 'social_like' || type == 'social_mention' || type == 'story_like') return false;
         final pid = (n['profile_id'] as String?) ?? '';
         if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';
         return pt.isEmpty || pt == currentType;
-      }).length;
+      }).map((n) => Map<String, dynamic>.from(n)).toList();
+      final count = (await notifsSansAutresProfils(visibles, activeProfileId)).length;
       if (mounted) setState(() => _unread = count);
     } catch (_) {}
   }

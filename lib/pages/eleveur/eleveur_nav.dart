@@ -6,6 +6,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/widgets/tarifs_abonnement.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
@@ -22,7 +23,6 @@ import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
-import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
@@ -363,16 +363,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      _DrawerSubItem(
-                        label: 'Mon abonnement',
-                        icon: Icons.workspace_premium_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const GardeAbonnementPage(),
-                          ));
-                        },
-                      ),
                     ],
                   ),
                   _DrawerSection(
@@ -554,16 +544,6 @@ class _EleveurNavState extends State<EleveurNav> {
                             ));
                           },
                         ),
-                        _DrawerSubItem(
-                          label: 'Mon abonnement',
-                          icon: Icons.workspace_premium_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const PhotographeAbonnementPage(),
-                            ));
-                          },
-                        ),
                       ],
                     ),
                     _DrawerSection(
@@ -668,16 +648,6 @@ class _EleveurNavState extends State<EleveurNav> {
                             ));
                           },
                         ),
-                        _DrawerSubItem(
-                          label: 'Mon abonnement',
-                          icon: Icons.workspace_premium_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const ToilettageAbonnementPage(),
-                            ));
-                          },
-                        ),
                       ],
                     ),
                     _DrawerSection(
@@ -749,16 +719,6 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const ProClientsPage(),
-                            ));
-                          },
-                        ),
-                        _DrawerSubItem(
-                          label: 'Mon abonnement',
-                          icon: Icons.workspace_premium_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => SanteAbonnementPage(profilType: User_Info.catPro),
                             ));
                           },
                         ),
@@ -847,16 +807,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const SanteSuivisMorphoPage(),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mon abonnement',
-                        icon: Icons.workspace_premium_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const SanteAbonnementPage(profilType: 'sante'),
                           ));
                         },
                       ),
@@ -998,14 +948,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      _DrawerSubItem(
-                        label: 'Mon abonnement',
-                        icon: Icons.workspace_premium_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const VetAbonnementPage()));
-                        },
-                      ),
                     ],
                   ),
                   _DrawerSection(
@@ -1108,16 +1050,6 @@ class _EleveurNavState extends State<EleveurNav> {
                             builder: (_) => _educationPlanCode == 'free'
                                 ? const EducationAbonnementPage()
                                 : const EmployesPage(profileType: 'education'),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
-                        label: 'Mon abonnement',
-                        icon: Icons.workspace_premium_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const EducationAbonnementPage(),
                           ));
                         },
                       ),
@@ -1422,7 +1354,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Mon abonnement',
+                        label: 'Tarifs et abonnement',
                         icon: Icons.workspace_premium_outlined,
                         onTap: () {
                           Navigator.pop(context);
@@ -1579,18 +1511,6 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(builder: (_) => page));
                       },
-                      extras: [
-                        _DrawerSubItem(
-                        label: 'Saillie',
-                        icon: Icons.diversity_1_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const AnnoncesPublicPage(typeFilter: 'saillie'),
-                          ));
-                        },
-                      ),
-                      ],
                     ),
                   ),
                 ],
@@ -1726,16 +1646,6 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  _DrawerItem(
-                    icon: Icons.workspace_premium_outlined,
-                    label: 'Mon abonnement',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const AbonnementPage(),
-                      ));
-                    },
-                  ),
                 ],
                 // La pension a deja sa propre section "Mon Profil" ci-dessus —
                 // eviter le doublon (meme logique que sur le site).
@@ -1753,6 +1663,17 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
+                  // Offres et abonnement du profil actif (déplacé depuis les
+                  // sections d'activité ; miroir site : « Mon Profil »).
+                  if (aTarifsAbonnement())
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'Tarifs et abonnement',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => pageTarifsAbonnement()));
+                      },
+                    ),
                 ],
                 if (User_Info.catPro == 'restauration') ...[
                   const Divider(height: 8),

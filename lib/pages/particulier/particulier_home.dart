@@ -15,9 +15,9 @@ import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/particulier/balades/balade_live_page.dart';
-import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
+import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 
 class ParticulierHomePage extends StatefulWidget {
@@ -401,11 +401,11 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       const SizedBox(height: 10),
       _QuickTileWide(
         icon: Icons.pets,
-        label: 'Trouver un compagnon',
-        subtitle: 'Feed · Recherche · Carte',
+        label: 'Trouver un animal',
+        subtitle: 'Liste · Fil · Carte',
         color: _teal,
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const TrouverCompagnonPage())),
+            MaterialPageRoute(builder: (_) => const TrouverAnimalPage())),
       ),
       const SizedBox(height: 10),
       _QuickTileWide(
@@ -498,7 +498,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             ]),
             TextButton(
               onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const AnnoncesPublicPage())),
+                  MaterialPageRoute(builder: (_) => const TrouverAnimalPage())),
               child: Text('Voir tout',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
             ),

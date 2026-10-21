@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:PetsMatch/main.dart' show getApiKey;
+import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
+import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
@@ -51,12 +52,20 @@ class AnnoncesPublicPage extends StatefulWidget {
   final String  initialEspece;
   final String? initialRace;
   final bool    isAssociation;
+  /// Contenu de l'onglet Animaux de « Trouver un animal » : pas d'AppBar,
+  /// filtre de type et modes Liste / Fil / Carte dans la page.
+  final bool    embedded;
+  /// 'tous' | 'compagnie' | 'adoption' | 'saillie' (sinon déduit de
+  /// [typeFilter] / [isAssociation], anciens accès).
+  final String? typeAnnonce;
   const AnnoncesPublicPage({
     super.key,
     this.typeFilter = 'compagnon',
     this.initialEspece = 'tous',
     this.initialRace,
     this.isAssociation = false,
+    this.embedded = false,
+    this.typeAnnonce,
   });
 
   @override
@@ -91,8 +100,10 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
   final _prixMinCtrl = TextEditingController();
   final _prixMaxCtrl = TextEditingController();
 
-  bool get _isSaillie    => widget.typeFilter == 'saillie';
-  bool get _isAssociation => widget.isAssociation;
+  late String _type = widget.typeAnnonce
+      ?? (widget.isAssociation ? 'adoption' : widget.typeFilter == 'saillie' ? 'saillie' : 'compagnie');
+  bool get _isSaillie    => _type == 'saillie';
+  bool get _isAssociation => _type == 'adoption';
 
   int get _activeFilterCount {
     int n = 0;
@@ -112,13 +123,16 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
     final ps = (d['profilSource'] as String?) ?? (d['profil_source'] as String?);
     if (_isAssociation) {
       if (ps != 'association') return false;
-    } else {
+    } else if (_type != 'tous') {
       if (ps == 'association') return false;
     }
+    // Adoption / compagnie : jamais de saillie ; « Tous » : saillies
+    // seulement pour un éleveur (même règle que le fil).
+    final estSaillie = (d['typeVente'] as String?) == 'saillie';
     if (_isSaillie) {
-      if ((d['typeVente'] as String?) != 'saillie') return false;
-    } else {
-      if ((d['typeVente'] as String?) == 'saillie') return false;
+      if (!estSaillie) return false;
+    } else if (estSaillie && !(_type == 'tous' && User_Info.isElevage)) {
+      return false;
     }
     final s = (d['statut'] as String?) ?? '';
     if (s == 'vendu' || s == 'cede' || s == 'expire') return false;
@@ -189,8 +203,94 @@ class _AnnoncesPublicPageState extends State<AnnoncesPublicPage> {
     });
   }
 
+  // Fil / Carte avec la recherche en cours (filtres compatibles conservés).
+  void _ouvrirFil() => Navigator.push(context, MaterialPageRoute(builder: (_) => AnnoncesFeedPage(
+        isAssociationFeed: _isAssociation,
+        toutesSources: _type == 'tous',
+        initialTypeFilter: _isSaillie ? 'saillie' : _type == 'tous' ? 'tous' : 'vente',
+        initialEspece: _espece,
+        demarrer: widget.embedded,
+      )));
+
+  void _ouvrirCarte() => Navigator.push(context, MaterialPageRoute(builder: (_) => AnnoncesMapPage(
+        typeFilter: _isSaillie ? 'saillie' : 'compagnon',
+        source: _isAssociation ? 'associations' : _type == 'tous' ? 'tous' : 'eleveurs',
+        espece: _espece, race: _raceText, pays: _pays, region: _region,
+        departement: _departement, ville: _ville,
+      )));
+
+  Widget _rechercheEtFiltre() => Row(children: [
+        Expanded(
+          child: _SearchBar(
+            controller: _searchCtrl,
+            hint: _isSaillie ? 'Race, étalon...' : 'Race, titre...',
+            onChanged: (v) => setState(() => _searchText = v),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _FilterButton(
+          count: _activeFilterCount,
+          onTap: () => _openFilterSheet(context),
+        ),
+      ]);
+
+  Widget _filtresActifsEtListe() => Column(children: [
+        if (_activeFilterCount > 0)
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: [
+                if (_espece != 'tous')
+                  _ActiveChip(label: speciesLabel(_espece), onRemove: () => _removeFilter('espece')),
+                if (_raceText.isNotEmpty)
+                  _ActiveChip(label: _raceText, onRemove: () => _removeFilter('race')),
+                if (_pays.isNotEmpty)
+                  _ActiveChip(label: _pays, onRemove: () => _removeFilter('pays')),
+                if (_region.isNotEmpty)
+                  _ActiveChip(label: _region, onRemove: () => _removeFilter('region')),
+                if (_departement.isNotEmpty)
+                  _ActiveChip(label: _departement, onRemove: () => _removeFilter('departement')),
+                if (_ville.isNotEmpty)
+                  _ActiveChip(label: _ville, onRemove: () => _removeFilter('ville')),
+                if (_prixMin != null)
+                  _ActiveChip(label: '≥ ${_prixMin!.toStringAsFixed(0)} €', onRemove: () => _removeFilter('prixMin')),
+                if (_prixMax != null)
+                  _ActiveChip(label: '≤ ${_prixMax!.toStringAsFixed(0)} €', onRemove: () => _removeFilter('prixMax')),
+              ]),
+            ),
+          ),
+        Expanded(child: _AnnoncesList(
+          key: ValueKey(_type),
+          matches: _matches,
+          isSaillie: _isSaillie,
+        )),
+      ]);
+
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) {
+      return Column(children: [
+        Container(
+          color: _teal,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: _rechercheEtFiltre(),
+        ),
+        BandeauTrouverAnimal(
+          filtres: ChipsTypeAnnonce(actif: _type, onChange: (v) => setState(() => _type = v)),
+          modes: SelecteurModes(
+            modes: const [SelecteurModes.liste, SelecteurModes.fil, SelecteurModes.carte],
+            actif: 'liste',
+            onChange: (m) {
+              if (m == 'fil') _ouvrirFil();
+              if (m == 'carte') _ouvrirCarte();
+            },
+          ),
+        ),
+        Expanded(child: _filtresActifsEtListe()),
+      ]);
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F0),
       appBar: AppBar(
@@ -884,7 +984,7 @@ class _ActiveChip extends StatelessWidget {
 class _AnnoncesList extends StatefulWidget {
   final bool Function(Map<String, dynamic>) matches;
   final bool isSaillie;
-  const _AnnoncesList({required this.matches, required this.isSaillie});
+  const _AnnoncesList({super.key, required this.matches, required this.isSaillie});
 
   @override
   State<_AnnoncesList> createState() => _AnnoncesListState();

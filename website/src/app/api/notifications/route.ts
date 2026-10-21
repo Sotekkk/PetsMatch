@@ -32,6 +32,39 @@ async function resolveOwnerUid(uid: string, profileId: string | null): Promise<s
   return cog ? owner : uid;
 }
 
+// Animaux cités par une notification (data.animalId / data.animalIds).
+function animauxDeNotif(n: { data?: unknown }): string[] {
+  const d = (n.data ?? {}) as { animalId?: unknown; animalIds?: unknown };
+  const ids = Array.isArray(d.animalIds) ? d.animalIds.map(String) : [];
+  if (d.animalId != null && d.animalId !== '') ids.push(String(d.animalId));
+  return [...new Set(ids)];
+}
+
+// Cloisonnement : une notification SANS profil destinataire (anciens rappels
+// automatiques) qui concerne un animal d'un AUTRE profil du compte (ex. vaccin
+// d'un chien de l'élevage) n'apparaît pas dans la cloche de l'association.
+// Miroir appli : notifsSansAutresProfils (lib/utils/cloisonnement_profils.dart).
+async function sansAnimauxAutresProfils<T extends { profile_id?: string | null; data?: unknown }>(
+  notifs: T[], profileId: string | null, uid: string): Promise<T[]> {
+  if (!profileId) return notifs;
+  const ids = [...new Set(notifs.filter(n => !n.profile_id).flatMap(animauxDeNotif))];
+  if (ids.length === 0) return notifs;
+  const [{ data: profils }, { data: animaux }] = await Promise.all([
+    supabase.from('user_profiles').select('id').eq('uid', uid),
+    supabase.from('animaux').select('id, profile_id').in('id', ids),
+  ]);
+  const mes = new Set((profils ?? []).map(p => String(p.id)));
+  const autres = new Set((animaux ?? [])
+    .filter(a => a.profile_id && a.profile_id !== profileId && mes.has(String(a.profile_id)))
+    .map(a => String(a.id)));
+  if (autres.size === 0) return notifs;
+  return notifs.filter(n => {
+    if (n.profile_id) return true;
+    const a = animauxDeNotif(n);
+    return a.length === 0 || !a.every(id => autres.has(id));
+  });
+}
+
 export async function GET(req: NextRequest) {
   const auth = await requireUser(req);
   if (auth instanceof NextResponse) return auth;
@@ -62,10 +95,11 @@ export async function GET(req: NextRequest) {
   // renseigné sur la notif, il prime sur profile_type (souvent absent à
   // la création). Sans ce filtre, une notif destinée à un autre profil du
   // même compte (ex. éleveur) apparaît aussi côté particulier/association.
-  const filtered = (data ?? []).filter((n) => {
+  const scopees = (data ?? []).filter((n) => {
     if (n.profile_id) return n.profile_id === profileId;
     return true;
-  }).slice(0, 20);
+  });
+  const filtered = (await sansAnimauxAutresProfils(scopees, profileId, ownerUid)).slice(0, 20);
 
   return NextResponse.json(filtered);
 }

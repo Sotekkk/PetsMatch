@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
+import { typesAnnonce, typeDepuisParams, correspondType, paramsAnimaux, type TypeAnnonce } from '@/lib/trouver-animal';
 import type { AnnonceMapItem } from '@/components/AnnoncesMap';
 
 const AnnoncesMap = dynamic(() => import('@/components/AnnoncesMap'), {
@@ -87,8 +88,8 @@ function AnnoncesCartePage() {
   const [items, setItems] = useState<(AnnonceMapItem & { espece?: string; race?: string; pays_eleveur?: string; region_eleveur?: string; departement_eleveur?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState('');
-  const [filtreSource] = useState(() => (searchParams.get('source') ?? 'eleveurs') as 'eleveurs' | 'associations' | 'tous');
-  const [filtreType, setFiltreType] = useState(() => searchParams.get('type') ?? 'tous');
+  // Type commun de « Trouver un animal » (anciens ?source= / ?type= compris).
+  const [typeAnnonce, setTypeAnnonce] = useState<TypeAnnonce>(() => typeDepuisParams(searchParams));
   const [filtreEspece, setFiltreEspece] = useState(() => searchParams.get('espece') ?? 'tous');
   const [showAdvanced, setShowAdvanced] = useState(() =>
     !!(searchParams.get('race') || searchParams.get('pays') || searchParams.get('region') || searchParams.get('dept') || searchParams.get('ville'))
@@ -114,13 +115,8 @@ function AnnoncesCartePage() {
       .select('id, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nom_eleveur, lat, lng, profil_source')
       .eq('statut', 'disponible');
 
-    const q = filtreSource === 'associations'
-      ? baseQuery.eq('profil_source', 'association')
-      : filtreSource === 'eleveurs'
-      ? baseQuery.or('profil_source.is.null,profil_source.neq.association')
-      : baseQuery;
-
-    q.then(async ({ data }) => {
+    // Toutes sources : le type (compagnie / adoption / saillie) filtre ensuite.
+    baseQuery.then(async ({ data }) => {
         const rows = (data ?? []) as RawAnnonce[];
         setLoading(false);
 
@@ -183,9 +179,10 @@ function AnnoncesCartePage() {
 
   const activeFilterCount = [filtreEspece !== 'tous' ? filtreEspece : '', filtreRace, filtrePays, filtreRegion, filtreDept, filtreVille].filter(Boolean).length;
 
+  const qs = paramsAnimaux({ type: typeAnnonce, espece: filtreEspece, race: filtreRace, pays: filtrePays, region: filtreRegion, dept: filtreDept, ville: filtreVille });
+
   const filtered = items.filter(a => {
-    if (filtreType === 'saillie') { if (a.type_vente !== 'saillie') return false; }
-    else if (filtreType === 'vente') { if (a.type_vente === 'saillie') return false; }
+    if (!correspondType(a, typeAnnonce, isEleveur)) return false;
     if (filtreEspece !== 'tous' && a.espece?.toLowerCase() !== filtreEspece) return false;
     if (filtreRace && !a.race?.toLowerCase().includes(filtreRace.toLowerCase())) return false;
     if (filtrePays && a.pays_eleveur && !a.pays_eleveur.toLowerCase().includes(filtrePays.toLowerCase())) return false;
@@ -213,13 +210,9 @@ function AnnoncesCartePage() {
     <div className="flex flex-col" style={{ height: '100dvh' }}>
       {/* Header */}
       <div className="bg-[#0C5C6C] text-white px-4 py-3 flex items-center gap-3 flex-shrink-0">
-        <Link href="/annonces"
-          className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors text-sm font-bold">
-          ←
-        </Link>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h1 className="font-bold text-base leading-none" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Carte des annonces
+            Trouver un animal
           </h1>
           {progress ? (
             <p className="text-white/60 text-xs mt-0.5">{progress}</p>
@@ -230,37 +223,29 @@ function AnnoncesCartePage() {
         {(loading || progress) && (
           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
         )}
-        <Link href="/annonces/feed"
-          className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors flex-shrink-0">
-          ▶ Feed
-        </Link>
+        {/* Liste / Fil / Carte avec la recherche en cours (miroir de TrouverAnimalNav) */}
+        <div role="group" aria-label="Affichage" className="inline-flex p-0.5 bg-white/15 rounded-lg flex-shrink-0">
+          {([['liste', 'Liste', `/annonces?${qs}`], ['fil', 'Fil', `/annonces/feed?${qs}&demarrer=1`], ['carte', 'Carte', '']] as const).map(([v, l, href]) =>
+            v === 'carte'
+              ? <span key={v} aria-current="page" className="px-3 py-1.5 rounded-md text-xs font-semibold bg-white text-[#0C5C6C]">{l}</span>
+              : <Link key={v} href={href} className="px-3 py-1.5 rounded-md text-xs font-semibold text-white/85 hover:text-white">{l}</Link>)}
+        </div>
       </div>
 
       {/* Filtres */}
       <div className="bg-white border-b border-gray-100 px-4 py-2 flex flex-col gap-2 flex-shrink-0">
         {/* Row 1: type + espèce + filtres button */}
         <div className="flex gap-2 overflow-x-auto items-center">
-          {[
-            { value: 'tous', label: 'Tous' },
-            { value: 'vente', label: '🐾 Compagnon' },
-            { value: 'saillie', label: '💜 Saillie' },
-          ].map(t => {
-            const locked = t.value === 'saillie' && !isEleveur;
-            return (
-              <button key={t.value}
-                onClick={() => { if (!locked) setFiltreType(t.value); }}
-                title={locked ? 'Réservé aux éleveurs professionnels' : undefined}
-                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
-                  locked
-                    ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'
-                    : filtreType === t.value
-                      ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
-                }`}>
-                {locked ? '🔒 Saillie' : t.label}
-              </button>
-            );
-          })}
+          {typesAnnonce(isEleveur).map(t => (
+            <button key={t.value} onClick={() => setTypeAnnonce(t.value)} aria-pressed={typeAnnonce === t.value}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
+                typeAnnonce === t.value
+                  ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+              }`}>
+              {t.label}
+            </button>
+          ))}
           <div className="w-px h-4 bg-gray-200 flex-shrink-0" />
           {ESPECES.map(esp => (
             <button key={esp} onClick={() => setFiltreEspece(esp)}
