@@ -117,6 +117,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    MessagingHelper.signalerLecture();
     _setActiveConversation(null);
     WidgetsBinding.instance.removeObserver(this);
     _reactionOverlay?.remove();
@@ -628,6 +629,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         unread[_uid] = 0;
         await _supa.from('conversations').update({'unread_count': unread})
             .eq('id', widget.conversationId);
+        MessagingHelper.signalerLecture();
       }
     } catch (_) {}
   }

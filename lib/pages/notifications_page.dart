@@ -1913,12 +1913,14 @@ class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    MessagingHelper.nonLusModifies.addListener(_fetchUnread);
     _fetchUnread();
     _subscribe();
   }
 
   @override
   void dispose() {
+    MessagingHelper.nonLusModifies.removeListener(_fetchUnread);
     WidgetsBinding.instance.removeObserver(this);
     _channel?.unsubscribe();
     super.dispose();
@@ -1963,7 +1965,7 @@ class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
   void _subscribe() {
     if (_uid.isEmpty) return;
     _channel = _supa
-        .channel('msg_badge_$_uid')
+        .channel('msg_badge_${_uid}_$hashCode')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',

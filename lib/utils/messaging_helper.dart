@@ -1,9 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class MessagingHelper {
   static final _supa = Supabase.instance.client;
+
+  /// Incrémenté quand des messages sont lus / marqués : la bulle rouge de la
+  /// barre du bas se recalcule aussitôt, sans attendre le temps réel.
+  static final ValueNotifier<int> nonLusModifies = ValueNotifier<int>(0);
+  static void signalerLecture() => nonLusModifies.value++;
 
   static String get _myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 

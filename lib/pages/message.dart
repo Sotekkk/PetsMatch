@@ -815,6 +815,7 @@ class _MessagePageState extends State<MessagePage> {
                 final unread2 = Map<String, dynamic>.from(unreadMap);
                 unread2[uid] = 0;
                 await _supa.from('conversations').update({'unread_count': unread2}).eq('id', id);
+                MessagingHelper.signalerLecture();
               });
             },
             child: Container(
@@ -901,6 +902,7 @@ class _MessagePageState extends State<MessagePage> {
                   final unread2 = Map<String, dynamic>.from(unreadMap);
                   unread2[uid] = 0;
                   await _supa.from('conversations').update({'unread_count': unread2}).eq('id', id);
+                MessagingHelper.signalerLecture();
                 });
               },
               child: Container(
