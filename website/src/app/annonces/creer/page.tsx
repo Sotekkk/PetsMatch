@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -864,6 +865,8 @@ function CreerAnnoncePageInner() {
 
   async function enregistrer(mode: 'publier' | 'brouillon') {
     const brouillon = mode === 'brouillon';
+    const erreurDate = erreurNaissanceAnimal(dateNaissance, espece);
+    if (erreurDate) { setError(erreurDate); return; }
     setError(''); setSaving(true);
     try {
       // Seuls les éleveurs validés peuvent publier
@@ -1341,7 +1344,8 @@ function CreerAnnoncePageInner() {
                     Date de naissance
                     {(espece === 'Chien' || espece === 'Chat') ? <span className="text-red-500 ml-1">*</span> : <span className="text-gray-400 font-normal ml-1">(optionnel)</span>}
                   </label>
-                  <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={iCls} />
+                  <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={iCls}
+                    min={bornesNaissanceAnimal(espece).min} max={bornesNaissanceAnimal(espece).max} />
                 </div>
                 <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Nombre de bébés</label>

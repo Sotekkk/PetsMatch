@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, majValidation } from '@/lib/exercices-progression';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
@@ -223,8 +224,8 @@ function age(dob?: string | null) {
 
 // ─── Champ texte générique ────────────────────────────────────────────────────
 
-function Field({ label, value, onChange, type='text', rows, required, digitsOnly }:
-  { label:string; value:string; onChange:(v:string)=>void; type?:string; rows?:number; required?:boolean; digitsOnly?:boolean }) {
+function Field({ label, value, onChange, type='text', rows, required, digitsOnly, min, max }:
+  { label:string; value:string; onChange:(v:string)=>void; type?:string; rows?:number; required?:boolean; digitsOnly?:boolean; min?:string; max?:string }) {
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
   if (type === 'checkbox') {
     return (
@@ -244,7 +245,7 @@ function Field({ label, value, onChange, type='text', rows, required, digitsOnly
       {rows ? (
         <textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} className={cls} />
       ) : (
-        <input type={type} value={value} inputMode={digitsOnly ? 'numeric' : undefined}
+        <input type={type} value={value} inputMode={digitsOnly ? 'numeric' : undefined} min={min} max={max}
           onChange={e=>onChange(digitsOnly ? e.target.value.replace(/\D/g, '') : e.target.value)}
           className={cls} />
       )}
@@ -3035,6 +3036,8 @@ function AnimalFichePageInner() {
   async function saveAnimal() {
     if (!user) return;
     if (!animal.nom?.trim()) { setSaveError('Le nom est requis.'); return; }
+    const erreurDate = erreurNaissanceAnimal(animal.date_naissance, animal.espece);
+    if (erreurDate) { setSaveError(erreurDate); return; }
     const ident = animal.identification ?? '';
     if (isNew && ident.replace(/\D/g, '').length >= 8 && ident !== puceVerifiee) {
       try {
@@ -4173,7 +4176,8 @@ function AnimalFichePageInner() {
                     ))}
                   </div>
                 </div>
-                <Field label="Date de naissance" value={animal.date_naissance??''} onChange={v=>set('date_naissance',v)} type="date" />
+                <Field label="Date de naissance" value={animal.date_naissance??''} onChange={v=>set('date_naissance',v)} type="date"
+                  min={bornesNaissanceAnimal(animal.espece).min} max={bornesNaissanceAnimal(animal.espece).max} />
                 <Field label="Couleur / Robe" value={animal.couleur??''} onChange={v=>set('couleur',v)} />
                 <Field label="Couleur des yeux" value={animal.couleur_yeux??''} onChange={v=>set('couleur_yeux',v)} />
                 {animal.espece === 'cheval' ? (

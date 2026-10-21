@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/utils/ecriture_sure.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -1301,8 +1302,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         onTap: () async {
           final picked = await showDatePicker(
             context: context,
-            initialDate: DateTime.tryParse(ctrl.text) ?? DateTime.now(),
-            firstDate: DateTime(1900), lastDate: DateTime.now(),
+            initialDate: borner(DateTime.tryParse(ctrl.text) ?? derniereNaissancePersonne(), premiereNaissancePersonne(), derniereNaissancePersonne()),
+            firstDate: premiereNaissancePersonne(), lastDate: derniereNaissancePersonne(),
             builder: (ctx, child) => Theme(
               data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
               child: child!,

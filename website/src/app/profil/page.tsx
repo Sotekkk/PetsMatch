@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissancePersonne, erreurNaissancePersonne } from '@/lib/ages-plausibles';
 import { useProfessionPlanCode, vetFormuleOk } from '@/lib/use-plan';
 import { TARIFS_VETO_GROUPES } from '@/lib/tarifs-veto';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -2594,6 +2595,9 @@ export default function ProfilPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const errs = validateForm();
+    // Date de naissance plausible (18 à 110 ans).
+    const erreurDob = erreurNaissancePersonne(dob);
+    if (erreurDob) errs.push(erreurDob);
     if (errs.length > 0) { setFormErrors(errs); return; }
     setFormErrors([]);
     setSaving(true);
@@ -3364,7 +3368,8 @@ export default function ProfilPage() {
           )}
           <Field label={isEleveur ? "Date de naissance *" : "Date de naissance"}>
             <input type="date" value={dob} onChange={e => setDob(e.target.value)}
-              required={isEleveur} className={inputCls} />
+              required={isEleveur} className={inputCls}
+              min={bornesNaissancePersonne().min} max={bornesNaissancePersonne().max} />
           </Field>
         </Card>
 

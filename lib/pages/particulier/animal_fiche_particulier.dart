@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/exercices_progression.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal;
@@ -684,6 +685,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     if (nom.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Le nom est requis'), backgroundColor: Colors.red));
+      return;
+    }
+    // Date de naissance plausible pour l'espèce (changée après coup, par ex.).
+    final erreurDate = erreurNaissanceAnimal(_dateNaissance, _espece);
+    if (erreurDate != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreurDate), backgroundColor: Colors.red));
       return;
     }
     // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) :
@@ -1611,6 +1618,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           const SizedBox(height: 6),
           _DateField(
             date: _dateNaissance,
+            premiere: premiereNaissanceAnimal(_espece),
             onPicked: (d) => setState(() => _dateNaissance = d),
           ),
           const SizedBox(height: 18),
@@ -4021,14 +4029,16 @@ class _SexeRow extends StatelessWidget {
 class _DateField extends StatelessWidget {
   final DateTime? date;
   final ValueChanged<DateTime> onPicked;
-  const _DateField({required this.date, required this.onPicked});
+  /// Date la plus ancienne proposée (âge maximum de l'espèce).
+  final DateTime? premiere;
+  const _DateField({required this.date, required this.onPicked, this.premiere});
   @override
   Widget build(BuildContext context) => GestureDetector(
         onTap: () async {
           final d = await showDatePicker(
             context: context,
-            initialDate: date ?? DateTime.now().subtract(const Duration(days: 365)),
-            firstDate: DateTime(1900),
+            initialDate: borner(date ?? DateTime.now().subtract(const Duration(days: 365)), premiere ?? DateTime(1900), DateTime.now()),
+            firstDate: premiere ?? DateTime(1900),
             lastDate: DateTime.now(),
           );
           if (d != null) onPicked(d);

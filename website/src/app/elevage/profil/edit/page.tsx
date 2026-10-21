@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissancePersonne, erreurNaissancePersonne } from '@/lib/ages-plausibles';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -482,6 +483,7 @@ export default function EleveurProfilEditPage() {
     if (!firstname.trim()) errs.push('Prénom requis');
     if (!lastname.trim()) errs.push('Nom requis');
     if (!dob) errs.push('Date de naissance requise');
+    else { const e = erreurNaissancePersonne(dob); if (e) errs.push(e); }
     if (!nameElevage.trim()) errs.push("Nom de l'élevage requis");
     if (!phoneElevage.trim()) errs.push("Téléphone de l'élevage requis");
     if (!rue.trim()) errs.push("Rue / voie de l'élevage requise");
@@ -797,7 +799,8 @@ export default function EleveurProfilEditPage() {
             </Field>
           </div>
           <Field label="Date de naissance *">
-            <input type="date" value={dob} onChange={e => setDob(e.target.value)} required className={inputCls} />
+            <input type="date" value={dob} onChange={e => setDob(e.target.value)} required className={inputCls}
+              min={bornesNaissancePersonne().min} max={bornesNaissancePersonne().max} />
           </Field>
         </Card>
 

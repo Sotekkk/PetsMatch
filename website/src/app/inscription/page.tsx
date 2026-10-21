@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissancePersonne } from '@/lib/ages-plausibles';
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -691,7 +692,7 @@ export default function InscriptionPage() {
                 </div>
                 <div>
                   <label className={labelCls}>Date de naissance * <span className="text-gray-400 font-normal">(18 ans minimum)</span></label>
-                  <input type="date" value={dateOfBirth} max={new Date(Date.now() - 18 * 365.25 * 864e5).toISOString().slice(0, 10)} onChange={(e) => setDateOfBirth(e.target.value)} className={inputCls} />
+                  <input type="date" value={dateOfBirth} min={bornesNaissancePersonne().min} max={bornesNaissancePersonne().max} onChange={(e) => setDateOfBirth(e.target.value)} className={inputCls} />
                 </div>
                 <div>
                   <label className={labelCls}>Téléphone</label>

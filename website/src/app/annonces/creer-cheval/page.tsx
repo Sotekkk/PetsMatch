@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { enregistrerModificationAnnonce } from '@/lib/annonce-paiement';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -186,6 +187,8 @@ function CreerAnnonceChevalInner() {
     e.preventDefault(); setError('');
     const priced = formule !== 'valorisation';
     if (!titre.trim()) { setError('Un titre est requis.'); return; }
+    const erreurDate = erreurNaissanceAnimal(dateNaissance, 'cheval');
+    if (erreurDate) { setError(erreurDate); return; }
     if (numSIRE.trim().length < 6) { setError('Le n° SIRE est obligatoire (Décret 2013-879).'); return; }
     if (existingPhotos.length + croppedBlobs.length === 0) { setError('Ajoutez au moins une photo.'); return; }
     if (priced && prixUnite !== 'convenir' && (!prix || isNaN(Number(prix)))) {
@@ -415,7 +418,8 @@ function CreerAnnonceChevalInner() {
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>
-              <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={iCls} />
+              <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={iCls}
+                min={bornesNaissanceAnimal('cheval').min} max={bornesNaissanceAnimal('cheval').max} />
             </div>
           </div>
 

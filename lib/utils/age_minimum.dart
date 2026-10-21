@@ -15,6 +15,6 @@ String? erreurAgeInscription(String dateTexte) {
   if (age < kAgeMinimum) {
     return 'Vous devez avoir au moins $kAgeMinimum ans pour créer un compte PetsMatch.';
   }
-  if (age > 120) return 'Date de naissance invalide.';
+  if (age > 110) return 'Date de naissance invalide.';
   return null;
 }

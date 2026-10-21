@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { poidsKg } from '@/lib/poids';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -112,6 +113,8 @@ export default function NouvelAnimalAssoPage() {
   async function handleSave() {
     if (!user) return;
     setError('');
+    const erreurDate = erreurNaissanceAnimal(dateNaissance, espece);
+    if (erreurDate) { setError(erreurDate); return; }
     setSaving(true);
     try {
       const id = `animal_${user.uid}_${Date.now()}`;
@@ -283,7 +286,7 @@ export default function NouvelAnimalAssoPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>
               <input type="date" className={iCls} value={dateNaissance}
                 onChange={e => setDateNaissance(e.target.value)}
-                max={new Date().toISOString().slice(0, 10)} />
+                min={bornesNaissanceAnimal(espece).min} max={bornesNaissanceAnimal(espece).max} />
             </>
           ) : (
             <>

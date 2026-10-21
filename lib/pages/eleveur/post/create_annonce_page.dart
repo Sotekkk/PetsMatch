@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:async';
@@ -1419,8 +1420,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     final fmt = DateFormat('dd/MM/yyyy');
     return GestureDetector(
       onTap: !enabled ? null : () async {
+        // Date de naissance : âge maximum plausible selon l'espèce.
         final d = await showDatePicker(context: context,
-          initialDate: value ?? DateTime.now(), firstDate: DateTime(2010), lastDate: DateTime.now(),
+          initialDate: borner(value ?? DateTime.now(), premiereNaissanceAnimal(_espece), DateTime.now()), firstDate: premiereNaissanceAnimal(_espece), lastDate: DateTime.now(),
           builder: (ctx, child) => Theme(data: ThemeData.light().copyWith(
               colorScheme: const ColorScheme.light(primary: _teal)), child: child!));
         if (d != null) onPick(d);

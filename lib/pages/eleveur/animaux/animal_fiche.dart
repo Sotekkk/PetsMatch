@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal, inviterAcquereur;
@@ -1284,6 +1285,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez saisir un nom')));
       return;
     }
+    // Date de naissance plausible pour l'espèce (changée après coup, par ex.).
+    final erreurDate = erreurNaissanceAnimal(_dateNaissance, _espece);
+    if (erreurDate != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreurDate), backgroundColor: Colors.red));
+      return;
+    }
     // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) :
     // proposer de récupérer sa fiche plutôt que d'en créer une seconde.
     if (widget.animalId == null && _identCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 8 && _identCtrl.text != _puceVerifiee) {
@@ -2157,8 +2164,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: _dateNaissance ?? now,
-      firstDate: DateTime(now.year - 100),
+      initialDate: borner(_dateNaissance ?? now, premiereNaissanceAnimal(_espece), now),
+      // Âge maximum plausible selon l'espèce, jamais dans le futur.
+      firstDate: premiereNaissanceAnimal(_espece),
       lastDate: now,
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),

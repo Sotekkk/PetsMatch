@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -712,8 +713,8 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
           onTap: () async {
             final d = await showDatePicker(
               context: context,
-              initialDate: _dateNaissance ?? DateTime(DateTime.now().year - 8),
-              firstDate: DateTime(1990),
+              initialDate: borner(_dateNaissance ?? DateTime(DateTime.now().year - 8), premiereNaissanceAnimal('cheval'), DateTime.now()),
+              firstDate: premiereNaissanceAnimal('cheval'),
               lastDate: DateTime.now(),
             );
             if (d != null) setState(() => _dateNaissance = d);

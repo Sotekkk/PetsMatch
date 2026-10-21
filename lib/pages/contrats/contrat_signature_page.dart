@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:io';
 import 'dart:typed_data';
@@ -2147,8 +2148,8 @@ class _ContratInfosFormState extends State<_ContratInfosForm> {
               onTap: () async {
                 final d = await showDatePicker(
                   context: context,
-                  initialDate: _dateNaissanceAnimal ?? DateTime.now(),
-                  firstDate: DateTime(2005),
+                  initialDate: borner(_dateNaissanceAnimal ?? DateTime.now(), premiereNaissanceAnimal(null), DateTime.now()),
+                  firstDate: premiereNaissanceAnimal(null),
                   lastDate: DateTime.now(),
                 );
                 if (d != null) setState(() => _dateNaissanceAnimal = d);

@@ -1,5 +1,6 @@
 'use client';
 
+import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { poidsKg } from '@/lib/poids';
 import FicheAnimal from '@/app/mes-animaux/[id]/page';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
@@ -110,6 +111,9 @@ function AjouterAnimalEmploye() {
   async function handleSave() {
     if (!user) return;
     setError('');
+    // Date de naissance plausible pour l'espèce.
+    const erreurDate = erreurNaissanceAnimal(dateNaissance, espece);
+    if (erreurDate) { setError(erreurDate); return; }
     if (employeurParam && !employeur?.perms.includes('write_animaux')) {
       setError("Vous n'avez pas l'autorisation d'ajouter des animaux pour cet élevage.");
       return;
@@ -317,7 +321,7 @@ function AjouterAnimalEmploye() {
             </label>
             <input type="date" className={iCls} value={dateNaissance}
               onChange={e => setDateNaissance(e.target.value)}
-              max={new Date().toISOString().slice(0, 10)} />
+              min={bornesNaissanceAnimal(espece).min} max={bornesNaissanceAnimal(espece).max} />
           </div>
         </div>
 
