@@ -383,9 +383,31 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
     });
   }
 
+  bool _reconnexionProposee = false;
+
   Future<void> _checkEmailVerified() async {
     User? user = FirebaseAuth.instance.currentUser;
-    await user?.reload();
+    try {
+      await user?.reload();
+    } catch (_) {
+      // Adresse changée côté serveur : cette session n'est plus valable. On
+      // propose de se reconnecter avec la nouvelle adresse (une seule fois).
+      if (!mounted || _reconnexionProposee) return;
+      _reconnexionProposee = true;
+      _pollTimer?.cancel();
+      await showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
+        title: const Text('Reconnectez-vous', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text("Votre adresse a été modifiée en $_currentEmail. Après avoir cliqué sur le lien de validation, "
+            "reconnectez-vous avec cette adresse et votre mot de passe pour terminer l'inscription.",
+            style: const TextStyle(fontFamily: 'Galey')),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Me reconnecter'))],
+      ));
+      if (!mounted) return;
+      Navigator.of(context).popUntil((r) => r.isFirst);
+      await FirebaseAuth.instance.signOut();
+      return;
+    }
+    user = FirebaseAuth.instance.currentUser;
     if (!mounted || user == null || !user.emailVerified) return;
     setState(() {
       _isVerified = true;

@@ -24,11 +24,19 @@ function VerifierEmail() {
   const [edition, setEdition] = useState(false);
   const [nouvelEmail, setNouvelEmail] = useState('');
   const [adresseEnvoi, setAdresseEnvoi] = useState<string | null>(null);
+  // Adresse changée côté serveur : la session du navigateur n'est plus valable,
+  // il faut se reconnecter (avec la nouvelle adresse) pour constater la validation.
+  const [sessionExpiree, setSessionExpiree] = useState(false);
 
   const verifier = useCallback(async () => {
     const u = auth.currentUser;
     if (!u) return false;
-    await u.reload();
+    try {
+      await u.reload();
+    } catch {
+      setSessionExpiree(true);
+      return false;
+    }
     if (auth.currentUser?.emailVerified) {
       setVerifie(true);
       // Adresse corrigée et validée : le compte enregistre la nouvelle.
@@ -84,7 +92,21 @@ function VerifierEmail() {
         <h1 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
           {verifie ? 'Adresse vérifiée !' : 'Vérifiez votre adresse e-mail'}
         </h1>
-        {verifie ? (
+        {sessionExpiree && !verifie ? (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Votre adresse a été modifiée{adresseEnvoi ? <> en <strong className="text-[#1F2A2E]">{adresseEnvoi}</strong></> : null}.
+              Après avoir cliqué sur le lien de validation, reconnectez-vous avec cette adresse et votre mot de passe pour terminer l&apos;inscription.
+            </p>
+            <button onClick={async () => {
+              const mail = adresseEnvoi ?? auth.currentUser?.email ?? '';
+              try { await signOut(auth); } catch { /* */ }
+              router.replace(`/connexion?email=${encodeURIComponent(mail)}&suite=${encodeURIComponent(suite)}`);
+            }} className="w-full py-3 rounded-xl bg-[#0C5C6C] text-white font-semibold hover:opacity-90">
+              Me reconnecter
+            </button>
+          </div>
+        ) : verifie ? (
           <p className="text-sm text-gray-600">Redirection en cours…</p>
         ) : (
           <>

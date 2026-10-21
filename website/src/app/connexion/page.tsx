@@ -10,6 +10,12 @@ import { auth } from '@/lib/firebase';
 export default function ConnexionPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
+  // Adresse préremplie (?email=) : retour de la page de validation après correction.
+  useEffect(() => {
+    const e = new URLSearchParams(window.location.search).get('email');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (e) setEmail(e);
+  }, []);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
