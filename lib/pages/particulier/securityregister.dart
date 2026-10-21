@@ -1,17 +1,12 @@
 import 'package:PetsMatch/main.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show Supabase;
-import 'dart:async';
+import 'package:PetsMatch/pages/association/inscription_association_page.dart';
+import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
+import 'package:PetsMatch/pages/particulier/description_page.dart';
 import 'package:PetsMatch/utils/google_auth_helper.dart';
 import 'package:flutter/material.dart';
 
-/// Première étape de l'inscription : e-mail + mot de passe. Le compte est
-/// créé ICI (et l'e-mail de vérification envoyé) : une adresse déjà utilisée
-/// ou invalide se voit tout de suite, avant de remplir le reste. [suivante] =
-/// l'étape d'informations du type de compte choisi.
 class RegisterSecurity extends StatefulWidget {
-  final Widget Function() suivante;
-  const RegisterSecurity({super.key, required this.suivante});
+  const RegisterSecurity({super.key});
   @override
   State<RegisterSecurity> createState() => _RegisterSecurityState();
 }
@@ -28,8 +23,6 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
   bool _passOk   = true;
   bool _verifOk  = true;
   bool _googleLoading = false;
-  bool _creation = false;
-  String? _erreur;
 
   static const _green = Color(0xFF6E9E57);
   static const _teal  = Color(0xFF0C5C6C);
@@ -53,8 +46,7 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
     return s;
   }
 
-  Future<void> _continue() async {
-    if (_creation) return;
+  void _continue() {
     final e = _emailCtrl.text.trim();
     final p = _passwordCtrl.text;
     final v = _verifCtrl.text;
@@ -62,69 +54,12 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
       _emailOk = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(e);
       _passOk  = p.length >= 6;
       _verifOk = v == p && v.isNotEmpty;
-      _erreur = null;
     });
     if (!_emailOk || !_passOk || !_verifOk) return;
 
     User_Info.email    = e;
     User_Info.password = p;
-    // Avant la création : l'écran racine (qui réagit à la connexion) reste neutre.
-    User_Info.inscriptionEnCours = true;
-    setState(() => _creation = true);
-    try {
-      User? user;
-      try {
-        user = (await FirebaseAuth.instance.createUserWithEmailAndPassword(email: e, password: p)).user;
-      } on FirebaseAuthException catch (err) {
-        if (err.code != 'email-already-in-use') rethrow;
-        // Inscription commencée puis interrompue : on la reprend si c'est
-        // bien la même personne (même mot de passe) et qu'elle n'est pas finie.
-        try {
-          user = (await FirebaseAuth.instance.signInWithEmailAndPassword(email: e, password: p)).user;
-        } on FirebaseAuthException {
-          throw FirebaseAuthException(code: 'deja-utilise-autre-mdp');
-        }
-        final dejaInscrit = user != null && await _compteDejaComplet(user.uid);
-        if (dejaInscrit) {
-          await FirebaseAuth.instance.signOut();
-          throw FirebaseAuthException(code: 'deja-inscrit');
-        }
-      }
-      if (user == null) throw FirebaseAuthException(code: 'inconnu');
-      User_Info.uid = user.uid;
-      if (!mounted) return;
-      if (user.emailVerified) {
-        _goNext();
-        return;
-      }
-      // E-mail à valider AVANT de remplir le reste : écran d'attente.
-      try { await user.sendEmailVerification(); } catch (_) {}
-      if (!mounted) return;
-      Navigator.push(context, MaterialPageRoute(builder: (_) => _ValidationEmailPage(email: e, suivante: widget.suivante)));
-    } on FirebaseAuthException catch (err) {
-      final m = switch (err.code) {
-        'deja-inscrit' => 'Un compte existe déjà avec cet e-mail : connectez-vous depuis la page de connexion.',
-        'deja-utilise-autre-mdp' => 'Cet e-mail est déjà utilisé. Connectez-vous ou réinitialisez votre mot de passe.',
-        'invalid-email' => "Cet e-mail n'est pas valide.",
-        'weak-password' => 'Mot de passe trop faible (6 caractères minimum).',
-        'network-request-failed' => 'Pas de connexion internet. Réessayez.',
-        _ => 'Création du compte impossible. Réessayez.',
-      };
-      if (mounted) setState(() => _erreur = m);
-      if (FirebaseAuth.instance.currentUser == null) User_Info.inscriptionEnCours = false;
-    } finally {
-      if (mounted) setState(() => _creation = false);
-    }
-  }
-
-  /// Compte déjà terminé (profil enregistré) : pas une inscription à reprendre.
-  Future<bool> _compteDejaComplet(String uid) async {
-    try {
-      final r = await Supabase.instance.client.from('user_profiles').select('id').eq('uid', uid).limit(1);
-      return (r as List).isNotEmpty;
-    } catch (_) {
-      return false;
-    }
+    _goNext();
   }
 
   Future<void> _continueWithGoogle() async {
@@ -150,7 +85,17 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
   }
 
   void _goNext() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => widget.suivante()));
+    final isEleveur = User_Info.isElevage || User_Info.isPro;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => User_Info.isAssociation
+            ? const RegisterAssociationInformationPage()
+            : isEleveur
+                ? const RegisterElevageInformation()
+                : DescriptionRegistrationPage(),
+      ),
+    );
   }
 
   @override
@@ -168,7 +113,7 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(24),
-          child: _StepBar(current: 1, total: isEleveur || isAsso ? 4 : 3),
+          child: _StepBar(current: isEleveur || isAsso ? 2 : 3, total: isEleveur || isAsso ? 4 : 3),
         ),
       ),
       body: SingleChildScrollView(
@@ -239,22 +184,18 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
               onToggle: () => setState(() => _showPass2 = !_showPass2),
             ),
           ]),
-          if (_erreur != null) ...[
-            const SizedBox(height: 16),
-            Text(_erreur!, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFFB3261E), fontWeight: FontWeight.w600)),
-          ],
           const SizedBox(height: 32),
 
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _creation ? null : _continue,
+              onPressed: _continue,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _green,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              child: Text(_creation ? 'CRÉATION DU COMPTE…' : 'CONTINUER',
+              child: const Text('CONTINUER',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 16, color: Colors.white)),
             ),
@@ -403,112 +344,4 @@ class _StepBar extends StatelessWidget {
       )),
     ),
   );
-}
-
-/// Inscription : e-mail à valider avant les étapes d'informations. Vérifie
-/// seul toutes les 4 s (lien cliqué depuis la boîte mail), ou sur « J'ai validé ».
-class _ValidationEmailPage extends StatefulWidget {
-  final String email;
-  final Widget Function() suivante;
-  const _ValidationEmailPage({required this.email, required this.suivante});
-  @override
-  State<_ValidationEmailPage> createState() => _ValidationEmailPageState();
-}
-
-class _ValidationEmailPageState extends State<_ValidationEmailPage> {
-  static const _teal = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
-  Timer? _timer;
-  bool _verif = false, _envoi = false, _fini = false;
-  String? _message;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _verifier(silencieux: true));
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _verifier({bool silencieux = false}) async {
-    if (_verif || _fini) return;
-    if (!silencieux) setState(() { _verif = true; _message = null; });
-    try {
-      final u = FirebaseAuth.instance.currentUser;
-      await u?.reload();
-      final ok = FirebaseAuth.instance.currentUser?.emailVerified ?? false;
-      if (ok && mounted && !_fini) {
-        _fini = true;
-        _timer?.cancel();
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => widget.suivante()));
-        return;
-      }
-      if (!silencieux && mounted) {
-        setState(() => _message = "L'adresse n'est pas encore validée : ouvrez le lien reçu par e-mail.");
-      }
-    } catch (_) {
-      if (!silencieux && mounted) setState(() => _message = 'Vérification impossible. Réessayez.');
-    } finally {
-      if (!silencieux && mounted) setState(() => _verif = false);
-    }
-  }
-
-  Future<void> _renvoyer() async {
-    setState(() { _envoi = true; _message = null; });
-    try {
-      await FirebaseAuth.instance.currentUser?.sendEmailVerification();
-      if (mounted) setState(() => _message = 'E-mail renvoyé. Pensez à regarder dans les indésirables.');
-    } catch (_) {
-      if (mounted) setState(() => _message = 'Trop de demandes : patientez une minute avant de renvoyer.');
-    } finally {
-      if (mounted) setState(() => _envoi = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
-      appBar: AppBar(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
-          title: const Text('Validez votre e-mail', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
-      body: ListView(padding: const EdgeInsets.all(24), children: [
-        const Icon(Icons.mark_email_unread_outlined, size: 56, color: _teal),
-        const SizedBox(height: 16),
-        const Text('Votre compte est créé', textAlign: TextAlign.center,
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20)),
-        const SizedBox(height: 10),
-        Text("Nous avons envoyé un lien de validation à ${widget.email}. Ouvrez-le, puis revenez ici : la suite de l'inscription s'ouvre toute seule.",
-            textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Galey', fontSize: 14.5, color: Colors.grey.shade700, height: 1.5)),
-        const SizedBox(height: 28),
-        FilledButton(
-          onPressed: _verif ? null : () => _verifier(),
-          style: FilledButton.styleFrom(backgroundColor: _green, padding: const EdgeInsets.symmetric(vertical: 15),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-          child: Text(_verif ? 'Vérification…' : "J'ai validé mon e-mail",
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-        ),
-        const SizedBox(height: 10),
-        TextButton(onPressed: _envoi ? null : _renvoyer,
-            child: Text(_envoi ? 'Envoi…' : "Renvoyer l'e-mail", style: const TextStyle(fontFamily: 'Galey', color: _teal))),
-        TextButton(
-          onPressed: () async {
-            // Mauvaise adresse : on supprime le compte tout juste créé et on corrige.
-            try { await FirebaseAuth.instance.currentUser?.delete(); } catch (_) {}
-            try { await FirebaseAuth.instance.signOut(); } catch (_) {}
-            User_Info.inscriptionEnCours = false;
-            if (context.mounted) Navigator.pop(context);
-          },
-          child: const Text("Modifier l'adresse e-mail", style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
-        ),
-        if (_message != null) ...[
-          const SizedBox(height: 10),
-          Text(_message!, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFFB3261E))),
-        ],
-      ]),
-    );
-  }
 }

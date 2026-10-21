@@ -1,5 +1,5 @@
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/particulier/description_page.dart';
+import 'package:PetsMatch/pages/particulier/securityregister.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:flutter/services.dart';
@@ -105,7 +105,7 @@ class _RegisterPhoneAdressInformationPageState
     User_Info.lat = _lat;
     User_Info.lng = _lng;
 
-    Navigator.push(context, MaterialPageRoute(builder: (_) => DescriptionRegistrationPage()));
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterSecurity()));
   }
 
   @override

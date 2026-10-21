@@ -4,8 +4,9 @@
 // automatique de la validation, rappel des spams.
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { sendEmailVerification, signOut } from 'firebase/auth';
+import { sendEmailVerification, signOut, verifyBeforeUpdateEmail } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
 const DELAI_RENVOI_S = 60;
@@ -18,6 +19,10 @@ function VerifierEmail() {
   const [attente, setAttente] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [verifie, setVerifie] = useState(false);
+  // Adresse mal saisie : correction sans refaire l'inscription (lien envoyé à la nouvelle adresse).
+  const [edition, setEdition] = useState(false);
+  const [nouvelEmail, setNouvelEmail] = useState('');
+  const [adresseEnvoi, setAdresseEnvoi] = useState<string | null>(null);
 
   const verifier = useCallback(async () => {
     const u = auth.currentUser;
@@ -25,6 +30,9 @@ function VerifierEmail() {
     await u.reload();
     if (auth.currentUser?.emailVerified) {
       setVerifie(true);
+      // Adresse corrigée et validée : le compte enregistre la nouvelle.
+      const mail = auth.currentUser.email;
+      if (mail) { try { await supabase.from('users').update({ email: mail }).eq('uid', auth.currentUser.uid); } catch { /* */ } }
       await auth.currentUser.getIdToken(true); // jeton à jour (email_verified)
       router.replace(suite);
       return true;
@@ -77,7 +85,7 @@ function VerifierEmail() {
         ) : (
           <>
             <p className="text-sm text-gray-600 leading-relaxed">
-              Un e-mail de vérification a été envoyé à <strong className="text-[#1F2A2E]">{email}</strong>.
+              Un e-mail de vérification a été envoyé à <strong className="text-[#1F2A2E]">{adresseEnvoi ?? email}</strong>.
               Cliquez sur le lien qu&apos;il contient — cette page se met à jour automatiquement.
             </p>
             <div className="mt-4 flex items-start gap-2 text-left bg-[#FFF7E6] border border-[#F5C26B] rounded-xl p-3">
@@ -96,6 +104,30 @@ function VerifierEmail() {
                 className="w-full py-3 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] font-semibold disabled:opacity-50">
                 {attente > 0 ? `Renvoyer l'e-mail (${attente} s)` : "Renvoyer l'e-mail de vérification"}
               </button>
+              {edition ? (
+                <div className="flex gap-2">
+                  <input type="email" value={nouvelEmail} onChange={e => setNouvelEmail(e.target.value)} placeholder="Nouvelle adresse e-mail"
+                    className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                  <button onClick={async () => {
+                    const u = auth.currentUser; const mail = nouvelEmail.trim();
+                    if (!u || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) { setMessage("Cette adresse n'est pas valide."); return; }
+                    try {
+                      await verifyBeforeUpdateEmail(u, mail);
+                      setAdresseEnvoi(mail); setEdition(false);
+                      setMessage(`Lien de validation envoyé à ${mail}. Vos informations sont conservées.`);
+                    } catch (e) {
+                      const c = (e as { code?: string }).code;
+                      setMessage(c === 'auth/email-already-in-use' ? 'Cette adresse est déjà utilisée par un autre compte.'
+                        : c === 'auth/requires-recent-login' ? 'Reconnectez-vous puis réessayez.' : 'Changement impossible. Réessayez.');
+                    }
+                  }} className="px-4 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold">Valider</button>
+                </div>
+              ) : (
+                <button onClick={() => { setEdition(true); setNouvelEmail(''); }}
+                  className="w-full py-2 text-sm text-[#0C5C6C] font-semibold hover:underline">
+                  Adresse erronée ? Modifier l&apos;adresse e-mail
+                </button>
+              )}
               <button onClick={async () => { await signOut(auth); router.replace('/connexion'); }}
                 className="w-full py-2 text-sm text-gray-500 hover:text-gray-700">
                 Se déconnecter

@@ -391,6 +391,12 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
     });
     _timer.cancel();
     _pollTimer?.cancel();
+    // Adresse corrigée puis validée : le compte enregistre la nouvelle adresse.
+    final mail = user.email;
+    if (mail != null && mail.isNotEmpty) {
+      User_Info.email = mail;
+      try { await Supabase.instance.client.from('users').update({'email': mail}).eq('uid', user.uid); } catch (_) {}
+    }
     if (User_Info.isElevage || User_Info.isPro || User_Info.isAssociation) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => VerificationRegistrationPage()),

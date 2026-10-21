@@ -20,6 +20,7 @@ const abonnementFunctions = require("./abonnements");
 const storiesCleanupFunctions = require("./stories_cleanup");
 const livraisonsPhotoFunctions = require("./livraisons_photo");
 const parseCarnetDocumentFunctions = require("./parse_carnet_document");
+const inscriptionFunctions = require("./inscription");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -108,3 +109,7 @@ exports.purgerLivraisonsPhoto = livraisonsPhotoFunctions.purgerLivraisonsPhoto;
 
 // Carnet de santé — import IA photo/PDF (ordonnance, CR, carnet vaccinal...)
 exports.parseCarnetDocument = parseCarnetDocumentFunctions.parseCarnetDocument;
+
+// Inscriptions jamais validées : adresse libérée à la nouvelle tentative + purge quotidienne.
+exports.libererEmailInscription = inscriptionFunctions.libererEmailInscription;
+exports.purgerInscriptionsAbandonnees = inscriptionFunctions.purgerInscriptionsAbandonnees;

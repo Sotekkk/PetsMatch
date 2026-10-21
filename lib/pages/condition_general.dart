@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/verifemail.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/utils/google_auth_helper.dart';
+import 'package:PetsMatch/utils/inscription_email.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -595,14 +596,17 @@ class _MentionsLegalesState extends State<MentionsLegales> {
   // (repéré : deux uid créés à moins de 0,1s d'écart). Verrou + désactivation
   // du bouton pendant la création.
   bool _submitting = false;
+  // Adresse libérée une fois (inscription abandonnée) puis nouvel essai.
+  bool _dejaReessaye = false;
   void _validateAndContinue() async {
     if (_submitting) return;
     setState(() => _submitting = true);
+    var relancer = false;
     try {
       final User user;
-      if (isCurrentUserGoogleAuth || FirebaseAuth.instance.currentUser != null) {
-        // Compte déjà créé à la 1re étape (e-mail / mot de passe, ou Google) :
-        // rien à recréer ici.
+      if (isCurrentUserGoogleAuth) {
+        // Déjà authentifié via Google (compte créé + email vérifié par
+        // Google plus tôt dans le parcours) — pas de mot de passe à créer.
         user = FirebaseAuth.instance.currentUser!;
         User_Info.uid = user.uid;
       } else {
@@ -617,7 +621,6 @@ class _MentionsLegalesState extends State<MentionsLegales> {
 
       Object isRegistered =
           await registerElevage(User_Info.email, User_Info.password);
-      User_Info.inscriptionEnCours = false;
       // Charge les profils V2 créés par registerElevage
       await User_Info.loadProfiles(user.uid);
       if (User_Info.isElevage) {
@@ -680,7 +683,15 @@ class _MentionsLegalesState extends State<MentionsLegales> {
             errorMessage = "Un compte actif existe déjà avec cet e-mail. Connectez-vous depuis la page de connexion.";
           }
         } on FirebaseAuthException {
-          errorMessage = "Cet e-mail est déjà utilisé avec un mot de passe différent. Connectez-vous ou réinitialisez votre mot de passe.";
+          // Inscription précédente jamais validée (autre mot de passe) : on libère
+          // l'adresse et on recrée le compte avec les informations saisies.
+          if (!_dejaReessaye && await libererEmailInscription(User_Info.email)) {
+            _dejaReessaye = true;
+            relancer = true;
+            errorMessage = '';
+          } else {
+            errorMessage = "Cet e-mail est déjà utilisé par un compte actif. Connectez-vous ou réinitialisez votre mot de passe.";
+          }
         }
       } else if (e.code == 'invalid-email') {
         errorMessage = "Cet e-mail n'est pas valide.";
@@ -690,7 +701,7 @@ class _MentionsLegalesState extends State<MentionsLegales> {
         errorMessage = "Une erreur est survenue. Veuillez réessayer.";
       }
 
-      if (!mounted) return;
+      if (!mounted || relancer) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
@@ -701,6 +712,7 @@ class _MentionsLegalesState extends State<MentionsLegales> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+    if (relancer && mounted) _validateAndContinue();
   }
 
   static const _teal = Color(0xFF0C5C6C);

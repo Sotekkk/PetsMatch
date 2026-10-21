@@ -1,6 +1,5 @@
 'use client';
 
-import { bornesNaissancePersonne } from '@/lib/ages-plausibles';
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -8,6 +7,8 @@ import { useRouter } from 'next/navigation';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, sendEmailVerification } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
+import { libererEmailInscription } from '@/lib/inscription-email';
+import { bornesNaissancePersonne } from '@/lib/ages-plausibles';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 import { ecrireLigne } from '@/lib/ecriture-sure';
@@ -30,9 +31,7 @@ function erreurAgeInscription(dateIso: string): string | null {
 const MAPS_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '';
 
 type Role = 'particulier' | 'eleveur' | 'pro';
-// Ordre : type de compte → e-mail / mot de passe (compte créé) → e-mail
-// validé → informations → documents / animaux → terminer.
-type Step = 'role' | 'account' | 'verif' | 'info' | 'docs' | 'animaux';
+type Step = 'role' | 'info' | 'docs' | 'animaux' | 'account';
 
 // « Vos animaux & votre projet » (particulier) — miroir appli description_page.dart.
 const ESPECES_PROJET: [string, string][] = [
@@ -209,7 +208,7 @@ export default function InscriptionPage() {
     if (s && s.startsWith('/') && !s.startsWith('//')) {
       setSuiteRdv(s);
       setRole('particulier');
-      setStep('account');
+      setStep('info');
     }
   }, []);
 
@@ -265,12 +264,7 @@ export default function InscriptionPage() {
   const professions = categoriePro ? PRO_CATEGORIES[categoriePro] ?? [] : [];
 
   // ── Navigation ──────────────────────────────────────────────────────────────
-  // Compte déjà créé (retour en arrière, reprise) : on ne le redemande pas.
-  function continueToInfo() {
-    setError('');
-    const u = auth.currentUser;
-    setStep(u ? (u.emailVerified ? 'info' : 'verif') : 'account');
-  }
+  function continueToInfo() { setError(''); setStep('info'); }
 
   function continueFromInfo() {
     if (!firstname.trim() || !lastname.trim()) {
@@ -309,7 +303,7 @@ export default function InscriptionPage() {
 
     // RNA (W + 9 chiffres) — format valide, pas d'API publique de vérification
     if (/^[Ww]\d{9}$/.test(siretClean)) {
-      await terminer();
+      setStep('account');
       return;
     }
 
@@ -360,7 +354,7 @@ export default function InscriptionPage() {
       setSiretVerifying(false);
     }
 
-    await terminer();
+    setStep('account');
   }
 
   // ── Création du profil Supabase ──────────────────────────────────────────────
@@ -463,88 +457,51 @@ export default function InscriptionPage() {
     }
   }
 
-  // Étape e-mail / mot de passe : le compte est créé ICI et l'e-mail de
-  // validation envoyé, avant de remplir le reste (adresse déjà utilisée ou
-  // invalide visible tout de suite).
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setError("Cet e-mail n'est pas valide."); return; }
     if (password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if (!cguAccepted) { setError('Vous devez accepter les CGU pour créer un compte.'); return; }
     setLoading(true);
     try {
-      let u;
-      try {
-        u = (await createUserWithEmailAndPassword(auth, email.trim(), password)).user;
-      } catch (err) {
-        if ((err as { code?: string }).code !== 'auth/email-already-in-use') throw err;
-        // Inscription commencée puis interrompue : reprise si même mot de passe et profil pas encore créé.
-        try {
-          u = (await signInWithEmailAndPassword(auth, email.trim(), password)).user;
-        } catch {
-          setError('Cet e-mail est déjà utilisé. Connectez-vous ou réinitialisez votre mot de passe.');
-          return;
-        }
-        const { data: deja } = await supabase.from('user_profiles').select('id').eq('uid', u.uid).limit(1);
-        if ((deja ?? []).length) {
-          setError('Un compte existe déjà avec cet e-mail : connectez-vous.');
-          return;
-        }
-      }
-      if (u.emailVerified) { setStep('info'); return; }
-      try { await sendEmailVerification(u); } catch { /* renvoi possible à l'étape suivante */ }
-      setStep('verif');
-    } catch (err) {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(cred.user, { displayName: `${firstname} ${lastname}`.trim() });
+      await createProfile(cred.user.uid, email);
+      // Vérification de l'adresse e-mail (comme l'appli) avant d'accéder au site.
+      try { await sendEmailVerification(cred.user); } catch { /* renvoi possible depuis /verifier-email */ }
+      router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/'))}`);
+    } catch (err: unknown) {
       const code = (err as { code?: string }).code;
-      setError(code === 'auth/invalid-email' ? "Cet e-mail n'est pas valide."
-        : code === 'auth/weak-password' ? 'Mot de passe trop faible (6 caractères minimum).'
-        : 'Création du compte impossible. Réessayez.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // E-mail validé ? (lien cliqué dans la boîte mail) — vérifié aussi toutes les 4 s.
-  const [verifMsg, setVerifMsg] = useState('');
-  async function verifierEmail(silencieux = false) {
-    const u = auth.currentUser;
-    if (!u) { setStep('account'); return; }
-    try { await u.reload(); } catch { /* réseau */ }
-    if (auth.currentUser?.emailVerified) { setVerifMsg(''); setStep('info'); return; }
-    if (!silencieux) setVerifMsg("L'adresse n'est pas encore validée : ouvrez le lien reçu par e-mail.");
-  }
-  useEffect(() => {
-    if (step !== 'verif') return;
-    const t = setInterval(() => { void verifierEmail(true); }, 4000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
-  async function renvoyerEmail() {
-    const u = auth.currentUser;
-    if (!u) return;
-    try { await sendEmailVerification(u); setVerifMsg('E-mail renvoyé. Pensez à regarder dans les indésirables.'); }
-    catch { setVerifMsg('Trop de demandes : patientez une minute avant de renvoyer.'); }
-  }
-  async function changerEmail() {
-    try { await auth.currentUser?.delete(); } catch { /* déjà supprimé */ }
-    try { await auth.signOut(); } catch { /* */ }
-    setVerifMsg('');
-    setStep('account');
-  }
-
-  // Dernière étape : le profil est enregistré (compte déjà créé et validé).
-  async function terminer() {
-    const u = auth.currentUser;
-    if (!u) { setError('Session expirée : reconnectez-vous pour terminer.'); setStep('account'); return; }
-    setError('');
-    setLoading(true);
-    try {
-      await updateProfile(u, { displayName: `${firstname} ${lastname}`.trim() });
-      await createProfile(u.uid, u.email ?? email);
-      router.push(isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/'));
-    } catch {
-      setError("Enregistrement impossible. Réessayez.");
+      if (code === 'auth/email-already-in-use') {
+        // Récupération : inscription précédemment interrompue avant la fin
+        try {
+          const existing = await signInWithEmailAndPassword(auth, email, password);
+          await updateProfile(existing.user, { displayName: `${firstname} ${lastname}`.trim() });
+          await createProfile(existing.user.uid, email); // upsert idempotent
+          const suite = isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/');
+          if (!existing.user.emailVerified) {
+            try { await sendEmailVerification(existing.user); } catch { /* renvoi possible depuis /verifier-email */ }
+            router.push(`/verifier-email?suite=${encodeURIComponent(suite)}`);
+          } else router.push(suite);
+          return;
+        } catch {
+          // Inscription précédente jamais validée (autre mot de passe) : on libère
+          // l'adresse et on recrée le compte avec les informations saisies.
+          if (await libererEmailInscription(email)) {
+            try {
+              const cred = await createUserWithEmailAndPassword(auth, email, password);
+              await updateProfile(cred.user, { displayName: `${firstname} ${lastname}`.trim() });
+              await createProfile(cred.user.uid, email);
+              try { await sendEmailVerification(cred.user); } catch { /* renvoi possible depuis /verifier-email */ }
+              router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/'))}`);
+              return;
+            } catch { /* message ci-dessous */ }
+          }
+          setError('Cet email est déjà utilisé par un compte actif. Connectez-vous depuis la page de connexion, ou réinitialisez votre mot de passe.');
+        }
+      } else {
+        setError('Une erreur est survenue. Veuillez réessayer.');
+      }
     } finally {
       setLoading(false);
     }
@@ -584,8 +541,8 @@ export default function InscriptionPage() {
     }
   }
 
-  const stepCount = 5;
-  const stepIndex = step === 'role' ? 1 : step === 'account' ? 2 : step === 'verif' ? 3 : step === 'info' ? 4 : stepCount;
+  const stepCount = 4;
+  const stepIndex = step === 'role' ? 1 : step === 'info' ? 2 : (step === 'docs' || step === 'animaux') ? 3 : stepCount;
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
@@ -645,25 +602,6 @@ export default function InscriptionPage() {
           )}
 
           {/* ── Étape 2 : informations personnelles ── */}
-          {step === 'verif' && (
-            <div className="space-y-4 text-center">
-              <h2 className="text-base font-bold text-[#1F2A2E]">Votre compte est créé</h2>
-              <p className="text-sm text-gray-600">
-                Nous avons envoyé un lien de validation à <b>{auth.currentUser?.email ?? email}</b>. Ouvrez-le, puis revenez ici :
-                la suite de l&apos;inscription s&apos;ouvre toute seule.
-              </p>
-              <button type="button" onClick={() => { void verifierEmail(); }}
-                className="w-full bg-[#6E9E57] hover:bg-[#5d8a48] text-white font-semibold py-3 rounded-xl transition-colors">
-                J&apos;ai validé mon e-mail
-              </button>
-              <div className="flex flex-wrap justify-center gap-4 text-sm">
-                <button type="button" onClick={() => { void renvoyerEmail(); }} className="text-[#0C5C6C] font-semibold">Renvoyer l&apos;e-mail</button>
-                <button type="button" onClick={() => { void changerEmail(); }} className="text-gray-500">Modifier l&apos;adresse e-mail</button>
-              </div>
-              {verifMsg && <p className="text-sm text-[#B3261E]">{verifMsg}</p>}
-            </div>
-          )}
-
           {step === 'info' && (
             <>
               <div className="flex items-center gap-2 mb-5">
@@ -948,7 +886,7 @@ export default function InscriptionPage() {
                     placeholder="Votre mode de vie, votre expérience avec les animaux…" className={inputCls} />
                 </div>
                 <button type="button" disabled={aDejaAnimal === null || projetAdoption === null}
-                  onClick={() => { setError(''); void terminer(); }}
+                  onClick={() => { setError(''); setStep('account'); }}
                   className="w-full bg-[#6E9E57] hover:bg-[#5d8a48] disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-colors">
                   Continuer
                 </button>
@@ -960,7 +898,7 @@ export default function InscriptionPage() {
           {step === 'account' && (
             <>
               <div className="flex items-center gap-2 mb-5">
-                <button onClick={() => setStep('role')} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => setStep(isEleveurOrPro ? 'docs' : 'animaux')} className="text-gray-400 hover:text-gray-600">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
