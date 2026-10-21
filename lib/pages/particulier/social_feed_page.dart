@@ -4508,9 +4508,11 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         // ── Aperçu images EN HAUT — style Instagram ───────────────
         if (hasImgs) ...[
           Stack(children: [
-            // PageView des images
-            SizedBox(
-              height: 300,
+            // PageView des images — réduit pendant la saisie pour que le
+            // clavier ne recouvre pas la légende.
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              height: bottom > 0 ? 110 : 300,
               child: PageView.builder(
                 itemCount: _images.length,
                 onPageChanged: (i) => setState(() => _imgPage = i),

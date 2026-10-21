@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-  const { password } = await req.json();
+  const { password } = await req.json().catch(() => ({})) as { password?: string };
   const betaPassword = process.env.BETA_PASSWORD;
 
-  if (!betaPassword || password !== betaPassword) {
+  // Espaces autour (copier-coller, clavier mobile) ignorés.
+  if (!betaPassword || (password ?? '').trim() !== betaPassword.trim()) {
     return NextResponse.json({ error: 'Mot de passe incorrect.' }, { status: 401 });
   }
 
