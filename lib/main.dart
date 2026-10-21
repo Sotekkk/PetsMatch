@@ -101,6 +101,19 @@ String _notifProfileEmoji(String type) => switch (type) {
   _                  => '📌',
 };
 
+/// Bascule réelle sur un autre profil du compte (même mécanisme que le
+/// sélecteur de profils) : la navigation du profil est reconstruite, puis
+/// [ouvrir] s'affiche par-dessus si fourni (conversation, notifications…).
+Future<void> basculerVersProfil(Map<String, dynamic> profil, {Widget? ouvrir}) async {
+  User_Info.applyProfile(profil);
+  drawerKey = GlobalKey<ScaffoldState>();
+  navigatorKey.currentState?.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => BottomNav()), (_) => false);
+  if (ouvrir != null) {
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => ouvrir));
+  }
+}
+
 /// Notification reçue pour un profil différent du profil actif : propose la
 /// bascule (à la manière de Facebook) au lieu de naviguer silencieusement
 /// sur le mauvais profil. Retourne true si le profil actif au retour est
@@ -147,7 +160,7 @@ Future<bool> _confirmAndSwitchProfile(String recipientProfileId) async {
       ) ??
       false;
 
-  if (ok) User_Info.applyProfile(target);
+  if (ok) await basculerVersProfil(target);
   return ok;
 }
 
@@ -370,6 +383,8 @@ class User_Info {
   static String departement = "";
   static String region = "";
   static String profilePictureUrl = '';
+  // Photo du compte (profil principal) : jamais reprise par un autre profil.
+  static String photoCompte = '';
   static String profilePictureUrlElevage = '';
   static bool isElevage = true;
   static String adressElevage = "";
@@ -449,6 +464,7 @@ class User_Info {
     departement = data['departement'] ?? departement;
     region = data['region'] ?? region;
     profilePictureUrl = data['profilePictureUrl'] ?? profilePictureUrl;
+    photoCompte = profilePictureUrl;
     profilePictureUrlElevage = data['profilePictureUrlElevage'] ?? data['profilePictureUrl'] ?? profilePictureUrlElevage;
     isElevage = data['isElevage'] ?? isElevage;
     nameElevage = data['nameElevage'] ?? nameElevage;
@@ -566,7 +582,9 @@ class User_Info {
     if (ph.isNotEmpty) phone_number = ph;
     final av    = p['avatar_url']?.toString() ?? '';
     final avPro = p['profile_picture_url_pro']?.toString() ?? '';
-    if (av.isNotEmpty) profilePictureUrl = av;
+    // Chaque profil a SA photo : un profil sans photo n'affiche pas celle du
+    // profil principal (seul le profil principal reprend la photo du compte).
+    profilePictureUrl = av.isNotEmpty ? av : (p['is_main'] == true ? photoCompte : '');
     // photo pro (logo élevage / cabinet) distincte de l'avatar personnel —
     // écrasement inconditionnel : sinon la photo du profil précédemment
     // actif reste affichée quand le profil nouvellement actif n'en a pas.

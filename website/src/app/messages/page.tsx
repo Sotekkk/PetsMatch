@@ -1,5 +1,12 @@
 'use client';
 
+import { conversationVisible, profilPrincipal, type ProfilCompte } from '@/lib/conversations-profil';
+
+const TYPE_PROFIL: Record<string, string> = {
+  particulier: 'Particulier', eleveur: 'Élevage', association: 'Association', pension: 'Pension', garde: 'Pet-sitter',
+  education: 'Éducateur', veterinaire: 'Vétérinaire', sante: 'Ostéo / kiné', toilettage: 'Toiletteur', photographe: 'Photographe',
+  marechal_ferrant: 'Maréchal-ferrant', taxi_animalier: 'Taxi animalier', restauration: 'Établissement',
+};
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
@@ -113,6 +120,7 @@ function MessagesPageInner() {
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [userProfileIds, setUserProfileIds] = useState<string[]>([]);
+  const [mesProfils, setMesProfils] = useState<ProfilCompte[]>([]);
   const userInfoCacheRef = useRef<Record<string, UserInfo>>({});
   const [, forceUpdate] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -141,7 +149,7 @@ function MessagesPageInner() {
   // Nouveau message — recherche d'un contact PetsMatch
   const [showNewMsgModal, setShowNewMsgModal] = useState(false);
   const [newMsgQuery, setNewMsgQuery] = useState('');
-  const [newMsgResults, setNewMsgResults] = useState<{ uid: string; nom: string; avatar?: string }[]>([]);
+  const [newMsgResults, setNewMsgResults] = useState<{ uid: string; profileId: string; nom: string; type: string; avatar?: string }[]>([]);
   const [newMsgSearching, setNewMsgSearching] = useState(false);
   const [newMsgSearchDone, setNewMsgSearchDone] = useState(false);
   const [startingConv, setStartingConv] = useState(false);
@@ -172,8 +180,8 @@ function MessagesPageInner() {
   // Profile IDs secondaires
   useEffect(() => {
     if (!user) return;
-    supabase.from('user_profiles_complet').select('id').eq('uid', user.uid)
-      .then(({ data }) => { if (data) setUserProfileIds(data.map((r: { id: string }) => r.id)); });
+    supabase.from('user_profiles_complet').select('id, is_main').eq('uid', user.uid)
+      .then(({ data }) => { if (data) { setUserProfileIds(data.map((r: { id: string }) => r.id)); setMesProfils(data as ProfilCompte[]); } });
   }, [user]);
 
   // Pré-sélectionner conversation via ?conv=
@@ -251,29 +259,29 @@ function MessagesPageInner() {
     setNewMsgSearching(true);
     setNewMsgSearchDone(false);
     try {
-      type Row = { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string; avatar_url?: string };
+      type Row = { id: string; uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string; avatar_url?: string };
       let rows: Row[] = [];
       if (q.includes('@')) {
         const userRow = await trouverUtilisateurParEmail(q.toLowerCase());
         if (userRow) {
-          const { data: cp } = await supabase.from('user_profiles_complet')
-              .select('uid, firstname, lastname, nom, profile_type, avatar_url')
-              .eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
-          rows = cp ? [cp] : [];
+          // Tous les profils de la personne : on choisit celui à qui écrire.
+          const { data: cps } = await supabase.from('user_profiles_complet')
+              .select('id, uid, firstname, lastname, nom, profile_type, avatar_url')
+              .eq('uid', userRow.uid).order('is_main', { ascending: false });
+          rows = (cps ?? []) as Row[];
         }
       } else {
         const { data } = await supabase.from('user_profiles_complet')
-            .select('uid, firstname, lastname, nom, profile_type, avatar_url')
+            .select('id, uid, firstname, lastname, nom, profile_type, avatar_url')
             .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`)
-            .eq('is_main', true)
-            .limit(10);
+            .limit(15);
         rows = data ?? [];
       }
       setNewMsgResults(
         rows.filter(r => r.uid !== user.uid).map(r => {
-          const isElevage = r.profile_type === 'eleveur';
-          const nom = isElevage && r.nom ? r.nom : `${r.firstname ?? ''} ${r.lastname ?? ''}`.trim();
-          return { uid: r.uid, nom: nom || 'Utilisateur PetsMatch', avatar: r.avatar_url };
+          const type = r.profile_type ?? 'particulier';
+          const nom = type !== 'particulier' && r.nom ? r.nom : `${r.firstname ?? ''} ${r.lastname ?? ''}`.trim();
+          return { uid: r.uid, profileId: r.id, nom: nom || 'Utilisateur PetsMatch', type: TYPE_PROFIL[type] ?? 'Profil', avatar: r.avatar_url };
         })
       );
     } finally {
@@ -297,20 +305,28 @@ function MessagesPageInner() {
   // Trouve ou crée une conversation directe avec cet utilisateur (même
   // logique que MessagingHelper.openOrCreateConversation côté app, pour ne
   // pas dupliquer une conversation déjà créée depuis l'appli).
-  async function startConversationWith(otherUid: string) {
+  async function startConversationWith(otherUid: string, otherProfileId?: string) {
     if (!user || startingConv) return;
     setStartingConv(true);
     try {
       const sorted = [user.uid, otherUid].sort().join('_');
+      // Une conversation relie DEUX profils précis (comme une page Facebook) :
+      // mon profil actif (sinon principal) et le profil choisi (sinon son
+      // profil principal). Miroir appli : MessagingHelper.openOrCreateConversation.
+      const monProfil = activeProfileId || profilPrincipal(mesProfils) || null;
+      let autreProfil = otherProfileId ?? null;
+      if (!autreProfil) {
+        const { data: p } = await supabase.from('user_profiles').select('id').eq('uid', otherUid).eq('is_main', true).maybeSingle();
+        autreProfil = (p?.id as string | undefined) ?? null;
+      }
       let existingQuery = supabase.from('conversations')
           .select('id').eq('participant_ids', sorted).eq('type', 'direct');
-      // Même profil actif que côté appli (MessagingHelper.openOrCreateConversation) :
-      // un profil secondaire (véto…) ne doit pas réutiliser/hériter une
-      // conversation taguée à un autre de ses profils.
-      if (activeProfileId) {
-        existingQuery = existingQuery.or(`pro_profile_id.eq.${activeProfileId},consumer_profile_id.eq.${activeProfileId}`);
+      if (monProfil && autreProfil) {
+        existingQuery = existingQuery.or(`and(pro_profile_id.eq.${monProfil},consumer_profile_id.eq.${autreProfil}),and(pro_profile_id.eq.${autreProfil},consumer_profile_id.eq.${monProfil})`);
+      } else if (monProfil) {
+        existingQuery = existingQuery.or(`pro_profile_id.eq.${monProfil},consumer_profile_id.eq.${monProfil}`);
       }
-      const { data: existing } = await existingQuery.maybeSingle();
+      const { data: existing } = await existingQuery.limit(1).maybeSingle();
       let conversationId = existing?.id as string | undefined;
       if (!conversationId) {
         const { data: created } = await supabase.from('conversations').insert({
@@ -320,7 +336,8 @@ function MessagesPageInner() {
           last_message: '',
           unread_count: { [user.uid]: 0, [otherUid]: 0 },
           updated_at: new Date().toISOString(),
-          ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
+          ...(monProfil ? { pro_profile_id: monProfil } : {}),
+          ...(autreProfil ? { consumer_profile_id: autreProfil } : {}),
         }).select('id').single();
         conversationId = created?.id as string;
       }
@@ -519,22 +536,17 @@ function MessagesPageInner() {
     if (conv.deleted_for?.[user.uid]) return false;
     const others = conv.participants.filter(p => p !== user.uid);
     if (others.some(p => blockedUsers.includes(p))) return false;
-    if (activeProfileId) {
-      const isMePro      = conv.pro_profile_id === activeProfileId;
-      const isMeConsumer = conv.consumer_profile_id === activeProfileId;
-      if (!isMePro && !isMeConsumer) return false;
-    } else {
-      const proIsMyProfile      = conv.pro_profile_id && userProfileIds.includes(conv.pro_profile_id);
-      const consumerIsMyProfile = conv.consumer_profile_id && userProfileIds.includes(conv.consumer_profile_id);
-      if (proIsMyProfile || consumerIsMyProfile) return false;
-    }
+    if (!conversationVisible(conv, activeProfileId, mesProfils)) return false;
     if (conv.archived_for?.[user.uid] === true) return false;
     return true;
   });
   const totalUnread = baseVisibleConvs.reduce((s, c) => s + (c.unread_count?.[user.uid] ?? 0), 0);
   const selectedConv = conversations.find(c => c.id === selectedId);
   const otherUid = selectedConv?.participants.find(p => p !== user.uid);
-  const otherInfo = otherUid ? (userInfoCacheRef.current[otherUid] ?? { name: '…' }) : null;
+  const infoConvSel = otherUid ? selectedConv?.participants_info?.[otherUid] : undefined;
+  const otherInfo = otherUid
+    ? (infoConvSel?.name ? { ...(userInfoCacheRef.current[otherUid] ?? {}), name: infoConvSel.name, avatar: infoConvSel.photo ?? userInfoCacheRef.current[otherUid]?.avatar } : (userInfoCacheRef.current[otherUid] ?? { name: '…' }))
+    : null;
   const theme = themeById(themeId);
 
   const filteredConvs = conversations
@@ -543,20 +555,8 @@ function MessagesPageInner() {
       const others = conv.participants.filter(p => p !== user.uid);
       if (others.some(p => blockedUsers.includes(p))) return false;
 
-      if (activeProfileId) {
-        // Profil secondaire actif (véto, pension…) : uniquement ses
-        // conversations taguées. Les conversations sans tag appartiennent au
-        // profil principal (particulier) — ne jamais les laisser fuiter ici,
-        // sinon elles apparaissent dans toutes les messageries du compte
-        // (bug constaté : messages du profil particulier visibles côté véto).
-        const isMePro      = conv.pro_profile_id === activeProfileId;
-        const isMeConsumer = conv.consumer_profile_id === activeProfileId;
-        if (!isMePro && !isMeConsumer) return false;
-      } else {
-        const proIsMyProfile      = conv.pro_profile_id && userProfileIds.includes(conv.pro_profile_id);
-        const consumerIsMyProfile = conv.consumer_profile_id && userProfileIds.includes(conv.consumer_profile_id);
-        if (proIsMyProfile || consumerIsMyProfile) return false;
-      }
+      // Côté marqué par mon profil, sinon mon profil principal (conversations-profil.ts).
+      if (!conversationVisible(conv, activeProfileId, mesProfils)) return false;
 
       const isArchived = conv.archived_for?.[user.uid] === true;
       if (activeCategory === '__archived__') return isArchived;
@@ -661,8 +661,11 @@ function MessagesPageInner() {
               const oUid = conv.participants.find(p => p !== user.uid);
               // Utiliser participants_info d'abord (plus rapide), puis le cache
               const infoFromConv = oUid ? conv.participants_info?.[oUid] : undefined;
+              // Nom du profil de CETTE conversation d'abord (une même personne peut
+              // écrire en particulier et en pro), sinon le profil principal en cache.
               const oInfo = oUid
-                ? (userInfoCacheRef.current[oUid] ?? { name: infoFromConv?.name ?? '…', avatar: infoFromConv?.photo })
+                ? (infoFromConv?.name ? { ...(userInfoCacheRef.current[oUid] ?? {}), name: infoFromConv.name, avatar: infoFromConv.photo ?? userInfoCacheRef.current[oUid]?.avatar }
+                  : (userInfoCacheRef.current[oUid] ?? { name: '…' }))
                 : { name: '…' };
               const rawUnread = conv.unread_count?.[user.uid] ?? 0;
               const isMuted = (conv.muted_for?.[user.uid] ?? 0) > Date.now();
@@ -1079,7 +1082,7 @@ function MessagesPageInner() {
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
             <div className="max-h-72 overflow-y-auto space-y-2">
               {newMsgResults.map(r => (
-                <button key={r.uid} onClick={() => startConversationWith(r.uid)} disabled={startingConv}
+                <button key={r.profileId} onClick={() => startConversationWith(r.uid, r.profileId)} disabled={startingConv}
                   className="w-full flex items-center gap-2.5 border border-gray-200 rounded-xl px-3 py-2.5 bg-white text-left hover:bg-gray-50 disabled:opacity-50">
                   <div className="w-8 h-8 rounded-full bg-[#0C5C6C]/10 flex items-center justify-center overflow-hidden flex-shrink-0">
                     {r.avatar ? (
@@ -1088,7 +1091,10 @@ function MessagesPageInner() {
                       <span className="text-[#0C5C6C] font-bold text-xs">{r.nom[0]?.toUpperCase()}</span>
                     )}
                   </div>
-                  <span className="flex-1 text-sm font-semibold text-[#1F2A2E]">{r.nom}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[#1F2A2E] truncate">{r.nom}</span>
+                    <span className="block text-xs text-gray-500">{r.type}</span>
+                  </span>
                   <span className="text-gray-400">›</span>
                 </button>
               ))}

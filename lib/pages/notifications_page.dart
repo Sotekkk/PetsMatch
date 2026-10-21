@@ -1,3 +1,4 @@
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/recuperations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
@@ -135,6 +136,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
   final _uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<Map<String, dynamic>> _notifs = [];
+  // Non lues destinées à mes autres profils : id du profil → nombre.
+  Map<String, int> _autresProfils = {};
   bool _loading = true;
 
   @override
@@ -184,13 +187,55 @@ class _NotificationsPageState extends State<NotificationsPage> {
         final pt = (n['profile_type'] as String?) ?? '';
         return pt.isEmpty || pt == currentType;
       }).toList();
+      // Non lues destinées à mes AUTRES profils (ex. la pension) : signalées
+      // en haut de la cloche avec « Basculer », comme les pages Facebook.
+      final autres = <String, int>{};
+      final miens = User_Info.availableProfiles.map((p) => p['id']?.toString() ?? '').toSet();
+      for (final n in (data as List)) {
+        final pid = (n['profile_id'] as String?) ?? '';
+        if (pid.isEmpty || pid == activeProfileId || !miens.contains(pid) || n['read'] == true) continue;
+        autres[pid] = (autres[pid] ?? 0) + 1;
+      }
       if (mounted) setState(() {
         _notifs = List<Map<String, dynamic>>.from(filtered);
+        _autresProfils = autres;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// « 3 notifications pour Pension Ambre — Basculer » : ouvre ce profil et sa cloche.
+  Widget _bandeauAutresProfils() {
+    if (_autresProfils.isEmpty) return const SizedBox.shrink();
+    return Column(children: [
+      for (final e in _autresProfils.entries)
+        Builder(builder: (_) {
+          final profil = User_Info.availableProfiles.firstWhere((p) => p['id']?.toString() == e.key, orElse: () => <String, dynamic>{});
+          if (profil.isEmpty) return const SizedBox.shrink();
+          final nom = (profil['nom']?.toString() ?? '').trim().isNotEmpty
+              ? profil['nom'].toString()
+              : '${profil['firstname'] ?? ''} ${profil['lastname'] ?? ''}'.trim();
+          return Material(
+            color: _teal.withValues(alpha: 0.08),
+            child: InkWell(
+              onTap: () => basculerVersProfil(profil, ouvrir: const NotificationsPage()),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(children: [
+                  const Icon(Icons.swap_horiz, color: _teal, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('${e.value} notification${e.value > 1 ? 's' : ''} pour $nom',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5))),
+                  const Text('Basculer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
+                ]),
+              ),
+            ),
+          );
+        }),
+      const Divider(height: 1),
+    ]);
   }
 
   Future<void> _deleteNotif(Map<String, dynamic> notif) async {
@@ -1721,7 +1766,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : RefreshIndicator(
+          : Column(children: [
+            _bandeauAutresProfils(),
+            Expanded(child: RefreshIndicator(
               onRefresh: _fetch,
               color: _teal,
               child: _notifs.isEmpty
@@ -1831,7 +1878,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         ));
                       },
                     ),
-            ),
+            ),)]),
     );
   }
 }
@@ -1895,9 +1942,6 @@ class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
       // multi-profils), supprimées, archivées ou mises en sourdine — toutes
       // invisibles dans la vue par défaut : bulle affichée mais aucun
       // message non lu visible.
-      final activePid = User_Info.activeProfileId;
-      final myProfileIds = User_Info.availableProfiles
-          .map((p) => p['id']?.toString() ?? '').toList();
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       int total = 0;
       for (final row in rows as List) {
@@ -1907,17 +1951,8 @@ class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
         if (archivedFor is Map && archivedFor[_uid] == true) continue;
         final mutedFor = row['muted_for'];
         if (mutedFor is Map && (mutedFor[_uid] as int? ?? 0) > nowMs) continue;
-        final convProPid = row['pro_profile_id']?.toString() ?? '';
-        final convConsumerPid = row['consumer_profile_id']?.toString() ?? '';
-        if (activePid.isNotEmpty) {
-          final isMePro = convProPid == activePid;
-          final isMeConsumer = convConsumerPid == activePid;
-          final isUntagged = convProPid.isEmpty && convConsumerPid.isEmpty;
-          if (!isMePro && !isMeConsumer && !isUntagged) continue;
-        } else {
-          if (convProPid.isNotEmpty && myProfileIds.contains(convProPid)) continue;
-          if (convConsumerPid.isNotEmpty && myProfileIds.contains(convConsumerPid)) continue;
-        }
+        // Même règle que la liste (MessagingHelper.visiblePourProfilActif).
+        if (!MessagingHelper.visiblePourProfilActif(row)) continue;
         final m = row['unread_count'];
         if (m is Map && m[_uid] is int) total += m[_uid] as int;
       }

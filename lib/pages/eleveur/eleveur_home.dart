@@ -127,7 +127,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       // Annonces) affichent bien les vraies données.
       final activeProfileIdEarly = User_Info.activeProfileId;
       String ownerUid = uid;
-      if (activeProfileIdEarly.isNotEmpty) {
+      final profilDuCompte = User_Info.availableProfiles.any((p) => p['id']?.toString() == activeProfileIdEarly);
+      if (activeProfileIdEarly.isNotEmpty && !profilDuCompte) {
         final ownerRow = await supa.from('user_profiles_complet')
             .select('uid').eq('id', activeProfileIdEarly).maybeSingle();
         ownerUid = (ownerRow?['uid'] as String?) ?? uid;
@@ -172,30 +173,26 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                   .eq('uid_eleveur', ownerUid).neq('profil_source', 'association')
                   .inFilter('statut', ['disponible', 'reserve', 'pause'])
                   .order('created_at', ascending: false).limit(3),
-          PlanService.getPlanCode(uid),
+          PlanService.getPlanCode(uid).then((c) async => [c, await PlanService.getConfig(c)]),
           PlanService.countActiveAnnonces(uid),
+          if (activeProfileId.isNotEmpty)
+            supa.from('animaux_proprietes').select('animal_id').eq('uid_proprio', ownerUid)
+                .eq('profile_id_proprio', activeProfileId).isFilter('date_fin', null)
+          else
+            Future.value(<dynamic>[]),
+          supa.from('animaux_proprietes').select('animal_id').eq('uid_proprio', ownerUid).isFilter('date_fin', null),
         ]);
         final alertes = results[0] as List;
         final profileMigrated = (results[1] as List).isNotEmpty;
         final annonces = results[2] as List;
         final recent = results[3] as List;
-        final planCode = results[4] as String;
+        final plan = results[4] as List;
+        final planCode = plan[0] as String;
+        final planConfig = plan[1];
         final activeCount = results[5] as int;
-        final planConfig = await PlanService.getConfig(planCode);
-
-        int animalCount;
-        if (activeProfileId.isNotEmpty && profileMigrated) {
-          final rows = await supa.from('animaux_proprietes')
-              .select('animal_id').eq('uid_proprio', ownerUid)
-              .eq('profile_id_proprio', activeProfileId)
-              .isFilter('date_fin', null);
-          animalCount = (rows as List).length;
-        } else {
-          final rows = await supa.from('animaux_proprietes')
-              .select('animal_id').eq('uid_proprio', ownerUid)
-              .isFilter('date_fin', null);
-          animalCount = (rows as List).length;
-        }
+        final animalCount = activeProfileId.isNotEmpty && profileMigrated
+            ? (results[6] as List).length
+            : (results[7] as List).length;
         if (!mounted) return;
         setState(() {
           _animalCount = animalCount;
@@ -209,7 +206,11 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         });
       } else {
         // Pro : stats spécifiques selon catPro (en parallèle avec les alertes)
-        final results = await Future.wait([alertesFuture, _loadProStats(uid, supa)]);
+        const avecTableauDeBord = {'pension', 'garde', 'education', 'toilettage', 'photographe'};
+        final results = await Future.wait([
+          alertesFuture,
+          if (!avecTableauDeBord.contains(User_Info.catPro)) _loadProStats(uid, supa),
+        ]);
         if (!mounted) return;
         setState(() {
           _mesAlertes = List<Map<String, dynamic>>.from(results[0] as List);
@@ -263,24 +264,25 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
 
     try {
       if (User_Info.catPro == 'veterinaire') {
-        final patients = await _patientsIds(supa, uid, pid);
-        final rdvToday = await pf(supa.from('rdv').select('id')
-            .eq('pro_uid', uid)
-            .gte('date_heure', todayStart)
-            .lte('date_heure', todayEnd)
-            .inFilter('statut', activeStatuts));
+        final r = await Future.wait<dynamic>([
+          _patientsIds(supa, uid, pid),
+          pf(supa.from('rdv').select('id').eq('pro_uid', uid).gte('date_heure', todayStart)
+              .lte('date_heure', todayEnd).inFilter('statut', activeStatuts)),
+        ]);
+        final patients = r[0], rdvToday = r[1];
         if (mounted) setState(() {
           _patientCount  = (patients as List).length;
           _rdvTodayCount = (rdvToday as List).length;
         });
       } else if (User_Info.catPro == 'sante') {
-        final patients = await _patientsIds(supa, uid, pid);
-        final rdvToday = await pf(supa.from('rdv').select('id')
-            .eq('pro_uid', uid)
-            .gte('date_heure', todayStart)
-            .lte('date_heure', todayEnd)
-            .inFilter('statut', activeStatuts));
-        final planCode = await PlanService.getPlanCode(uid, profilType: 'sante');
+        final r = await Future.wait<dynamic>([
+          _patientsIds(supa, uid, pid),
+          pf(supa.from('rdv').select('id').eq('pro_uid', uid).gte('date_heure', todayStart)
+              .lte('date_heure', todayEnd).inFilter('statut', activeStatuts)),
+          PlanService.getPlanCode(uid, profilType: 'sante'),
+        ]);
+        final patients = r[0], rdvToday = r[1];
+        final planCode = r[2] as String;
         if (mounted) setState(() {
           _patientCount  = (patients as List).length;
           _rdvTodayCount = (rdvToday as List).length;
@@ -301,16 +303,13 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           _rdvTodayCount      = (rdvToday as List).length;
         });
       } else {
-        final rdvToday = await pf(supa.from('rdv').select('id')
-            .eq('pro_uid', uid)
-            .gte('date_heure', todayStart)
-            .lte('date_heure', todayEnd)
-            .inFilter('statut', activeStatuts));
-        final rdvMonth = await pf(supa.from('rdv').select('id')
-            .eq('pro_uid', uid)
-            .gte('date_heure', monthStart)
-            .lte('date_heure', monthEnd)
-            .inFilter('statut', activeStatuts));
+        final r = await Future.wait<dynamic>([
+          pf(supa.from('rdv').select('id').eq('pro_uid', uid).gte('date_heure', todayStart)
+              .lte('date_heure', todayEnd).inFilter('statut', activeStatuts)),
+          pf(supa.from('rdv').select('id').eq('pro_uid', uid).gte('date_heure', monthStart)
+              .lte('date_heure', monthEnd).inFilter('statut', activeStatuts)),
+        ]);
+        final rdvToday = r[0], rdvMonth = r[1];
         if (mounted) setState(() {
           _rdvTodayCount = (rdvToday as List).length;
           _rdvMonthCount = (rdvMonth as List).length;

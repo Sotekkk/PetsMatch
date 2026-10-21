@@ -1,5 +1,6 @@
 'use client';
 
+import { conversationVisible, profilsPropres, type ProfilCompte } from '@/lib/conversations-profil';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import QuickSearchModal, { type QuickSearchItem } from '@/components/QuickSearchModal';
@@ -1377,7 +1378,6 @@ export default function Header() {
         .filter('participants', 'cs', `["${user!.uid}"]`);
       if (!data) return;
       const now = Date.now();
-      const myProfileIds = profiles.map(p => p.id);
       const total = (data as {
         unread_count: Record<string, number> | null;
         deleted_for: Record<string, boolean> | null;
@@ -1390,17 +1390,8 @@ export default function Header() {
         // profil continue de gonfler le badge alors qu'elle est invisible.
         .filter(c => !c.deleted_for?.[user!.uid])
         .filter(c => !((c.muted_for?.[user!.uid] ?? 0) > now))
-        .filter(c => {
-          // Même logique que messages/page.tsx : un profil secondaire (véto,
-          // pension…) ne voit que ses conversations taguées ; le profil
-          // principal voit tout SAUF celles taguées à un autre de ses profils.
-          if (activeProfileId) {
-            return c.pro_profile_id === activeProfileId || c.consumer_profile_id === activeProfileId;
-          }
-          const proIsMyProfile = c.pro_profile_id && myProfileIds.includes(c.pro_profile_id);
-          const consumerIsMyProfile = c.consumer_profile_id && myProfileIds.includes(c.consumer_profile_id);
-          return !proIsMyProfile && !consumerIsMyProfile;
-        })
+        // Même règle que la liste (conversations-profil.ts).
+        .filter(c => conversationVisible(c, activeProfileId, profilsPropres(profiles as unknown as ProfilCompte[], user?.uid)))
         .reduce((s, c) => s + (c.unread_count?.[user!.uid] ?? 0), 0);
       setUnreadMessages(total);
     }

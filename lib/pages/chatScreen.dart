@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -688,7 +689,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
         await _supa.from('conversations').update({
           'last_message':      imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : text)),
-          'updated_at':        DateTime.now().toIso8601String(),
+          'updated_at':        DateTime.now().toUtc().toIso8601String(),
           'unread_count':      unread,
           'participants_info': info,
           'deleted_for':       {},
@@ -725,10 +726,23 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   // ── User info (AppBar) ────────────────────────────────────────────────────────
 
+  Map<String, dynamic>? _userInfoCache;
+
   Future<Map<String, dynamic>> _getUserInfo(String userId) async {
+    if (_userInfoCache != null && _userInfoCache!['uid'] == userId) return _userInfoCache!;
     try {
-      final d = await MessagingHelper.getDisplayInfo(userId);
-      return {
+      // Profil de l'autre côté de la conversation (ex. sa pension), pas son profil principal.
+      String? autreProfil;
+      try {
+        final c = await _supa.from('conversations').select('pro_profile_id, consumer_profile_id').eq('id', widget.conversationId).maybeSingle();
+        final monUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final miens = User_Info.availableProfiles.where((p) => (p['uid']?.toString() ?? monUid) == monUid)
+            .map((p) => p['id']?.toString() ?? '').toSet();
+        final pro = c?['pro_profile_id']?.toString() ?? '', con = c?['consumer_profile_id']?.toString() ?? '';
+        autreProfil = miens.contains(pro) ? (con.isEmpty ? null : con) : (pro.isEmpty ? null : pro);
+      } catch (_) {}
+      final d = await MessagingHelper.getDisplayInfo(userId, profileId: autreProfil);
+      return _userInfoCache = {
         'name': d['name'],
         'profilePictureUrl': d['photo'] as String? ?? '',
         'uid': userId,

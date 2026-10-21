@@ -129,6 +129,7 @@ class _MessagePageState extends State<MessagePage> {
       final conversationId = await MessagingHelper.openOrCreateConversation(
         otherUid: otherUid,
         myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        otherProfileId: result['profileId']?.toString(),
       );
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(
@@ -145,8 +146,6 @@ class _MessagePageState extends State<MessagePage> {
     if (_uid.isEmpty) return;
     setState(() => _loading = true);
     try {
-      final pid = User_Info.activeProfileId;
-
       final rows = await _supa
           .from('conversations')
           .select()
@@ -161,11 +160,7 @@ class _MessagePageState extends State<MessagePage> {
       // encore le profil) et ne doivent jamais apparaître ailleurs, sinon elles
       // fuitent dans toutes les boîtes de réception du compte (bug constaté :
       // messages du profil particulier visibles dans la messagerie du véto).
-      final filtered = pid.isEmpty ? all : all.where((c) {
-        final cPro = (c['pro_profile_id'] as String?) ?? '';
-        final cCon = (c['consumer_profile_id'] as String?) ?? '';
-        return cPro == pid || cCon == pid;
-      }).toList();
+      final filtered = all.where(MessagingHelper.visiblePourProfilActif).toList();
 
       if (mounted) setState(() {
         _convs = filtered;
@@ -386,21 +381,25 @@ class _MessagePageState extends State<MessagePage> {
 
   // ── User info ─────────────────────────────────────────────────────────────────
 
-  Future<Map<String, String?>> _userInfo(String uid, {Map<String, dynamic>? cached}) async {
-    if (_userCache.containsKey(uid)) return _userCache[uid]!;
+  /// Nom affiché de l'autre côté d'UNE conversation : mémorisé par
+  /// conversation (une même personne peut écrire en particulier et en pro —
+  /// chaque conversation garde le nom du profil concerné).
+  Future<Map<String, String?>> _userInfo(String uid, {Map<String, dynamic>? cached, String? convId}) async {
+    final cle = '${convId ?? ''}:$uid';
+    if (_userCache.containsKey(cle)) return _userCache[cle]!;
     if (uid.isEmpty) return {'name': 'Utilisateur inconnu', 'photo': null};
     if (cached != null) {
       final name = (cached['name'] as String?) ?? '';
-      _userCache[uid] = {'name': name.isEmpty ? 'Utilisateur' : name, 'photo': cached['photo'] as String?};
-      return _userCache[uid]!;
+      _userCache[cle] = {'name': name.isEmpty ? 'Utilisateur' : name, 'photo': cached['photo'] as String?};
+      return _userCache[cle]!;
     }
     try {
       final d = await MessagingHelper.getDisplayInfo(uid);
-      _userCache[uid] = {'name': d['name'] as String, 'photo': d['photo'] as String?};
+      _userCache[cle] = {'name': d['name'] as String, 'photo': d['photo'] as String?};
     } catch (_) {
-      _userCache[uid] = {'name': 'Utilisateur inconnu', 'photo': null};
+      _userCache[cle] = {'name': 'Utilisateur inconnu', 'photo': null};
     }
-    return _userCache[uid]!;
+    return _userCache[cle]!;
   }
 
   String _fmtIso(String? iso) {
@@ -702,7 +701,7 @@ class _MessagePageState extends State<MessagePage> {
                         'participants_info': participantsInfo,
                         'last_message': '',
                         'unread_count': unread,
-                        'updated_at': DateTime.now().toIso8601String(),
+                        'updated_at': DateTime.now().toUtc().toIso8601String(),
                       });
                       if (ctx.mounted) Navigator.pop(ctx);
                       _loadConversations();
@@ -734,21 +733,7 @@ class _MessagePageState extends State<MessagePage> {
       if (isGroupe && activeCat != '__petfriends__') return false;
 
       // Filtre profil (V2) — groupes PetFriends passent directement (pas de pro/consumer pid)
-      if (!isGroupe) {
-        final convProPid      = data['pro_profile_id']?.toString()      ?? '';
-        final convConsumerPid = data['consumer_profile_id']?.toString() ?? '';
-        final activePid       = User_Info.activeProfileId;
-        if (activePid.isNotEmpty) {
-          final isMePro      = convProPid == activePid;
-          final isMeConsumer = convConsumerPid == activePid;
-          if (!isMePro && !isMeConsumer) return false;
-        } else {
-          final myProfileIds = User_Info.availableProfiles
-              .map((p) => p['id']?.toString() ?? '').toList();
-          if (convProPid.isNotEmpty && myProfileIds.contains(convProPid)) return false;
-          if (convConsumerPid.isNotEmpty && myProfileIds.contains(convConsumerPid)) return false;
-        }
-      }
+      if (!isGroupe && !MessagingHelper.visiblePourProfilActif(data)) return false;
 
       // Bloqués
       final others = (data['participants'] as List? ?? []).where((p) => p != uid);
@@ -897,7 +882,7 @@ class _MessagePageState extends State<MessagePage> {
         }
 
         return FutureBuilder<Map<String, String?>>(
-          future: _userInfo(otherId, cached: cached),
+          future: _userInfo(otherId, cached: cached, convId: data['id']?.toString()),
           builder: (context, userSnap) {
             if (!userSnap.hasData) return const SizedBox.shrink();
             final info = userSnap.data!;
@@ -1060,27 +1045,27 @@ class _NewMessageSearchSheetState extends State<_NewMessageSearchSheet> {
         if (userRow == null) {
           rows = [];
         } else {
-          final cp = await _supa.from('user_profiles_complet')
-              .select('uid, firstname, lastname, nom, profile_type, avatar_url')
-              .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
-          rows = cp != null ? [Map<String, dynamic>.from(cp)] : [];
+          // Tous les profils de la personne : on choisit celui à qui écrire.
+          final cps = await _supa.from('user_profiles_complet')
+              .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, is_main')
+              .eq('uid', userRow['uid'] as String).order('is_main', ascending: false);
+          rows = (cps as List).map((cp) => Map<String, dynamic>.from(cp)).toList();
         }
       } else {
         final cps = await _supa
             .from('user_profiles_complet')
-            .select('uid, firstname, lastname, nom, profile_type, avatar_url')
+            .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, is_main')
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
-            .eq('is_main', true)
-            .limit(10);
+            .limit(15);
         rows = (cps as List).map((cp) => Map<String, dynamic>.from(cp)).toList();
       }
       final mapped = rows.where((r) => r['uid'] != _myUid).map((r) {
-        final isElevage = r['profile_type'] == 'eleveur';
-        final nomElevage = r['nom'] as String?;
-        final nom = isElevage && nomElevage?.isNotEmpty == true
-            ? nomElevage!
+        final type = r['profile_type']?.toString() ?? 'particulier';
+        final nomStructure = (r['nom'] as String?)?.trim() ?? '';
+        final nom = type != 'particulier' && nomStructure.isNotEmpty
+            ? nomStructure
             : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
-        return {...r, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom};
+        return {...r, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom, 'type_libelle': _typeProfil[type] ?? 'Profil'};
       }).toList();
       if (mounted) setState(() => _results = mapped);
     } finally {
@@ -1088,8 +1073,15 @@ class _NewMessageSearchSheetState extends State<_NewMessageSearchSheet> {
     }
   }
 
+  static const _typeProfil = {
+    'particulier': 'Particulier', 'eleveur': 'Élevage', 'association': 'Association', 'pension': 'Pension',
+    'garde': 'Pet-sitter', 'education': 'Éducateur', 'veterinaire': 'Vétérinaire', 'sante': 'Ostéo / kiné',
+    'toilettage': 'Toiletteur', 'photographe': 'Photographe', 'marechal_ferrant': 'Maréchal-ferrant',
+    'taxi_animalier': 'Taxi animalier', 'restauration': 'Établissement',
+  };
+
   void _select(Map<String, dynamic> r) {
-    Navigator.pop(context, {'uid': r['uid'], 'nom': r['nom']});
+    Navigator.pop(context, {'uid': r['uid'], 'nom': r['nom'], 'profileId': r['id']});
   }
 
   @override
@@ -1148,8 +1140,12 @@ class _NewMessageSearchSheetState extends State<_NewMessageSearchSheet> {
                       ? null : const Icon(Icons.person, size: 16, color: _teal),
                 ),
                 const SizedBox(width: 10),
-                Expanded(child: Text(r['nom'] as String,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Galey'))),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(r['nom'] as String,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Galey')),
+                  Text(r['type_libelle']?.toString() ?? '',
+                      style: TextStyle(fontSize: 11.5, fontFamily: 'Galey', color: Colors.grey.shade600)),
+                ])),
                 const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
               ]),
             ),

@@ -468,7 +468,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                         'participants_info': participantsInfo,
                         'last_message': '',
                         'unread_count': unread,
-                        'updated_at': DateTime.now().toIso8601String(),
+                        'updated_at': DateTime.now().toUtc().toIso8601String(),
                       });
                       if (ctx.mounted) Navigator.pop(ctx);
                       _loadGroupes();

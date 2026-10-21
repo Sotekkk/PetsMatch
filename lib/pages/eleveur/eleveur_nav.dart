@@ -148,6 +148,9 @@ class _EleveurNavState extends State<EleveurNav> {
     1 => MessagePage(),
     2 => const NotificationsPage(),
     3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0)),
+    // Pets Social (menu) : affiché DANS la navigation pour garder la barre du
+    // bas, comme pour le profil particulier.
+    4 => const SocialFeedPage(),
     _ => User_Info.catPro == 'restauration'
         ? const RestaurationHomePage()
         : const EleveurHomePage(),
@@ -1398,9 +1401,7 @@ class _EleveurNavState extends State<EleveurNav> {
                           showSocialDot: true,
                           onTap: () {
                             Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const SocialFeedPage(),
-                            ));
+                            setState(() => _selectedIndex = 4);
                           },
                         ),
                     ],
@@ -1681,9 +1682,7 @@ class _EleveurNavState extends State<EleveurNav> {
                       showSocialDot: true,
                       onTap: () {
                         Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const SocialFeedPage(),
-                        ));
+                        setState(() => _selectedIndex = 4);
                       },
                     ),
                 ],

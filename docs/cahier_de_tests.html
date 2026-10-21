@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cahier de tests PetsMatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+/* Mise en page : cahier de recette — en-tête collant (version + avancement), sommaire des profils, un chapitre par profil, lignes de test cochables. */
+:root{
+  --bg:#F5F7F6; --surface:#FFFFFF; --ink:#16252A; --muted:#5B6B70; --line:#DCE3E1;
+  --teal:#0C5C6C; --teal-soft:#E3EFF1; --green:#4E8A3E; --green-soft:#E6F1E2; --amber:#A8650B; --amber-soft:#FBEFD9;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1A1D; --surface:#172529; --ink:#E6EEEC; --muted:#9AAEB2; --line:#2A3B40;
+  --teal:#5FB7C7; --teal-soft:#183A42; --green:#86C273; --green-soft:#1E3420; --amber:#E2A54A; --amber-soft:#3A2A12; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0F1A1D; --surface:#172529; --ink:#E6EEEC; --muted:#9AAEB2; --line:#2A3B40;
+  --teal:#5FB7C7; --teal-soft:#183A42; --green:#86C273; --green-soft:#1E3420; --amber:#E2A54A; --amber-soft:#3A2A12; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:0 64px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding-block:10px}
+.brand{font-family:var(--f-display);font-weight:700;font-size:17px;color:var(--teal);margin-right:auto}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;background:var(--surface);padding:3px}
+.seg button{font:600 13.5px var(--f-body);border:0;background:transparent;color:var(--muted);padding:7px 14px;border-radius:999px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--teal);color:var(--surface)}
+.seg button:focus-visible,.chk:focus-visible,summary:focus-visible,.toc a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.gauge{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{width:120px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--green);width:0}
+header.intro{padding-block:28px 8px;display:grid;gap:14px}
+header.intro h1{font-size:clamp(28px,5vw,40px);line-height:1.1}
+.lead{color:var(--muted);max-width:66ch;margin:0}
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:6px}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.rule h3{font-size:15px;margin-bottom:6px;color:var(--teal)}
+.rule p,.rule li{margin:0;font-size:14px;color:var(--ink)}
+.rule ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.legend{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:var(--muted);align-items:center}
+.tag{display:inline-block;font:700 11px var(--f-body);letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:5px;vertical-align:2px;white-space:nowrap}
+.tag.deux{background:var(--amber-soft);color:var(--amber)}
+.tag.app{background:var(--teal-soft);color:var(--teal)}
+.tag.site{background:var(--teal-soft);color:var(--teal)}
+.toc{margin-top:22px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.toc a{display:flex;justify-content:space-between;gap:8px;align-items:baseline;text-decoration:none;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-weight:600;font-size:14px}
+.toc a span{color:var(--muted);font-weight:500;font-size:12.5px;font-variant-numeric:tabular-nums}
+.toc a.fini{border-color:var(--green)}
+.toc a.fini span{color:var(--green)}
+section.profil{margin-top:40px}
+.phead{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;border-bottom:2px solid var(--teal);padding-bottom:8px}
+.phead h2{font-size:26px;color:var(--teal)}
+.phead .cnt{color:var(--muted);font-size:13.5px;font-variant-numeric:tabular-nums}
+.pintro{color:var(--muted);margin:10px 0 0;max-width:72ch;font-size:14.5px}
+details.bloc{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+details.bloc>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:12px 16px;font-family:var(--f-display);font-weight:700;font-size:16.5px}
+details.bloc>summary::-webkit-details-marker{display:none}
+details.bloc>summary .n{font:500 12.5px var(--f-body);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+ol.tests{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+li.t{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 10px;padding:11px 16px;border-top:1px solid var(--line)}
+li.t:first-child{border-top:0}
+.chk{appearance:none;width:20px;height:20px;margin:2px 0 0;border:2px solid var(--muted);border-radius:5px;cursor:pointer;display:grid;place-content:center;background:var(--surface)}
+.chk:checked{background:var(--green);border-color:var(--green)}
+.chk:checked::after{content:"";width:10px;height:5px;border-left:2.5px solid var(--surface);border-bottom:2.5px solid var(--surface);transform:rotate(-45deg) translate(1px,-1px)}
+.act{margin:0;font-weight:600}
+.att{margin:2px 0 0;color:var(--muted);font-size:14px}
+.att b{font-weight:600;color:var(--ink)}
+li.t.ok .act{color:var(--muted)}
+.note{grid-column:2;margin-top:6px;width:100%;font:14px var(--f-body);color:var(--ink);background:transparent;border:0;border-bottom:1px dashed var(--line);padding:3px 0}
+.note::placeholder{color:var(--muted);opacity:.7}
+.note:focus{outline:none;border-bottom-color:var(--teal)}
+.bug{margin-top:40px}
+.bug .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px}
+.printnote{font-size:13px;color:var(--muted);margin-top:8px}
+.vonly{display:none}
+@media (max-width:520px){.bar{width:80px}.phead h2{font-size:22px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  :root{--bg:#fff;--surface:#fff;--ink:#111;--muted:#444;--line:#bbb;--teal:#0C5C6C}
+  body{font-size:11pt}
+  .top,.toc,.printnote{display:none}
+  details.bloc{break-inside:auto;border-color:#999}
+  details.bloc>summary{font-size:13pt}
+  details:not([open])>ol{display:block}
+  section.profil{break-before:page;margin-top:0}
+  li.t{break-inside:avoid;padding:7px 10px}
+  .chk{border-color:#333}
+  .note{border-bottom:1px solid #999;min-height:18px}
+  .note::placeholder{color:transparent}
+  .vonly{display:inline}
+}
+</style>
+</head><body>
+
+<div class="top"><div class="wrap">
+  <span class="brand">Cahier de tests PetsMatch</span>
+  <div class="seg" role="group" aria-label="Version testée">
+    <button id="v-app" type="button" aria-pressed="true">Version appli</button>
+    <button id="v-site" type="button" aria-pressed="false">Version site</button>
+  </div>
+  <div class="gauge"><span id="g-txt">0 / 0</span><span class="bar"><i id="g-bar"></i></span></div>
+</div></div>
+
+<div class="wrap">
+<header class="intro">
+  <h1 id="titre">Cahier de tests <span id="titre-v">— appli</span></h1>
+  <p class="lead">Ce cahier suit PetsMatch profil par profil, de la création du profil jusqu'à chaque fonctionnalité. Pour chaque ligne : faites l'action, vérifiez le résultat attendu, cochez si c'est bon. Si quelque chose ne va pas, laissez la case vide et écrivez ce que vous avez vu dans la ligne de remarque.</p>
+  <div class="rules">
+    <div class="rule"><h3>Avant de commencer</h3><ul>
+      <li class="r-app">Installez l'appli : le fichier APK (Android) ou le lien TestFlight (iPhone) envoyé par Angélique.</li>
+      <li class="r-site">Ouvrez petsmatchapp.com. Le site demande un mot de passe d'accès bêta : Angélique vous le donne.</li>
+      <li>Utilisez votre propre adresse e-mail : vous recevrez de vrais e-mails (confirmation, contrats, factures).</li>
+      <li>Ne payez rien pour de vrai. Pour tester une formule payante (Essentiel, Premium), demandez à Angélique de l'activer.</li>
+    </ul></div>
+    <div class="rule"><h3>Un compte, plusieurs profils</h3><p>Vous créez un seul compte. Vous commencez par le profil Particulier, puis vous ajoutez chaque profil pro (élevage, pension, toiletteur…) depuis le menu. On passe de l'un à l'autre sans se déconnecter. Un profil pro doit parfois être validé : prévenez Angélique quand vous en créez un.</p></div>
+    <div class="rule"><h3>Les tests à deux</h3><p>Les lignes <span class="tag deux">À deux</span> se font avec Angélique : l'une joue le client (Particulier), l'autre le professionnel. Faites chaque scénario dans les deux sens quand c'est possible.</p></div>
+  </div>
+  <div class="legend">
+    <span><span class="tag deux">À deux</span> avec Angélique</span>
+    <span id="lg-app"><span class="tag app">Appli</span> seulement sur l'appli</span>
+    <span id="lg-site"><span class="tag site">Site</span> seulement sur le site</span>
+  </div>
+  <p class="printnote">Pour imprimer, choisissez la version puis utilisez l'impression de votre navigateur (Ctrl + P) : chaque profil commence sur une nouvelle page, avec ses lignes de remarque.</p>
+  <nav class="toc" id="toc" aria-label="Profils"></nav>
+</header>
+
+<main id="profils"></main>
+
+<section class="bug">
+  <div class="phead"><h2>Signaler un problème</h2></div>
+  <p class="pintro">Pour chaque problème, notez ces cinq informations : elles permettent de le corriger vite.</p>
+  <div class="grid">
+    <div class="rule"><h3>Où</h3><p>Le profil actif et l'écran (par exemple « Pension, Nos pensionnaires, menu Actions »).</p></div>
+    <div class="rule"><h3>Ce que vous avez fait</h3><p>Les étapes dans l'ordre, jusqu'au problème.</p></div>
+    <div class="rule"><h3>Ce qui s'est passé</h3><p>Le message affiché, l'écran blanc, la donnée fausse ou manquante.</p></div>
+    <div class="rule"><h3>Ce que vous attendiez</h3><p>Le résultat attendu écrit dans ce cahier, ou ce qui vous semblait logique.</p></div>
+    <div class="rule"><h3>Une capture d'écran</h3><p>Avec l'heure, et le modèle du téléphone ou le navigateur utilisé.</p></div>
+  </div>
+</section>
+</div>
+
+<script>
+// p : 'app' | 'site' (absent = les deux) ; d : test à deux.
+const PROFILS = [
+{ id:'commun', nom:'Compte et fonctions communes', intro:"À faire en premier, avec le profil Particulier. Ces fonctions existent pour tous les profils.", blocs:[
+ { t:'Créer le compte', i:[
+  {a:"Créer un compte avec votre e-mail et un mot de passe", r:"Le compte est créé, un e-mail de confirmation arrive"},
+  {a:"Choisir le profil Particulier et remplir prénom, nom, adresse", r:"L'adresse se complète avec la recherche Google ; les informations sont enregistrées"},
+  {a:"Ajouter une photo de profil", r:"La photo est recadrée en carré avant l'envoi et s'affiche correctement"},
+  {a:"Suivre le guide de démarrage (ajouter un animal ou passer l'étape)", r:"On peut passer une étape ; le bandeau du guide peut être fermé et repris dans les paramètres"},
+  {a:"Se déconnecter puis se reconnecter", r:"On retrouve son profil et ses données"},
+  {a:"Utiliser « Mot de passe oublié »", r:"Un e-mail de réinitialisation arrive et le nouveau mot de passe fonctionne"},
+  {a:"Ouvrir Mon profil et modifier une information", r:"La modification est enregistrée et s'affiche partout (menu, fiche publique)"},
+ ]},
+ { t:'Plusieurs profils', i:[
+  {a:"Ajouter un profil pro depuis le menu (par exemple Pension)", r:"Le nouveau profil apparaît ; on peut basculer entre Particulier et ce profil"},
+  {a:"Basculer d'un profil à l'autre plusieurs fois", r:"Chaque profil affiche uniquement ses données (animaux, agenda, contrats, factures) : rien d'un autre profil ne s'y mélange"},
+  {a:"Se déconnecter depuis un profil pro", r:"La déconnexion fonctionne sans écran gris ni blocage"},
+ ]},
+ { t:'Notifications et messagerie', i:[
+  {a:"Ouvrir la cloche des notifications", r:"La liste s'affiche ; toucher une notification ouvre le bon écran"},
+  {a:"Recevoir une notification téléphone l'appli fermée", r:"La notification arrive sur le téléphone et ouvre l'appli au bon endroit", p:'app', d:true},
+  {a:"Envoyer un message à Angélique depuis sa fiche", r:"Le message part ; elle le reçoit ; une seule notification par message (pas de doublon)", d:true},
+  {a:"Répondre dans la conversation", r:"Les messages s'affichent dans l'ordre, avec le bon nom de profil"},
+ ]},
+ { t:'Recherche et navigation', i:[
+  {a:"Utiliser la loupe (recherche rapide) et taper « facture », « agenda », « contrat »", r:"Les fonctionnalités correspondantes s'affichent et s'ouvrent"},
+  {a:"Ouvrir l'annuaire des professionnels et filtrer par catégorie et par espèce", r:"Les pros affichés correspondent aux filtres"},
+  {a:"Ouvrir la fiche publique d'un pro", r:"On voit sa description, ses horaires, ses services, ses tarifs s'il les affiche, ses photos et ses avis"},
+  {a:"Ajouter une annonce ou une fiche aux favoris (cœur)", r:"Elle apparaît dans Favoris, avec une image bien cadrée"},
+  {a:"Ouvrir Paramètres", r:"Les réglages s'affichent (notifications, reprendre le guide…)"},
+ ]},
+ { t:'Communauté et sorties', i:[
+  {a:"Publier une photo dans le fil social", r:"Le post apparaît au nom de votre profil Particulier (jamais d'un profil pro)"},
+  {a:"Aimer et commenter un post, suivre quelqu'un", r:"Le compteur change ; la personne suivie apparaît dans vos abonnements"},
+  {a:"Rechercher un groupe par nom ou thème, le rejoindre, y publier", r:"La publication apparaît dans le groupe ; un groupe privé montre l'onglet membres"},
+  {a:"Signaler une publication de groupe", r:"Le signalement est enregistré"},
+  {a:"Ouvrir les forums et les événements", r:"Les listes s'affichent, on peut ouvrir un sujet ou un événement"},
+  {a:"Ouvrir la carte des lieux pet-friendly, en consulter un, proposer un lieu", r:"La proposition est envoyée (elle sera modérée)"},
+  {a:"Ouvrir les lieux naturels, proposer un lieu, laisser un avis avec photos", r:"La proposition et l'avis sont enregistrés, plusieurs photos acceptées"},
+  {a:"Signaler une alerte cyanobactéries sur un point d'eau", r:"Le point apparaît sur la carte en « suspecté » ; « confirmé » demande une photo"},
+  {a:"Ouvrir les balades et balades ludiques", r:"Les parcours s'affichent sur la carte"},
+ ]},
+ { t:'Animaux perdus et annonces', i:[
+  {a:"Déclarer un animal perdu ou trouvé", r:"La déclaration apparaît sur la carte et dans « Mes déclarations »"},
+  {a:"Créer une alerte (zone, espèce)", r:"L'alerte est enregistrée dans « Gérer mes alertes »"},
+  {a:"Parcourir « Trouver un compagnon » avec des filtres", r:"Les annonces correspondent aux filtres ; on peut contacter l'annonceur"},
+  {a:"Publier une annonce de matériel ou d'équipement", r:"Elle apparaît dans « Mes annonces »"},
+ ]},
+]},
+
+{ id:'particulier', nom:'Particulier', intro:"Le propriétaire d'animaux. C'est aussi le rôle du client dans tous les tests à deux.", blocs:[
+ { t:'Mes animaux', i:[
+  {a:"Créer la fiche d'un animal : nom, espèce, race, date de naissance, numéro de puce, photo", r:"La fiche est créée ; la photo est recadrée en carré"},
+  {a:"Saisir le poids (avec une virgule, par exemple 12,5)", r:"Le poids est accepté et apparaît sur la courbe de poids"},
+  {a:"Modifier la fiche puis la rouvrir", r:"Les changements sont conservés"},
+  {a:"Renseigner l'alimentation (ration, marque)", r:"L'alimentation est enregistrée"},
+  {a:"Ajouter un document (onglet Documents) avec une date d'expiration", r:"Le document est enregistré et un rappel apparaît dans l'agenda"},
+  {a:"Inviter un co-propriétaire (Angélique) sur l'animal", r:"Elle reçoit l'invitation, l'accepte et voit l'animal", d:true},
+  {a:"Donner l'accès de la fiche à un pro, puis le retirer", r:"Le pro voit la fiche avec les droits choisis, puis ne la voit plus"},
+ ]},
+ { t:'Carnet de santé', i:[
+  {a:"Ajouter un vaccin avec une date de rappel", r:"Le vaccin s'affiche ; le rappel apparaît dans l'agenda"},
+  {a:"Ajouter un vermifuge et un antiparasitaire", r:"Ils s'affichent dans le carnet"},
+  {a:"Ajouter un traitement sur plusieurs jours avec heures de rappel", r:"Un rappel arrive avant chaque heure ; il revient chaque jour tant qu'il n'est pas validé"},
+  {a:"Ajouter une allergie, une visite, une chirurgie", r:"Chaque élément s'affiche dans son domaine"},
+  {a:"Ouvrir l'onglet Consultations après un rendez-vous véto ou ostéo", r:"Le compte rendu du pro y apparaît, filtré par métier", d:true},
+ ]},
+ { t:'Agenda et tâches', i:[
+  {a:"Créer un événement dans l'agenda", r:"Il apparaît au bon jour et à la bonne heure"},
+  {a:"Cocher une tâche faite", r:"Elle reste visible, marquée comme faite (elle ne disparaît pas)"},
+  {a:"Laisser un rappel sans le valider", r:"Il revient le lendemain"},
+ ]},
+ { t:'Rendez-vous chez un pro', i:[
+  {a:"Prendre rendez-vous chez le toiletteur d'Angélique en choisissant un de vos animaux", r:"Le créneau est proposé, la demande part, pas d'écran blanc", d:true},
+  {a:"Remplir les consignes avant le rendez-vous (toiletteur)", r:"Le questionnaire est envoyé ; le pro le lit dans le dossier de la séance", d:true},
+  {a:"Recevoir la confirmation du rendez-vous", r:"Notification « confirmé » ; le rendez-vous apparaît dans l'agenda", d:true},
+  {a:"Annuler ou modifier un rendez-vous", r:"Le pro est prévenu", d:true},
+  {a:"Laisser un avis après la prestation", r:"L'avis apparaît sur la fiche publique du pro", d:true},
+  {a:"Prendre rendez-vous chez le vétérinaire, l'ostéo, l'éducateur, le photographe", r:"Chaque métier propose ses propres motifs et durées", d:true},
+ ]},
+ { t:'Séjour en pension', i:[
+  {a:"Sur la fiche d'une pension, toucher « Réserver » et choisir l'animal et les dates d'arrivée et de départ", r:"Le nombre de nuits et une estimation du prix s'affichent (si la pension montre ses tarifs)", d:true},
+  {a:"Répondre à « déjà venu dans cette pension ? » par Non", r:"Si la pension exige un essai, une date d'essai est demandée avant l'arrivée", d:true},
+  {a:"Pour un cheval ou un âne, choisir Box ou Pré", r:"L'estimation suit le choix", d:true},
+  {a:"Écrire des consignes pour le séjour et envoyer", r:"Message « Demande envoyée » ; la demande apparaît dans « Mes séjours en pension »", d:true},
+  {a:"Annuler une demande encore en attente", r:"Statut « Annulé » ; la pension est prévenue", d:true},
+  {a:"Recevoir l'acceptation", r:"Notification « Séjour confirmé » qui ouvre « Mes séjours en pension »", d:true},
+ ]},
+ { t:'Contrats, factures, galeries', i:[
+  {a:"Ouvrir Mes contrats", r:"Chaque contrat a un titre clair : type, prestataire, animal"},
+  {a:"Signer un contrat reçu", r:"Signature au doigt sur l'appli ; le pro est prévenu ; le statut passe à signé", p:'app', d:true},
+  {a:"Signer un contrat reçu", r:"Signature à la souris ; après « Valider et fermer » on revient sur Mes contrats", p:'site', d:true},
+  {a:"Refuser un contrat avec une raison", r:"Le statut passe à refusé ; le pro est prévenu", d:true},
+  {a:"Ouvrir Mes factures et une facture reçue", r:"Le PDF s'ouvre avec les bonnes informations", d:true},
+  {a:"Ouvrir une galerie photo reçue : aimer des photos, en sélectionner", r:"Le cœur et la coche fonctionnent séparément ; la sélection est envoyée au photographe", d:true},
+  {a:"Partager la galerie à ses proches", r:"Le lien montre les photos avec filigrane, sans message d'erreur", d:true},
+  {a:"Retrouver sa sélection dans Favoris, onglet Shootings", r:"Les photos sélectionnées y sont"},
+  {a:"Recevoir la livraison finale", r:"E-mail avec le lien de téléchargement et la facture acquittée ; demande d'avis", d:true},
+ ]},
+ { t:'Autres', i:[
+  {a:"Accepter la proposition de reprendre une fiche créée par un pro (client sans appli devenu inscrit)", r:"Le message montre le bon nom de pro ; après acceptation l'animal apparaît dans Mes animaux", d:true},
+  {a:"Ouvrir Mes animaux acquis après une cession", r:"L'animal cédé apparaît avec son contrat", d:true},
+  {a:"Ouvrir Mes employeurs (si un pro vous a ajoutée comme employée)", r:"Seuls les employeurs de ce profil s'affichent ; les actions suivent les autorisations", d:true},
+  {a:"Publier une annonce cheval (location, demi-pension, pension)", r:"L'annonce est publiée avec ses champs équins (niveau, vidéos)"},
+ ]},
+]},
+
+{ id:'eleveur', nom:'Éleveur', intro:"Ajoutez un profil Élevage depuis le menu. Plusieurs fonctions demandent une formule Essentiel ou Premium : demandez l'activation.", blocs:[
+ { t:'Créer le profil', i:[
+  {a:"Créer le profil élevage : nom, SIRET, numéro d'élevage, espèces et races, adresse, photo", r:"Les informations saisies à l'inscription se retrouvent à l'identique dans Modifier mon profil"},
+  {a:"Suivre le guide éleveur", r:"Chaque étape mène au bon écran ; l'essai de 30 jours s'affiche"},
+  {a:"Ouvrir sa fiche publique", r:"Elle affiche l'élevage, pas le profil particulier"},
+ ]},
+ { t:'Animaux et reproduction', i:[
+  {a:"Créer un reproducteur et une femelle", r:"Ils apparaissent dans Mes animaux du profil élevage seulement"},
+  {a:"Activer la vitrine des reproducteurs", r:"La fiche publique propose « Voir les reproducteurs », groupés par espèce et race"},
+  {a:"Enregistrer une saillie, suivre les chaleurs", r:"Le suivi apparaît dans l'onglet Chaleurs"},
+  {a:"Créer une portée et saisir les poids des petits", r:"Les courbes de poids de la portée s'affichent"},
+  {a:"Ajouter un test génétique (statut porteur)", r:"Le résultat apparaît sur la fiche"},
+  {a:"Importer des animaux depuis I-CAD", r:"Les animaux importés apparaissent avec leur identification", p:'site'},
+ ]},
+ { t:'Suivi de l\'élevage', i:[
+  {a:"Créer un protocole et l'appliquer", r:"Les tâches du protocole apparaissent dans l'agenda"},
+  {a:"Ouvrir le suivi sanitaire (registre)", r:"Les soins enregistrés y figurent"},
+  {a:"Ajouter un article à l'inventaire avec un seuil, puis descendre sous le seuil", r:"Notification « Stock bas » qui ouvre la fiche de l'article"},
+  {a:"Ouvrir le registre Entrée - Sortie", r:"Les mouvements d'animaux y figurent"},
+ ]},
+ { t:'Équipe', i:[
+  {a:"Ajouter Angélique comme employée avec des autorisations", r:"Elle voit vos animaux selon ses droits, dans Mes employeurs", d:true},
+  {a:"Lui déléguer le suivi des chaleurs d'une femelle (Employés, bouton chaleurs)", r:"Elle reçoit les rappels de chaleurs", d:true},
+  {a:"Inviter un cogérant", r:"Le cogérant accède à l'élevage", d:true},
+ ]},
+ { t:'Annonces', i:[
+  {a:"Créer une annonce avec plusieurs photos", r:"Les photos sont recadrées en carré ; l'annonce apparaît dans Trouver un compagnon"},
+  {a:"Modifier puis retirer l'annonce", r:"Les changements sont visibles côté acheteur"},
+ ]},
+ { t:'Contrats et cession', i:[
+  {a:"Créer un contrat de réservation pour Angélique (client)", r:"Elle le reçoit, le signe ; vous le signez ; le PDF montre les deux signatures", d:true},
+  {a:"Créer un contrat de vente avec condition de stérilisation", r:"Le contrat se signe à deux ; la condition apparaît dans le contrat", d:true},
+  {a:"Créer un certificat d'engagement", r:"Le délai de réflexion de 7 jours est respecté avant de pouvoir finaliser", d:true},
+  {a:"Confirmer la cession", r:"L'animal passe chez l'acquéreur ; il apparaît dans ses Animaux acquis", d:true},
+  {a:"Ouvrir l'onglet Suivi de Mes animaux", r:"Les rappels de stérilisation et les anniversaires des animaux cédés s'affichent"},
+ ]},
+ { t:'Facturation', i:[
+  {a:"Créer une facture pour un client", r:"Numéro automatique ; mentions obligatoires ; TVA ou franchise selon le profil"},
+  {a:"Marquer la facture payée (mode de paiement)", r:"Statut payée ; la facture n'est plus modifiable"},
+  {a:"Faire un avoir sur une facture", r:"L'avoir reprend la facture d'origine"},
+  {a:"Ouvrir le PDF de la facture", r:"Le PDF s'affiche correctement"},
+ ]},
+]},
+
+{ id:'association', nom:'Association', intro:"Ajoutez un profil Association. Le particulier n'a pas d'essai gratuit, l'association non plus.", blocs:[
+ { t:'Créer le profil', i:[
+  {a:"Créer le profil association (nom, identité légale, adresse, photo)", r:"Les informations se retrouvent dans Modifier le profil association"},
+ ]},
+ { t:'Animaux et accueil', i:[
+  {a:"Créer des animaux à l'adoption", r:"Ils apparaissent dans Mes animaux du profil association seulement"},
+  {a:"Ajouter une famille d'accueil et lui confier un animal", r:"L'animal apparaît dans « Animaux en accueil » de la famille", d:true},
+  {a:"Affecter des animaux aux hébergements", r:"L'affectation est enregistrée"},
+  {a:"Ajouter un bénévole", r:"Il voit l'association dans Mes associations", d:true},
+  {a:"Ouvrir protocoles, suivi sanitaire, inventaire, entrée - sortie", r:"Chaque écran affiche les données de l'association"},
+ ]},
+ { t:'Adoption', i:[
+  {a:"Publier une annonce d'adoption", r:"Elle apparaît dans Annonces d'adoption"},
+  {a:"Recevoir une demande de visite d'adoption et la confirmer", r:"La visite apparaît dans l'agenda des deux côtés", d:true},
+  {a:"Créer un contrat d'adoption et le faire signer", r:"Signature des deux parties ; l'animal passe en adopté", d:true},
+  {a:"Créer un certificat d'engagement", r:"Le délai de 7 jours s'applique", d:true},
+  {a:"Créer une facture (frais d'adoption)", r:"La facture porte l'identité de l'association"},
+ ]},
+]},
+
+{ id:'pension', nom:'Pension', intro:"Ajoutez un profil Pension. Faites les tests de réservation à deux : Angélique réserve comme cliente.", blocs:[
+ { t:'Créer et régler le profil', i:[
+  {a:"Créer le profil pension (nom, adresse, espèces gardées, photo)", r:"Les informations se retrouvent dans Modifier mon profil"},
+  {a:"Ajouter des photos de la pension et des logements", r:"Elles s'affichent sur la fiche publique"},
+  {a:"Créer des logements (box, pré, chatterie…) avec capacité et espèces", r:"Ils apparaissent dans Logements et dans le planning d'occupation"},
+  {a:"Ouvrir Tarification : prix par nuit pour chaque espèce (seul / partagé)", r:"Les espèces n'ont pas d'emoji ; les prix sont enregistrés"},
+  {a:"Pour le cheval ou l'âne, saisir un prix Box et un prix Pré", r:"La fiche publique affiche « Box … € · Pré … € »"},
+  {a:"Ajouter une réduction séjour long", r:"Elle est enregistrée"},
+  {a:"Régler le règlement du séjour : arrhes en %, solde à l'arrivée ou au départ", r:"Le réglage est enregistré"},
+  {a:"Cocher « Essai obligatoire avant le premier séjour » avec une précision", r:"Le réglage est enregistré"},
+  {a:"Cocher « Afficher mes tarifs sur ma fiche publique »", r:"La fiche publique affiche les tarifs ; le champ « tarif libre » n'apparaît plus"},
+ ]},
+ { t:'Demandes de séjour', i:[
+  {a:"Recevoir la demande de séjour d'Angélique", r:"Notification ; la demande apparaît en haut de l'accueil, avec « nouveau pensionnaire » ou « déjà venu », l'essai et box / pré", d:true},
+  {a:"Accepter la demande (un seul appui)", r:"Le séjour et l'essai entrent au planning ; pas de doublon même en appuyant deux fois ; la cliente est prévenue", d:true},
+  {a:"Accepter une demande alors que les logements sont pleins", r:"Message « Complet le … » avec « Accepter quand même »", d:true},
+  {a:"Refuser une demande avec un motif", r:"La cliente reçoit le motif", d:true},
+ ]},
+ { t:'Accueil et pensionnaires', i:[
+  {a:"Toucher « Animaux présents » sur l'accueil", r:"Nos pensionnaires s'ouvre, filtré sur les présents (séjours à venir exclus)"},
+  {a:"Toucher « Arrivées aujourd'hui » puis « Départs aujourd'hui »", r:"Nos pensionnaires s'ouvre filtré ; on peut changer de date"},
+  {a:"Ajouter un pensionnaire à la main (client sans appli)", r:"Il apparaît dans Nos pensionnaires"},
+  {a:"Ouvrir Accès fiche pensionnaire", r:"Seuls les animaux confiés à cette pension s'affichent"},
+  {a:"Ouvrir la fiche d'un pensionnaire", r:"Santé et alimentation du propriétaire visibles ; vermifuges et antiparasitaires non modifiables sans autorisation"},
+ ]},
+ { t:'Pendant le séjour (menu Actions)', i:[
+  {a:"Enregistrer l'arrivée (heure, déposant, logement, effets, consignes)", r:"Les consignes de la cliente sont préremplies ; ensuite on propose contrat ou facture"},
+  {a:"Ouvrir Contrat", r:"Le contrat s'ouvre dans la visionneuse : client, animal, dates, logement, prix, arrhes"},
+  {a:"Faire signer le contrat en ligne", r:"La cliente reçoit « Contrat à signer » et le signe ; il apparaît signé dans Documents", d:true},
+  {a:"Ajouter une entrée au journal (photo, note)", r:"La cliente la voit dans l'onglet Pension & Garde de son animal", d:true},
+  {a:"Recevoir le rappel d'un traitement saisi par la cliente pendant le séjour", r:"Notification et tâche dans Mes tâches ; aucun rappel hors séjour", d:true},
+  {a:"Facturer (acompte ou séjour)", r:"La facture reprend prénom, nom, e-mail, téléphone, adresse du client ; pour un élevage client, le nom de l'élevage"},
+  {a:"Enregistrer la sortie", r:"Fiche de départ ; on propose de facturer si ce n'est pas fait, puis de retirer l'accès à la fiche"},
+ ]},
+ { t:'Organisation', i:[
+  {a:"Ouvrir le planning d'occupation", r:"Les séjours occupent les bons logements aux bonnes dates"},
+  {a:"Ouvrir Mes tâches, protocoles, suivi sanitaire, inventaire", r:"Chaque écran affiche les données de la pension"},
+  {a:"Ajouter un employé", r:"Il voit le planning selon ses droits", d:true},
+  {a:"Ouvrir Documents", r:"Contrats de séjour avec leur statut ; plus d'onglet Factures"},
+  {a:"Ouvrir Facturation", r:"Les factures de la pension s'affichent"},
+ ]},
+]},
+
+{ id:'garde', nom:'Pet-sitter', intro:"Ajoutez un profil Pet-sitter (garde à domicile).", blocs:[
+ { t:'Créer et régler le profil', i:[
+  {a:"Créer le profil (zone d'intervention, espèces, services, photo)", r:"Les informations se retrouvent dans Modifier mon profil"},
+  {a:"Ouvrir Mes créneaux et définir ses disponibilités", r:"Les créneaux sont enregistrés"},
+  {a:"Ouvrir Tarifs clients et saisir ses prix", r:"Les prix sont repris dans les devis et factures"},
+ ]},
+ { t:'Gardes', i:[
+  {a:"Recevoir une demande de garde sur plusieurs jours", r:"La demande apparaît dans Gérer mes RDV avec les passages", d:true},
+  {a:"Accepter la garde", r:"Proposition de contrat, devis ou facture ; la cliente est prévenue", d:true},
+  {a:"Envoyer le contrat de garde à signer", r:"La cliente le signe ; le PDF est lisible dans l'appli", d:true},
+  {a:"Ouvrir Ma tournée du jour", r:"Les visites du jour sont dans l'ordre"},
+  {a:"Enregistrer une visite avec un rapport (photos, note)", r:"La cliente reçoit le rapport", d:true},
+  {a:"Ouvrir le registre des visites et Mes animaux en garde", r:"Les visites et animaux s'affichent"},
+  {a:"Enregistrer la remise de clés (gestion des clés)", r:"La clé apparaît avec le client"},
+ ]},
+ { t:'Clients et administratif', i:[
+  {a:"Créer un client sans appli (Nouveau client dans l'agenda)", r:"Le client et son animal sont créés ; le contrat peut partir par e-mail"},
+  {a:"Créer un devis puis une facture", r:"Les deux reprennent les coordonnées du client"},
+  {a:"Ouvrir protocoles, tâches, inventaire, employés", r:"Chaque écran affiche les données du pet-sitter"},
+ ]},
+]},
+
+{ id:'education', nom:'Éducateur et comportementaliste', intro:"Ajoutez un profil Éducateur.", blocs:[
+ { t:'Créer et régler le profil', i:[
+  {a:"Créer le profil (méthodes, espèces, zone, photo) et suivre le guide", r:"Les cartes de l'accueil mènent au planning, à l'agenda et à la formule"},
+  {a:"Définir ses créneaux et ses formules (forfaits de séances)", r:"Les formules apparaissent sur la fiche publique"},
+ ]},
+ { t:'Cours', i:[
+  {a:"Créer un cours collectif récurrent avec une capacité", r:"Les séances apparaissent dans le planning des cours"},
+  {a:"La cliente s'inscrit à un cours collectif", r:"Le nombre d'inscrits augmente ; « complet » quand la capacité est atteinte", d:true},
+  {a:"Une place se libère", r:"Notification « place libérée » aux intéressés", d:true},
+  {a:"Recevoir une réservation de cours individuel", r:"Elle apparaît dans l'agenda", d:true},
+ ]},
+ { t:'Suivi des animaux', i:[
+  {a:"Créer un exercice dans la bibliothèque avec plusieurs étapes", r:"L'exercice et ses étapes sont enregistrés"},
+  {a:"Attribuer l'exercice à un animal avec une durée et un nombre de réussites", r:"La cliente le voit dans l'onglet Éducation de son animal", d:true},
+  {a:"La cliente valide les étapes", r:"La progression s'affiche ; les rappels s'arrêtent une fois validé pour le jour", d:true},
+  {a:"Toucher la notification d'exercice côté cliente", r:"Elle ouvre l'onglet Éducation de l'animal", d:true},
+  {a:"Rédiger un bilan éducatif", r:"Le bilan est lisible par la cliente", d:true},
+ ]},
+ { t:'Administratif', i:[
+  {a:"Créer un devis et l'envoyer", r:"La cliente le reçoit comme contrat ; sa signature vaut acceptation et ouvre le forfait", d:true},
+  {a:"Créer une facture", r:"La facture reprend les coordonnées du client"},
+  {a:"Créer un client sans appli", r:"Le client et son animal sont créés"},
+ ]},
+]},
+
+{ id:'veterinaire', nom:'Vétérinaire', intro:"Ajoutez un profil Vétérinaire (clinique). L'équipe (praticiens, ASV) se teste à deux.", blocs:[
+ { t:'Créer et régler le profil', i:[
+  {a:"Créer le profil clinique (adresse, horaires, espèces, photo)", r:"Les informations se retrouvent dans Modifier mon profil"},
+  {a:"Ajouter des praticiens et des salles, définir les motifs de consultation", r:"Chaque motif a sa durée ; les créneaux suivent les praticiens"},
+  {a:"Ajouter Angélique comme ASV", r:"Elle accède à la clinique via Mes employeurs, selon ses droits", d:true},
+ ]},
+ { t:'Rendez-vous et consultations', i:[
+  {a:"Recevoir un rendez-vous (motif, praticien ou « peu importe »)", r:"Il apparaît sur le bon praticien et dans une salle libre", d:true},
+  {a:"Accepter le rendez-vous", r:"La cliente reçoit la confirmation et un rappel la veille", d:true},
+  {a:"Saisir le compte rendu de consultation et une ordonnance", r:"La cliente les voit dans l'onglet Consultations de son animal", d:true},
+  {a:"Ouvrir la fiche véto de l'animal : consultations et journal médical", r:"Chaque consultation a sa carte et son détail"},
+  {a:"Demander l'accès au carnet de santé d'un animal", r:"La demande affiche le nom de la clinique ; la cliente accepte", d:true},
+ ]},
+ { t:'Patients et administratif', i:[
+  {a:"Créer un patient dont le propriétaire n'a pas l'appli", r:"La fiche est créée dans Mes patients"},
+  {a:"Le propriétaire crée son compte et accepte de reprendre la fiche", r:"La fiche passe dans ses animaux", d:true},
+  {a:"Créer une facture de consultation", r:"La facture reprend les coordonnées du client"},
+ ]},
+]},
+
+{ id:'sante', nom:'Ostéopathe et kiné', intro:"Ajoutez un profil Santé (ostéopathe, kinésithérapeute).", blocs:[
+ { t:'Profil et rendez-vous', i:[
+  {a:"Créer le profil (spécialité, espèces, zone, photo) et ses créneaux", r:"Les informations s'affichent sur la fiche publique"},
+  {a:"Recevoir et accepter un rendez-vous", r:"La cliente est prévenue", d:true},
+ ]},
+ { t:'Séances', i:[
+  {a:"Saisir une séance (bilan, soins, conseils)", r:"La séance génère un PDF"},
+  {a:"La cliente ouvre l'onglet Consultations de son animal", r:"La séance y apparaît, filtrée sur ce métier", d:true},
+  {a:"Ouvrir Mes patients", r:"Les animaux suivis s'affichent"},
+  {a:"Créer une facture", r:"La facture reprend les coordonnées du client"},
+ ]},
+]},
+
+{ id:'toilettage', nom:'Toiletteur', intro:"Ajoutez un profil Toiletteur.", blocs:[
+ { t:'Profil et prestations', i:[
+  {a:"Créer le profil (salon, horaires, photo) et ses créneaux", r:"Les informations s'affichent sur la fiche publique"},
+  {a:"Créer des prestations avec un prix par espèce et gabarit", r:"Les prix sont repris dans les devis et contrats"},
+  {a:"Choisir d'afficher ou non les prix sur la fiche publique", r:"Sinon la fiche affiche « Sur devis »"},
+ ]},
+ { t:'Rendez-vous et séance', i:[
+  {a:"Recevoir un rendez-vous et le confirmer", r:"La demande de consignes part automatiquement à la cliente", d:true},
+  {a:"Lire les consignes dans le dossier de la séance", r:"Les réponses de la cliente s'affichent", d:true},
+  {a:"Envoyer les consignes à un client sans compte", r:"Le client reçoit un lien personnel par e-mail"},
+  {a:"Ouvrir le dossier de la séance : compte rendu, conseils de soin du pelage", r:"La cliente voit le compte rendu et les conseils sur la fiche de son animal", d:true},
+  {a:"Générer le contrat de toilettage", r:"Le contrat est lisible en PDF dans l'appli"},
+  {a:"Facturer la séance (prix TTC) et la marquer payée", r:"La facture reprend le prix TTC et les coordonnées du client"},
+ ]},
+ { t:'Équipe', i:[
+  {a:"Ajouter un employé et ouvrir le planning des employés", r:"Les rendez-vous se répartissent par employé"},
+  {a:"Ouvrir le tableau de bord", r:"Les chiffres de l'activité s'affichent"},
+ ]},
+]},
+
+{ id:'photographe', nom:'Photographe', intro:"Ajoutez un profil Photographe. Les galeries clients demandent la formule Premium.", blocs:[
+ { t:'Profil et prestations', i:[
+  {a:"Créer le profil et ses créneaux", r:"Les informations s'affichent sur la fiche publique"},
+  {a:"Créer des prestations (prix, acompte, délai de livraison)", r:"Elles sont proposées à la réservation"},
+  {a:"Ajouter des photos au portfolio", r:"Elles s'affichent sur la fiche publique"},
+ ]},
+ { t:'Séance', i:[
+  {a:"Recevoir une réservation de séance", r:"Elle apparaît dans l'agenda et dans Mes clients et suivi", d:true},
+  {a:"Ouvrir le dossier de la séance : contacter le client (appel, SMS, WhatsApp, e-mail)", r:"Chaque moyen de contact s'ouvre"},
+  {a:"Préciser le lieu avec la recherche Google", r:"Le lieu est enregistré"},
+  {a:"Créer le devis et la facture préremplis", r:"Client, animaux, prix TTC et acompte déduit sont repris"},
+  {a:"Envoyer le contrat photo", r:"La cliente le signe ; le statut passe à signé ; la notification va au bon profil", d:true},
+ ]},
+ { t:'Galerie et livraison', i:[
+  {a:"Créer une galerie, ajouter des photos, l'envoyer à la cliente", r:"La cliente reçoit la galerie", d:true},
+  {a:"Relancer la sélection", r:"La cliente reçoit la relance", d:true},
+  {a:"Suivre les étapes dans le dossier : sélection, paiement, retouche, livraison", r:"Chaque étape se valide au même endroit"},
+  {a:"Livrer les fichiers finaux (jusqu'à 500 Mo)", r:"Bloqué si la facture n'est pas payée (sauf forcer) ; e-mail au client avec la facture acquittée ; demande d'avis", d:true},
+  {a:"Ouvrir les statistiques", r:"Le chiffre d'affaires inclut les factures payées"},
+  {a:"Filtrer Mes galeries clients", r:"Le filtre est une liste déroulante"},
+ ]},
+]},
+];
+
+const $ = s => document.querySelector(s);
+const lire = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } };
+const ecrire = (k, v) => { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } };
+let version = lire('pm-cahier-version', 'app') === 'site' ? 'site' : 'app';
+
+function visible(item) { return !item.p || item.p === version; }
+
+function rendre() {
+  document.querySelectorAll('.r-app').forEach(e => e.hidden = version !== 'app');
+  document.querySelectorAll('.r-site').forEach(e => e.hidden = version !== 'site');
+  $('#lg-app').hidden = version !== 'app';
+  $('#lg-site').hidden = version !== 'site';
+  $('#titre-v').textContent = version === 'app' ? '— appli' : '— site';
+  $('#v-app').setAttribute('aria-pressed', String(version === 'app'));
+  $('#v-site').setAttribute('aria-pressed', String(version === 'site'));
+  const main = $('#profils'); main.innerHTML = '';
+  const toc = $('#toc'); toc.innerHTML = '';
+  PROFILS.forEach(pr => {
+    const sec = document.createElement('section'); sec.className = 'profil'; sec.id = pr.id;
+    const items = pr.blocs.flatMap((b, bi) => b.i.map((it, ii) => ({ it, key: `${version}:${pr.id}:${bi}:${ii}` }))).filter(x => visible(x.it));
+    sec.innerHTML = `<div class="phead"><h2>${pr.nom}</h2><span class="cnt" data-cnt></span></div><p class="pintro">${pr.intro}</p>`;
+    pr.blocs.forEach((b, bi) => {
+      const lignes = b.i.map((it, ii) => ({ it, key: `${version}:${pr.id}:${bi}:${ii}` })).filter(x => visible(x.it));
+      if (!lignes.length) return;
+      const det = document.createElement('details'); det.className = 'bloc'; det.open = true;
+      det.innerHTML = `<summary><span>${b.t}</span><span class="n"></span></summary><ol class="tests"></ol>`;
+      const ol = det.querySelector('ol');
+      lignes.forEach(({ it, key }) => {
+        const li = document.createElement('li'); li.className = 't';
+        const id = 'c-' + key.replace(/[^a-z0-9]/gi, '-');
+        const tags = (it.d ? ' <span class="tag deux">À deux</span>' : '') + (it.p === 'app' ? ' <span class="tag app">Appli</span>' : it.p === 'site' ? ' <span class="tag site">Site</span>' : '');
+        li.innerHTML = `<input type="checkbox" class="chk" id="${id}"><div><label class="act" for="${id}">${it.a}${tags}</label><p class="att"><b>Attendu :</b> ${it.r}</p></div><input class="note" id="n-${id}" type="text" placeholder="Remarque" aria-label="Remarque">`;
+        const c = li.querySelector('.chk'), n = li.querySelector('.note');
+        c.checked = lire('pm-c:' + key, '') === '1'; li.classList.toggle('ok', c.checked);
+        n.value = lire('pm-n:' + key, '');
+        c.addEventListener('change', () => { ecrire('pm-c:' + key, c.checked ? '1' : ''); li.classList.toggle('ok', c.checked); compter(); });
+        n.addEventListener('input', () => ecrire('pm-n:' + key, n.value));
+        ol.appendChild(li);
+      });
+      sec.appendChild(det);
+    });
+    main.appendChild(sec);
+    const a = document.createElement('a'); a.href = '#' + pr.id; a.dataset.p = pr.id;
+    a.innerHTML = `${pr.nom}<span></span>`; toc.appendChild(a);
+  });
+  compter();
+}
+
+function compter() {
+  let tot = 0, ok = 0;
+  PROFILS.forEach(pr => {
+    const sec = document.getElementById(pr.id);
+    const boxes = sec.querySelectorAll('.chk'); const faits = sec.querySelectorAll('.chk:checked').length;
+    tot += boxes.length; ok += faits;
+    sec.querySelector('[data-cnt]').textContent = `${faits} / ${boxes.length} validés`;
+    sec.querySelectorAll('details.bloc').forEach(d => { d.querySelector('.n').textContent = `${d.querySelectorAll('.chk:checked').length} / ${d.querySelectorAll('.chk').length}`; });
+    const a = document.querySelector(`.toc a[data-p="${pr.id}"]`);
+    a.querySelector('span').textContent = `${faits} / ${boxes.length}`;
+    a.classList.toggle('fini', boxes.length > 0 && faits === boxes.length);
+  });
+  $('#g-txt').textContent = `${ok} / ${tot} validés`;
+  $('#g-bar').style.width = tot ? (100 * ok / tot) + '%' : '0';
+}
+
+$('#v-app').addEventListener('click', () => { version = 'app'; ecrire('pm-cahier-version', 'app'); rendre(); });
+$('#v-site').addEventListener('click', () => { version = 'site'; ecrire('pm-cahier-version', 'site'); rendre(); });
+rendre();
+</script>
+
+</body></html>

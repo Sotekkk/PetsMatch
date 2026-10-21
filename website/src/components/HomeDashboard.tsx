@@ -177,36 +177,36 @@ export default function HomeDashboard() {
   // Profil secondaire actif (pro/eleveur) → ProDashboard avec son ID
   if (activeProfile?.profile_type === 'veterinaire') {
     return <VetDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma clinique'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   if (activeProfile?.profile_type === 'sante') {
     return <SanteDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon cabinet'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   // Pet-sitting / garde : tableau de bord dédié (miroir appli GardeDashboard).
   if (activeProfile?.profile_type === 'garde' || activeProfile?.cat_pro === 'garde') {
     return <GardeDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   // Éducateur / comportementaliste : tableau de bord dédié (miroir appli EducationDashboard).
   if (activeProfile?.profile_type === 'education' || activeProfile?.cat_pro === 'education') {
     return <EducationDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon activité'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   // Photographe : tableau de bord du studio (miroir appli PhotographeStudioDashboard).
   if (activeProfile?.profile_type === 'photographe' || activeProfile?.cat_pro === 'photographe') {
     return <PhotographeDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon studio'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   // Toiletteur : tableau de bord du salon (miroir appli ToilettageSalonDashboard).
   if (activeProfile?.profile_type === 'toilettage' || activeProfile?.cat_pro === 'toilettage') {
     return <ToilettageDashboard nom={activeProfile.nom || userData?.nameElevage || 'Mon salon'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   // Pension : poste de pilotage du jour (miroir appli PensionDashboard).
   if (activeProfile?.profile_type === 'pension' || activeProfile?.cat_pro === 'pension') {
     return <PensionDashboard nom={activeProfile.nom || userData?.nameElevage || 'Ma pension'}
-      avatar={activeProfile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null} />;
+      avatar={activeProfile.avatar_url || (activeProfile.is_main ? (userData?.profilePictureUrlElevage || userData?.profilePictureUrl) : null) || null} />;
   }
   if (activeProfile) return <ProDashboard profile={activeProfile} profileId={activeProfileId} />;
 

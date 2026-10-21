@@ -194,7 +194,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
         final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (gardeId != null ? '🐾 Demande de dépannage' : (t.length > 80 ? '${t.substring(0, 80)}…' : t)));
         await _supa.from('conversations').update({
           'last_message': previewText,
-          'updated_at':   DateTime.now().toIso8601String(),
+          'updated_at':   DateTime.now().toUtc().toIso8601String(),
           'unread_count': unread,
           'participants_info': updatedInfo,
         }).eq('id', widget.conversationId);

@@ -429,7 +429,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         await _supa.from('conversations').update({
           'last_message': texte,
           'unread_count': unread,
-          'updated_at':   DateTime.now().toIso8601String(),
+          'updated_at':   DateTime.now().toUtc().toIso8601String(),
           // Un nouveau message fait réapparaître la conversation si le
           // destinataire l'avait supprimée de sa liste.
           'deleted_for':  {},
