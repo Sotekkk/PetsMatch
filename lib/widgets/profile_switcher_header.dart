@@ -105,14 +105,17 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     } catch (_) {}
   }
 
-  /// Avatar affiché pour une ligne user_profiles, aligné sur le profil public :
-  /// particulier → photo perso (avatar_url) ; pro / éleveur / asso → photo
-  /// pro (profile_picture_url_pro), sinon repli sur l'autre.
+  /// Avatar affiché pour une ligne user_profiles : particulier → photo perso
+  /// (avatar_url). Profil principal pro / éleveur → photo pro
+  /// (profile_picture_url_pro). Profil secondaire (association, autre
+  /// activité) → avatar_url, où ses écrans d'édition enregistrent son logo
+  /// (son profile_picture_url_pro peut être une copie du logo de l'élevage).
+  /// Même règle que User_Info.applyProfile ; repli sur l'autre champ.
   static String _displayAvatar(Map<String, dynamic> p) {
     final perso = p['avatar_url']?.toString() ?? '';
     final pro = p['profile_picture_url_pro']?.toString() ?? '';
     final type = p['profile_type']?.toString() ?? '';
-    if (type == 'particulier') return perso.isNotEmpty ? perso : pro;
+    if (type == 'particulier' || p['is_main'] != true) return perso.isNotEmpty ? perso : pro;
     return pro.isNotEmpty ? pro : perso;
   }
 

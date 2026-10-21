@@ -605,7 +605,13 @@ class User_Info {
     // photo pro (logo élevage / cabinet) distincte de l'avatar personnel —
     // écrasement inconditionnel : sinon la photo du profil précédemment
     // actif reste affichée quand le profil nouvellement actif n'en a pas.
-    profilePictureUrlElevage = avPro.isNotEmpty ? avPro : av;
+    // Profil secondaire (association, autre activité) : son logo est dans
+    // avatar_url (profil_association_edit / pro_profile_edit) ; son
+    // profile_picture_url_pro peut garder une copie du logo de l'élevage
+    // principal → ne s'en servir qu'en repli.
+    profilePictureUrlElevage = p['is_main'] == true
+        ? (avPro.isNotEmpty ? avPro : av)
+        : (av.isNotEmpty ? av : avPro);
 
     // Adresse pro (remplace les deux adresses)
     adress        = p['adresse']?.toString() ?? '';

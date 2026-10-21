@@ -1667,11 +1667,7 @@ export default function Header() {
       <span className="relative inline-flex flex-shrink-0" style={{ width: taille, height: taille }}>
         <span className="w-full h-full rounded-full overflow-hidden bg-white border border-gray-200 flex items-center justify-center">
           {url ? (
-            // Cadre rond : un logo rectangulaire « contain » touchait le
-            // cercle et perdait ses coins. Marge = carré inscrit (≈ 15 %).
-            <span className="w-full h-full flex items-center justify-center" style={{ padding: Math.max(2, Math.round(taille * 0.15)) }}>
-              <Image src={url} alt="" width={taille} height={taille} className="w-full h-full object-contain" />
-            </span>
+            <Image src={url} alt="" width={taille} height={taille} className="w-full h-full object-contain" />
           ) : (
             <span className="text-[#0C5C6C] font-bold" style={{ fontSize: Math.round(taille * 0.38) }}>{(nom[0] ?? '?').toUpperCase()}</span>
           )}
