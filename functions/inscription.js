@@ -18,7 +18,7 @@ const {SUPABASE_URL, SUPABASE_AUTH_HEADERS, INTERNAL_API_SECRET} = require("./co
 const SITE_URL = process.env.SITE_URL || "https://petsmatchapp.com";
 
 /** E-mail de validation envoyé par le site (gabarit PetsMatch), lien généré ici. */
-function envoyerValidation(email, lien) {
+function envoyerValidation(email, lien, jeton) {
     return new Promise((resolve) => {
         const data = JSON.stringify({email, lien});
         const u = new URL(`${SITE_URL}/api/inscription/email-validation`);
@@ -26,10 +26,17 @@ function envoyerValidation(email, lien) {
             hostname: u.hostname, path: u.pathname, method: "POST",
             headers: {
                 "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data),
+                // Jeton Firebase de la personne (route accessible à un utilisateur connecté),
+                // + secret serveur s'il est configuré.
+                "Authorization": `Bearer ${jeton}`,
                 ...(INTERNAL_API_SECRET ? {"x-internal-secret": INTERNAL_API_SECRET} : {}),
             },
         }, (res) => {
-            res.on("data", () => {}); res.on("end", () => resolve(res.statusCode === 200));
+            res.on("data", () => {});
+            res.on("end", () => {
+                if (res.statusCode !== 200) console.error(`[inscription] envoi validation HTTP ${res.statusCode}`);
+                resolve(res.statusCode === 200);
+            });
         });
         req.on("error", () => resolve(false));
         req.write(data);
@@ -196,7 +203,7 @@ exports.changerEmailInscription = functions
             // Le lien de validation part d'ici : la session du navigateur / de
             // l'appli porte encore l'ancienne adresse juste après le changement.
             const lien = await admin.auth().generateEmailVerificationLink(email);
-            const envoye = await envoyerValidation(email, lien);
+            const envoye = await envoyerValidation(email, lien, m[1]);
             console.log(`[inscription] adresse corrigée avant validation uid=${uid} envoi=${envoye}`);
             res.json({ok: true, envoye});
         } catch (e) {
