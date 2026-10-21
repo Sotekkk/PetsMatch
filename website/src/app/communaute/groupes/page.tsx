@@ -38,6 +38,8 @@ interface CreateGroupeData {
   description: string;
   type: string;
   prive: boolean;
+  /** Groupe public : nouveaux membres validés par l'admin avant de publier. */
+  validation: boolean;
   regles: string[];
 }
 
@@ -54,7 +56,7 @@ export default function GroupesPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createData, setCreateData] = useState<CreateGroupeData>({
-    nom: '', description: '', type: 'autre', prive: false, regles: [],
+    nom: '', description: '', type: 'autre', prive: false, validation: true, regles: [],
   });
   const [newRegle, setNewRegle] = useState('');
   const [saving, setSaving] = useState(false);
@@ -131,7 +133,8 @@ export default function GroupesPage() {
       setMesGroupes(prev => { const s = new Set(prev); s.delete(groupe.id); return s; });
       setPendingGroupes(prev => { const s = new Set(prev); s.delete(groupe.id); return s; });
     } else {
-      const statut = groupe.prive ? 'pending' : 'active';
+      const validation = groupe.prive || (groupe as { validation_adhesion?: boolean | null }).validation_adhesion !== false;
+      const statut = validation ? 'pending' : 'active';
       await supabase.from('groupes_membres').insert({
         groupe_id: groupe.id,
         user_uid: user.uid,
@@ -140,7 +143,7 @@ export default function GroupesPage() {
         statut,
         rejoint_at: new Date().toISOString(),
       });
-      if (groupe.prive) {
+      if (validation) {
         setPendingGroupes(prev => new Set([...prev, groupe.id]));
       } else {
         setMesGroupes(prev => new Set([...prev, groupe.id]));
@@ -159,6 +162,7 @@ export default function GroupesPage() {
         description: createData.description.trim(),
         type: createData.type,
         prive: createData.prive,
+        validation_adhesion: createData.prive || createData.validation,
         regles: createData.regles,
         created_at: new Date().toISOString(),
       }).select().single();
@@ -175,7 +179,7 @@ export default function GroupesPage() {
         setMesGroupes(prev => new Set([...prev, inserted.id]));
       }
       setShowCreate(false);
-      setCreateData({ nom: '', description: '', type: 'autre', prive: false, regles: [] });
+      setCreateData({ nom: '', description: '', type: 'autre', prive: false, validation: true, regles: [] });
       load();
     } finally {
       setSaving(false);
@@ -490,6 +494,17 @@ export default function GroupesPage() {
                     <p className="text-xs text-gray-400">Membres approuvés uniquement</p>
                   </div>
                 </label>
+                {!createData.prive && (
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={createData.validation}
+                      onChange={e => setCreateData(d => ({ ...d, validation: e.target.checked }))}
+                      className="w-4 h-4 accent-[#00ACC1]" />
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700" style={{ fontFamily: 'Galey, sans-serif' }}>Valider les nouveaux membres</p>
+                      <p className="text-xs text-gray-400">Tout le monde peut lire ; publier demande votre accord</p>
+                    </div>
+                  </label>
+                )}
 
                 <button
                   onClick={createGroupe}

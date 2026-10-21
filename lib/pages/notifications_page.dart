@@ -1192,6 +1192,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
     } else if (type == 'groupe_mention') {
       final groupeId = data is Map ? data['groupeId'] as String? : null;
       if (groupeId != null) await openGroupeById(context, groupeId);
+    } else if (type == 'groupe_demande' || type == 'groupe_accepte' || type == 'groupe_refuse') {
+      // Demande d'adhésion (admin : onglet Demandes du groupe) / réponse à ma demande.
+      final groupeId = data is Map ? data['groupe_id']?.toString() : null;
+      if (groupeId != null) await openGroupeById(context, groupeId);
     } else if (type == 'social_follow') {
       final actorUid = data is Map ? data['actor_uid'] as String? : null;
       if (actorUid != null) {
@@ -1412,6 +1416,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_mention':
       case 'forum_mention':
       case 'groupe_mention': return Icons.alternate_email;
+      case 'groupe_demande': return Icons.group_add_outlined;
+      case 'groupe_accepte': return Icons.how_to_reg_outlined;
+      case 'groupe_refuse': return Icons.group_off_outlined;
       case 'chaleur':       return Icons.spa;
       case 'animal_evolution': return Icons.auto_awesome;
       case 'rappel_vaccin': return Icons.vaccines_outlined;

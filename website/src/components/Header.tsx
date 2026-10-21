@@ -812,6 +812,11 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
   const d = n.data ?? {};
   const devisPath = proType === 'garde' ? '/garde/devis' : proType === 'photographe' ? '/photographe/devis' : proType === 'toilettage' ? '/toilettage/devis' : proType === 'marechal_ferrant' ? '/marechal-ferrant/devis' : '/education/devis';
   switch (n.type) {
+    // Demande d'adhésion à un groupe (admins) / réponse à ma demande.
+    case 'groupe_demande':
+    case 'groupe_accepte':
+    case 'groupe_refuse':
+      return d.groupe_id ? `/communaute/groupes/${d.groupe_id}` : '/communaute/groupes';
     case 'like':
       return d.annonceId
         ? `/annonces/${d.annonceId}${d.bebeIndex != null && d.bebeIndex !== '' ? `?bebe=${d.bebeIndex}` : ''}`

@@ -302,6 +302,8 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
   bool get _canModerate => _isAdmin || _isModerator;
   bool get _isPending => _myMembership?['statut'] == 'pending';
   bool get _isPrive => _groupe['prive'] == true;
+  // Adhésion validée par l'admin : groupe privé, ou public avec validation (par défaut).
+  bool get _validationRequise => _isPrive || _groupe['validation_adhesion'] != false;
 
   Future<void> _joinOrLeave() async {
     if (_uid.isEmpty) return;
@@ -315,7 +317,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       setState(() => _myMembership = null);
     } else {
       // Rejoindre
-      final statut = _isPrive ? 'pending' : 'active';
+      final statut = _validationRequise ? 'pending' : 'active';
       await _supa.from('groupes_membres').insert({
         'groupe_id': _groupe['id'],
         'user_uid': _uid,
@@ -325,7 +327,11 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         'rejoint_at': DateTime.now().toIso8601String(),
       });
       setState(() => _myMembership = {'role': 'membre', 'statut': statut});
-      if (!_isPrive) setState(() => _membresCount++);
+      if (!_validationRequise) setState(() => _membresCount++);
+      if (_validationRequise && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Demande envoyée : vous pourrez publier dès qu'un admin l'aura acceptée.")));
+      }
     }
   }
 
@@ -872,7 +878,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         if (cancel == true) _joinOrLeave();
       };
     } else {
-      label = _isPrive ? 'Demander à rejoindre' : 'Rejoindre le groupe';
+      label = _validationRequise ? 'Demander à rejoindre' : 'Rejoindre le groupe';
       bgColor = _tealC;
       fgColor = _darkC;
       onTap = _joinOrLeave;

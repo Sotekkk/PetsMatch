@@ -76,7 +76,7 @@ function ProfileAvatar({ profile, size = 36 }: { profile?: UserProfile; size?: n
 
 interface Groupe {
   id: string; nom: string; description: string; type: string;
-  prive: boolean; createur_uid: string; regles: string[];
+  prive: boolean; createur_uid: string; regles: string[]; validation_adhesion?: boolean | null;
   avatar_url?: string; photo_cover_url?: string;
 }
 interface Post {
@@ -258,7 +258,9 @@ export default function GroupeDetailPage() {
       setMembership(null);
       setMembresCount(c => c - (isMember ? 1 : 0));
     } else {
-      const statut = groupe.prive ? 'pending' : 'active';
+      // Validation par l'admin : groupe privé, ou public avec validation (par défaut).
+      const validation = groupe.prive || groupe.validation_adhesion !== false;
+      const statut = validation ? 'pending' : 'active';
       await supabase.from('groupes_membres').insert({
         groupe_id: id,
         user_uid: user.uid,
@@ -268,7 +270,7 @@ export default function GroupeDetailPage() {
         rejoint_at: new Date().toISOString(),
       });
       setMembership({ role: 'membre', statut });
-      if (!groupe.prive) setMembresCount(c => c + 1);
+      if (!validation) setMembresCount(c => c + 1);
     }
   }
 
@@ -673,7 +675,7 @@ export default function GroupeDetailPage() {
             }`}
             style={{ fontFamily: 'Galey, sans-serif' }}
           >
-            {canModerate ? (isAdmin ? '⚙️ Admin' : '⚙️ Modérateur') : isMember ? 'Membre ✓ — Quitter' : isPending ? 'Demande en attente…' : groupe.prive ? 'Demander à rejoindre' : 'Rejoindre le groupe'}
+            {canModerate ? (isAdmin ? '⚙️ Admin' : '⚙️ Modérateur') : isMember ? 'Membre ✓ — Quitter' : isPending ? 'Demande en attente…' : (groupe.prive || groupe.validation_adhesion !== false) ? 'Demander à rejoindre' : 'Rejoindre le groupe'}
           </button>
         )}
 

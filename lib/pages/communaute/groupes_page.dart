@@ -144,7 +144,8 @@ class _GroupesPageState extends State<GroupesPage>
     if (_uid.isEmpty) return;
     final estMembre = _mesGroupes.contains(groupeId);
     final groupe = _groupes.firstWhere((g) => g['id'].toString() == groupeId, orElse: () => {});
-    final isPrive = groupe['prive'] == true;
+    // Validation par l'admin : groupe privé, ou public avec validation (par défaut).
+    final isPrive = groupe['prive'] == true || groupe['validation_adhesion'] != false;
     setState(() {
       if (estMembre) {
         _mesGroupes.remove(groupeId);
@@ -170,7 +171,7 @@ class _GroupesPageState extends State<GroupesPage>
         });
         if (isPrive && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Demande envoyée — en attente d\'approbation')),
+            const SnackBar(content: Text("Demande envoyée : vous pourrez publier dès qu'un admin l'aura acceptée.")),
           );
         }
       }
@@ -630,6 +631,8 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
   String _description = '';
   String _type = 'autre';
   bool _prive = false;
+  // Groupe public : nouveaux membres validés par l'admin avant de publier (comme Facebook).
+  bool _validation = true;
   bool _saving = false;
 
   Future<void> _save() async {
@@ -648,6 +651,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
         'description': _description,
         'type': _type,
         'prive': _prive,
+        'validation_adhesion': _prive || _validation,
         'created_at': DateTime.now().toIso8601String(),
       }).select().single();
 
@@ -764,6 +768,21 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
                             fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
                   ]),
                 ]),
+                if (!_prive)
+                  Row(children: [
+                    Switch(
+                      value: _validation,
+                      onChanged: (v) => setState(() => _validation = v),
+                      activeThumbColor: const Color(0xFF7ED69D),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Valider les nouveaux membres',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text('Tout le monde peut lire ; publier demande votre accord',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                    ])),
+                  ]),
                 const SizedBox(height: 24),
 
                 SizedBox(
