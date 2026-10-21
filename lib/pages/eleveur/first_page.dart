@@ -1,7 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/utils/age_minimum.dart';
 import 'package:PetsMatch/utils/photos_inscription.dart';
-import 'package:PetsMatch/pages/particulier/securityregister.dart';
+import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'dart:io';
@@ -83,7 +83,7 @@ class _RegisterEleveurInformationPageState
     _uploadImage().catchError((_) {});
 
     Navigator.push(context,
-        MaterialPageRoute(builder: (_) => const RegisterSecurity()));
+        MaterialPageRoute(builder: (_) => const RegisterElevageInformation()));
   }
 
   @override

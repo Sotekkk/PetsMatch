@@ -600,9 +600,9 @@ class _MentionsLegalesState extends State<MentionsLegales> {
     setState(() => _submitting = true);
     try {
       final User user;
-      if (isCurrentUserGoogleAuth) {
-        // Déjà authentifié via Google (compte créé + email vérifié par
-        // Google plus tôt dans le parcours) — pas de mot de passe à créer.
+      if (isCurrentUserGoogleAuth || FirebaseAuth.instance.currentUser != null) {
+        // Compte déjà créé à la 1re étape (e-mail / mot de passe, ou Google) :
+        // rien à recréer ici.
         user = FirebaseAuth.instance.currentUser!;
         User_Info.uid = user.uid;
       } else {
@@ -617,6 +617,7 @@ class _MentionsLegalesState extends State<MentionsLegales> {
 
       Object isRegistered =
           await registerElevage(User_Info.email, User_Info.password);
+      User_Info.inscriptionEnCours = false;
       // Charge les profils V2 créés par registerElevage
       await User_Info.loadProfiles(user.uid);
       if (User_Info.isElevage) {

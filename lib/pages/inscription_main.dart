@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/first_page.dart';
 import 'package:PetsMatch/pages/association/inscription_association_page.dart';
 import 'package:PetsMatch/pages/pro/restauration/inscription_restauration_pro_page.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/particulier/securityregister.dart';
 
 class InscriptionChoicePage extends StatelessWidget {
   const InscriptionChoicePage({super.key});
@@ -43,7 +44,7 @@ class InscriptionChoicePage extends StatelessWidget {
               User_Info.isElevage = false;
               User_Info.isPro = false;
               Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const RegisterParticulierInformationPage()));
+                  MaterialPageRoute(builder: (_) => RegisterSecurity(suivante: () => const RegisterParticulierInformationPage())));
             },
           ),
           const SizedBox(height: 14),
@@ -56,7 +57,7 @@ class InscriptionChoicePage extends StatelessWidget {
               User_Info.isElevage = true;
               User_Info.isPro = false;
               Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const RegisterEleveurInformationPage()));
+                  MaterialPageRoute(builder: (_) => RegisterSecurity(suivante: () => const RegisterEleveurInformationPage())));
             },
           ),
           const SizedBox(height: 14),
@@ -70,7 +71,7 @@ class InscriptionChoicePage extends StatelessWidget {
               User_Info.isPro = true;
               User_Info.isAssociation = false;
               Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const RegisterEleveurInformationPage()));
+                  MaterialPageRoute(builder: (_) => RegisterSecurity(suivante: () => const RegisterEleveurInformationPage())));
             },
           ),
           const SizedBox(height: 14),
@@ -84,7 +85,7 @@ class InscriptionChoicePage extends StatelessWidget {
               User_Info.isPro = false;
               User_Info.isAssociation = true;
               Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const RegisterAssociationFirstInfoPage()));
+                  MaterialPageRoute(builder: (_) => RegisterSecurity(suivante: () => const RegisterAssociationFirstInfoPage())));
             },
           ),
           const SizedBox(height: 14),

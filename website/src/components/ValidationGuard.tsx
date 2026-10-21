@@ -40,6 +40,12 @@ export default function ValidationGuard({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (loading) return;
+    // Compte créé (e-mail / mot de passe) mais inscription jamais terminée
+    // (aucun profil) : on la reprend là où elle s'était arrêtée.
+    if (user && !userData && !isPublicPath(pathname)) {
+      router.replace('/inscription');
+      return;
+    }
     if (!user || !userData) return;
 
     // RGPD01 : CGU non acceptées → forcer l'acceptation (sauf pages publiques)

@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/beta_gate.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
+import 'package:PetsMatch/pages/inscription_main.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/verifemail.dart';
@@ -580,6 +581,11 @@ class User_Info {
   static String activeType      = '';  // type du profil actif (primaire ou secondaire)
   static final ValueNotifier<String> profileNotifier = ValueNotifier<String>('');
   static List<Map<String, dynamic>> availableProfiles = [];
+  /// Profils chargés avec succès (liste vide = inscription jamais terminée).
+  static bool profilsCharges = false;
+  /// Parcours d'inscription en cours (compte créé à la 1re étape) : l'écran
+  /// racine ne doit rien afficher ni enregistrer en dessous.
+  static bool inscriptionEnCours = false;
   static String primaryLabel = '';
   static String primaryType  = '';
   static String primaryAvatar = '';
@@ -699,6 +705,7 @@ class User_Info {
           .timeout(const Duration(seconds: 10));
       final profiles = List<Map<String, dynamic>>.from(rows as List);
       availableProfiles = profiles;
+      profilsCharges = true;
       if (profiles.isEmpty) return;
       // Profil principal en premier (is_main=true) sinon premier disponible
       final main = profiles.firstWhere(
@@ -1136,6 +1143,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
             }
 
             if (!snap.hasData) return WelcomePage();
+
+            // Inscription en cours (écrans empilés au-dessus) : rien en dessous,
+            // sinon l'écran de vérification enregistrerait un compte incomplet.
+            if (User_Info.inscriptionEnCours) {
+              return const Scaffold(backgroundColor: Color(0xFFF8F8F6), body: SizedBox.shrink());
+            }
+            // Compte créé (e-mail / mot de passe) mais inscription jamais
+            // terminée : on la reprend au choix du type de compte.
+            if (User_Info.profilsCharges && User_Info.availableProfiles.isEmpty && !User_Info.isAdmin) {
+              return const InscriptionChoicePage();
+            }
 
             // Un pro « en attente » (jamais encore examiné) garde l'accès normal
             // à l'appli — seul un dossier explicitement REFUSÉ par un admin reste

@@ -4,7 +4,6 @@ import 'package:PetsMatch/utils/photos_inscription.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/condition_general.dart';
-import 'package:PetsMatch/pages/particulier/securityregister.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:flutter/material.dart';
 
@@ -79,7 +78,7 @@ class _RegisterAssociationFirstInfoPageState
     PhotosInscription.photo = _imageFile;
 
     Navigator.push(context,
-        MaterialPageRoute(builder: (_) => const RegisterSecurity()));
+        MaterialPageRoute(builder: (_) => const RegisterAssociationInformationPage()));
   }
 
   @override
