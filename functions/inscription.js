@@ -14,7 +14,28 @@ if (!admin.apps.length) admin.initializeApp();
 //  • purgerInscriptionsAbandonnees (tous les jours, 4 h) : même nettoyage pour
 //    les comptes jamais validés de plus de 3 jours.
 
-const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS, INTERNAL_API_SECRET} = require("./config");
+const SITE_URL = process.env.SITE_URL || "https://petsmatchapp.com";
+
+/** E-mail de validation envoyé par le site (gabarit PetsMatch), lien généré ici. */
+function envoyerValidation(email, lien) {
+    return new Promise((resolve) => {
+        const data = JSON.stringify({email, lien});
+        const u = new URL(`${SITE_URL}/api/inscription/email-validation`);
+        const req = https.request({
+            hostname: u.hostname, path: u.pathname, method: "POST",
+            headers: {
+                "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data),
+                ...(INTERNAL_API_SECRET ? {"x-internal-secret": INTERNAL_API_SECRET} : {}),
+            },
+        }, (res) => {
+            res.on("data", () => {}); res.on("end", () => resolve(res.statusCode === 200));
+        });
+        req.on("error", () => resolve(false));
+        req.write(data);
+        req.end();
+    });
+}
 
 function supabaseDelete(path) {
     return new Promise((resolve) => {
@@ -172,8 +193,12 @@ exports.changerEmailInscription = functions
             }
             await admin.auth().updateUser(uid, {email, emailVerified: false});
             await supabasePatch(`/rest/v1/users?uid=eq.${encodeURIComponent(uid)}`, {email});
-            console.log(`[inscription] adresse corrigée avant validation uid=${uid}`);
-            res.json({ok: true});
+            // Le lien de validation part d'ici : la session du navigateur / de
+            // l'appli porte encore l'ancienne adresse juste après le changement.
+            const lien = await admin.auth().generateEmailVerificationLink(email);
+            const envoye = await envoyerValidation(email, lien);
+            console.log(`[inscription] adresse corrigée avant validation uid=${uid} envoi=${envoye}`);
+            res.json({ok: true, envoye});
         } catch (e) {
             console.error("[inscription] changerEmailInscription:", e.message);
             res.status(500).json({error: "Changement impossible. Réessayez."});

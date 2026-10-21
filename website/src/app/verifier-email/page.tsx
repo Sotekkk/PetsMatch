@@ -118,8 +118,8 @@ function VerifierEmail() {
                     // Adresse changée tout de suite sur le même compte, puis nouvel e-mail de validation.
                     const err = await changerEmailInscription(await u.getIdToken(), mail);
                     if (err) { setMessage(err); return; }
+                    // E-mail de validation envoyé par le serveur à la nouvelle adresse.
                     try { await u.reload(); } catch { /* */ }
-                    try { if (auth.currentUser) await sendEmailVerification(auth.currentUser); } catch { /* renvoi possible */ }
                     setAdresseEnvoi(mail); setEdition(false);
                     setMessage(`Adresse corrigée : un lien de validation a été envoyé à ${mail}. Vos informations sont conservées.`);
                   }} className="px-4 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold">Valider</button>

@@ -465,8 +465,8 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
       final jeton = await user.getIdToken();
       final err = await changerEmailInscription(jeton ?? '', newEmail);
       if (err != null) throw Exception(err);
-      await user.reload();
-      try { await FirebaseAuth.instance.currentUser?.sendEmailVerification(); } catch (_) {}
+      // E-mail de validation envoyé par le serveur à la nouvelle adresse.
+      try { await user.reload(); } catch (_) {}
       User_Info.email = newEmail;
       if (!mounted) return;
       setState(() {
