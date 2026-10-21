@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth-context';
 const DELAI_RENVOI_S = 60;
 
 function VerifierEmail() {
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUserData } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const suite = params.get('suite') && params.get('suite') !== '/verifier-email' ? params.get('suite')! : '/';
@@ -34,11 +34,13 @@ function VerifierEmail() {
       const mail = auth.currentUser.email;
       if (mail) { try { await supabase.from('users').update({ email: mail }).eq('uid', auth.currentUser.uid); } catch { /* */ } }
       await auth.currentUser.getIdToken(true); // jeton à jour (email_verified)
+      // Profil créé juste après le compte : rechargé avant la suite.
+      try { await refreshUserData(); } catch { /* */ }
       router.replace(suite);
       return true;
     }
     return false;
-  }, [router, suite]);
+  }, [router, suite, refreshUserData]);
 
   // Pas connecté → connexion ; vérification automatique toutes les 5 s.
   useEffect(() => {

@@ -254,6 +254,8 @@ export default function InscriptionPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [cguAccepted, setCguAccepted] = useState(false);
+  const [voirMdp, setVoirMdp] = useState(false);
+  const [password2, setPassword2] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [siretVerifying, setSiretVerifying] = useState(false);
@@ -461,6 +463,7 @@ export default function InscriptionPage() {
     e.preventDefault();
     setError('');
     if (password.length < 6) { setError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+    if (password !== password2) { setError('Les deux mots de passe ne sont pas identiques.'); return; }
     if (!cguAccepted) { setError('Vous devez accepter les CGU pour créer un compte.'); return; }
     setLoading(true);
     try {
@@ -914,8 +917,21 @@ export default function InscriptionPage() {
                 </div>
                 <div>
                   <label className={labelCls}>Mot de passe *</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                    required placeholder="6 caractères minimum" className={inputCls} />
+                  <div className="relative">
+                    <input type={voirMdp ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
+                      required placeholder="6 caractères minimum" className={`${inputCls} pr-20`} autoComplete="new-password" />
+                    <button type="button" onClick={() => setVoirMdp(v => !v)}
+                      aria-label={voirMdp ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                      className="absolute inset-y-0 right-2 my-auto h-8 px-2 text-xs font-semibold text-[#0C5C6C] rounded-lg hover:bg-[#0C5C6C]/10">
+                      {voirMdp ? 'Masquer' : 'Afficher'}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Confirmez le mot de passe *</label>
+                  <input type={voirMdp ? 'text' : 'password'} value={password2} onChange={(e) => setPassword2(e.target.value)}
+                    required placeholder="Le même mot de passe" className={inputCls} autoComplete="new-password" />
+                  {password2 && password2 !== password && <p className="text-xs text-red-500 mt-1">Les deux mots de passe ne sont pas identiques.</p>}
                 </div>
 
                 <label className="flex items-start gap-3 cursor-pointer select-none">
