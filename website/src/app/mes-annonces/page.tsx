@@ -12,6 +12,7 @@ import { useTypeProfilActif } from '@/hooks/useTypeProfilActif';
 import { droitsAnnonces, lireFiltreType, FILTRES_TYPE, type TypeAnnonceFiltre } from '@/lib/annonces-droits';
 import MesAnnoncesMateriel from '@/components/annonces/MesAnnoncesMateriel';
 import BoostAnnonceModal from '@/components/annonces/BoostAnnonceModal';
+import ConfirmationBoost from '@/components/annonces/ConfirmationBoost';
 import { Puce } from '@/components/dashboard/kit';
 import {
   EnteteGestion, BandeauQuota, BarreFiltres, CarteAnnonce, RubriqueAnnonces, EtatVide, Chargement,
@@ -71,9 +72,14 @@ export default function MesAnnoncesPage() {
   const [recherche, setRecherche] = useState('');
   // Boost : point d'entrée unique (menu « … ») ; ?boost=<id> l'ouvre (lien de l'appli).
   const [boostId, setBoostId] = useState<string | null>(null);
+  // Retour du paiement d'un boost choisi à la publication.
+  const [publieeId, setPubliee] = useState<string | null>(null);
   useEffect(() => {
-    const b = new URLSearchParams(window.location.search).get('boost');
+    const q = new URLSearchParams(window.location.search);
+    const b = q.get('boost');
     if (b) setBoostId(b);
+    const p = q.get('publiee');
+    if (p) { setPubliee(p); window.history.replaceState({}, '', '/mes-annonces'); }
   }, []);
   const [statsAnnonceId, setStatsAnnonceId] = useState<string | null>(null);
   const [statsAnnonceTitle, setStatsAnnonceTitle] = useState<string | undefined>();
@@ -218,11 +224,12 @@ export default function MesAnnoncesPage() {
     if (p.get('paye') === '1') return 'Paiement reçu : votre annonce est en cours de publication.';
     if (p.get('paiement') === 'annule') return 'Paiement annulé — votre annonce reste en brouillon.';
     if (p.get('brouillon') === '1') return 'Brouillon enregistré. Reprenez-le quand vous voulez avec « Reprendre ».';
+    if (p.get('boost_success') === '1') return 'Paiement reçu : le boost de votre annonce est activé dès sa confirmation.';
     return null;
   });
   useEffect(() => {
     const s = window.location.search;
-    if (s.includes('paye=') || s.includes('paiement=') || s.includes('brouillon=')) {
+    if (s.includes('paye=') || s.includes('paiement=') || s.includes('brouillon=') || s.includes('boost_success=')) {
       const t = new URLSearchParams(s).get('type');
       window.history.replaceState({}, '', t ? `/mes-annonces?type=${t}` : '/mes-annonces');
     }
@@ -258,6 +265,7 @@ export default function MesAnnoncesPage() {
           {notice}
         </div>
       )}
+      {publieeId && <ConfirmationBoost annonceId={publieeId} onFermer={() => setPubliee(null)} />}
       <EnteteGestion total={total} publierHref="/annonces/publier" achatsHref="/mes-achats" />
 
       {/* Quota du plan (annonces d'animaux d'éleveur) */}

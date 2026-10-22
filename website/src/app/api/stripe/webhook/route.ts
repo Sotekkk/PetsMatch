@@ -166,7 +166,12 @@ export async function POST(req: NextRequest) {
           if (session.metadata?.modification_id) {
             await appliquerModification(session.metadata.modification_id, session.id);
           }
-          if (produit_code) {
+          // Événement déjà traité (Stripe renvoie parfois le même) : rien à refaire.
+          const paymentIntent = typeof session.payment_intent === 'string' ? session.payment_intent : null;
+          const { data: dejaTraite } = paymentIntent
+            ? await supabase.from('achats_ponctuels').select('id').eq('stripe_payment_intent_id', paymentIntent).limit(1).maybeSingle()
+            : { data: null };
+          if (produit_code && !dejaTraite) {
             const { data: produit } = await supabase.from('produits_ponctuels').select('id, label, prix, duree_heures').eq('code', produit_code).maybeSingle();
             if (produit) {
               const expiration = produit.duree_heures
@@ -187,6 +192,13 @@ export async function POST(req: NextRequest) {
                   await supabase.from('annonces').update({
                     statut: 'disponible', paiement_statut: 'paye', expires_at: expiresAt,
                   }).eq('id', annonce_id);
+                } else if (expiration && (session.metadata?.publier_statut === 'disponible' || session.metadata?.publier_statut === 'en_attente')) {
+                  // Boost choisi à la publication : publier l'annonce (une seule
+                  // fois : seulement si elle attend encore en brouillon) et
+                  // activer le boost pour la durée achetée.
+                  await supabase.from('annonces').update({
+                    statut: session.metadata.publier_statut, paiement_statut: null, boost_until: expiration,
+                  }).eq('id', annonce_id).eq('statut', 'brouillon');
                 } else if (expiration) {
                   await supabase.from('annonces').update({ boost_until: expiration }).eq('id', annonce_id);
                 }

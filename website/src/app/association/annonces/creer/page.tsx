@@ -142,7 +142,8 @@ function CreerAnnonceAssoPageInner() {
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
-    const arr = Array.from(files).slice(0, 6 - photos.length);
+    // Ajoute à la suite des photos déjà présentes (6 au total).
+    const arr = Array.from(files).slice(0, Math.max(0, 6 - photos.length - existingPhotoUrls.length));
     setPhotos(prev => [...prev, ...arr]);
     arr.forEach(f => {
       const reader = new FileReader();

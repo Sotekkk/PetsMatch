@@ -144,13 +144,18 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   }
 
   Future<void> _addPhoto() async {
+    if (_photosUrls.length + _photosFiles.length >= 6) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('6 photos maximum.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
     final src = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galerie'),
+          ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galerie (une ou plusieurs photos)'),
               onTap: () => Navigator.pop(context, ImageSource.gallery)),
           ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('Appareil photo'),
               onTap: () => Navigator.pop(context, ImageSource.camera)),
@@ -158,6 +163,14 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       ),
     );
     if (src == null) return;
+    if (src == ImageSource.gallery) {
+      // Plusieurs photos en une sélection, ajoutées à la suite des précédentes
+      // (jamais en remplacement ; la photo principale ne change pas).
+      final restant = 6 - _photosUrls.length - _photosFiles.length;
+      final fichiers = await pickAndCropSquareMultiple(limite: restant);
+      if (fichiers.isNotEmpty && mounted) setState(() => _photosFiles.addAll(fichiers));
+      return;
+    }
     final f = await pickAndCropSquare(source: src);
     if (f != null && mounted) setState(() => _photosFiles.add(f));
   }
@@ -448,7 +461,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
             OutlinedButton.icon(
               onPressed: _addPhoto,
               icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-              label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              label: Text(_photosUrls.isEmpty && _photosFiles.isEmpty ? 'Choisir des photos' : 'Ajouter des photos', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
               style: OutlinedButton.styleFrom(
                 foregroundColor: _teal, side: const BorderSide(color: kDashBorder),
                 minimumSize: const Size(double.infinity, 48),

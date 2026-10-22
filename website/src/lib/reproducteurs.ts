@@ -96,3 +96,41 @@ export async function chargerReproducteursExterieurs({ uidEleveur, sexe, espece 
   } catch { /* réseau indisponible */ }
   return out;
 }
+
+// ── Parents d'une annonce (« Chercher parmi mes animaux ») ─────────────────
+// Mère : femelles taggées « Reproductrice » ; père : mâles taggés
+// « Reproducteur » (même case `reproducteur` de la fiche). Jamais un animal
+// cédé (statut hors cheptel ou acquéreur renseigné), même si l'ancien tag est
+// resté. Jamais déduit du sexe ou de l'âge. Profil élevage actif uniquement.
+// Miroir appli : lib/utils/reproducteurs.dart (estParentProposable).
+
+type AnimalParent = { reproducteur?: boolean | null; statut?: string | null; sexe?: string | null; uid_acquereur?: string | null };
+
+export const SELECT_PARENT_CHAMPS = 'reproducteur, statut, uid_acquereur';
+
+export function estParentProposable(a: AnimalParent, sexe: 'male' | 'femelle'): boolean {
+  return a.reproducteur === true && a.sexe === sexe && !a.uid_acquereur
+    && !STATUTS_HORS_CHEPTEL.includes(a.statut ?? '');
+}
+
+/** Message quand aucun parent ne correspond. */
+export const aucunParent = (sexe: 'male' | 'femelle') =>
+  sexe === 'femelle' ? 'Aucune femelle reproductrice disponible' : 'Aucun mâle reproducteur disponible';
+
+/** Requête des parents proposables, filtrée dès la récupération. */
+export function requeteParents(select: string, sexe: 'male' | 'femelle', espece: string, cible: { profileId?: string | null; uid: string }) {
+  let q = supabase.from('animaux').select(`${select}, ${SELECT_PARENT_CHAMPS}`)
+    .eq('espece', espece).eq('sexe', sexe).eq('reproducteur', true)
+    .is('uid_acquereur', null)
+    .not('statut', 'in', `(${STATUTS_HORS_CHEPTEL.join(',')})`);
+  q = cible.profileId ? q.eq('profile_id', cible.profileId) : q.eq('uid_eleveur', cible.uid);
+  return q.order('nom');
+}
+
+/** Vérification à l'enregistrement : le parent choisi est-il toujours proposable ? */
+export async function parentToujoursProposable(id: string, sexe: 'male' | 'femelle', cible: { profileId?: string | null; uid: string }): Promise<boolean> {
+  let q = supabase.from('animaux').select(`sexe, ${SELECT_PARENT_CHAMPS}`).eq('id', id);
+  q = cible.profileId ? q.eq('profile_id', cible.profileId) : q.eq('uid_eleveur', cible.uid);
+  const { data } = await q.maybeSingle();
+  return !!data && estParentProposable(data as AnimalParent, sexe);
+}

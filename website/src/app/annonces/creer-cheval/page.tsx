@@ -154,9 +154,11 @@ function CreerAnnonceChevalInner() {
   function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = '';
-    const room = MAX_PHOTOS - (existingPhotos.length + croppedBlobs.length);
+    // Ajoute à la suite (y compris pendant un recadrage en cours), sans remplacer.
+    const room = MAX_PHOTOS - (existingPhotos.length + croppedBlobs.length + cropQueue.length + (cropSrc ? 1 : 0));
     if (room <= 0 || !files.length) return;
     const take = files.slice(0, room);
+    if (cropSrc) { setCropQueue(q => [...q, ...take]); return; }
     setCropQueue(take.slice(1));
     setCropSrc(URL.createObjectURL(take[0]));
   }
@@ -190,7 +192,8 @@ function CreerAnnonceChevalInner() {
     const erreurDate = erreurNaissanceAnimal(dateNaissance, 'cheval');
     const ec: Record<string, string> = {};
     if (!titre.trim()) ec.titre = 'Un titre est requis.';
-    if (erreurDate) ec.naissance = erreurDate;
+    if (!dateNaissance) ec.naissance = 'Obligatoire : date de naissance du cheval.';
+    else if (erreurDate) ec.naissance = erreurDate;
     if (numSIRE.trim().length < 6) ec.sire = 'Le n° SIRE est obligatoire (Décret 2013-879).';
     if (existingPhotos.length + croppedBlobs.length === 0) ec.photos = 'Ajoutez au moins une photo.';
     if (priced && prixUnite !== 'convenir' && (!prix || isNaN(Number(prix)))) ec.prix = 'Indiquez un prix (ou passez en « à convenir »).';
@@ -376,8 +379,10 @@ function CreerAnnonceChevalInner() {
               <option value="entier">Entier</option>
             </select>
           </Champ>
-          <Champ label="Date de naissance" htmlFor="naissance" erreur={erreurs.naissance}>
-            <input id="naissance" type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={classeChamp} style={styleChamp}
+          <Champ label="Date de naissance" requis htmlFor="naissance" erreur={erreurs.naissance}
+            aide={paiementStatut === 'paye' ? 'Non modifiable après publication.' : 'Ne pourra plus être modifiée une fois l’annonce publiée.'}>
+            <input id="naissance" type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)}
+              disabled={!!editId && paiementStatut === 'paye'} className={`${classeChamp} disabled:bg-gray-50 disabled:text-gray-500`} style={styleChamp}
               min={bornesNaissanceAnimal('cheval').min} max={bornesNaissanceAnimal('cheval').max} />
           </Champ>
         </div>

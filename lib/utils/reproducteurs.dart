@@ -255,3 +255,45 @@ class _ReproducteurSheetState extends State<_ReproducteurSheet> {
     ));
   }
 }
+
+// ── Parents d'une annonce (« Chercher parmi mes animaux ») ─────────────────
+// Mère : femelles taggées « Reproductrice » ; père : mâles taggés
+// « Reproducteur » (même case `reproducteur` de la fiche). Jamais un animal
+// cédé (statut hors cheptel ou acquéreur renseigné), même si l'ancien tag est
+// resté. Jamais déduit du sexe ou de l'âge. Profil élevage actif uniquement.
+// Miroir site : website/src/lib/reproducteurs.ts (estParentProposable).
+
+bool estParentProposable(Map<String, dynamic> a, String sexe) =>
+    a['reproducteur'] == true &&
+    a['sexe'] == sexe &&
+    (a['uid_acquereur'] == null || a['uid_acquereur'].toString().isEmpty) &&
+    !kStatutsHorsCheptel.contains((a['statut'] ?? '').toString());
+
+String aucunParent(String sexe) =>
+    sexe == 'femelle' ? 'Aucune femelle reproductrice disponible' : 'Aucun mâle reproducteur disponible';
+
+/// Parents proposables, filtrés dès la récupération.
+Future<List<Map<String, dynamic>>> chargerParentsProposables({
+  required String sexe, required String espece, required String uid, String? profileId,
+}) async {
+  var q = Supabase.instance.client.from('animaux').select()
+      .eq('espece', espece).eq('sexe', sexe).eq('reproducteur', true)
+      .isFilter('uid_acquereur', null)
+      .not('statut', 'in', '(${kStatutsHorsCheptel.join(',')})');
+  q = (profileId != null && profileId.isNotEmpty) ? q.eq('profile_id', profileId) : q.eq('uid_eleveur', uid);
+  final rows = List<Map<String, dynamic>>.from(await q.order('nom'));
+  return rows.where((a) => estParentProposable(a, sexe)).toList();
+}
+
+/// Vérification à l'enregistrement : le parent choisi est-il toujours proposable ?
+Future<bool> parentToujoursProposable(String id, String sexe, {required String uid, String? profileId}) async {
+  try {
+    var q = Supabase.instance.client.from('animaux')
+        .select('sexe, reproducteur, statut, uid_acquereur').eq('id', id);
+    q = (profileId != null && profileId.isNotEmpty) ? q.eq('profile_id', profileId) : q.eq('uid_eleveur', uid);
+    final a = await q.maybeSingle();
+    return a != null && estParentProposable(Map<String, dynamic>.from(a), sexe);
+  } catch (_) {
+    return false;
+  }
+}

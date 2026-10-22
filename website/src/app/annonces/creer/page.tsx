@@ -5,6 +5,9 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { apiFetch } from '@/lib/api-fetch';
+import { Icone } from '@/components/dashboard/kit';
+import { requeteParents, estParentProposable, parentToujoursProposable, aucunParent } from '@/lib/reproducteurs';
+import { chargerOffresBoost, dureeOffre, prixOffre, urlPaiementBoost, type OffreBoost } from '@/lib/boost-offres';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
@@ -99,6 +102,11 @@ function CreerAnnoncePageInner() {
   const [cession, setCession] = useState<'vente' | 'adoption' | 'don'>('vente');
   // Brouillon : annonce enregistrée (statut « brouillon ») reprise via ?brouillon=<id>
   const [brouillonId, setBrouillonId] = useState<string | null>(null);
+  // Boost choisi juste avant la publication ('' = publier sans boost).
+  const [offresBoost, setOffresBoost] = useState<OffreBoost[]>([]);
+  const [choixBoost, setChoixBoost] = useState('');
+  const [paiementAnnule, setPaiementAnnule] = useState(false);
+  useEffect(() => { chargerOffresBoost().then(setOffresBoost); }, []);
   const [photosExistantes, setPhotosExistantes] = useState<string[]>([]);
   const [planCode, setPlanCode] = useState<string>('free');
   const [autoSaveA, setAutoSaveA] = useState<string | null>(null);
@@ -124,6 +132,7 @@ function CreerAnnoncePageInner() {
   const [etape, setEtape] = useState(1);
   const [previews, setPreviews] = useState<string[]>([]);
   const [cropQueue, setCropQueue] = useState<File[]>([]);
+  const [avisPhotos, setAvisPhotos] = useState<string | null>(null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -139,6 +148,8 @@ function CreerAnnoncePageInner() {
 
   // ── Portée
   const [dateNaissance, setDateNaissance] = useState('');
+  // Date de naissance d'un animal seul (vente, adoption, don, retraité) : obligatoire.
+  const [dateNaissanceAnimal, setDateNaissanceAnimal] = useState('');
   const [nombreBebes, setNombreBebes] = useState(1);
   const [prixMin, setPrixMin] = useState('');
   const [prixMax, setPrixMax] = useState('');
@@ -352,7 +363,7 @@ function CreerAnnoncePageInner() {
   const champsBrouillon = {
     type, cession, titre, espece, especeAutre, race, description,
     sexeAnimal, couleurAnimal, couleurYeuxAnimal, sterilise, prix,
-    dateNaissance, nombreBebes, prixMin, prixMax, animauxPortee,
+    dateNaissance, dateNaissanceAnimal, nombreBebes, prixMin, prixMax, animauxPortee,
     vaccines, vermifuge, identificationSante, bilanSante, semaines, clubPedigree, numRegistre,
     sailliePrix, saillieConditions, saillieGenetique,
     numSIRE, numPasseportEquin, numIdentification,
@@ -373,7 +384,7 @@ function CreerAnnoncePageInner() {
     setEspeceAutre(g('especeAutre', '')); setDescription(g('description', ''));
     setSexeAnimal(g('sexeAnimal', 'male')); setCouleurAnimal(g('couleurAnimal', '')); setCouleurYeuxAnimal(g('couleurYeuxAnimal', ''));
     setSterilise(g('sterilise', false)); setPrix(g('prix', ''));
-    setDateNaissance(g('dateNaissance', '')); setNombreBebes(g('nombreBebes', 1)); setPrixMin(g('prixMin', '')); setPrixMax(g('prixMax', ''));
+    setDateNaissance(g('dateNaissance', '')); setDateNaissanceAnimal(g('dateNaissanceAnimal', '')); setNombreBebes(g('nombreBebes', 1)); setPrixMin(g('prixMin', '')); setPrixMax(g('prixMax', ''));
     const bebes = g<AnimalPortee[]>('animauxPortee', []);
     setAnimauxPortee(bebes);
     const bp: Record<string, { blobs: Blob[]; previews: string[] }> = {};
@@ -415,6 +426,7 @@ function CreerAnnoncePageInner() {
         sexeAnimal: a.sexe, couleurAnimal: a.couleur, couleurYeuxAnimal: a.couleur_yeux, sterilise: a.sterilise,
         prix: a.prix != null ? String(a.prix) : '',
         dateNaissance: a.date_naissance ? String(a.date_naissance).substring(0, 10) : '', nombreBebes: a.nombre_bebes ?? 1,
+        dateNaissanceAnimal: a.date_naissance_animal ? String(a.date_naissance_animal).substring(0, 10) : '',
         prixMin: a.prix_min_portee != null ? String(a.prix_min_portee) : '', prixMax: a.prix_max_portee != null ? String(a.prix_max_portee) : '',
         animauxPortee: bebes,
         vaccines: a.vaccines, vermifuge: a.vermifuge, identificationSante: a.identification, bilanSante: a.bilan_sante,
@@ -430,9 +442,12 @@ function CreerAnnoncePageInner() {
         pereAnimalId: a.pere_animal_id ?? (tv === 'saillie' ? a.etalon_animal_id : null), pereNom: a.pere_nom, perePuce: a.pere_puce, pereRace: a.pere_race,
         pereCouleur: a.pere_couleur, pereCouleurYeux: a.pere_couleur_yeux, pereDescription: a.pere_description, pereRegistre: a.pere_registre,
         perePhotoPreview: a.pere_photo_url, pereSource: 'mien',
-        photosExistantes: (a.photos as string[] | null) ?? [], etape: 1,
+        photosExistantes: (a.photos as string[] | null) ?? [],
+        // Retour d'un paiement de boost annulé : directement au choix final.
+        etape: searchParams.get('paiement') === 'annule' ? 3 : 1,
       });
       setBrouillonId(id);
+      if (searchParams.get('paiement') === 'annule') { setPaiementAnnule(true); setChoixBoost(''); }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, user]);
@@ -471,7 +486,7 @@ function CreerAnnoncePageInner() {
   if (!userData?.isElevage) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
-        <span className="text-4xl">🔒</span>
+        <span className="text-[#0C5C6C]"><Icone nom="cle" taille={40} /></span>
         <p className="font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
           Réservé aux éleveurs certifiés
         </p>
@@ -496,23 +511,19 @@ function CreerAnnoncePageInner() {
   // ── My animals loaders
   async function loadFemelles() {
     setLoadingFemelles(true);
-    const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, race, couleur, couleur_yeux, description, identification, photo_url')
-      .eq('uid_eleveur', user!.uid)
-      .eq('espece', ESPECE_DB[espece] ?? espece.toLowerCase())
-      .eq('sexe', 'femelle').order('nom');
-    setMyFemelles((data ?? []) as MyAnimal[]);
+    // Femelles taggées « Reproductrice », non cédées, du profil élevage actif.
+    const { data } = await requeteParents('id, nom, sexe, race, couleur, couleur_yeux, description, identification, photo_url',
+      'femelle', ESPECE_DB[espece] ?? espece.toLowerCase(), { profileId: activeProfileId, uid: user!.uid });
+    setMyFemelles(((data ?? []) as unknown as MyAnimal[]).filter(a => estParentProposable(a as never, 'femelle')));
     setLoadingFemelles(false);
   }
 
   async function loadMales() {
     setLoadingMales(true);
-    const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre')
-      .eq('uid_eleveur', user!.uid)
-      .eq('espece', ESPECE_DB[espece] ?? espece.toLowerCase())
-      .eq('sexe', 'male').order('nom');
-    setMyMales((data ?? []) as MyAnimal[]);
+    // Mâles taggés « Reproducteur », non cédés, du profil élevage actif.
+    const { data } = await requeteParents('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre',
+      'male', ESPECE_DB[espece] ?? espece.toLowerCase(), { profileId: activeProfileId, uid: user!.uid });
+    setMyMales(((data ?? []) as unknown as MyAnimal[]).filter(a => estParentProposable(a as never, 'male')));
     setLoadingMales(false);
   }
 
@@ -566,6 +577,7 @@ function CreerAnnoncePageInner() {
 
   // ── Parent selectors
   function selectMere(a: MyAnimal) {
+    if (!estParentProposable(a as never, 'femelle')) { setError('Cet animal n’est pas une femelle reproductrice disponible.'); return; }
     setMereAnimalId(a.id); setMereNom(a.nom ?? ''); setMerePuce(a.identification ?? '');
     setMereRace(a.race ?? ''); setMereCouleur(a.couleur ?? ''); setMereCouleurYeux(a.couleur_yeux ?? ''); setMereDescription(a.description ?? '');
     setMerePhotoPreview(a.photo_url ?? null);
@@ -578,6 +590,7 @@ function CreerAnnoncePageInner() {
   }
 
   function selectPere(a: MyAnimal) {
+    if (!estParentProposable(a as never, 'male')) { setError('Cet animal n’est pas un mâle reproducteur disponible.'); return; }
     setPereAnimalId(a.id); setPereNom(a.nom ?? ''); setPerePuce(a.identification ?? '');
     setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereCouleurYeux(a.couleur_yeux ?? ''); setPereDescription(a.description ?? '');
     setPerePhotoPreview(a.photo_url ?? null);
@@ -590,6 +603,9 @@ function CreerAnnoncePageInner() {
   function selectRetraite(a: MyAnimal) {
     setRetraiteAnimalId(a.id);
     setRetraiteAnimalNom(a.nom);
+    // Date de naissance reprise de la fiche de l'animal.
+    supabase.from('animaux').select('date_naissance').eq('id', a.id).maybeSingle()
+      .then(({ data }) => { if (data?.date_naissance) setDateNaissanceAnimal(String(data.date_naissance).substring(0, 10)); });
     setSexeAnimal((a.sexe === 'femelle' ? 'femelle' : 'male') as 'male' | 'femelle');
     setCouleurAnimal(a.couleur ?? ''); setCouleurYeuxAnimal(a.couleur_yeux ?? '');
     setRace(a.race ?? '');
@@ -755,13 +771,22 @@ function CreerAnnoncePageInner() {
   }
 
   // ── Main photos
+  // Plusieurs photos en une sélection, ou en plusieurs fois : chaque ajout
+  // complète la galerie (jamais de remplacement ; la photo principale ne
+  // change pas). Maximum 5 photos au total.
   function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []).slice(0, Math.max(0, 5 - photosExistantes.length));
+    const choisis = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    const enAttente = cropQueue.length + (cropSrc ? 1 : 0);
+    const restant = Math.max(0, 5 - photosExistantes.length - croppedBlobs.length - enAttente);
+    const files = choisis.slice(0, restant);
+    setAvisPhotos(choisis.length > files.length
+      ? `Maximum 5 photos : ${choisis.length - files.length} photo${choisis.length - files.length > 1 ? 's n’ont' : ' n’a'} pas été ajoutée${choisis.length - files.length > 1 ? 's' : ''}.`
+      : null);
     if (!files.length) return;
-    setCroppedBlobs([]); setPreviews([]);
+    if (cropSrc) { setCropQueue(q => [...q, ...files]); return; }
     setCropQueue(files.slice(1));
     setCropSrc(URL.createObjectURL(files[0]));
-    e.target.value = '';
   }
   function handleCropConfirm(blob: Blob) {
     const url = URL.createObjectURL(blob);
@@ -834,6 +859,9 @@ function CreerAnnoncePageInner() {
     if (n === 1) {
       if (espece === 'Autre' && !especeAutre.trim()) return 'Précisez l’espèce.';
       if (chienChat && type === 'portee' && !dateNaissance) return 'Obligatoire : date de naissance de la portée.';
+      if ((type === 'compagnon' || type === 'retraite') && !dateNaissanceAnimal) return 'Obligatoire : date de naissance de l’animal.';
+      const errAnimal = (type === 'compagnon' || type === 'retraite') ? erreurNaissanceAnimal(dateNaissanceAnimal, espece) : null;
+      if (errAnimal) return errAnimal;
     }
     if (n === 2) {
       if (espece === 'Cheval' && !numSIRE.trim()) return 'Obligatoire : numéro SIRE pour tout équidé mis en vente — Décret n°2013-879.';
@@ -865,8 +893,12 @@ function CreerAnnoncePageInner() {
 
   async function enregistrer(mode: 'publier' | 'brouillon') {
     const brouillon = mode === 'brouillon';
-    const erreurDate = erreurNaissanceAnimal(dateNaissance, espece);
+    const erreurDate = erreurNaissanceAnimal(dateNaissance, espece)
+      ?? ((type === 'compagnon' || type === 'retraite') ? erreurNaissanceAnimal(dateNaissanceAnimal, espece) : null);
     if (erreurDate) { setError(erreurDate); return; }
+    if (!brouillon && (type === 'compagnon' || type === 'retraite') && !dateNaissanceAnimal) {
+      setError('Obligatoire : date de naissance de l’animal.'); return;
+    }
     setError(''); setSaving(true);
     try {
       // Seuls les éleveurs validés peuvent publier
@@ -918,24 +950,39 @@ function CreerAnnoncePageInner() {
       }
       if (!brouillon && (espece === 'Chien' || espece === 'Chat') && type === 'portee') {
         if (!merePuce.trim()) {
-          setError('⚠ Obligatoire : numéro d\'identification (puce ICAD ou tatouage) de la mère — art. L214-8 Code rural.');
+          setError('Obligatoire : numéro d\'identification (puce ICAD ou tatouage) de la mère — art. L214-8 Code rural.');
           setSaving(false); return;
         }
         if (!dateNaissance) {
-          setError('⚠ Obligatoire : date de naissance de la portée.');
+          setError('Obligatoire : date de naissance de la portée.');
+          setSaving(false); return;
+        }
+      }
+      // Parents choisis parmi mes animaux : toujours reproducteurs et non cédés.
+      if (!brouillon && type !== 'saillie') {
+        const cible = { profileId: activeProfileId, uid: user!.uid };
+        if (mereAnimalId && !(await parentToujoursProposable(mereAnimalId, 'femelle', cible))) {
+          setError('La mère choisie n’est plus une femelle reproductrice disponible (cédée ou sans tag « Reproductrice »). Choisissez-en une autre ou saisissez-la manuellement.');
+          setSaving(false); return;
+        }
+      }
+      if (!brouillon && type !== 'saillie' && pereSource === 'mien' && pereAnimalId) {
+        if (!(await parentToujoursProposable(pereAnimalId, 'male', { profileId: activeProfileId, uid: user!.uid }))) {
+          setError('Le père choisi n’est plus un mâle reproducteur disponible (cédé ou sans tag « Reproducteur »). Choisissez-en un autre, passez par le réseau PetsMatch ou saisissez-le manuellement.');
           setSaving(false); return;
         }
       }
       if (!brouillon && espece === 'Cheval' && !numSIRE.trim()) {
-        setError('⚠ Obligatoire : numéro SIRE pour tout équidé mis en vente — Décret n°2013-879.');
+        setError('Obligatoire : numéro SIRE pour tout équidé mis en vente — Décret n°2013-879.');
         setSaving(false); return;
       }
       if (!brouillon && (espece === 'Chien' || espece === 'Chat') && type !== 'portee' && !numIdentification.trim()) {
-        setError('⚠ Obligatoire : numéro d\'identification de l\'animal (puce électronique ou tatouage) — art. L212-10 Code rural.');
+        setError('Obligatoire : numéro d\'identification de l\'animal (puce électronique ou tatouage) — art. L212-10 Code rural.');
         setSaving(false); return;
       }
 
       const annonceStatut = brouillon ? 'brouillon' : planCfg.autoPublish ? 'disponible' : 'en_attente';
+      const boostPublication = !brouillon && !!choixBoost && offresBoost.some(o => o.code === choixBoost);
       const expireAt = new Date(Date.now() + planCfg.dureeDays * 86_400_000).toISOString();
       const photoUrls: string[] = [...photosExistantes];
       for (const blob of croppedBlobs)
@@ -1010,7 +1057,10 @@ function CreerAnnoncePageInner() {
         espece_autre: espece === 'Autre' ? (especeAutre.trim() || null) : null,
         type: type === 'portee' ? 'portee' : 'animal',
         type_vente: effectiveTypeVente,
-        photos: photoUrls, statut: annonceStatut, expire_at: expireAt, description,
+        // Avec boost : l'annonce, complète, attend en brouillon le paiement
+        // (publiée par le webhook à la confirmation, jamais avant).
+        photos: photoUrls, statut: boostPublication ? 'brouillon' : annonceStatut, expire_at: expireAt, description,
+        ...(!brouillon && { paiement_statut: boostPublication ? 'attente_boost' : null }),
         ...(isEquideFormule && {
           prix_unite: formuleEquine === 'vente' ? null : prixUnite,
           niveau_recommande: niveauEquide || null,
@@ -1021,8 +1071,8 @@ function CreerAnnoncePageInner() {
           video_monte_url: videoMonteUrl,
           video_libre_url: videoLibreUrl,
         }),
-        ...(type === 'compagnon' && { prix: prix && cession !== 'don' ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, couleur_yeux: couleurYeuxAnimal || null, sterilise }),
-        ...(type === 'retraite' && { prix: prix && cession !== 'don' ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, couleur_yeux: couleurYeuxAnimal || null, etalon_animal_id: retraiteAnimalId }),
+        ...(type === 'compagnon' && { prix: prix && cession !== 'don' ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, couleur_yeux: couleurYeuxAnimal || null, sterilise, date_naissance_animal: dateNaissanceAnimal || null }),
+        ...(type === 'retraite' && { prix: prix && cession !== 'don' ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, couleur_yeux: couleurYeuxAnimal || null, etalon_animal_id: retraiteAnimalId, date_naissance_animal: dateNaissanceAnimal || null }),
         ...(type === 'portee' && {
           date_naissance: dateNaissance || null,
           nombre_bebes: nombreBebes,
@@ -1054,10 +1104,16 @@ function CreerAnnoncePageInner() {
         num_sire: espece === 'Cheval' ? numSIRE || null : null,
         num_passeport_equin: espece === 'Cheval' ? numPasseportEquin || null : null,
       };
+      const idAnnonce = brouillonId ?? genId();
       const { error: insertError } = brouillonId
         ? await supabase.from('annonces').update(payload).eq('id', brouillonId)
-        : await supabase.from('annonces').insert({ id: genId(), ...payload });
+        : await supabase.from('annonces').insert({ id: idAnnonce, ...payload });
       if (insertError) throw new Error(insertError.message);
+      // Retour arrière depuis le paiement : on retravaille la même annonce (pas de doublon).
+      if (!brouillonId) {
+        setBrouillonId(idAnnonce);
+        window.history.replaceState({}, '', `/annonces/creer?brouillon=${idAnnonce}`);
+      }
       oublierBrouillonLocal();
       if (brouillon) { router.push('/mes-annonces?brouillon=1'); return; }
 
@@ -1076,6 +1132,11 @@ function CreerAnnoncePageInner() {
         }
       }
 
+      if (boostPublication) {
+        // Récapitulatif du boost et du montant, puis paiement.
+        router.push(urlPaiementBoost(idAnnonce, choixBoost, annonceStatut));
+        return;
+      }
       router.push(annonceStatut === 'en_attente' ? '/mes-annonces?pending=1' : '/mes-annonces');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1084,15 +1145,15 @@ function CreerAnnoncePageInner() {
   }
 
   // ── Reusable animal picker list
-  function AnimalPickerList({ animals, isLoading, onSelect }: {
-    animals: MyAnimal[]; isLoading: boolean; onSelect: (a: MyAnimal) => void;
+  function AnimalPickerList({ animals, isLoading, onSelect, vide = 'Aucun animal trouvé' }: {
+    animals: MyAnimal[]; isLoading: boolean; onSelect: (a: MyAnimal) => void; vide?: string;
   }) {
     return (
       <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
         {isLoading ? (
           <p className="text-sm text-gray-400 text-center py-4">Chargement…</p>
         ) : animals.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">Aucun animal trouvé</p>
+          <p className="text-sm text-gray-400 text-center py-4">{vide}</p>
         ) : animals.map(a => (
           <button key={a.id} type="button" onClick={() => onSelect(a)}
             className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#E8F4F6] text-left border-b border-gray-50 last:border-0 transition-colors">
@@ -1325,6 +1386,14 @@ function CreerAnnoncePageInner() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Couleur des yeux <span className="text-gray-400 font-normal">(optionnel)</span></label>
                 <input value={couleurYeuxAnimal} onChange={e => setCouleurYeuxAnimal(e.target.value)} placeholder="Ex: marron, bleu…" className={iCls} />
               </div>
+              <div>
+                <label htmlFor="naissance-animal" className="block text-sm font-medium text-gray-700 mb-1">
+                  Date de naissance <span className="text-red-500">*</span>
+                </label>
+                <input id="naissance-animal" type="date" value={dateNaissanceAnimal} onChange={e => setDateNaissanceAnimal(e.target.value)}
+                  className={iCls} min={bornesNaissanceAnimal(espece).min} max={bornesNaissanceAnimal(espece).max} />
+                <p className="text-xs text-gray-500 mt-1">Non modifiable une fois l’annonce publiée.</p>
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-700">Stérilisé(e)</span>
                 <button type="button" onClick={() => setSterilise(!sterilise)}
@@ -1505,7 +1574,7 @@ function CreerAnnoncePageInner() {
                     <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M21 21l-5.2-5.2m0 0A7.5 7.5 0 105.2 5.2a7.5 7.5 0 0010.6 10.6z" /></svg>
                     <span>{mereAnimalId ? 'Changer d\'animal' : 'Chercher parmi mes animaux'}</span>
                   </button>
-                  {showMerePicker && <AnimalPickerList animals={myFemelles} isLoading={loadingFemelles} onSelect={selectMere} />}
+                  {showMerePicker && <AnimalPickerList animals={myFemelles} isLoading={loadingFemelles} onSelect={selectMere} vide={aucunParent('femelle')} />}
                 </div>
               </div>
               <div className="flex gap-3">
@@ -1570,7 +1639,7 @@ function CreerAnnoncePageInner() {
                     <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M21 21l-5.2-5.2m0 0A7.5 7.5 0 105.2 5.2a7.5 7.5 0 0010.6 10.6z" /></svg>
                     <span>{pereAnimalId ? 'Changer d\'animal' : 'Chercher parmi mes animaux'}</span>
                   </button>
-                  {showPerePicker && <AnimalPickerList animals={myMales} isLoading={loadingMales} onSelect={selectPere} />}
+                  {showPerePicker && <AnimalPickerList animals={myMales} isLoading={loadingMales} onSelect={selectPere} vide={aucunParent('male')} />}
                 </div>
               </div>
             )}
@@ -1690,11 +1759,15 @@ function CreerAnnoncePageInner() {
                 ))}
               </div>
             )}
+            {photosExistantes.length + previews.length < 5 && (
             <label className="flex items-center justify-center gap-2 w-full border border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-lg py-6 cursor-pointer transition-colors text-gray-400 hover:text-[#0C5C6C]">
               <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M6.8 6.2A2.3 2.3 0 015 7.2c-.4.1-.8.1-1.1.2C2.8 7.5 2 8.4 2 9.5V18a2.3 2.3 0 002.3 2.3h15.4A2.3 2.3 0 0022 18V9.5c0-1.1-.8-2-1.9-2.2l-1.1-.1a2.3 2.3 0 01-1.8-1.1l-.8-1.3a2.2 2.2 0 00-1.8-1H9.4a2.2 2.2 0 00-1.8 1l-.8 1.4zM16.5 12.8a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" /></svg>
-              <span className="text-sm font-medium">Choisir des photos</span>
+              <span className="text-sm font-medium">{photosExistantes.length + previews.length === 0 ? 'Choisir des photos' : 'Ajouter des photos'}</span>
               <input type="file" accept="image/*" multiple onChange={handlePhotos} className="hidden" />
             </label>
+            )}
+            <p className="text-xs text-gray-500 mt-1.5">{photosExistantes.length + previews.length} / 5 photos · sélection multiple possible · la première est la photo principale.</p>
+            {avisPhotos && <p role="status" className="text-xs font-semibold text-[#B45309] mt-1">{avisPhotos}</p>}
             {previews.length > 0 && (
               <div className="flex gap-2 mt-3 flex-wrap">
                 {previews.map((p, i) => (
@@ -1836,6 +1909,37 @@ function CreerAnnoncePageInner() {
             </div>
           )}
 
+          {/* ── Boost, juste avant de publier ── */}
+          {offresBoost.length > 0 && (
+            <fieldset className="border border-gray-200 rounded-lg p-4">
+              <legend className="px-1 text-sm font-semibold text-[#1F2A2E]">Souhaitez-vous booster votre annonce ?</legend>
+              {paiementAnnule && (
+                <p role="status" className="mb-3 rounded-lg px-3 py-2 text-sm text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A]">
+                  Paiement annulé : votre annonce est conservée en brouillon avec toutes ses informations et photos. Vous pouvez réessayer ou publier sans boost.
+                </p>
+              )}
+              <div className="grid gap-2">
+                {[{ code: '', label: 'Publier sans boost', prix: 0, duree_heures: null, description: 'Votre annonce est publiée normalement. Vous pourrez la booster plus tard depuis « Mes annonces ».' } as OffreBoost, ...offresBoost].map(o => {
+                  const actif = choixBoost === o.code;
+                  return (
+                    <label key={o.code || 'sans'} className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${actif ? 'border-[#0C5C6C] bg-[#E8F4F6]' : 'border-gray-200 hover:border-gray-300'}`}>
+                      <input type="radio" name="choix-boost" value={o.code} checked={actif} onChange={() => setChoixBoost(o.code)}
+                        className="mt-1 accent-[#0C5C6C]" />
+                      <span className="flex-1 min-w-0">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span className="text-sm font-semibold text-[#1F2A2E]">{o.label}</span>
+                          {o.code && <span className="text-sm font-bold text-[#1F2A2E] tabular-nums whitespace-nowrap">{prixOffre(o.prix)}</span>}
+                        </span>
+                        {o.code && <span className="block text-xs text-gray-600">{dureeOffre(o.duree_heures)} de mise en avant · prix total, paiement unique</span>}
+                        {o.description && <span className="block text-xs text-gray-500 mt-0.5">{o.description}</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+
           {/* ── Récapitulatif ── */}
           <div className="border border-gray-200 rounded-lg p-4">
             <p className="text-sm font-semibold text-[#1F2A2E] mb-2">Récapitulatif</p>
@@ -1847,7 +1951,7 @@ function CreerAnnoncePageInner() {
                 ['Prix', type === 'saillie' ? (sailliePrix ? `${sailliePrix} €` : 'Gratuite') : cession === 'don' ? 'Don' : type === 'portee' ? ([prixMin, prixMax].filter(Boolean).join(' – ') || '—') + (prixMin || prixMax ? ' €' : '') : (prix ? `${prix} €` : '—')],
                 ['Photos', `${photosExistantes.length + previews.length} / 5`],
                 ['Durée de publication', `${(PLAN_CONFIG[planCode] ?? PLAN_CONFIG.free).dureeDays} jours (selon votre abonnement)`],
-                ['Mise en avant', 'Depuis Mes annonces, après publication'],
+                ['Mise en avant', choixBoost ? (() => { const o = offresBoost.find(x => x.code === choixBoost); return o ? `${o.label} · ${dureeOffre(o.duree_heures)} · ${prixOffre(o.prix)}` : '—'; })() : 'Sans boost'],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-3 border-b border-gray-100 py-1">
                   <dt className="text-gray-500">{k}</dt><dd className="font-medium text-[#1F2A2E] text-right truncate">{v}</dd>
@@ -1882,7 +1986,7 @@ function CreerAnnoncePageInner() {
             ) : (
               <button type="submit" disabled={saving}
                 className="h-10 px-5 rounded-lg bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white text-sm font-semibold">
-                {saving ? 'Publication en cours…' : "Publier l'annonce"}
+                {saving ? (choixBoost ? 'Préparation du paiement…' : 'Publication en cours…') : choixBoost ? 'Passer au paiement' : 'Publier mon annonce'}
               </button>
             )}
             </div>

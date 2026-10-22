@@ -98,6 +98,8 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
   // Statut de paiement de l'annonce éditée ('paye' = déjà publiée → édition
   // simple ; sinon on repasse par le paiement web).
   String? _paiementStatut;
+  /// Annonce publiée (payée) : la date de naissance n'est plus modifiable.
+  bool get _datePubliee => widget.annonceId != null && _paiementStatut == 'paye';
 
   bool _saving = false;
 
@@ -236,7 +238,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galerie'),
+          ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galerie (une ou plusieurs photos)'),
               onTap: () => Navigator.pop(context, ImageSource.gallery)),
           ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('Appareil photo'),
               onTap: () => Navigator.pop(context, ImageSource.camera)),
@@ -244,6 +246,14 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       ),
     );
     if (src == null) return;
+    if (src == ImageSource.gallery) {
+      // Plusieurs photos en une sélection, ajoutées à la suite des précédentes
+      // (jamais en remplacement ; la photo principale ne change pas).
+      final restant = _maxPhotos - _photosUrls.length - _photosFiles.length;
+      final fichiers = await pickAndCropSquareMultiple(limite: restant);
+      if (fichiers.isNotEmpty && mounted) setState(() => _photosFiles.addAll(fichiers));
+      return;
+    }
     final f = await pickAndCropSquare(source: src);
     if (f != null && mounted) setState(() => _photosFiles.add(f));
   }
@@ -282,6 +292,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
   Future<void> _save() async {
     final priced = _typeVente != 'valorisation';
     if (_titreCtrl.text.trim().isEmpty) { _snack('Un titre est requis.'); return; }
+    if (_dateNaissance == null) { _snack('Obligatoire : date de naissance du cheval.'); return; }
     if (_sireCtrl.text.trim().length < 6) { _snack('Le n° SIRE est obligatoire (Décret 2013-879).'); return; }
     if (_photosUrls.isEmpty && _photosFiles.isEmpty) { _snack('Ajoutez au moins une photo.'); return; }
     if (priced && double.tryParse(_prixCtrl.text.trim()) == null && _prixUnite != 'convenir') {
@@ -670,8 +681,11 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
           ],
           onChanged: (v) => setState(() => _sexe = v ?? 'hongre'),
         )),
-        _section('Date de naissance', child: InkWell(
-          onTap: () async {
+        _section('Date de naissance', requis: true,
+            aide: _datePubliee ? 'Non modifiable après publication.' : 'Ne pourra plus être modifiée une fois l\'annonce publiée.',
+            child: InkWell(
+          // Verrouillée une fois l'annonce publiée (contrôle serveur identique).
+          onTap: _datePubliee ? null : () async {
             final d = await showDatePicker(
               context: context,
               initialDate: borner(_dateNaissance ?? DateTime(DateTime.now().year - 8), premiereNaissanceAnimal('cheval'), DateTime.now()),
@@ -703,7 +717,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
           OutlinedButton.icon(
             onPressed: _addPhoto,
             icon: const Icon(Icons.add_photo_alternate_outlined),
-            label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey')),
+            label: Text(_photosUrls.isEmpty && _photosFiles.isEmpty ? 'Choisir des photos' : 'Ajouter des photos', style: const TextStyle(fontFamily: 'Galey')),
             style: OutlinedButton.styleFrom(
               foregroundColor: _teal, side: const BorderSide(color: kDashBorder),
               minimumSize: const Size(double.infinity, 48)),

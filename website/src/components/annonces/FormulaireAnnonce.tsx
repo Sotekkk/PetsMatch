@@ -120,7 +120,7 @@ export function GrillePhotos({ photos, max, onRetirer, onAjouter, multiple = tru
 }) {
   return (
     <div>
-      <p className="text-sm text-gray-500 mb-2 tabular-nums">{photos.length} / {max} photos</p>
+      <p className="text-sm text-gray-500 mb-2 tabular-nums">{photos.length} / {max} photos{multiple ? ' · sélection multiple possible' : ''}</p>
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
         {photos.map((p, i) => (
           <div key={p.cle} className="relative aspect-square rounded-xl overflow-hidden bg-[#EEF1EF]">
@@ -137,7 +137,7 @@ export function GrillePhotos({ photos, max, onRetirer, onAjouter, multiple = tru
           <label className="aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 cursor-pointer text-gray-500 hover:text-[#0C5C6C] hover:border-[#0C5C6C]/50 transition-colors"
             style={{ borderColor: BORDURE }}>
             <Icone nom="plus" taille={22} />
-            <span className="text-xs font-semibold">Ajouter</span>
+            <span className="text-xs font-semibold text-center px-1">{photos.length === 0 ? 'Choisir des photos' : 'Ajouter des photos'}</span>
             <input type="file" accept="image/*" multiple={multiple} className="hidden" onChange={onAjouter} />
           </label>
         )}

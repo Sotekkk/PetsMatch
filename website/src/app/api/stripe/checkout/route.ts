@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     const auth = await requireUser(req);
     if (auth instanceof NextResponse) return auth;
     const uid = auth.uid;
-    const { email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath } = await req.json();
+    const { email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath, publier_statut } = await req.json();
     if (!email) return NextResponse.json({ error: 'email requis' }, { status: 400 });
     if (profile_id) {
       // Le profil payé doit être à l'appelant — ou à un élevage qu'il co-gère.
@@ -93,17 +93,46 @@ export async function POST(req: NextRequest) {
       // particulier revient sur /mes-annonces ; les boosts gardent leur retour.
       const ponctuelBack = (returnPath as string | undefined) ?? '/mes-annonces';
       const isAnnonceChevalParticulier = produit_code === 'annonce_cheval_particulier';
+
+      // Boost choisi à la publication : l'annonce, complète, attend en
+      // brouillon (paiement_statut « attente_boost ») ; elle n'est publiée
+      // qu'à la confirmation du paiement (webhook). Paiement annulé : elle
+      // reste en brouillon, rien n'est activé.
+      const publication = publier_statut === 'disponible' || publier_statut === 'en_attente';
+      if (publication) {
+        if (!annonce_id || !(produit.duree_heures as number | null)) {
+          return NextResponse.json({ error: 'Annonce ou offre de boost invalide.' }, { status: 400 });
+        }
+        const { data: a } = await supabase.from('annonces').select('uid_eleveur, statut, paiement_statut').eq('id', annonce_id).maybeSingle();
+        if (!a) return NextResponse.json({ error: 'Annonce introuvable.' }, { status: 404 });
+        let proprietaire = a.uid_eleveur === uid;
+        if (!proprietaire) {
+          const { data: cog } = await supabase.from('elevage_cogerants').select('id')
+            .eq('uid_gerant', a.uid_eleveur).eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null)
+            .limit(1).maybeSingle();
+          proprietaire = !!cog;
+        }
+        if (!proprietaire) return NextResponse.json({ error: 'Annonce non autorisée.' }, { status: 403 });
+        // Déjà publiée (paiement confirmé, retour arrière…) : pas de second paiement.
+        if (a.statut !== 'brouillon' || a.paiement_statut !== 'attente_boost') {
+          return NextResponse.json({ error: 'Cette annonce est déjà publiée.' }, { status: 409 });
+        }
+      }
+
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: isAnnonceChevalParticulier
           ? `${origin}${ponctuelBack}?paye=1`
+          : publication ? `${origin}/mes-annonces?publiee=${annonce_id}`
           : `${origin}/mes-annonces?boost_success=1`,
         cancel_url: isAnnonceChevalParticulier
           ? `${origin}${ponctuelBack}?paiement=annule`
+          : publication ? `${origin}/annonces/creer?brouillon=${annonce_id}&paiement=annule`
           : `${origin}/mes-annonces`,
-        metadata: { uid, produit_code, annonce_id: annonce_id ?? '' },
-      });
+        metadata: { uid, produit_code, annonce_id: annonce_id ?? '', ...(publication ? { publier_statut } : {}) },
+      // Clics répétés / retour depuis le paiement : même session Stripe, jamais deux paiements.
+      }, publication ? { idempotencyKey: `publication-boost-${annonce_id}-${produit_code}` } : undefined);
 
       return NextResponse.json({ url: session.url });
     }

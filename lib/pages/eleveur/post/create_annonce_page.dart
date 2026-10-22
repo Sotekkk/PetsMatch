@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/services/plan_service.dart';
@@ -61,6 +62,76 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Map<String, dynamic>? _brouillonLocal;
   static const _dark = Color(0xFF1F2A2E);
   bool get _estBrouillon => widget.initialData?['statut'] == 'brouillon';
+
+  // Boost choisi juste avant la publication ('' = publier sans boost). Mêmes
+  // offres que le menu « … » de Mes annonces (produits_ponctuels) ; paiement
+  // sur le site (interdit dans l'appli), l'annonce attend en brouillon.
+  List<Map<String, dynamic>> _offresBoost = [];
+  String _choixBoost = '';
+  bool get _publication => widget.annonceId == null || _estBrouillon;
+
+  Future<void> _chargerOffresBoost() async {
+    try {
+      final rows = await Supabase.instance.client.from('produits_ponctuels')
+          .select('code, label, prix, duree_heures, description')
+          .eq('actif', true).not('duree_heures', 'is', null)
+          .inFilter('code', ['boost_48h', 'mise_une']).order('prix');
+      if (mounted) setState(() => _offresBoost = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
+  }
+
+  static String _dureeOffre(num? h) => h == null ? ''
+      : h >= 24 ? '${(h / 24).round()} jour${(h / 24).round() > 1 ? 's' : ''}' : '${h.toInt()} h';
+  static String _prixOffre(num p) => '${p.toStringAsFixed(2).replaceAll('.', ',')} €';
+
+  Widget _sectionBoost() {
+    final options = <Map<String, dynamic>>[
+      {'code': '', 'label': 'Publier sans boost',
+        'description': 'Votre annonce est publiée normalement. Vous pourrez la booster plus tard depuis « Mes annonces ».'},
+      ..._offresBoost,
+    ];
+    return _card('Souhaitez-vous booster votre annonce ?', Icons.bolt, [
+      for (final o in options)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: InkWell(
+            onTap: () => setState(() => _choixBoost = o['code'] as String),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _choixBoost == o['code'] ? const Color(0xFFE8F4F6) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _choixBoost == o['code'] ? _teal : kDashBorder),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(_choixBoost == o['code'] ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    size: 20, color: _choixBoost == o['code'] ? _teal : kDashMuted),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(child: Text(o['label'].toString(), style: const TextStyle(fontFamily: 'Galey',
+                        fontSize: 14, fontWeight: FontWeight.w700, color: kDashInk))),
+                    if ((o['code'] as String).isNotEmpty)
+                      Text(_prixOffre(o['prix'] as num), style: const TextStyle(fontFamily: 'Galey',
+                          fontSize: 14, fontWeight: FontWeight.w700, color: kDashInk)),
+                  ]),
+                  if ((o['code'] as String).isNotEmpty)
+                    Text('${_dureeOffre(o['duree_heures'] as num?)} de mise en avant · prix total, paiement unique',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                  if ((o['description'] ?? '').toString().isNotEmpty)
+                    Text(o['description'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                ])),
+              ]),
+            ),
+          ),
+        ),
+      if (_choixBoost.isNotEmpty)
+        const Text('Le paiement se fait sur le site. Votre annonce reste en brouillon et n\'est publiée '
+            'qu\'à la confirmation du paiement ; en cas d\'annulation, rien n\'est perdu.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+    ]);
+  }
 
   // ── Espèce & Race ─────────────────────────────────────────────────────────────
   String _espece = 'chien';
@@ -204,6 +275,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     super.initState();
     _loadBreeds();
     _loadInitialData();
+    _chargerOffresBoost();
     if (widget.initialData == null) {
       final es = _breederSpecies;
       if (es.isNotEmpty && !es.contains(_espece)) _espece = es.first;
@@ -467,7 +539,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             child: const Icon(Icons.photo_library_outlined, color: Color(0xFF0C5C6C)),
           ),
           title: const Text('Choisir depuis la galerie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-          subtitle: const Text('Sélectionner une photo existante', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+          subtitle: const Text('Sélectionner une ou plusieurs photos', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
           onTap: () => Navigator.pop(context, ImageSource.gallery),
         ),
       ]),
@@ -477,8 +549,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Future<File?> _pickAndCrop({ImageSource source = ImageSource.gallery}) async {
     final picked = await ImagePicker().pickImage(source: source, imageQuality: 90);
     if (picked == null) return null;
+    return _recadrer(picked.path);
+  }
+
+  /// Recadrage carré d'une photo choisie (null : recadrage annulé).
+  Future<File?> _recadrer(String chemin) async {
     final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
+      sourcePath: chemin,
       aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
       uiSettings: [
         AndroidUiSettings(
@@ -508,8 +585,28 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     }
     final source = await _showPhotoSourceSheet();
     if (source == null) return;
-    final f = await _pickAndCrop(source: source);
-    if (f != null) setState(() => _photosFiles.add(f));
+    if (source == ImageSource.camera) {
+      final f = await _pickAndCrop(source: source);
+      if (f != null && mounted) setState(() => _photosFiles.add(f));
+      return;
+    }
+    // Galerie : plusieurs photos en une sélection, ajoutées à la suite des
+    // précédentes (jamais en remplacement ; la photo principale ne change pas).
+    final restant = 5 - _photosUrls.length - _photosFiles.length;
+    final choix = await ImagePicker().pickMultiImage(imageQuality: 90, limit: restant > 1 ? restant : null);
+    if (choix.isEmpty) return;
+    final retenus = choix.take(restant).toList();
+    for (final x in retenus) {
+      final f = await _recadrer(x.path);
+      if (f == null || !mounted) continue;
+      if (_photosUrls.length + _photosFiles.length >= 5) break;
+      setState(() => _photosFiles.add(f));
+    }
+    if (choix.length > retenus.length && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          'Maximum 5 photos : ${choix.length - retenus.length} photo${choix.length - retenus.length > 1 ? 's n\'ont' : ' n\'a'} pas été ajoutée${choix.length - retenus.length > 1 ? 's' : ''}.',
+          style: const TextStyle(fontFamily: 'Galey'))));
+    }
   }
 
   Future<void> _pickMerePhoto() async {
@@ -527,9 +624,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Future<void> _pickAnimalForMere() async {
     final r = await showModalBottomSheet<Map<String, dynamic>>(
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'femelle'),
+      builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'femelle', parentsSeulement: true),
     );
-    if (r != null && mounted) setState(() {
+    if (r == null || !mounted) return;
+    if (r['parentProposable'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+          'Cet animal n\'est pas une femelle reproductrice disponible.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    setState(() {
       _mereAnimalId         = r['id'];
       _mereNomCtrl.text     = r['nom']            ?? '';
       _merePuceCtrl.text    = r['identification'] ?? '';
@@ -545,9 +648,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   Future<void> _pickAnimalForPere() async {
     final r = await showModalBottomSheet<Map<String, dynamic>>(
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-      builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'male'),
+      builder: (_) => _AnimalPickerSheet(espece: _espece, sexeFilter: 'male', parentsSeulement: true),
     );
-    if (r != null && mounted) setState(() {
+    if (r == null || !mounted) return;
+    if (r['parentProposable'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+          'Cet animal n\'est pas un mâle reproducteur disponible.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    setState(() {
       _pereAnimalId         = r['id'];
       _pereNomCtrl.text     = r['nom']            ?? '';
       _perePuceCtrl.text    = r['identification'] ?? '';
@@ -665,6 +774,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     if (n == 1) {
       if (_raceCtrl.text.trim().isEmpty && _titreCtrl.text.trim().isEmpty) return 'Veuillez saisir une race.';
       if (chienChat && _type == 'portee' && _dateNaissance == null) return 'Obligatoire : date de naissance de la portée.';
+      // Animal seul (vente, adoption, don, retraité) : date de naissance obligatoire.
+      if (_type == 'animal' && _typeVente != 'saillie' && _dateNaissanceAnimal == null) {
+        return 'Obligatoire : date de naissance de l\'animal.';
+      }
     }
     if (n == 2) {
       if (_espece == 'cheval' && _numSIRECtrl.text.trim().isEmpty) return 'Obligatoire : numéro SIRE pour tout équidé (Décret n°2013-879).';
@@ -707,6 +820,28 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     }
 
     // ── Champs légaux obligatoires (Code rural français) ──────────────────
+    if (!brouillon && _type == 'animal' && _typeVente != 'saillie' && _dateNaissanceAnimal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Obligatoire : date de naissance de l\'animal.', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    // Parents choisis parmi mes animaux : toujours reproducteurs et non cédés.
+    if (!brouillon && !_isEditLocked && _typeVente != 'saillie' && _typeVente != 'retraite') {
+      final uidMoi = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final pid = User_Info.activeProfileId;
+      String? refus;
+      if (_mereAnimalId != null && !(await parentToujoursProposable(_mereAnimalId!, 'femelle', uid: uidMoi, profileId: pid))) {
+        refus = 'La mère choisie n\'est plus une femelle reproductrice disponible (cédée ou sans tag « Reproductrice »).';
+      } else if (_pereAnimalId != null && _pereEleveurReseau == null
+          && !(await parentToujoursProposable(_pereAnimalId!, 'male', uid: uidMoi, profileId: pid))) {
+        refus = 'Le père choisi n\'est plus un mâle reproducteur disponible (cédé ou sans tag « Reproducteur »).';
+      }
+      if (refus != null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(refus, style: const TextStyle(fontFamily: 'Galey'))));
+        return;
+      }
+    }
     if (!brouillon && _photosFiles.isEmpty && _photosUrls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Au moins une photo est obligatoire',
@@ -870,6 +1005,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       }();
 
       final now = DateTime.now().toIso8601String();
+      final boostPublication = !brouillon && _publication && _choixBoost.isNotEmpty
+          && _offresBoost.any((o) => o['code'] == _choixBoost);
+      String? idAnnonce = widget.annonceId;
       final supaData = <String, dynamic>{
         'uid_eleveur':          ownerUid,
         if (activeProfileId.isNotEmpty) 'profile_id': activeProfileId,
@@ -894,7 +1032,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             ? _prixUnite
             : null,
         'prix_negociable':      _prixNegociable,
-        'statut':               brouillon ? 'brouillon' : _statut,
+        // Avec boost : l'annonce, complète, attend en brouillon le paiement
+        // (publiée par le serveur à la confirmation, jamais avant).
+        'statut':               brouillon || boostPublication ? 'brouillon' : _statut,
+        if (!brouillon) 'paiement_statut': boostPublication ? 'attente_boost' : null,
         'date_naissance': _type == 'portee' && _dateNaissance != null
             ? _dateNaissance!.toIso8601String().substring(0, 10) : null,
         'nombre_bebes':         _type == 'portee' ? _nombreBebes : null,
@@ -1028,10 +1169,22 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             DateTime.now().add(Duration(days: _dureePlan ?? _dureeAnnonce)).toIso8601String();
         supaData['vues']     = 0;
         supaData['contacts'] = 0;
-        await Supabase.instance.client.from('annonces').insert(supaData);
+        final cree = await Supabase.instance.client.from('annonces').insert(supaData).select('id').single();
+        idAnnonce = cree['id']?.toString();
       }
       await _oublierBrouillonLocal();
       _autoSaveTimer?.cancel();
+      if (boostPublication && idAnnonce != null) {
+        // Récapitulatif du boost et paiement sur le site.
+        await launchUrl(Uri.parse('$kSiteBaseUrl/annonces/paiement-boost?annonce=$idAnnonce&offre=$_choixBoost&statut=$_statut'),
+            mode: LaunchMode.externalApplication);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+            'Finalisez le paiement sur le site. L\'annonce reste en brouillon jusqu\'à sa confirmation.',
+            style: TextStyle(fontFamily: 'Galey'))));
+        Navigator.pop(context);
+        return;
+      }
       if (mounted && brouillon) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Brouillon enregistré dans Mes annonces.', style: TextStyle(fontFamily: 'Galey'))));
@@ -1097,6 +1250,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _sectionPublication(), gap,
       if (isSaillie) ...[_sectionSaillie(), gap],
       if (_espece == 'cheval' && !isSaillie) ...[_sectionEquide(), gap],
+      if (_publication && _offresBoost.isNotEmpty) ...[_sectionBoost(), gap],
       _recap(),
     ];
     // Modification d'une annonce publiée : une seule page, sections dans
@@ -1217,7 +1371,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
               child: _saving
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : Text(_etape < 3 ? 'Suivant'
-                        : (widget.annonceId == null || _estBrouillon) ? 'Publier l\'annonce' : 'Enregistrer',
+                        : _publication ? (_choixBoost.isNotEmpty ? 'Passer au paiement' : 'Publier mon annonce') : 'Enregistrer',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             ),
           ]),
@@ -1339,7 +1493,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       ('Prix', prix),
       ('Photos', '${_photosUrls.length + _photosFiles.length} / 5'),
       ('Durée de publication', '${_dureePlan ?? _dureeAnnonce} jours (selon votre abonnement)'),
-      ('Mise en avant', 'Depuis Mes annonces, après publication'),
+      ('Mise en avant', _choixBoost.isEmpty ? 'Sans boost' : () {
+        final o = _offresBoost.firstWhere((x) => x['code'] == _choixBoost, orElse: () => {});
+        return o.isEmpty ? '—' : '${o['label']} · ${_dureeOffre(o['duree_heures'] as num?)} · ${_prixOffre(o['prix'] as num)}';
+      }()),
     ];
     return _card('Récapitulatif', Icons.fact_check_outlined, [
       for (final l in lignes)
@@ -1825,7 +1982,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         const Spacer(),
         if (total < 5) TextButton.icon(onPressed: _pickAnnoncePhoto,
           icon: const Icon(Icons.add_photo_alternate_outlined, size: 16, color: _teal),
-          label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+          label: Text(total == 0 ? 'Choisir des photos' : 'Ajouter des photos', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
           style: TextButton.styleFrom(visualDensity: VisualDensity.compact)),
       ]),
       const SizedBox(height: 8),
@@ -1839,10 +1996,11 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           child: Container(width: 100, height: 100, margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
                 border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
-            child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.add_photo_alternate_outlined, color: _teal, size: 28),
-              SizedBox(height: 4),
-              Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _teal)),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.add_photo_alternate_outlined, color: _teal, size: 28),
+              const SizedBox(height: 4),
+              Text(total == 0 ? 'Choisir des photos' : 'Ajouter des photos', textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _teal)),
             ]))),
       ])),
     ]);
@@ -2034,14 +2192,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _label('Couleur des yeux'),
       _textField(_couleurYeuxCtrl, 'Ex: marron, bleu...'),
       const SizedBox(height: 10),
-      _label('Date de naissance'),
+      _label(_typeVente == 'saillie' ? 'Date de naissance' : 'Date de naissance *'),
       _datePicker('Sélectionner une date', _dateNaissanceAnimal,
           (d) => setState(() => _dateNaissanceAnimal = d), enabled: !_isEditLocked),
-      if (_isEditLocked) ...[
-        const SizedBox(height: 4),
-        Text('Non modifiable après publication.',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-      ],
+      const SizedBox(height: 4),
+      Text(_isEditLocked ? 'Non modifiable après publication.' : 'Ne pourra plus être modifiée une fois l\'annonce publiée.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       if (_typeVente != 'saillie') ...[
         const SizedBox(height: 6),
         _checkRow(Icons.cut_outlined, 'Stérilisé(e)', _sterilise,
@@ -2649,7 +2805,9 @@ class _AnimalPickerSheet extends StatelessWidget {
   final String? sexeFilter;
   // Saillie : seuls les reproducteurs actifs (utils/reproducteurs.dart)
   final bool reproducteursSeulement;
-  const _AnimalPickerSheet({required this.espece, this.sexeFilter, this.reproducteursSeulement = false});
+  /// Mère / père d'une annonce : reproducteurs taggés, non cédés, profil actif.
+  final bool parentsSeulement;
+  const _AnimalPickerSheet({required this.espece, this.sexeFilter, this.reproducteursSeulement = false, this.parentsSeulement = false});
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -2678,7 +2836,10 @@ class _AnimalPickerSheet extends StatelessWidget {
           child: uid == null
               ? const Center(child: Text('Non connecté'))
               : FutureBuilder<List<Map<String, dynamic>>>(
-                  future: Supabase.instance.client
+                  future: parentsSeulement && sexeFilter != null
+                      ? chargerParentsProposables(sexe: sexeFilter!, espece: espece, uid: uid,
+                          profileId: User_Info.activeProfileId)
+                      : Supabase.instance.client
                       .from('animaux').select()
                       .eq('uid_eleveur', uid).eq('espece', espece)
                       .then((rows) => rows.where((d) =>
@@ -2692,11 +2853,11 @@ class _AnimalPickerSheet extends StatelessWidget {
                       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                         speciesIcon(espece, 48, Colors.grey.shade300),
                         const SizedBox(height: 12),
-                        Text('Aucun animal disponible',
+                        Text(parentsSeulement && sexeFilter != null ? aucunParent(sexeFilter!) : 'Aucun animal disponible',
                             style: TextStyle(fontFamily: 'Galey', fontSize: 15,
                                 color: Colors.grey.shade500)),
                         const SizedBox(height: 4),
-                        Text(reproducteursSeulement ? 'Aucun reproducteur actif : cochez « Reproducteur » sur sa fiche'
+                        if (!parentsSeulement) Text(reproducteursSeulement ? 'Aucun reproducteur actif : cochez « Reproducteur » sur sa fiche'
                             : sexeFilter == 'femelle' ? 'Aucune femelle de cette espèce'
                             : sexeFilter == 'male' ? 'Aucun mâle de cette espèce'
                             : '',
@@ -2750,6 +2911,7 @@ class _AnimalPickerSheet extends StatelessWidget {
                           trailing: const Icon(Icons.chevron_right, color: _teal),
                           onTap: () => Navigator.pop(context, {
                             'id':             d['id'],
+                            if (sexeFilter != null) 'parentProposable': estParentProposable(d, sexeFilter!),
                             'nom':            d['nom'] ?? '',
                             'photoUrl':       photoUrl,
                             'couleur':        d['couleur'] ?? '',

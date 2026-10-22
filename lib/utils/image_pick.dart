@@ -53,3 +53,36 @@ Future<File?> pickAndCropSquare({ImageSource source = ImageSource.gallery}) asyn
   );
   return cropped != null ? File(cropped.path) : null;
 }
+
+/// Galerie : plusieurs photos en une sélection, chacune recadrée au carré
+/// (une photo dont le recadrage est annulé est ignorée). [limite] : nombre
+/// maximum de photos encore acceptées.
+Future<List<File>> pickAndCropSquareMultiple({required int limite}) async {
+  if (limite <= 0) return [];
+  final choix = await ImagePicker().pickMultiImage(imageQuality: 85, limit: limite > 1 ? limite : null);
+  final out = <File>[];
+  for (final x in choix.take(limite)) {
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: x.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Recadrer',
+          toolbarColor: const Color(0xFF0C5C6C),
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: const Color(0xFF6E9E57),
+          lockAspectRatio: true,
+        ),
+        IOSUiSettings(
+          title: 'Recadrer',
+          aspectRatioLockEnabled: true,
+          minimumAspectRatio: 1.0,
+          resetAspectRatioEnabled: false,
+          aspectRatioPickerButtonHidden: true,
+        ),
+      ],
+    );
+    if (cropped != null) out.add(File(cropped.path));
+  }
+  return out;
+}

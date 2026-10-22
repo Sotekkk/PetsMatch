@@ -5,29 +5,21 @@
 // inchangés (anciennement dans la fiche de l'annonce).
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/lib/auth-context';
-import { apiFetch } from '@/lib/api-fetch';
+import { useRouter } from 'next/navigation';
 import { Icone, BORDURE } from '@/components/dashboard/kit';
+import { chargerOffresBoost, dureeOffre, prixOffre, urlPaiementBoost, type OffreBoost as Produit } from '@/lib/boost-offres';
 
-interface Produit { code: string; label: string; prix: number; duree_heures: number | null }
-
-export default function BoostAnnonceModal({ annonceId, boostUntil, returnPath, onClose }: {
-  annonceId: string; boostUntil?: string | null; returnPath: string; onClose: () => void;
+/** `returnPath` : conservé pour les appels existants (le retour du paiement
+ *  se fait sur « Mes annonces »). */
+export default function BoostAnnonceModal({ annonceId, boostUntil, onClose }: {
+  annonceId: string; boostUntil?: string | null; returnPath?: string; onClose: () => void;
 }) {
-  const { user } = useAuth();
+  const router = useRouter();
   const [produits, setProduits] = useState<Produit[] | null>(null);
   const [boosting, setBoosting] = useState(false);
   const actif = !!boostUntil && new Date(boostUntil) > new Date();
 
-  useEffect(() => {
-    supabase.from('produits_ponctuels')
-      .select('code, label, prix, duree_heures')
-      .eq('actif', true)
-      .not('duree_heures', 'is', null)
-      .in('code', ['boost_48h', 'mise_une'])
-      .then(({ data }) => setProduits((data as Produit[]) ?? []));
-  }, []);
+  useEffect(() => { chargerOffresBoost().then(setProduits); }, []);
 
   useEffect(() => {
     const touche = (e: KeyboardEvent) => { if (e.key === 'Escape' && !boosting) onClose(); };
@@ -35,26 +27,10 @@ export default function BoostAnnonceModal({ annonceId, boostUntil, returnPath, o
     return () => document.removeEventListener('keydown', touche);
   }, [onClose, boosting]);
 
-  async function booster(code: string) {
-    if (!user) return;
+  // Même parcours qu'à la publication : récapitulatif puis paiement.
+  function booster(code: string) {
     setBoosting(true);
-    try {
-      const res = await apiFetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: user.uid, email: user.email ?? '',
-          produit_code: code, annonce_id: annonceId,
-          returnPath,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.url) throw new Error(json.error ?? 'Boost indisponible pour le moment.');
-      window.location.assign(json.url as string);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Boost indisponible pour le moment.');
-      setBoosting(false);
-    }
+    router.push(urlPaiementBoost(annonceId, code));
   }
 
   return (
@@ -80,13 +56,9 @@ export default function BoostAnnonceModal({ annonceId, boostUntil, returnPath, o
               style={{ border: `1px solid ${BORDURE}` }}>
               <span>
                 <span className="block text-sm font-semibold text-[#1E2025]">{p.label}</span>
-                {p.duree_heures != null && (
-                  <span className="block text-xs text-gray-500">
-                    {p.duree_heures >= 24 ? `${Math.round(p.duree_heures / 24)} j` : `${p.duree_heures} h`} de mise en avant
-                  </span>
-                )}
+                <span className="block text-xs text-gray-500">{dureeOffre(p.duree_heures)} de mise en avant{p.description ? ` · ${p.description}` : ''}</span>
               </span>
-              <span className="text-sm font-bold text-[#B45309] tabular-nums">{p.prix.toFixed(2)} €</span>
+              <span className="text-sm font-bold text-[#B45309] tabular-nums whitespace-nowrap">{prixOffre(p.prix)}</span>
             </button>
           ))}
         </div>

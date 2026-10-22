@@ -37,7 +37,7 @@ const _techniques = {
   'is_suspect', 'suspect_reasons', 'boost_until', 'paiement_statut', 'expires_at', 'lat', 'lng', 'latitude', 'longitude',
 };
 const _verrouilles = {
-  'espece', 'espece_autre', 'race', 'sexe', 'type', 'type_vente', 'date_naissance',
+  'espece', 'espece_autre', 'race', 'sexe', 'type', 'type_vente', 'date_naissance', 'date_naissance_animal',
   'mere_animal_id', 'mere_nom', 'mere_puce', 'mere_photo_url', 'mere_race', 'mere_lof',
   'pere_animal_id', 'pere_nom', 'pere_puce', 'pere_photo_url', 'pere_race', 'pere_lof', 'etalon_animal_id',
 };
