@@ -30,15 +30,42 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ items: data ?? [] });
   }
   if (type === 'lieux') {
-    const [enAttente, publies] = await Promise.all([
+    // Files de modération des lieux pet-friendly (communauté + établissements).
+    const [enAttente, aCorriger, publies, corrections, revendications, journal] = await Promise.all([
       supabaseAdmin.from('petfriendly_places').select('*')
         .eq('statut', 'en_attente_validation').order('created_at', { ascending: true }),
       supabaseAdmin.from('petfriendly_places').select('*')
-        .in('statut', ['actif', 'suspendu']).order('created_at', { ascending: false }).limit(100),
+        .in('statut', ['a_corriger', 'brouillon']).order('updated_at', { ascending: false }).limit(100),
+      supabaseAdmin.from('petfriendly_places').select('*')
+        .in('statut', ['actif', 'suspendu', 'masque', 'refuse']).order('created_at', { ascending: false }).limit(200),
+      supabaseAdmin.from('petfriendly_corrections').select('*, place:petfriendly_places(id, nom, ville)')
+        .eq('statut', 'en_attente').order('created_at', { ascending: true }),
+      supabaseAdmin.from('petfriendly_revendications').select('*, place:petfriendly_places(id, nom, ville, site_web, siret)')
+        .eq('statut', 'en_attente').order('created_at', { ascending: true }),
+      supabaseAdmin.from('petfriendly_moderation_log').select('*, place:petfriendly_places(nom)')
+        .order('created_at', { ascending: false }).limit(60),
     ]);
-    const err = enAttente.error ?? publies.error;
+    const err = enAttente.error ?? aCorriger.error ?? publies.error ?? corrections.error ?? revendications.error ?? journal.error;
     if (err) return NextResponse.json({ error: err.message }, { status: 500 });
-    return NextResponse.json({ enAttente: enAttente.data ?? [], publies: publies.data ?? [] });
+    // Doublons probables : lieu déjà présent à moins de 150 m d'une fiche en attente.
+    type L = { id: string; nom?: string; lat?: number; lng?: number; ville?: string; statut?: string };
+    const tous = [...(publies.data ?? []), ...(enAttente.data ?? []), ...(aCorriger.data ?? [])] as L[];
+    const dist = (a: L, b: L) => {
+      if (a.lat == null || a.lng == null || b.lat == null || b.lng == null) return Infinity;
+      const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+      return 6371000 * 2 * Math.asin(Math.sqrt(h));
+    };
+    const doublons: Record<string, { id: string; nom?: string; ville?: string; statut?: string; metres: number }[]> = {};
+    for (const p of (enAttente.data ?? []) as L[]) {
+      const proches = tous.filter(o => o.id !== p.id && o.statut !== 'refuse' && dist(p, o) < 150)
+        .map(o => ({ id: o.id, nom: o.nom, ville: o.ville, statut: o.statut, metres: Math.round(dist(p, o)) }));
+      if (proches.length) doublons[p.id] = proches;
+    }
+    return NextResponse.json({
+      enAttente: enAttente.data ?? [], aCorriger: aCorriger.data ?? [], publies: publies.data ?? [],
+      corrections: corrections.data ?? [], revendications: revendications.data ?? [], journal: journal.data ?? [], doublons,
+    });
   }
   if (type === 'signalements_contexte') {
     // Qui signale + ce qui est signalé (extrait), lu avec la clé service : un
@@ -157,19 +184,143 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      // ── Lieux pet-friendly ────────────────────────────────────────────
-      case 'lieu_valider': {
-        const r = await supabaseAdmin.from('petfriendly_places').update({
-          statut: 'actif', valide_par: auth.uid, valide_at: new Date().toISOString(),
-        }).eq('id', id);
-        if (r.error) throw r.error;
-        return NextResponse.json({ ok: true });
-      }
+      // ── Lieux pet-friendly : décisions de modération ───────────────────
+      // Chaque décision est historisée (petfriendly_moderation_log) et, sauf
+      // réactivation, la personne concernée est prévenue avec le motif.
+      case 'lieu_valider':
+      case 'lieu_a_corriger':
+      case 'lieu_refuser':
+      case 'lieu_masquer':
       case 'lieu_suspendre':
       case 'lieu_reactiver': {
-        const r = await supabaseAdmin.from('petfriendly_places')
-          .update({ statut: action === 'lieu_suspendre' ? 'suspendu' : 'actif' }).eq('id', id);
+        const motif = String(body.motif ?? '').trim() || null;
+        if (['lieu_a_corriger', 'lieu_refuser', 'lieu_masquer'].includes(action) && !motif) {
+          return NextResponse.json({ error: 'Indiquez le motif.' }, { status: 400 });
+        }
+        const lieu = (await supabaseAdmin.from('petfriendly_places').select('id, nom, uid_pro, pro_profile_id, ajoute_par_uid, ajoute_par_profile_id, origine').eq('id', id).maybeSingle()).data;
+        if (!lieu) return NextResponse.json({ error: 'Lieu introuvable' }, { status: 404 });
+        const statut = { lieu_valider: 'actif', lieu_a_corriger: 'a_corriger', lieu_refuser: 'refuse', lieu_masquer: 'masque', lieu_suspendre: 'suspendu', lieu_reactiver: 'actif' }[action]!;
+        const maj: Record<string, unknown> = { statut, motif_moderation: motif };
+        if (action === 'lieu_valider') {
+          maj.valide_par = auth.uid; maj.valide_at = new Date().toISOString();
+          if (lieu.uid_pro) maj.verification = 'verifie';
+        }
+        const r = await supabaseAdmin.from('petfriendly_places').update(maj).eq('id', id);
         if (r.error) throw r.error;
+        await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: id, objet: 'fiche', objet_id: id, action: action.replace('lieu_', ''), motif, admin_uid: auth.uid });
+        // Destinataire : le gestionnaire s'il existe, sinon le contributeur.
+        const dest = lieu.uid_pro ? { uid: lieu.uid_pro, pid: lieu.pro_profile_id } : { uid: lieu.ajoute_par_uid, pid: lieu.ajoute_par_profile_id };
+        const textes: Record<string, [string, string]> = {
+          lieu_valider: ['Lieu publié', `« ${lieu.nom} » est maintenant visible sur la carte des lieux pet-friendly. Merci pour votre contribution.`],
+          lieu_a_corriger: ['Lieu à compléter', `« ${lieu.nom} » doit être complété avant publication : ${motif}`],
+          lieu_refuser: ['Lieu non publié', `« ${lieu.nom} » n'a pas été publié : ${motif}`],
+          lieu_masquer: ['Lieu masqué', `« ${lieu.nom} » a été masqué de la carte : ${motif}`],
+          lieu_suspendre: ['Lieu suspendu', `« ${lieu.nom} » a été suspendu${motif ? ` : ${motif}` : '.'}`],
+        };
+        if (dest.uid && textes[action]) {
+          await supabaseAdmin.from('notifications').insert({
+            uid: dest.uid, type: 'lieu_moderation', read: false, ...(dest.pid ? { profile_id: dest.pid } : {}),
+            title: textes[action][0], body: textes[action][1], data: { place_id: id },
+          });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'lieu_fusionner': {
+        // Doublon : avis, corrections et revendications rejoignent la fiche
+        // conservée ; la fiche en double est refusée (motif : doublon).
+        const cible = String(body.cible ?? '');
+        if (!cible || cible === id) return NextResponse.json({ error: 'Fiche à conserver manquante' }, { status: 400 });
+        const [src, dst] = await Promise.all([
+          supabaseAdmin.from('petfriendly_places').select('id, nom, ajoute_par_uid, ajoute_par_profile_id').eq('id', id).maybeSingle(),
+          supabaseAdmin.from('petfriendly_places').select('id, nom').eq('id', cible).maybeSingle(),
+        ]);
+        if (!src.data || !dst.data) return NextResponse.json({ error: 'Lieu introuvable' }, { status: 404 });
+        for (const t of ['petfriendly_reviews', 'petfriendly_corrections', 'petfriendly_revendications']) {
+          const r = await supabaseAdmin.from(t).update({ place_id: cible }).eq('place_id', id);
+          if (r.error) throw r.error;
+        }
+        const r = await supabaseAdmin.from('petfriendly_places').update({ statut: 'refuse', motif_moderation: `Doublon de « ${dst.data.nom} »` }).eq('id', id);
+        if (r.error) throw r.error;
+        await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: cible, objet: 'fiche', objet_id: id, action: 'fusionner', motif: `« ${src.data.nom} » fusionné dans « ${dst.data.nom} »`, admin_uid: auth.uid });
+        if (src.data.ajoute_par_uid) {
+          await supabaseAdmin.from('notifications').insert({
+            uid: src.data.ajoute_par_uid, type: 'lieu_moderation', read: false,
+            ...(src.data.ajoute_par_profile_id ? { profile_id: src.data.ajoute_par_profile_id } : {}),
+            title: 'Lieu déjà référencé', body: `« ${src.data.nom} » existait déjà : votre contribution a été rattachée à la fiche « ${dst.data.nom} ».`,
+            data: { place_id: cible },
+          });
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'correction_appliquer':
+      case 'correction_refuser': {
+        const motif = String(body.motif ?? '').trim() || null;
+        const c = (await supabaseAdmin.from('petfriendly_corrections').select('*, place:petfriendly_places(id, nom, uid_pro)').eq('id', id).maybeSingle()).data as
+          { id: string; uid: string; profile_id: string | null; place_id: string; champs: Record<string, unknown>; place: { nom: string; uid_pro: string | null } | null } | null;
+        if (!c) return NextResponse.json({ error: 'Correction introuvable' }, { status: 404 });
+        if (action === 'correction_refuser' && !motif) return NextResponse.json({ error: 'Indiquez le motif.' }, { status: 400 });
+        if (action === 'correction_appliquer') {
+          const AUTORISES = ['nom', 'categorie', 'sous_categorie', 'adresse', 'code_postal', 'ville', 'lat', 'lng', 'site_web', 'telephone',
+            'especes_acceptees', 'animaux_en_salle', 'terrasse', 'restriction_taille', 'nb_animaux_max', 'supplement_animal',
+            'conditions_particulieres', 'horaires', 'derniere_confirmation_le'];
+          const maj = Object.fromEntries(Object.entries(c.champs ?? {}).filter(([k]) => AUTORISES.includes(k)));
+          if (Object.keys(maj).length) {
+            const r = await supabaseAdmin.from('petfriendly_places').update(maj).eq('id', c.place_id);
+            if (r.error) throw r.error;
+          }
+        }
+        const r = await supabaseAdmin.from('petfriendly_corrections').update({
+          statut: action === 'correction_appliquer' ? 'appliquee' : 'refusee', motif, traite_par: auth.uid, traite_le: new Date().toISOString(),
+        }).eq('id', id);
+        if (r.error) throw r.error;
+        await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: c.place_id, objet: 'correction', objet_id: id, action: action === 'correction_appliquer' ? 'appliquer' : 'refuser', motif, admin_uid: auth.uid, details: c.champs });
+        await supabaseAdmin.from('notifications').insert({
+          uid: c.uid, type: 'lieu_moderation', read: false, ...(c.profile_id ? { profile_id: c.profile_id } : {}),
+          title: action === 'correction_appliquer' ? 'Correction appliquée' : 'Correction non retenue',
+          body: action === 'correction_appliquer'
+            ? `Merci : votre correction de « ${c.place?.nom ?? 'ce lieu'} » a été appliquée.`
+            : `Votre correction de « ${c.place?.nom ?? 'ce lieu'} » n'a pas été retenue : ${motif}`,
+          data: { place_id: c.place_id },
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'revendication_valider':
+      case 'revendication_refuser': {
+        const motif = String(body.motif ?? '').trim() || null;
+        const rv = (await supabaseAdmin.from('petfriendly_revendications').select('*, place:petfriendly_places(id, nom, uid_pro)').eq('id', id).maybeSingle()).data as
+          { id: string; uid: string; profile_id: string | null; place_id: string; siret: string | null; place: { nom: string; uid_pro: string | null } | null } | null;
+        if (!rv) return NextResponse.json({ error: 'Revendication introuvable' }, { status: 404 });
+        if (action === 'revendication_refuser' && !motif) return NextResponse.json({ error: 'Indiquez le motif.' }, { status: 400 });
+        if (action === 'revendication_valider') {
+          if (rv.place?.uid_pro && rv.place.uid_pro !== rv.uid) {
+            return NextResponse.json({ error: 'Cette fiche a déjà un gestionnaire.' }, { status: 409 });
+          }
+          // Même fiche (identifiant, avis, historique conservés) : seul le gestionnaire change.
+          const r = await supabaseAdmin.from('petfriendly_places').update({
+            uid_pro: rv.uid, pro_profile_id: rv.profile_id, verification: 'verifie',
+            ...(rv.siret ? { siret: rv.siret } : {}),
+          }).eq('id', rv.place_id);
+          if (r.error) throw r.error;
+          await supabaseAdmin.from('petfriendly_revendications').update({
+            statut: 'refusee', motif: 'Une autre demande a été validée pour cette fiche.', traite_par: auth.uid, traite_le: new Date().toISOString(),
+          }).eq('place_id', rv.place_id).eq('statut', 'en_attente').neq('id', id);
+        }
+        const r = await supabaseAdmin.from('petfriendly_revendications').update({
+          statut: action === 'revendication_valider' ? 'validee' : 'refusee', motif, traite_par: auth.uid, traite_le: new Date().toISOString(),
+        }).eq('id', id);
+        if (r.error) throw r.error;
+        await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: rv.place_id, objet: 'revendication', objet_id: id, action: action === 'revendication_valider' ? 'valider' : 'refuser', motif, admin_uid: auth.uid });
+        await supabaseAdmin.from('notifications').insert({
+          uid: rv.uid, type: 'lieu_moderation', read: false, ...(rv.profile_id ? { profile_id: rv.profile_id } : {}),
+          title: action === 'revendication_valider' ? 'Fiche revendiquée' : 'Revendication refusée',
+          body: action === 'revendication_valider'
+            ? `Vous gérez désormais « ${rv.place?.nom ?? 'votre établissement'} » : vous pouvez corriger les informations et répondre aux avis.`
+            : `Votre demande pour « ${rv.place?.nom ?? 'cet établissement'} » a été refusée : ${motif}`,
+          data: { place_id: rv.place_id },
+        });
         return NextResponse.json({ ok: true });
       }
 
