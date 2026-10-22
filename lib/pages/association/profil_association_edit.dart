@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/utils/image_pick.dart' show pickAndCropSquare;
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -453,40 +452,6 @@ class _ProfilAssociationEditPageState extends State<ProfilAssociationEditPage> {
                   const SizedBox(height: 14),
                   _label('Facebook'),
                   _field(controller: _fbCtrl, hint: 'facebook.com/votreasso'),
-                  const SizedBox(height: 24),
-
-                  // ── Bénévoles / Employés ──────────────────────────────────
-                  GestureDetector(
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const EmployesPage(isAssociation: true))),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 6, offset: const Offset(0, 2))],
-                      ),
-                      child: Row(children: [
-                        Container(
-                          width: 38, height: 38,
-                          decoration: BoxDecoration(color: const Color(0xFFE8F4F6), borderRadius: BorderRadius.circular(10)),
-                          child: const Icon(Icons.group_outlined, color: _teal, size: 20),
-                        ),
-                        const SizedBox(width: 14),
-                        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('Gestion des bénévoles / employés',
-                              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                                  fontSize: 14, color: Color(0xFF1F2A2E))),
-                          SizedBox(height: 2),
-                          Text('Ajouter, révoquer, gérer les accès',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
-                        ])),
-                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF9CA3AF)),
-                      ]),
-                    ),
-                  ),
-
                   const SizedBox(height: 32),
                   SizedBox(
                     width: double.infinity,

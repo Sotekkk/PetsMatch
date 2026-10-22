@@ -3155,7 +3155,11 @@ export default function ProfilPage() {
 
       {/* Employés — visible pour éleveurs, pros et associations ; véto dès
           Avancé, santé en formule Pro (sinon grisé → formules). */}
-      {(isEleveur || userData?.isPro || userData?.isAssociation) && (
+      {/* Pas pour une association : son équipe (bénévoles / employés) est
+          déjà accessible depuis « Équipe » du menu — miroir appli
+          (profil_association_edit.dart, bloc retiré). */}
+      {(isEleveur || userData?.isPro || userData?.isAssociation)
+        && !(activeProfileId ? resolvedType === 'association' : userData?.isAssociation === true) && (
         <Link href={equipeIncluse ? '/elevage/employes' : metierEquipe === 'veterinaire' ? '/veterinaire/abonnement' : metierEquipe === 'garde' ? '/garde/abonnement' : '/sante/abonnement'}
           className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow mb-5">
           <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
