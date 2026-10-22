@@ -42,11 +42,10 @@ const CATEGORIES: { value: string; label: string; icon: string }[] = [
 ];
 
 const ESPECES: { value: string; label: string }[] = [
-  { value: 'tous', label: 'Toutes espèces' },
-  { value: 'chien', label: '🐶 Chien' },
-  { value: 'chat', label: '🐱 Chat' },
-  { value: 'cheval', label: '🐴 Cheval' },
-  { value: 'lapin', label: '🐰 Lapin' },
+  { value: 'chien', label: 'Chien' },
+  { value: 'chat', label: 'Chat' },
+  { value: 'cheval', label: 'Cheval' },
+  { value: 'lapin', label: 'Lapin' },
 ];
 
 const DAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
@@ -143,7 +142,8 @@ export default function AnimalFriendlyPage() {
   const [lieux, setLieux] = useState<Lieu[]>([]);
   const [loading, setLoading] = useState(true);
   const [categorie, setCategorie] = useState('tous');
-  const [espece, setEspece] = useState('tous');
+  // Espèces cochées (aucune = toutes) : un lieu correspond s'il accepte au moins l'une d'elles.
+  const [especes, setEspeces] = useState<string[]>([]);
   const [view, setView] = useState<'liste' | 'carte'>('liste');
 
   async function loadLieux() {
@@ -164,8 +164,8 @@ export default function AnimalFriendlyPage() {
   useEffect(() => { loadLieux(); }, []);
 
   let filtered = categorie === 'tous' ? lieux : lieux.filter(l => l.categorie === categorie);
-  if (espece !== 'tous') {
-    filtered = filtered.filter(l => (l.especes_acceptees ?? []).includes(espece));
+  if (especes.length) {
+    filtered = filtered.filter(l => (l.especes_acceptees ?? []).some(e => especes.includes(e)));
   }
   const withCoords = filtered.filter(
     (p): p is Lieu & { lat: number; lng: number } => p.lat != null && p.lng != null,
@@ -207,23 +207,34 @@ export default function AnimalFriendlyPage() {
         </div>
 
         {/* Filtres espèce */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-5 scrollbar-hide">
-          {ESPECES.map(e => (
-            <button
-              key={e.value}
-              onClick={() => setEspece(e.value)}
-              className="flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all"
-              style={{
-                fontFamily: 'Galey, sans-serif',
-                backgroundColor: espece === e.value ? '#0C5C6C1A' : 'transparent',
-                color: espece === e.value ? '#0C5C6C' : '#6B7280',
-                border: `1px solid ${espece === e.value ? '#0C5C6C' : '#E5E7EB'}`,
-              }}
-            >
-              {e.label}
-            </button>
-          ))}
-        </div>
+        <details className="group relative mb-5 w-full sm:w-72 border border-gray-200 rounded-xl bg-white" style={{ fontFamily: 'Galey, sans-serif' }}>
+          <summary className="list-none cursor-pointer flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+            <span className={especes.length ? 'text-[#1F2A2E]' : 'text-gray-500'}>
+              {especes.length === 0 || especes.length === ESPECES.length ? 'Toutes espèces'
+                : ESPECES.filter(e => especes.includes(e.value)).map(e => e.label).join(', ')}
+            </span>
+            <svg className="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </summary>
+          <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1">
+            <label className="flex items-center gap-3 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-gray-50">
+              <input type="checkbox" className="w-4 h-4 accent-[#0C5C6C]"
+                checked={especes.length === ESPECES.length}
+                onChange={ev => setEspeces(ev.target.checked ? ESPECES.map(e => e.value) : [])} />
+              Tout cocher
+            </label>
+            <div className="border-t border-gray-100 my-1" />
+            {ESPECES.map(e => (
+              <label key={e.value} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                <input type="checkbox" className="w-4 h-4 accent-[#0C5C6C]"
+                  checked={especes.includes(e.value)}
+                  onChange={() => setEspeces(prev => prev.includes(e.value) ? prev.filter(x => x !== e.value) : [...prev, e.value])} />
+                {e.label}
+              </label>
+            ))}
+          </div>
+        </details>
 
         {/* Compteur + toggle vue */}
         <div className="flex items-center justify-between mb-4">

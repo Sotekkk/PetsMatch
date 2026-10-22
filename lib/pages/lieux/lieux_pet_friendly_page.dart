@@ -36,7 +36,8 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
   final _scroll = ScrollController();
 
   String _categorie = 'tous'; // 'tous' | 'hebergement' | 'restauration'
-  String _espece = 'tous';
+  // Espèces cochées (vide = toutes) : un lieu correspond s'il accepte au moins l'une d'elles.
+  final Set<String> _especesFiltre = {};
   String _sortBy = 'recent'; // 'recent' | 'note' | 'misEnAvant'
   bool _mapView = false;
 
@@ -109,8 +110,9 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
           .eq('statut', 'actif');
 
       if (_categorie != 'tous') base = base.eq('categorie', _categorie);
-      if (_espece != 'tous')
-        base = base.contains('especes_acceptees', [_espece]);
+      if (_especesFiltre.isNotEmpty) {
+        base = base.overlaps('especes_acceptees', _especesFiltre.toList());
+      }
 
       // Apply sort + pagination (returns PostgrestTransformBuilder — no reassign)
       final data = await (_sortBy == 'note'
@@ -236,9 +238,9 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
           ),
           // ── Filtres ──
           _Filters(
-            categorie: _categorie, espece: _espece,
+            categorie: _categorie, especes: _especesFiltre,
             onCategorie: (v) { _categorie = v; _load(reset: true); },
-            onEspece: (v) { _espece = v; _load(reset: true); },
+            onEspeces: (v) { _especesFiltre..clear()..addAll(v); _load(reset: true); },
           ),
           // ── Contenu ──
           Expanded(
@@ -307,16 +309,60 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
 
 class _Filters extends StatelessWidget {
   final String categorie;
-  final String espece;
+  final Set<String> especes;
   final ValueChanged<String> onCategorie;
-  final ValueChanged<String> onEspece;
+  final ValueChanged<Set<String>> onEspeces;
+
+  static const _listeEspeces = [('chien', 'Chien'), ('chat', 'Chat'), ('cheval', 'Cheval'), ('lapin', 'Lapin')];
 
   const _Filters({
     required this.categorie,
-    required this.espece,
+    required this.especes,
     required this.onCategorie,
-    required this.onEspece,
+    required this.onEspeces,
   });
+
+  // Liste déroulante à cases à cocher, sans émoticônes.
+  Future<void> _choisirEspeces(BuildContext context) async {
+    final choix = {...especes};
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Align(alignment: Alignment.centerLeft,
+                child: Text('Espèces acceptées', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+          ),
+          CheckboxListTile(
+            controlAffinity: ListTileControlAffinity.leading,
+            activeColor: const Color(0xFF0C5C6C),
+            value: choix.length == _listeEspeces.length,
+            onChanged: (v) => setS(() { choix.clear(); if (v == true) choix.addAll(_listeEspeces.map((e) => e.$1)); }),
+            title: const Text('Tout cocher', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          ),
+          const Divider(height: 1),
+          for (final e in _listeEspeces)
+            CheckboxListTile(
+              controlAffinity: ListTileControlAffinity.leading,
+              activeColor: const Color(0xFF0C5C6C),
+              value: choix.contains(e.$1),
+              onChanged: (v) => setS(() => v == true ? choix.add(e.$1) : choix.remove(e.$1)),
+              title: Text(e.$2, style: const TextStyle(fontFamily: 'Galey')),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(width: double.infinity, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C), foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Appliquer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ),
+        ]),
+      )),
+    );
+    if (ok == true) onEspeces(choix);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -339,20 +385,29 @@ class _Filters extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [
-              _Chip('Toutes espèces', 'tous', espece, onEspece,
-                  Icons.pets_outlined),
-              const SizedBox(width: 8),
-              _Chip('🐶 Chien', 'chien', espece, onEspece, null),
-              const SizedBox(width: 8),
-              _Chip('🐱 Chat', 'chat', espece, onEspece, null),
-              const SizedBox(width: 8),
-              _Chip('🐴 Cheval', 'cheval', espece, onEspece, null),
-              const SizedBox(width: 8),
-              _Chip('🐰 Lapin', 'lapin', espece, onEspece, null),
-            ]),
+          InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _choisirEspeces(context),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: especes.isEmpty ? Colors.grey.shade300 : const Color(0xFF0C5C6C)),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.pets_outlined, size: 15, color: Color(0xFF0C5C6C)),
+                const SizedBox(width: 6),
+                Text(
+                  especes.isEmpty || especes.length == _listeEspeces.length
+                      ? 'Toutes espèces'
+                      : _listeEspeces.where((e) => especes.contains(e.$1)).map((e) => e.$2).join(', '),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E)),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more, size: 18, color: Color(0xFF5E6B70)),
+              ]),
+            ),
           ),
         ],
       ),
@@ -557,18 +612,6 @@ class _LieuCard extends StatelessWidget {
     final raw = lieu['especes_acceptees'];
     if (raw == null) return [];
     return List<String>.from(raw as List);
-  }
-
-  String _especeEmoji(String e) {
-    const map = {
-      'chien': '🐶',
-      'chat': '🐱',
-      'cheval': '🐴',
-      'lapin': '🐰',
-      'oiseau': '🦜',
-      'nac': '🐾'
-    };
-    return map[e.toLowerCase()] ?? '🐾';
   }
 
   @override
