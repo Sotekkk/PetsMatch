@@ -104,6 +104,40 @@ const NAV_PARTICULIER = [
   { href: '/services',             label: 'Annuaire des professionnels' },
 ];
 
+// Barre du particulier (refonte UX) : quatre rubriques courtes sur une ligne,
+// les pages regroupées dans des menus déroulants. Mêmes destinations
+// qu'avant, rien de supprimé (Mes Animaux passe dans le menu personnel).
+type GroupeNav = { label: string; href?: string; liens?: { href: string; label: string }[] };
+const NAV_PARTICULIER_GROUPES: GroupeNav[] = [
+  { label: 'Découvrir', liens: [
+    { href: '/',                 label: 'Accueil' },
+    { href: '/balades-ludiques', label: 'Balades ludiques' },
+    { href: '/promenades',       label: 'Promenades' },
+    { href: '/lieux-naturels',   label: 'Lieux naturels' },
+    { href: '/animal-friendly',  label: 'Lieux pet-friendly' },
+    { href: '/animaux-perdus',   label: 'Animaux perdus et trouvés' },
+  ] },
+  { label: 'Annonces', liens: [
+    { href: '/annonces',        label: 'Animaux' },
+    { href: '/adoptions',       label: 'Adoptions' },
+    { href: '/annonces/objets', label: 'Matériel et équipements' },
+    { href: '/elevages',        label: 'Élevages' },
+    { href: '/associations',    label: 'Associations' },
+    { href: '/annonces/carte',  label: 'Carte des annonces' },
+  ] },
+  { label: 'Communauté', href: '/communaute' },
+  { label: 'Services', liens: [
+    { href: '/services',                     label: 'Tout l\'annuaire' },
+    { href: '/services?metier=veterinaire',  label: 'Vétérinaires' },
+    { href: '/services?metier=osteopathe',   label: 'Ostéopathes' },
+    { href: '/services?metier=education',    label: 'Éducateurs et comportementalistes' },
+    { href: '/services?metier=pension',      label: 'Pensions' },
+    { href: '/services?metier=petsitter',    label: 'Pet-sitters' },
+    { href: '/services?metier=toilettage',   label: 'Toiletteurs' },
+    { href: '/services?metier=photographe',  label: 'Photographes' },
+  ] },
+];
+
 const NAV_ASSOCIATION = [
   { href: '/association',              label: 'Mon Association' },
   { href: '/association/animaux',      label: 'Mes Animaux' },
@@ -1014,6 +1048,9 @@ export default function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [guestMoreOpen, setGuestMoreOpen] = useState(false);
+  // Rubrique ouverte de la barre du particulier (une seule à la fois).
+  const [navGroupe, setNavGroupe] = useState<string | null>(null);
+  const navGroupesRef = useRef<HTMLElement>(null);
   const guestMoreRef = useRef<HTMLDivElement>(null);
   const [bellOpen, setBellOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
@@ -1519,6 +1556,9 @@ export default function Header() {
       if (guestMoreRef.current && !guestMoreRef.current.contains(e.target as Node)) {
         setGuestMoreOpen(false);
       }
+      if (navGroupesRef.current && !navGroupesRef.current.contains(e.target as Node)) {
+        setNavGroupe(null);
+      }
       const dans = (r: React.RefObject<HTMLElement | null>) => !!r.current && r.current.contains(e.target as Node);
       if (!dans(profilRef) && !dans(profilMobileRef) && !dans(panneauProfilMobileRef)) setProfileSwitcherOpen(false);
       if (!dans(menuMobileBoutonRef) && !dans(menuMobileRef)) setMenuOpen(false);
@@ -1526,7 +1566,7 @@ export default function Header() {
     function handleKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return;
       setProfileSwitcherOpen(false); setDropdownOpen(false); setMenuOpen(false);
-      setBellOpen(false); setGuestMoreOpen(false);
+      setBellOpen(false); setGuestMoreOpen(false); setNavGroupe(null);
     }
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('keydown', handleKey);
@@ -1666,6 +1706,94 @@ export default function Header() {
     );
   }
 
+  // ── Menu personnel du particulier (refonte UX) ────────────────────────────
+  // Mêmes entrées que menuSections (rien de perdu), réparties en raccourcis +
+  // trois sections. Une entrée non classée tombe dans « Mes activités » ; les
+  // pages déjà dans la barre (annonces, annuaire, communauté…) n'y sont pas
+  // répétées.
+  const estParticulier = !!user && !isEffectivelyPro && !effectiveIsAssociation && !effectiveIsEleveur;
+  function MenuParticulier({ onNavigate }: { onNavigate: () => void }) {
+    const tous = menuSections.flatMap(sec => sec.items as ItemMenu[]);
+    const parHref = (h: string) => tous.find(i => i.href.split('?')[0] === h);
+    const raccourcis = [
+      { href: '/mes-animaux', label: 'Mes animaux', icon: '🐾' },
+      { href: '/agenda', label: 'Mon agenda', icon: '🗓️' },
+      { href: '/mes-taches', label: 'Mes tâches', icon: '✅' },
+      { href: droitsAnn.mesAnnonces, label: 'Mes annonces', icon: '📋' },
+    ];
+    const DANS_LA_BARRE = new Set(NAV_PARTICULIER_GROUPES.flatMap(g => g.href ? [g.href] : (g.liens ?? []).map(l => l.href.split('?')[0])));
+    const DOCUMENTS = ['/mes-contrats', '/mes-factures', '/mes-achats'];
+    const PARAMETRES = ['/profil', '/tarifs', '/demande-influenceur', '/guide'];
+    const pris = new Set([...raccourcis.map(r => r.href.split('?')[0]), ...DOCUMENTS, ...PARAMETRES]);
+    const sections: { titre: string; items: { href: string; label: string }[] }[] = [
+      { titre: 'Mes activités et services', items: [
+        ...tous.filter(i => { const h = i.href.split('?')[0]; return !pris.has(h) && !DANS_LA_BARRE.has(h); })
+          .map(i => ({ href: i.href, label: i.label })),
+        { href: '/favoris', label: 'Mes interactions (favoris et j\'aime)' },
+        { href: '/mes-alertes', label: 'Mes alertes animaux perdus' },
+      ].filter((it, idx, arr) => arr.findIndex(x => x.href === it.href) === idx) },
+      { titre: 'Documents et administratif', items: DOCUMENTS.map(parHref).filter(Boolean).map(i => ({ href: i!.href, label: i!.label })) },
+      { titre: 'Paramètres et abonnement', items: [
+        { href: '/profil', label: 'Mon profil et paramètres' },
+        ...PARAMETRES.slice(1).map(parHref).filter(Boolean).map(i => ({ href: i!.href, label: i!.label })),
+      ] },
+    ];
+    const chevron = (ouvert: boolean) => (
+      <svg className={`w-4 h-4 text-gray-400 transition-transform ${ouvert ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+      </svg>
+    );
+    return (
+      <nav aria-label="Menu personnel" className="py-3">
+        <div className="grid grid-cols-2 gap-2 px-3 pb-3">
+          {raccourcis.map(r => (
+            <Link key={r.href} href={r.href} onClick={onNavigate} aria-current={actifMenu(r.href) ? 'page' : undefined}
+              className={`flex flex-col gap-2 p-3 rounded-xl text-[13px] font-bold transition-colors ${
+                actifMenu(r.href) ? 'bg-[#E8F4F6] text-[#0C5C6C]' : 'bg-[#F1F6F5] text-[#1F2A2E] hover:bg-[#E8F4F6]'}`}>
+              <span className="text-[#0C5C6C]"><IconeMenu code={r.icon} /></span>
+              {r.label}
+            </Link>
+          ))}
+        </div>
+        <div className="border-t border-gray-200 px-2 pt-1 space-y-0.5">
+          {sections.filter(sec => sec.items.length).map(sec => {
+            const ouvert = !!expandedSections[sec.titre];
+            const contientActif = sec.items.some(i => actifMenu(i.href));
+            return (
+              <div key={sec.titre}>
+                <button type="button" onClick={() => toggleSection(sec.titre)} aria-expanded={ouvert}
+                  className={`w-full flex items-center justify-between gap-3 px-3 min-h-[44px] rounded-lg text-[14px] font-bold hover:bg-gray-50 ${contientActif ? 'text-[#0C5C6C]' : 'text-[#1F2A2E]'}`}>
+                  <span className="text-left">{sec.titre}</span>
+                  {sec.items.some(i => i.href === '/mes-factures') && facturesNonVues > 0 && (
+                    <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
+                  )}
+                  {chevron(ouvert)}
+                </button>
+                {ouvert && (
+                  <div className="pl-3 pb-1 space-y-0.5">
+                    {sec.items.map(it => (
+                      <Link key={it.href} href={it.href} onClick={onNavigate} aria-current={actifMenu(it.href) ? 'page' : undefined}
+                        className={`flex items-center px-3 min-h-[38px] rounded-md text-sm transition-colors ${
+                          actifMenu(it.href) ? 'bg-[#E8F4F6] text-[#0C5C6C] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
+                        {it.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="border-t border-gray-200 mt-2 px-2 pt-2">
+          <button type="button" onClick={handleSignOut}
+            className="w-full flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-[14px] font-bold text-[#B42318] hover:bg-red-50">
+            <IconeMenu code="🚪" /> Se déconnecter
+          </button>
+        </div>
+      </nav>
+    );
+  }
+
   /** Photo ou logo affiché en entier (jamais recadré), pastilles posées hors du cadre arrondi. */
   function AvatarProfil({ url, nom, taille, pastilles }: { url?: string | null; nom: string; taille: number; pastilles?: React.ReactNode }) {
     return (
@@ -1698,8 +1826,18 @@ export default function Header() {
         <AvatarProfil url={effectiveAvatar} nom={effectiveDisplayName} taille={48} />
         <div className="min-w-0 flex-1">
           <p className="text-[#1F2A2E] font-bold text-[15px] leading-snug line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{effectiveDisplayName}</p>
-          <p className="text-gray-500 text-sm">{typeLabel(effectiveType)}</p>
+          <p className="text-gray-500 text-sm">{estParticulier ? 'Profil Particulier' : typeLabel(effectiveType)}</p>
         </div>
+        {estParticulier && (
+          <Link href="/profil" aria-label="Paramètres du compte" title="Paramètres du compte"
+            onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+              <circle cx="12" cy="12" r="3" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" />
+            </svg>
+          </Link>
+        )}
       </div>
     );
   }
@@ -1775,8 +1913,39 @@ export default function Header() {
         {/* Desktop nav */}
         {/* min-w-0 : la navigation ne repousse jamais la cloche ni le sélecteur
             hors de l'écran ; si elle manque de place, elle défile. */}
-        <nav className={`hidden md:flex items-center gap-1 flex-1 min-w-0 justify-center ${!loading && user ? 'overflow-x-auto [scrollbar-width:none]' : ''}`}>
-          {(loading || !user) ? (
+        <nav ref={navGroupesRef} className={`hidden md:flex items-center gap-1 flex-1 min-w-0 justify-center ${!loading && user && !estParticulier ? 'overflow-x-auto [scrollbar-width:none]' : ''}`}>
+          {estParticulier ? (
+            NAV_PARTICULIER_GROUPES.map(g => {
+              const actif = g.href ? isActive(g.href) : (g.liens ?? []).some(l => l.href !== '/' && isActive(l.href.split('?')[0]));
+              const ouvert = navGroupe === g.label;
+              const cls = `px-3.5 py-1.5 rounded-full text-[15px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1 ${
+                actif || ouvert ? 'bg-white/20 text-white' : 'text-white/80 hover:text-white hover:bg-white/10'}`;
+              return g.href ? (
+                <Link key={g.label} href={g.href} className={cls} onClick={() => setNavGroupe(null)}>{g.label}</Link>
+              ) : (
+                <div key={g.label} className="relative">
+                  <button type="button" className={cls} aria-expanded={ouvert} aria-haspopup="menu"
+                    onClick={() => setNavGroupe(ouvert ? null : g.label)}>
+                    {g.label}
+                    <svg className={`w-3.5 h-3.5 transition-transform ${ouvert ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {ouvert && (
+                    <div role="menu" className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-50">
+                      {(g.liens ?? []).map(l => (
+                        <Link key={l.href} href={l.href} role="menuitem" onClick={() => setNavGroupe(null)}
+                          className={`block px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                            isActive(l.href.split('?')[0]) && l.href !== '/' && !l.href.includes('?') ? 'text-[#0C5C6C] bg-[#E8F4F6]' : 'text-[#1F2A2E] hover:bg-gray-50'}`}>
+                          {l.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (loading || !user) ? (
             <>
               {NAV_GUEST_PRIMARY.map((l) => (
                 <Link key={l.href} href={l.href}
@@ -2040,7 +2209,9 @@ export default function Header() {
                 <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
                   <EnteteMenu />
                   <div className="max-h-[70vh] overflow-y-auto overscroll-contain">
-                    <MenuPro onNavigate={() => setDropdownOpen(false)} />
+                    {estParticulier
+                      ? <MenuParticulier onNavigate={() => setDropdownOpen(false)} />
+                      : <MenuPro onNavigate={() => setDropdownOpen(false)} />}
                   </div>
                 </div>
               )}
@@ -2115,6 +2286,25 @@ export default function Header() {
       {menuOpen && (
         <div ref={menuMobileRef} className="md:hidden bg-[#094F5D] px-4 max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {/* Nav links */}
+          {estParticulier ? (
+            <div className="pt-2">
+              {NAV_PARTICULIER_GROUPES.map(g => (
+                <div key={g.label} className="border-b border-white/10 py-2">
+                  {g.href ? (
+                    <Link href={g.href} onClick={() => setMenuOpen(false)} className="block py-1.5 text-sm font-bold text-white">{g.label}</Link>
+                  ) : (
+                    <>
+                      <p className="py-1 text-xs font-bold uppercase tracking-wide text-white/60">{g.label}</p>
+                      {(g.liens ?? []).map(l => (
+                        <Link key={l.href} href={l.href} onClick={() => setMenuOpen(false)}
+                          className="block py-1.5 pl-2 text-sm text-white/85 hover:text-white">{l.label}</Link>
+                      ))}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="space-y-0.5 pt-2">
             {navLinks.map((l) => (
               <Link key={l.href} href={l.href} onClick={() => setMenuOpen(false)}
@@ -2125,11 +2315,14 @@ export default function Header() {
               </Link>
             ))}
           </div>
+          )}
 
           {!loading && user ? (
             <div className="mt-3 -mx-4 bg-white">
               <EnteteMenu />
-              <MenuPro onNavigate={() => setMenuOpen(false)} />
+              {estParticulier
+                ? <MenuParticulier onNavigate={() => setMenuOpen(false)} />
+                : <MenuPro onNavigate={() => setMenuOpen(false)} />}
             </div>
           ) : !loading && (
             <div className="pt-3 flex gap-3">

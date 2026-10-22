@@ -19,6 +19,10 @@ import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/annonces/trouver_animal_page.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
+import 'package:PetsMatch/pages/agenda/agenda_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
+import 'package:PetsMatch/pages/pro/pension_reservation_page.dart' show MesSejoursPensionPage;
+import 'package:PetsMatch/pages/services/services_page.dart';
 
 class ParticulierHomePage extends StatefulWidget {
   const ParticulierHomePage({super.key});
@@ -42,6 +46,10 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   List<Map<String, dynamic>> _alertesPubliques = [];
   bool _loadingAlertes = false;
   List<Map<String, dynamic>> _annonces = [];
+  // Mon quotidien : prochains événements de l'agenda (rendez-vous, tâches) du
+  // profil actif + rappels santé à venir des animaux de ce profil.
+  List<Map<String, dynamic>> _evenements = [];
+  List<Map<String, dynamic>> _rappels = [];
 
   @override
   void initState() {
@@ -120,8 +128,42 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
           .order('created_at', ascending: false)
           .limit(6);
 
+      // Mon quotidien — scopé au profil actif (jamais l'agenda d'un autre profil).
+      final now = DateTime.now();
+      final debutJour = DateTime(now.year, now.month, now.day);
+      var evenements = <Map<String, dynamic>>[];
+      try {
+        final qEv = activeProfileId.isNotEmpty
+            ? _supa.from('agenda_events').select().eq('pro_profile_id', activeProfileId)
+            : _supa.from('agenda_events').select().eq('uid', uid).or('pro_profile_id.is.null,pro_profile_id.eq.');
+        evenements = List<Map<String, dynamic>>.from(await qEv
+            .gte('date_debut', debutJour.toIso8601String())
+            .lte('date_debut', debutJour.add(const Duration(days: 15)).toIso8601String())
+            .order('date_debut')
+            .limit(8) as List);
+      } catch (_) {}
+      var rappels = <Map<String, dynamic>>[];
+      if (myIds.isNotEmpty) {
+        final de = DateFormat('yyyy-MM-dd').format(debutJour);
+        final a = DateFormat('yyyy-MM-dd').format(debutJour.add(const Duration(days: 30)));
+        for (final t in const [('vaccinations', 'vaccin', 'Rappel vaccin'), ('vermifuges', 'produit', 'Vermifuge'), ('antiparasitaires', 'produit', 'Antiparasitaire')]) {
+          try {
+            final rows = await _supa.from(t.$1).select().inFilter('animal_id', myIds)
+                .gte('date_rappel', de).lte('date_rappel', a).order('date_rappel').limit(5);
+            for (final r in rows as List) {
+              final m = Map<String, dynamic>.from(r as Map);
+              m['_libelle'] = '${t.$3}${(m[t.$2] ?? '').toString().isNotEmpty ? ' ${m[t.$2]}' : ''}';
+              rappels.add(m);
+            }
+          } catch (_) {}
+        }
+        rappels.sort((x, y) => (x['date_rappel'] ?? '').toString().compareTo((y['date_rappel'] ?? '').toString()));
+      }
+
       if (!mounted) return;
       setState(() {
+        _evenements = evenements;
+        _rappels = rappels.take(4).toList();
         final firestorePic = doc.data()?['profilePictureUrl'];
         _photoUrl = (profileAvatar != null && profileAvatar.isNotEmpty)
             ? profileAvatar
@@ -197,13 +239,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
               actions: const [QuickSearchButton()],
               flexibleSpace: FlexibleSpaceBar(
                 background: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [_teal, _tealLight],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
+                  color: _teal,
                   child: SafeArea(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -231,11 +267,13 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Bonjour, ${User_Info.firstname} !',
+                                    const Text('Tableau de bord · Particulier',
+                                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFFCCE8EE))),
+                                    Text('Bonjour ${User_Info.firstname}',
                                         style: const TextStyle(
                                             fontFamily: 'Galey',
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 18,
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 20,
                                             color: Colors.white)),
                                     if (User_Info.ville.isNotEmpty)
                                       Row(
@@ -277,11 +315,13 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                     _buildMesAnimauxSection(),
                     const SizedBox(height: 20),
                   ],
-                  _buildQuickAccess(),
                   if (_mesAlertes.isNotEmpty) ...[
-                    const SizedBox(height: 16),
                     _buildAlerteBanner(),
+                    const SizedBox(height: 20),
                   ],
+                  _buildMonQuotidien(),
+                  const SizedBox(height: 24),
+                  _buildQuickAccess(),
                   const SizedBox(height: 24),
                   _buildAnnoncesSection(),
                   const SizedBox(height: 24),
@@ -371,55 +411,158 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   // Un ou plusieurs animaux (choix_animaux_balade.dart).
   Future<void> _demarrerBalade() => demarrerBalade(context);
 
+  Widget _titreSection(String t) => Text(t,
+      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 17, color: Color(0xFF1F2A2E)));
+
+  void _ouvrir(Widget page) => Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+
   Widget _buildQuickAccess() {
-    return Column(children: [
-      _QuickTileWide(
-        icon: Icons.directions_walk,
-        label: 'Démarrer une balade',
-        subtitle: 'Trace le parcours en direct, gagne de l\'XP et des flammes',
-        color: _teal,
-        onTap: _demarrerBalade,
-      ),
+    final orange = Colors.orange.shade800;
+    const vert = Color(0xFF4E7A3B);
+    final tuiles = <(IconData, String, Color, VoidCallback)>[
+      (Icons.description_outlined, 'Mes annonces', _teal, () => _ouvrir(const MesAnnoncesParticulierPage())),
+      (Icons.medical_services_outlined, 'Trouver un pro', _teal, () => _ouvrir(const ServicesPage())),
+      (Icons.location_searching, 'Perdus et trouvés', orange, () => _ouvrir(const AnimauxPerdusPage())),
+      (Icons.groups_outlined, 'Communauté', _teal, () => _ouvrir(const CommunauteHubPage())),
+      (Icons.house_outlined, 'Mes séjours', _teal, () => _ouvrir(const MesSejoursPensionPage())),
+      (Icons.directions_walk, 'Démarrer une balade', vert, _demarrerBalade),
+      (Icons.pets, 'Trouver un animal', _teal, () => _ouvrir(const TrouverAnimalPage())),
+      (Icons.nfc_outlined, 'Recherche par puce', const Color(0xFF374151), () => showModalBottomSheet(
+            context: context,
+            useRootNavigator: true,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => const ChipSearchSheet(),
+          )),
+      (Icons.notifications_active_outlined, 'Mes alertes', orange, () => _ouvrir(const MesAlertesPage())),
+    ];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _titreSection('Accès rapides'),
       const SizedBox(height: 10),
-      _QuickTileWide(
-        icon: Icons.location_searching,
-        label: 'Mes Alertes',
-        subtitle: 'Animaux déclarés perdus',
-        color: Colors.orange.shade700,
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const MesAlertesPage())),
+      GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.05,
+        children: tuiles.map((t) => Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: t.$4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(t.$1, color: t.$3, size: 26),
+                const SizedBox(height: 8),
+                Text(t.$2, textAlign: TextAlign.center, maxLines: 2,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+              ]),
+            ),
+          ),
+        )).toList(),
       ),
+    ]);
+  }
+
+  // ── Mon quotidien : rendez-vous, à faire, rappels santé ─────────────────────
+  Widget _buildMonQuotidien() {
+    final rdv = _evenements.where((e) => const {'rdv', 'visite'}.contains(e['type'])).take(3).toList();
+    final aFaire = _evenements.where((e) => !const {'rdv', 'visite'}.contains(e['type'])).take(3).toList();
+    final rien = rdv.isEmpty && aFaire.isEmpty && _rappels.isEmpty;
+    String quand(String? iso, {bool heure = false}) {
+      final d = DateTime.tryParse(iso ?? '')?.toLocal();
+      if (d == null) return '';
+      final auj = DateTime.now();
+      final j = DateTime(d.year, d.month, d.day).difference(DateTime(auj.year, auj.month, auj.day)).inDays;
+      final jour = j == 0 ? 'Aujourd\'hui' : j == 1 ? 'Demain' : DateFormat('EEE d MMM', 'fr_FR').format(d);
+      return heure && (d.hour != 0 || d.minute != 0) ? '$jour · ${DateFormat('HH:mm').format(d)}' : jour;
+    }
+    String nomAnimal(dynamic id) {
+      final a = _animaux.where((x) => x['id']?.toString() == id?.toString());
+      return a.isEmpty ? '' : (a.first['nom'] ?? '').toString();
+    }
+    Widget sousTitre(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(t.toUpperCase(),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: Colors.grey.shade600)),
+        );
+    Widget ligne(IconData icone, Color couleur, String titre, String detail, VoidCallback onTap) => InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            child: Row(children: [
+              Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(color: couleur.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icone, size: 18, color: couleur),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(titre, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+                if (detail.isNotEmpty)
+                  Text(detail, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ])),
+              Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+            ]),
+          ),
+        );
+    void agenda() => _ouvrir(const AgendaPage(isParticulier: true));
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _titreSection('Mon quotidien'),
       const SizedBox(height: 10),
-      _QuickTileWide(
-        icon: Icons.groups_outlined,
-        label: 'Communauté',
-        subtitle: 'Balades · Forums · Groupes · Événements',
-        color: const Color(0xFF6E9E57),
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const CommunauteHubPage())),
-      ),
-      const SizedBox(height: 10),
-      _QuickTileWide(
-        icon: Icons.pets,
-        label: 'Trouver un animal',
-        subtitle: 'Liste · Fil · Carte',
-        color: _teal,
-        onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const TrouverAnimalPage())),
-      ),
-      const SizedBox(height: 10),
-      _QuickTileWide(
-        icon: Icons.nfc_outlined,
-        label: 'Recherche par puce',
-        subtitle: 'Perdus · Trouvés · Élevage',
-        color: const Color(0xFF374151),
-        onTap: () => showModalBottomSheet(
-          context: context,
-          useRootNavigator: true,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) => const ChipSearchSheet(),
+      Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
         ),
+        child: rien
+            ? Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('Rien de prévu pour le moment.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+                  const SizedBox(height: 4),
+                  Text('Profitez de vos compagnons. Vos rendez-vous, tâches et rappels santé apparaîtront ici.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: agenda,
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, foregroundColor: _teal),
+                    icon: const Icon(Icons.calendar_month_outlined, size: 18),
+                    label: const Text('Ouvrir mon agenda', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  ),
+                ]),
+              )
+            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (rdv.isNotEmpty) ...[
+                  sousTitre('Prochains rendez-vous'),
+                  ...rdv.map((e) => ligne(Icons.event_outlined, _teal, (e['titre'] ?? 'Rendez-vous').toString(),
+                      [quand(e['date_debut']?.toString(), heure: true), nomAnimal(e['animal_id'])].where((x) => x.isNotEmpty).join(' · '), agenda)),
+                ],
+                if (aFaire.isNotEmpty) ...[
+                  sousTitre('À faire'),
+                  ...aFaire.map((e) => ligne(Icons.check_circle_outline, const Color(0xFF4E7A3B), (e['titre'] ?? 'Tâche').toString(),
+                      [quand(e['date_debut']?.toString(), heure: true), nomAnimal(e['animal_id'])].where((x) => x.isNotEmpty).join(' · '), agenda)),
+                ],
+                if (_rappels.isNotEmpty) ...[
+                  sousTitre('Rappels et échéances'),
+                  ..._rappels.map((r) {
+                    final animal = _animaux.where((x) => x['id']?.toString() == r['animal_id']?.toString());
+                    return ligne(Icons.schedule, Colors.orange.shade800,
+                        [r['_libelle'], nomAnimal(r['animal_id'])].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
+                        quand(r['date_rappel']?.toString()),
+                        () => animal.isEmpty ? null : _ouvrir(AnimalFicheParticulierPage(
+                            animalId: animal.first['id'] as String?, initialData: animal.first)));
+                  }),
+                ],
+                const SizedBox(height: 6),
+              ]),
       ),
     ]);
   }
@@ -434,7 +577,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             Row(children: [
               const Icon(Icons.pets, color: _teal, size: 18),
               const SizedBox(width: 6),
-              const Text('Mes Animaux',
+              const Text('Mes animaux',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 16, color: Color(0xFF1F2A2E))),
             ]),
@@ -492,7 +635,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             Row(children: [
               const Icon(Icons.campaign_outlined, color: _teal, size: 18),
               const SizedBox(width: 6),
-              const Text('Trouver un compagnon',
+              const Text('Découvrir',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 16, color: Color(0xFF1F2A2E))),
             ]),
