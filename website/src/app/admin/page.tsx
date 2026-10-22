@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { collection, getDocs, doc, getDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { notifyProfileValidated, sendNotification } from '@/lib/notifications';
@@ -36,6 +36,8 @@ interface ProfileEntry {
   especesAcceptees: string[]; certifications: { nom?: string; organisme?: string }[];
   rayonIntervention?: number; isAdmin?: boolean; isElevage?: boolean; isAssociation?: boolean;
   isPremium?: boolean; siret?: string;
+  /** Inscription jamais finalisée (e-mail jamais validé) — Cloud Function inscriptionsNonValidees. */
+  emailNonValide?: boolean;
 }
 
 // Catégorie unique d'un profil pour le filtre admin — éleveur/association
@@ -471,6 +473,18 @@ export default function AdminPage() {
         if (aW !== bW) return aW - bW;
         return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
       });
+      // Inscriptions non finalisées (e-mail jamais validé) : marquées, pas cachées
+      // (purge automatique après 3 jours par purgerInscriptionsAbandonnees).
+      try {
+        const jeton = await auth.currentUser?.getIdToken();
+        const r = await fetch('https://europe-west1-petsmatch-eb96d.cloudfunctions.net/inscriptionsNonValidees', {
+          headers: { Authorization: `Bearer ${jeton ?? ''}` },
+        });
+        if (r.ok) {
+          const nonValides = new Set(((await r.json()) as { uids?: string[] }).uids ?? []);
+          allEntries.forEach(e => { if (nonValides.has(e.uid)) e.emailNonValide = true; });
+        }
+      } catch { /* liste affichée sans l'étiquette */ }
       setEntries(allEntries);
     } finally {
       setUsersLoading(false);
@@ -3131,6 +3145,7 @@ function ProfileCard({ entry, onClick, profileCount }: { entry: ProfileEntry; on
         {entry.nameElevage && <p className="text-xs text-[#0C5C6C] truncate">{entry.nameElevage}</p>}
         <p className="text-xs text-gray-400 truncate">{entry.email}</p>
         <div className="flex gap-1.5 flex-wrap mt-1">
+          {entry.emailNonValide && <Badge label="E-mail non validé" color="#b45309" />}
           {entry.isSecondary && <Badge label="Secondaire" color="#7c3aed" />}
           {entry.isAdmin && <Badge label="Admin" color="#7c3aed" />}
           {!entry.isSecondary && entry.isElevage && <Badge label="Éleveur" color="#0C5C6C" />}

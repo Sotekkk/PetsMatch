@@ -17,8 +17,8 @@ class DescriptionRegistrationPage extends StatefulWidget {
 
 /// Espèces proposées (même liste que le site).
 const kEspecesProjet = [
-  ('chien', '🐶 Chien'), ('chat', '🐱 Chat'), ('lapin', '🐰 Lapin'), ('cheval', '🐴 Cheval'),
-  ('oiseau', '🐦 Oiseau'), ('nac', '🐹 NAC'), ('reptile', '🦎 Reptile'), ('autre', '🐾 Autre'),
+  ('chien', 'Chien'), ('chat', 'Chat'), ('lapin', 'Lapin'), ('cheval', 'Cheval'),
+  ('oiseau', 'Oiseau'), ('nac', 'NAC'), ('reptile', 'Reptile'), ('autre', 'Autre'),
 ];
 
 /// Texte du projet d'adoption (stocké dans adoptProject, éditable ensuite
@@ -142,16 +142,53 @@ class _DescriptionRegistrationPageState extends State<DescriptionRegistrationPag
                 const SizedBox(height: 14),
                 const Text('Quelle(s) espèce(s) ?', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  for (final e in kEspecesProjet)
-                    FilterChip(
-                      label: Text(e.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                      selected: _especes.contains(e.$1),
-                      selectedColor: _green.withValues(alpha: 0.2),
-                      checkmarkColor: _green,
-                      onSelected: (v) => setState(() => v ? _especes.add(e.$1) : _especes.remove(e.$1)),
+                // Liste déroulante à cases à cocher (plusieurs espèces, ou toutes).
+                Theme(
+                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                ]),
+                    child: ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                      title: Text(
+                        _especes.isEmpty
+                            ? 'Choisir les espèces'
+                            : _especes.length == kEspecesProjet.length
+                                ? 'Toutes les espèces'
+                                : kEspecesProjet.where((e) => _especes.contains(e.$1)).map((e) => e.$2).join(', '),
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                            color: _especes.isEmpty ? Colors.grey.shade500 : const Color(0xFF1F2A2E)),
+                      ),
+                      children: [
+                        CheckboxListTile(
+                          dense: true,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          activeColor: _green,
+                          value: _especes.length == kEspecesProjet.length,
+                          onChanged: (v) => setState(() {
+                            _especes.clear();
+                            if (v == true) _especes.addAll(kEspecesProjet.map((e) => e.$1));
+                          }),
+                          title: const Text('Tout cocher',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                        const Divider(height: 1),
+                        for (final e in kEspecesProjet)
+                          CheckboxListTile(
+                            dense: true,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            activeColor: _green,
+                            value: _especes.contains(e.$1),
+                            onChanged: (v) => setState(() => v == true ? _especes.add(e.$1) : _especes.remove(e.$1)),
+                            title: Text(e.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _precisionsCtrl,

@@ -17,6 +17,23 @@ if (!admin.apps.length) admin.initializeApp();
 const {SUPABASE_URL, SUPABASE_AUTH_HEADERS, INTERNAL_API_SECRET} = require("./config");
 const SITE_URL = process.env.SITE_URL || "https://petsmatchapp.com";
 
+// Lien de validation valable 10 minutes : Firebase ne permet pas de régler la
+// durée de ses liens (environ 3 jours). L'e-mail contient donc un lien PetsMatch
+// (petsmatchapp.com/api/inscription/lien?t=…) qui retient son heure d'envoi :
+// validerLienInscription redirige vers le lien Firebase dans les 10 minutes,
+// sinon vers la page de validation (« lien expiré », nouveau lien possible).
+const DUREE_LIEN_MS = 10 * 60 * 1000;
+const crypto = require("crypto");
+
+async function lienValidation(uid, email) {
+    const lienFirebase = await admin.auth().generateEmailVerificationLink(email);
+    const jeton = crypto.randomBytes(24).toString("hex");
+    await admin.firestore().collection("liens_validation").doc(jeton).set({
+        uid, email, lien: lienFirebase, expire: Date.now() + DUREE_LIEN_MS,
+    });
+    return `${SITE_URL}/api/inscription/lien?t=${jeton}`;
+}
+
 /** E-mail de validation envoyé par le site (gabarit PetsMatch), lien généré ici. */
 function envoyerValidation(email, lien, jeton) {
     return new Promise((resolve) => {
@@ -186,7 +203,7 @@ exports.changerEmailInscription = functions
             }
             if ((moi.email || "").toLowerCase() === email) {
                 // Même adresse : simple renvoi du lien de validation.
-                const lien = await admin.auth().generateEmailVerificationLink(email);
+                const lien = await lienValidation(uid, email);
                 const envoye = await envoyerValidation(email, lien, m[1]);
                 res.json({ok: true, envoye}); return;
             }
@@ -205,7 +222,7 @@ exports.changerEmailInscription = functions
             await supabasePatch(`/rest/v1/users?uid=eq.${encodeURIComponent(uid)}`, {email});
             // Le lien de validation part d'ici : la session du navigateur / de
             // l'appli porte encore l'ancienne adresse juste après le changement.
-            const lien = await admin.auth().generateEmailVerificationLink(email);
+            const lien = await lienValidation(uid, email);
             const envoye = await envoyerValidation(email, lien, m[1]);
             // Changer l'adresse ferme la session en cours (Firebase) : jeton de
             // reconnexion automatique, pour ne pas faire se reconnecter quelqu'un
@@ -221,5 +238,90 @@ exports.changerEmailInscription = functions
         } catch (e) {
             console.error("[inscription] changerEmailInscription:", e.message);
             res.status(500).json({error: "Changement impossible. Réessayez."});
+        }
+    });
+
+function supabaseGet(path) {
+    return new Promise((resolve) => {
+        const url = new URL(`${SUPABASE_URL}${path}`);
+        const req = https.request({
+            hostname: url.hostname, path: url.pathname + (url.search || ""), method: "GET",
+            headers: {...SUPABASE_AUTH_HEADERS},
+        }, (res) => {
+            let d = "";
+            res.on("data", (c) => d += c);
+            res.on("end", () => {
+                try {
+                    resolve(JSON.parse(d));
+                } catch (e) {
+                    resolve(null);
+                }
+            });
+        });
+        req.on("error", () => resolve(null));
+        req.end();
+    });
+}
+
+// Admin : comptes dont l'inscription n'est pas finalisée (e-mail / mot de passe
+// jamais validé). Le site n'a pas l'Admin SDK : le module admin interroge ici
+// pour marquer ces comptes « E-mail non validé ». Réservé aux admins.
+exports.inscriptionsNonValidees = functions
+    .region("europe-west1")
+    .https.onRequest(async (req, res) => {
+        res.set("Access-Control-Allow-Origin", "*");
+        res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+        if (req.method === "OPTIONS") {
+            res.status(204).send(""); return;
+        }
+        const m = String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i);
+        if (!m) {
+            res.status(401).json({error: "Non connecté"}); return;
+        }
+        try {
+            const {uid} = await admin.auth().verifyIdToken(m[1]);
+            const rows = await supabaseGet(`/rest/v1/users?uid=eq.${encodeURIComponent(uid)}&select=is_admin`);
+            if (!Array.isArray(rows) || rows[0]?.is_admin !== true) {
+                res.status(403).json({error: "Réservé aux admins"}); return;
+            }
+            const uids = [];
+            let page;
+            do {
+                const r = await admin.auth().listUsers(1000, page);
+                r.users.forEach((u) => {
+                    if (estAbandonne(u)) uids.push(u.uid);
+                });
+                page = r.pageToken;
+            } while (page);
+            res.json({uids});
+        } catch (e) {
+            console.error("[inscription] inscriptionsNonValidees:", e.message);
+            res.status(500).json({error: "Erreur serveur"});
+        }
+    });
+
+// Ouverture d'un lien de validation PetsMatch (voir lienValidation) : valable
+// 10 minutes, ensuite « lien expiré » sur la page de validation.
+exports.validerLienInscription = functions
+    .region("europe-west1")
+    .https.onRequest(async (req, res) => {
+        const jeton = String((req.query && req.query.t) || "");
+        const expire = `${SITE_URL}/verifier-email?lien=expire`;
+        if (!/^[a-f0-9]{48}$/.test(jeton)) {
+            res.redirect(302, expire); return;
+        }
+        try {
+            const doc = await admin.firestore().collection("liens_validation").doc(jeton).get();
+            const d = doc.exists ? doc.data() : null;
+            if (!d || !d.lien || Date.now() > d.expire) {
+                // Adresse transmise : la page propose un nouveau lien même
+                // ouverte dans un autre navigateur (boîte mail), sans session.
+                res.redirect(302, d && d.email ? `${expire}&email=${encodeURIComponent(d.email)}` : expire); return;
+            }
+            res.redirect(302, d.lien);
+        } catch (e) {
+            console.error("[inscription] validerLienInscription:", e.message);
+            res.redirect(302, expire);
         }
     });

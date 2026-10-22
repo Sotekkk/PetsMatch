@@ -628,7 +628,7 @@ class _MentionsLegalesState extends State<MentionsLegales> {
       }
       if (!mounted) return;
       if (!user.emailVerified) {
-        await user.sendEmailVerification();
+        await envoyerEmailValidation(user);
         if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute(
@@ -671,7 +671,7 @@ class _MentionsLegalesState extends State<MentionsLegales> {
             User_Info.uid = existingUser.uid;
             // Re-sync Supabase au cas où l'écriture précédente aurait échoué
             await registerElevage(User_Info.email, User_Info.password);
-            await existingUser.sendEmailVerification();
+            await envoyerEmailValidation(existingUser);
             if (!mounted) return;
             Navigator.of(context).push(
               MaterialPageRoute(

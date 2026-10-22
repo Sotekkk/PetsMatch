@@ -4,10 +4,10 @@ import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup, sendEmailVerification } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { libererEmailInscription } from '@/lib/inscription-email';
+import { envoyerEmailValidation, libererEmailInscription } from '@/lib/inscription-email';
 import { bornesNaissancePersonne } from '@/lib/ages-plausibles';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
@@ -35,8 +35,8 @@ type Step = 'role' | 'info' | 'docs' | 'animaux' | 'account';
 
 // « Vos animaux & votre projet » (particulier) — miroir appli description_page.dart.
 const ESPECES_PROJET: [string, string][] = [
-  ['chien', '🐶 Chien'], ['chat', '🐱 Chat'], ['lapin', '🐰 Lapin'], ['cheval', '🐴 Cheval'],
-  ['oiseau', '🐦 Oiseau'], ['nac', '🐹 NAC'], ['reptile', '🦎 Reptile'], ['autre', '🐾 Autre'],
+  ['chien', 'Chien'], ['chat', 'Chat'], ['lapin', 'Lapin'], ['cheval', 'Cheval'],
+  ['oiseau', 'Oiseau'], ['nac', 'NAC'], ['reptile', 'Reptile'], ['autre', 'Autre'],
 ];
 function texteProjetAdoption(aDejaAnimal: boolean, projet: boolean, especes: string[], precisions: string): string {
   if (!projet) return '';
@@ -471,7 +471,7 @@ export default function InscriptionPage() {
       await updateProfile(cred.user, { displayName: `${firstname} ${lastname}`.trim() });
       await createProfile(cred.user.uid, email);
       // Vérification de l'adresse e-mail (comme l'appli) avant d'accéder au site.
-      try { await sendEmailVerification(cred.user); } catch { /* renvoi possible depuis /verifier-email */ }
+      await envoyerEmailValidation(cred.user); // lien de 10 minutes, renvoi possible depuis /verifier-email
       router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/'))}`);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
@@ -483,7 +483,7 @@ export default function InscriptionPage() {
           await createProfile(existing.user.uid, email); // upsert idempotent
           const suite = isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/');
           if (!existing.user.emailVerified) {
-            try { await sendEmailVerification(existing.user); } catch { /* renvoi possible depuis /verifier-email */ }
+            await envoyerEmailValidation(existing.user);
             router.push(`/verifier-email?suite=${encodeURIComponent(suite)}`);
           } else router.push(suite);
           return;
@@ -495,7 +495,7 @@ export default function InscriptionPage() {
               const cred = await createUserWithEmailAndPassword(auth, email, password);
               await updateProfile(cred.user, { displayName: `${firstname} ${lastname}`.trim() });
               await createProfile(cred.user.uid, email);
-              try { await sendEmailVerification(cred.user); } catch { /* renvoi possible depuis /verifier-email */ }
+              await envoyerEmailValidation(cred.user); // lien de 10 minutes, renvoi possible depuis /verifier-email
               router.push(`/verifier-email?suite=${encodeURIComponent(isEleveurOrPro ? '/en-attente-validation' : (suiteRdv ?? '/'))}`);
               return;
             } catch { /* message ci-dessous */ }
@@ -577,7 +577,6 @@ export default function InscriptionPage() {
                     className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all text-left ${
                       role === r.value ? 'border-[#0C5C6C] bg-[#E8F4F6]' : 'border-gray-200 hover:border-gray-300'
                     }`}>
-                    <span className="text-2xl">{r.icon}</span>
                     <div>
                       <p className="font-semibold text-[#1F2A2E] text-sm">{r.label}</p>
                       <p className="text-gray-500 text-xs">{r.desc}</p>
@@ -868,15 +867,35 @@ export default function InscriptionPage() {
                     {projetAdoption && (
                       <div className="mt-3 space-y-2">
                         <p className="text-xs font-semibold text-gray-600">Quelle(s) espèce(s) ?</p>
-                        <div className="flex flex-wrap gap-2">
-                          {ESPECES_PROJET.map(([k, l]) => (
-                            <button key={k} type="button"
-                              onClick={() => setEspecesProjet(e => e.includes(k) ? e.filter(x => x !== k) : [...e, k])}
-                              className={`px-3 py-1.5 rounded-full border text-xs ${especesProjet.includes(k) ? 'bg-[#6E9E57]/20 border-[#6E9E57] text-[#3D6B2E] font-semibold' : 'border-gray-200 text-gray-600'}`}>
-                              {l}
-                            </button>
-                          ))}
-                        </div>
+                        <details className="group border border-gray-200 rounded-xl bg-white">
+                          <summary className="list-none cursor-pointer flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+                            <span className={especesProjet.length ? 'text-[#1F2A2E]' : 'text-gray-400'}>
+                              {especesProjet.length === 0 ? 'Choisir les espèces'
+                                : especesProjet.length === ESPECES_PROJET.length ? 'Toutes les espèces'
+                                : ESPECES_PROJET.filter(([k]) => especesProjet.includes(k)).map(([, l]) => l).join(', ')}
+                            </span>
+                            <svg className="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </summary>
+                          <div className="border-t border-gray-100 py-1">
+                            <label className="flex items-center gap-3 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-gray-50">
+                              <input type="checkbox" className="w-4 h-4 accent-[#6E9E57]"
+                                checked={especesProjet.length === ESPECES_PROJET.length}
+                                onChange={e => setEspecesProjet(e.target.checked ? ESPECES_PROJET.map(([k]) => k) : [])} />
+                              Tout cocher
+                            </label>
+                            <div className="border-t border-gray-100 my-1" />
+                            {ESPECES_PROJET.map(([k, l]) => (
+                              <label key={k} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                                <input type="checkbox" className="w-4 h-4 accent-[#6E9E57]"
+                                  checked={especesProjet.includes(k)}
+                                  onChange={() => setEspecesProjet(e => e.includes(k) ? e.filter(x => x !== k) : [...e, k])} />
+                                {l}
+                              </label>
+                            ))}
+                          </div>
+                        </details>
                         <textarea value={precisionsProjet} onChange={e => setPrecisionsProjet(e.target.value)} rows={2}
                           placeholder="Précisions (race, délai, mode de vie…) — optionnel" className={inputCls} />
                       </div>

@@ -48,3 +48,13 @@ Future<String?> changerEmailInscription(String jeton, String email) async {
     return 'Pas de connexion. Réessayez.';
   }
 }
+
+/// E-mail de validation de l'inscription, envoyé par le serveur (lien PetsMatch
+/// valable 10 minutes). Envoi direct Firebase en secours.
+Future<void> envoyerEmailValidation(User user) async {
+  try {
+    final err = await changerEmailInscription(await user.getIdToken() ?? '', user.email ?? '');
+    if (err == null) return;
+  } catch (_) {}
+  try { await user.sendEmailVerification(); } catch (_) {}
+}

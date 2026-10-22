@@ -4,13 +4,13 @@
 // automatique de la validation, rappel des spams.
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { sendEmailVerification, signOut } from 'firebase/auth';
-import { changerEmailInscription } from '@/lib/inscription-email';
+import { sendEmailVerification, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { changerEmailInscription, envoyerEmailValidation } from '@/lib/inscription-email';
 import { auth } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
-const DELAI_RENVOI_S = 60;
+const DELAI_RENVOI_S = 90;
 
 function VerifierEmail() {
   const { user, loading, refreshUserData } = useAuth();
@@ -20,6 +20,7 @@ function VerifierEmail() {
   const [attente, setAttente] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [verifie, setVerifie] = useState(false);
+  const lienExpire = params.get('lien') === 'expire';
   // Adresse mal saisie : correction sans refaire l'inscription (lien envoyé à la nouvelle adresse).
   const [edition, setEdition] = useState(false);
   const [nouvelEmail, setNouvelEmail] = useState('');
@@ -27,6 +28,18 @@ function VerifierEmail() {
   // Adresse changée côté serveur : la session du navigateur n'est plus valable,
   // il faut se reconnecter (avec la nouvelle adresse) pour constater la validation.
   const [sessionExpiree, setSessionExpiree] = useState(false);
+  const [mdpConfirme, setMdpConfirme] = useState('');
+  // Dernière adresse connue : si Firebase ferme la session (adresse corrigée),
+  // on reste sur cette page et on demande juste le mot de passe.
+  // Lien expiré ouvert depuis la boîte mail (autre navigateur, pas de session) :
+  // l'adresse arrive dans l'URL pour proposer tout de suite un nouveau lien.
+  const [derniereAdresse, setDerniereAdresse] = useState(() => params.get('email') ?? '');
+  useEffect(() => {
+    const e = auth.currentUser?.email ?? user?.email;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (e) setDerniereAdresse(adresseEnvoi ?? e);
+  }, [user, loading, adresseEnvoi]);
+  const [erreurMdp, setErreurMdp] = useState('');
 
   const verifier = useCallback(async () => {
     const u = auth.currentUser;
@@ -53,10 +66,14 @@ function VerifierEmail() {
 
   // Pas connecté → connexion ; vérification automatique toutes les 5 s.
   useEffect(() => {
-    if (!loading && !user && !auth.currentUser) { router.replace('/connexion'); return; }
+    if (!loading && !user && !auth.currentUser) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (derniereAdresse) { setSessionExpiree(true); return; }
+      router.replace('/connexion'); return;
+    }
     const t = setInterval(() => { void verifier(); }, 5000);
     return () => clearInterval(t);
-  }, [user, loading, router, verifier]);
+  }, [user, loading, router, verifier, derniereAdresse]);
 
   useEffect(() => {
     if (attente <= 0) return;
@@ -72,7 +89,7 @@ function VerifierEmail() {
     try { if (u) jeton = await u.getIdToken(true); } catch { /* session expirée */ }
     if (!u || !jeton) {
       setSessionExpiree(true);
-      setMessage('Votre session a expiré : reconnectez-vous pour recevoir un nouveau lien.');
+      setMessage('');
       return;
     }
     // Renvoi par le serveur (l'envoi direct du navigateur échoue souvent en silence).
@@ -91,7 +108,7 @@ function VerifierEmail() {
     if (!ok) setMessage("Votre adresse n'est pas encore vérifiée : cliquez sur le lien reçu par e-mail.");
   }
 
-  const email = auth.currentUser?.email ?? user?.email ?? '';
+  const email = auth.currentUser?.email ?? user?.email ?? derniereAdresse;
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4 py-10 bg-[#F8F8F6]">
@@ -100,19 +117,41 @@ function VerifierEmail() {
         <h1 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
           {verifie ? 'Adresse vérifiée !' : 'Vérifiez votre adresse e-mail'}
         </h1>
+        {lienExpire && !verifie && (
+          <p className="mb-4 text-sm font-semibold text-[#B45309] bg-[#FEF3C7] rounded-xl px-3 py-2">
+            Ce lien de validation a expiré (valable 10 minutes). Cliquez sur « Renvoyer l&apos;e-mail » pour en recevoir un nouveau.
+          </p>
+        )}
         {sessionExpiree && !verifie ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-600 leading-relaxed">
-              Votre session a expiré{adresseEnvoi ? <> (adresse : <strong className="text-[#1F2A2E]">{adresseEnvoi}</strong>)</> : null}.
-              Reconnectez-vous avec votre adresse et votre mot de passe : vos informations sont conservées et vous pourrez recevoir un nouveau lien de validation.
+              Pour continuer votre inscription avec <strong className="text-[#1F2A2E]">{adresseEnvoi ?? email}</strong>,
+              confirmez simplement votre mot de passe. Vos informations sont conservées.
             </p>
-            <button onClick={async () => {
-              const mail = adresseEnvoi ?? auth.currentUser?.email ?? '';
-              try { await signOut(auth); } catch { /* */ }
-              router.replace(`/connexion?email=${encodeURIComponent(mail)}&suite=${encodeURIComponent(suite)}`);
-            }} className="w-full py-3 rounded-xl bg-[#0C5C6C] text-white font-semibold hover:opacity-90">
-              Me reconnecter
-            </button>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setErreurMdp('');
+              try {
+                const cred = await signInWithEmailAndPassword(auth, adresseEnvoi ?? email, mdpConfirme);
+                setSessionExpiree(false); setMdpConfirme('');
+                if (cred.user.emailVerified) { await verifier(); return; }
+                // Nouveau lien envoyé tout de suite (lien précédent expiré).
+                const ok = await envoyerEmailValidation(cred.user);
+                setMessage(ok ? `Nouveau lien envoyé à ${cred.user.email} (valable 10 minutes).` : 'Envoi impossible pour le moment. Réessayez dans quelques minutes.');
+                setAttente(DELAI_RENVOI_S);
+              } catch {
+                setErreurMdp('Mot de passe incorrect.');
+              }
+            }} className="space-y-3 text-left">
+              <label htmlFor="mdp-confirme" className="block text-xs font-semibold text-gray-600">Mot de passe</label>
+              <input id="mdp-confirme" type="password" value={mdpConfirme} onChange={e => setMdpConfirme(e.target.value)}
+                autoComplete="current-password" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
+              {erreurMdp && <p className="text-xs text-red-600">{erreurMdp}</p>}
+              <button type="submit" disabled={!mdpConfirme}
+                className="w-full py-3 rounded-xl bg-[#0C5C6C] text-white font-semibold hover:opacity-90 disabled:opacity-50">
+                Continuer
+              </button>
+            </form>
           </div>
         ) : verifie ? (
           <p className="text-sm text-gray-600">Redirection en cours…</p>

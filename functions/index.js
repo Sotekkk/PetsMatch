@@ -114,3 +114,5 @@ exports.parseCarnetDocument = parseCarnetDocumentFunctions.parseCarnetDocument;
 exports.libererEmailInscription = inscriptionFunctions.libererEmailInscription;
 exports.purgerInscriptionsAbandonnees = inscriptionFunctions.purgerInscriptionsAbandonnees;
 exports.changerEmailInscription = inscriptionFunctions.changerEmailInscription;
+exports.inscriptionsNonValidees = inscriptionFunctions.inscriptionsNonValidees;
+exports.validerLienInscription = inscriptionFunctions.validerLienInscription;

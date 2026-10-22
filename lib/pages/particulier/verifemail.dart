@@ -377,18 +377,14 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
     }
   }
 
+  // « Renvoyer l'e-mail » : bloqué 1 min 30 après l'envoi, puis cliquable
+  // (avant : minuteur périodique qui re-bloquait le bouton chaque minute).
+  static const _delaiRenvoi = Duration(seconds: 90);
+
   void _startTimer() {
-    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_isResendEnabled) {
-          _isResendEnabled = false;
-          Future.delayed(Duration(minutes: 1), () {
-            setState(() {
-              _isResendEnabled = true;
-            });
-          });
-        }
-      });
+    _isResendEnabled = false;
+    _timer = Timer(_delaiRenvoi, () {
+      if (mounted) setState(() => _isResendEnabled = true);
     });
   }
 
@@ -401,16 +397,40 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
     if (!mounted || _reconnexionProposee) return;
     _reconnexionProposee = true;
     _pollTimer?.cancel();
-    await showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
-      title: const Text('Reconnectez-vous', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-      content: Text("Votre session a expiré. Reconnectez-vous avec $_currentEmail et votre mot de passe : "
-          "vos informations sont conservées et vous pourrez recevoir un nouveau lien de validation.",
-          style: const TextStyle(fontFamily: 'Galey')),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Me reconnecter'))],
+    final mdpCtrl = TextEditingController();
+    String? erreur;
+    final ok = await showDialog<bool>(context: context, barrierDismissible: false, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setD) => AlertDialog(
+        title: const Text('Confirmez votre mot de passe', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text("Pour continuer votre inscription avec $_currentEmail, confirmez simplement votre mot de passe. "
+              "Vos informations sont conservées.", style: const TextStyle(fontFamily: 'Galey')),
+          const SizedBox(height: 12),
+          TextField(controller: mdpCtrl, obscureText: true,
+              decoration: InputDecoration(labelText: 'Mot de passe', errorText: erreur, border: const OutlineInputBorder())),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              try {
+                await FirebaseAuth.instance.signInWithEmailAndPassword(email: _currentEmail, password: mdpCtrl.text);
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              } catch (_) {
+                setD(() => erreur = 'Mot de passe incorrect.');
+              }
+            },
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
     ));
-    if (!mounted) return;
-    Navigator.of(context).popUntil((r) => r.isFirst);
-    await FirebaseAuth.instance.signOut();
+    mdpCtrl.dispose();
+    _reconnexionProposee = false;
+    if (ok == true && mounted) {
+      _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (!_isVerified) _checkEmailVerified();
+      });
+    }
   }
 
   Future<void> _checkEmailVerified() async {
@@ -473,10 +493,8 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
       }
       setState(() {
         _isResendEnabled = false;
-        Future.delayed(Duration(minutes: 1), () {
-          setState(() {
-            _isResendEnabled = true;
-          });
+        Future.delayed(_delaiRenvoi, () {
+          if (mounted) setState(() => _isResendEnabled = true);
         });
       });
     }
@@ -525,7 +543,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
         _savingEmail = false;
         _isResendEnabled = false;
       });
-      Future.delayed(const Duration(minutes: 1), () {
+      Future.delayed(_delaiRenvoi, () {
         if (mounted) setState(() => _isResendEnabled = true);
       });
     } on FirebaseAuthException catch (e) {

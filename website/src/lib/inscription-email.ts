@@ -1,4 +1,4 @@
-import { signInWithCustomToken } from 'firebase/auth';
+import { sendEmailVerification, signInWithCustomToken, type User } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 // Inscription : adresse prise par une inscription ABANDONNÉE (compte jamais
 // validé) → la Cloud Function libererEmailInscription la supprime pour que la
@@ -38,4 +38,14 @@ export async function changerEmailInscription(jeton: string, email: string): Pro
   } catch {
     return 'Pas de connexion. Réessayez.';
   }
+}
+
+/** E-mail de validation de l'inscription, envoyé par le serveur (lien
+ *  PetsMatch valable 10 minutes). Envoi direct Firebase en secours. */
+export async function envoyerEmailValidation(u: User): Promise<boolean> {
+  try {
+    const err = await changerEmailInscription(await u.getIdToken(), u.email ?? '');
+    if (!err) return true;
+  } catch { /* secours ci-dessous */ }
+  try { await sendEmailVerification(u); return true; } catch { return false; }
 }
