@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/main.dart' show getApiKey;
 import 'package:flutter/material.dart';
 import 'package:google_maps_webservice/places.dart';
@@ -810,6 +811,7 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
           .select('id, nom, espece, race, photo_url')
           .eq('uid_eleveur', uid)
           .eq('is_association', true)
+          .eq('profile_id', User_Info.activeProfileId)
           .inFilter('statut', ['disponible', 'en_soin'])
           .isFilter('fa_id', null)
           .order('nom');

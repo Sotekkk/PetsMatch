@@ -36,7 +36,7 @@ function ChenilOuFaStep({ onNext, onSkip }: { onNext: () => void; onSkip: () => 
   async function chargerAnimaux() {
     if (!user) return [];
     const { data } = await supabase.from('animaux').select('id, nom, espece, statut')
-      .eq('uid_eleveur', user.uid).eq('is_association', true)
+      .eq('uid_eleveur', user.uid).eq('is_association', true).eq('profile_id', activeProfileId)
       .is('enclos_id', null).is('fa_id', null).order('nom', { ascending: true });
     return ((data ?? []) as (AnimalAPlacer & { statut: string | null })[]).filter(a => !SORTIES.includes(a.statut ?? ''));
   }

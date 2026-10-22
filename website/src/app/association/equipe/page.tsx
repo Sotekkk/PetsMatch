@@ -715,7 +715,7 @@ function AssignTaskModal({ uid, assigneeUid, onClose }: {
   // La fenêtre revérifie l'animal à l'enregistrement (adopté entre-temps).
   const chargerAnimauxEligibles = useCallback(async (): Promise<AnimalOption[]> => {
     const { data: ownedData } = await supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere, statut')
-      .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
+      .eq('uid_eleveur', uid).eq('is_association', true).eq('profile_id', activeProfileId).order('nom');
     const owned = ((ownedData ?? []) as (AnimalOption & { statut?: string | null })[]).filter(a => !estHorsPriseEnCharge(a));
     const ownedIds = new Set(owned.map(a => a.id));
 

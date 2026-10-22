@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -75,6 +76,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
             .select('id, nom, espece, photo_url, statut, date_entree, date_sortie, enclos_id, fa_id')
             .eq('uid_eleveur', uid)
             .eq('is_association', true)
+            .eq('profile_id', User_Info.activeProfileId)
             .order('nom'),
       ]);
 

@@ -333,12 +333,12 @@ export default function ChenilWebPage() {
     const [{ data: enc }, { data: ani }] = await Promise.all([
       enclosQuery,
       supabase.from('animaux').select('id, nom, espece, photo_url, statut, enclos_id, fa_id, date_entree, date_sortie')
-        .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
+        .eq('uid_eleveur', user.uid).eq('is_association', true).eq('profile_id', activeProfileId).order('nom'),
     ]);
     setEnclos((enc ?? []) as Enclos[]);
     setAnimaux((ani ?? []) as Animal[]);
     setLoading(false);
-  }, [user]);
+  }, [user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 

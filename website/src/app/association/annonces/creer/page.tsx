@@ -64,10 +64,11 @@ function CreerAnnonceAssoPageInner() {
       .select('id, nom, espece, espece_autre, race, sexe, statut, photo_url, date_naissance, age_estime')
       .eq('uid_eleveur', user.uid)
       .eq('is_association', true)
+      .eq('profile_id', activeProfileId)
       .in('statut', ['disponible', 'en_soin'])
       .order('nom')
       .then(({ data }) => setMesAnimaux(data ?? []));
-  }, [user]);
+  }, [user, activeProfileId]);
 
   // Charger l'annonce existante pour édition
   useEffect(() => {

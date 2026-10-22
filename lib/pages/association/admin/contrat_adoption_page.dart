@@ -54,6 +54,7 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
           .select('id, nom, espece, race, identification, date_naissance, photo_url, statut')
           .eq('uid_eleveur', uid)
           .eq('is_association', true)
+          .eq('profile_id', User_Info.activeProfileId)
           .not('statut', 'in', '(sorti,decede,adopte)')
           .order('nom'),
       _supa.from('documents_animaux')

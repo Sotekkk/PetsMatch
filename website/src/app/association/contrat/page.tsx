@@ -120,7 +120,7 @@ export default function ContratsAdoptionPage() {
       : supabase.from('user_profiles_complet').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('uid', user.uid).eq('is_main', true).maybeSingle();
     const [docsRes, aniRes, profRes, userRes] = await Promise.all([
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).eq('type', 'contrat_adoption').order('created_at', { ascending: false }),
-      supabase.from('animaux').select('id, nom, espece, race, sexe, identification, date_naissance, couleur, couleur_yeux, sterilise').eq('uid_eleveur', user.uid).eq('is_association', true).not('statut', 'in', '(sorti,decede,adopte)').order('nom'),
+      supabase.from('animaux').select('id, nom, espece, race, sexe, identification, date_naissance, couleur, couleur_yeux, sterilise').eq('uid_eleveur', user.uid).eq('is_association', true).eq('profile_id', profileId ?? '').not('statut', 'in', '(sorti,decede,adopte)').order('nom'),
       profQuery,
       supabase.from('users_complet').select('email').eq('uid', user.uid).maybeSingle(),
     ]);

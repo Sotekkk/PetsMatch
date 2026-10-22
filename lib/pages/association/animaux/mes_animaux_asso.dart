@@ -76,7 +76,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
       const cols = 'id,nom,espece,race,sexe,statut,fa_id,date_naissance,age_estime,photo_url,date_entree,date_sortie,uid_eleveur,identification';
       final owned = List<Map<String, dynamic>>.from(
         await _supa.from('animaux').select(cols)
-            .eq('uid_eleveur', uid).eq('is_association', true).order('nom') as List,
+            .eq('uid_eleveur', uid).eq('is_association', true).eq('profile_id', User_Info.activeProfileId).order('nom') as List,
       );
 
       // Cessions reçues : un même uid Firebase peut porter plusieurs profils

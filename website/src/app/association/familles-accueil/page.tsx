@@ -202,6 +202,7 @@ export default function FamillesAccueilWebPage() {
       .select('id, nom, espece, race, photo_url')
       .eq('uid_eleveur', user!.uid)
       .eq('is_association', true)
+      .eq('profile_id', profileId ?? '')
       .in('statut', ['disponible', 'en_soin'])
       .is('fa_id', null)
       .order('nom');

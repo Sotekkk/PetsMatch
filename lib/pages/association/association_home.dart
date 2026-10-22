@@ -70,6 +70,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         .select('statut, fa_id')
         .eq('uid_eleveur', uid)
         .eq('is_association', true)
+        .eq('profile_id', User_Info.activeProfileId)
         .catchError((_) => <dynamic>[]);
 
     final recentRes = await _supa
@@ -77,6 +78,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         .select('id, nom, espece, photo_url, statut')
         .eq('uid_eleveur', uid)
         .eq('is_association', true)
+        .eq('profile_id', User_Info.activeProfileId)
         .order('created_at', ascending: false)
         .limit(6)
         .catchError((_) => <dynamic>[]);
@@ -99,6 +101,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
         .select('id, nom, espece, race, photo_url, date_naissance')
         .eq('uid_eleveur', uid)
         .eq('is_association', true)
+        .eq('profile_id', User_Info.activeProfileId)
         .eq('statut', 'disponible')
         .order('created_at', ascending: false)
         .limit(10)

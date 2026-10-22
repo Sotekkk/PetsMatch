@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -16,7 +17,7 @@ Future<List<Map<String, dynamic>>> _animauxAPlacer() async {
   if (uid == null) return [];
   final rows = await Supabase.instance.client.from('animaux')
       .select('id, nom, espece, statut, enclos_id, fa_id')
-      .eq('uid_eleveur', uid).eq('is_association', true)
+      .eq('uid_eleveur', uid).eq('is_association', true).eq('profile_id', User_Info.activeProfileId)
       .isFilter('enclos_id', null).isFilter('fa_id', null)
       .order('nom', ascending: true);
   return List<Map<String, dynamic>>.from(rows as List)

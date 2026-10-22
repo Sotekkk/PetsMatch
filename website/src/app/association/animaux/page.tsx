@@ -76,7 +76,7 @@ function AnimauxAssoPageInner() {
     async function load() {
       const uid = user!.uid;
       const { data: ownedData } = await supabase.from('animaux').select(cols)
-        .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
+        .eq('uid_eleveur', uid).eq('is_association', true).eq('profile_id', activeProfileId).order('nom');
       const ownedList = (ownedData ?? []) as Animal[];
       const ownedIds = new Set(ownedList.map(a => a.id));
 

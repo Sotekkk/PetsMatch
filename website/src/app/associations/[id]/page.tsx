@@ -78,7 +78,8 @@ export default function AssociationProfilePage() {
       Promise.all([
         supabase.from('users_complet').select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone_number').eq('uid', firebaseUid).maybeSingle(),
         supabase.from('annonces').select('id, titre, espece, race, photos, ville_eleveur').eq('uid_eleveur', firebaseUid).eq('profil_source', 'association').eq('statut', 'disponible').order('created_at', { ascending: false }),
-        supabase.from('animaux').select('id, nom, espece, race, statut, photo_url').eq('uid_eleveur', firebaseUid).eq('is_association', true).eq('statut', 'disponible').order('nom'),
+        supabase.from('animaux').select('id, nom, espece, race, statut, photo_url').eq('uid_eleveur', firebaseUid).eq('is_association', true).eq('statut', 'disponible')
+          .eq('profile_id', sp?.id ?? '').order('nom'),
       ]).then(([{ data: userRow }, { data: ann }, { data: anim }]) => {
         const nom = (sp?.nom?.trim() || sp?.profile_label?.trim())
           ?? (userRow as { name_elevage?: string } | null)?.name_elevage ?? 'Association';

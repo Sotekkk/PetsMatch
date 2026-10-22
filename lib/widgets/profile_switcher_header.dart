@@ -255,7 +255,7 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
             builder: (ctx) => AlertDialog(
               title: const Text('Supprimer ce profil ?',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              content: const Text('Cette action est irréversible.',
+              content: const Text('Ses animaux, tâches, rappels et notifications seront supprimés avec lui. Cette action est irréversible.',
                   style: TextStyle(fontFamily: 'Galey')),
               actions: [
                 TextButton(
