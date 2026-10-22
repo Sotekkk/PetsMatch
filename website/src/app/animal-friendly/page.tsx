@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
+import { ESPECES_LIEUX } from '@/lib/especes-lieux';
 
 const PetFriendlyPlacesMap = dynamic(() => import('@/components/PetFriendlyPlacesMap'), {
   ssr: false,
@@ -41,12 +42,7 @@ const CATEGORIES: { value: string; label: string; icon: string }[] = [
   { value: 'restauration', label: 'Cafés & Restos', icon: '🍽️' },
 ];
 
-const ESPECES: { value: string; label: string }[] = [
-  { value: 'chien', label: 'Chien' },
-  { value: 'chat', label: 'Chat' },
-  { value: 'cheval', label: 'Cheval' },
-  { value: 'lapin', label: 'Lapin' },
-];
+const ESPECES = ESPECES_LIEUX;
 
 const DAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 

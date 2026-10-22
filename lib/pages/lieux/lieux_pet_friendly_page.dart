@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/liste_especes_cocher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -313,7 +314,7 @@ class _Filters extends StatelessWidget {
   final ValueChanged<String> onCategorie;
   final ValueChanged<Set<String>> onEspeces;
 
-  static const _listeEspeces = [('chien', 'Chien'), ('chat', 'Chat'), ('cheval', 'Cheval'), ('lapin', 'Lapin')];
+  static const _listeEspeces = kEspecesLieux;
 
   const _Filters({
     required this.categorie,
@@ -327,8 +328,9 @@ class _Filters extends StatelessWidget {
     final choix = {...especes};
     final ok = await showModalBottomSheet<bool>(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Align(alignment: Alignment.centerLeft,
@@ -358,7 +360,7 @@ class _Filters extends StatelessWidget {
               child: const Text('Appliquer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             )),
           ),
-        ]),
+        ])),
       )),
     );
     if (ok == true) onEspeces(choix);

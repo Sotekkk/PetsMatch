@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/liste_especes_cocher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_webservice/places.dart';
 import 'package:image_picker/image_picker.dart';
@@ -605,31 +606,13 @@ class _InscriptionLieuPageState extends State<InscriptionLieuPage> {
   // ─── Étape 3 — Détails & Contact ─────────────────────────────────────────
 
   Widget _buildStep3() {
-    const especes = [
-      ('chien', '🐶 Chien'), ('chat', '🐱 Chat'), ('cheval', '🐴 Cheval'),
-      ('lapin', '🐰 Lapin'), ('oiseau', '🦜 Oiseau'), ('nac', '🐾 NAC'),
-    ];
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _SectionTitle('Espèces acceptées'),
-        Wrap(
-          spacing: 8, runSpacing: 8,
-          children: especes.map((e) {
-            final selected = _especesChoisies.contains(e.$1);
-            return FilterChip(
-              label: Text(e.$2, style: TextStyle(fontSize: 12,
-                  color: selected ? Colors.white : Colors.grey.shade700)),
-              selected: selected,
-              selectedColor: _teal,
-              backgroundColor: Colors.white,
-              checkmarkColor: Colors.white,
-              side: BorderSide(color: selected ? _teal : Colors.grey.shade300),
-              onSelected: (v) => setState(() {
-                if (v) _especesChoisies.add(e.$1); else _especesChoisies.remove(e.$1);
-              }),
-            );
-          }).toList(),
+        ListeEspecesACocher(
+          selection: _especesChoisies.toSet(),
+          onChanged: (v) => setState(() => _especesChoisies..clear()..addAll(v)),
         ),
         const SizedBox(height: 20),
         if (_categorie == 'hebergement') ...[

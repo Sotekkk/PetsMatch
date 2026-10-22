@@ -3,6 +3,7 @@ import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/liste_especes_cocher.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
@@ -975,26 +976,9 @@ class _EditLieuPageState extends State<_EditLieuPage>
 
         // Espèces
         _SectionTitle2('Espèces acceptées'),
-        Wrap(
-          spacing: 8, runSpacing: 8,
-          children: [
-            ('chien', '🐶 Chien'), ('chat', '🐱 Chat'), ('cheval', '🐴 Cheval'),
-            ('lapin', '🐰 Lapin'), ('oiseau', '🦜 Oiseau'), ('nac', '🐾 NAC'),
-          ].map((e) {
-            final sel = _especes.contains(e.$1);
-            return FilterChip(
-              label: Text(e.$2, style: TextStyle(fontSize: 12,
-                  color: sel ? Colors.white : Colors.grey.shade700)),
-              selected: sel,
-              selectedColor: _teal,
-              backgroundColor: Colors.white,
-              checkmarkColor: Colors.white,
-              side: BorderSide(color: sel ? _teal : Colors.grey.shade300),
-              onSelected: (v) => setState(() {
-                if (v) _especes.add(e.$1); else _especes.remove(e.$1);
-              }),
-            );
-          }).toList(),
+        ListeEspecesACocher(
+          selection: _especes.toSet(),
+          onChanged: (v) => setState(() => _especes..clear()..addAll(v)),
         ),
         const SizedBox(height: 20),
 

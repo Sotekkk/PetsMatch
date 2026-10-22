@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { ESPECES_LIEUX } from '@/lib/especes-lieux';
 import { useAuth } from '@/lib/auth-context';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -251,7 +252,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
             <div className="flex flex-wrap gap-2">
               {especes.map(e => (
                 <span key={e} className="text-xs font-medium px-3 py-1.5 rounded-full bg-[#E8F5E9] text-[#2E7D32]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                  {ESPECE_LABEL[e.toLowerCase()] ?? e}
+                  {ESPECES_LIEUX.find(x => x.value === e.toLowerCase())?.label ?? ESPECE_LABEL[e.toLowerCase()] ?? e}
                 </span>
               ))}
             </div>

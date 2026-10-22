@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/liste_especes_cocher.dart' show kEspecesLieux;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -710,12 +711,9 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                     Wrap(
                       spacing: 8, runSpacing: 6,
                       children: especes.map((e) {
-                        const labels = {
-                          'chien': 'Chien', 'chat': 'Chat', 'cheval': 'Cheval',
-                          'lapin': 'Lapin', 'oiseau': 'Oiseau', 'nac': 'NAC',
-                        };
+                        final libelle = kEspecesLieux.where((x) => x.$1 == e.toLowerCase());
                         return Chip(
-                          label: Text(labels[e.toLowerCase()] ?? e,
+                          label: Text(libelle.isEmpty ? e : libelle.first.$2,
                               style: const TextStyle(fontSize: 12)),
                           backgroundColor: const Color(0xFFE8F5E9),
                           side: BorderSide.none,
