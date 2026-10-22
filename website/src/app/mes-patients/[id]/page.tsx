@@ -165,8 +165,8 @@ const EDUC_TYPES_SEANCE: Record<string, string> = {
 };
 
 const ESPECE_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
-  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷', ane: '🐴',
+  chien: '', chat: '', cheval: '', lapin: '',
+  oiseau: '', nac: '', ovin: '', caprin: '', porcin: '', ane: '',
 };
 const PENSION_TYPES = new Set(['pension', 'garde', 'toilettage', 'photographe']);
 const TEAL = '#0C5C6C';
@@ -1753,7 +1753,7 @@ function PatientDetailPageInner() {
           <div className="w-16 h-16 rounded-2xl overflow-hidden bg-white/20 flex-shrink-0 flex items-center justify-center">
             {animal.photo_url
               ? <Image src={animal.photo_url} alt="" width={64} height={64} className="object-cover w-full h-full" />
-              : <span className="text-3xl">{ESPECE_EMOJI[animal.espece?.toLowerCase()] ?? '🐾'}</span>
+              : <span className="text-3xl">{ESPECE_EMOJI[animal.espece?.toLowerCase()] ?? ''}</span>
             }
           </div>
           <div className="min-w-0">

@@ -78,7 +78,7 @@ interface HealthRecord { id: string; [key: string]: unknown; }
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
 const ESPECES = ['chien','chat','lapin','oiseau','nac','cheval','ovin','caprin','porcin','autre'];
-const ESPECE_EMOJI: Record<string,string> = { chien:'🐕', chat:'🐈', cheval:'🐴', lapin:'🐰', oiseau:'🦜', nac:'🦎', ovin:'🐑', caprin:'🐐', porcin:'🐷', autre:'🐾' };
+const ESPECE_EMOJI: Record<string,string> = { chien:'', chat:'', cheval:'', lapin:'', oiseau:'', nac:'', ovin:'', caprin:'', porcin:'', autre:'' };
 const TYPES_POIL = ['Court','Mi-long','Long','Frisé','Fil de soie','Ras'];
 const PROV_QUALITES = ['naissance','eleveur','particulier','refuge','importation','autre'];
 const DEST_QUALITES = ['eleveur','particulier','refuge','autre'];
@@ -4114,7 +4114,7 @@ function AnimalFichePageInner() {
               {animal.photo_url ? (
                 <img src={animal.photo_url} alt="" className="w-full h-full object-cover"/>
               ) : (
-                <span className="text-5xl">{ESPECE_EMOJI[animal.espece ?? ''] ?? '🐾'}</span>
+                <span className="text-5xl">{ESPECE_EMOJI[animal.espece ?? ''] ?? ''}</span>
               )}
               {editing && (
                 <>

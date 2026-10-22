@@ -97,8 +97,8 @@ function age(iso?: string | null) {
 }
 
 const ESP_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', lapin: '🐇', oiseau: '🦜',
-  cheval: '🐴', nac: '🐹', ovin: '🐑', caprin: '🐐', porcin: '🐷',
+  chien: '', chat: '', lapin: '', oiseau: '',
+  cheval: '', nac: '', ovin: '', caprin: '', porcin: '',
 };
 
 const RATION_LABEL: Record<string, string> = {
@@ -266,7 +266,7 @@ export default function AnimalFichePensionWebPage() {
 
   const nom    = animal?.nom ?? 'Animal';
   const espece = animal?.espece ?? '';
-  const emoji  = ESP_EMOJI[espece] ?? '🐾';
+  const emoji  = ESP_EMOJI[espece] ?? '';
 
   return (
     <div style={{ minHeight: '100vh', background: '#F8F8F6', paddingBottom: 60 }}>

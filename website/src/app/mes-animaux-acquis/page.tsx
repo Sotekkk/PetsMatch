@@ -8,8 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
 const ESPECE_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
-  nac: '🦎', oiseau: '🦜', ovin: '🐑', caprin: '🐐', porcin: '🐷',
+  chien: '', chat: '', cheval: '', lapin: '',
+  nac: '', oiseau: '', ovin: '', caprin: '', porcin: '',
 };
 
 interface Animal {
@@ -111,7 +111,7 @@ export default function MesAnimauxAcquisPage() {
           {animaux.map(a => {
             const dt = a.date_sortie ? new Date(a.date_sortie) : null;
             const dateStr = dt ? dt.toLocaleDateString('fr-FR') : null;
-            const emoji = ESPECE_EMOJI[a.espece ?? ''] ?? '🐾';
+            const emoji = ESPECE_EMOJI[a.espece ?? ''] ?? '';
 
             return (
               <Link key={a.id} href={`/mes-animaux/${a.id}?readOnly=1`}

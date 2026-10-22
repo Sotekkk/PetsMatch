@@ -34,8 +34,8 @@ type State =
   | { status: 'ok'; animal: Animal };
 
 const ESPECE_EMOJI: Record<string, string> = {
-  chien: '🐶', chat: '🐱', equide: '🐴', lapin: '🐰',
-  oiseau: '🦜', reptile: '🦎', autre: '🐾',
+  chien: '', chat: '', equide: '', lapin: '',
+  oiseau: '', reptile: '', autre: '',
 };
 
 export default function PartageAnimalPage() {
@@ -99,7 +99,7 @@ export default function PartageAnimalPage() {
   }
 
   const { animal } = state;
-  const emoji = ESPECE_EMOJI[animal.espece ?? 'autre'] ?? '🐾';
+  const emoji = ESPECE_EMOJI[animal.espece ?? 'autre'] ?? '';
 
   const age = animal.date_naissance
     ? (() => {

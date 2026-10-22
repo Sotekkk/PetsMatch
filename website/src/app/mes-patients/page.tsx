@@ -41,8 +41,8 @@ interface Grant {
 }
 
 const ESPECE_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
-  oiseau: '🦜', nac: '🦎', ovin: '🐑', caprin: '🐐', porcin: '🐷',
+  chien: '', chat: '', cheval: '', lapin: '',
+  oiseau: '', nac: '', ovin: '', caprin: '', porcin: '',
 };
 
 function age(dateNaissance: string | null): string {
@@ -352,7 +352,7 @@ export default function MesPatientsPage() {
                     <div className="w-14 h-14 rounded-2xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
                       {a.photo_url
                         ? <Image src={a.photo_url} alt="" width={56} height={56} className="object-cover w-full h-full" />
-                        : <span className="text-2xl">{ESPECE_EMOJI[a.espece?.toLowerCase()] ?? '🐾'}</span>
+                        : <span className="text-2xl">{ESPECE_EMOJI[a.espece?.toLowerCase()] ?? ''}</span>
                       }
                     </div>
                     <div className="flex-1 min-w-0">
@@ -450,7 +450,7 @@ export default function MesPatientsPage() {
                   <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
                     {chipResult.photo_url
                       ? <Image src={chipResult.photo_url} alt="" width={48} height={48} className="object-cover w-full h-full" />
-                      : <span className="text-xl">{ESPECE_EMOJI[chipResult.espece?.toLowerCase()] ?? '🐾'}</span>}
+                      : <span className="text-xl">{ESPECE_EMOJI[chipResult.espece?.toLowerCase()] ?? ''}</span>}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm text-[#1F2A2E]">{chipResult.nom}</p>

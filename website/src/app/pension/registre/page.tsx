@@ -28,15 +28,15 @@ function normalizeChip(s?: string | null) {
 }
 
 const ESP_EMOJI: Record<string, string> = {
-  chien: '🐕', chat: '🐈', lapin: '🐇', oiseau: '🦜',
-  cheval: '🐴', nac: '🐹', ovin: '🐑', caprin: '🐐', porcin: '🐷',
+  chien: '', chat: '', lapin: '', oiseau: '',
+  cheval: '', nac: '', ovin: '', caprin: '', porcin: '',
 };
 const ESP_LABEL: Record<string, string> = {
   chien: 'Chien', chat: 'Chat', lapin: 'Lapin', oiseau: 'Oiseau',
   cheval: 'Cheval', nac: 'NAC', ovin: 'Ovin', caprin: 'Caprin', porcin: 'Porc',
 };
 
-function espEmoji(e?: string | null) { return ESP_EMOJI[e ?? ''] ?? '🐾'; }
+function espEmoji(e?: string | null) { return ESP_EMOJI[e ?? ''] ?? ''; }
 function espLabel(e?: string | null) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
 
 interface PensionFacture {
@@ -281,7 +281,7 @@ export default function RegistrePensionPage() {
                     border: '1px solid rgba(255,255,255,0.3)',
                     color: filterEspece === e ? TEAL : 'white',
                     fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  {e ? `${espEmoji(e)} ${espLabel(e)}` : 'Toutes les espèces'}
+                  {e ? espLabel(e) : 'Toutes les espèces'}
                 </button>
               ))}
             </div>
