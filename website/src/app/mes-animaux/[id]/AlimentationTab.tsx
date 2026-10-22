@@ -1,4 +1,5 @@
 'use client';
+import { repartir100 } from '@/lib/repartition';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -1110,7 +1111,9 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
                   <span className="font-bold" style={{ color: c }}>{val}%</span>
                 </div>
                 <input type="range" min={0} max={100} value={val}
-                  onChange={ev => setAlim(p => ({ ...p, [k]: parseInt(ev.target.value) }))}
+                  onChange={ev => setAlim(p => ({ ...p, ...repartir100({
+                    barf_muscle: p.barf_muscle ?? 0, barf_os: p.barf_os ?? 0, barf_abats: p.barf_abats ?? 0, barf_legumes: p.barf_legumes ?? 0,
+                  }, k, parseInt(ev.target.value)) }))}
                   className="w-full accent-[#0C5C6C] h-1" />
               </div>
             );

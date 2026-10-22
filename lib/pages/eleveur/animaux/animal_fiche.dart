@@ -17,6 +17,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/utils/repartition.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11890,10 +11891,10 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         ] else if (_typeValide == 'barf') ...[
           const _AlimSection('Composition BARF (%)'),
           const SizedBox(height: 10),
-          _BarfSlider(label:'Muscles / viande maigre', emoji:'🥩', value:_pctMuscles, color:const Color(0xFF0C5C6C), onChanged:(v)=>setState(()=>_pctMuscles=v)),
-          _BarfSlider(label:'Abats (foie, rein…)',     emoji:'🫀', value:_pctAbats,   color:const Color(0xFF8D6E63), onChanged:(v)=>setState(()=>_pctAbats=v)),
-          _BarfSlider(label:'Os charnus',               emoji:'🦴', value:_pctOs,      color:const Color(0xFFBCAAA4), onChanged:(v)=>setState(()=>_pctOs=v)),
-          _BarfSlider(label:'Légumes & fruits',         emoji:'🥦', value:_pctLegumes, color:const Color(0xFF6E9E57), onChanged:(v)=>setState(()=>_pctLegumes=v)),
+          _BarfSlider(label:'Muscles / viande maigre', emoji:'🥩', value:_pctMuscles, color:const Color(0xFF0C5C6C), onChanged: (v) => setState(() { final r = repartir100({'m': _pctMuscles, 'a': _pctAbats, 'o': _pctOs, 'l': _pctLegumes}, 'm', v); _pctMuscles = r['m']!; _pctAbats = r['a']!; _pctOs = r['o']!; _pctLegumes = r['l']!; })),
+          _BarfSlider(label:'Abats (foie, rein…)',     emoji:'🫀', value:_pctAbats,   color:const Color(0xFF8D6E63), onChanged: (v) => setState(() { final r = repartir100({'m': _pctMuscles, 'a': _pctAbats, 'o': _pctOs, 'l': _pctLegumes}, 'a', v); _pctMuscles = r['m']!; _pctAbats = r['a']!; _pctOs = r['o']!; _pctLegumes = r['l']!; })),
+          _BarfSlider(label:'Os charnus',               emoji:'🦴', value:_pctOs,      color:const Color(0xFFBCAAA4), onChanged: (v) => setState(() { final r = repartir100({'m': _pctMuscles, 'a': _pctAbats, 'o': _pctOs, 'l': _pctLegumes}, 'o', v); _pctMuscles = r['m']!; _pctAbats = r['a']!; _pctOs = r['o']!; _pctLegumes = r['l']!; })),
+          _BarfSlider(label:'Légumes & fruits',         emoji:'🥦', value:_pctLegumes, color:const Color(0xFF6E9E57), onChanged: (v) => setState(() { final r = repartir100({'m': _pctMuscles, 'a': _pctAbats, 'o': _pctOs, 'l': _pctLegumes}, 'l', v); _pctMuscles = r['m']!; _pctAbats = r['a']!; _pctOs = r['o']!; _pctLegumes = r['l']!; })),
           const SizedBox(height: 4),
           Row(mainAxisAlignment:MainAxisAlignment.end, children:[
             Text('Total : ', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
@@ -12059,9 +12060,9 @@ class _AlimentationTabState extends State<_AlimentationTab> {
           _AlimSection(widget.s._espece == 'lapin' ? 'Composition (foin + granulés)' : 'Composition de la ration'),
           const SizedBox(height: 10),
           if (['cheval','ovin','caprin'].contains(widget.s._espece)) ...[
-            _BarfSlider(label:'Foin / Fourrage',   emoji:'🌿', value:_pctFoinMix,     color:const Color(0xFF6E9E57), onChanged:(v)=>setState(()=>_pctFoinMix=v)),
-            _BarfSlider(label:'Granulés / Aliment', emoji:'🌾', value:_pctGranulesMix, color:const Color(0xFFB8860B), onChanged:(v)=>setState(()=>_pctGranulesMix=v)),
-            _BarfSlider(label:'Compléments',        emoji:'💊', value:_pctCompMix,     color:const Color(0xFF0C5C6C), onChanged:(v)=>setState(()=>_pctCompMix=v)),
+            _BarfSlider(label:'Foin / Fourrage',   emoji:'🌿', value:_pctFoinMix,     color:const Color(0xFF6E9E57), onChanged: (v) => setState(() { final r = repartir100({'f': _pctFoinMix, 'g': _pctGranulesMix, 'c': _pctCompMix}, 'f', v); _pctFoinMix = r['f']!; _pctGranulesMix = r['g']!; _pctCompMix = r['c']!; })),
+            _BarfSlider(label:'Granulés / Aliment', emoji:'🌾', value:_pctGranulesMix, color:const Color(0xFFB8860B), onChanged: (v) => setState(() { final r = repartir100({'f': _pctFoinMix, 'g': _pctGranulesMix, 'c': _pctCompMix}, 'g', v); _pctFoinMix = r['f']!; _pctGranulesMix = r['g']!; _pctCompMix = r['c']!; })),
+            _BarfSlider(label:'Compléments',        emoji:'💊', value:_pctCompMix,     color:const Color(0xFF0C5C6C), onChanged: (v) => setState(() { final r = repartir100({'f': _pctFoinMix, 'g': _pctGranulesMix, 'c': _pctCompMix}, 'c', v); _pctFoinMix = r['f']!; _pctGranulesMix = r['g']!; _pctCompMix = r['c']!; })),
             const SizedBox(height: 4),
             Row(mainAxisAlignment:MainAxisAlignment.end, children:[
               Text('Total : ', style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
