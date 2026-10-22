@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 
 import 'lieu_detail_page.dart';
+import 'recommander_lieu_page.dart';
 import 'lieux_feed_page.dart';
 
 const _catHue = {
@@ -236,6 +237,26 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
                 ),
               ),
             ]),
+          ),
+          // ── Recommander un lieu (contribution communautaire, modérée) ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final ok = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const RecommanderLieuPage()));
+                  if (ok == true) _load(reset: true);
+                },
+                icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                label: const Text('Recommander un lieu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white54),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+              ),
+            ),
           ),
           // ── Filtres ──
           _Filters(

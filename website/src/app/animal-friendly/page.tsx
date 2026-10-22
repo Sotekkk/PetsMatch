@@ -172,13 +172,18 @@ export default function AnimalFriendlyPage() {
       {/* Hero */}
       <div className="bg-[#0C5C6C] text-white px-4 py-8">
         <div className="max-w-3xl mx-auto text-center">
-          <p className="text-4xl mb-2">🐾</p>
           <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
             Lieux Pet-Friendly
           </h1>
           <p className="text-white/70 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Hébergements, cafés & restaurants qui accueillent vos animaux
+            Hébergements, cafés, restaurants, commerces et activités qui accueillent vos animaux
           </p>
+          <Link href="/animal-friendly/recommander"
+            className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-xl border border-white/50 text-white text-sm font-semibold hover:bg-white/10"
+            style={{ fontFamily: 'Galey, sans-serif' }}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" d="M12 5v14M5 12h14" /></svg>
+            Recommander un lieu
+          </Link>
         </div>
       </div>
 
