@@ -1252,7 +1252,7 @@ class _AnnonceMiniCard extends StatelessWidget {
                 Text(prix, style: const TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF0C5C6C))),
               if (ville.isNotEmpty)
-                Text('ðŸ“ $ville',
+                Text(ville,
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
                         color: Color(0xFF9CA3AF)),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
