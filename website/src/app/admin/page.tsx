@@ -59,8 +59,8 @@ interface Stats {
 
 interface Signalement {
   id: string; reporter_uid: string;
-  target_type: 'user' | 'annonce' | 'profil_pro' | 'balade_ludique';
-  target_id: string; raison: string; description?: string;
+  target_type: 'user' | 'annonce' | 'profil_pro' | 'balade_ludique' | 'groupe_post';
+  target_id: string; raison: string; description?: string; groupe_id?: string | null;
   statut: 'en_attente' | 'traite' | 'rejete';
   admin_note?: string; created_at: string; handled_at?: string; handled_by?: string;
 }
@@ -146,7 +146,56 @@ const RAISON_LABELS: Record<string, string> = {
 
 const TARGET_LABELS: Record<string, string> = {
   user: 'Utilisateur', annonce: 'Annonce', profil_pro: 'Profil pro', balade_ludique: 'Balade ludique',
+  groupe_post: 'Publication de groupe',
 };
+
+/** Contexte d'un signalement (api/admin/moderation?type=signalements_contexte). */
+interface SigContexte {
+  reporter: { uid: string; nom: string };
+  cible: null | {
+    nom?: string; extrait?: string; image_url?: string | null;
+    auteur?: { uid: string; nom: string }; groupe_id?: string; groupe_nom?: string;
+  };
+}
+
+/** Liens : publication / profil signalé + profil de la personne qui signale. */
+function SigLiens({ sig, ctx, detail }: { sig: Signalement; ctx?: SigContexte; detail?: boolean }) {
+  const lien = 'text-xs text-[#0C5C6C] hover:underline font-semibold';
+  const groupeId = ctx?.cible?.groupe_id ?? sig.groupe_id;
+  return (
+    <div className={detail ? 'space-y-2' : 'mt-1.5 space-y-1'} onClick={e => e.stopPropagation()}>
+      {sig.target_type === 'groupe_post' && ctx?.cible && (
+        <div className="bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+          <p className="text-[11px] text-gray-400">
+            {ctx.cible.groupe_nom ? `Groupe « ${ctx.cible.groupe_nom} »` : 'Groupe'}
+            {ctx.cible.auteur && <> · publié par <Link href={`/profil/${ctx.cible.auteur.uid}`} target="_blank" className="text-[#0C5C6C] hover:underline">{ctx.cible.auteur.nom}</Link></>}
+          </p>
+          {ctx.cible.extrait && <p className={`text-xs text-gray-700 mt-0.5 ${detail ? '' : 'line-clamp-2'}`}>{ctx.cible.extrait}</p>}
+          {detail && ctx.cible.image_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={ctx.cible.image_url} alt="" className="mt-2 max-h-48 rounded-lg object-contain" />
+          )}
+        </div>
+      )}
+      {sig.target_type === 'groupe_post' && !ctx?.cible && detail && (
+        <p className="text-xs text-gray-400">Publication supprimée ou introuvable.</p>
+      )}
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {sig.target_type === 'groupe_post' && groupeId && (
+          <Link href={`/communaute/groupes/${groupeId}#post-${sig.target_id}`} target="_blank" className={lien}>Voir la publication ↗</Link>
+        )}
+        {sig.target_type === 'user' && (
+          <Link href={`/profil/${sig.target_id}`} target="_blank" className={lien}>
+            Voir le profil signalé{ctx?.cible?.nom ? ` (${ctx.cible.nom})` : ''} ↗
+          </Link>
+        )}
+        <Link href={`/profil/${sig.reporter_uid}`} target="_blank" className={lien}>
+          Signalé par {ctx?.reporter.nom ?? 'la personne'} ↗
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
@@ -161,6 +210,7 @@ export default function AdminPage() {
 
   // Signalements
   const [signalements, setSignalements] = useState<Signalement[]>([]);
+  const [sigContexte, setSigContexte] = useState<Record<string, SigContexte>>({});
   const [sigFilter, setSigFilter] = useState<SigFilter>('en_attente');
   const [sigLoading, setSigLoading] = useState(false);
   const [selectedSig, setSelectedSig] = useState<Signalement | null>(null);
@@ -290,7 +340,14 @@ export default function AdminPage() {
         .from('signalements').select('*')
         .eq('statut', statut)
         .order('created_at', { ascending: statut !== 'en_attente' });
-      setSignalements((data ?? []) as Signalement[]);
+      const liste = (data ?? []) as Signalement[];
+      setSignalements(liste);
+      if (liste.length) {
+        try {
+          const r = await apiFetch(`/api/admin/moderation?type=signalements_contexte&ids=${liste.map(s => s.id).join(',')}`);
+          if (r.ok) setSigContexte(((await r.json()) as { items: Record<string, SigContexte> }).items ?? {});
+        } catch { /* liens de base quand même */ }
+      }
     } finally {
       setSigLoading(false);
     }
@@ -1550,6 +1607,7 @@ export default function AdminPage() {
                       {sig.description && (
                         <p className="text-xs text-gray-500 mt-1 line-clamp-2">{sig.description}</p>
                       )}
+                      <SigLiens sig={sig} ctx={sigContexte[sig.id]} />
                       <p className="text-xs text-gray-400 mt-1">
                         {new Date(sig.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
@@ -2804,7 +2862,7 @@ export default function AdminPage() {
             <div className="p-6 space-y-4">
               <InfoRow label="Raison" value={RAISON_LABELS[selectedSig.raison] ?? selectedSig.raison} />
               {selectedSig.description && <InfoRow label="Description" value={selectedSig.description} />}
-              <InfoRow label="Signalé par (uid)" value={selectedSig.reporter_uid} mono />
+              <SigLiens sig={selectedSig} ctx={sigContexte[selectedSig.id]} detail />
               <InfoRow label="Date" value={new Date(selectedSig.created_at).toLocaleString('fr-FR')} />
               {selectedSig.target_type === 'annonce' && (
                 <Link href={`/annonces/${selectedSig.target_id}`} target="_blank"

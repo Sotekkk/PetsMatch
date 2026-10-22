@@ -40,6 +40,47 @@ export async function GET(req: NextRequest) {
     if (err) return NextResponse.json({ error: err.message }, { status: 500 });
     return NextResponse.json({ enAttente: enAttente.data ?? [], publies: publies.data ?? [] });
   }
+  if (type === 'signalements_contexte') {
+    // Qui signale + ce qui est signalé (extrait), lu avec la clé service : un
+    // admin n'est pas forcément membre du groupe privé où est la publication.
+    const ids = (searchParams.get('ids') ?? '').split(',').filter(Boolean).slice(0, 200);
+    if (ids.length === 0) return NextResponse.json({ items: {} });
+    const { data: sigs } = await supabaseAdmin.from('signalements')
+      .select('id, reporter_uid, target_type, target_id, groupe_id').in('id', ids);
+    const liste = (sigs ?? []) as { id: string; reporter_uid: string; target_type: string; target_id: string; groupe_id: string | null }[];
+    const uids = new Set<string>();
+    liste.forEach(s => { if (s.reporter_uid) uids.add(s.reporter_uid); if (s.target_type === 'user') uids.add(s.target_id); });
+    const postIds = liste.filter(s => s.target_type === 'groupe_post').map(s => s.target_id);
+    const { data: posts } = postIds.length
+      ? await supabaseAdmin.from('groupe_posts').select('id, groupe_id, auteur_uid, auteur_profile_id, contenu, image_url').in('id', postIds)
+      : { data: [] };
+    const postsList = (posts ?? []) as { id: string; groupe_id: string; auteur_uid: string; auteur_profile_id: string | null; contenu: string | null; image_url: string | null }[];
+    postsList.forEach(p => uids.add(p.auteur_uid));
+    const groupeIds = [...new Set(postsList.map(p => p.groupe_id))];
+    const [{ data: profils }, { data: groupes }] = await Promise.all([
+      supabaseAdmin.from('user_profiles').select('id, uid, profile_type, nom, firstname, lastname, is_main').in('uid', [...uids]),
+      groupeIds.length ? supabaseAdmin.from('groupes').select('id, nom').in('id', groupeIds) : Promise.resolve({ data: [] }),
+    ]);
+    type P = { id: string; uid: string; profile_type: string; nom: string | null; firstname: string | null; lastname: string | null; is_main: boolean };
+    const pl = (profils ?? []) as P[];
+    const nomP = (p?: P) => p ? ((p.profile_type !== 'particulier' && p.nom?.trim()) || `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || p.nom || '') : '';
+    // Personne : profil particulier, sinon principal.
+    const nomUid = (uid: string) => nomP(pl.find(p => p.uid === uid && p.profile_type === 'particulier') ?? pl.find(p => p.uid === uid && p.is_main) ?? pl.find(p => p.uid === uid)) || uid;
+    const items: Record<string, unknown> = {};
+    for (const s of liste) {
+      const post = postsList.find(p => p.id === s.target_id);
+      items[s.id] = {
+        reporter: { uid: s.reporter_uid, nom: nomUid(s.reporter_uid) },
+        cible: s.target_type === 'groupe_post' && post ? {
+          extrait: (post.contenu ?? '').slice(0, 300), image_url: post.image_url,
+          auteur: { uid: post.auteur_uid, nom: nomP(pl.find(p => p.id === post.auteur_profile_id)) || nomUid(post.auteur_uid) },
+          groupe_id: post.groupe_id,
+          groupe_nom: ((groupes ?? []) as { id: string; nom: string }[]).find(g => g.id === post.groupe_id)?.nom ?? '',
+        } : s.target_type === 'user' ? { nom: nomUid(s.target_id) } : null,
+      };
+    }
+    return NextResponse.json({ items });
+  }
   return NextResponse.json({ error: 'type inconnu' }, { status: 400 });
 }
 
