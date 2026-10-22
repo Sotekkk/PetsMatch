@@ -865,28 +865,48 @@ export default function EleveurProfilEditPage() {
 
         {/* ── Espèces élevées / races ── */}
         <Card title="Espèces élevées">
-          <div className="flex flex-wrap gap-2 mb-4">
-            {ESPECES_CONFIG.map(sp => {
-              const active = especesElevees.some(e => e.espece === sp.value);
-              return (
-                <button key={sp.value} type="button" onClick={() => toggleEspece(sp.value)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                    active
-                      ? 'bg-[#6E9E57] text-white border-[#6E9E57]'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#6E9E57]'
-                  }`}>
-                  {sp.emoji} {sp.label}
-                </button>
-              );
-            })}
-          </div>
+          {/* Liste déroulante à cases à cocher (plusieurs espèces possibles). */}
+          <details className="group mb-4 border border-gray-200 rounded-xl bg-white">
+            <summary className="list-none cursor-pointer flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+              <span className={especesElevees.length ? 'text-[#1F2A2E]' : 'text-gray-400'}>
+                {especesElevees.length
+                  ? especesElevees.map(e => ESPECES_CONFIG.find(c => c.value === e.espece)?.label ?? e.espece).join(', ')
+                  : 'Choisir les espèces'}
+              </span>
+              <svg className="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </summary>
+            <div className="border-t border-gray-100 py-1 max-h-72 overflow-y-auto">
+              <label className="flex items-center gap-3 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-gray-50">
+                <input type="checkbox" className="w-4 h-4 accent-[#6E9E57]"
+                  checked={ESPECES_CONFIG.every(sp => especesElevees.some(e => e.espece === sp.value))}
+                  onChange={e => {
+                    const tout = e.target.checked;
+                    ESPECES_CONFIG.forEach(sp => {
+                      if (especesElevees.some(x => x.espece === sp.value) !== tout) toggleEspece(sp.value);
+                    });
+                  }} />
+                Tout cocher
+              </label>
+              <div className="border-t border-gray-100 my-1" />
+              {ESPECES_CONFIG.map(sp => (
+                <label key={sp.value} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                  <input type="checkbox" className="w-4 h-4 accent-[#6E9E57]"
+                    checked={especesElevees.some(e => e.espece === sp.value)}
+                    onChange={() => toggleEspece(sp.value)} />
+                  {sp.label}
+                </label>
+              ))}
+            </div>
+          </details>
           {especesElevees.map(entry => {
             const cfg = ESPECES_CONFIG.find(e => e.value === entry.espece);
             return (
               <div key={entry.espece} className="border border-gray-100 rounded-xl p-3 mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-semibold text-[#1F2A2E]">
-                    {cfg?.emoji} {cfg?.label}
+                    {cfg?.label ?? entry.espece}
                   </span>
                   <button type="button" onClick={() => openBreedPicker(entry.espece)}
                     className="flex items-center gap-1 text-xs text-[#6E9E57] hover:text-[#5A8A45] font-medium border border-[#6E9E57]/30 rounded-full px-2.5 py-1 hover:bg-[#EEF5EA]">

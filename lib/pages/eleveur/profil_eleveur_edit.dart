@@ -957,29 +957,53 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF1F2A2E))),
         const SizedBox(height: 12),
 
-        // Species chips
-        Wrap(spacing: 8, runSpacing: 8, children: speciesList.map((sp) {
-          final active = _hasEspece(sp.value);
-          return GestureDetector(
-            onTap: () => _toggleEspece(sp.value),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: active ? sp.color : Colors.transparent,
-                border: Border.all(color: active ? sp.color : Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                speciesIcon(sp.value, 13, active ? Colors.white : sp.color),
-                const SizedBox(width: 6),
-                Text(sp.label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    color: active ? Colors.white : Colors.black87,
-                    fontWeight: active ? FontWeight.w600 : FontWeight.normal)),
-              ]),
+        // Liste déroulante à cases à cocher (plusieurs espèces possibles).
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(12),
             ),
-          );
-        }).toList()),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+              childrenPadding: const EdgeInsets.only(bottom: 6),
+              title: Text(
+                _especesElevees.isEmpty
+                    ? 'Choisir les espèces'
+                    : _especesElevees.map((e) => speciesLabel(e['espece'] as String)).join(', '),
+                maxLines: 2, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                    color: _especesElevees.isEmpty ? Colors.grey.shade500 : const Color(0xFF1F2A2E)),
+              ),
+              children: [
+                CheckboxListTile(
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: const Color(0xFF6E9E57),
+                  value: speciesList.every((sp) => _hasEspece(sp.value)),
+                  onChanged: (v) {
+                    final tout = v == true;
+                    for (final sp in speciesList) {
+                      if (_hasEspece(sp.value) != tout) _toggleEspece(sp.value);
+                    }
+                  },
+                  title: const Text('Tout cocher',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+                const Divider(height: 1),
+                ...speciesList.map((sp) => CheckboxListTile(
+                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: const Color(0xFF6E9E57),
+                  value: _hasEspece(sp.value),
+                  onChanged: (_) => _toggleEspece(sp.value),
+                  title: Text(sp.label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                )),
+              ],
+            ),
+          ),
+        ),
 
         // Races per selected species
         ..._especesElevees.map((entry) {
