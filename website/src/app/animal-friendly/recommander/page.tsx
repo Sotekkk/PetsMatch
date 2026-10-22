@@ -59,6 +59,31 @@ export default function RecommanderLieuPage() {
   // Étape 4
   const [pourquoi, setPourquoi] = useState('');
   const [photos, setPhotos] = useState<File[]>([]);
+  // Fiche existante à compléter (?id=) : préremplie, mise à jour, renvoyée en validation.
+  const [existantId, setExistantId] = useState<string | null>(null);
+  const [photosExistantes, setPhotosExistantes] = useState<string[]>([]);
+
+  useEffect(() => {
+    const idEdit = new URLSearchParams(window.location.search).get('id');
+    if (!idEdit || !user) return;
+    supabase.from('petfriendly_places').select('*').eq('id', idEdit).eq('ajoute_par_uid', user.uid).maybeSingle()
+      .then(({ data }) => {
+        if (!data) return;
+        const e = data as Record<string, unknown>;
+        setExistantId(idEdit); setEtape(1);
+        setNom(String(e.nom ?? '')); setType(String(e.sous_categorie ?? ''));
+        const rue = String(e.adresse ?? ''), cp = String(e.code_postal ?? ''), ville = String(e.ville ?? '');
+        setAdresse([rue, cp, ville].filter(Boolean).join(' '));
+        if (e.lat != null && e.lng != null) setLieu({ rue, codePostal: cp, ville, lat: Number(e.lat), lng: Number(e.lng) });
+        setSite(String(e.site_web ?? '')); setTel(String(e.telephone ?? ''));
+        setEspeces((e.especes_acceptees as string[] | null) ?? []);
+        setInterieur((e.animaux_en_salle as boolean | null) ?? null); setTerrasse((e.terrasse as boolean | null) ?? null);
+        setTaille((e.restriction_taille as boolean | null) ?? null); setSupplement((e.supplement_animal as boolean | null) ?? null);
+        setNb(e.nb_animaux_max != null ? String(e.nb_animaux_max) : ''); setConditions(String(e.conditions_particulieres ?? ''));
+        setVisite(String(e.derniere_confirmation_le ?? '')); setPourquoi(String(e.recommandation ?? ''));
+        setPhotosExistantes((e.photos as string[] | null) ?? []); setConfirme(true);
+      });
+  }, [user]);
   const [confirme, setConfirme] = useState(false);
   // Doublons probables avant envoi
   const [proches, setProches] = useState<Trouve[]>([]);
@@ -130,9 +155,7 @@ export default function RecommanderLieuPage() {
       const dossier = `${user.uid}_${Date.now()}`;
       const urls: string[] = [];
       for (let i = 0; i < photos.length; i++) urls.push(await uploadPhoto(photos[i], `lieux/communaute/${dossier}/photo_${i}.jpg`));
-      const { error } = await supabase.from('petfriendly_places').insert({
-        origine: 'communaute', source_conditions: 'communaute', ajoute_par_uid: user.uid,
-        ...(activeProfileId ? { ajoute_par_profile_id: activeProfileId } : {}),
+      const donnees = {
         nom: nom.trim(), categorie: t.categorie, sous_categorie: t.value,
         adresse: lieu.rue, code_postal: lieu.codePostal || null, ville: lieu.ville, lat: lieu.lat, lng: lieu.lng,
         site_web: site.trim() || null, telephone: tel.trim() || null,
@@ -142,9 +165,15 @@ export default function RecommanderLieuPage() {
         nb_animaux_max: nb.trim() ? Number(nb) : null,
         conditions_particulieres: conditions.trim() || null,
         derniere_confirmation_le: visite,
-        recommandation: pourquoi.trim(), photos: urls,
+        recommandation: pourquoi.trim(), photos: [...photosExistantes, ...urls],
         statut: 'en_attente_validation',
-      });
+      };
+      const { error } = existantId
+        ? await supabase.from('petfriendly_places').update(donnees).eq('id', existantId)
+        : await supabase.from('petfriendly_places').insert({
+            ...donnees, origine: 'communaute', source_conditions: 'communaute', ajoute_par_uid: user.uid,
+            ...(activeProfileId ? { ajoute_par_profile_id: activeProfileId } : {}),
+          });
       if (error) throw error;
       setEnvoye(true);
     } catch (e) {
@@ -165,7 +194,7 @@ export default function RecommanderLieuPage() {
   if (envoye) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-3" style={{ fontFamily: 'Galey, sans-serif' }}>
-        <h1 className="text-2xl font-bold text-[#1F2A2E]">Merci pour votre recommandation</h1>
+        <h1 className="text-2xl font-bold text-[#1F2A2E]">{existantId ? 'Fiche renvoyée en validation' : 'Merci pour votre recommandation'}</h1>
         <p className="text-gray-600">Votre proposition est en attente de validation. Vous serez prévenu(e) dès qu&apos;elle sera publiée, ou si des précisions sont nécessaires.</p>
         <Link href="/animal-friendly" className="inline-block px-5 py-2.5 rounded-xl bg-[#0C5C6C] text-white font-semibold">Retour aux lieux</Link>
       </div>
@@ -334,7 +363,7 @@ export default function RecommanderLieuPage() {
               className="flex-1 py-3 rounded-xl border border-gray-200 bg-white font-bold text-gray-700">Retour</button>
             <button type="button" disabled={envoi} onClick={etape === 4 ? envoyer : suivant}
               className="flex-[2] py-3 rounded-xl bg-[#0C5C6C] text-white font-bold disabled:opacity-50">
-              {envoi ? 'Envoi…' : etape === 4 ? 'Envoyer ma recommandation' : 'Continuer'}
+              {envoi ? 'Envoi…' : etape === 4 ? (existantId ? 'Renvoyer en validation' : 'Envoyer ma recommandation') : 'Continuer'}
             </button>
           </div>
         )}

@@ -18,6 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/lieux/mes_contributions_lieux_page.dart';
 import 'package:PetsMatch/widgets/mention_hashtag.dart' show mentionsToPlainText;
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/profile_service.dart';
@@ -1155,6 +1156,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       // Demande d'adhésion (admin : onglet Demandes du groupe) / réponse à ma demande.
       final groupeId = data is Map ? data['groupe_id']?.toString() : null;
       if (groupeId != null) await openGroupeById(context, groupeId);
+    } else if (type == 'lieu_moderation') {
+      // Lieu publié / à compléter / refusé, correction, revendication.
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesContributionsLieuxPage()));
     } else if (type == 'social_follow') {
       final actorUid = data is Map ? data['actor_uid'] as String? : null;
       if (actorUid != null) {

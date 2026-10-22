@@ -6,6 +6,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 import { ActionBtn, Badge, InfoRow, fmtDate } from './ui';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { ESPECES_LIEUX } from '@/lib/especes-lieux';
+import { TYPES_LIEU } from '@/lib/lieux-categories';
 
 type Lieu = Record<string, unknown> & {
   id: string; nom?: string; statut?: string; created_at?: string; origine?: string; verification?: string;
@@ -39,6 +42,90 @@ const ONGLETS = [
 ] as const;
 type Onglet = typeof ONGLETS[number][0];
 
+type TroisEtats = boolean | null;
+
+/** Correction directe d'une fiche par l'admin (enregistrée puis tracée). */
+function FormModifierLieu({ l, onEnregistrer, onAnnuler }: { l: Lieu; onEnregistrer: (champs: Record<string, unknown>) => void; onAnnuler: () => void }) {
+  const v = (k: string) => (l[k] == null ? '' : String(l[k]));
+  const [nom, setNom] = useState(v('nom'));
+  const [type, setType] = useState(v('sous_categorie'));
+  const [adresse, setAdresse] = useState([v('adresse'), v('code_postal'), v('ville')].filter(Boolean).join(' '));
+  const [lieu, setLieu] = useState<{ rue: string; codePostal: string; ville: string; lat: number; lng: number } | null>(null);
+  const [site, setSite] = useState(v('site_web'));
+  const [tel, setTel] = useState(v('telephone'));
+  const [especes, setEspeces] = useState<string[]>((l.especes_acceptees as string[] | null) ?? []);
+  const [etats, setEtats] = useState<Record<string, TroisEtats>>({
+    animaux_en_salle: (l.animaux_en_salle as TroisEtats) ?? null, terrasse: (l.terrasse as TroisEtats) ?? null,
+    restriction_taille: (l.restriction_taille as TroisEtats) ?? null, supplement_animal: (l.supplement_animal as TroisEtats) ?? null,
+  });
+  const [nb, setNb] = useState(v('nb_animaux_max'));
+  const [conditions, setConditions] = useState(v('conditions_particulieres'));
+  const [description, setDescription] = useState(v('description'));
+  const input = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white';
+
+  function enregistrer() {
+    const t = TYPES_LIEU.find(x => x.value === type);
+    const champs: Record<string, unknown> = {
+      nom: nom.trim(), site_web: site.trim() || null, telephone: tel.trim() || null, especes_acceptees: especes,
+      ...etats, nb_animaux_max: nb.trim() ? Number(nb) : null,
+      conditions_particulieres: conditions.trim() || null, description: description.trim() || null,
+      ...(t ? { categorie: t.categorie, sous_categorie: t.value } : {}),
+      ...(lieu ? { adresse: lieu.rue, code_postal: lieu.codePostal || null, ville: lieu.ville, lat: lieu.lat, lng: lieu.lng } : {}),
+    };
+    onEnregistrer(champs);
+  }
+
+  return (
+    <div className="space-y-3 border border-[#0C5C6C]/30 rounded-xl p-3 bg-[#F7FBFB]">
+      <p className="text-sm font-bold text-[#0C5C6C]">Modifier la fiche</p>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-xs font-semibold text-gray-500">Nom<input value={nom} onChange={e => setNom(e.target.value)} className={input} /></label>
+        <label className="text-xs font-semibold text-gray-500">Catégorie
+          <select value={type} onChange={e => setType(e.target.value)} className={input}>
+            {!TYPES_LIEU.some(t => t.value === type) && <option value={type}>{type || '—'}</option>}
+            {TYPES_LIEU.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select></label>
+      </div>
+      <div className="text-xs font-semibold text-gray-500">Adresse (choisir dans la liste pour déplacer le point sur la carte)
+        <AddressAutocomplete value={adresse} onChange={setAdresse} className={input} onSelectDetails={d => setLieu(d)} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-xs font-semibold text-gray-500">Site web<input value={site} onChange={e => setSite(e.target.value)} className={input} /></label>
+        <label className="text-xs font-semibold text-gray-500">Téléphone<input value={tel} onChange={e => setTel(e.target.value)} className={input} /></label>
+      </div>
+      <div>
+        <p className="text-xs font-semibold text-gray-500 mb-1">Espèces accueillies</p>
+        <div className="flex flex-wrap gap-2">
+          {ESPECES_LIEUX.map(e => (
+            <label key={e.value} className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white">
+              <input type="checkbox" className="accent-[#0C5C6C]" checked={especes.includes(e.value)}
+                onChange={() => setEspeces(p => p.includes(e.value) ? p.filter(x => x !== e.value) : [...p, e.value])} />{e.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {([['animaux_en_salle', 'Accès intérieur'], ['terrasse', 'Terrasse / extérieur'], ['restriction_taille', 'Restriction de taille'], ['supplement_animal', 'Supplément']] as const).map(([k, lib]) => (
+          <label key={k} className="text-xs font-semibold text-gray-500">{lib}
+            <select value={etats[k] === true ? 'oui' : etats[k] === false ? 'non' : ''} className={input}
+              onChange={e => setEtats(p => ({ ...p, [k]: e.target.value === 'oui' ? true : e.target.value === 'non' ? false : null }))}>
+              <option value="">Non renseigné</option><option value="oui">Oui</option><option value="non">Non</option>
+            </select></label>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="text-xs font-semibold text-gray-500">Nombre d&apos;animaux max<input type="number" min={1} value={nb} onChange={e => setNb(e.target.value)} className={input} /></label>
+        <label className="text-xs font-semibold text-gray-500">Conditions particulières<input value={conditions} onChange={e => setConditions(e.target.value)} className={input} /></label>
+      </div>
+      <label className="block text-xs font-semibold text-gray-500">Description<textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} className={input} /></label>
+      <div className="flex gap-2">
+        <ActionBtn label="Enregistrer" color="#0C5C6C" onClick={enregistrer} />
+        <ActionBtn label="Annuler" color="#64748b" onClick={onAnnuler} />
+      </div>
+    </div>
+  );
+}
+
 function referencement(l: Lieu): string {
   if (!l.uid_pro) return 'Communauté';
   if (l.plan && l.plan !== 'decouverte') return 'Partenaire PetsMatch';
@@ -53,6 +140,7 @@ export default function LieuxPetFriendlyTab() {
   const [onglet, setOnglet] = useState<Onglet>('nouvelles');
   const [ouvert, setOuvert] = useState<string | null>(null);
   const [motif, setMotif] = useState('');
+  const [enEdition, setEnEdition] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
 
@@ -142,6 +230,10 @@ export default function LieuxPetFriendlyTab() {
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
               {TROIS_ETATS.map(([k, label]) => <p key={k}><span className="text-gray-500">{label} :</span> {etat(l[k])}</p>)}
             </div>
+            {enEdition === l.id
+              ? <FormModifierLieu l={l} onAnnuler={() => setEnEdition(null)}
+                  onEnregistrer={champs => { void agir('lieu_modifier', l.id, { champs }).then(() => setEnEdition(null)); }} />
+              : <ActionBtn label="Modifier la fiche" color="#0C5C6C" onClick={() => setEnEdition(l.id)} />}
             {champMotif}
             <div className="flex gap-2 flex-wrap">{actions}</div>
             {doublons.length > 0 && (

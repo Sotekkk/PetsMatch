@@ -9,6 +9,7 @@ import 'package:PetsMatch/widgets/app_nav_drawer.dart';
 
 import 'lieu_detail_page.dart';
 import 'recommander_lieu_page.dart';
+import 'mes_contributions_lieux_page.dart';
 import 'lieux_feed_page.dart';
 
 // Couleur d'épingle selon le référencement : communauté, établissement
@@ -273,9 +274,14 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
           // ── Recommander un lieu (contribution communautaire, modérée) ──
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
+            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              TextButton(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesContributionsLieuxPage())),
+                style: TextButton.styleFrom(foregroundColor: Colors.white70),
+                child: const Text('Mes contributions', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
                 onPressed: () async {
                   final ok = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const RecommanderLieuPage()));
                   if (ok == true) _load(reset: true);
@@ -288,7 +294,7 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 ),
               ),
-            ),
+            ]),
           ),
           // ── Filtres ──
           _Filters(

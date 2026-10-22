@@ -244,6 +244,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
+      case 'lieu_modifier': {
+        // Correction directe par l'admin (champs autorisés), tracée dans l'historique.
+        const AUTORISES = ['nom', 'categorie', 'sous_categorie', 'adresse', 'code_postal', 'ville', 'lat', 'lng', 'site_web', 'telephone',
+          'especes_acceptees', 'animaux_en_salle', 'terrasse', 'restriction_taille', 'nb_animaux_max', 'supplement_animal',
+          'conditions_particulieres', 'description', 'recommandation', 'derniere_confirmation_le'];
+        const champs = Object.fromEntries(Object.entries((body.champs ?? {}) as Record<string, unknown>).filter(([k]) => AUTORISES.includes(k)));
+        if (!Object.keys(champs).length) return NextResponse.json({ error: 'Aucune modification.' }, { status: 400 });
+        const r = await supabaseAdmin.from('petfriendly_places').update(champs).eq('id', id);
+        if (r.error) throw r.error;
+        await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: id, objet: 'fiche', objet_id: id, action: 'modifier', motif: String(body.motif ?? '').trim() || null, admin_uid: auth.uid, details: champs });
+        return NextResponse.json({ ok: true });
+      }
+
       case 'lieu_fusionner': {
         // Doublon : avis, corrections et revendications rejoignent la fiche
         // conservée ; la fiche en double est refusée (motif : doublon).

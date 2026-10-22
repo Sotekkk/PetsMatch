@@ -34,7 +34,10 @@ const kTypesLieu = [
 /// doublon), informations, conditions d'accueil (oui / non / je ne sais pas),
 /// expérience, validation → fiche « en attente de validation » (modération).
 class RecommanderLieuPage extends StatefulWidget {
-  const RecommanderLieuPage({super.key});
+  /// Fiche du contributeur à compléter (statut brouillon / à corriger / en
+  /// attente) : formulaire prérempli, enregistrement puis renvoi en validation.
+  final Map<String, dynamic>? existant;
+  const RecommanderLieuPage({super.key, this.existant});
   @override
   State<RecommanderLieuPage> createState() => _RecommanderLieuPageState();
 }
@@ -76,6 +79,37 @@ class _RecommanderLieuPageState extends State<RecommanderLieuPage> {
 
   // Doublons détectés avant envoi (lieux à moins de 150 m)
   List<Map<String, dynamic>> _proches = [];
+  List<String> _photosExistantes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existant;
+    if (e == null) return;
+    _etape = 1;
+    _nomCtrl.text = (e['nom'] ?? '').toString();
+    final sc = (e['sous_categorie'] ?? '').toString();
+    _type = kTypesLieu.any((t) => t.$1 == sc) ? sc : null;
+    _rue = (e['adresse'] ?? '').toString();
+    _cp = (e['code_postal'] ?? '').toString();
+    _ville = (e['ville'] ?? '').toString();
+    _adresseCtrl.text = [_rue, _cp, _ville].where((x) => x.isNotEmpty).join(' ');
+    _lat = (e['lat'] as num?)?.toDouble();
+    _lng = (e['lng'] as num?)?.toDouble();
+    _siteCtrl.text = (e['site_web'] ?? '').toString();
+    _telCtrl.text = (e['telephone'] ?? '').toString();
+    _especes = Set<String>.from(e['especes_acceptees'] as List? ?? []);
+    _interieur = e['animaux_en_salle'] as bool?;
+    _terrasse = e['terrasse'] as bool?;
+    _taille = e['restriction_taille'] as bool?;
+    _supplement = e['supplement_animal'] as bool?;
+    _nbCtrl.text = e['nb_animaux_max']?.toString() ?? '';
+    _conditionsCtrl.text = (e['conditions_particulieres'] ?? '').toString();
+    _visite = DateTime.tryParse(e['derniere_confirmation_le']?.toString() ?? '');
+    _pourquoiCtrl.text = (e['recommandation'] ?? '').toString();
+    _photosExistantes = List<String>.from(e['photos'] as List? ?? []);
+    _confirme = true;
+  }
 
   @override
   void dispose() {
@@ -239,11 +273,7 @@ class _RecommanderLieuPageState extends State<RecommanderLieuPage> {
         urls.add(await stockage.uploadPhoto(_photos[i], 'lieux/communaute/$dossier/photo_$i.jpg'));
       }
       final pid = User_Info.activeProfileId;
-      await _supa.from('petfriendly_places').insert({
-        'origine': 'communaute',
-        'source_conditions': 'communaute',
-        'ajoute_par_uid': uid,
-        if (pid.isNotEmpty) 'ajoute_par_profile_id': pid,
+      final donnees = <String, dynamic>{
         'nom': _nomCtrl.text.trim(),
         'categorie': type.$2,
         'sous_categorie': type.$1,
@@ -264,12 +294,25 @@ class _RecommanderLieuPageState extends State<RecommanderLieuPage> {
         'conditions_particulieres': _conditionsCtrl.text.trim().isEmpty ? null : _conditionsCtrl.text.trim(),
         'derniere_confirmation_le': DateFormat('yyyy-MM-dd').format(_visite!),
         'recommandation': _pourquoiCtrl.text.trim(),
-        'photos': urls,
+        'photos': [..._photosExistantes, ...urls],
         'statut': 'en_attente_validation',
-      });
+      };
+      if (widget.existant != null) {
+        // Fiche complétée : mise à jour puis renvoi en validation.
+        await _supa.from('petfriendly_places').update(donnees).eq('id', widget.existant!['id']);
+      } else {
+        await _supa.from('petfriendly_places').insert({
+          ...donnees,
+          'origine': 'communaute',
+          'source_conditions': 'communaute',
+          'ajoute_par_uid': uid,
+          if (pid.isNotEmpty) 'ajoute_par_profile_id': pid,
+        });
+      }
       if (!mounted) return;
       await showDialog(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('Merci pour votre recommandation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(widget.existant != null ? 'Fiche renvoyée en validation' : 'Merci pour votre recommandation',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         content: const Text('Votre proposition est en attente de validation. Vous serez prévenu(e) dès qu\'elle sera publiée, '
             'ou si des précisions sont nécessaires.', style: TextStyle(fontFamily: 'Galey')),
         actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
@@ -314,7 +357,7 @@ class _RecommanderLieuPageState extends State<RecommanderLieuPage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: Row(children: [
             Expanded(child: OutlinedButton(
-              onPressed: _envoi ? null : () => setState(() => _etape--),
+              onPressed: _envoi ? null : () => (widget.existant != null && _etape == 1) ? Navigator.pop(context) : setState(() => _etape--),
               style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
               child: const Text('Retour', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             )),
@@ -325,7 +368,7 @@ class _RecommanderLieuPageState extends State<RecommanderLieuPage> {
                   padding: const EdgeInsets.symmetric(vertical: 14)),
               child: _envoi
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text(_etape == 4 ? 'Envoyer ma recommandation' : 'Continuer',
+                  : Text(_etape == 4 ? (widget.existant != null ? 'Renvoyer en validation' : 'Envoyer ma recommandation') : 'Continuer',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             )),
           ]),

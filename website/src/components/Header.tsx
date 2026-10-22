@@ -816,6 +816,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
   const devisPath = proType === 'garde' ? '/garde/devis' : proType === 'photographe' ? '/photographe/devis' : proType === 'toilettage' ? '/toilettage/devis' : proType === 'marechal_ferrant' ? '/marechal-ferrant/devis' : '/education/devis';
   switch (n.type) {
     // Demande d'adhésion à un groupe (admins) / réponse à ma demande.
+    // Lieu pet-friendly : publié / à compléter / refusé, correction, revendication.
+    case 'lieu_moderation':
+      return '/animal-friendly/mes-contributions';
     case 'groupe_demande':
     case 'groupe_accepte':
     case 'groupe_refuse':
