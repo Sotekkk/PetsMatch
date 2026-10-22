@@ -516,7 +516,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         maxChildSize: 0.9,
         builder: (_, ctrl) => Column(children: [
           const Padding(padding: EdgeInsets.fromLTRB(0, 12, 0, 8),
-            child: Text('Lier un de mes chevaux',
+            child: Text('Ajouter un cheval',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
           if (_loadingChevaux)
             const Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())
@@ -652,7 +652,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         _section('Mon cheval (optionnel)', child: OutlinedButton.icon(
           onPressed: _selectAnimal,
           icon: const Icon(Icons.pets_outlined),
-          label: Text(_linkedAnimalNom != null ? 'Lié : $_linkedAnimalNom' : 'Lier un de mes chevaux',
+          label: Text(_linkedAnimalNom != null ? 'Lié : $_linkedAnimalNom' : 'Ajouter un cheval',
               style: const TextStyle(fontFamily: 'Galey')),
           style: OutlinedButton.styleFrom(
             foregroundColor: _teal,

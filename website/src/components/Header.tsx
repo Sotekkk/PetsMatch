@@ -579,7 +579,6 @@ const MENU_ASSOCIATION = [
     icon: '🗓️',
     items: [
       { href: '/association/agenda', label: 'Agenda',    icon: '🗓️' },
-      { href: '/agenda',             label: 'RDV visites d\'adoption', icon: '🐾' },
       { href: '/mes-rdv',            label: 'Mes RDV',   icon: '📅' },
       { href: '/mes-taches',         label: 'Mes tâches', icon: '✅' },
     ],

@@ -347,7 +347,7 @@ function CreerAnnonceChevalInner() {
               onClick={async () => { if (!showPicker) await loadMyHorses(); setShowPicker(!showPicker); }}
               className="min-h-11 w-full rounded-xl text-sm font-semibold text-[#0C5C6C] bg-white hover:bg-[#E8F4F6] text-left px-3.5"
               style={{ border: '1px solid rgba(12,92,108,0.45)' }}>
-              {linkedNom ? `Lié : ${linkedNom}` : 'Lier un de mes chevaux'}
+              {linkedNom ? `Lié : ${linkedNom}` : 'Ajouter un cheval'}
             </button>
           </Champ>
           {showPicker && (
