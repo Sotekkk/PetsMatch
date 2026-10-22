@@ -17,6 +17,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -1217,34 +1218,72 @@ class _AuthWrapperState extends State<AuthWrapper> {
 class _SuspendedAccountPage extends StatelessWidget {
   const _SuspendedAccountPage();
 
+  /// Sanction de modération en cours (règle enfreinte, date de fin), si le
+  /// compte a été suspendu / bloqué depuis un signalement.
+  Future<Map<String, dynamic>?> _sanction() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    try {
+      final r = await Supabase.instance.client.from('sanctions_moderation')
+          .select('type, regle, precisions, fin_le')
+          .eq('uid', uid).inFilter('type', ['suspension', 'blocage']).isFilter('leve_le', null)
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+      return r;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    const style = TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF5E6B70), height: 1.4);
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('🚫', style: TextStyle(fontSize: 56)),
-            const SizedBox(height: 16),
-            const Text('Compte suspendu',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
-            const SizedBox(height: 8),
-            Text(
-              'Votre compte a été suspendu par un administrateur. '
-              'Contactez le support si vous pensez qu\'il s\'agit d\'une erreur.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => FirebaseAuth.instance.signOut(),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C)),
-              child: const Text('Se déconnecter',
-                  style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-            ),
-          ]),
+          child: FutureBuilder<Map<String, dynamic>?>(
+            future: _sanction(),
+            builder: (context, snap) {
+              final s = snap.data;
+              final bloque = s?['type'] == 'blocage';
+              final fin = DateTime.tryParse(s?['fin_le']?.toString() ?? '')?.toLocal();
+              final precisions = (s?['precisions'] ?? '').toString();
+              return Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.block, size: 52, color: Colors.red.shade400),
+                const SizedBox(height: 16),
+                Text(bloque ? 'Compte bloqué' : 'Compte suspendu',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+                const SizedBox(height: 10),
+                if (s != null) ...[
+                  Text('Règle enfreinte : ${s['regle']}${precisions.isNotEmpty ? ' — $precisions' : ''}.',
+                      textAlign: TextAlign.center, style: style),
+                  const SizedBox(height: 6),
+                  Text(bloque
+                      ? 'Ce blocage est définitif.'
+                      : fin != null ? 'Votre compte sera rétabli le ${DateFormat('d MMMM yyyy', 'fr_FR').format(fin)}.' : '',
+                      textAlign: TextAlign.center, style: style),
+                  const SizedBox(height: 6),
+                ],
+                Text(
+                  s == null
+                      ? 'Votre compte a été suspendu par un administrateur. '
+                        'Contactez le support si vous pensez qu\'il s\'agit d\'une erreur.'
+                      : 'Contactez le support si vous pensez qu\'il s\'agit d\'une erreur.',
+                  textAlign: TextAlign.center,
+                  style: style,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => FirebaseAuth.instance.signOut(),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C)),
+                  child: const Text('Se déconnecter',
+                      style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+                ),
+              ]);
+            },
+          ),
         ),
       ),
     );

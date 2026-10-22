@@ -21,6 +21,7 @@ const storiesCleanupFunctions = require("./stories_cleanup");
 const livraisonsPhotoFunctions = require("./livraisons_photo");
 const parseCarnetDocumentFunctions = require("./parse_carnet_document");
 const inscriptionFunctions = require("./inscription");
+const moderationFunctions = require("./moderation");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -116,3 +117,4 @@ exports.purgerInscriptionsAbandonnees = inscriptionFunctions.purgerInscriptionsA
 exports.changerEmailInscription = inscriptionFunctions.changerEmailInscription;
 exports.inscriptionsNonValidees = inscriptionFunctions.inscriptionsNonValidees;
 exports.validerLienInscription = inscriptionFunctions.validerLienInscription;
+exports.leverSuspensionsExpirees = moderationFunctions.leverSuspensionsExpirees;

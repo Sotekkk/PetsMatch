@@ -172,6 +172,97 @@ export async function POST(req: NextRequest) {
         if (r.error) throw r.error;
         return NextResponse.json({ ok: true });
       }
+
+      // ── Signalements : sanction décidée par l'admin ─────────────────────
+      // Contenu retiré et/ou avertissement, suspension (jours) ou blocage
+      // (définitif) du compte de l'auteur, avec la règle enfreinte : la
+      // personne est prévenue (notification) et la sanction est historisée.
+      case 'signalement_sanction': {
+        const sig = (await supabaseAdmin.from('signalements').select('*').eq('id', id).maybeSingle()).data as
+          { id: string; target_type: string; target_id: string } | null;
+        if (!sig) return NextResponse.json({ error: 'Signalement introuvable' }, { status: 404 });
+        const regle = String(body.regle ?? '').trim();
+        const precisions = String(body.precisions ?? '').trim();
+        const supprimer = body.supprimer === true;
+        const sanction = String(body.sanction ?? 'aucune'); // aucune | avertissement | suspension | blocage
+        const jours = Math.min(365, Math.max(1, Number(body.jours ?? 7)));
+        if (!regle) return NextResponse.json({ error: 'Indiquez la règle enfreinte.' }, { status: 400 });
+
+        // Auteur + contenu visé.
+        let auteur: string | null = null;
+        let contenu: Record<string, unknown> | null = null;
+        let libelleContenu = 'votre contenu';
+        if (sig.target_type === 'groupe_post') {
+          const p = (await supabaseAdmin.from('groupe_posts').select('id, auteur_uid, contenu, groupe_id').eq('id', sig.target_id).maybeSingle()).data;
+          auteur = p?.auteur_uid ?? null; libelleContenu = 'votre publication dans un groupe';
+          contenu = p ? { type: 'groupe_post', id: p.id, groupe_id: p.groupe_id, extrait: String(p.contenu ?? '').slice(0, 300) } : null;
+        } else if (sig.target_type === 'annonce') {
+          const a = (await supabaseAdmin.from('annonces').select('id, uid_eleveur, titre').eq('id', sig.target_id).maybeSingle()).data;
+          auteur = a?.uid_eleveur ?? null; libelleContenu = 'votre annonce';
+          contenu = a ? { type: 'annonce', id: a.id, extrait: a.titre } : null;
+        } else if (sig.target_type === 'balade_ludique') {
+          const b = (await supabaseAdmin.from('balades_ludiques').select('id, createur_uid, titre').eq('id', sig.target_id).maybeSingle()).data;
+          auteur = b?.createur_uid ?? null; libelleContenu = 'votre balade';
+          contenu = b ? { type: 'balade_ludique', id: b.id, extrait: b.titre } : null;
+        } else if (sig.target_type === 'user') {
+          auteur = sig.target_id;
+        }
+        if (!auteur) return NextResponse.json({ error: 'Auteur introuvable (contenu déjà supprimé ?)' }, { status: 404 });
+
+        const faits: string[] = [];
+        if (supprimer && contenu) {
+          const r = sig.target_type === 'groupe_post'
+            ? await supabaseAdmin.from('groupe_posts').delete().eq('id', sig.target_id)
+            : sig.target_type === 'annonce'
+              ? await supabaseAdmin.from('annonces').update({ statut: 'supprime' }).eq('id', sig.target_id)
+              : await supabaseAdmin.from('balades_ludiques').update({ statut: 'supprime' }).eq('id', sig.target_id);
+          if (r.error) throw r.error;
+          await supabaseAdmin.from('sanctions_moderation').insert({
+            uid: auteur, type: 'suppression', regle, precisions: precisions || null,
+            signalement_id: sig.id, contenu, created_by: auth.uid,
+          });
+          faits.push('contenu supprimé');
+        }
+
+        let finLe: string | null = null;
+        if (sanction === 'avertissement' || sanction === 'suspension' || sanction === 'blocage') {
+          if (sanction === 'suspension') finLe = new Date(Date.now() + jours * 864e5).toISOString();
+          const r = await supabaseAdmin.from('sanctions_moderation').insert({
+            uid: auteur, type: sanction, regle, precisions: precisions || null, fin_le: finLe,
+            signalement_id: sig.id, contenu, created_by: auth.uid,
+          });
+          if (r.error) throw r.error;
+          if (sanction !== 'avertissement') {
+            // Compte entier (tous les profils), comme le bouton « Suspendre » de l'admin.
+            const s = await supabaseAdmin.from('user_profiles').update({ statut_pro: 'suspendu' }).eq('uid', auteur);
+            if (s.error) throw s.error;
+          }
+          faits.push(sanction === 'avertissement' ? 'avertissement' : sanction === 'suspension' ? `suspension ${jours} j` : 'compte bloqué');
+        }
+
+        // La personne est prévenue, avec la règle enfreinte.
+        const motif = precisions ? `${regle} — ${precisions}` : regle;
+        const dateFin = finLe ? new Date(finLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+        const titre = sanction === 'blocage' ? 'Votre compte a été bloqué'
+          : sanction === 'suspension' ? `Votre compte est suspendu jusqu'au ${dateFin}`
+          : supprimer ? `Nous avons retiré ${libelleContenu}`
+          : 'Avertissement de la modération';
+        const corps = [
+          supprimer && contenu ? `${libelleContenu.charAt(0).toUpperCase()}${libelleContenu.slice(1)} a été retiré(e).` : '',
+          `Règle enfreinte : ${motif}.`,
+          sanction === 'suspension' ? `Votre compte est suspendu jusqu'au ${dateFin}.` : '',
+          sanction === 'blocage' ? 'Votre compte est bloqué de façon définitive.' : '',
+        ].filter(Boolean).join(' ');
+        if (faits.length) {
+          await supabaseAdmin.from('notifications').insert({ uid: auteur, type: 'moderation', title: titre, body: corps, read: false });
+        }
+
+        await supabaseAdmin.from('signalements').update({
+          statut: 'traite', handled_at: new Date().toISOString(), handled_by: auth.uid,
+          admin_note: [faits.join(', ') || 'sans suite', motif].filter(Boolean).join(' · '),
+        }).eq('id', sig.id);
+        return NextResponse.json({ ok: true, faits });
+      }
     }
     return NextResponse.json({ error: 'action inconnue' }, { status: 400 });
   } catch (e) {

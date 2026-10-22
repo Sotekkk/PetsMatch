@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -82,21 +82,7 @@ export default function ValidationGuard({ children }: { children: React.ReactNod
   // statut « refuse » qui ne concerne que la validation pro.
   const isSuspended = userData?.statutPro === 'suspendu';
   if (isSuspended && !isPublicPath(pathname)) {
-    return (
-      <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center">
-        <span className="text-5xl">🚫</span>
-        <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Compte suspendu
-        </p>
-        <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Votre compte a été suspendu par un administrateur. Contactez le support si vous pensez qu&apos;il s&apos;agit d&apos;une erreur.
-        </p>
-        <button onClick={() => signOut(auth)}
-          className="mt-2 px-5 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D]">
-          Se déconnecter
-        </button>
-      </div>
-    );
+    return <EcranCompteSuspendu uid={auth.currentUser?.uid ?? ''} />;
   }
 
   return (
@@ -112,5 +98,40 @@ export default function ValidationGuard({ children }: { children: React.ReactNod
       )}
       {children}
     </>
+  );
+}
+
+/** Compte suspendu ou bloqué par la modération : règle enfreinte et date de fin
+ *  (sanctions_moderation), sinon message générique (suspension manuelle). */
+function EcranCompteSuspendu({ uid }: { uid: string }) {
+  const [sanction, setSanction] = useState<{ type: string; regle: string; precisions: string | null; fin_le: string | null } | null>(null);
+  useEffect(() => {
+    if (!uid) return;
+    supabase.from('sanctions_moderation').select('type, regle, precisions, fin_le')
+      .eq('uid', uid).in('type', ['suspension', 'blocage']).is('leve_le', null)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setSanction(data as typeof sanction));
+  }, [uid]);
+  const bloque = sanction?.type === 'blocage';
+  const fin = sanction?.fin_le ? new Date(sanction.fin_le).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  return (
+    <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center" style={{ fontFamily: 'Galey, sans-serif' }}>
+      <p className="text-gray-800 text-lg font-bold">{bloque ? 'Compte bloqué' : 'Compte suspendu'}</p>
+      {sanction ? (
+        <div className="max-w-sm space-y-2 text-sm text-gray-600">
+          <p>Règle enfreinte : <strong className="text-gray-800">{sanction.regle}</strong>{sanction.precisions ? ` — ${sanction.precisions}` : ''}.</p>
+          <p>{bloque ? 'Ce blocage est définitif.' : fin ? `Votre compte sera rétabli le ${fin}.` : ''}</p>
+          <p>Contactez le support si vous pensez qu&apos;il s&apos;agit d&apos;une erreur.</p>
+        </div>
+      ) : (
+        <p className="text-gray-500 text-sm max-w-sm">
+          Votre compte a été suspendu par un administrateur. Contactez le support si vous pensez qu&apos;il s&apos;agit d&apos;une erreur.
+        </p>
+      )}
+      <button onClick={() => signOut(auth)}
+        className="mt-2 px-5 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D]">
+        Se déconnecter
+      </button>
+    </div>
   );
 }

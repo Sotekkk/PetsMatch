@@ -160,6 +160,101 @@ interface SigContexte {
   };
 }
 
+// Règles proposées pour motiver une sanction (communiquées à la personne).
+const REGLES_MODERATION = [
+  'Vente ou don d\'animaux interdit à cet endroit',
+  'Contenu inapproprié ou choquant',
+  'Propos injurieux, harcèlement ou discrimination',
+  'Spam ou publicité non autorisée',
+  'Arnaque ou tentative de fraude',
+  'Maltraitance animale',
+  'Fausse information ou usurpation d\'identité',
+  'Hors sujet par rapport au groupe',
+  'Autre (préciser)',
+];
+
+/** Décision sur un signalement : retirer le contenu, avertir, suspendre ou
+ *  bloquer l'auteur — toujours avec la règle enfreinte, transmise à la personne. */
+function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: string) => void }) {
+  const [regle, setRegle] = useState('');
+  const [precisions, setPrecisions] = useState('');
+  const [supprimer, setSupprimer] = useState(sig.target_type !== 'user');
+  const [sanction, setSanction] = useState<'aucune' | 'avertissement' | 'suspension' | 'blocage'>('avertissement');
+  const [jours, setJours] = useState(7);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const peutSupprimer = sig.target_type !== 'user';
+  const pret = !!regle && (regle !== 'Autre (préciser)' || precisions.trim().length > 0) && (supprimer || sanction !== 'aucune');
+
+  async function appliquer() {
+    if (sanction === 'blocage' && !confirm('Bloquer définitivement ce compte ?')) return;
+    setEnvoi(true); setErreur('');
+    try {
+      const r = await apiFetch('/api/admin/moderation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'signalement_sanction', id: sig.id, regle, precisions, supprimer: peutSupprimer && supprimer, sanction, jours }),
+      });
+      const j = await r.json().catch(() => ({})) as { error?: string; faits?: string[] };
+      if (!r.ok) { setErreur(j.error ?? 'Action impossible.'); return; }
+      onFait((j.faits ?? []).join(', '));
+    } finally { setEnvoi(false); }
+  }
+
+  const choix = (v: typeof sanction, label: string, aide: string) => (
+    <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer ${sanction === v ? 'border-[#0C5C6C] bg-[#E8F4F6]' : 'border-gray-200 hover:bg-gray-50'}`}>
+      <input type="radio" name="sanction" checked={sanction === v} onChange={() => setSanction(v)} className="mt-0.5 accent-[#0C5C6C]" />
+      <span><span className="block text-sm font-semibold text-[#1F2A2E]">{label}</span><span className="block text-xs text-gray-500">{aide}</span></span>
+    </label>
+  );
+
+  return (
+    <div className="border border-gray-200 rounded-2xl p-4 space-y-3">
+      <p className="text-sm font-bold text-[#1F2A2E]">Décision</p>
+      <div>
+        <label htmlFor="regle" className="text-xs font-semibold text-gray-600 block mb-1">Règle enfreinte *</label>
+        <select id="regle" value={regle} onChange={e => setRegle(e.target.value)}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+          <option value="">Choisir…</option>
+          {REGLES_MODERATION.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+      </div>
+      <div>
+        <label htmlFor="precisions" className="text-xs font-semibold text-gray-600 block mb-1">
+          Précisions envoyées à la personne{regle === 'Autre (préciser)' ? ' *' : ' (facultatif)'}
+        </label>
+        <textarea id="precisions" value={precisions} onChange={e => setPrecisions(e.target.value)} rows={2}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+      </div>
+      {peutSupprimer && (
+        <label className="flex items-center gap-2.5 text-sm font-semibold text-[#1F2A2E] cursor-pointer">
+          <input type="checkbox" checked={supprimer} onChange={e => setSupprimer(e.target.checked)} className="w-4 h-4 accent-[#B42318]" />
+          Supprimer {sig.target_type === 'groupe_post' ? 'la publication' : sig.target_type === 'annonce' ? 'l\'annonce' : 'la balade'}
+        </label>
+      )}
+      <div className="space-y-2">
+        {choix('aucune', 'Aucune sanction sur le compte', 'Seulement le retrait du contenu, avec le motif.')}
+        {choix('avertissement', 'Avertir', 'Message d\'avertissement avec la règle enfreinte.')}
+        {choix('suspension', 'Suspendre le compte', 'Accès bloqué pendant la durée choisie, puis rétabli automatiquement.')}
+        {sanction === 'suspension' && (
+          <div className="pl-7">
+            <label htmlFor="jours" className="text-xs font-semibold text-gray-600 mr-2">Durée</label>
+            <select id="jours" value={jours} onChange={e => setJours(Number(e.target.value))}
+              className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white">
+              {[1, 3, 7, 15, 30, 90].map(j => <option key={j} value={j}>{j} jour{j > 1 ? 's' : ''}</option>)}
+            </select>
+          </div>
+        )}
+        {choix('blocage', 'Bloquer le compte', 'Blocage définitif (réactivable depuis la fiche du compte).')}
+      </div>
+      {erreur && <p className="text-xs text-red-600">{erreur}</p>}
+      <button type="button" onClick={appliquer} disabled={!pret || envoi}
+        className="w-full py-2.5 rounded-xl bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-40 text-white text-sm font-bold">
+        {envoi ? 'Application…' : 'Appliquer et prévenir la personne'}
+      </button>
+    </div>
+  );
+}
+
 /** Liens : publication / profil signalé + profil de la personne qui signale. */
 function SigLiens({ sig, ctx, detail }: { sig: Signalement; ctx?: SigContexte; detail?: boolean }) {
   const lien = 'text-xs text-[#0C5C6C] hover:underline font-semibold';
@@ -2862,7 +2957,7 @@ export default function AdminPage() {
       {selectedSig && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
           onClick={() => setSelectedSig(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl"
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="bg-[#fee2e2] rounded-t-2xl px-6 py-4 flex items-center justify-between">
               <div>
@@ -2885,9 +2980,17 @@ export default function AdminPage() {
                 </Link>
               )}
               {selectedSig.statut === 'en_attente' && (
+                <PanneauSanction sig={selectedSig} onFait={(resume) => {
+                  setSignalements(prev => prev.filter(s => s.id !== selectedSig.id));
+                  if (stats) setStats(prev => prev ? { ...prev, signalementsEnAttente: Math.max(0, prev.signalementsEnAttente - 1) } : prev);
+                  setSelectedSig(null);
+                  alert(`Décision appliquée : ${resume || 'signalement traité'}. La personne a été prévenue.`);
+                }} />
+              )}
+              {selectedSig.statut === 'en_attente' && (
                 <>
                   <div>
-                    <label className="text-xs text-gray-400 block mb-1">Note admin (optionnel)</label>
+                    <label className="text-xs text-gray-400 block mb-1">Note admin (sans suite / rejet)</label>
                     <textarea
                       value={adminNote}
                       onChange={e => setAdminNote(e.target.value)}
