@@ -230,6 +230,43 @@ const NOTIF_PERM_BY_TABLE = {
     antiparasitaires: "notif_antiparasitaires",
 };
 
+// ─── Même traitement ? (un enregistrement plus récent remplace l'ancien) ──────
+
+/** Type d'un vaccin : catégorie, ou nom du vaccin si la catégorie est vide / « Autre ». */
+function typeVaccin(row) {
+    const norm = (v) => String(v || "").trim().toLowerCase();
+    const c = norm(row.categorie);
+    return c && c !== "autre" ? c : norm(row.vaccin);
+}
+
+/** Clé de regroupement : animal (+ type de vaccin pour les vaccinations). */
+function cleTraitement(table, row) {
+    return table === "vaccinations" ? `${row.animal_id}|${typeVaccin(row)}` : String(row.animal_id);
+}
+
+/**
+ * true si un traitement plus récent du même type a déjà été saisi pour cet
+ * animal (ex. vaccin refait le 1/10 : l'ancien rappel du 22/10 ne doit plus
+ * partir). Pour les vaccins, la catégorie OU le nom du vaccin font foi.
+ */
+async function dejaRemplace(table, row) {
+    const autres = await supabaseGet(
+        `${table}?animal_id=eq.${encodeURIComponent(row.animal_id)}&id=neq.${encodeURIComponent(row.id)}` +
+        "&select=id,vaccin,categorie,date,date_rappel",
+    ).catch(() => []);
+    if (!Array.isArray(autres)) return false;
+    const nomVaccin = String(row.vaccin || "").trim().toLowerCase();
+    return autres.some((a) => {
+        if (table === "vaccinations") {
+            const memeType = typeVaccin(a) === typeVaccin(row) ||
+                (nomVaccin && String(a.vaccin || "").trim().toLowerCase() === nomVaccin);
+            if (!memeType) return false;
+        }
+        return (a.date && row.date && a.date > row.date) ||
+            (a.date_rappel && row.date_rappel && a.date_rappel > row.date_rappel);
+    });
+}
+
 // ─── Date helper (heure locale Paris pour éviter les décalages UTC) ───────────
 
 function dateStr(daysFromNow) {
@@ -292,6 +329,8 @@ exports.sendSanteReminders = functions
                         `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
                     );
                     if (Array.isArray(existing) && existing.length > 0) continue;
+                    // Traitement déjà refait (enregistrement plus récent) : plus de rappel.
+                    if (await dejaRemplace(table, row)) continue;
 
                     // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
                     // fiable — voir migration_fix_animaux_proprietes_unique_constraint.sql)
@@ -441,9 +480,8 @@ async function sendOverdueSanteReminders(digest) {
         // inversement le forcer sur un autre type de vaccin non pertinent).
         const latestByGroup = new Map();
         for (const row of rows) {
-            const key = table === "vaccinations" ?
-                `${row.animal_id}|${row.categorie || row[nomField] || ""}` :
-                row.animal_id;
+            // Catégorie « Autre » ou vide : le nom du vaccin sert de type.
+            const key = cleTraitement(table, row);
             const prev = latestByGroup.get(key);
             if (!prev || row.date_rappel > prev.date_rappel) latestByGroup.set(key, row);
         }

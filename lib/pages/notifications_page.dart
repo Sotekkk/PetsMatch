@@ -138,7 +138,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   List<Map<String, dynamic>> _notifs = [];
   // Non lues destinées à mes autres profils : id du profil → nombre.
-  Map<String, int> _autresProfils = {};
   bool _loading = true;
 
   @override
@@ -188,61 +187,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
         final pt = (n['profile_type'] as String?) ?? '';
         return pt.isEmpty || pt == currentType;
       }).toList();
-      // Non lues destinées à mes AUTRES profils (ex. la pension) : signalées
-      // en haut de la cloche avec « Basculer », comme les pages Facebook.
-      final autres = <String, int>{};
-      final miens = User_Info.availableProfiles.map((p) => p['id']?.toString() ?? '').toSet();
-      for (final n in (data as List)) {
-        final pid = (n['profile_id'] as String?) ?? '';
-        if (pid.isEmpty || pid == activeProfileId || !miens.contains(pid) || n['read'] == true) continue;
-        // Même exclusion que la liste : les likes / mentions Pets Social vont dans le cœur du fil.
-        final t = n['type'] as String? ?? '';
-        if (t == 'social_like' || t == 'social_mention' || t == 'story_like') continue;
-        autres[pid] = (autres[pid] ?? 0) + 1;
-      }
       // Cloisonnement : un ancien rappel sans profil destinataire qui
       // concerne un animal d'un autre profil du compte n'est pas affiché ici.
       final propres = await notifsSansAutresProfils(List<Map<String, dynamic>>.from(filtered), activeProfileId);
       if (mounted) setState(() {
         _notifs = propres;
-        _autresProfils = autres;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  /// « 3 notifications pour Pension Ambre — Basculer » : ouvre ce profil et sa cloche.
-  Widget _bandeauAutresProfils() {
-    if (_autresProfils.isEmpty) return const SizedBox.shrink();
-    return Column(children: [
-      for (final e in _autresProfils.entries)
-        Builder(builder: (_) {
-          final profil = User_Info.availableProfiles.firstWhere((p) => p['id']?.toString() == e.key, orElse: () => <String, dynamic>{});
-          if (profil.isEmpty) return const SizedBox.shrink();
-          final nom = (profil['nom']?.toString() ?? '').trim().isNotEmpty
-              ? profil['nom'].toString()
-              : '${profil['firstname'] ?? ''} ${profil['lastname'] ?? ''}'.trim();
-          return Material(
-            color: _teal.withValues(alpha: 0.08),
-            child: InkWell(
-              onTap: () => basculerVersProfil(profil, ouvrir: const NotificationsPage()),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(children: [
-                  const Icon(Icons.swap_horiz, color: _teal, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text('${e.value} notification${e.value > 1 ? 's' : ''} pour $nom',
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5))),
-                  const Text('Basculer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
-                ]),
-              ),
-            ),
-          );
-        }),
-      const Divider(height: 1),
-    ]);
   }
 
   Future<void> _deleteNotif(Map<String, dynamic> notif) async {
@@ -1786,7 +1740,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
           : Column(children: [
-            _bandeauAutresProfils(),
             Expanded(child: RefreshIndicator(
               onRefresh: _fetch,
               color: _teal,
