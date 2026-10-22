@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { loadBreeds } from '@/lib/breeds';
 
 const CAT_INFO: Record<string, { label: string; emoji: string }> = {
   sante:       { label: 'Santé',         emoji: '🏥' },
@@ -14,7 +15,24 @@ const CAT_INFO: Record<string, { label: string; emoji: string }> = {
   general:     { label: 'Général',       emoji: '💬' },
 };
 
+// « Animal concerné » — même liste que l'appli (forum_page.dart _kAnimalTypes).
+const ANIMAUX_FORUM: { value: string; label: string }[] = [
+  { value: 'chien', label: 'Chien' }, { value: 'chat', label: 'Chat' }, { value: 'lapin', label: 'Lapin' },
+  { value: 'oiseau', label: 'Oiseau' }, { value: 'nac', label: 'NAC' }, { value: 'cheval', label: 'Cheval' },
+  { value: 'ovin', label: 'Ovin' }, { value: 'caprin', label: 'Caprin' }, { value: 'porcin', label: 'Porc' },
+  { value: 'autre', label: 'Autre' },
+];
+
+function libelleAnimaux(s: { animal_types?: string[] | null; animal_type?: string | null; race?: string | null }): string {
+  const liste = s.animal_types?.length ? s.animal_types : s.animal_type ? [s.animal_type] : [];
+  if (!liste.length) return '';
+  const label = liste.length >= ANIMAUX_FORUM.length ? 'Toutes espèces'
+    : liste.map(v => ANIMAUX_FORUM.find(a => a.value === v)?.label ?? v).join(', ');
+  return s.race ? `${label} · ${s.race}` : label;
+}
+
 interface Sujet {
+  animal_types?: string[] | null; animal_type?: string | null; race?: string | null;
   id: string; titre: string; contenu: string;
   auteur_uid: string; auteur_profile_id?: string | null; epingle: boolean; created_at: string;
   photo_url?: string | null; video_url?: string | null;
@@ -173,6 +191,16 @@ export default function ForumCategoriePage() {
   const [newTitre, setNewTitre] = useState('');
   const [newContenu, setNewContenu] = useState('');
   const [newPhoto, setNewPhoto] = useState<File | null>(null);
+  const [newAnimaux, setNewAnimaux] = useState<string[]>([]);
+  const [newRace, setNewRace] = useState('');
+  const [races, setRaces] = useState<string[]>([]);
+  // Race facultative : seulement quand une seule espèce est cochée.
+  useEffect(() => {
+    let annule = false;
+    if (newAnimaux.length !== 1) { setRaces([]); setNewRace(''); return; }
+    loadBreeds(newAnimaux[0]).then(r => { if (!annule) { setRaces(r); setNewRace(x => (r.includes(x) ? x : '')); } });
+    return () => { annule = true; };
+  }, [newAnimaux]);
   const [saving, setSaving] = useState(false);
 
   const loadSujets = useCallback(async () => {
@@ -239,12 +267,17 @@ export default function ForumCategoriePage() {
         titre: newTitre.trim(), contenu: newContenu.trim(),
         created_at: new Date().toISOString(),
         ...(photoUrl ? { photo_url: photoUrl } : {}),
+        ...(newAnimaux.length ? { animal_types: newAnimaux } : {}),
+        // Une seule espèce : animal_type garde la couleur / l'ancien affichage (appli).
+        ...(newAnimaux.length === 1 ? { animal_type: newAnimaux[0], ...(newRace ? { race: newRace } : {}) } : {}),
       }).select().single();
       if (data) setSujets(prev => [data as Sujet, ...prev]);
       setShowCreate(false);
       setNewTitre('');
       setNewContenu('');
       setNewPhoto(null);
+      setNewAnimaux([]);
+      setNewRace('');
     } finally { setSaving(false); }
   }
 
@@ -304,6 +337,9 @@ export default function ForumCategoriePage() {
                       {(s.video_url ? '🎥 ' : s.photo_url ? '📷 ' : '')}{s.titre}
                     </p>
                     <p className="text-xs text-gray-500 line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{s.contenu}</p>
+                    {libelleAnimaux(s) && (
+                      <span className="inline-block mt-2 text-[11px] font-semibold text-[#00838F] bg-[#00ACC1]/10 rounded-full px-2 py-0.5">{libelleAnimaux(s)}</span>
+                    )}
                     <p className="text-xs text-gray-400 mt-2">{fmtDate(s.created_at)}</p>
                   </div>
                   <svg className="w-4 h-4 text-gray-400 flex-shrink-0 mt-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -415,6 +451,50 @@ export default function ForumCategoriePage() {
                 <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600">✕</button>
               </div>
               <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Animal concerné (facultatif)</label>
+                  <details className="group border border-gray-200 rounded-xl bg-white">
+                    <summary className="list-none cursor-pointer flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                      <span className={newAnimaux.length ? 'text-[#1E2025]' : 'text-gray-400'}>
+                        {newAnimaux.length === 0 ? 'Choisir'
+                          : newAnimaux.length === ANIMAUX_FORUM.length ? 'Toutes espèces'
+                          : ANIMAUX_FORUM.filter(a => newAnimaux.includes(a.value)).map(a => a.label).join(', ')}
+                      </span>
+                      <svg className="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </summary>
+                    <div className="border-t border-gray-100 py-1 max-h-60 overflow-y-auto">
+                      <label className="flex items-center gap-3 px-4 py-2 text-sm font-semibold cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" className="w-4 h-4 accent-[#00ACC1]"
+                          checked={newAnimaux.length === ANIMAUX_FORUM.length}
+                          onChange={e => setNewAnimaux(e.target.checked ? ANIMAUX_FORUM.map(a => a.value) : [])} />
+                        Tout cocher
+                      </label>
+                      <div className="border-t border-gray-100 my-1" />
+                      {ANIMAUX_FORUM.map(a => (
+                        <label key={a.value} className="flex items-center gap-3 px-4 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                          <input type="checkbox" className="w-4 h-4 accent-[#00ACC1]"
+                            checked={newAnimaux.includes(a.value)}
+                            onChange={e => setNewAnimaux(prev => e.target.checked
+                              ? ANIMAUX_FORUM.map(x => x.value).filter(v => v === a.value || prev.includes(v))
+                              : prev.filter(v => v !== a.value))} />
+                          {a.label}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+                {newAnimaux.length === 1 && races.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Race (facultatif)</label>
+                    <select value={newRace} onChange={e => setNewRace(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[#00ACC1]">
+                      <option value="">Toutes races</option>
+                      {races.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Titre *</label>
                   <input

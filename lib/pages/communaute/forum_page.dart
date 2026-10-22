@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:PetsMatch/main.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -263,6 +265,28 @@ const _kAnimalTypes = [
   ('Porc',   'porcin'),
   ('Autre',  'autre'),
 ];
+
+const _kBreedAssets = {
+  'chien': 'assets/dog_breeds.json', 'chat': 'assets/cat_breeds.json',
+  'cheval': 'assets/horse_breeds.json', 'lapin': 'assets/rabbit_breeds.json',
+  'oiseau': 'assets/bird_breeds.json', 'nac': 'assets/nac_breeds.json',
+  'ovin': 'assets/sheep_breeds.json', 'caprin': 'assets/goat_breeds.json',
+  'porcin': 'assets/pig_breeds.json',
+};
+
+/// Libellé « Animal concerné » d'un sujet : plusieurs espèces (animal_types),
+/// « Toutes espèces », + race facultative ; repli sur l'ancien animal_type.
+String _libelleAnimaux(Map<String, dynamic> sujet) {
+  final types = (sujet['animal_types'] as List?)?.map((e) => e.toString()).toList() ?? [];
+  final un = sujet['animal_type']?.toString() ?? '';
+  final liste = types.isNotEmpty ? types : (un.isNotEmpty ? [un] : <String>[]);
+  if (liste.isEmpty) return '';
+  final label = liste.length >= _kAnimalTypes.length
+      ? 'Toutes espèces'
+      : liste.map((v) => _kAnimalTypes.firstWhere((t) => t.$2 == v, orElse: () => (v, v)).$1).join(', ');
+  final race = sujet['race']?.toString() ?? '';
+  return race.isNotEmpty ? '$label · $race' : label;
+}
 
 Color _animalColor(String? type) {
   switch (type) {
@@ -608,6 +632,7 @@ class _SujetTile extends StatelessWidget {
     final epingle = sujet['epingle'] == true;
     final animalType = sujet['animal_type']?.toString() ?? '';
     final animalColor = _animalColor(animalType.isEmpty ? null : animalType);
+    final libelleAnimaux = _libelleAnimaux(sujet);
 
     return GestureDetector(
       onTap: onTap,
@@ -660,7 +685,7 @@ class _SujetTile extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                     ],
-                    if (animalType.isNotEmpty) ...[
+                    if (libelleAnimaux.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -669,7 +694,7 @@ class _SujetTile extends StatelessWidget {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          animalType[0].toUpperCase() + animalType.substring(1),
+                          libelleAnimaux,
                           style: TextStyle(
                               fontFamily: 'Galey',
                               fontSize: 11,
@@ -1064,7 +1089,9 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
   final _contenuCtrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
-  String? _animalType;
+  final Set<String> _animalTypes = {};
+  String? _race;
+  List<String> _races = [];
   File? _photo;
   File? _video;
   bool _saving = false;
@@ -1102,7 +1129,10 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         'titre': _titre,
         'contenu': contenu,
         'created_at': DateTime.now().toIso8601String(),
-        if (_animalType != null) 'animal_type': _animalType,
+        if (_animalTypes.isNotEmpty) 'animal_types': _animalTypes.toList(),
+        // Une seule espèce : animal_type garde la couleur / l'ancien affichage.
+        if (_animalTypes.length == 1) 'animal_type': _animalTypes.first,
+        if (_animalTypes.length == 1 && _race != null) 'race': _race,
         if (media.photoUrl != null) 'photo_url': media.photoUrl,
         if (media.videoUrl != null) 'video_url': media.videoUrl,
       }).select('id').single();
@@ -1172,32 +1202,67 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
 
                 _lbl('Animal concerné'),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _kAnimalTypes.map((t) {
-                    final sel = _animalType == t.$2;
-                    final color = _animalColor(t.$2);
-                    return GestureDetector(
-                      onTap: () => setState(() => _animalType = sel ? null : t.$2),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: sel ? color : Colors.white.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: sel ? color : Colors.white.withValues(alpha: 0.20)),
-                        ),
-                        child: Text(t.$1,
-                            style: TextStyle(
-                                fontFamily: 'Galey',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: sel ? Colors.white : Colors.white.withValues(alpha: 0.70))),
+                Theme(
+                  data: Theme.of(context).copyWith(
+                    dividerColor: Colors.transparent,
+                    unselectedWidgetColor: Colors.white.withValues(alpha: 0.6),
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                    ),
+                    child: ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                      iconColor: Colors.white70,
+                      collapsedIconColor: Colors.white70,
+                      title: Text(
+                        _animalTypes.isEmpty
+                            ? 'Choisir (facultatif)'
+                            : _animalTypes.length == _kAnimalTypes.length
+                                ? 'Toutes espèces'
+                                : _kAnimalTypes.where((t) => _animalTypes.contains(t.$2)).map((t) => t.$1).join(', '),
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                            color: _animalTypes.isEmpty ? Colors.white.withValues(alpha: 0.5) : Colors.white),
                       ),
-                    );
-                  }).toList(),
+                      children: [
+                        _caseAnimal('Tout cocher', _animalTypes.length == _kAnimalTypes.length, (v) {
+                          setState(() {
+                            _animalTypes.clear();
+                            if (v) _animalTypes.addAll(_kAnimalTypes.map((t) => t.$2));
+                          });
+                          _chargerRaces();
+                        }, gras: true),
+                        Divider(height: 1, color: Colors.white.withValues(alpha: 0.15)),
+                        ..._kAnimalTypes.map((t) => _caseAnimal(t.$1, _animalTypes.contains(t.$2), (v) {
+                          setState(() => v ? _animalTypes.add(t.$2) : _animalTypes.remove(t.$2));
+                          _chargerRaces();
+                        })),
+                      ],
+                    ),
+                  ),
                 ),
+                // Race facultative : une seule espèce cochée qui a une liste de races.
+                if (_animalTypes.length == 1 && _races.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _lbl('Race (facultatif)'),
+                  DropdownButtonFormField<String?>(
+                    value: _race,
+                    isExpanded: true,
+                    dropdownColor: _darkC,
+                    menuMaxHeight: 360,
+                    style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 14),
+                    iconEnabledColor: Colors.white70,
+                    decoration: _dec('Toutes races'),
+                    items: [
+                      const DropdownMenuItem<String?>(value: null, child: Text('Toutes races')),
+                      ..._races.map((r) => DropdownMenuItem<String?>(value: r, child: Text(r, overflow: TextOverflow.ellipsis))),
+                    ],
+                    onChanged: (v) => setState(() => _race = v),
+                  ),
+                ],
                 const SizedBox(height: 20),
 
                 _lbl('Titre *'),
@@ -1268,6 +1333,35 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
                 fontSize: 13,
                 color: Colors.white.withValues(alpha: 0.6))),
       );
+
+  Widget _caseAnimal(String label, bool coche, ValueChanged<bool> onChanged, {bool gras = false}) =>
+      CheckboxListTile(
+        dense: true,
+        controlAffinity: ListTileControlAffinity.leading,
+        activeColor: _tealC,
+        checkColor: Colors.white,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.6)),
+        value: coche,
+        onChanged: (v) => onChanged(v == true),
+        title: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white,
+            fontWeight: gras ? FontWeight.w600 : FontWeight.normal)),
+      );
+
+  /// Liste des races de l'espèce cochée (une seule) ; sinon pas de race.
+  Future<void> _chargerRaces() async {
+    if (_animalTypes.length != 1) {
+      setState(() { _races = []; _race = null; });
+      return;
+    }
+    final esp = _animalTypes.first;
+    final asset = _kBreedAssets[esp];
+    List<String> races = [];
+    if (asset != null) {
+      try { races = List<String>.from(json.decode(await rootBundle.loadString(asset))); } catch (_) {}
+    }
+    if (!mounted || _animalTypes.length != 1 || _animalTypes.first != esp) return;
+    setState(() { _races = races; if (_race != null && !races.contains(_race)) _race = null; });
+  }
 
   InputDecoration _dec(String hint) => InputDecoration(
         hintText: hint,
