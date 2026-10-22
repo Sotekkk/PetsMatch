@@ -1018,8 +1018,6 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
             padding: const EdgeInsets.only(top: 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                speciesIcon(espece, 14, color),
-                const SizedBox(width: 6),
                 Text(speciesLabel(espece),
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
                         fontSize: 13, color: color)),
