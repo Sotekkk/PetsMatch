@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
+import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/liste_especes_cocher.dart';
 import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart' show referencementLieu, kLibelleReferencement, kIconeReferencement;
@@ -405,6 +409,160 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
         ligne(Icons.flag_outlined, 'Signaler une information', () => _signalerLieu(lieu)),
       ]),
     );
+  }
+
+  // ── Revendication (gratuite, vérifiée par l'équipe) ─────────────────────
+  Map<String, dynamic>? _maRevendication;
+  bool _revendicationChargee = false;
+
+  Future<void> _chargerRevendication() async {
+    if (_uid == null || _revendicationChargee) return;
+    _revendicationChargee = true;
+    try {
+      final r = await _supabase.from('petfriendly_revendications').select('statut, motif')
+          .eq('place_id', widget.id).eq('uid', _uid!).order('created_at', ascending: false).limit(1).maybeSingle();
+      if (mounted) setState(() => _maRevendication = r);
+    } catch (_) {}
+  }
+
+  Widget _blocGestion(Map<String, dynamic> lieu) {
+    if (_uid != null && _uid == lieu['uid_pro']) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: SizedBox(width: double.infinity, child: OutlinedButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MonEtablissementPage())),
+          icon: const Icon(Icons.edit_outlined, size: 18),
+          label: const Text('Gérer ma fiche', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        )),
+      );
+    }
+    if (lieu['uid_pro'] != null) return const SizedBox.shrink();
+    _chargerRevendication();
+    final enCours = _maRevendication?['statut'] == 'en_attente';
+    final refusee = _maRevendication?['statut'] == 'refusee';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade300)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Vous gérez cet établissement ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 14)),
+        const SizedBox(height: 4),
+        Text(enCours
+            ? 'Votre demande est en cours de vérification par l\'équipe PetsMatch.'
+            : refusee
+                ? 'Votre demande précédente a été refusée${(_maRevendication?['motif'] ?? '').toString().isNotEmpty ? ' : ${_maRevendication!['motif']}' : ''}. Vous pouvez en envoyer une nouvelle.'
+                : 'Revendiquez gratuitement cette fiche pour corriger les informations et répondre aux avis. Sans abonnement.',
+            style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700, height: 1.4)),
+        if (!enCours) ...[
+          const SizedBox(height: 10),
+          SizedBox(width: double.infinity, child: OutlinedButton(
+            onPressed: () => _revendiquer(lieu),
+            child: const Text('Revendiquer cette fiche', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ],
+      ]),
+    );
+  }
+
+  Future<void> _revendiquer(Map<String, dynamic> lieu) async {
+    if (!_connecteOuAvertir()) return;
+    const fonctions = ['Gérant(e)', 'Propriétaire', 'Directeur / directrice', 'Salarié(e) mandaté(e)', 'Autre'];
+    String fonction = fonctions.first;
+    String methode = 'email_pro';
+    final siretCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    File? justificatif;
+    String? erreur;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          const Text('Revendiquer cette fiche', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18)),
+          const SizedBox(height: 4),
+          Text('Gratuit, sans abonnement. Les avis et l\'historique de la fiche sont conservés.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            initialValue: fonction, isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Votre fonction *', border: OutlineInputBorder()),
+            items: [for (final f in fonctions) DropdownMenuItem(value: f, child: Text(f))],
+            onChanged: (v) => setS(() => fonction = v ?? fonction),
+          ),
+          const SizedBox(height: 12),
+          TextField(controller: siretCtrl, keyboardType: TextInputType.number, maxLength: 14,
+              decoration: const InputDecoration(labelText: 'SIRET de l\'établissement *', border: OutlineInputBorder())),
+          const Text('Preuve de votre lien avec l\'établissement *', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          RadioListTile<String>(
+            contentPadding: EdgeInsets.zero, value: 'email_pro', groupValue: methode,
+            onChanged: (v) => setS(() => methode = v!),
+            title: const Text('Adresse e-mail professionnelle'),
+            subtitle: const Text('Au nom de domaine du site de l\'établissement.'),
+          ),
+          if (methode == 'email_pro')
+            TextField(controller: emailCtrl, keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'E-mail professionnel', border: OutlineInputBorder())),
+          RadioListTile<String>(
+            contentPadding: EdgeInsets.zero, value: 'justificatif', groupValue: methode,
+            onChanged: (v) => setS(() => methode = v!),
+            title: const Text('Justificatif'),
+            subtitle: const Text('Kbis, extrait INSEE, bail ou facture au nom de l\'établissement (photo).'),
+          ),
+          if (methode == 'justificatif')
+            OutlinedButton.icon(
+              onPressed: () async {
+                final x = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+                if (x != null) setS(() => justificatif = File(x.path));
+              },
+              icon: const Icon(Icons.upload_file_outlined, size: 18),
+              label: Text(justificatif == null ? 'Choisir le justificatif' : 'Justificatif ajouté'),
+            ),
+          if (erreur != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(erreur!, style: const TextStyle(color: Colors.red))),
+          const SizedBox(height: 8),
+          Text('Chaque demande est vérifiée par l\'équipe PetsMatch avant de donner l\'accès à la fiche.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 12),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 13)),
+            onPressed: () {
+              final siret = siretCtrl.text.replaceAll(' ', '');
+              if (siret.length != 14) { setS(() => erreur = 'SIRET : 14 chiffres.'); return; }
+              if (methode == 'email_pro' && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailCtrl.text.trim())) {
+                setS(() => erreur = 'Adresse e-mail invalide.'); return;
+              }
+              if (methode == 'justificatif' && justificatif == null) { setS(() => erreur = 'Ajoutez le justificatif.'); return; }
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Envoyer ma demande', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ])),
+      )),
+    );
+    final siret = siretCtrl.text.replaceAll(' ', '');
+    final email = emailCtrl.text.trim();
+    siretCtrl.dispose(); emailCtrl.dispose();
+    if (ok != true) return;
+    try {
+      String? url;
+      if (methode == 'justificatif' && justificatif != null) {
+        url = await stockage.uploadPhotoPrive(justificatif!, 'revendications/$_uid/${widget.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      }
+      await _supabase.from('petfriendly_revendications').insert({
+        'place_id': widget.id, 'uid': _uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
+        'fonction': fonction, 'siret': siret, 'methode': methode,
+        if (methode == 'email_pro') 'email_pro': email,
+        if (url != null) 'justificatif_url': url,
+      });
+      if (!mounted) return;
+      setState(() => _maRevendication = {'statut': 'en_attente'});
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Demande envoyée : vous serez prévenu(e) après vérification.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi impossible : $e')));
+    }
   }
 
   bool _connecteOuAvertir() {
@@ -974,6 +1132,9 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                   // Contribuer : corriger, signaler (une seule fois chacune)
                   _actionsContribution(lieu),
                   const SizedBox(height: 16),
+
+                  // Gestionnaire : gérer sa fiche ; sinon revendication (gratuite)
+                  _blocGestion(lieu),
 
                   // Description
                   if (description.isNotEmpty) ...[

@@ -120,6 +120,44 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
   const [raison, setRaison] = useState('');
   const [detailSignal, setDetailSignal] = useState('');
   const [messageContrib, setMessageContrib] = useState('');
+  // Revendication gratuite (vérifiée par l'équipe).
+  const [maRevendication, setMaRevendication] = useState<{ statut: string; motif?: string | null } | null>(null);
+  const [rev, setRev] = useState({ fonction: 'Gérant(e)', siret: '', methode: 'email_pro' as 'email_pro' | 'justificatif', email: '' });
+  const [revFichier, setRevFichier] = useState<File | null>(null);
+  const [revOuvert, setRevOuvert] = useState(false);
+  const [revErreur, setRevErreur] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('petfriendly_revendications').select('statut, motif').eq('place_id', id).eq('uid', user.uid)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setMaRevendication(data as typeof maRevendication));
+  }, [user, id]);
+
+  async function envoyerRevendication() {
+    if (!user) return;
+    const siret = rev.siret.replace(/\s/g, '');
+    if (siret.length !== 14) { setRevErreur('SIRET : 14 chiffres.'); return; }
+    if (rev.methode === 'email_pro' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rev.email.trim())) { setRevErreur('Adresse e-mail invalide.'); return; }
+    if (rev.methode === 'justificatif' && !revFichier) { setRevErreur('Ajoutez le justificatif.'); return; }
+    setRevErreur('');
+    let url: string | null = null;
+    if (rev.methode === 'justificatif' && revFichier) {
+      // Stockage privé (documents) : seul l'admin l'ouvre, par lien temporaire.
+      const ext = revFichier.type === 'application/pdf' ? 'pdf' : 'jpg';
+      const chemin = `revendications/${user.uid}/${id}_${Date.now()}.${ext}`;
+      const { error: e } = await supabase.storage.from('documents').upload(chemin, revFichier, { contentType: revFichier.type || 'image/jpeg', upsert: true });
+      if (e) { setRevErreur(`Envoi du justificatif impossible : ${e.message}`); return; }
+      url = supabase.storage.from('documents').getPublicUrl(chemin).data.publicUrl;
+    }
+    const { error: err } = await supabase.from('petfriendly_revendications').insert({
+      place_id: id, uid: user.uid, ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+      fonction: rev.fonction, siret, methode: rev.methode,
+      ...(rev.methode === 'email_pro' ? { email_pro: rev.email.trim() } : {}), ...(url ? { justificatif_url: url } : {}),
+    });
+    if (err) { setRevErreur(`Envoi impossible : ${err.message}`); return; }
+    setMaRevendication({ statut: 'en_attente' }); setRevOuvert(false);
+  }
 
   function ouvrirCorrection() {
     if (!lieu) return;
@@ -400,6 +438,45 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
         {messageContrib && <p className="text-sm text-[#0C5C6C] -mt-3 mb-5" style={{ fontFamily: 'Galey, sans-serif' }}>{messageContrib}</p>}
+
+        {/* Gestion : gestionnaire, ou revendication gratuite d'une fiche sans gestionnaire */}
+        {!lieu.uid_pro && (
+          <div className="mb-5 bg-white rounded-2xl border border-gray-200 p-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+            <p className="font-bold text-sm text-[#1F2A2E]">Vous gérez cet établissement ?</p>
+            <p className="text-[13px] text-gray-600 mt-1">
+              {maRevendication?.statut === 'en_attente' ? "Votre demande est en cours de vérification par l'équipe PetsMatch."
+                : maRevendication?.statut === 'refusee' ? `Votre demande précédente a été refusée${maRevendication.motif ? ` : ${maRevendication.motif}` : ''}. Vous pouvez en envoyer une nouvelle.`
+                : 'Revendiquez gratuitement cette fiche pour corriger les informations et répondre aux avis. Sans abonnement.'}
+            </p>
+            {maRevendication?.statut !== 'en_attente' && !revOuvert && (
+              user
+                ? <button type="button" onClick={() => setRevOuvert(true)} className="mt-3 w-full py-2.5 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Revendiquer cette fiche</button>
+                : <Link href={`/connexion?suite=/animal-friendly/${id}`} className="mt-3 block text-center py-2.5 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Se connecter pour revendiquer</Link>
+            )}
+            {revOuvert && (
+              <div className="mt-3 space-y-3">
+                <div><label htmlFor="rev-fonction" className="text-sm font-bold block mb-1">Votre fonction *</label>
+                  <select id="rev-fonction" value={rev.fonction} onChange={e => setRev(r => ({ ...r, fonction: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+                    {['Gérant(e)', 'Propriétaire', 'Directeur / directrice', 'Salarié(e) mandaté(e)', 'Autre'].map(f => <option key={f}>{f}</option>)}
+                  </select></div>
+                <div><label htmlFor="rev-siret" className="text-sm font-bold block mb-1">SIRET de l&apos;établissement *</label>
+                  <input id="rev-siret" inputMode="numeric" maxLength={17} value={rev.siret} onChange={e => setRev(r => ({ ...r, siret: e.target.value }))} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" /></div>
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-bold mb-1">Preuve de votre lien avec l&apos;établissement *</legend>
+                  <label className="flex items-start gap-2 text-sm"><input type="radio" name="rev-methode" className="mt-1 accent-[#0C5C6C]" checked={rev.methode === 'email_pro'} onChange={() => setRev(r => ({ ...r, methode: 'email_pro' }))} />
+                    <span><strong>Adresse e-mail professionnelle</strong><br /><span className="text-gray-500 text-xs">Au nom de domaine du site de l&apos;établissement.</span></span></label>
+                  {rev.methode === 'email_pro' && <input type="email" aria-label="E-mail professionnel" value={rev.email} onChange={e => setRev(r => ({ ...r, email: e.target.value }))} placeholder="contact@etablissement.fr" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />}
+                  <label className="flex items-start gap-2 text-sm"><input type="radio" name="rev-methode" className="mt-1 accent-[#0C5C6C]" checked={rev.methode === 'justificatif'} onChange={() => setRev(r => ({ ...r, methode: 'justificatif' }))} />
+                    <span><strong>Justificatif</strong><br /><span className="text-gray-500 text-xs">Kbis, extrait INSEE, bail ou facture au nom de l&apos;établissement (PDF ou photo).</span></span></label>
+                  {rev.methode === 'justificatif' && <input type="file" accept="image/*,application/pdf" aria-label="Justificatif" onChange={e => setRevFichier(e.target.files?.[0] ?? null)} className="text-sm" />}
+                </fieldset>
+                <p className="text-xs text-gray-500">Chaque demande est vérifiée par l&apos;équipe PetsMatch avant de donner l&apos;accès à la fiche. Les avis et l&apos;historique sont conservés.</p>
+                {revErreur && <p className="text-sm text-red-600">{revErreur}</p>}
+                <button type="button" onClick={envoyerRevendication} className="w-full py-2.5 rounded-xl bg-[#0C5C6C] text-white font-bold text-sm">Envoyer ma demande</button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Conditions animaux (hébergement) */}
         {isHeb && lieu.uid_pro && (lieu.animaux_dans_chambre != null || lieu.frais_animal_nuit != null || lieu.nb_animaux_max != null || lieu.espace_detente != null || (lieu.equipements_fournis?.length ?? 0) > 0) && (

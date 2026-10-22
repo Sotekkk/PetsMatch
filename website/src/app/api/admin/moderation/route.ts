@@ -62,6 +62,15 @@ export async function GET(req: NextRequest) {
         .map(o => ({ id: o.id, nom: o.nom, ville: o.ville, statut: o.statut, metres: Math.round(dist(p, o)) }));
       if (proches.length) doublons[p.id] = proches;
     }
+    // Justificatifs de revendication (stockage privé) : lien temporaire d'1 h.
+    const revs = (revendications.data ?? []) as { justificatif_url?: string | null }[];
+    for (const r of revs) {
+      const m = r.justificatif_url?.match(/\/object\/(?:public|sign)\/documents\/([^?]+)/);
+      if (m) {
+        const { data: sig } = await supabaseAdmin.storage.from('documents').createSignedUrl(decodeURIComponent(m[1]), 3600);
+        r.justificatif_url = sig?.signedUrl ?? null;
+      }
+    }
     return NextResponse.json({
       enAttente: enAttente.data ?? [], aCorriger: aCorriger.data ?? [], publies: publies.data ?? [],
       corrections: corrections.data ?? [], revendications: revendications.data ?? [], journal: journal.data ?? [], doublons,

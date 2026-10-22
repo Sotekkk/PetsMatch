@@ -685,6 +685,9 @@ class _EditLieuPageState extends State<_EditLieuPage>
         payload.addAll({
           'terrasse':         _terrasse,
           'animaux_en_salle': _animauxSalle,
+          // Conditions désormais déclarées par l'établissement (fiche revendiquée ou non).
+          'source_conditions': 'etablissement',
+          'derniere_confirmation_le': DateTime.now().toIso8601String().substring(0, 10),
           'eau_fournie':      _eauFournie,
           'friandises':       _friandises,
           'pet_menu':         _petMenu,
