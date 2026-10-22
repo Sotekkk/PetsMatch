@@ -15,36 +15,28 @@ export interface PetFriendlyMapItem {
   lng: number;
   note_moyenne?: number | null;
   nb_avis?: number | null;
+  referencement?: 'communaute' | 'verifie' | 'partenaire';
 }
 
-const CAT_COLOR: Record<string, string> = {
-  hebergement: '#1E88E5',
-  restauration: '#EF6C00',
-};
-const CAT_EMOJI: Record<string, string> = {
-  hebergement: '🏨',
-  restauration: '🍽️',
+// Couleur d'épingle selon le référencement (une seule carte pour les trois).
+const REF_COLOR: Record<string, string> = { communaute: '#FFFFFF', verifie: '#0C5C6C', partenaire: '#6E9E57' };
+const REF_LABEL: Record<string, string> = {
+  communaute: 'Recommandé par la communauté', verifie: 'Établissement vérifié', partenaire: 'Partenaire PetsMatch',
 };
 const CAT_LABEL: Record<string, string> = {
-  hebergement: 'Hébergement',
-  restauration: 'Restauration',
+  hebergement: 'Hébergement', restauration: 'Café / restaurant', commerce: 'Commerce', activite: 'Activité ou loisir',
 };
 
-function makeIcon(categorie: string) {
-  const color = CAT_COLOR[categorie] ?? '#0C5C6C';
-  const emoji = CAT_EMOJI[categorie] ?? '📍';
-
+function makeIcon(referencement: string) {
+  const fond = REF_COLOR[referencement] ?? '#0C5C6C';
+  const bord = referencement === 'communaute' ? '#5E6B70' : '#FFFFFF';
   return L.divIcon({
     className: '',
-    html: `<div style="
-      background:${color};width:34px;height:34px;border-radius:50% 50% 50% 0;
-      transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;
-      box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid white;">
-      <span style="transform:rotate(45deg);font-size:15px;line-height:1">${emoji}</span>
-    </div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 34],
-    popupAnchor: [0, -36],
+    html: `<div style="background:${fond};width:30px;height:30px;border-radius:50% 50% 50% 0;
+      transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.3);border:3px solid ${bord};"></div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    popupAnchor: [0, -32],
   });
 }
 
@@ -71,12 +63,12 @@ export default function PetFriendlyPlacesMap({ places }: { places: PetFriendlyMa
       />
       <FitBounds places={places} />
       {places.map(p => (
-        <Marker key={p.id} position={[p.lat, p.lng]} icon={makeIcon(p.categorie)}>
+        <Marker key={p.id} position={[p.lat, p.lng]} icon={makeIcon(p.referencement ?? 'verifie')}>
           <Popup>
             <div className="text-sm" style={{ minWidth: 160 }}>
               <p className="font-bold text-[#1F2A2E]">{p.nom}</p>
-              <p className="text-gray-500 text-xs">{CAT_EMOJI[p.categorie]} {CAT_LABEL[p.categorie] ?? p.categorie}</p>
-              {p.ville && <p className="text-gray-500 text-xs">📍 {p.ville}</p>}
+              <p className="text-gray-500 text-xs">{CAT_LABEL[p.categorie] ?? p.categorie}{p.referencement ? ` · ${REF_LABEL[p.referencement]}` : ''}</p>
+              {p.ville && <p className="text-gray-500 text-xs">{p.ville}</p>}
               {(p.nb_avis ?? 0) > 0 && (
                 <p className="text-gray-500 text-xs">★ {(p.note_moyenne ?? 0).toFixed(1)} ({p.nb_avis} avis)</p>
               )}

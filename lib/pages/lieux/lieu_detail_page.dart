@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:PetsMatch/widgets/liste_especes_cocher.dart' show kEspecesLieux;
+import 'package:PetsMatch/widgets/liste_especes_cocher.dart';
+import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart' show referencementLieu, kLibelleReferencement, kIconeReferencement;
+import 'package:intl/intl.dart' show DateFormat;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -301,6 +303,229 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
   }
 
   // ─── Section horaires ──────────────────────────────────────────────────────
+
+  // ── Référencement, conditions, contributions ───────────────────────────
+  Widget _blocReferencement(Map<String, dynamic> lieu) {
+    final ref = referencementLieu(lieu);
+    final communaute = ref == 'communaute';
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(kIconeReferencement[ref], size: 16,
+            color: ref == 'partenaire' ? const Color(0xFF4E7A3B) : ref == 'verifie' ? _teal : Colors.grey.shade700),
+        const SizedBox(width: 6),
+        Text(kLibelleReferencement[ref]!,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+      ]),
+      const SizedBox(height: 8),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: communaute ? const Color(0xFFFDF6EC) : const Color(0xFFE8F4F6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: communaute ? const Color(0xFFF1D9B5) : const Color(0xFFCFE5EA)),
+        ),
+        child: Text(
+          communaute
+              ? 'Ce lieu a été ajouté par un membre de PetsMatch. Les conditions d\'accueil des animaux n\'ont pas été '
+                'confirmées par l\'établissement. Nous vous recommandons de les vérifier avant votre visite.'
+              : 'Informations gérées par l\'établissement.'
+                '${ref == 'verifie' ? ' La vérification concerne le gestionnaire de la fiche, pas la qualité de l\'établissement.' : ''}',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, height: 1.4,
+              color: communaute ? const Color(0xFF6B4A12) : const Color(0xFF0C4A55)),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _conditionsAccueil(Map<String, dynamic> lieu) {
+    String etat(dynamic v) => v == true ? 'Oui' : v == false ? 'Non' : 'Non renseigné';
+    final especes = List<String>.from(lieu['especes_acceptees'] as List? ?? []);
+    final dateConf = DateTime.tryParse(lieu['derniere_confirmation_le']?.toString() ?? '');
+    final communaute = lieu['source_conditions'] == 'communaute' || lieu['uid_pro'] == null;
+    final lignes = <(String, String)>[
+      ('Espèces accueillies', especes.isEmpty ? 'Non renseigné'
+          : kEspecesLieux.where((e) => especes.contains(e.$1)).map((e) => e.$2).join(', ')),
+      ('Accès intérieur', etat(lieu['animaux_en_salle'])),
+      ('Terrasse / extérieur', etat(lieu['terrasse'])),
+      ('Restriction de taille', etat(lieu['restriction_taille'])),
+      ('Nombre d\'animaux', lieu['nb_animaux_max'] == null ? 'Non renseigné' : '${lieu['nb_animaux_max']} maximum'),
+      ('Supplément', etat(lieu['supplement_animal'])),
+      if ((lieu['conditions_particulieres'] ?? '').toString().trim().isNotEmpty)
+        ('Conditions particulières', lieu['conditions_particulieres'].toString().trim()),
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Conditions d\'accueil des animaux',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        const SizedBox(height: 4),
+        Text(
+          '${communaute ? 'Source : communauté' : 'Source : établissement'}'
+          '${dateConf != null ? ' · ${communaute ? 'dernière visite déclarée' : 'confirmé'} le ${DateFormat('dd/MM/yyyy').format(dateConf)}' : ''}',
+          style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 8),
+        for (final l in lignes)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 150, child: Text(l.$1, style: TextStyle(fontSize: 13, color: Colors.grey.shade600))),
+              Expanded(child: Text(l.$2, style: TextStyle(fontSize: 13,
+                  fontWeight: l.$2 == 'Non renseigné' ? FontWeight.w400 : FontWeight.w700,
+                  color: l.$2 == 'Non renseigné' ? Colors.grey.shade500 : const Color(0xFF1E2025)))),
+            ]),
+          ),
+        const SizedBox(height: 4),
+        Text('« Non renseigné » : l\'information n\'a pas été donnée, ce n\'est pas une confirmation.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+      ]),
+    );
+  }
+
+  Widget _actionsContribution(Map<String, dynamic> lieu) {
+    final gestionnaire = _uid != null && _uid == lieu['uid_pro'];
+    if (gestionnaire) return const SizedBox.shrink();
+    Widget ligne(IconData i, String t, VoidCallback onTap) => ListTile(
+          dense: true,
+          leading: Icon(i, color: _teal, size: 20),
+          title: Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+          trailing: const Icon(Icons.chevron_right, size: 18),
+          onTap: onTap,
+        );
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)]),
+      child: Column(children: [
+        ligne(Icons.edit_note_outlined, 'Proposer une correction', () => _proposerCorrection(lieu)),
+        const Divider(height: 1),
+        ligne(Icons.flag_outlined, 'Signaler une information', () => _signalerLieu(lieu)),
+      ]),
+    );
+  }
+
+  bool _connecteOuAvertir() {
+    if (_uid != null) return true;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connectez-vous pour contribuer.')));
+    return false;
+  }
+
+  Future<void> _proposerCorrection(Map<String, dynamic> lieu) async {
+    if (!_connecteOuAvertir()) return;
+    final especes = Set<String>.from(lieu['especes_acceptees'] as List? ?? []);
+    bool? interieur = lieu['animaux_en_salle'] as bool?, terrasse = lieu['terrasse'] as bool?;
+    bool? taille = lieu['restriction_taille'] as bool?, supplement = lieu['supplement_animal'] as bool?;
+    final commentaireCtrl = TextEditingController();
+    final envoye = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        Widget trois(String t, bool? v, ValueChanged<bool?> on) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                const SizedBox(height: 4),
+                SegmentedButton<int>(
+                  segments: const [ButtonSegment(value: 1, label: Text('Oui')), ButtonSegment(value: 0, label: Text('Non')),
+                    ButtonSegment(value: -1, label: Text('Je ne sais pas'))],
+                  selected: {v == true ? 1 : v == false ? 0 : -1},
+                  onSelectionChanged: (x) => setS(() => on(x.first == 1 ? true : x.first == 0 ? false : null)),
+                ),
+              ]),
+            );
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            const Text('Proposer une correction', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(height: 4),
+            Text('Votre proposition est vérifiée avant d\'être appliquée.', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 12),
+            ListeEspecesACocher(selection: especes, onChanged: (v) => setS(() { especes..clear()..addAll(v); })),
+            const SizedBox(height: 12),
+            trois('Accès intérieur', interieur, (v) => interieur = v),
+            trois('Terrasse / extérieur', terrasse, (v) => terrasse = v),
+            trois('Restriction de taille', taille, (v) => taille = v),
+            trois('Supplément tarifaire', supplement, (v) => supplement = v),
+            TextField(controller: commentaireCtrl, maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Précisions (adresse, horaires, fermeture…)', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 13)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ])),
+        );
+      }),
+    );
+    if (envoye != true) { commentaireCtrl.dispose(); return; }
+    // Seuls les champs modifiés partent dans la proposition.
+    final champs = <String, dynamic>{};
+    final avant = Set<String>.from(lieu['especes_acceptees'] as List? ?? []);
+    if (avant.length != especes.length || !avant.containsAll(especes)) champs['especes_acceptees'] = especes.toList();
+    if (interieur != lieu['animaux_en_salle']) champs['animaux_en_salle'] = interieur;
+    if (terrasse != lieu['terrasse']) champs['terrasse'] = terrasse;
+    if (taille != lieu['restriction_taille']) champs['restriction_taille'] = taille;
+    if (supplement != lieu['supplement_animal']) champs['supplement_animal'] = supplement;
+    final commentaire = commentaireCtrl.text.trim();
+    commentaireCtrl.dispose();
+    if (champs.isEmpty && commentaire.isEmpty) return;
+    try {
+      await _supabase.from('petfriendly_corrections').insert({
+        'place_id': widget.id, 'uid': _uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
+        'champs': champs, if (commentaire.isNotEmpty) 'commentaire': commentaire,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Merci : votre correction sera vérifiée par l\'équipe.')));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi impossible : $e')));
+    }
+  }
+
+  Future<void> _signalerLieu(Map<String, dynamic> lieu) async {
+    if (!_connecteOuAvertir()) return;
+    const raisons = [
+      ('information_incorrecte', 'Information incorrecte'),
+      ('animaux_refuses', 'Les animaux ne sont pas acceptés'),
+      ('lieu_ferme', 'Lieu fermé définitivement'),
+      ('photo_non_autorisee', 'Photo utilisée sans autorisation'),
+      ('donnees_personnelles', 'Données personnelles exposées'),
+      ('autre', 'Autre'),
+    ];
+    String? raison;
+    final detailCtrl = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+      title: const Text('Signaler une information', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        for (final r in raisons)
+          RadioListTile<String>(dense: true, contentPadding: EdgeInsets.zero, value: r.$1, groupValue: raison,
+              onChanged: (v) => setD(() => raison = v), title: Text(r.$2)),
+        TextField(controller: detailCtrl, maxLines: 3,
+            decoration: const InputDecoration(labelText: 'Précisions', border: OutlineInputBorder())),
+      ])),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+        TextButton(onPressed: raison == null ? null : () => Navigator.pop(ctx, true), child: const Text('Envoyer')),
+      ],
+    )));
+    final detail = detailCtrl.text.trim();
+    detailCtrl.dispose();
+    if (ok != true || raison == null) return;
+    try {
+      await _supabase.from('signalements').insert({
+        'reporter_uid': _uid, 'target_type': 'lieu', 'target_id': widget.id, 'raison': raison,
+        if (detail.isNotEmpty) 'description': detail,
+      });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Merci, votre signalement a été transmis.')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Envoi impossible : $e')));
+    }
+  }
 
   Widget _buildHorairesSection(Map<String, dynamic>? horaires) {
     if (horaires == null || horaires.isEmpty) return const SizedBox.shrink();
@@ -603,6 +828,8 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                       Text('${note.toStringAsFixed(1)} ($nbAvis avis)',
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     ]),
+                  const SizedBox(height: 10),
+                  _blocReferencement(lieu),
                   const SizedBox(height: 12),
 
                   // Adresse + nav
@@ -724,14 +951,29 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                     const SizedBox(height: 16),
                   ],
 
-                  // Champs spécifiques hébergement
-                  if (categorie == 'hebergement') ...[
-                    const Text('Conditions animaux',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-                    const SizedBox(height: 8),
+                  // Conditions d'accueil (tous les lieux) — source et date affichées
+                  _conditionsAccueil(lieu),
+                  const SizedBox(height: 16),
+
+                  // Champs spécifiques hébergement déclarés par l'établissement
+                  if (categorie == 'hebergement' && lieu['uid_pro'] != null) ...[
                     _PetInfoCard(lieu: lieu),
                     const SizedBox(height: 16),
                   ],
+
+                  // Recommandation du membre (lieu communautaire) : observation, pas une info officielle
+                  if (lieu['uid_pro'] == null && (lieu['recommandation'] ?? '').toString().trim().isNotEmpty) ...[
+                    const Text('Pourquoi un membre recommande ce lieu',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                    const SizedBox(height: 8),
+                    Text('« ${lieu['recommandation'].toString().trim()} »',
+                        style: const TextStyle(fontSize: 13, height: 1.5, fontStyle: FontStyle.italic)),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Contribuer : corriger, signaler (une seule fois chacune)
+                  _actionsContribution(lieu),
+                  const SizedBox(height: 16),
 
                   // Description
                   if (description.isNotEmpty) ...[

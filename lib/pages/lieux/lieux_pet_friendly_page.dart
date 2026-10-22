@@ -11,9 +11,36 @@ import 'lieu_detail_page.dart';
 import 'recommander_lieu_page.dart';
 import 'lieux_feed_page.dart';
 
-const _catHue = {
-  'hebergement':  BitmapDescriptor.hueAzure,
-  'restauration': BitmapDescriptor.hueOrange,
+// Couleur d'épingle selon le référencement : communauté, établissement
+// vérifié, partenaire PetsMatch (une seule carte pour les trois).
+const _refHue = {
+  'communaute': BitmapDescriptor.hueOrange,
+  'verifie':    BitmapDescriptor.hueAzure,
+  'partenaire': BitmapDescriptor.hueGreen,
+};
+
+/// Référencement d'un lieu : communauté (sans gestionnaire), établissement
+/// vérifié (gestionnaire, formule gratuite) ou partenaire (formule payante).
+String referencementLieu(Map<String, dynamic> l) {
+  if (l['uid_pro'] == null) return 'communaute';
+  if ((l['plan'] ?? 'decouverte') != 'decouverte') return 'partenaire';
+  return 'verifie';
+}
+
+const kLibelleReferencement = {
+  'communaute': 'Recommandé par la communauté',
+  'verifie': 'Établissement vérifié',
+  'partenaire': 'Partenaire PetsMatch',
+};
+const kIconeReferencement = {
+  'communaute': Icons.groups_outlined,
+  'verifie': Icons.verified_user_outlined,
+  'partenaire': Icons.star_outline_rounded,
+};
+
+const _libelleCategorie = {
+  'hebergement': 'Hébergement', 'restauration': 'Café / restaurant',
+  'commerce': 'Commerce', 'activite': 'Activité ou loisir',
 };
 
 class LieuxPetFriendlyPage extends StatefulWidget {
@@ -40,6 +67,8 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
   String _categorie = 'tous'; // 'tous' | 'hebergement' | 'restauration'
   // Espèces cochées (vide = toutes) : un lieu correspond s'il accepte au moins l'une d'elles.
   final Set<String> _especesFiltre = {};
+  // Référencement : tous | communaute | verifie | partenaire (combinable).
+  String _referencement = 'tous';
   String _sortBy = 'recent'; // 'recent' | 'note' | 'misEnAvant'
   bool _mapView = false;
 
@@ -108,8 +137,11 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
       var base = _supabase
           .from('petfriendly_places')
           .select(
-              'id, uid_pro, nom, categorie, sous_categorie, ville, lat, lng, especes_acceptees, horaires, photo_profil_url, banniere_url, photos, note_moyenne, nb_avis, nb_likes, plan, statut')
+              'id, uid_pro, nom, categorie, sous_categorie, ville, lat, lng, especes_acceptees, horaires, photo_profil_url, banniere_url, photos, note_moyenne, nb_avis, nb_likes, plan, statut, origine, verification')
           .eq('statut', 'actif');
+      if (_referencement == 'communaute') base = base.isFilter('uid_pro', null);
+      if (_referencement == 'verifie') base = base.not('uid_pro', 'is', null).eq('plan', 'decouverte');
+      if (_referencement == 'partenaire') base = base.not('uid_pro', 'is', null).neq('plan', 'decouverte');
 
       if (_categorie != 'tous') base = base.eq('categorie', _categorie);
       if (_especesFiltre.isNotEmpty) {
@@ -214,7 +246,7 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
                 itemBuilder: (_) => const [
                   PopupMenuItem(value: 'recent', child: Text('Les plus récents')),
                   PopupMenuItem(value: 'note', child: Text('Mieux notés')),
-                  PopupMenuItem(value: 'misEnAvant', child: Text('Mis en avant')),
+                  PopupMenuItem(value: 'misEnAvant', child: Text('Partenaires en premier (classement sponsorisé)')),
                 ],
               ),
               const SizedBox(width: 4),
@@ -260,7 +292,8 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
           ),
           // ── Filtres ──
           _Filters(
-            categorie: _categorie, especes: _especesFiltre,
+            categorie: _categorie, especes: _especesFiltre, referencement: _referencement,
+            onReferencement: (v) { _referencement = v; _load(reset: true); },
             onCategorie: (v) { _categorie = v; _load(reset: true); },
             onEspeces: (v) { _especesFiltre..clear()..addAll(v); _load(reset: true); },
           ),
@@ -332,16 +365,20 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
 class _Filters extends StatelessWidget {
   final String categorie;
   final Set<String> especes;
+  final String referencement;
   final ValueChanged<String> onCategorie;
   final ValueChanged<Set<String>> onEspeces;
+  final ValueChanged<String> onReferencement;
 
   static const _listeEspeces = kEspecesLieux;
 
   const _Filters({
     required this.categorie,
     required this.especes,
+    required this.referencement,
     required this.onCategorie,
     required this.onEspeces,
+    required this.onReferencement,
   });
 
   // Liste déroulante à cases à cocher, sans émoticônes.
@@ -405,6 +442,25 @@ class _Filters extends StatelessWidget {
               const SizedBox(width: 8),
               _Chip('Cafés & Restos', 'restauration', categorie, onCategorie,
                   Icons.restaurant_outlined),
+              const SizedBox(width: 8),
+              _Chip('Commerces', 'commerce', categorie, onCategorie,
+                  Icons.storefront_outlined),
+              const SizedBox(width: 8),
+              _Chip('Activités', 'activite', categorie, onCategorie,
+                  Icons.park_outlined),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(children: [
+              _Chip('Tous les lieux', 'tous', referencement, onReferencement, null),
+              const SizedBox(width: 8),
+              _Chip('Communauté', 'communaute', referencement, onReferencement, Icons.groups_outlined),
+              const SizedBox(width: 8),
+              _Chip('Établissements vérifiés', 'verifie', referencement, onReferencement, Icons.verified_user_outlined),
+              const SizedBox(width: 8),
+              _Chip('Partenaires PetsMatch', 'partenaire', referencement, onReferencement, Icons.star_outline_rounded),
             ]),
           ),
           const SizedBox(height: 8),
@@ -526,14 +582,14 @@ class _LieuxMapViewState extends State<_LieuxMapView> {
       if (lat == null || lng == null) continue;
       final id = lieu['id'] as String;
       final cat = lieu['categorie'] as String? ?? '';
+      final ref = referencementLieu(lieu);
       m[MarkerId(id)] = Marker(
         markerId: MarkerId(id),
         position: LatLng(lat, lng),
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-            _catHue[cat] ?? BitmapDescriptor.hueViolet),
+        icon: BitmapDescriptor.defaultMarkerWithHue(_refHue[ref] ?? BitmapDescriptor.hueViolet),
         infoWindow: InfoWindow(
           title: lieu['nom'] as String? ?? '',
-          snippet: cat == 'hebergement' ? '🏨 Hébergement' : '🍽️ Restauration',
+          snippet: '${_libelleCategorie[cat] ?? 'Lieu'} · ${kLibelleReferencement[ref]}',
           onTap: () => widget.onTapLieu(id),
         ),
       );
@@ -645,7 +701,7 @@ class _LieuCard extends StatelessWidget {
     final nom = lieu['nom'] as String? ?? '';
     final ouvert = _ouvertLabel(lieu);
     final especes = _especes(lieu);
-    final isPremium = lieu['plan'] == 'premium';
+    final ref = referencementLieu(lieu);
 
     return GestureDetector(
       onTap: onTap,
@@ -694,25 +750,6 @@ class _LieuCard extends StatelessWidget {
                         child: Text(ouvert,
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 10)),
-                      ),
-                    ),
-                  // Badge Recommandé
-                  if (isPremium)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFA000),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text('⭐ Recommandé',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700)),
                       ),
                     ),
                   // Logo circle
@@ -779,6 +816,15 @@ class _LieuCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Icon(kIconeReferencement[ref], size: 12,
+                          color: ref == 'partenaire' ? const Color(0xFF4E7A3B) : ref == 'verifie' ? const Color(0xFF0C5C6C) : Colors.grey.shade600),
+                      const SizedBox(width: 3),
+                      Expanded(child: Text(kLibelleReferencement[ref]!,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey.shade700))),
+                    ]),
                     const SizedBox(height: 4),
                     if (note > 0)
                       Row(

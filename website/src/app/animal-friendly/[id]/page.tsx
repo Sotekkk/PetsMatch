@@ -4,6 +4,7 @@ import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ESPECES_LIEUX } from '@/lib/especes-lieux';
+import { referencementLieu, LIBELLE_REFERENCEMENT } from '@/lib/lieux-categories';
 import { useAuth } from '@/lib/auth-context';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -31,7 +32,25 @@ interface Lieu {
   nb_animaux_max?: number | null;
   espace_detente?: boolean | null;
   equipements_fournis?: string[] | null;
+  plan?: string | null;
+  verification?: string | null;
+  source_conditions?: string | null;
+  derniere_confirmation_le?: string | null;
+  animaux_en_salle?: boolean | null;
+  terrasse?: boolean | null;
+  restriction_taille?: boolean | null;
+  supplement_animal?: boolean | null;
+  conditions_particulieres?: string | null;
+  recommandation?: string | null;
 }
+
+type TroisEtats = boolean | null;
+const etat = (v: TroisEtats | undefined) => (v === true ? 'Oui' : v === false ? 'Non' : 'Non renseigné');
+const RAISONS_LIEU: [string, string][] = [
+  ['information_incorrecte', 'Information incorrecte'], ['animaux_refuses', 'Les animaux ne sont pas acceptés'],
+  ['lieu_ferme', 'Lieu fermé définitivement'], ['photo_non_autorisee', 'Photo utilisée sans autorisation'],
+  ['donnees_personnelles', 'Données personnelles exposées'], ['autre', 'Autre'],
+];
 
 interface Avis {
   id: string;
@@ -82,7 +101,7 @@ function ouvertLabel(horaires?: Record<string, string> | null): string {
 
 export default function LieuDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
 
   const [lieu, setLieu] = useState<Lieu | null>(null);
   const [avis, setAvis] = useState<Avis[]>([]);
@@ -94,6 +113,47 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
   const [commentaire, setCommentaire] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Contributions : correction proposée, signalement (modérés par l'admin).
+  const [panneau, setPanneau] = useState<'' | 'correction' | 'signalement'>('');
+  const [corr, setCorr] = useState<{ especes: string[]; interieur: TroisEtats; terrasse: TroisEtats; taille: TroisEtats; supplement: TroisEtats; commentaire: string }>(
+    { especes: [], interieur: null, terrasse: null, taille: null, supplement: null, commentaire: '' });
+  const [raison, setRaison] = useState('');
+  const [detailSignal, setDetailSignal] = useState('');
+  const [messageContrib, setMessageContrib] = useState('');
+
+  function ouvrirCorrection() {
+    if (!lieu) return;
+    setCorr({ especes: lieu.especes_acceptees ?? [], interieur: lieu.animaux_en_salle ?? null, terrasse: lieu.terrasse ?? null,
+      taille: lieu.restriction_taille ?? null, supplement: lieu.supplement_animal ?? null, commentaire: '' });
+    setPanneau('correction'); setMessageContrib('');
+  }
+
+  async function envoyerCorrection() {
+    if (!user || !lieu) return;
+    const champs: Record<string, unknown> = {};
+    const avant = lieu.especes_acceptees ?? [];
+    if (avant.length !== corr.especes.length || avant.some(e => !corr.especes.includes(e))) champs.especes_acceptees = corr.especes;
+    if (corr.interieur !== (lieu.animaux_en_salle ?? null)) champs.animaux_en_salle = corr.interieur;
+    if (corr.terrasse !== (lieu.terrasse ?? null)) champs.terrasse = corr.terrasse;
+    if (corr.taille !== (lieu.restriction_taille ?? null)) champs.restriction_taille = corr.taille;
+    if (corr.supplement !== (lieu.supplement_animal ?? null)) champs.supplement_animal = corr.supplement;
+    if (!Object.keys(champs).length && !corr.commentaire.trim()) { setMessageContrib('Aucune modification à envoyer.'); return; }
+    const { error: err } = await supabase.from('petfriendly_corrections').insert({
+      place_id: id, uid: user.uid, ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+      champs, ...(corr.commentaire.trim() ? { commentaire: corr.commentaire.trim() } : {}),
+    });
+    setMessageContrib(err ? `Envoi impossible : ${err.message}` : "Merci : votre correction sera vérifiée par l'équipe.");
+    if (!err) setPanneau('');
+  }
+
+  async function envoyerSignalement() {
+    if (!user || !raison) return;
+    const { error: err } = await supabase.from('signalements').insert({
+      reporter_uid: user.uid, target_type: 'lieu', target_id: id, raison, ...(detailSignal.trim() ? { description: detailSignal.trim() } : {}),
+    });
+    setMessageContrib(err ? `Envoi impossible : ${err.message}` : 'Merci, votre signalement a été transmis.');
+    if (!err) { setPanneau(''); setRaison(''); setDetailSignal(''); }
+  }
 
   async function loadLieu() {
     setLoading(true);
@@ -172,6 +232,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
   const isHeb = lieu.categorie === 'hebergement';
   const ouvert = ouvertLabel(lieu.horaires);
   const especes = lieu.especes_acceptees ?? [];
+  const ref = referencementLieu(lieu);
   const photos = lieu.photos ?? [];
   const mapsUrl = lieu.lat != null && lieu.lng != null
     ? `https://www.google.com/maps/dir/?api=1&destination=${lieu.lat},${lieu.lng}`
@@ -200,21 +261,29 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
         </h1>
         {ouvert && <p className="text-sm mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>{ouvert}</p>}
         {(lieu.note_moyenne ?? 0) > 0 && (
-          <p className="text-sm text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          <p className="text-sm text-gray-800 mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
             <span className="text-[#FFA000]">★</span> {(lieu.note_moyenne ?? 0).toFixed(1)} ({lieu.nb_avis ?? 0} avis)
           </p>
         )}
+        <p className={`text-sm font-bold mb-2 ${ref === 'partenaire' ? 'text-[#4E7A3B]' : ref === 'verifie' ? 'text-[#0C5C6C]' : 'text-gray-700'}`}
+          style={{ fontFamily: 'Galey, sans-serif' }}>{LIBELLE_REFERENCEMENT[ref]}</p>
+        <div className={`rounded-xl px-3.5 py-3 mb-5 text-[13px] leading-relaxed border ${ref === 'communaute'
+          ? 'bg-[#FDF6EC] border-[#F1D9B5] text-[#6B4A12]' : 'bg-[#E8F4F6] border-[#CFE5EA] text-[#0C4A55]'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+          {ref === 'communaute'
+            ? "Ce lieu a été ajouté par un membre de PetsMatch. Les conditions d'accueil des animaux n'ont pas été confirmées par l'établissement. Nous vous recommandons de les vérifier avant votre visite."
+            : `Informations gérées par l'établissement.${ref === 'verifie' ? " La vérification concerne le gestionnaire de la fiche, pas la qualité de l'établissement." : ''}`}
+        </div>
 
         {/* Adresse / contact */}
         <div className="bg-white rounded-2xl shadow-sm p-4 mb-5 flex flex-col gap-2.5">
           {(lieu.adresse || lieu.ville) && (
             <p className="text-sm flex items-center gap-2" style={{ fontFamily: 'Galey, sans-serif' }}>
-              📍 {[lieu.adresse, lieu.ville].filter(Boolean).join(', ')}
+              {[lieu.adresse, lieu.ville].filter(Boolean).join(', ')}
             </p>
           )}
           {lieu.telephone && (
             <a href={`tel:${lieu.telephone}`} className="text-sm flex items-center gap-2 text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
-              📞 {lieu.telephone}
+              {lieu.telephone}
             </a>
           )}
           {lieu.site_web && (
@@ -224,7 +293,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
               className="text-sm flex items-center gap-2 text-[#0C5C6C] underline truncate"
               style={{ fontFamily: 'Galey, sans-serif' }}
             >
-              🌐 {lieu.site_web}
+              {lieu.site_web}
             </a>
           )}
           <div className="flex gap-2 pt-1.5">
@@ -245,29 +314,102 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Espèces acceptées */}
-        {especes.length > 0 && (
-          <div className="mb-5">
-            <h2 className="font-bold text-base text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Animaux acceptés</h2>
-            <div className="flex flex-wrap gap-2">
-              {especes.map(e => (
-                <span key={e} className="text-xs font-medium px-3 py-1.5 rounded-full bg-[#E8F5E9] text-[#2E7D32]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                  {ESPECES_LIEUX.find(x => x.value === e.toLowerCase())?.label ?? ESPECE_LABEL[e.toLowerCase()] ?? e}
-                </span>
+        {/* Conditions d'accueil (tous les lieux) : 3 états, source et date */}
+        <div className="mb-5 bg-white rounded-2xl shadow-sm p-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          <h2 className="font-bold text-base text-[#1F2A2E]">Conditions d&apos;accueil des animaux</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Source : {ref === 'communaute' || lieu.source_conditions === 'communaute' ? 'communauté' : 'établissement'}
+            {lieu.derniere_confirmation_le ? ` · ${ref === 'communaute' ? 'dernière visite déclarée' : 'confirmé'} le ${new Date(lieu.derniere_confirmation_le).toLocaleDateString('fr-FR')}` : ''}
+          </p>
+          <table className="w-full mt-3 text-sm">
+            <tbody>
+              {([
+                ['Espèces accueillies', especes.length ? especes.map(e => ESPECES_LIEUX.find(x => x.value === e.toLowerCase())?.label ?? ESPECE_LABEL[e.toLowerCase()] ?? e).join(', ') : 'Non renseigné'],
+                ['Accès intérieur', etat(lieu.animaux_en_salle)],
+                ['Terrasse / extérieur', etat(lieu.terrasse)],
+                ['Restriction de taille', etat(lieu.restriction_taille)],
+                ["Nombre d'animaux", lieu.nb_animaux_max != null ? `${lieu.nb_animaux_max} maximum` : 'Non renseigné'],
+                ['Supplément', etat(lieu.supplement_animal)],
+                ...(lieu.conditions_particulieres ? [['Conditions particulières', lieu.conditions_particulieres]] : []),
+              ] as [string, string][]).map(([k, v]) => (
+                <tr key={k} className="border-t border-gray-100">
+                  <td className="py-2 pr-3 text-gray-500 align-top w-44">{k}</td>
+                  <td className={`py-2 ${v === 'Non renseigné' ? 'text-gray-400' : 'font-semibold text-[#1F2A2E]'}`}>{v}</td>
+                </tr>
               ))}
-            </div>
+            </tbody>
+          </table>
+          <p className="text-[11px] text-gray-400 mt-2">« Non renseigné » : l&apos;information n&apos;a pas été donnée, ce n&apos;est pas une confirmation.</p>
+        </div>
+
+        {ref === 'communaute' && lieu.recommandation && (
+          <div className="mb-5" style={{ fontFamily: 'Galey, sans-serif' }}>
+            <h2 className="font-bold text-base text-[#1F2A2E] mb-2">Pourquoi un membre recommande ce lieu</h2>
+            <p className="text-sm text-gray-700 italic leading-relaxed">« {lieu.recommandation} »</p>
           </div>
         )}
 
+        {/* Contribuer : corriger, signaler */}
+        {user?.uid !== lieu.uid_pro && (
+          <div className="mb-5 bg-white rounded-2xl shadow-sm divide-y" style={{ fontFamily: 'Galey, sans-serif' }}>
+            <button type="button" onClick={() => user ? ouvrirCorrection() : setMessageContrib('Connectez-vous pour contribuer.')}
+              className="w-full text-left px-4 py-3 text-sm font-bold text-[#1F2A2E] hover:bg-gray-50">Proposer une correction</button>
+            <button type="button" onClick={() => { if (user) { setPanneau('signalement'); setMessageContrib(''); } else setMessageContrib('Connectez-vous pour contribuer.'); }}
+              className="w-full text-left px-4 py-3 text-sm font-bold text-[#1F2A2E] hover:bg-gray-50">Signaler une information</button>
+            {panneau === 'correction' && (
+              <div className="px-4 py-4 space-y-3">
+                <p className="text-xs text-gray-500">Votre proposition est vérifiée avant d&apos;être appliquée.</p>
+                <div className="flex flex-wrap gap-2">
+                  {ESPECES_LIEUX.map(e => (
+                    <label key={e.value} className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-2 py-1">
+                      <input type="checkbox" className="accent-[#0C5C6C]" checked={corr.especes.includes(e.value)}
+                        onChange={() => setCorr(c => ({ ...c, especes: c.especes.includes(e.value) ? c.especes.filter(x => x !== e.value) : [...c.especes, e.value] }))} />
+                      {e.label}
+                    </label>
+                  ))}
+                </div>
+                {([['Accès intérieur', 'interieur'], ['Terrasse / extérieur', 'terrasse'], ['Restriction de taille', 'taille'], ['Supplément tarifaire', 'supplement']] as const).map(([lib, cle]) => (
+                  <fieldset key={cle}>
+                    <legend className="text-sm font-bold mb-1">{lib}</legend>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([['Oui', true], ['Non', false], ['Je ne sais pas', null]] as [string, TroisEtats][]).map(([t, v]) => (
+                        <button key={t} type="button" aria-pressed={corr[cle] === v} onClick={() => setCorr(c => ({ ...c, [cle]: v }))}
+                          className={`py-1.5 rounded-lg border text-sm ${corr[cle] === v ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C] font-bold' : 'border-gray-200'}`}>{t}</button>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
+                <textarea value={corr.commentaire} onChange={e => setCorr(c => ({ ...c, commentaire: e.target.value }))} rows={3}
+                  placeholder="Précisions (adresse, horaires, fermeture…)" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <button type="button" onClick={envoyerCorrection} className="w-full py-2.5 rounded-xl bg-[#0C5C6C] text-white font-bold text-sm">Envoyer</button>
+              </div>
+            )}
+            {panneau === 'signalement' && (
+              <div className="px-4 py-4 space-y-2">
+                {RAISONS_LIEU.map(([v, l]) => (
+                  <label key={v} className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="raison-lieu" className="accent-[#0C5C6C]" checked={raison === v} onChange={() => setRaison(v)} />{l}
+                  </label>
+                ))}
+                <textarea value={detailSignal} onChange={e => setDetailSignal(e.target.value)} rows={2} placeholder="Précisions"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <button type="button" disabled={!raison} onClick={envoyerSignalement}
+                  className="w-full py-2.5 rounded-xl bg-[#0C5C6C] text-white font-bold text-sm disabled:opacity-40">Envoyer</button>
+              </div>
+            )}
+          </div>
+        )}
+        {messageContrib && <p className="text-sm text-[#0C5C6C] -mt-3 mb-5" style={{ fontFamily: 'Galey, sans-serif' }}>{messageContrib}</p>}
+
         {/* Conditions animaux (hébergement) */}
-        {isHeb && (lieu.animaux_dans_chambre != null || lieu.frais_animal_nuit != null || lieu.nb_animaux_max != null || lieu.espace_detente != null || (lieu.equipements_fournis?.length ?? 0) > 0) && (
+        {isHeb && lieu.uid_pro && (lieu.animaux_dans_chambre != null || lieu.frais_animal_nuit != null || lieu.nb_animaux_max != null || lieu.espace_detente != null || (lieu.equipements_fournis?.length ?? 0) > 0) && (
           <div className="mb-5">
-            <h2 className="font-bold text-base text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Conditions animaux</h2>
+            <h2 className="font-bold text-base text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Hébergement</h2>
             <div className="bg-white rounded-xl shadow-sm p-3.5 flex flex-col gap-1.5 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-              {lieu.animaux_dans_chambre != null && <p>{lieu.animaux_dans_chambre ? '✅' : '❌'} Animaux dans la chambre</p>}
+              {lieu.animaux_dans_chambre != null && <p>Animaux dans la chambre : {lieu.animaux_dans_chambre ? 'oui' : 'non'}</p>}
               {lieu.frais_animal_nuit != null && <p>Supplément / nuit : {lieu.frais_animal_nuit}€</p>}
               {lieu.nb_animaux_max != null && <p>Animaux max / séjour : {lieu.nb_animaux_max === 0 ? 'Pas de limite' : lieu.nb_animaux_max}</p>}
-              {lieu.espace_detente != null && <p>{lieu.espace_detente ? '✅' : '❌'} Espace détente animaux</p>}
+              {lieu.espace_detente != null && <p>Espace détente animaux : {lieu.espace_detente ? 'oui' : 'non'}</p>}
               {(lieu.equipements_fournis?.length ?? 0) > 0 && <p>Équipements fournis : {lieu.equipements_fournis!.join(', ')}</p>}
             </div>
           </div>

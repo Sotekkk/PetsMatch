@@ -5,6 +5,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
 import { ESPECES_LIEUX } from '@/lib/especes-lieux';
+import { referencementLieu, LIBELLE_REFERENCEMENT } from '@/lib/lieux-categories';
 
 const PetFriendlyPlacesMap = dynamic(() => import('@/components/PetFriendlyPlacesMap'), {
   ssr: false,
@@ -32,14 +33,39 @@ interface Lieu {
   note_moyenne?: number | null;
   nb_avis?: number | null;
   plan?: string | null;
+  uid_pro?: string | null;
+  verification?: string | null;
 }
+
+// Pictogramme de référencement (trait sobre) : communauté / vérifié / partenaire.
+function IconeReferencement({ r }: { r: 'communaute' | 'verifie' | 'partenaire' }) {
+  const d = r === 'communaute'
+    ? 'M9 11a3 3 0 100-6 3 3 0 000 6zM3 19c0-3 3-5 6-5s6 2 6 5M17 11.5a2.5 2.5 0 100-5M15.5 14.5c3 0 5.5 1.5 5.5 4.5'
+    : r === 'verifie' ? 'M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6zM9 12l2 2 4-4'
+    : 'M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z';
+  return (
+    <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
+  );
+}
+const COULEUR_REF = { communaute: 'text-gray-600', verifie: 'text-[#0C5C6C]', partenaire: 'text-[#4E7A3B]' } as const;
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
 
-const CATEGORIES: { value: string; label: string; icon: string }[] = [
-  { value: 'tous', label: 'Tout', icon: '🧭' },
-  { value: 'hebergement', label: 'Hébergements', icon: '🏨' },
-  { value: 'restauration', label: 'Cafés & Restos', icon: '🍽️' },
+const CATEGORIES: { value: string; label: string }[] = [
+  { value: 'tous', label: 'Tout' },
+  { value: 'hebergement', label: 'Hébergements' },
+  { value: 'restauration', label: 'Cafés & Restos' },
+  { value: 'commerce', label: 'Commerces' },
+  { value: 'activite', label: 'Activités' },
+];
+
+const REFERENCEMENTS: { value: 'tous' | 'communaute' | 'verifie' | 'partenaire'; label: string }[] = [
+  { value: 'tous', label: 'Tous les lieux' },
+  { value: 'communaute', label: 'Communauté' },
+  { value: 'verifie', label: 'Établissements vérifiés' },
+  { value: 'partenaire', label: 'Partenaires PetsMatch' },
 ];
 
 const ESPECES = ESPECES_LIEUX;
@@ -82,7 +108,7 @@ function LieuCard({ lieu }: { lieu: Lieu }) {
   const isHeb = lieu.categorie === 'hebergement';
   const photo = photoUrl(lieu);
   const ouvert = ouvertLabel(lieu.horaires);
-  const isPremium = lieu.plan === 'premium';
+  const ref = referencementLieu(lieu);
   const note = lieu.note_moyenne ?? 0;
 
   return (
@@ -99,7 +125,6 @@ function LieuCard({ lieu }: { lieu: Lieu }) {
             className="absolute inset-0 flex items-center justify-center text-5xl"
             style={{ backgroundColor: isHeb ? '#E3F2FD' : '#FFF3E0' }}
           >
-            {isHeb ? '🏨' : '🍽️'}
           </div>
         )}
         {ouvert && (
@@ -107,21 +132,15 @@ function LieuCard({ lieu }: { lieu: Lieu }) {
             {ouvert}
           </span>
         )}
-        {isPremium && (
-          <span className="absolute top-3 right-3 text-[11px] font-bold text-white px-2.5 py-1 rounded-full bg-[#FFA000]">
-            ⭐ Recommandé
-          </span>
-        )}
       </div>
       <div className="px-3.5 py-3">
         <p className="font-bold text-[13px] text-[#1E2025] line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>
           {lieu.nom}
         </p>
-        {lieu.ville && (
-          <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-1">
-            📍 {lieu.ville}
-          </p>
-        )}
+        {lieu.ville && <p className="text-[11px] text-gray-500 mt-1">{lieu.ville}</p>}
+        <p className={`text-[11px] font-semibold mt-1 flex items-center gap-1 ${COULEUR_REF[ref]}`}>
+          <IconeReferencement r={ref} /> {LIBELLE_REFERENCEMENT[ref]}
+        </p>
         {note > 0 && (
           <p className="text-[11px] text-gray-700 mt-1 flex items-center gap-1">
             <span className="text-[#FFA000]">★</span> {note.toFixed(1)} <span className="text-gray-400">({lieu.nb_avis ?? 0})</span>
@@ -138,6 +157,7 @@ export default function AnimalFriendlyPage() {
   const [lieux, setLieux] = useState<Lieu[]>([]);
   const [loading, setLoading] = useState(true);
   const [categorie, setCategorie] = useState('tous');
+  const [referencement, setReferencement] = useState<'tous' | 'communaute' | 'verifie' | 'partenaire'>('tous');
   // Espèces cochées (aucune = toutes) : un lieu correspond s'il accepte au moins l'une d'elles.
   const [especes, setEspeces] = useState<string[]>([]);
   const [view, setView] = useState<'liste' | 'carte'>('liste');
@@ -147,7 +167,7 @@ export default function AnimalFriendlyPage() {
     try {
       const { data } = await supabase
         .from('petfriendly_places')
-        .select('id, nom, categorie, ville, lat, lng, especes_acceptees, horaires, photo_profil_url, banniere_url, photos, note_moyenne, nb_avis, plan')
+        .select('id, nom, categorie, ville, lat, lng, especes_acceptees, horaires, photo_profil_url, banniere_url, photos, note_moyenne, nb_avis, plan, uid_pro, verification')
         .eq('statut', 'actif')
         .order('created_at', { ascending: false })
         .limit(300);
@@ -160,6 +180,7 @@ export default function AnimalFriendlyPage() {
   useEffect(() => { loadLieux(); }, []);
 
   let filtered = categorie === 'tous' ? lieux : lieux.filter(l => l.categorie === categorie);
+  if (referencement !== 'tous') filtered = filtered.filter(l => referencementLieu(l) === referencement);
   if (especes.length) {
     filtered = filtered.filter(l => (l.especes_acceptees ?? []).some(e => especes.includes(e)));
   }
@@ -202,7 +223,19 @@ export default function AnimalFriendlyPage() {
                 border: `1.5px solid ${categorie === c.value ? '#0C5C6C' : '#E5E7EB'}`,
               }}
             >
-              {c.icon} {c.label}
+              {c.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Filtre de référencement (combinable avec catégorie et espèces) */}
+        <div role="group" aria-label="Référencement" className="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-hide">
+          {REFERENCEMENTS.map(r => (
+            <button key={r.value} type="button" onClick={() => setReferencement(r.value)} aria-pressed={referencement === r.value}
+              className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                referencement === r.value ? 'bg-[#0C5C6C]/10 text-[#0C5C6C] border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}
+              style={{ fontFamily: 'Galey, sans-serif' }}>
+              {r.value !== 'tous' && <IconeReferencement r={r.value} />}{r.label}
             </button>
           ))}
         </div>
@@ -273,7 +306,7 @@ export default function AnimalFriendlyPage() {
           </div>
         ) : view === 'carte' ? (
           <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: '65vh' }}>
-            <PetFriendlyPlacesMap places={withCoords} />
+            <PetFriendlyPlacesMap places={withCoords.map(p => ({ ...p, referencement: referencementLieu(p) }))} />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 flex flex-col items-center gap-3">

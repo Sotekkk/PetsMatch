@@ -61,7 +61,7 @@ interface Stats {
 
 interface Signalement {
   id: string; reporter_uid: string;
-  target_type: 'user' | 'annonce' | 'profil_pro' | 'balade_ludique' | 'groupe_post';
+  target_type: 'user' | 'annonce' | 'profil_pro' | 'balade_ludique' | 'groupe_post' | 'lieu' | 'lieu_avis';
   target_id: string; raison: string; description?: string; groupe_id?: string | null;
   statut: 'en_attente' | 'traite' | 'rejete';
   admin_note?: string; created_at: string; handled_at?: string; handled_by?: string;
@@ -148,7 +148,7 @@ const RAISON_LABELS: Record<string, string> = {
 
 const TARGET_LABELS: Record<string, string> = {
   user: 'Utilisateur', annonce: 'Annonce', profil_pro: 'Profil pro', balade_ludique: 'Balade ludique',
-  groupe_post: 'Publication de groupe',
+  groupe_post: 'Publication de groupe', lieu: 'Lieu pet-friendly', lieu_avis: 'Avis sur un lieu',
 };
 
 /** Contexte d'un signalement (api/admin/moderation?type=signalements_contexte). */
@@ -228,7 +228,7 @@ function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: s
       {peutSupprimer && (
         <label className="flex items-center gap-2.5 text-sm font-semibold text-[#1F2A2E] cursor-pointer">
           <input type="checkbox" checked={supprimer} onChange={e => setSupprimer(e.target.checked)} className="w-4 h-4 accent-[#B42318]" />
-          Supprimer {sig.target_type === 'groupe_post' ? 'la publication' : sig.target_type === 'annonce' ? 'l\'annonce' : 'la balade'}
+          {sig.target_type === 'lieu' ? 'Masquer la fiche du lieu' : `Supprimer ${sig.target_type === 'groupe_post' ? 'la publication' : sig.target_type === 'annonce' ? 'l\'annonce' : 'la balade'}`}
         </label>
       )}
       <div className="space-y-2">
@@ -280,6 +280,9 @@ function SigLiens({ sig, ctx, detail }: { sig: Signalement; ctx?: SigContexte; d
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {sig.target_type === 'groupe_post' && groupeId && (
           <Link href={`/communaute/groupes/${groupeId}#post-${sig.target_id}`} target="_blank" className={lien}>Voir la publication ↗</Link>
+        )}
+        {sig.target_type === 'lieu' && (
+          <Link href={`/animal-friendly/${sig.target_id}`} target="_blank" className={lien}>Voir la fiche du lieu ↗</Link>
         )}
         {sig.target_type === 'user' && (
           <Link href={`/profil/${sig.target_id}`} target="_blank" className={lien}>

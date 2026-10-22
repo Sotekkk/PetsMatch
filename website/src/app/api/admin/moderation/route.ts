@@ -355,6 +355,10 @@ export async function POST(req: NextRequest) {
           const b = (await supabaseAdmin.from('balades_ludiques').select('id, createur_uid, titre').eq('id', sig.target_id).maybeSingle()).data;
           auteur = b?.createur_uid ?? null; libelleContenu = 'votre balade';
           contenu = b ? { type: 'balade_ludique', id: b.id, extrait: b.titre } : null;
+        } else if (sig.target_type === 'lieu') {
+          const l = (await supabaseAdmin.from('petfriendly_places').select('id, nom, uid_pro, ajoute_par_uid').eq('id', sig.target_id).maybeSingle()).data;
+          auteur = l?.uid_pro ?? l?.ajoute_par_uid ?? null; libelleContenu = 'votre fiche de lieu';
+          contenu = l ? { type: 'lieu', id: l.id, extrait: l.nom } : null;
         } else if (sig.target_type === 'user') {
           auteur = sig.target_id;
         }
@@ -366,7 +370,9 @@ export async function POST(req: NextRequest) {
             ? await supabaseAdmin.from('groupe_posts').delete().eq('id', sig.target_id)
             : sig.target_type === 'annonce'
               ? await supabaseAdmin.from('annonces').update({ statut: 'supprime' }).eq('id', sig.target_id)
-              : await supabaseAdmin.from('balades_ludiques').update({ statut: 'supprime' }).eq('id', sig.target_id);
+              : sig.target_type === 'lieu'
+                ? await supabaseAdmin.from('petfriendly_places').update({ statut: 'masque', motif_moderation: regle }).eq('id', sig.target_id)
+                : await supabaseAdmin.from('balades_ludiques').update({ statut: 'supprime' }).eq('id', sig.target_id);
           if (r.error) throw r.error;
           await supabaseAdmin.from('sanctions_moderation').insert({
             uid: auteur, type: 'suppression', regle, precisions: precisions || null,
