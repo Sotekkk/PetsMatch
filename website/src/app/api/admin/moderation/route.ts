@@ -86,6 +86,12 @@ export async function GET(req: NextRequest) {
     const liste = (sigs ?? []) as { id: string; reporter_uid: string; target_type: string; target_id: string; groupe_id: string | null }[];
     const uids = new Set<string>();
     liste.forEach(s => { if (s.reporter_uid) uids.add(s.reporter_uid); if (s.target_type === 'user') uids.add(s.target_id); });
+    const avisIds = liste.filter(s => s.target_type === 'lieu_avis').map(s => s.target_id);
+    const { data: avisLieux } = avisIds.length
+      ? await supabaseAdmin.from('petfriendly_reviews').select('id, place_id, user_uid, commentaire').in('id', avisIds)
+      : { data: [] };
+    const avisList = (avisLieux ?? []) as { id: string; place_id: string; user_uid: string; commentaire: string | null }[];
+    avisList.forEach(a => uids.add(a.user_uid));
     const postIds = liste.filter(s => s.target_type === 'groupe_post').map(s => s.target_id);
     const { data: posts } = postIds.length
       ? await supabaseAdmin.from('groupe_posts').select('id, groupe_id, auteur_uid, auteur_profile_id, contenu, image_url').in('id', postIds)
@@ -112,7 +118,10 @@ export async function GET(req: NextRequest) {
           auteur: { uid: post.auteur_uid, nom: nomP(pl.find(p => p.id === post.auteur_profile_id)) || nomUid(post.auteur_uid) },
           groupe_id: post.groupe_id,
           groupe_nom: ((groupes ?? []) as { id: string; nom: string }[]).find(g => g.id === post.groupe_id)?.nom ?? '',
-        } : s.target_type === 'user' ? { nom: nomUid(s.target_id) } : null,
+        } : s.target_type === 'lieu_avis' && avisList.find(a => a.id === s.target_id) ? (() => {
+          const a = avisList.find(x => x.id === s.target_id)!;
+          return { extrait: (a.commentaire ?? '').slice(0, 300), auteur: { uid: a.user_uid, nom: nomUid(a.user_uid) }, lieu_id: a.place_id };
+        })() : s.target_type === 'user' ? { nom: nomUid(s.target_id) } : null,
       };
     }
     return NextResponse.json({ items });
@@ -364,6 +373,10 @@ export async function POST(req: NextRequest) {
           const b = (await supabaseAdmin.from('balades_ludiques').select('id, createur_uid, titre').eq('id', sig.target_id).maybeSingle()).data;
           auteur = b?.createur_uid ?? null; libelleContenu = 'votre balade';
           contenu = b ? { type: 'balade_ludique', id: b.id, extrait: b.titre } : null;
+        } else if (sig.target_type === 'lieu_avis') {
+          const av = (await supabaseAdmin.from('petfriendly_reviews').select('id, user_uid, commentaire, place_id').eq('id', sig.target_id).maybeSingle()).data;
+          auteur = av?.user_uid ?? null; libelleContenu = 'votre avis sur un lieu';
+          contenu = av ? { type: 'lieu_avis', id: av.id, place_id: av.place_id, extrait: String(av.commentaire ?? '').slice(0, 300) } : null;
         } else if (sig.target_type === 'lieu') {
           const l = (await supabaseAdmin.from('petfriendly_places').select('id, nom, uid_pro, ajoute_par_uid').eq('id', sig.target_id).maybeSingle()).data;
           auteur = l?.uid_pro ?? l?.ajoute_par_uid ?? null; libelleContenu = 'votre fiche de lieu';
@@ -381,6 +394,8 @@ export async function POST(req: NextRequest) {
               ? await supabaseAdmin.from('annonces').update({ statut: 'supprime' }).eq('id', sig.target_id)
               : sig.target_type === 'lieu'
                 ? await supabaseAdmin.from('petfriendly_places').update({ statut: 'masque', motif_moderation: regle }).eq('id', sig.target_id)
+              : sig.target_type === 'lieu_avis'
+                ? await supabaseAdmin.from('petfriendly_reviews').update({ statut: 'masque' }).eq('id', sig.target_id)
                 : await supabaseAdmin.from('balades_ludiques').update({ statut: 'supprime' }).eq('id', sig.target_id);
           if (r.error) throw r.error;
           await supabaseAdmin.from('sanctions_moderation').insert({

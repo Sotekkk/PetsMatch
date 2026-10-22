@@ -156,7 +156,7 @@ interface SigContexte {
   reporter: { uid: string; nom: string };
   cible: null | {
     nom?: string; extrait?: string; image_url?: string | null;
-    auteur?: { uid: string; nom: string }; groupe_id?: string; groupe_nom?: string;
+    auteur?: { uid: string; nom: string }; groupe_id?: string; groupe_nom?: string; lieu_id?: string;
   };
 }
 
@@ -228,7 +228,7 @@ function PanneauSanction({ sig, onFait }: { sig: Signalement; onFait: (resume: s
       {peutSupprimer && (
         <label className="flex items-center gap-2.5 text-sm font-semibold text-[#1F2A2E] cursor-pointer">
           <input type="checkbox" checked={supprimer} onChange={e => setSupprimer(e.target.checked)} className="w-4 h-4 accent-[#B42318]" />
-          {sig.target_type === 'lieu' ? 'Masquer la fiche du lieu' : `Supprimer ${sig.target_type === 'groupe_post' ? 'la publication' : sig.target_type === 'annonce' ? 'l\'annonce' : 'la balade'}`}
+          {sig.target_type === 'lieu' ? 'Masquer la fiche du lieu' : sig.target_type === 'lieu_avis' ? "Masquer l'avis" : `Supprimer ${sig.target_type === 'groupe_post' ? 'la publication' : sig.target_type === 'annonce' ? 'l\'annonce' : 'la balade'}`}
         </label>
       )}
       <div className="space-y-2">
@@ -281,6 +281,12 @@ function SigLiens({ sig, ctx, detail }: { sig: Signalement; ctx?: SigContexte; d
         {sig.target_type === 'groupe_post' && groupeId && (
           <Link href={`/communaute/groupes/${groupeId}#post-${sig.target_id}`} target="_blank" className={lien}>Voir la publication ↗</Link>
         )}
+        {sig.target_type === 'lieu_avis' && ctx?.cible && (<>
+          <span className="block w-full text-xs text-gray-700 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+            Avis de {ctx.cible.auteur?.nom ?? 'un membre'} : « {ctx.cible.extrait} »
+          </span>
+          {ctx.cible.lieu_id && <Link href={`/animal-friendly/${ctx.cible.lieu_id}`} target="_blank" className={lien}>Voir la fiche du lieu ↗</Link>}
+        </>)}
         {sig.target_type === 'lieu' && (
           <Link href={`/animal-friendly/${sig.target_id}`} target="_blank" className={lien}>Voir la fiche du lieu ↗</Link>
         )}

@@ -1193,6 +1193,9 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
                         ),
                     ],
                   ),
+                  Text('Avis classés du plus récent au plus ancien. Ils sont modérés de la même façon pour tous les '
+                      'établissements, partenaires ou non. PetsMatch ne vérifie pas la réalité des visites.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
                   const SizedBox(height: 8),
                   if (_avis.isEmpty)
                     const Text('Aucun avis pour le moment.',
@@ -1474,13 +1477,15 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
       final profileRow = await Supabase.instance.client
           .from('user_profiles_complet').select('id').eq('uid', widget.uid ?? '').eq('is_main', true).maybeSingle();
       final userProfileId = profileRow?['id'] as String?;
-      await Supabase.instance.client.from('petfriendly_review_contests').insert({
-        'review_id': widget.avis['id'],
-        'place_id': widget.avis['place_id'],
-        'uid_pro': widget.uid,
-        if (userProfileId != null) 'user_profile_id': userProfileId,
-        'motif': _reportCtrl.text.trim(),
-        'type': type,
+      // Signalement (membre) ou contestation motivée (établissement, abonné ou
+      // non) : file Signalements de l'admin, décision tracée et notifiée.
+      await Supabase.instance.client.from('signalements').insert({
+        'reporter_uid': widget.uid,
+        'target_type': 'lieu_avis',
+        'target_id': widget.avis['id'].toString(),
+        'raison': widget.isPlaceOwner ? 'faux_avis' : 'contenu_inapproprie',
+        'description': '${widget.isPlaceOwner ? 'Contestation de l\'établissement' : 'Signalement'}'
+            ' : ${_reportCtrl.text.trim()}',
       });
       if (mounted) {
         Navigator.pop(context);
@@ -1546,6 +1551,13 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
               size: 22, color: const Color(0xFFFFA000),
             ))),
           ],
+          if ((widget.avis['note_conformite'] as int? ?? 0) > 0 || (widget.avis['note_amenagements'] as int? ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            Text([
+              if ((widget.avis['note_conformite'] as int? ?? 0) > 0) 'Conformité des conditions : ${widget.avis['note_conformite']}/5',
+              if ((widget.avis['note_amenagements'] as int? ?? 0) > 0) 'Aménagements : ${widget.avis['note_amenagements']}/5',
+            ].join(' · '), style: TextStyle(fontSize: 12.5, color: Colors.grey.shade700)),
+          ],
           const SizedBox(height: 6),
           Text(avis['_user_nom'] as String? ?? 'Anonyme',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
@@ -1556,11 +1568,14 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
             Text('Avec $animalNom',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           ],
-          if (dateVisite != null) ...[
-            const SizedBox(height: 4),
-            Text('Visité le $dateVisite',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
-          ],
+          const SizedBox(height: 4),
+          Text([
+            if (dateVisite != null) 'Visite déclarée le $dateVisite',
+            if (DateTime.tryParse(widget.avis['created_at']?.toString() ?? '') != null)
+              'publié le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(widget.avis['created_at'].toString()).toLocal())}',
+            if (DateTime.tryParse(widget.avis['modifie_le']?.toString() ?? '') != null)
+              'modifié le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(widget.avis['modifie_le'].toString()).toLocal())}',
+          ].join(' · '), style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           if (reponse != null) ...[
             const SizedBox(height: 14),
             Container(
@@ -1605,6 +1620,13 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
               )),
             ]),
           ] else if (widget.uid != null) ...[
+            if (widget.isPlaceOwner)
+              SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                onPressed: _repondre,
+                icon: const Icon(Icons.reply_outlined, size: 16),
+                label: Text(reponse == null ? 'Répondre à cet avis' : 'Modifier ma réponse'),
+                style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+              )),
             SizedBox(width: double.infinity, child: TextButton.icon(
               onPressed: () => setState(() => _reporting = true),
               icon: const Icon(Icons.flag_outlined, size: 16, color: Colors.orange),
@@ -1617,6 +1639,28 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
         ],
       ),
     );
+  }
+
+  Future<void> _repondre() async {
+    final ctrl = TextEditingController(text: widget.avis['reponse_pro'] as String? ?? '');
+    final texte = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Répondre à cet avis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: TextField(controller: ctrl, maxLines: 5, maxLength: 1000,
+          decoration: const InputDecoration(hintText: 'Votre réponse, visible publiquement', border: OutlineInputBorder())),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Publier')),
+      ],
+    ));
+    ctrl.dispose();
+    if (texte == null) return;
+    try {
+      await Supabase.instance.client.from('petfriendly_reviews')
+          .update({'reponse_pro': texte}).eq('id', widget.avis['id']);
+      if (mounted) { Navigator.pop(context); widget.onReload(); }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
   }
 
   Widget _buildEditForm() {
@@ -1786,6 +1830,9 @@ class _AvisFormState extends State<_AvisForm> {
   static const _teal = Color(0xFF0C5C6C);
   int _note = 0;
   int _noteAccueil = 0;
+  int _noteConformite = 0;   // facultatif
+  int _noteAmenagements = 0; // facultatif
+  DateTime? _dateVisite;
   final _commentCtrl = TextEditingController();
   bool _saving = false;
 
@@ -1806,6 +1853,9 @@ class _AvisFormState extends State<_AvisForm> {
         if (userProfileId != null) 'user_profile_id': userProfileId,
         'note': _note,
         'note_accueil': _noteAccueil,
+        if (_noteConformite > 0) 'note_conformite': _noteConformite,
+        if (_noteAmenagements > 0) 'note_amenagements': _noteAmenagements,
+        if (_dateVisite != null) 'date_visite': _dateVisite!.toIso8601String().substring(0, 10),
         'commentaire': _commentCtrl.text.trim(),
       });
       widget.onSubmit();
@@ -1846,13 +1896,31 @@ class _AvisFormState extends State<_AvisForm> {
           const Text('Laisser un avis',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
           const SizedBox(height: 16),
-          const Text('Note globale', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text('Appréciation générale *', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           _stars(_note, (v) => setState(() => _note = v)),
           const SizedBox(height: 12),
-          const Text('Accueil des animaux', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text('Qualité de l\'accueil des animaux *', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           _stars(_noteAccueil, (v) => setState(() => _noteAccueil = v)),
+          const SizedBox(height: 12),
+          const Text('Conformité des conditions annoncées (facultatif)', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          _stars(_noteConformite, (v) => setState(() => _noteConformite = v)),
+          const SizedBox(height: 12),
+          const Text('Aménagements pour les animaux (facultatif)', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          _stars(_noteAmenagements, (v) => setState(() => _noteAmenagements = v)),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final d = await showDatePicker(context: context, initialDate: _dateVisite ?? DateTime.now(),
+                  firstDate: DateTime.now().subtract(const Duration(days: 365 * 3)), lastDate: DateTime.now());
+              if (d != null) setState(() => _dateVisite = d);
+            },
+            icon: const Icon(Icons.event_outlined, size: 18),
+            label: Text(_dateVisite == null ? 'Date de votre visite' : 'Visite le ${DateFormat('dd/MM/yyyy').format(_dateVisite!)}'),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _commentCtrl,

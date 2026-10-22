@@ -59,6 +59,11 @@ interface Avis {
   commentaire: string;
   reponse_pro?: string | null;
   created_at: string;
+  note_conformite?: number | null;
+  note_amenagements?: number | null;
+  date_visite?: string | null;
+  modifie_le?: string | null;
+  user_uid?: string;
 }
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
@@ -110,6 +115,14 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
 
   const [note, setNote] = useState(0);
   const [noteAccueil, setNoteAccueil] = useState(0);
+  const [noteConformite, setNoteConformite] = useState(0);   // facultatif
+  const [noteAmenagements, setNoteAmenagements] = useState(0); // facultatif
+  const [dateVisite, setDateVisite] = useState('');
+  // Réponse de l'établissement / signalement d'un avis (id de l'avis ouvert).
+  const [reponseOuverte, setReponseOuverte] = useState<string | null>(null);
+  const [reponseTexte, setReponseTexte] = useState('');
+  const [signalAvis, setSignalAvis] = useState<string | null>(null);
+  const [signalAvisTexte, setSignalAvisTexte] = useState('');
   const [commentaire, setCommentaire] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -208,7 +221,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
     try {
       const { data } = await supabase
         .from('petfriendly_reviews')
-        .select('id, note, note_accueil, commentaire, reponse_pro, created_at')
+        .select('id, note, note_accueil, commentaire, reponse_pro, created_at, note_conformite, note_amenagements, date_visite, modifie_le, user_uid')
         .eq('place_id', id)
         .eq('statut', 'actif')
         .order('created_at', { ascending: false })
@@ -220,6 +233,23 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   useEffect(() => { loadLieu(); loadAvis(); }, [id]);
+
+  async function publierReponse(avisId: string) {
+    const { error: err } = await supabase.from('petfriendly_reviews').update({ reponse_pro: reponseTexte.trim() }).eq('id', avisId);
+    if (!err) { setReponseOuverte(null); setReponseTexte(''); await loadAvis(); }
+  }
+
+  // Signalement (membre) ou contestation motivée (établissement, abonné ou non).
+  async function signalerAvis(avisId: string) {
+    if (!user || signalAvisTexte.trim().length < 5) return;
+    const pro = user.uid === lieu?.uid_pro;
+    const { error: err } = await supabase.from('signalements').insert({
+      reporter_uid: user.uid, target_type: 'lieu_avis', target_id: avisId,
+      raison: pro ? 'faux_avis' : 'contenu_inapproprie',
+      description: `${pro ? "Contestation de l'établissement" : 'Signalement'} : ${signalAvisTexte.trim()}`,
+    });
+    if (!err) { setSignalAvis(null); setSignalAvisTexte(''); setMessageContrib('Merci, votre signalement a été transmis.'); }
+  }
 
   async function submitAvis() {
     if (!user || note === 0 || noteAccueil === 0 || commentaire.trim().length < 20) {
@@ -237,10 +267,13 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
         user_profile_id: profileRow?.id ?? null,
         note,
         note_accueil: noteAccueil,
+        ...(noteConformite ? { note_conformite: noteConformite } : {}),
+        ...(noteAmenagements ? { note_amenagements: noteAmenagements } : {}),
+        ...(dateVisite ? { date_visite: dateVisite } : {}),
         commentaire: commentaire.trim(),
       });
       if (err) throw err;
-      setNote(0); setNoteAccueil(0); setCommentaire('');
+      setNote(0); setNoteAccueil(0); setNoteConformite(0); setNoteAmenagements(0); setDateVisite(''); setCommentaire('');
       await loadAvis();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur inattendue';
@@ -540,7 +573,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
         {user && (
           <div className="bg-white rounded-2xl shadow-sm p-4 mb-4">
             <p className="font-bold text-sm mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>Laisser un avis</p>
-            <p className="text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Note globale</p>
+            <p className="text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Appréciation générale *</p>
             <div className="flex gap-1 mb-2.5">
               {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} onClick={() => setNote(n)} className="text-2xl leading-none">
@@ -548,7 +581,7 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Accueil des animaux</p>
+            <p className="text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Qualité de l&apos;accueil des animaux *</p>
             <div className="flex gap-1 mb-2.5">
               {[1, 2, 3, 4, 5].map(n => (
                 <button key={n} onClick={() => setNoteAccueil(n)} className="text-2xl leading-none">
@@ -556,6 +589,27 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
                 </button>
               ))}
             </div>
+            <p className="text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Conformité des conditions annoncées (facultatif)</p>
+            <div className="flex gap-1 mb-2.5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} type="button" aria-label={`${n} sur 5`} onClick={() => setNoteConformite(n)} className="text-2xl leading-none">
+                  <span style={{ color: n <= noteConformite ? '#FFA000' : '#E5E7EB' }}>★</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Aménagements pour les animaux (facultatif)</p>
+            <div className="flex gap-1 mb-2.5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} type="button" aria-label={`${n} sur 5`} onClick={() => setNoteAmenagements(n)} className="text-2xl leading-none">
+                  <span style={{ color: n <= noteAmenagements ? '#FFA000' : '#E5E7EB' }}>★</span>
+                </button>
+              ))}
+            </div>
+            <label className="block text-xs text-gray-500 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Date de votre visite
+              <input type="date" max={new Date().toISOString().slice(0, 10)} value={dateVisite} onChange={e => setDateVisite(e.target.value)}
+                className="block mt-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+            </label>
             <textarea
               value={commentaire}
               onChange={e => setCommentaire(e.target.value)}
@@ -581,7 +635,11 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : avis.length === 0 ? (
+        ) : (<>
+          <p className="text-[11px] text-gray-400 mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Avis classés du plus récent au plus ancien. Ils sont modérés de la même façon pour tous les établissements, partenaires ou non. PetsMatch ne vérifie pas la réalité des visites.
+          </p>
+        {avis.length === 0 ? (
           <p className="text-sm text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun avis pour le moment.</p>
         ) : (
           <div className="flex flex-col gap-2.5">
@@ -593,18 +651,17 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
                       <span key={n} style={{ color: n <= a.note ? '#FFA000' : '#E5E7EB', fontSize: 13 }}>★</span>
                     ))}
                   </div>
-                  {a.note_accueil > 0 && (
-                    <div className="flex items-center gap-0.5 text-gray-400">
-                      🐾
-                      {[1, 2, 3, 4, 5].map(n => (
-                        <span key={n} style={{ color: n <= a.note_accueil ? '#9CA3AF' : '#E5E7EB', fontSize: 11 }}>★</span>
-                      ))}
-                    </div>
-                  )}
                   <span className="text-[11px] text-gray-400 ml-auto" style={{ fontFamily: 'Galey, sans-serif' }}>
-                    {new Date(a.created_at).toLocaleDateString('fr-FR')}
+                    {[a.date_visite && `Visite le ${new Date(a.date_visite).toLocaleDateString('fr-FR')}`,
+                      `publié le ${new Date(a.created_at).toLocaleDateString('fr-FR')}`,
+                      a.modifie_le && `modifié le ${new Date(a.modifie_le).toLocaleDateString('fr-FR')}`].filter(Boolean).join(' · ')}
                   </span>
                 </div>
+                <p className="text-[12px] text-gray-600 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {[a.note_accueil > 0 && `Accueil des animaux ${a.note_accueil}/5`,
+                    a.note_conformite && `Conditions conformes ${a.note_conformite}/5`,
+                    a.note_amenagements && `Aménagements ${a.note_amenagements}/5`].filter(Boolean).join(' · ')}
+                </p>
                 <p className="text-sm text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>{a.commentaire}</p>
                 {a.reponse_pro && (
                   <div className="mt-2 bg-[#E8F5E9] rounded-lg p-2.5">
@@ -612,10 +669,39 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
                     <p className="text-xs text-gray-700" style={{ fontFamily: 'Galey, sans-serif' }}>{a.reponse_pro}</p>
                   </div>
                 )}
+                {user && user.uid !== a.user_uid && (
+                  <div className="mt-2 flex gap-4 text-xs" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {user.uid === lieu.uid_pro && (
+                      <button type="button" className="font-semibold text-[#0C5C6C]"
+                        onClick={() => { setReponseOuverte(a.id); setReponseTexte(a.reponse_pro ?? ''); }}>
+                        {a.reponse_pro ? 'Modifier ma réponse' : 'Répondre à cet avis'}
+                      </button>
+                    )}
+                    <button type="button" className="text-gray-500" onClick={() => { setSignalAvis(a.id); setSignalAvisTexte(''); }}>
+                      {user.uid === lieu.uid_pro ? 'Contester cet avis' : 'Signaler cet avis'}
+                    </button>
+                  </div>
+                )}
+                {reponseOuverte === a.id && (
+                  <div className="mt-2 space-y-2">
+                    <textarea value={reponseTexte} onChange={e => setReponseTexte(e.target.value)} rows={3} maxLength={1000}
+                      aria-label="Votre réponse" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                    <button type="button" onClick={() => publierReponse(a.id)} className="px-4 py-2 rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold">Publier la réponse</button>
+                  </div>
+                )}
+                {signalAvis === a.id && (
+                  <div className="mt-2 space-y-2">
+                    <textarea value={signalAvisTexte} onChange={e => setSignalAvisTexte(e.target.value)} rows={2}
+                      placeholder="Motif (obligatoire)" aria-label="Motif du signalement" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                    <button type="button" disabled={signalAvisTexte.trim().length < 5} onClick={() => signalerAvis(a.id)}
+                      className="px-4 py-2 rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-40">Envoyer</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
+        </>)}
       </div>
     </div>
   );
