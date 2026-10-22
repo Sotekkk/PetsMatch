@@ -11,8 +11,10 @@ import { chargerOffresBoost, dureeOffre, prixOffre, urlPaiementBoost, type Offre
 
 /** `returnPath` : conservé pour les appels existants (le retour du paiement
  *  se fait sur « Mes annonces »). */
-export default function BoostAnnonceModal({ annonceId, boostUntil, onClose }: {
+export default function BoostAnnonceModal({ annonceId, boostUntil, onClose, table = 'annonces' }: {
   annonceId: string; boostUntil?: string | null; returnPath?: string; onClose: () => void;
+  /** Annonce de matériel & équipements : annonces_objets. */
+  table?: 'annonces' | 'annonces_objets';
 }) {
   const router = useRouter();
   const [produits, setProduits] = useState<Produit[] | null>(null);
@@ -30,7 +32,7 @@ export default function BoostAnnonceModal({ annonceId, boostUntil, onClose }: {
   // Même parcours qu'à la publication : récapitulatif puis paiement.
   function booster(code: string) {
     setBoosting(true);
-    router.push(urlPaiementBoost(annonceId, code));
+    router.push(urlPaiementBoost(annonceId, code, undefined, table));
   }
 
   return (

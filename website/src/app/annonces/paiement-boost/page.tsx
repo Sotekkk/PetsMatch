@@ -24,6 +24,7 @@ function Inner() {
   const annonceId = params.get('annonce');
   const code = params.get('offre');
   const statutCible = params.get('statut') === 'en_attente' ? 'en_attente' : 'disponible';
+  const table = params.get('table') === 'annonces_objets' ? 'annonces_objets' : 'annonces';
   const [annonce, setAnnonce] = useState<AnnonceBoost | null | undefined>(undefined);
   const [offre, setOffre] = useState<Offre | null | undefined>(undefined);
   const [envoi, setEnvoi] = useState(false);
@@ -35,17 +36,23 @@ function Inner() {
 
   useEffect(() => {
     if (!annonceId || !code) { setAnnonce(null); setOffre(null); return; }
-    supabase.from('annonces').select('id, titre, race, statut, paiement_statut, boost_until').eq('id', annonceId).maybeSingle()
-      .then(({ data }) => setAnnonce((data as AnnonceBoost) ?? null));
+    (table === 'annonces_objets'
+      ? supabase.from('annonces_objets').select('id, titre, statut, boost_until').eq('id', annonceId).maybeSingle()
+      : supabase.from('annonces').select('id, titre, race, statut, paiement_statut, boost_until').eq('id', annonceId).maybeSingle())
+      .then(({ data }) => setAnnonce(data ? { race: null, paiement_statut: null, ...(data as object) } as AnnonceBoost : null));
     supabase.from('produits_ponctuels').select('code, label, prix, duree_heures, description')
       .eq('code', code).eq('actif', true).in('code', CODES_BOOST).maybeSingle()
       .then(({ data }) => setOffre((data as Offre) ?? null));
-  }, [annonceId, code]);
+  }, [annonceId, code, table]);
 
   // Publication en attente de ce paiement (boost choisi à la création).
-  const publication = annonce?.statut === 'brouillon' && annonce.paiement_statut === 'attente_boost';
+  const publication = table === 'annonces_objets'
+    ? annonce?.statut === 'attente_boost'
+    : annonce?.statut === 'brouillon' && annonce.paiement_statut === 'attente_boost';
   const dejaPubliee = !!annonce && !publication && annonce.statut === 'brouillon';
-  const retourChoix = `/annonces/creer?brouillon=${annonceId}&paiement=annule`;
+  const retourChoix = table === 'annonces_objets'
+    ? `/annonces/creer-objet?edit=${annonceId}&paiement=annule`
+    : `/annonces/creer?brouillon=${annonceId}&paiement=annule`;
 
   async function payer() {
     if (!user || !annonce || !offre || envoi) return;
@@ -57,7 +64,8 @@ function Inner() {
         body: JSON.stringify({
           uid: user.uid, email: user.email ?? '',
           produit_code: offre.code, annonce_id: annonce.id,
-          ...(publication ? { publier_statut: statutCible } : {}),
+          table,
+          ...(publication ? { publier_statut: table === 'annonces_objets' ? 'disponible' : statutCible } : {}),
         }),
       });
       const json = await res.json();
@@ -114,7 +122,7 @@ function Inner() {
 
             <p className="text-sm text-gray-600 mt-4 rounded-xl px-4 py-3 bg-white" style={{ border: `1px solid ${BORDURE}` }}>
               {publication
-                ? (statutCible === 'disponible'
+                ? (statutCible === 'disponible' || table === 'annonces_objets'
                     ? 'Votre annonce sera publiée et boostée dès la confirmation du paiement. Si le paiement est annulé, elle reste en brouillon avec toutes ses informations et photos.'
                     : 'Votre annonce sera envoyée en validation et boostée dès la confirmation du paiement. Si le paiement est annulé, elle reste en brouillon avec toutes ses informations et photos.')
                 : 'Le boost démarre dès la confirmation du paiement. Paiement sécurisé via Stripe.'}

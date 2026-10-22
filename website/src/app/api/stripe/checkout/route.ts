@@ -15,7 +15,9 @@ export async function POST(req: NextRequest) {
     const auth = await requireUser(req);
     if (auth instanceof NextResponse) return auth;
     const uid = auth.uid;
-    const { email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath, publier_statut } = await req.json();
+    const { email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath, publier_statut, table: tableDemandee } = await req.json();
+    // Annonce boostée : animal (annonces) ou matériel & équipements (annonces_objets).
+    const tableAnnonce = tableDemandee === 'annonces_objets' ? 'annonces_objets' : 'annonces';
     if (!email) return NextResponse.json({ error: 'email requis' }, { status: 400 });
     if (profile_id) {
       // Le profil payé doit être à l'appelant — ou à un élevage qu'il co-gère.
@@ -103,20 +105,26 @@ export async function POST(req: NextRequest) {
         if (!annonce_id || !(produit.duree_heures as number | null)) {
           return NextResponse.json({ error: 'Annonce ou offre de boost invalide.' }, { status: 400 });
         }
-        const { data: a } = await supabase.from('annonces').select('uid_eleveur, statut, paiement_statut').eq('id', annonce_id).maybeSingle();
+        // Matériel : en attente, statut « attente_boost » (pas de colonne
+        // paiement_statut) ; animal : brouillon + paiement_statut « attente_boost ».
+        const { data: a } = tableAnnonce === 'annonces_objets'
+          ? await supabase.from('annonces_objets').select('uid, statut').eq('id', annonce_id).maybeSingle()
+          : await supabase.from('annonces').select('uid_eleveur, statut, paiement_statut').eq('id', annonce_id).maybeSingle();
         if (!a) return NextResponse.json({ error: 'Annonce introuvable.' }, { status: 404 });
-        let proprietaire = a.uid_eleveur === uid;
-        if (!proprietaire) {
+        const proprietaireUid = ('uid_eleveur' in a ? a.uid_eleveur : a.uid) as string;
+        let proprietaire = proprietaireUid === uid;
+        if (!proprietaire && tableAnnonce === 'annonces') {
           const { data: cog } = await supabase.from('elevage_cogerants').select('id')
-            .eq('uid_gerant', a.uid_eleveur).eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null)
+            .eq('uid_gerant', proprietaireUid).eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null)
             .limit(1).maybeSingle();
           proprietaire = !!cog;
         }
         if (!proprietaire) return NextResponse.json({ error: 'Annonce non autorisée.' }, { status: 403 });
         // Déjà publiée (paiement confirmé, retour arrière…) : pas de second paiement.
-        if (a.statut !== 'brouillon' || a.paiement_statut !== 'attente_boost') {
-          return NextResponse.json({ error: 'Cette annonce est déjà publiée.' }, { status: 409 });
-        }
+        const enAttente = tableAnnonce === 'annonces_objets'
+          ? a.statut === 'attente_boost'
+          : a.statut === 'brouillon' && 'paiement_statut' in a && a.paiement_statut === 'attente_boost';
+        if (!enAttente) return NextResponse.json({ error: 'Cette annonce est déjà publiée.' }, { status: 409 });
       }
 
       const session = await stripe.checkout.sessions.create({
@@ -124,15 +132,17 @@ export async function POST(req: NextRequest) {
         line_items: [{ price: priceId, quantity: 1 }],
         success_url: isAnnonceChevalParticulier
           ? `${origin}${ponctuelBack}?paye=1`
-          : publication ? `${origin}/mes-annonces?publiee=${annonce_id}`
+          : publication ? `${origin}/mes-annonces?publiee=${annonce_id}${tableAnnonce === 'annonces_objets' ? '&type=materiel' : ''}`
           : `${origin}/mes-annonces?boost_success=1`,
         cancel_url: isAnnonceChevalParticulier
           ? `${origin}${ponctuelBack}?paiement=annule`
-          : publication ? `${origin}/annonces/creer?brouillon=${annonce_id}&paiement=annule`
+          : publication ? (tableAnnonce === 'annonces_objets'
+              ? `${origin}/annonces/creer-objet?edit=${annonce_id}&paiement=annule`
+              : `${origin}/annonces/creer?brouillon=${annonce_id}&paiement=annule`)
           : `${origin}/mes-annonces`,
-        metadata: { uid, produit_code, annonce_id: annonce_id ?? '', ...(publication ? { publier_statut } : {}) },
+        metadata: { uid, produit_code, annonce_id: annonce_id ?? '', table: tableAnnonce, ...(publication ? { publier_statut } : {}) },
       // Clics répétés / retour depuis le paiement : même session Stripe, jamais deux paiements.
-      }, publication ? { idempotencyKey: `publication-boost-${annonce_id}-${produit_code}` } : undefined);
+      }, publication ? { idempotencyKey: `publication-boost-${tableAnnonce}-${annonce_id}-${produit_code}` } : undefined);
 
       return NextResponse.json({ url: session.url });
     }

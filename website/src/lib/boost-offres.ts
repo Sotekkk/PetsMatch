@@ -20,5 +20,6 @@ export const dureeOffre = (h: number | null) => h == null ? ''
 export const prixOffre = (p: number) => `${p.toFixed(2).replace('.', ',')} €`;
 
 /** Page de récapitulatif et de paiement d'un boost. */
-export const urlPaiementBoost = (annonceId: string, code: string, statut?: string) =>
-  `/annonces/paiement-boost?annonce=${annonceId}&offre=${code}${statut ? `&statut=${statut}` : ''}`;
+export type TableAnnonce = 'annonces' | 'annonces_objets';
+export const urlPaiementBoost = (annonceId: string, code: string, statut?: string, table: TableAnnonce = 'annonces') =>
+  `/annonces/paiement-boost?annonce=${annonceId}&offre=${code}${statut ? `&statut=${statut}` : ''}${table === 'annonces_objets' ? '&table=annonces_objets' : ''}`;

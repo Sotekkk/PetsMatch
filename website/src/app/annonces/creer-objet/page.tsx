@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PageFormulaire, SectionFormulaire, Champ, Colonnes, CaseACocher, GrillePhotos, classeChamp, styleChamp,
 } from '@/components/annonces/FormulaireAnnonce';
+import ChoixBoost, { useOffresBoost } from '@/components/annonces/ChoixBoost';
+import { urlPaiementBoost } from '@/lib/boost-offres';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadPhoto } from '@/lib/upload-media';
@@ -49,6 +51,12 @@ function CreerObjetInner() {
   const [err, setErr] = useState('');
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
   const [avisPhotos, setAvisPhotos] = useState<string | null>(null);
+  // Boost choisi avant de publier ; annonce en attente du paiement (statut
+  // « attente_boost ») : reprise comme une création, pas comme une modification.
+  const offresBoost = useOffresBoost();
+  const [choixBoost, setChoixBoost] = useState('');
+  const [enAttente, setEnAttente] = useState(false);
+  const paiementAnnule = params.get('paiement') === 'annule';
 
   const priced = transaction === 'vente' || transaction === 'location';
 
@@ -69,6 +77,7 @@ function CreerObjetInner() {
       setDepartement(data.departement ?? '');
       if (data.ville) setCommunes([data.ville]);
       setExistingPhotos(data.photos ?? []);
+      setEnAttente(data.statut === 'attente_boost');
     });
   }, [editId]);
 
@@ -122,6 +131,8 @@ function CreerObjetInner() {
       setErr('Cette rubrique est réservée au matériel et aux équipements. Pour un animal, choisissez « Animal » dans « Publier une annonce ».');
       return;
     }
+    const creation = !editId || enAttente;
+    const boostPublication = creation && !!choixBoost && offresBoost.some(o => o.code === choixBoost);
     setSaving(true);
     try {
       const uploaded: string[] = [];
@@ -146,19 +157,33 @@ function CreerObjetInner() {
         departement: departement || geo?.departement || null,
         region: region || geo?.region || null,
         nom_vendeur: user!.displayName || 'Particulier',
-        statut: 'disponible',
+        // Avec boost : publiée seulement à la confirmation du paiement.
+        statut: boostPublication ? 'attente_boost' : 'disponible',
         updated_at: new Date().toISOString(),
       };
-      if (editId) {
+      let idAnnonce = editId;
+      if (editId && !enAttente) {
         // Photos / disponibilité gratuites, le reste payant (4,99 €).
         const { statut: _statut, ...sansStatut } = payload; void _statut;
         const applique = await enregistrerModificationAnnonce('annonces_objets', editId, JSON.parse(JSON.stringify(sansStatut)));
         if (!applique) { setSaving(false); return; }
+      } else if (editId) {
+        // Annonce pas encore publiée (paiement du boost annulé) : on la complète.
+        payload.expires_at = new Date(Date.now() + 60 * 86400_000).toISOString();
+        const { error } = await supabase.from('annonces_objets').update(payload).eq('id', editId).eq('statut', 'attente_boost');
+        if (error) throw error;
       } else {
         payload.created_at = new Date().toISOString();
         payload.expires_at = new Date(Date.now() + 60 * 86400_000).toISOString();
-        const { error } = await supabase.from('annonces_objets').insert(payload);
+        const { data: cree, error } = await supabase.from('annonces_objets').insert(payload).select('id').single();
         if (error) throw error;
+        idAnnonce = String(cree.id);
+      }
+      if (boostPublication && idAnnonce) {
+        // Retour arrière depuis le paiement : on reprend la même annonce (pas de doublon).
+        window.history.replaceState({}, '', `/annonces/creer-objet?edit=${idAnnonce}`);
+        router.push(urlPaiementBoost(idAnnonce, choixBoost, undefined, 'annonces_objets'));
+        return;
       }
       router.push('/mes-annonces?type=materiel');
     } catch (e) {
@@ -175,10 +200,10 @@ function CreerObjetInner() {
 
   return (
     <PageFormulaire retourHref={retour} retourLabel={editId ? 'Retour à mes annonces' : 'Publier une annonce'}
-      titre={editId ? 'Modifier l’annonce' : 'Matériel & équipements'}
+      titre={editId && !enAttente ? 'Modifier l’annonce' : 'Matériel & équipements'}
       sousTitre="Matériel destiné aux animaux et aux activités professionnelles : paniers, grilles de chenil, parcs, caisses de transport, équipements de mise bas… La vente d’un animal n’est pas autorisée ici."
       erreur={err} onSubmit={ev => { ev.preventDefault(); submit(); }} annulerHref={retour} enregistrement={saving}
-      libelleEnregistrer={editId ? 'Enregistrer les modifications' : 'Publier gratuitement'}>
+      libelleEnregistrer={editId && !enAttente ? 'Enregistrer les modifications' : choixBoost ? 'Passer au paiement' : 'Publier mon annonce'}>
 
       <SectionFormulaire titre="Informations principales">
         <Champ label="Titre" requis htmlFor="titre" erreur={erreurs.titre}>
@@ -282,6 +307,11 @@ function CreerObjetInner() {
           </Champ>
         </Colonnes>
       </SectionFormulaire>
+      {(!editId || enAttente) && offresBoost.length > 0 && (
+        <SectionFormulaire titre="Souhaitez-vous booster votre annonce ?">
+          <ChoixBoost offres={offresBoost} choix={choixBoost} onChoix={setChoixBoost} paiementAnnule={enAttente && paiementAnnule} />
+        </SectionFormulaire>
+      )}
     </PageFormulaire>
   );
 }

@@ -160,6 +160,9 @@ class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
     final photos = List<String>.from(r['photos'] ?? const []);
     final statut = (r['statut'] ?? 'disponible').toString();
     final isPause = statut == 'pause';
+    // Boost choisi à la publication, paiement pas encore confirmé : pas en ligne.
+    final enAttente = statut == 'attente_boost';
+    final booste = _boosted(r);
     final created = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
     final vues = (r['vues'] as num?)?.toInt() ?? 0;
     final contacts = (r['contacts'] as num?)?.toInt() ?? 0;
@@ -173,8 +176,9 @@ class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
       titre: (r['titre'] ?? '').toString(),
       sousTitre: annonceObjetCategorieLabel(r['categorie'] as String?),
       etiquettes: [
-        isPause ? puceStatut('En pause', 'gris') : puceStatut('En ligne', 'vert'),
-        if (_boosted(r)) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
+        enAttente ? puceStatut('En attente de paiement', 'ambre')
+            : isPause ? puceStatut('En pause', 'gris') : puceStatut('En ligne', 'vert'),
+        if (booste) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
       ],
       prix: annonceObjetPrixLabel(r),
       indicateurs: [
@@ -182,11 +186,19 @@ class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
         (Icons.chat_bubble_outline, '$contacts contact${contacts > 1 ? 's' : ''}'),
         if (created != null) (Icons.calendar_today_outlined, DateFormat('dd/MM/yy').format(created)),
       ],
-      principales: [
-        GestionAction('Voir', Icons.visibility_outlined, voir),
-        GestionAction('Modifier', Icons.edit_outlined, () => _create(edit: r)),
-      ],
-      menu: [
+      principales: enAttente
+          ? [GestionAction('Reprendre la publication', Icons.edit_outlined, () => _create(edit: r))]
+          : [
+              GestionAction('Voir', Icons.visibility_outlined, voir),
+              GestionAction('Modifier', Icons.edit_outlined, () => _create(edit: r)),
+            ],
+      menu: enAttente ? [
+        GestionAction('Supprimer', Icons.delete_outline, () => _delete(r), danger: true),
+      ] : [
+        GestionAction(booste ? 'Prolonger le boost' : 'Booster l\'annonce', Icons.bolt,
+            () => ouvrirBoostAnnonce(context, annonceId: (r['id'] ?? '').toString(),
+                boostUntil: r['boost_until']?.toString(), materiel: true),
+            actif: booste),
         GestionAction(isPause ? 'Activer' : 'Mettre en pause',
             isPause ? Icons.play_arrow_outlined : Icons.pause_outlined, () => _togglePause(r)),
         GestionAction('Supprimer', Icons.delete_outline, () => _delete(r), danger: true),

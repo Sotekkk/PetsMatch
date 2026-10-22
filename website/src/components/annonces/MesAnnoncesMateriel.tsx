@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { categorieLabel, ANNONCE_OBJET_TRANSACTIONS } from '@/lib/annonce-objet-categories';
 import { Puce } from '@/components/dashboard/kit';
 import { CarteAnnonce, EtatVide, Chargement, correspondRecherche, TEINTES_STATUT } from '@/components/annonces/GestionAnnonces';
+import BoostAnnonceModal from '@/components/annonces/BoostAnnonceModal';
 
 interface AnnonceObjet {
   id: string;
@@ -39,6 +40,7 @@ export default function MesAnnoncesMateriel({ statut = 'toutes', recherche = '',
   const { user, activeProfileId } = useAuth();
   const [rows, setRows] = useState<AnnonceObjet[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [boostId, setBoostId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -85,14 +87,17 @@ export default function MesAnnoncesMateriel({ statut = 'toutes', recherche = '',
     <div className="space-y-3">
       {liste.map(a => {
         const pause = a.statut === 'pause';
-        const t = TEINTES_STATUT[pause ? 'gris' : 'vert'];
+        // Boost choisi à la publication, paiement pas encore confirmé : pas en ligne.
+        const attente = a.statut === 'attente_boost';
+        const booste = boostActif(a.boost_until);
+        const t = TEINTES_STATUT[attente ? 'ambre' : pause ? 'gris' : 'vert'];
         return (
           <CarteAnnonce key={a.id} href={`/annonces/objets/${a.id}`} photo={a.photos?.[0]} iconeVide="caisse"
             titre={a.titre}
             sousTitre={`${categorieLabel(a.categorie)} · ${ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}`}
             etiquettes={<>
-              <Puce texte={pause ? 'En pause' : 'En ligne'} fg={t.fg} bg={t.bg} point />
-              {boostActif(a.boost_until) && <Puce texte="Boostée" fg="#B45309" bg="#FEF3C7" icone="eclair" />}
+              <Puce texte={attente ? 'En attente de paiement' : pause ? 'En pause' : 'En ligne'} fg={t.fg} bg={t.bg} point />
+              {booste && <Puce texte="Boostée" fg="#B45309" bg="#FEF3C7" icone="eclair" />}
             </>}
             prix={prixLabel(a)}
             indicateurs={[
@@ -100,16 +105,25 @@ export default function MesAnnoncesMateriel({ statut = 'toutes', recherche = '',
               { icone: 'enveloppe', texte: `${a.contacts ?? 0} contact${(a.contacts ?? 0) > 1 ? 's' : ''}` },
               ...(a.created_at ? [{ icone: 'calendrier', texte: new Date(a.created_at).toLocaleDateString('fr-FR') }] : []),
             ]}
-            principales={[
+            principales={attente ? [
+              { label: 'Reprendre la publication', icone: 'crayon', href: `/annonces/creer-objet?edit=${a.id}` },
+            ] : [
               { label: 'Voir', icone: 'oeil', href: `/annonces/objets/${a.id}` },
               { label: 'Modifier', icone: 'crayon', href: `/annonces/creer-objet?edit=${a.id}` },
             ]}
-            menu={[
+            menu={attente ? [
+              { label: 'Supprimer', icone: 'corbeille', danger: true, disabled: busy === a.id, onClick: () => remove(a) },
+            ] : [
+              { label: booste ? 'Prolonger le boost' : 'Booster l’annonce', icone: 'eclair', actif: booste, onClick: () => setBoostId(a.id) },
               { label: pause ? 'Activer' : 'Mettre en pause', icone: pause ? 'lecture' : 'pause', disabled: busy === a.id, onClick: () => togglePause(a) },
               { label: 'Supprimer', icone: 'corbeille', danger: true, disabled: busy === a.id, onClick: () => remove(a) },
             ]} />
         );
       })}
+      {boostId && (
+        <BoostAnnonceModal annonceId={boostId} table="annonces_objets"
+          boostUntil={rows.find(x => x.id === boostId)?.boost_until} onClose={() => setBoostId(null)} />
+      )}
     </div>
   );
 }

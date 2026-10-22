@@ -10,7 +10,7 @@ import { Icone } from '@/components/dashboard/kit';
 
 const fmt = (iso: string) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
 
-export default function ConfirmationBoost({ annonceId, onFermer }: { annonceId: string; onFermer: () => void }) {
+export default function ConfirmationBoost({ annonceId, table = 'annonces', onFermer }: { annonceId: string; table?: 'annonces' | 'annonces_objets'; onFermer: () => void }) {
   const [etat, setEtat] = useState<{ statut: string; debut: string | null; fin: string } | null>(null);
   const [delaiDepasse, setDelaiDepasse] = useState(false);
 
@@ -18,12 +18,12 @@ export default function ConfirmationBoost({ annonceId, onFermer }: { annonceId: 
     let essais = 0;
     let fini = false;
     const verifier = async () => {
-      const { data: a } = await supabase.from('annonces').select('statut, boost_until').eq('id', annonceId).maybeSingle();
-      if (a && a.statut !== 'brouillon' && a.boost_until) {
-        const { data: achat } = await supabase.from('achats_ponctuels').select('created_at')
-          .eq('annonce_id', annonceId).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const { data: a } = await supabase.from(table).select('statut, boost_until').eq('id', annonceId).maybeSingle();
+      if (a && a.statut !== 'brouillon' && a.statut !== 'attente_boost' && a.boost_until) {
+        const { data: achat } = await supabase.from('achats_ponctuels').select('date_achat')
+          .eq('annonce_id', annonceId).order('date_achat', { ascending: false }).limit(1).maybeSingle();
         fini = true;
-        setEtat({ statut: a.statut as string, debut: (achat?.created_at as string | undefined) ?? null, fin: a.boost_until as string });
+        setEtat({ statut: a.statut as string, debut: (achat?.date_achat as string | undefined) ?? null, fin: a.boost_until as string });
         return;
       }
       if (++essais >= 15) { fini = true; setDelaiDepasse(true); return; }
@@ -31,7 +31,7 @@ export default function ConfirmationBoost({ annonceId, onFermer }: { annonceId: 
     };
     verifier();
     return () => { fini = true; };
-  }, [annonceId]);
+  }, [annonceId, table]);
 
   return (
     <div role="status" className="mb-5 rounded-2xl px-4 py-4 flex items-start gap-3 bg-[#EAF5EC] border border-[#BFE3C6]">

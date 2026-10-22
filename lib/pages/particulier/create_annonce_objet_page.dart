@@ -1,3 +1,6 @@
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:PetsMatch/widgets/annonces/gestion_annonces_kit.dart';
 import 'package:PetsMatch/widgets/annonces/formulaire_annonce_kit.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
@@ -51,11 +54,18 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
   bool _loadingVilles = false;
 
   bool get _isEdit => widget.annonceId != null;
+  // Boost choisi avant de publier. Annonce en attente du paiement (statut
+  // « attente_boost ») : reprise comme une création, pas une modification.
+  List<Map<String, dynamic>> _offresBoost = [];
+  String _choixBoost = '';
+  late final bool _enAttente = widget.initialData?['statut'] == 'attente_boost';
+  bool get _creation => !_isEdit || _enAttente;
   bool get _priced => _transaction == 'vente' || _transaction == 'location';
 
   @override
   void initState() {
     super.initState();
+    chargerOffresBoost().then((o) { if (mounted) setState(() => _offresBoost = o); });
     final d = widget.initialData;
     if (d != null) {
       _titreCtrl.text = (d['titre'] ?? '').toString();
@@ -169,6 +179,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       return;
     }
 
+    final boost = _creation && _choixBoost.isNotEmpty && _offresBoost.any((o) => o['code'] == _choixBoost);
     setState(() => _saving = true);
     try {
       final uid = User_Info.uid;
@@ -202,11 +213,17 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
         'departement': _departement ?? geo?.departement,
         'region': _region ?? geo?.region,
         'nom_vendeur': nom.isEmpty ? 'Particulier' : nom,
-        'statut': 'disponible',
+        // Avec boost : publiée seulement à la confirmation du paiement.
+        'statut': boost ? 'attente_boost' : 'disponible',
         'updated_at': now,
       };
 
-      if (_isEdit) {
+      String? idAnnonce = widget.annonceId;
+      if (_isEdit && _enAttente) {
+        // Annonce pas encore publiée (paiement du boost annulé) : on la complète.
+        data['expires_at'] = DateTime.now().add(const Duration(days: 60)).toIso8601String();
+        await _supa.from('annonces_objets').update(data).eq('id', widget.annonceId!).eq('statut', 'attente_boost');
+      } else if (_isEdit) {
         // Photos / disponibilité gratuites, le reste payant (4,99 €).
         data.remove('statut');
         final issue = await enregistrerModificationAnnonce(context,
@@ -221,7 +238,17 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
         data['created_at'] = now;
         data['expires_at'] =
             DateTime.now().add(const Duration(days: 60)).toIso8601String();
-        await _supa.from('annonces_objets').insert(data);
+        final cree = await _supa.from('annonces_objets').insert(data).select('id').single();
+        idAnnonce = cree['id']?.toString();
+      }
+      if (boost && idAnnonce != null) {
+        // Récapitulatif et paiement sur le site (interdit dans l'appli).
+        await launchUrl(Uri.parse('$kSiteBaseUrl/annonces/paiement-boost?annonce=$idAnnonce&offre=$_choixBoost&table=annonces_objets'),
+            mode: LaunchMode.externalApplication);
+        if (!mounted) return;
+        _snack('Finalisez le paiement sur le site. L\'annonce sera publiée dès sa confirmation.');
+        Navigator.pop(context, true);
+        return;
       }
       if (!mounted) return;
       _snack(_isEdit ? 'Annonce mise à jour.' : 'Annonce publiée !');
@@ -246,7 +273,8 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       ),
       bottomNavigationBar: FormActions(
         saving: _saving,
-        libelle: _isEdit ? 'Enregistrer les modifications' : 'Publier gratuitement',
+        libelle: !_creation ? 'Enregistrer les modifications'
+            : _choixBoost.isNotEmpty ? 'Passer au paiement' : 'Publier mon annonce',
         onEnregistrer: _save,
       ),
       body: ListView(
@@ -441,6 +469,12 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
               onChanged: _region == null ? null : (v) => setState(() => _departement = v),
             ),
           ]),
+
+          if (_creation && _offresBoost.isNotEmpty)
+            FormSection(titre: 'Souhaitez-vous booster votre annonce ?', children: [
+              ChoixBoostAnnonce(offres: _offresBoost, choix: _choixBoost,
+                  onChoix: (c) => setState(() => _choixBoost = c)),
+            ]),
         ],
       ),
     );

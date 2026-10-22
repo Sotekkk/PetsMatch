@@ -192,6 +192,15 @@ export async function POST(req: NextRequest) {
                   await supabase.from('annonces').update({
                     statut: 'disponible', paiement_statut: 'paye', expires_at: expiresAt,
                   }).eq('id', annonce_id);
+                } else if (expiration && session.metadata?.table === 'annonces_objets') {
+                  // Matériel & équipements : publication en attente du paiement
+                  // (une seule fois) ou boost d'une annonce déjà en ligne.
+                  if (session.metadata?.publier_statut) {
+                    await supabase.from('annonces_objets').update({ statut: 'disponible', boost_until: expiration })
+                      .eq('id', annonce_id).eq('statut', 'attente_boost');
+                  } else {
+                    await supabase.from('annonces_objets').update({ boost_until: expiration }).eq('id', annonce_id);
+                  }
                 } else if (expiration && (session.metadata?.publier_statut === 'disponible' || session.metadata?.publier_statut === 'en_attente')) {
                   // Boost choisi à la publication : publier l'annonce (une seule
                   // fois : seulement si elle attend encore en brouillon) et

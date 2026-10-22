@@ -74,12 +74,15 @@ export default function MesAnnoncesPage() {
   const [boostId, setBoostId] = useState<string | null>(null);
   // Retour du paiement d'un boost choisi à la publication.
   const [publieeId, setPubliee] = useState<string | null>(null);
+  // Annonce de matériel (annonces_objets) pour la confirmation et le boost ouvert par lien.
+  const [tableLien, setTableLien] = useState<'annonces' | 'annonces_objets'>('annonces');
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    if (q.get('table') === 'annonces_objets' || (q.get('publiee') && q.get('type') === 'materiel')) setTableLien('annonces_objets');
     const b = q.get('boost');
     if (b) setBoostId(b);
     const p = q.get('publiee');
-    if (p) { setPubliee(p); window.history.replaceState({}, '', '/mes-annonces'); }
+    if (p) { setPubliee(p); window.history.replaceState({}, '', q.get('type') === 'materiel' ? '/mes-annonces?type=materiel' : '/mes-annonces'); }
   }, []);
   const [statsAnnonceId, setStatsAnnonceId] = useState<string | null>(null);
   const [statsAnnonceTitle, setStatsAnnonceTitle] = useState<string | undefined>();
@@ -265,7 +268,7 @@ export default function MesAnnoncesPage() {
           {notice}
         </div>
       )}
-      {publieeId && <ConfirmationBoost annonceId={publieeId} onFermer={() => setPubliee(null)} />}
+      {publieeId && <ConfirmationBoost annonceId={publieeId} table={tableLien} onFermer={() => setPubliee(null)} />}
       <EnteteGestion total={total} publierHref="/annonces/publier" achatsHref="/mes-achats" />
 
       {/* Quota du plan (annonces d'animaux d'éleveur) */}
@@ -379,7 +382,7 @@ export default function MesAnnoncesPage() {
       )}
 
       {boostId && (
-        <BoostAnnonceModal annonceId={boostId} returnPath="/mes-annonces"
+        <BoostAnnonceModal annonceId={boostId} returnPath="/mes-annonces" table={tableLien}
           boostUntil={annonces.find(x => x.id === boostId)?.boost_until}
           onClose={() => { setBoostId(null); if (window.location.search.includes('boost=')) window.history.replaceState({}, '', '/mes-annonces'); }} />
       )}

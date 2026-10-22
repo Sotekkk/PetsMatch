@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 
 const _teal = kDashTeal;
@@ -389,7 +390,7 @@ class GestionVide extends StatelessWidget {
 /// se finalise sur le site, qui ouvre directement les offres (?boost=<id>).
 /// Offres, durées et paiement inchangés.
 Future<void> ouvrirBoostAnnonce(BuildContext context,
-    {required String annonceId, String? boostUntil, bool association = false}) {
+    {required String annonceId, String? boostUntil, bool association = false, bool materiel = false}) {
   final until = boostUntil != null ? DateTime.tryParse(boostUntil) : null;
   final actif = until != null && until.isAfter(DateTime.now());
   return showModalBottomSheet<void>(
@@ -424,7 +425,8 @@ Future<void> ouvrirBoostAnnonce(BuildContext context,
           onPressed: () async {
             Navigator.pop(ctx);
             final page = association ? 'association/annonces' : 'mes-annonces';
-            await launchUrl(Uri.parse('$kSiteBaseUrl/$page?boost=$annonceId'), mode: LaunchMode.externalApplication);
+            await launchUrl(Uri.parse('$kSiteBaseUrl/$page?boost=$annonceId${materiel ? '&table=annonces_objets' : ''}'),
+                mode: LaunchMode.externalApplication);
           },
           icon: const Icon(Icons.open_in_new, size: 18),
           label: Text(actif ? 'Prolonger sur le site' : 'Booster sur le site',
@@ -442,4 +444,80 @@ Future<void> ouvrirBoostAnnonce(BuildContext context,
       ]),
     )),
   );
+}
+
+/// Offres de boost existantes (produits_ponctuels), du moins cher au plus cher.
+Future<List<Map<String, dynamic>>> chargerOffresBoost() async {
+  try {
+    final rows = await Supabase.instance.client.from('produits_ponctuels')
+        .select('code, label, prix, duree_heures, description')
+        .eq('actif', true).not('duree_heures', 'is', null)
+        .inFilter('code', ['boost_48h', 'mise_une']).order('prix');
+    return List<Map<String, dynamic>>.from(rows as List);
+  } catch (_) {
+    return [];
+  }
+}
+
+String dureeOffreBoost(num? h) => h == null ? ''
+    : h >= 24 ? '${(h / 24).round()} jour${(h / 24).round() > 1 ? 's' : ''}' : '${h.toInt()} h';
+String prixOffreBoost(num p) => '${p.toStringAsFixed(2).replaceAll('.', ',')} €';
+
+/// « Souhaitez-vous booster votre annonce ? » : « Publier sans boost » par
+/// défaut, puis les offres avec prix total, durée et avantages.
+class ChoixBoostAnnonce extends StatelessWidget {
+  final List<Map<String, dynamic>> offres;
+  final String choix;
+  final ValueChanged<String> onChoix;
+  const ChoixBoostAnnonce({super.key, required this.offres, required this.choix, required this.onChoix});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <Map<String, dynamic>>[
+      {'code': '', 'label': 'Publier sans boost',
+        'description': 'Votre annonce est publiée normalement. Vous pourrez la booster plus tard depuis « Mes annonces ».'},
+      ...offres,
+    ];
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      for (final o in options)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: InkWell(
+            onTap: () => onChoix(o['code'] as String),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: choix == o['code'] ? const Color(0xFFE8F4F6) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: choix == o['code'] ? _teal : kDashBorder),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(choix == o['code'] ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    size: 20, color: choix == o['code'] ? _teal : kDashMuted),
+                const SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(child: Text(o['label'].toString(), style: const TextStyle(fontFamily: 'Galey',
+                        fontSize: 14, fontWeight: FontWeight.w700, color: kDashInk))),
+                    if ((o['code'] as String).isNotEmpty)
+                      Text(prixOffreBoost(o['prix'] as num), style: const TextStyle(fontFamily: 'Galey',
+                          fontSize: 14, fontWeight: FontWeight.w700, color: kDashInk)),
+                  ]),
+                  if ((o['code'] as String).isNotEmpty)
+                    Text('${dureeOffreBoost(o['duree_heures'] as num?)} de mise en avant · prix total, paiement unique',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                  if ((o['description'] ?? '').toString().isNotEmpty)
+                    Text(o['description'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                ])),
+              ]),
+            ),
+          ),
+        ),
+      if (choix.isNotEmpty)
+        const Text('Le paiement se fait sur le site. Votre annonce n\'est publiée qu\'à la confirmation '
+            'du paiement ; en cas d\'annulation, rien n\'est perdu.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+    ]);
+  }
 }
