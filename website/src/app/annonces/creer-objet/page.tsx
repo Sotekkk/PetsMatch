@@ -17,6 +17,13 @@ import {
 const MAX_PHOTOS = 6;
 const INTERDITS = ['chiot', 'chaton', 'à adopter', 'a adopter', 'portée de', 'portee de', 'lapereau'];
 
+const apercusCache = new WeakMap<File, string>();
+function apercuDe(f: File): string {
+  let u = apercusCache.get(f);
+  if (!u) { u = URL.createObjectURL(f); apercusCache.set(f, u); }
+  return u;
+}
+
 function CreerObjetInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -41,6 +48,7 @@ function CreerObjetInner() {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [erreurs, setErreurs] = useState<Record<string, string>>({});
+  const [avisPhotos, setAvisPhotos] = useState<string | null>(null);
 
   const priced = transaction === 'vente' || transaction === 'location';
 
@@ -86,10 +94,17 @@ function CreerObjetInner() {
 
   const totalPhotos = existingPhotos.length + files.length;
 
+  // Une ou plusieurs photos à chaque sélection, ajoutées à la suite des
+  // précédentes (jamais en remplacement). Les fichiers sont copiés tout de
+  // suite : le champ est vidé juste après pour permettre une nouvelle sélection.
   function addFiles(list: FileList | null) {
-    if (!list) return;
-    const room = MAX_PHOTOS - totalPhotos;
-    setFiles(f => [...f, ...Array.from(list).slice(0, room)]);
+    const choisis = list ? Array.from(list) : [];
+    if (!choisis.length) return;
+    const room = Math.max(0, MAX_PHOTOS - totalPhotos);
+    setAvisPhotos(choisis.length > room
+      ? `Maximum ${MAX_PHOTOS} photos : ${choisis.length - room} photo${choisis.length - room > 1 ? 's n’ont' : ' n’a'} pas été ajoutée${choisis.length - room > 1 ? 's' : ''}.`
+      : null);
+    setFiles(f => [...f, ...choisis.slice(0, room)]);
   }
 
   async function submit() {
@@ -154,7 +169,7 @@ function CreerObjetInner() {
 
   const cat = ANNONCE_OBJET_CATEGORIES.find(c => c.slug === categorie);
 
-  const apercus = files.map(f => URL.createObjectURL(f));
+  const apercus = files.map(f => apercuDe(f));
   const choix = (actif: boolean) => `min-h-10 px-3.5 rounded-xl text-sm font-semibold border transition-colors ${actif ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-700 hover:border-[#0C5C6C]/50'}`;
   const retour = editId ? '/mes-annonces?type=materiel' : '/annonces/publier';
 
@@ -195,6 +210,7 @@ function CreerObjetInner() {
             onRetirer={i => i < existingPhotos.length
               ? setExistingPhotos(p => p.filter((_, j) => j !== i))
               : setFiles(p => p.filter((_, j) => j !== i - existingPhotos.length))} />
+          {avisPhotos && <p role="status" className="text-xs font-semibold text-[#B45309] mt-2">{avisPhotos}</p>}
         </Champ>
       </SectionFormulaire>
 
