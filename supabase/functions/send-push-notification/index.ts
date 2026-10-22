@@ -67,8 +67,8 @@ serve(async (req) => {
 
     // Payload Supabase Database Webhook : { type, table, record, old_record }
     const record = body?.record ?? body;
-    const { uid, title, body: notifBody, data, recipient_profile_id, profile_id, profile_type } = record as {
-      uid: string; title: string; body: string; data: Record<string, unknown>;
+    const { uid, title, body: notifBody, data, recipient_profile_id, profile_id, profile_type, type: notifType } = record as {
+      uid: string; title: string; body: string; data: Record<string, unknown>; type?: string;
       recipient_profile_id?: string; profile_id?: string; profile_type?: string;
     };
     // `recipient_profile_id` (colonne dédiée, peu utilisée — cogérance/
@@ -126,6 +126,9 @@ serve(async (req) => {
     }
     // Injecter le profil destinataire dans le payload FCM (lu par
     // lib/main.dart _handleNotifNavigation pour proposer la bascule au tap)
+    // Type de la notification (colonne) : l'appli ouvre la bonne page au tap
+    // (ex. notifications Pets Social pour un like / une mention).
+    if (notifType && !dataStr['type']) dataStr['type'] = notifType;
     if (targetProfileId) dataStr['recipient_profile_id'] = targetProfileId;
     if (profileName)      dataStr['recipient_profile_name'] = profileName;
     if (profileType)      dataStr['recipient_profile_type'] = profileType;

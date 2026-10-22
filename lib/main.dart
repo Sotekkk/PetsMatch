@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/verifemail.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialNotificationsPage;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
@@ -208,6 +209,21 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
       ));
       return;
     }
+  }
+
+  // Pets Social (like, mention, like de story) : ces notifications ne sont pas
+  // dans la cloche générale — ouvre les notifications Pets Social du profil
+  // concerné (bascule faite juste au-dessus). Commentaires / abonnements
+  // restent dans la cloche générale.
+  const typesSocial = {'social_like', 'social_mention', 'story_like'};
+  final estSocial = typesSocial.contains(type);
+  final monUid = FirebaseAuth.instance.currentUser?.uid;
+  if (estSocial && monUid != null) {
+    nav.push(MaterialPageRoute(builder: (_) => SocialNotificationsPage(
+      myUid: monUid,
+      myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+    )));
+    return;
   }
 
   // Notif de chaleurs probables/à venir (éleveur ou employé à qui le suivi a
