@@ -1,5 +1,6 @@
 'use client';
 
+import { profilPourAnimal } from '@/lib/cloisonnement-profils';
 import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, majValidation } from '@/lib/exercices-progression';
@@ -1015,13 +1016,16 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
         let rappel = new Date(exp); rappel.setDate(rappel.getDate() - 30);
         if (rappel < new Date()) rappel = exp;
         rappel.setHours(8, 0, 0, 0);
+        const proProfileDoc = await profilPourAnimal(animalId, user.uid, activeProfileId);
         await supabase.from('agenda_events').insert({
           uid: ownerUidProp ?? user.uid,
           titre: `Document à renouveler : ${DOC_LIBRE_CATS.find(c => c.value === cat)?.label ?? file.name}`,
           type: 'autre',
           date_debut: rappel.toISOString(),
           animal_id: Number.isFinite(Number(animalId)) ? Number(animalId) : null,
-          ...(activeProfileId ? { profile_id: activeProfileId, pro_profile_id: activeProfileId } : {}),
+          // Profil propriétaire de l'animal (un rappel de l'élevage reste dans
+          // l'agenda de l'élevage, même créé depuis un autre profil).
+          ...(proProfileDoc ? { profile_id: proProfileDoc, pro_profile_id: proProfileDoc } : {}),
         });
       }
       setExpiration('');
@@ -3464,6 +3468,8 @@ function AnimalFichePageInner() {
         const nextHeat = new Date(startDate);
         nextHeat.setDate(nextHeat.getDate() + interval);
         const nomAnimal = animal.nom || 'animal';
+        // Profil propriétaire de l'animal (miroir appli _scheduleRappelAgenda).
+        const proProfileRappel = await profilPourAnimal(id, user.uid, activeProfileId);
         for (const offset of [7, 1]) {
           const rappel = new Date(nextHeat);
           rappel.setDate(rappel.getDate() - offset);
@@ -3474,7 +3480,8 @@ function AnimalFichePageInner() {
               titre: `Chaleurs prévues J-${offset} — ${nomAnimal}`,
               type: 'medication',
               date_debut: dateAt8.toISOString(),
-              ...(activeProfileId ? { pro_profile_id: activeProfileId, profile_id: activeProfileId } : {}),
+              animal_id: Number.isFinite(Number(id)) ? Number(id) : null,
+              ...(proProfileRappel ? { pro_profile_id: proProfileRappel, profile_id: proProfileRappel } : {}),
             }).then(({ error }) => { if (error) console.error('agenda_events chaleurs error:', error.message); });
           }
         }

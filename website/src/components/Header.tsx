@@ -222,7 +222,6 @@ const MENU_MARECHAL = [
       { href: '/mes-rdv',       label: 'Gérer mes RDV',     icon: '🗓️' },
       { href: '/pro/creneaux',  label: 'Mes créneaux',      icon: '⏰' },
       { href: '/mes-patients',  label: 'Mes équidés suivis', icon: '🐾' },
-      { href: '/marechal-ferrant/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },
   {
@@ -342,7 +341,6 @@ const MENU_PENSION = [
     icon: '👤',
     items: [
       { href: '/profil',             label: 'Modifier mon profil', icon: '✏️' },
-      { href: '/pension/abonnement', label: 'Mon abonnement',      icon: '💳' },
     ],
   },
 ];
@@ -369,7 +367,6 @@ const MENU_GARDE = [
       { href: '/elevage/inventaire',  label: 'Inventaire',           icon: '📦', pro: true },
       { href: '/mes-taches',          label: 'Mes tâches',           icon: '✅', pro: true },
       { href: '/garde/employes',      label: 'Mes Employés',         icon: '👥', pro: true },
-      { href: '/garde/abonnement',    label: 'Mon abonnement',       icon: '💳' },
     ],
   },
   {
@@ -412,7 +409,6 @@ const MENU_EDUCATION = [
       { href: '/mes-patients',       label: 'Mes animaux suivis', icon: '🐾' },
       { href: '/education/bibliotheque', label: 'Bibliothèque d\'exercices', icon: '🏋️' },
       { href: '/elevage/employes',   label: 'Mes employés',       icon: '👥' },
-      { href: '/education/abonnement', label: 'Mon abonnement',   icon: '💳' },
     ],
   },
   {
@@ -458,7 +454,6 @@ const MENU_PHOTOGRAPHE = [
       { href: '/photographe/clients', label: 'Mes clients et suivi', icon: '👥' },
       { href: '/photographe/prestations', label: 'Mes prestations', icon: '📷' },
       { href: '/photographe/dashboard',   label: 'Statistiques',   icon: '📊' },
-      { href: '/photographe/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },
   {
@@ -501,7 +496,6 @@ const MENU_TOILETTAGE = [
       { href: '/toilettage/prestations', label: 'Mes prestations', icon: '✂️' },
       { href: '/toilettage/employes', label: 'Mes employés',     icon: '👥' },
       { href: '/toilettage/dashboard',   label: 'Tableau de bord', icon: '📊' },
-      { href: '/toilettage/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },
   {
@@ -1208,11 +1202,9 @@ export default function Header() {
         ? { ...sec, items: [...sec.items, { href: '/sante/suivis', label: 'Mes consultations', icon: '🦴' }] }
         : sec)
     : withEmployeurs;
-  const withAbonnement = (isEffectivelyPro && !effectiveIsPension && !effectiveIsEducation && !effectiveIsGarde && abonnementHref)
-    ? withSuivisAvantAbo.map((sec, i) => i === (isSanteOuVet ? 0 : 1)
-        ? { ...sec, items: [...sec.items, { href: abonnementHref, label: 'Mon abonnement', icon: '💳' }] }
-        : sec)
-    : withSuivisAvantAbo;
+  // « Mon abonnement » est regroupé avec « Tarifs et abonnement » (section
+  // « Mon Profil », voir tarifsHref) — miroir appli.
+  const withAbonnement = withSuivisAvantAbo;
   const withSanteSuivis = isSanteOuVet
     ? withAbonnement.map((sec, i) => i === 0
         ? { ...sec, section: effectiveSubCatPro === 'sante' ? 'Mon activité santé' : 'Mon activité vétérinaire' }
@@ -1250,10 +1242,23 @@ export default function Header() {
   // « Tarifs et abonnement » : page des tarifs ouverte sur les offres du
   // profil actif (déplacée depuis « Annuaire & Communauté »). Miroir appli :
   // entrée du même nom dans « Mon Profil » (eleveur_nav.dart).
-  const tarifsHref = `/tarifs?metier=${effectiveType}`;
+  // Regroupe l'ancien « Mon abonnement » : page d'abonnement du métier actif
+  // (formules, tarifs et gestion de l'abonnement, inchangée). Association et
+  // particulier n'ont pas d'abonnement : la page des tarifs filtrée sur leur
+  // offre. Aucun autre profil n'a d'offre : pas d'entrée.
+  const ABO_PAR_TYPE: Record<string, string> = {
+    ...ABONNEMENT_HREF,
+    eleveur: '/abonnement',
+    restauration: '/abonnement',
+    pension: '/pension/abonnement',
+    garde: '/garde/abonnement',
+    education: '/education/abonnement',
+  };
+  const tarifsHref: string | null = ABO_PAR_TYPE[effectiveType]
+    ?? (effectiveType === 'association' || effectiveType === 'particulier' ? `/tarifs?metier=${effectiveType}` : null);
   const withGuide = withVetoClinique.map(sec => sec.section === 'Mon Profil'
     ? { ...sec, items: [...sec.items,
-        { href: tarifsHref, label: 'Tarifs et abonnement', icon: '💶' },
+        ...(tarifsHref ? [{ href: tarifsHref, label: 'Tarifs et abonnement', icon: '💶' }] : []),
         { href: '/guide', label: 'Guide de démarrage', icon: '🚩' }] }
     : sec);
   const withAchats = withGuide.map(sec => ({
@@ -1635,7 +1640,7 @@ export default function Header() {
               <span className="text-[#0C5C6C]"><IconeMenu code="👤" /></span> Mon Profil
             </Link>
           )}
-          {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+          {tarifsHref && !menuSections.some((sec) => sec.section === 'Mon Profil') && (
             <Link href={tarifsHref} onClick={onNavigate}
               className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
               <span className="text-[#0C5C6C]"><IconeMenu code="💶" /></span> Tarifs et abonnement

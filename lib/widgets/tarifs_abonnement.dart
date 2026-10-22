@@ -13,9 +13,16 @@ import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 /// profil ACTIF uniquement. Miroir site : `/tarifs?metier=…`
 /// depuis « Mon Profil » (components/Header.tsx). Aucune entrée pour une
 /// association (gratuite) ni un particulier.
+/// Restauration : formules de l'abonnement éleveur (comme l'ancienne entrée
+/// « Mon abonnement »). Autres métiers sans offre (taxi…) : pas d'entrée.
+const _metiersAvecOffre = {
+  'pension', 'garde', 'education', 'photographe', 'toilettage',
+  'veterinaire', 'sante', 'marechal_ferrant', 'restauration',
+};
+
 bool aTarifsAbonnement() =>
     User_Info.activeType != 'association' && User_Info.activeType != 'particulier'
-    && (User_Info.isPro || User_Info.isElevage);
+    && (User_Info.isPro ? _metiersAvecOffre.contains(User_Info.catPro) : User_Info.isElevage);
 
 Widget pageTarifsAbonnement() => switch (User_Info.isPro ? User_Info.catPro : '') {
   'pension' => const PensionAbonnementPage(),
