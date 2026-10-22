@@ -3,7 +3,9 @@
 import { enregistrerModificationAnnonce } from '@/lib/annonce-paiement';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import {
+  PageFormulaire, SectionFormulaire, Champ, Colonnes, CaseACocher, GrillePhotos, classeChamp, styleChamp,
+} from '@/components/annonces/FormulaireAnnonce';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadPhoto } from '@/lib/upload-media';
@@ -12,7 +14,6 @@ import {
   ANNONCE_OBJET_CATEGORIES, ANNONCE_OBJET_TRANSACTIONS, ANNONCE_OBJET_ETATS,
 } from '@/lib/annonce-objet-categories';
 
-const TEAL = '#0C5C6C';
 const MAX_PHOTOS = 6;
 const INTERDITS = ['chiot', 'chaton', 'à adopter', 'a adopter', 'portée de', 'portee de', 'lapereau'];
 
@@ -39,6 +40,7 @@ function CreerObjetInner() {
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
+  const [erreurs, setErreurs] = useState<Record<string, string>>({});
 
   const priced = transaction === 'vente' || transaction === 'location';
 
@@ -92,10 +94,14 @@ function CreerObjetInner() {
 
   async function submit() {
     setErr('');
-    if (!titre.trim()) { setErr('Donnez un titre à votre annonce.'); return; }
-    if (totalPhotos === 0) { setErr('Ajoutez au moins une photo.'); return; }
-    if (cp.trim().length !== 5) { setErr('Indiquez un code postal.'); return; }
-    if (!ville.trim()) { setErr('Sélectionnez votre commune.'); return; }
+    const e: Record<string, string> = {};
+    if (!titre.trim()) e.titre = 'Donnez un titre à votre annonce.';
+    if (totalPhotos === 0) e.photos = 'Ajoutez au moins une photo.';
+    if (cp.trim().length !== 5) e.cp = 'Indiquez un code postal.';
+    else if (!ville.trim()) e.ville = 'Sélectionnez votre commune.';
+    setErreurs(e);
+    const premiere = Object.values(e)[0];
+    if (premiere) { setErr(premiere); return; }
     const txt = `${titre} ${description}`.toLowerCase();
     if (INTERDITS.some(w => txt.includes(w))) {
       setErr('Cette rubrique est réservée au matériel et aux équipements. Pour un animal, choisissez « Animal » dans « Publier une annonce ».');
@@ -148,160 +154,119 @@ function CreerObjetInner() {
 
   const cat = ANNONCE_OBJET_CATEGORIES.find(c => c.slug === categorie);
 
+  const apercus = files.map(f => URL.createObjectURL(f));
+  const choix = (actif: boolean) => `min-h-10 px-3.5 rounded-xl text-sm font-semibold border transition-colors ${actif ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-700 hover:border-[#0C5C6C]/50'}`;
+  const retour = editId ? '/mes-annonces?type=materiel' : '/annonces/publier';
+
   return (
-    <div className="max-w-xl mx-auto px-4 py-8 pb-24">
-      <Link href="/annonces/publier" className="text-sm text-[#0C5C6C] hover:underline">← Publier une annonce</Link>
-      <h1 className="text-2xl font-bold text-[#1F2A2E] mt-2 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-        {editId ? 'Modifier l’annonce' : 'Matériel & équipements'}
-      </h1>
-      <p className="text-sm text-gray-500 mb-5">
-        Matériel destiné aux animaux et aux activités professionnelles : paniers, grilles de chenil,
-        parcs, caisses de transport, équipements de mise bas… La vente d’un animal n’est pas autorisée ici.
-      </p>
+    <PageFormulaire retourHref={retour} retourLabel={editId ? 'Retour à mes annonces' : 'Publier une annonce'}
+      titre={editId ? 'Modifier l’annonce' : 'Matériel & équipements'}
+      sousTitre="Matériel destiné aux animaux et aux activités professionnelles : paniers, grilles de chenil, parcs, caisses de transport, équipements de mise bas… La vente d’un animal n’est pas autorisée ici."
+      erreur={err} onSubmit={ev => { ev.preventDefault(); submit(); }} annulerHref={retour} enregistrement={saving}
+      libelleEnregistrer={editId ? 'Enregistrer les modifications' : 'Publier gratuitement'}>
 
-      {/* Photos */}
-      <label className="block text-sm font-semibold text-[#1F2A2E] mb-2">Photos ({totalPhotos}/{MAX_PHOTOS})</label>
-      <div className="flex flex-wrap gap-2 mb-5">
-        {existingPhotos.map((u, i) => (
-          <div key={u} className="relative w-20 h-20">
-            <img src={u} alt="" className="w-20 h-20 object-cover rounded-xl" />
-            <button onClick={() => setExistingPhotos(p => p.filter((_, j) => j !== i))}
-              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs">×</button>
-          </div>
-        ))}
-        {files.map((f, i) => (
-          <div key={i} className="relative w-20 h-20">
-            <img src={URL.createObjectURL(f)} alt="" className="w-20 h-20 object-cover rounded-xl" />
-            <button onClick={() => setFiles(p => p.filter((_, j) => j !== i))}
-              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs">×</button>
-          </div>
-        ))}
-        {totalPhotos < MAX_PHOTOS && (
-          <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center text-2xl text-gray-400 cursor-pointer hover:border-[#0C5C6C]">
-            +
-            <input type="file" accept="image/*" multiple className="hidden" onChange={e => addFiles(e.target.files)} />
-          </label>
-        )}
-      </div>
-
-      <Field label="Titre">
-        <input value={titre} onChange={e => setTitre(e.target.value)}
-          placeholder="Ex : Cage à lapin XXL, Harnais taille L, Foin 2024…"
-          className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-      </Field>
-
-      <Field label="Catégorie">
-        <select value={categorie} onChange={e => setCategorie(e.target.value)}
-          className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
-          {ANNONCE_OBJET_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
-        </select>
-        {cat && <p className="text-xs text-gray-400 mt-1">{cat.exemples}</p>}
-      </Field>
-
-      <Field label="Type d’annonce">
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(ANNONCE_OBJET_TRANSACTIONS).map(([k, v]) => (
-            <button key={k} onClick={() => setTransaction(k)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${transaction === k ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'border-gray-300 text-gray-600 hover:border-[#0C5C6C]'}`}>
-              {v}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {priced && (
-        <>
-          <Field label={transaction === 'location' ? 'Prix (par mois, €)' : 'Prix (€)'}>
-            <input value={prix} onChange={e => setPrix(e.target.value.replace(/[^0-9.,]/g, ''))}
-              inputMode="decimal"
-              className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-            <label className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-              <input type="checkbox" checked={negociable} onChange={e => setNegociable(e.target.checked)} className="accent-[#0C5C6C]" />
-              Prix négociable
-            </label>
-          </Field>
-          <Field label="État">
+      <SectionFormulaire titre="Informations principales">
+        <Champ label="Titre" requis htmlFor="titre" erreur={erreurs.titre}>
+          <input id="titre" value={titre} onChange={e => setTitre(e.target.value)}
+            placeholder="Ex : Cage à lapin XXL, Harnais taille L, Foin 2024…" className={classeChamp} style={styleChamp} />
+        </Champ>
+        <Colonnes>
+          <Champ label="Catégorie" htmlFor="categorie" aide={cat?.exemples}>
+            <select id="categorie" value={categorie} onChange={e => setCategorie(e.target.value)} className={classeChamp} style={styleChamp}>
+              {ANNONCE_OBJET_CATEGORIES.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+            </select>
+          </Champ>
+          <Champ label="Type d’annonce">
             <div className="flex flex-wrap gap-2">
-              {Object.entries(ANNONCE_OBJET_ETATS).map(([k, v]) => (
-                <button key={k} onClick={() => setEtat(etat === k ? '' : k)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${etat === k ? 'bg-[#6E9E57] text-white border-[#6E9E57]' : 'border-gray-300 text-gray-600 hover:border-[#6E9E57]'}`}>
-                  {v}
-                </button>
+              {Object.entries(ANNONCE_OBJET_TRANSACTIONS).map(([k, v]) => (
+                <button key={k} type="button" onClick={() => setTransaction(k)} aria-pressed={transaction === k}
+                  className={choix(transaction === k)} style={transaction === k ? undefined : styleChamp}>{v}</button>
               ))}
             </div>
-          </Field>
-        </>
+          </Champ>
+        </Colonnes>
+      </SectionFormulaire>
+
+      <SectionFormulaire titre="Photos et médias">
+        <Champ label="Photos" requis erreur={erreurs.photos} aide={`Jusqu’à ${MAX_PHOTOS} photos ; la première est la photo principale.`}>
+          <GrillePhotos max={MAX_PHOTOS}
+            photos={[...existingPhotos.map((u, i) => ({ url: u, cle: `e${i}${u}` })), ...apercus.map((u, i) => ({ url: u, cle: `n${i}` }))]}
+            onAjouter={e => { addFiles(e.target.files); e.target.value = ''; }}
+            onRetirer={i => i < existingPhotos.length
+              ? setExistingPhotos(p => p.filter((_, j) => j !== i))
+              : setFiles(p => p.filter((_, j) => j !== i - existingPhotos.length))} />
+        </Champ>
+      </SectionFormulaire>
+
+      <SectionFormulaire titre="Description">
+        <Champ label="Présentation" htmlFor="description">
+          <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={5}
+            placeholder="Dimensions, marque, état, retrait sur place / envoi…" className={`${classeChamp} resize-y`} style={styleChamp} />
+        </Champ>
+      </SectionFormulaire>
+
+      {priced && (
+        <SectionFormulaire titre="Prix et état">
+          <Colonnes>
+            <Champ label={transaction === 'location' ? 'Prix (par mois, €)' : 'Prix (€)'} htmlFor="prix">
+              <input id="prix" value={prix} onChange={e => setPrix(e.target.value.replace(/[^0-9.,]/g, ''))} inputMode="decimal"
+                className={classeChamp} style={styleChamp} />
+            </Champ>
+            <div className="sm:pt-7"><CaseACocher label="Prix négociable" checked={negociable} onChange={setNegociable} /></div>
+          </Colonnes>
+          <Champ label="État">
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(ANNONCE_OBJET_ETATS).map(([k, v]) => (
+                <button key={k} type="button" onClick={() => setEtat(etat === k ? '' : k)} aria-pressed={etat === k}
+                  className={choix(etat === k)} style={etat === k ? undefined : styleChamp}>{v}</button>
+              ))}
+            </div>
+          </Champ>
+        </SectionFormulaire>
       )}
 
-      <Field label="Description">
-        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={5}
-          placeholder="Dimensions, marque, état, retrait sur place / envoi…"
-          className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:border-[#0C5C6C]" />
-      </Field>
-
-      <h2 className="text-sm font-bold text-[#0C5C6C] mt-2 mb-2">Localisation</h2>
-
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Code postal">
-          <input value={cp} onChange={e => setCp(e.target.value.replace(/\D/g, '').slice(0, 5))}
-            inputMode="numeric" placeholder="5 chiffres"
-            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-        </Field>
-        <div className="col-span-2">
-          <Field label="Commune">
-            {loadingCommunes ? (
-              <p className="text-sm text-gray-400 py-2.5">Recherche des communes…</p>
-            ) : communes.length === 0 ? (
-              <p className="text-sm text-gray-400 py-2.5">
-                {cp.length === 5 ? 'Aucune commune pour ce code postal.' : 'Saisissez d’abord le code postal.'}
-              </p>
-            ) : communes.length === 1 ? (
-              <div className="w-full border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-medium">{communes[0]}</div>
-            ) : (
-              <select value={ville} onChange={e => setVille(e.target.value)}
-                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
-                <option value="">Sélectionnez votre commune</option>
-                {communes.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            )}
-          </Field>
+      <SectionFormulaire titre="Localisation">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Champ label="Code postal" requis htmlFor="cp" erreur={erreurs.cp}>
+            <input id="cp" value={cp} onChange={e => setCp(e.target.value.replace(/\D/g, '').slice(0, 5))}
+              inputMode="numeric" placeholder="5 chiffres" className={classeChamp} style={styleChamp} />
+          </Champ>
+          <div className="sm:col-span-2">
+            <Champ label="Commune" requis htmlFor="commune" erreur={erreurs.ville}>
+              {loadingCommunes ? (
+                <p className="text-sm text-gray-500 min-h-11 flex items-center">Recherche des communes…</p>
+              ) : communes.length === 0 ? (
+                <p className="text-sm text-gray-500 min-h-11 flex items-center">
+                  {cp.length === 5 ? 'Aucune commune pour ce code postal.' : 'Saisissez d’abord le code postal.'}
+                </p>
+              ) : communes.length === 1 ? (
+                <div className={`${classeChamp} bg-[#F3F6F5] flex items-center`} style={styleChamp}>{communes[0]}</div>
+              ) : (
+                <select id="commune" value={ville} onChange={e => setVille(e.target.value)} className={classeChamp} style={styleChamp}>
+                  <option value="">Sélectionnez votre commune</option>
+                  {communes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+            </Champ>
+          </div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Région">
-          <select value={region} onChange={e => { setRegion(e.target.value); setDepartement(''); }}
-            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
-            <option value="">Région</option>
-            {REGIONS_BY_PAYS.France.map(r => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </Field>
-        <Field label="Département">
-          <select value={departement} onChange={e => setDepartement(e.target.value)} disabled={!region}
-            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-[#0C5C6C]">
-            <option value="">{region ? 'Département' : 'Choisissez une région'}</option>
-            {region && departmentsInRegion(region).map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </Field>
-      </div>
-
-      {err && <p className="text-red-500 text-sm mt-2">{err}</p>}
-
-      <button onClick={submit} disabled={saving}
-        className="w-full mt-6 py-3.5 rounded-2xl text-white font-bold disabled:opacity-60"
-        style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
-        {saving ? 'Enregistrement…' : editId ? 'Enregistrer' : 'Publier gratuitement'}
-      </button>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-4">
-      <label className="block text-sm font-semibold text-[#1F2A2E] mb-1.5">{label}</label>
-      {children}
-    </div>
+        <Colonnes>
+          <Champ label="Région" htmlFor="region">
+            <select id="region" value={region} onChange={e => { setRegion(e.target.value); setDepartement(''); }} className={classeChamp} style={styleChamp}>
+              <option value="">Région</option>
+              {REGIONS_BY_PAYS.France.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </Champ>
+          <Champ label="Département" htmlFor="departement">
+            <select id="departement" value={departement} onChange={e => setDepartement(e.target.value)} disabled={!region}
+              className={`${classeChamp} disabled:bg-gray-50 disabled:text-gray-400`} style={styleChamp}>
+              <option value="">{region ? 'Département' : 'Choisissez une région'}</option>
+              {region && departmentsInRegion(region).map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Champ>
+        </Colonnes>
+      </SectionFormulaire>
+    </PageFormulaire>
   );
 }
 

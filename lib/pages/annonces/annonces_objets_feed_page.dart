@@ -9,6 +9,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/widgets/annonces/gestion_annonces_kit.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/annonce_objet_categories.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
@@ -17,7 +19,6 @@ import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_objet_page.dart';
 
 const _teal  = Color(0xFF0C5C6C);
-const _green = Color(0xFF6E9E57);
 const _orange = Color(0xFFFF8A00);
 
 const _kTris = <String, String>{
@@ -716,116 +717,130 @@ class _AnnonceObjetDetailPageState extends State<AnnonceObjetDetailPage> {
     final created = DateTime.tryParse(d['created_at']?.toString() ?? '')?.toLocal();
     final loc = [d['ville'], d['code_postal'], d['departement'], d['region']]
         .where((s) => (s ?? '').toString().isNotEmpty).join(' · ');
+    final statutPause = d['statut'] == 'pause';
+    BoxDecoration carte() => BoxDecoration(color: Colors.white,
+        borderRadius: BorderRadius.circular(16), border: Border.all(color: kDashBorder));
+    Widget ligne(String k, String v) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(width: 120, child: Text(k, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: kDashMuted))),
+            Expanded(child: Text(v, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: kDashInk))),
+          ]),
+        );
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F6F4),
+      backgroundColor: kDashFond,
+      // Gestion (modifier, pause, suppression) : uniquement dans « Mes annonces ».
       appBar: AppBar(
         backgroundColor: _teal, foregroundColor: Colors.white,
         title: Text((d['titre'] ?? 'Annonce').toString(),
             maxLines: 1, overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        actions: [
-          if (_isOwner)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () async {
-                final ok = await Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => CreateAnnonceObjetPage(
-                        annonceId: d['id'] as String?, initialData: d)));
-                if (ok == true && mounted) Navigator.pop(context, true);
-              },
-            ),
-        ],
       ),
-      body: ListView(children: [
-        if (photos.isNotEmpty)
-          Column(children: [
-            SizedBox(
-              height: 280,
-              child: PageView.builder(
-                itemCount: photos.length,
-                onPageChanged: (i) => setState(() => _photo = i),
-                itemBuilder: (_, i) => CachedNetworkImage(
-                    imageUrl: photos[i], fit: BoxFit.cover, width: double.infinity),
-              ),
-            ),
-            if (photos.length > 1)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  for (var i = 0; i < photos.length; i++)
-                    Container(
-                      width: i == _photo ? 16 : 6, height: 6,
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      decoration: BoxDecoration(
-                        color: i == _photo ? _teal : Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(3),
+      body: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 40), children: [
+        // Galerie : photo entière (proportions respectées) + position
+        AspectRatio(
+          aspectRatio: 4 / 3,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              color: const Color(0xFFEEF1EF),
+              child: photos.isEmpty
+                  ? const Center(child: Icon(Icons.inventory_2_outlined, color: _teal, size: 48))
+                  : Stack(fit: StackFit.expand, children: [
+                      PageView.builder(
+                        itemCount: photos.length,
+                        onPageChanged: (i) => setState(() => _photo = i),
+                        itemBuilder: (_, i) => CachedNetworkImage(imageUrl: photos[i], fit: BoxFit.contain),
                       ),
-                    ),
-                ]),
-              ),
-          ]),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                      if (photos.length > 1)
+                        Positioned(bottom: 10, right: 10, child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                          child: Text('${_photo + 1} / ${photos.length}',
+                              style: const TextStyle(color: Colors.white, fontSize: 11.5, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        )),
+                    ]),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        // Résumé
+        Text((d['titre'] ?? '').toString(),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 24, color: kDashInk)),
+        const SizedBox(height: 4),
+        Text(annonceObjetPrixLabel(d),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 20, color: _teal)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          statutPause ? puceStatut('En pause', 'gris') : puceStatut('En ligne', 'vert'),
+          puceType(kAnnonceObjetTransactions[d['type_transaction']] ?? 'Vente'),
+        ]),
+        const SizedBox(height: 14),
+        // Vendeur (contact jamais proposé au propriétaire)
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: carte(),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              _chip(annonceObjetCategorieLabel(d['categorie'] as String?), _teal),
-              _chip(kAnnonceObjetTransactions[d['type_transaction']] ?? 'Vente', _green),
-              if (d['etat'] != null)
-                _chip(kAnnonceObjetEtats[d['etat']] ?? d['etat'].toString(), Colors.blueGrey),
-            ]),
-            const SizedBox(height: 12),
-            Text((d['titre'] ?? '').toString(),
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 20, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 6),
-            Text(annonceObjetPrixLabel(d),
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18, color: _teal)),
-            const SizedBox(height: 12),
-            if ((d['description'] ?? '').toString().isNotEmpty)
-              Text(d['description'].toString(),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF2C3A40))),
-            const SizedBox(height: 16),
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.place_outlined, size: 16, color: Colors.grey),
-              const SizedBox(width: 4),
-              Expanded(child: Text(loc,
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600))),
-            ]),
+            const Text('Vendeur', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: kDashMuted)),
             const SizedBox(height: 4),
-            Row(children: [
-              const Icon(Icons.person_outline, size: 16, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text((d['nom_vendeur'] ?? 'Particulier').toString(),
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
-              if (created != null) ...[
-                const Spacer(),
-                Text(DateFormat('dd/MM/yyyy').format(created),
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
-              ],
-            ]),
-            const SizedBox(height: 24),
-            if (!_isOwner)
+            Text((d['nom_vendeur'] ?? 'Particulier').toString(),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: kDashInk)),
+            if (loc.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.place_outlined, size: 15, color: kDashMuted),
+                const SizedBox(width: 4),
+                Expanded(child: Text(loc, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted))),
+              ]),
+            ],
+            if (!_isOwner) ...[
+              const SizedBox(height: 14),
               SizedBox(
-                width: double.infinity, height: 50,
+                width: double.infinity, height: 48,
                 child: ElevatedButton.icon(
                   onPressed: _contacting ? null : _contact,
-                  icon: const Icon(Icons.chat_outlined, size: 18),
+                  icon: const Icon(Icons.mail_outline, size: 18),
                   label: Text(_contacting ? 'Ouverture…' : 'Contacter le vendeur',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _teal, foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
+            ],
           ]),
         ),
+        const SizedBox(height: 12),
+        // Informations
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: carte(),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Informations', style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: kDashInk)),
+            const SizedBox(height: 6),
+            ligne('Catégorie', annonceObjetCategorieLabel(d['categorie'] as String?)),
+            ligne('Transaction', kAnnonceObjetTransactions[d['type_transaction']] ?? 'Vente'),
+            if (d['etat'] != null) ligne('État', kAnnonceObjetEtats[d['etat']] ?? d['etat'].toString()),
+            if (loc.isNotEmpty) ligne('Lieu', loc),
+            if (created != null) ligne('Publiée le', DateFormat('dd/MM/yyyy').format(created)),
+          ]),
+        ),
+        if ((d['description'] ?? '').toString().isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: carte(),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Description', style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: kDashInk)),
+              const SizedBox(height: 8),
+              Text(d['description'].toString(),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14.5, height: 1.5, color: Color(0xFF41525A))),
+            ]),
+          ),
+        ],
       ]),
     );
   }
 
-  Widget _chip(String t, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-        child: Text(t, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: c)),
-      );
 }

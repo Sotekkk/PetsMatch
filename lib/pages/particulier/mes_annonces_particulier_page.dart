@@ -2,6 +2,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/widgets/annonces/gestion_annonces_kit.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -26,9 +27,11 @@ class MesAnnoncesParticulierPage extends StatelessWidget {
 /// [statut] : 'all', 'actives', 'pause', 'terminees'.
 class MesAnnoncesChevalListe extends StatefulWidget {
   final String statut;
+  /// Texte de la barre de recherche (titre, race, ville).
+  final String recherche;
   final int refreshKey;
   final ValueChanged<int>? onCompte;
-  const MesAnnoncesChevalListe({super.key, this.statut = 'all', this.refreshKey = 0, this.onCompte});
+  const MesAnnoncesChevalListe({super.key, this.statut = 'all', this.recherche = '', this.refreshKey = 0, this.onCompte});
 
   @override
   State<MesAnnoncesChevalListe> createState() => _MesAnnoncesChevalListeState();
@@ -36,7 +39,6 @@ class MesAnnoncesChevalListe extends StatefulWidget {
 
 class _MesAnnoncesChevalListeState extends State<MesAnnoncesChevalListe> {
   static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
   final _supa = Supabase.instance.client;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
 
@@ -99,67 +101,10 @@ class _MesAnnoncesChevalListeState extends State<MesAnnoncesChevalListe> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  // Paiement in-app interdit : le boost se finalise sur le site (fiche annonce).
-  Future<void> _boost(Map<String, dynamic> r) async {
-    final id = r['id'] as String?;
-    final until = DateTime.tryParse(r['boost_until']?.toString() ?? '');
-    final active = until != null && until.isAfter(DateTime.now());
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).padding.bottom + 20),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
-                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 18),
-            Row(children: [
-              const Icon(Icons.bolt, color: Color(0xFFFF8A00), size: 22),
-              const SizedBox(width: 8),
-              Text(active ? 'Annonce boostée' : 'Booster mon annonce',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _teal)),
-            ]),
-            const SizedBox(height: 8),
-            Text(
-              active
-                  ? 'Votre annonce est mise en avant jusqu\'au '
-                      '${DateFormat('dd/MM/yyyy à HH:mm').format(until.toLocal())}. '
-                      'Vous pouvez prolonger la mise en avant sur le site.'
-                  : 'Un boost place votre annonce en tête des résultats de recherche '
-                      'et du fil. Le paiement se fait sur le site, en quelques secondes.',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF41525A), height: 1.4),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(width: double.infinity, child: ElevatedButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final uri = Uri.parse('${PlanService.kWebsiteUrl}/annonces/${id ?? ''}');
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              },
-              icon: const Icon(Icons.open_in_new, size: 18),
-              label: Text(active ? 'Prolonger sur le site' : 'Booster sur le site',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF8A00), foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            )),
-            const SizedBox(height: 6),
-            Center(child: TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Plus tard',
-                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
+  // Paiement in-app interdit : le boost se finalise sur le site (offres de
+  // « Mes annonces », ouvertes directement).
+  Future<void> _boost(Map<String, dynamic> r) => ouvrirBoostAnnonce(context,
+      annonceId: (r['id'] ?? '').toString(), boostUntil: r['boost_until']?.toString());
 
   Future<void> _togglePause(Map<String, dynamic> r) async {
     final next = (r['statut'] == 'pause') ? 'disponible' : 'pause';
@@ -229,26 +174,18 @@ class _MesAnnoncesChevalListeState extends State<MesAnnoncesChevalListe> {
       return const Padding(padding: EdgeInsets.all(24),
           child: Center(child: CircularProgressIndicator(color: _teal)));
     }
-    final liste = _rows.where(_garde).toList();
+    final liste = _rows.where(_garde).where((r) => correspondRecherche(widget.recherche,
+        [r['titre'] as String?, r['race'] as String?, r['ville_eleveur'] as String?])).toList();
     if (liste.isEmpty) {
-      return DashCarte(
-        padding: const EdgeInsets.all(20),
-        child: Column(children: [
-          Container(
-            width: 44, height: 44,
-            decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
-            child: const Icon(Icons.pets_outlined, color: _teal, size: 21),
-          ),
-          const SizedBox(height: 10),
-          Text(widget.statut == 'all' ? 'Aucune annonce de cheval pour le moment.' : 'Aucune annonce de cheval avec ce statut.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
-          if (widget.statut == 'all') ...[
-            const SizedBox(height: 12),
-            DashBoutonPilule(label: 'Publier une annonce cheval', icon: Icons.add, onTap: () => _openCreate()),
-          ],
-        ]),
-      );
+      return Column(children: [
+        GestionVide(icon: Icons.pets_outlined, texte: widget.recherche.trim().isNotEmpty
+            ? 'Aucune annonce de cheval ne correspond à la recherche.'
+            : widget.statut == 'all' ? 'Aucune annonce de cheval pour le moment.' : 'Aucune annonce de cheval avec ce statut.'),
+        if (widget.statut == 'all' && widget.recherche.trim().isEmpty) ...[
+          const SizedBox(height: 12),
+          DashBoutonPilule(label: 'Publier une annonce cheval', icon: Icons.add, onTap: () => _openCreate()),
+        ],
+      ]);
     }
     return Column(children: liste.map(_card).toList());
   }
@@ -262,107 +199,51 @@ class _MesAnnoncesChevalListeState extends State<MesAnnoncesChevalListe> {
     final created = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
     final boostUntil = DateTime.tryParse(r['boost_until']?.toString() ?? '');
     final isBoosted = boostUntil != null && boostUntil.isAfter(DateTime.now());
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kDashBorder),
-        boxShadow: kDashOmbre,
-      ),
-      child: Column(children: [
-        InkWell(
-          onTap: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => AnnonceDetailPage(annonceId: r['id'] as String, initialData: r))),
-          borderRadius: BorderRadius.circular(16),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
-              child: SizedBox(
-                width: 90, height: 108,
-                child: photos.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _ph())
-                    : _ph(),
-              ),
-            ),
-            Expanded(child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  _badge(
-                    isBrouillon ? 'Brouillon · à publier'
-                        : isPause ? 'En pause' : 'En ligne',
-                    isBrouillon ? const Color(0xFFB45309)
-                        : isPause ? const Color(0xFF9CA3AF) : _green),
-                  if (isBoosted) _badge('Boostée', const Color(0xFFB45309)),
-                ]),
-                const SizedBox(height: 6),
-                Text(titre.isEmpty ? 'Cheval' : titre,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                        fontSize: 14, color: Color(0xFF1F2A2E)),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Row(children: [
-                  Text(_prixLabel(r),
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                          fontSize: 13, color: _teal)),
-                  const Spacer(),
-                  if (created != null)
-                    Text(DateFormat('dd/MM/yy').format(created),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
-                ]),
-              ]),
-            )),
-          ]),
-        ),
-        Divider(height: 1, color: Colors.grey.shade100),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(children: [
-            _act(Icons.edit_outlined, 'Modifier', _teal, () => _openCreate(edit: r)),
-            const SizedBox(width: 6),
-            if (isBrouillon)
-              _act(Icons.open_in_new, 'Finaliser sur le site', const Color(0xFFB45309),
-                  _finaliserSurSite)
-            else ...[
-              _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
-                  isPause ? 'Activer' : 'Mettre en pause', isPause ? _green : const Color(0xFF4B5563),
-                  () => _togglePause(r)),
-              const SizedBox(width: 6),
-              _act(Icons.bolt, isBoosted ? 'Boostée' : 'Booster',
-                  const Color(0xFFFF8A00), () => _boost(r)),
+    final vues = (r['vues'] as num?)?.toInt() ?? 0;
+    final contacts = (r['contacts'] as num?)?.toInt() ?? 0;
+    void voir() => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => AnnonceDetailPage(annonceId: r['id'] as String, initialData: r)));
+    final supprimer = GestionAction('Supprimer', Icons.delete_outline, () => _delete(r), danger: true);
+    return GestionCarteAnnonce(
+      onTap: voir,
+      photo: photos.isNotEmpty
+          ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover, errorWidget: (_, __, ___) => _ph())
+          : _ph(),
+      titre: titre.isEmpty ? 'Cheval' : titre,
+      sousTitre: [r['race'] as String? ?? '', r['ville_eleveur'] as String? ?? ''].where((e) => e.isNotEmpty).join(' · '),
+      etiquettes: [
+        isBrouillon ? puceStatut('Brouillon · à publier', 'ambre')
+            : isPause ? puceStatut('En pause', 'gris') : puceStatut('En ligne', 'vert'),
+        if (isBoosted) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
+      ],
+      prix: _prixLabel(r),
+      indicateurs: [
+        (Icons.visibility_outlined, '$vues vue${vues > 1 ? 's' : ''}'),
+        (Icons.chat_bubble_outline, '$contacts contact${contacts > 1 ? 's' : ''}'),
+        if (created != null) (Icons.calendar_today_outlined, DateFormat('dd/MM/yy').format(created)),
+      ],
+      principales: isBrouillon
+          ? [
+              GestionAction('Finaliser sur le site', Icons.open_in_new, _finaliserSurSite),
+              GestionAction('Modifier', Icons.edit_outlined, () => _openCreate(edit: r)),
+            ]
+          : [
+              GestionAction('Voir', Icons.visibility_outlined, voir),
+              GestionAction('Modifier', Icons.edit_outlined, () => _openCreate(edit: r)),
             ],
-            const Spacer(),
-            _act(Icons.delete_outline, 'Supprimer', Colors.redAccent, () => _delete(r)),
-          ]),
-        ),
-      ]),
+      menu: isBrouillon
+          ? [supprimer]
+          : [
+              GestionAction(isPause ? 'Activer' : 'Mettre en pause',
+                  isPause ? Icons.play_arrow_outlined : Icons.pause_outlined, () => _togglePause(r)),
+              GestionAction(isBoosted ? 'Prolonger le boost' : 'Booster l\'annonce', Icons.bolt, () => _boost(r), actif: isBoosted),
+              supprimer,
+            ],
     );
   }
 
   Widget _ph() => Container(
     color: const Color(0xFFEEF5EA),
     child: const Center(child: Icon(Icons.pets_outlined, color: _teal, size: 26)),
-  );
-
-  Widget _badge(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: color)),
-  );
-
-  Widget _act(IconData icon, String label, Color color, VoidCallback onTap) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color)),
-      ]),
-    ),
   );
 }

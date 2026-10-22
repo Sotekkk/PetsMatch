@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { lireFiltreType, type TypeAnnonceFiltre } from '@/lib/annonces-droits';
+import { lireFiltreType, FILTRES_TYPE, type TypeAnnonceFiltre } from '@/lib/annonces-droits';
 import MesAnnoncesMateriel from '@/components/annonces/MesAnnoncesMateriel';
-import FiltresAnnonces from '@/components/annonces/FiltresAnnonces';
-import { Icone, BORDURE, OMBRE } from '@/components/dashboard/kit';
+import BoostAnnonceModal from '@/components/annonces/BoostAnnonceModal';
+import { Puce } from '@/components/dashboard/kit';
+import {
+  EnteteGestion, BarreFiltres, CarteAnnonce, RubriqueAnnonces, EtatVide, Chargement,
+  correspondRecherche, TEINTES_STATUT,
+} from '@/components/annonces/GestionAnnonces';
 
 interface Annonce {
   id: string;
@@ -22,6 +24,7 @@ interface Annonce {
   contacts?: number;
   created_at?: string;
   expires_at?: string;
+  boost_until?: string;
 }
 
 const STATUT_LABEL: Record<string, string> = {
@@ -31,24 +34,28 @@ const STATUT_LABEL: Record<string, string> = {
   archive:    'Archivée',
   expiree:    'Expirée',
 };
-const STATUT_COLOR: Record<string, string> = {
-  disponible: 'bg-green-100 text-green-700',
-  pause:      'bg-gray-100 text-gray-500',
-  cede:       'bg-teal-100 text-[#0C5C6C]',
-  archive:    'bg-gray-100 text-gray-500',
-  expiree:    'bg-red-100 text-red-500',
+// Teinte de la puce de statut (TEINTES_STATUT du kit de gestion).
+const STATUT_TEINTE: Record<string, string> = {
+  disponible: 'vert', pause: 'gris', cede: 'teal', archive: 'gris', expiree: 'rouge',
 };
 
 type Tab = 'toutes' | 'disponible' | 'pause' | 'cede';
 
 export default function AnnoncesAssoPage() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('toutes');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [typeFiltre, setTypeFiltre] = useState<TypeAnnonceFiltre>('toutes');
   const [nbMateriel, setNbMateriel] = useState(0);
+  const [recherche, setRecherche] = useState('');
+  // Boost : point d'entrée unique (menu « … ») ; ?boost=<id> l'ouvre (lien de l'appli).
+  const [boostId, setBoostId] = useState<string | null>(null);
+  useEffect(() => {
+    const b = new URLSearchParams(window.location.search).get('boost');
+    if (b) setBoostId(b);
+  }, []);
 
   // Filtre de type lu dans l'URL (?type=animaux|materiel), anciens liens compris.
   useEffect(() => {
@@ -61,18 +68,28 @@ export default function AnnoncesAssoPage() {
     window.history.replaceState({}, '', u.pathname + u.search);
   }
 
-  const load = () => {
+  const load = async () => {
     if (!user) return;
-    supabase
+    let q = supabase
       .from('annonces')
-      .select('id, titre, type_vente, espece, race, statut, photos, vues, contacts, created_at, expires_at')
+      .select('id, titre, type_vente, espece, race, statut, photos, vues, contacts, created_at, expires_at, boost_until')
       .eq('uid_eleveur', user.uid)
-      .eq('profil_source', 'association')
-      .order('created_at', { ascending: false })
-      .then(({ data }) => { setAnnonces(data ?? []); setLoading(false); });
+      .eq('profil_source', 'association');
+    // Annonces rattachées au profil association actif (une association
+    // supprimée puis recréée ne reprend pas les annonces de l'ancienne) ;
+    // repli sur l'uid pour les annonces antérieures à profile_id.
+    if (activeProfileId) {
+      const { data: check } = await supabase.from('annonces').select('id')
+        .eq('uid_eleveur', user.uid).eq('profil_source', 'association').not('profile_id', 'is', null).limit(1);
+      if ((check ?? []).length > 0) q = q.eq('profile_id', activeProfileId);
+    }
+    const { data } = await q.order('created_at', { ascending: false });
+    setAnnonces(data ?? []);
+    setLoading(false);
   };
 
-  useEffect(() => { load(); }, [user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [user, activeProfileId]);
 
   // Realtime
   useEffect(() => {
@@ -117,130 +134,80 @@ export default function AnnoncesAssoPage() {
     setDeleting(null);
   };
 
-  const filtered = tab === 'toutes' ? annonces
+  const parStatut = tab === 'toutes' ? annonces
     : tab === 'cede' ? annonces.filter(a => a.statut === 'cede' || a.statut === 'archive' || a.statut === 'expiree')
     : annonces.filter(a => a.statut === tab);
+  const filtered = parStatut.filter(a => correspondRecherche(recherche, a.titre, a.espece, a.race));
 
   const voirAnimaux = typeFiltre !== 'materiel';
   const voirMateriel = typeFiltre !== 'animaux';
   const total = annonces.length + nbMateriel;
-  const btnIcone = 'inline-flex items-center justify-center w-9 h-9 border rounded-xl transition-colors';
   // Statuts communs aux deux types (matériel : disponible / pause).
   const statutMateriel = tab === 'cede' ? 'aucun' : tab;
 
   return (
-    <div className="space-y-5 font-galey">
-      {/* En-tête */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-[#1E2025]">Mes annonces</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{total} annonce{total !== 1 ? 's' : ''}</p>
-        </div>
-        <Link href="/annonces/publier"
-          className="bg-[#0C5C6C] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#094F5D] transition-colors inline-flex items-center gap-2">
-          <Icone nom="plus" taille={16} /> Publier une annonce
-        </Link>
-      </div>
+    <div className="font-galey">
+      <EnteteGestion total={total} publierHref="/annonces/publier" />
 
-      <FiltresAnnonces
-        type={typeFiltre} onType={choisirType}
-        statut={tab} onStatut={v => setTab(v as Tab)}
-        statuts={([['toutes', 'Tous les statuts'], ['disponible', 'Disponible'], ['pause', 'En pause'], ['cede', 'Cédées']] as [Tab, string][]).map(([k, label]) => ({ k, label }))}
-      />
+      <BarreFiltres recherche={recherche} onRecherche={setRecherche} filtres={[
+        { label: 'Type', valeur: typeFiltre, options: FILTRES_TYPE, onChange: v => choisirType(v as TypeAnnonceFiltre) },
+        { label: 'Statut', valeur: tab, onChange: v => setTab(v as Tab),
+          options: ([['toutes', 'Tous'], ['disponible', 'Disponible'], ['pause', 'En pause'], ['cede', 'Cédées']] as [Tab, string][]).map(([k, label]) => ({ k, label })) },
+      ]} />
 
       {voirAnimaux && (
-        <section>
-          {typeFiltre === 'toutes' && <h2 className="text-lg font-bold text-[#1E2025] mb-3">Animaux</h2>}
-          {loading ? (
-            <div className="flex justify-center py-16">
-              <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className={`text-center py-12 bg-white rounded-2xl ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
-              <span className="w-11 h-11 mx-auto mb-3 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="patte" /></span>
-              <p className="text-sm text-gray-500 mb-3">
-                {tab === 'toutes' ? 'Aucune annonce d’adoption publiée.' : `Aucune annonce ${tab === 'pause' ? 'en pause' : tab === 'cede' ? 'cédée' : 'disponible'}.`}
-              </p>
-              {tab === 'toutes' && (
-                <Link href="/association/annonces/creer"
-                  className="inline-block bg-[#0C5C6C] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#094F5D]">
-                  Publier une annonce d’adoption
-                </Link>
-              )}
-            </div>
+        <RubriqueAnnonces titre="Animaux à l’adoption" icone="patte" nombre={loading ? null : annonces.length}>
+          {loading ? <Chargement /> : filtered.length === 0 ? (
+            <EtatVide icone="patte" texte={recherche.trim() ? 'Aucune annonce ne correspond à la recherche.'
+              : tab === 'toutes' ? 'Aucune annonce d’adoption publiée.' : `Aucune annonce ${tab === 'pause' ? 'en pause' : tab === 'cede' ? 'cédée' : 'disponible'}.`} />
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="space-y-3">
               {filtered.map(a => {
                 const statut = a.statut ?? 'disponible';
                 const photos = (a.photos as string[]) ?? [];
+                const t = TEINTES_STATUT[STATUT_TEINTE[statut] ?? 'gris'];
+                const booste = !!a.boost_until && new Date(a.boost_until) > new Date();
                 return (
-                  <div key={a.id} className={`bg-white rounded-2xl overflow-hidden flex flex-col ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
-                    <div className="aspect-[4/3] bg-[#E8F4F6] relative">
-                      {photos[0] ? (
-                        <Image src={photos[0]} alt={a.titre ?? ''} fill className="object-cover" unoptimized />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[#0C5C6C]"><Icone nom="patte" taille={40} /></div>
-                      )}
-                      <div className="absolute top-2 left-2">
-                        <span className="bg-white/95 text-[#1E2025] text-xs font-semibold px-2 py-0.5 rounded-full border border-[#E5E8E6]">Adoption</span>
-                      </div>
-                      <div className="absolute top-2 right-2">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUT_COLOR[statut] ?? 'bg-gray-100 text-gray-500'}`}>
-                          {STATUT_LABEL[statut] ?? statut}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="p-4 flex-1 flex flex-col">
-                      <h3 className="font-bold text-[#1E2025] text-[15px] truncate">
-                        {a.titre ?? (`${a.espece ?? ''} ${a.race ?? ''}`.trim() || 'Sans titre')}
-                      </h3>
-                      <p className="text-gray-500 text-xs capitalize">{a.espece}{a.race ? ` · ${a.race}` : ''}</p>
-                      <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 tabular-nums">
-                        <span className="inline-flex items-center gap-1"><Icone nom="oeil" taille={14} />{a.vues ?? 0}</span>
-                        <span className="inline-flex items-center gap-1"><Icone nom="enveloppe" taille={14} />{a.contacts ?? 0}</span>
-                        {a.created_at && <span className="ml-auto">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>}
-                      </div>
-
-                      <div className="flex gap-1.5 mt-3 pt-3 border-t border-[#EEF0EE]">
-                        <Link href={`/annonces/${a.id}`}
-                          className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold py-2 rounded-xl transition-colors">
-                          Voir
-                        </Link>
-                        <Link href={`/association/annonces/creer?edit=${a.id}`}
-                          className="flex-1 text-center text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] hover:bg-[#E8F4F6] font-semibold py-2 rounded-xl transition-colors">
-                          Modifier
-                        </Link>
-                        <button onClick={() => handlePause(a)}
-                          title={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'} aria-label={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'}
-                          className={`${btnIcone} ${statut === 'pause' ? 'border-[#2F7D3A] text-[#2F7D3A] hover:bg-[#EAF5EC]' : 'border-gray-200 text-gray-500 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C]'}`}>
-                          <Icone nom={statut === 'pause' ? 'lecture' : 'pause'} taille={15} />
-                        </button>
-                        {(statut === 'expiree' || expiresWithinDays(a, 7)) && (
-                          <button onClick={() => handleRenew(a)} title="Renouveler pour 30 jours" aria-label="Renouveler pour 30 jours"
-                            className={`${btnIcone} border-orange-200 text-orange-700 hover:bg-orange-50`}>
-                            <Icone nom="renouveler" taille={15} />
-                          </button>
-                        )}
-                        <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id} aria-label="Supprimer" title="Supprimer"
-                          className={`${btnIcone} border-red-100 hover:bg-red-50 text-red-500 disabled:opacity-50`}>
-                          <Icone nom="corbeille" taille={15} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <CarteAnnonce key={a.id} href={`/annonces/${a.id}`} photo={photos[0]}
+                    titre={a.titre ?? (`${a.espece ?? ''} ${a.race ?? ''}`.trim() || 'Sans titre')}
+                    sousTitre={[a.espece, a.race].filter(Boolean).join(' · ')}
+                    etiquettes={<>
+                      <Puce texte={STATUT_LABEL[statut] ?? statut} fg={t.fg} bg={t.bg} point />
+                      <Puce texte="Adoption" fg="#41525A" bg="#F3F6F5" />
+                      {booste && <Puce texte="Boostée" fg="#B45309" bg="#FEF3C7" icone="eclair" />}
+                    </>}
+                    indicateurs={[
+                      { icone: 'oeil', texte: `${a.vues ?? 0} vue${(a.vues ?? 0) > 1 ? 's' : ''}` },
+                      { icone: 'enveloppe', texte: `${a.contacts ?? 0} contact${(a.contacts ?? 0) > 1 ? 's' : ''}` },
+                      ...(a.created_at ? [{ icone: 'calendrier', texte: new Date(a.created_at).toLocaleDateString('fr-FR') }] : []),
+                    ]}
+                    principales={[
+                      { label: 'Voir', icone: 'oeil', href: `/annonces/${a.id}` },
+                      { label: 'Modifier', icone: 'crayon', href: `/association/annonces/creer?edit=${a.id}` },
+                    ]}
+                    menu={[
+                      { label: booste ? 'Prolonger le boost' : 'Booster l’annonce', icone: 'eclair', onClick: () => setBoostId(a.id), actif: booste },
+                      { label: statut === 'pause' ? 'Réactiver' : 'Mettre en pause', icone: statut === 'pause' ? 'lecture' : 'pause', onClick: () => handlePause(a) },
+                      ...((statut === 'expiree' || expiresWithinDays(a, 7)) ? [{ label: 'Renouveler pour 30 jours', icone: 'renouveler', onClick: () => handleRenew(a) }] : []),
+                      { label: deleting === a.id ? 'Suppression…' : 'Supprimer', icone: 'corbeille', danger: true, disabled: deleting === a.id, onClick: () => handleDelete(a.id) },
+                    ]} />
                 );
               })}
             </div>
           )}
-        </section>
+        </RubriqueAnnonces>
+      )}
+
+      {boostId && (
+        <BoostAnnonceModal annonceId={boostId} returnPath="/association/annonces"
+          boostUntil={annonces.find(x => x.id === boostId)?.boost_until}
+          onClose={() => { setBoostId(null); if (window.location.search.includes('boost=')) window.history.replaceState({}, '', '/association/annonces'); }} />
       )}
 
       {voirMateriel && (
-        <section>
-          {typeFiltre === 'toutes' && <h2 className="text-lg font-bold text-[#1E2025] mb-3">Matériel & équipements</h2>}
-          <MesAnnoncesMateriel statut={statutMateriel} onCompte={setNbMateriel} />
-        </section>
+        <RubriqueAnnonces titre="Matériel & équipements" icone="caisse" nombre={nbMateriel}>
+          <MesAnnoncesMateriel statut={statutMateriel} recherche={recherche} onCompte={setNbMateriel} />
+        </RubriqueAnnonces>
       )}
     </div>
   );

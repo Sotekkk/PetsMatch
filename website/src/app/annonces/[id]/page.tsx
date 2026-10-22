@@ -10,7 +10,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import { resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
-import { apiFetch } from '@/lib/api-fetch';
+import { Icone, Puce, BORDURE } from '@/components/dashboard/kit';
+import { TEINTES_STATUT } from '@/components/annonces/GestionAnnonces';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ interface Annonce {
   saillie_genetique?: string;
   etalon_animal_id?: string;
   pere_animal_id?: string;
+  mere_animal_id?: string;
   mere_nom?: string; mere_puce?: string; mere_race?: string;
   mere_photo_url?: string; mere_couleur?: string; mere_couleur_yeux?: string; mere_description?: string; mere_registre?: string;
   pere_nom?: string; pere_puce?: string; pere_race?: string;
@@ -68,6 +70,8 @@ interface Annonce {
   profil_source?: string;
   profile_id?: string;
   boost_until?: string;
+  vaccines?: boolean; vermifuge?: boolean; identification?: boolean; bilan_sante?: boolean; semaines?: number;
+  numero_registre?: string; club_pedigree?: string; studbook?: string; prix_negociable?: boolean;
 }
 
 interface AssoData {
@@ -107,23 +111,53 @@ function ageLabel(dateStr?: string): string | null {
 
 function especeLabel(e?: string, especeAutre?: string) {
   const map: Record<string, string> = {
-    chien: '🐕 Chien', chat: '🐈 Chat', lapin: '🐇 Lapin',
-    oiseau: '🐦 Oiseau', reptile: '🦎 Reptile', cheval: '🐴 Cheval',
-    ane: '🫏 Âne', ovin: '🐑 Ovin', caprin: '🐐 Caprin',
-    porcin: '🐷 Porcin', nac: '🐾 NAC', poule: '🐓 Poule',
+    chien: 'Chien', chat: 'Chat', lapin: 'Lapin',
+    oiseau: 'Oiseau', reptile: 'Reptile', cheval: 'Cheval',
+    ane: 'Âne', ovin: 'Ovin', caprin: 'Caprin',
+    porcin: 'Porcin', nac: 'NAC', poule: 'Poule',
   };
-  if (e?.toLowerCase() === 'autre' && especeAutre) return `🐾 ${especeAutre}`;
-  return e ? (map[e.toLowerCase()] ?? `🐾 ${e}`) : '';
+  if (e?.toLowerCase() === 'autre' && especeAutre) return especeAutre;
+  return e ? (map[e.toLowerCase()] ?? e) : '';
 }
 
-function Chip({ icon, label, color = '#0C5C6C' }: { icon: string; label: string; color?: string }) {
+const STATUT_ANNONCE: Record<string, { label: string; teinte: string }> = {
+  disponible: { label: 'Disponible', teinte: 'vert' },
+  reserve:    { label: 'Réservé', teinte: 'ambre' },
+  vendu:      { label: 'Vendu', teinte: 'bleu' },
+  cede:       { label: 'Cédé', teinte: 'teal' },
+  pause:      { label: 'En pause', teinte: 'gris' },
+  archivee:   { label: 'Archivée', teinte: 'gris' },
+  archive:    { label: 'Archivée', teinte: 'gris' },
+  expiree:    { label: 'Expirée', teinte: 'rouge' },
+  suspendu:   { label: 'Suspendue', teinte: 'rouge' },
+  brouillon:  { label: 'Brouillon', teinte: 'gris' },
+};
+
+/** Ligne « libellé : valeur » de la carte Informations. */
+function Ligne({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
-      style={{ background: `${color}18`, color }}>
-      <span>{icon}</span>{label}
-    </span>
+    <div className="grid grid-cols-[minmax(0,9rem)_1fr] gap-3 py-1.5 text-[15px]">
+      <dt className="text-gray-500">{label}</dt>
+      <dd className="text-[#1E2025] min-w-0 break-words">{children}</dd>
+    </div>
   );
 }
+
+/** Section blanche de la fiche (titre + contenu). */
+function Bloc({ titre, aside, children }: { titre: string; aside?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="bg-white rounded-2xl p-5 sm:p-6" style={{ border: `1px solid ${BORDURE}` }}>
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <h2 className="font-bold text-lg sm:text-xl text-[#1E2025]">{titre}</h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const Fermer = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>;
+const Chevron = ({ gauche = false }: { gauche?: boolean }) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={gauche ? 'M15 6l-6 6 6 6' : 'M9 6l6 6-6 6'} /></svg>;
 
 // ── Lightbox ──────────────────────────────────────────────────────────────────
 
@@ -157,20 +191,23 @@ function Lightbox({ photos, initialIdx, onClose }: {
 
         {/* Fermer */}
         <button onClick={closeRef}
-          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-lg hover:bg-white/30 transition-colors">
-          ✕
+          aria-label="Fermer"
+          className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center hover:bg-white/30 transition-colors">
+          <Fermer />
         </button>
 
         {/* Navigation */}
         {photos.length > 1 && (
           <>
             <button onClick={() => setIdx(i => (i - 1 + photos.length) % photos.length)}
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-2xl hover:bg-white/30 transition-colors">
-              ‹
+              aria-label="Photo précédente"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center hover:bg-white/30 transition-colors">
+              <Chevron gauche />
             </button>
             <button onClick={() => setIdx(i => (i + 1) % photos.length)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center text-2xl hover:bg-white/30 transition-colors">
-              ›
+              aria-label="Photo suivante"
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/15 text-white flex items-center justify-center hover:bg-white/30 transition-colors">
+              <Chevron />
             </button>
             <div className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/70 text-sm bg-black/30 px-3 py-1 rounded-full">
               {idx + 1} / {photos.length}
@@ -211,7 +248,6 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
     });
   }, [annonceId, bebeIndex, mode]);
 
-  const icon = mode === 'likes' ? '❤️' : '🔖';
   const label = mode === 'likes' ? `j'aime${users.length > 1 ? 's' : ''}` : `favori${users.length > 1 ? 's' : ''}`;
 
   return (
@@ -221,7 +257,7 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <span>{icon}</span>
+            <span className="text-[#E0457B]"><Icone nom="coeur" taille={18} /></span>
             <span className="font-['Galey'] font-bold text-[#1F2A2E]">
               {loading ? '…' : `${users.length} ${label}`}
               {bebeIndex != null && <span className="font-normal text-gray-400 text-xs ml-2">— bébé {bebeIndex + 1}</span>}
@@ -351,26 +387,28 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
   };
 
   return (
-    <div ref={cardRef} className="rounded-xl overflow-hidden border border-[#E8EDE6] bg-[#F8F8F6]">
-      <div className="aspect-square relative bg-[#EEF5EA] group"
+    <div ref={cardRef} className="rounded-xl overflow-hidden bg-white" style={{ border: `1px solid ${BORDURE}` }}>
+      <div className="aspect-square relative bg-[#F3F6F5] group"
         onClick={() => photos.length > 0 && onOpenLightbox(photos, idx)}
         style={{ cursor: photos.length > 0 ? 'zoom-in' : 'default' }}>
         {photos.length > 0 ? (
           <Image src={photos[idx]} alt={b.nom || `Bébé ${index + 1}`} fill className="object-cover"
             sizes="(max-width: 672px) 50vw, 336px" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-3xl">🐾</div>
+          <div className="w-full h-full flex items-center justify-center text-[#0C5C6C]"><Icone nom="patte" taille={30} /></div>
         )}
         {/* Flèches navigation */}
         {photos.length > 1 && (
           <>
             <button onClick={e => { e.stopPropagation(); setIdx(i => (i - 1 + photos.length) % photos.length); }}
-              className="absolute left-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity">
-              ‹
+              aria-label="Photo précédente"
+              className="absolute left-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Chevron gauche />
             </button>
             <button onClick={e => { e.stopPropagation(); setIdx(i => (i + 1) % photos.length); }}
-              className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-black/40 text-white flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity">
-              ›
+              aria-label="Photo suivante"
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Chevron />
             </button>
             <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
               {photos.map((_, j) => (
@@ -394,23 +432,23 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
             color: 'white',
             backdropFilter: 'blur(4px)',
           }}>
-          {isLiked ? '❤️' : '🤍'}{likeCount > 0 && <span>{likeCount}</span>}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 20s-7-4.4-9-9a5 5 0 019-3 5 5 0 019 3c-2 4.6-9 9-9 9z" /></svg>{likeCount > 0 && <span>{likeCount}</span>}
         </button>
       </div>
       <div className="p-2 space-y-0.5">
         <p className="font-['Galey'] font-bold text-sm text-[#1E2025] truncate">{b.nom || `Bébé ${index + 1}`}</p>
-        {b.sexe && <p className="text-xs text-gray-500">{b.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}</p>}
-        {b.couleur && <p className="text-xs text-gray-400 truncate">🎨 {b.couleur}</p>}
-        {b.couleur_yeux && <p className="text-xs text-gray-400 truncate">👁 {b.couleur_yeux}</p>}
-        {b.prix != null && <p className="font-['Galey'] font-bold text-sm text-[#0C5C6C]">{b.prix} €</p>}
-        {b.description && <p className="text-xs text-gray-400 mt-1 leading-relaxed line-clamp-3">{b.description}</p>}
+        {b.sexe && <p className="text-xs text-gray-600">{b.sexe === 'male' ? 'Mâle' : 'Femelle'}</p>}
+        {b.couleur && <p className="text-xs text-gray-500 truncate">Robe : {b.couleur}</p>}
+        {b.couleur_yeux && <p className="text-xs text-gray-500 truncate">Yeux : {b.couleur_yeux}</p>}
+        {b.prix != null && <p className="font-['Galey'] font-bold text-sm text-[#1E2025]">{b.prix} €</p>}
+        {b.description && <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-3">{b.description}</p>}
         {photos.length > 1 && (
-          <p className="text-[10px] text-gray-400 mt-0.5">📷 {photos.length} photos</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{photos.length} photos</p>
         )}
         {likeCount > 0 && (
           <button onClick={e => { e.stopPropagation(); onShowLikers?.(); }}
-            className="text-[10px] text-gray-400 hover:text-red-400 transition-colors mt-0.5">
-            ❤️ {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
+            className="text-[11px] text-gray-500 hover:text-[#E0457B] transition-colors mt-0.5">
+            {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
           </button>
         )}
       </div>
@@ -441,7 +479,6 @@ function AnnonceDetailPageInner() {
   const [likeCount, setLikeCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
-  const [favoriCount, setFavoriCount] = useState(0);
   const [activeModal, setActiveModal] = useState<{ mode: 'likes' | 'favoris'; bebeIndex?: number } | null>(null);
   const bebeRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -453,45 +490,41 @@ function AnnonceDetailPageInner() {
   const [sigRaison, setSigRaison] = useState('contenu_inapproprie');
   const [sigDesc, setSigDesc] = useState('');
 
-  // Boost (propriétaire de l'annonce uniquement)
-  const [showBoostModal, setShowBoostModal] = useState(false);
-  const [boostProducts, setBoostProducts] = useState<{ code: string; label: string; prix: number; duree_heures: number | null }[]>([]);
-  const [boosting, setBoosting] = useState(false);
-
-  const isBoostActive = !!annonce?.boost_until && new Date(annonce.boost_until) > new Date();
+  // Le boost se gère uniquement depuis le menu « … » de « Mes annonces »
+  // (components/annonces/BoostAnnonceModal.tsx) : rien ici.
   const isOwner = !!user && !!annonce && user.uid === annonce.uid_eleveur
     && (!annonce.profile_id || !activeProfileId || annonce.profile_id === activeProfileId);
 
+  // Fiches publiques des parents (reproducteurs rendus publics par l'élevage,
+  // mêmes règles que /elevages/[id]/reproducteurs/[animalId]).
+  const [fichesParents, setFichesParents] = useState<{ pere?: string; mere?: string }>({});
+  const [copie, setCopie] = useState(false);
   useEffect(() => {
-    if (!showBoostModal || boostProducts.length) return;
-    supabase.from('produits_ponctuels')
-      .select('code, label, prix, duree_heures')
-      .eq('actif', true)
-      .not('duree_heures', 'is', null)
-      .in('code', ['boost_48h', 'mise_une'])
-      .then(({ data }) => setBoostProducts((data as typeof boostProducts) ?? []));
-  }, [showBoostModal, boostProducts.length]);
+    const uid = annonce?.uid_eleveur;
+    const ids = [annonce?.pere_animal_id, annonce?.mere_animal_id].filter((x): x is string => !!x);
+    if (!uid || ids.length === 0 || annonce?.profil_source === 'association') { setFichesParents({}); return; }
+    (async () => {
+      const { data: prof } = await supabase.from('user_profiles_complet')
+        .select('id, montre_reproducteurs, statut_pro')
+        .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
+      if (!prof?.id || prof.montre_reproducteurs !== true) return;
+      if (!['actif', 'validated'].includes(prof.statut_pro ?? '') && user?.uid !== uid) return;
+      const { data: rows } = await supabase.from('animaux').select('id')
+        .in('id', ids).eq('profile_id', prof.id).eq('uid_eleveur', uid).eq('reproducteur_public', true);
+      const visibles = new Set((rows ?? []).map(r => String(r.id)));
+      const href = (aid?: string) => aid && visibles.has(aid) ? `/elevages/${uid}/reproducteurs/${aid}` : undefined;
+      setFichesParents({ pere: href(annonce?.pere_animal_id), mere: href(annonce?.mere_animal_id) });
+    })();
+  }, [annonce?.uid_eleveur, annonce?.pere_animal_id, annonce?.mere_animal_id, annonce?.profil_source, user?.uid]);
 
-  async function boostAnnonce(produitCode: string) {
-    if (!user || !annonce) return;
-    setBoosting(true);
+  async function partager() {
+    const url = window.location.href;
+    const titreP = annonce?.titre || annonce?.race || 'Annonce PetsMatch';
     try {
-      const res = await apiFetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: user.uid, email: user.email ?? '',
-          produit_code: produitCode, annonce_id: annonce.id,
-          returnPath: `/annonces/${annonce.id}`,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.url) throw new Error(json.error ?? 'Boost indisponible pour le moment.');
-      window.location.assign(json.url as string);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Boost indisponible pour le moment.');
-      setBoosting(false);
-    }
+      if (navigator.share) { await navigator.share({ title: titreP, url }); return; }
+      await navigator.clipboard.writeText(url);
+      setCopie(true); setTimeout(() => setCopie(false), 2000);
+    } catch { /* partage annulé */ }
   }
   const [sigLoading, setSigLoading] = useState(false);
   const [sigSent, setSigSent] = useState(false);
@@ -609,12 +642,6 @@ function AnnonceDetailPageInner() {
         if (!user) return;
         setIsLiked(uniqueUids.includes(user.uid));
       });
-    // Charge le nombre de favoris (pour le propriétaire seulement)
-    if (user) {
-      supabase.from('favoris').select('user_uid', { count: 'exact', head: true })
-        .eq('annonce_id', id).is('bebe_index', null)
-        .then(({ count }) => { if (count != null) setFavoriCount(count); });
-    }
   }, [id, user]);
 
   // Étalon lié : tests génétiques + fertilité (saillie)
@@ -755,7 +782,7 @@ function AnnonceDetailPageInner() {
   if (!annonce) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#F8F8F6]">
       <p className="text-gray-500 font-['Galey']">Annonce introuvable.</p>
-      <Link href="/annonces" className="text-[#0C5C6C] underline text-sm">← Retour aux annonces</Link>
+      <Link href="/annonces" className="text-[#0C5C6C] underline text-sm">Retour aux annonces</Link>
     </div>
   );
 
@@ -765,14 +792,14 @@ function AnnonceDetailPageInner() {
       && !['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner) {
     return (
       <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center">
-        <span className="text-5xl">⏳</span>
+        <span className="text-[#0C5C6C]"><Icone nom="horloge" taille={44} /></span>
         <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
           Cette annonce est en cours de validation
         </p>
         <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
           Elle sera visible dès que notre équipe aura approuvé le vendeur.
         </p>
-        <Link href="/annonces" className="text-[#0C5C6C] text-sm underline">← Retour aux annonces</Link>
+        <Link href="/annonces" className="text-[#0C5C6C] text-sm underline">Retour aux annonces</Link>
       </div>
     );
   }
@@ -782,14 +809,14 @@ function AnnonceDetailPageInner() {
   if (annonce.statut === 'quota_depasse' && !isOwner) {
     return (
       <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center">
-        <span className="text-5xl">🔒</span>
+        <span className="text-[#0C5C6C]"><Icone nom="cle" taille={44} /></span>
         <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
           Cette annonce n&apos;est plus disponible
         </p>
         <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
           Elle sera de nouveau visible dès que le vendeur aura repris un abonnement payant.
         </p>
-        <Link href="/annonces" className="text-[#0C5C6C] text-sm underline">← Retour aux annonces</Link>
+        <Link href="/annonces" className="text-[#0C5C6C] text-sm underline">Retour aux annonces</Link>
       </div>
     );
   }
@@ -798,6 +825,7 @@ function AnnonceDetailPageInner() {
   const bebes = (annonce.animaux_portee ?? []) as Bebe[];
   const isPortee = annonce.type === 'portee';
   const isSaillie = annonce.type_vente === 'saillie';
+  const isAsso = annonce.profil_source === 'association';
   const EQUIDE_FORMULES: Record<string, string> = {
     location: 'Location', demi_pension: 'Demi-pension',
     pension_complete: 'Pension complète', valorisation: 'Valorisation',
@@ -810,514 +838,434 @@ function AnnonceDetailPageInner() {
     || annonce.video_monte_url || annonce.video_libre_url);
   const titre = annonce.titre || annonce.race || especeLabel(annonce.espece, annonce.espece_autre) || 'Annonce';
   const dateNaissStr = isPortee ? annonce.date_naissance : annonce.date_naissance_animal;
+  const statutInfo = STATUT_ANNONCE[annonce.statut ?? 'disponible'];
+  const teinteStatut = TEINTES_STATUT[statutInfo?.teinte ?? 'gris'];
+
+  // Prix principal (mêmes règles qu'auparavant, selon le type d'annonce).
+  const prixPrincipal: { libelle?: string; valeur: string } | null = equideFormule
+    ? { libelle: equideFormule, valeur: annonce.type_vente === 'valorisation'
+        ? (annonce.prix != null && annonce.prix > 0 ? `${annonce.prix} €${prixCadence}` : 'Rémunération à convenir')
+        : (annonce.prix != null && annonce.prix > 0 ? `${annonce.prix} €${prixCadence}` : 'Prix à convenir') }
+    : annonce.type_vente === 'don' ? { valeur: 'Don' }
+    : isSaillie ? (annonce.saillie_prix != null ? { libelle: 'Saillie', valeur: `${Number(annonce.saillie_prix)} €` } : null)
+    : isPortee ? ((annonce.prix_min_portee != null || annonce.prix_max_portee != null) ? { valeur:
+        annonce.prix_min_portee != null && annonce.prix_max_portee != null
+          ? `${annonce.prix_min_portee} – ${annonce.prix_max_portee} €`
+          : annonce.prix_min_portee != null ? `À partir de ${annonce.prix_min_portee} €`
+          : `Jusqu'à ${annonce.prix_max_portee} €` } : null)
+    : annonce.prix != null ? { libelle: annonce.type_vente === 'adoption' ? 'Frais d’adoption' : undefined, valeur: `${annonce.prix} €` }
+    : null;
+
+  const destination = isSaillie ? 'Saillie' : equideFormule ? equideFormule
+    : isPortee ? 'Portée' : annonce.type_vente === 'adoption' ? 'Adoption'
+    : annonce.type_vente === 'don' ? 'Don' : 'Compagnie';
+
+  // Annonceur : association ou éleveur (même carte, mêmes actions qu'avant).
+  const vendeur = isAsso
+    ? (assoData ? {
+        libelle: 'Association', nom: assoData.nom, avatar: assoData.avatar, ville: assoData.ville,
+        href: annonce.uid_eleveur ? `/associations/${assoProfileId ?? annonce.uid_eleveur}` : null, badge: null as React.ReactNode,
+      } : null)
+    : (pro || annonce.nom_eleveur) ? {
+        libelle: annonce.profil_source === 'particulier' ? 'Annonceur' : 'Éleveur',
+        nom: pro?.name_elevage || annonce.nom_eleveur || 'Éleveur',
+        avatar: pro?.profile_picture_url_elevage ?? '',
+        ville: [pro?.ville_elevage || annonce.ville_eleveur, pro?.pays_elevage && pro.pays_elevage !== 'France' ? pro.pays_elevage : null].filter(Boolean).join(', '),
+        href: annonce.uid_eleveur ? `/elevages/${annonce.uid_eleveur}` : null,
+        badge: pro ? <VerificationBadge level={getBadgeLevel({ statutPro: pro.statut_pro, siret: pro.siret, isPremium: pro.is_premium })} size="sm" /> : null,
+      } : null;
+  // Contact : jamais pour le propriétaire de l'annonce.
+  const peutContacter = !!user && !isOwner && user.uid !== annonce.uid_eleveur
+    && (isAsso || annonce.statut === 'disponible');
+  const libelleContact = isAsso ? 'Contacter l’association' : annonce.profil_source === 'particulier' ? 'Contacter l’annonceur' : 'Contacter l’éleveur';
+
+  const parents = !isSaillie ? ([
+    { cle: 'pere' as const, libelle: 'Père', nom: annonce.pere_nom, race: annonce.pere_race, photo: annonce.pere_photo_url,
+      couleur: annonce.pere_couleur, yeux: annonce.pere_couleur_yeux, puce: annonce.pere_puce, registre: annonce.pere_registre,
+      description: annonce.pere_description, href: fichesParents.pere },
+    { cle: 'mere' as const, libelle: 'Mère', nom: annonce.mere_nom, race: annonce.mere_race, photo: annonce.mere_photo_url,
+      couleur: annonce.mere_couleur, yeux: annonce.mere_couleur_yeux, puce: annonce.mere_puce, registre: annonce.mere_registre,
+      description: annonce.mere_description, href: fichesParents.mere },
+  ].filter(p => p.nom || p.race || p.photo)) : [];
+
+  const bouton = 'inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors min-h-11 px-4';
 
   return (
     <>
-    <div className="min-h-screen bg-[#F8F8F6]">
-      {/* Header */}
-      <div className="bg-white border-b border-[#E8EDE6] sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-[#0C5C6C] hover:opacity-70 transition-opacity">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M19 12H5M12 5l-7 7 7 7"/>
-            </svg>
-          </button>
-          <span className="font-['Galey'] font-bold text-[#1E2025] truncate flex-1">{titre}</span>
-        </div>
-      </div>
+    <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+        <button onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0C5C6C] hover:underline mb-4">
+          <Chevron gauche /> Retour
+        </button>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-
-        {/* Carrousel photos */}
-        {photos.length > 0 && (
-          <div className="rounded-2xl overflow-hidden bg-black relative aspect-square group cursor-zoom-in"
-            onClick={() => setLightbox({ photos, idx: imgIdx })}>
-            <Image src={photos[imgIdx]} alt={titre} fill className="object-contain" sizes="(max-width: 672px) 100vw, 672px" />
-            {photos.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-5 lg:gap-8 items-start">
+          {/* ── Galerie ─────────────────────────────────────────────────── */}
+          <div className="min-w-0">
+            {photos.length > 0 ? (
               <>
-                <button onClick={e => { e.stopPropagation(); setImgIdx(i => (i - 1 + photos.length) % photos.length); }}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-8 h-8 flex items-center justify-center">‹</button>
-                <button onClick={e => { e.stopPropagation(); setImgIdx(i => (i + 1) % photos.length); }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/40 text-white rounded-full w-8 h-8 flex items-center justify-center">›</button>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                  {photos.map((_, i) => (
-                    <button key={i} onClick={e => { e.stopPropagation(); setImgIdx(i); }}
-                      className={`w-2 h-2 rounded-full transition-all ${i === imgIdx ? 'bg-white w-4' : 'bg-white/50'}`} />
-                  ))}
+                <div className="rounded-2xl overflow-hidden bg-[#EEF1EF] relative aspect-[4/3] group cursor-zoom-in"
+                  onClick={() => setLightbox({ photos, idx: imgIdx })}>
+                  <Image src={photos[imgIdx]} alt={titre} fill className="object-contain" sizes="(max-width: 1024px) 100vw, 600px" priority />
+                  {photos.length > 1 && (
+                    <>
+                      <button aria-label="Photo précédente" onClick={e => { e.stopPropagation(); setImgIdx(i => (i - 1 + photos.length) % photos.length); }}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/90 text-[#1E2025] rounded-full w-10 h-10 flex items-center justify-center shadow"><Chevron gauche /></button>
+                      <button aria-label="Photo suivante" onClick={e => { e.stopPropagation(); setImgIdx(i => (i + 1) % photos.length); }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/90 text-[#1E2025] rounded-full w-10 h-10 flex items-center justify-center shadow"><Chevron /></button>
+                      <span className="absolute bottom-3 right-3 text-xs font-semibold bg-black/50 text-white px-2 py-0.5 rounded-full tabular-nums">{imgIdx + 1} / {photos.length}</span>
+                    </>
+                  )}
                 </div>
+                {photos.length > 1 && (
+                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 mt-3">
+                    {photos.map((p, i) => (
+                      <button key={i} onClick={() => setImgIdx(i)} aria-label={`Photo ${i + 1}`}
+                        className={`relative aspect-[4/3] rounded-xl overflow-hidden bg-[#EEF1EF] ${i === imgIdx ? 'ring-2 ring-[#0C5C6C] ring-offset-2' : 'opacity-80 hover:opacity-100'}`}>
+                        <Image src={p} alt="" fill className="object-cover" sizes="120px" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </>
+            ) : (
+              <div className="rounded-2xl aspect-[4/3] bg-[#EEF1EF] flex items-center justify-center text-[#0C5C6C]"><Icone nom="patte" taille={56} /></div>
             )}
           </div>
-        )}
 
-        {/* Titre + chips espèce/race */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h1 className="font-['Galey'] font-bold text-xl text-[#1E2025] mb-3">{titre}</h1>
-          <div className="flex flex-wrap gap-2">
-            {annonce.espece && <Chip icon="🐾" label={especeLabel(annonce.espece, annonce.espece_autre)} />}
-            {annonce.race && annonce.race !== annonce.espece && <Chip icon="🏷️" label={annonce.race} />}
-            {annonce.registre_type && !annonce.registre_type.startsWith('Non ') &&
-              <Chip icon="📜" label={annonce.registre_type} color="#6E9E57" />}
-            {isSaillie && <Chip icon="💑" label="Saillie" color="#8B5CF6" />}
-            {annonce.ville_eleveur && <Chip icon="📍" label={annonce.ville_eleveur} color="#64748B" />}
-          </div>
-        </div>
-
-        {/* Infos animal / portée */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-          <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide">
-            {isPortee ? 'La portée' : 'L\'animal'}
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {annonce.sexe && (
-              <Chip
-                icon={annonce.sexe === 'male' ? '♂️' : '♀️'}
-                label={annonce.sexe === 'male' ? 'Mâle' : 'Femelle'}
-                color={annonce.sexe === 'male' ? '#0C5C6C' : '#EC4899'}
-              />
-            )}
-            {annonce.couleur && <Chip icon="🎨" label={annonce.couleur} color="#64748B" />}
-            {annonce.couleur_yeux && <Chip icon="👁" label={annonce.couleur_yeux} color="#64748B" />}
-            {annonce.sterilise && <Chip icon="✂️" label="Stérilisé(e)" color="#F59E0B" />}
-
-            {/* ── DATE DE NAISSANCE ── */}
-            {ageLabel(dateNaissStr) && (
-              <Chip icon="🎂" label={annonce.age_estime ? `Environ ${ageLabel(dateNaissStr)!}` : ageLabel(dateNaissStr)!} />
-            )}
-            {fmtDate(dateNaissStr) && (
-              <Chip icon="📅"
-                label={annonce.age_estime
-                  ? `Né(e) vers ${new Date(dateNaissStr!).getFullYear()}`
-                  : `Né(e) le ${fmtDate(dateNaissStr)}`}
-                color="#4B5563" />
-            )}
-
-            {isPortee && annonce.nb_nes != null && (
-              <Chip icon="🐾" label={`${annonce.nb_nes} bébé${annonce.nb_nes > 1 ? 's' : ''}`} />
-            )}
-            {isPortee && annonce.nb_attendu != null && (
-              <Chip icon="⏳" label={`${annonce.nb_attendu} attendu${annonce.nb_attendu > 1 ? 's' : ''}`} color="#64748B" />
-            )}
-          </div>
-          {annonce.age_estime && (
-            <p className="text-xs text-amber-700 italic">
-              ⚠ Âge estimé par l'association — la date de naissance exacte de cet animal n'est pas connue.
-            </p>
-          )}
-
-          {/* Prix */}
-          {equideFormule && (
+          {/* ── Résumé, annonceur, informations ─────────────────────────── */}
+          <div className="min-w-0 space-y-4">
             <div>
-              <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] mb-1">{equideFormule}</span>
-              <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">
-                {annonce.type_vente === 'valorisation'
-                  ? (annonce.prix != null && annonce.prix > 0 ? `${annonce.prix} €${prixCadence}` : 'Rémunération à convenir')
-                  : (annonce.prix != null && annonce.prix > 0 ? `${annonce.prix} €${prixCadence}` : 'Prix à convenir')}
-              </p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h1 className="text-[28px] sm:text-4xl font-bold text-[#1E2025] leading-tight break-words">{titre}</h1>
+                  <p className="text-base text-gray-600 mt-1 capitalize">
+                    {[annonce.race && annonce.race !== titre ? annonce.race : especeLabel(annonce.espece, annonce.espece_autre), annonce.ville_eleveur].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                {prixPrincipal && (
+                  <div className="text-right flex-shrink-0">
+                    {prixPrincipal.libelle && <p className="text-xs font-semibold text-gray-500">{prixPrincipal.libelle}</p>}
+                    <p className="text-2xl sm:text-3xl font-bold text-[#0C5C6C] tabular-nums whitespace-nowrap">{prixPrincipal.valeur}</p>
+                    {annonce.prix_negociable && <p className="text-xs font-semibold text-[#2F7D3A]">Négociable</p>}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                {statutInfo && <Puce texte={statutInfo.label} fg={teinteStatut.fg} bg={teinteStatut.bg} point />}
+                <Puce texte={destination} fg="#41525A" bg="#FFFFFF" />
+              </div>
+              {/* Actions publiques de consultation */}
+              <div className="flex flex-wrap items-center gap-2 mt-4">
+                <button onClick={toggleLike} disabled={likeLoading} aria-pressed={isLiked}
+                  className={`${bouton} bg-white disabled:opacity-60 ${isLiked ? 'text-[#E0457B]' : 'text-[#1E2025] hover:border-[#0C5C6C]/50'}`}
+                  style={{ border: `1px solid ${isLiked ? '#F4B5C9' : BORDURE}` }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 20s-7-4.4-9-9a5 5 0 019-3 5 5 0 019 3c-2 4.6-9 9-9 9z" /></svg>
+                  J&apos;aime{likeCount > 0 && <span className="tabular-nums text-gray-500">· {likeCount}</span>}
+                </button>
+                <button onClick={partager} className={`${bouton} bg-white text-[#1E2025] hover:border-[#0C5C6C]/50`} style={{ border: `1px solid ${BORDURE}` }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+                  {copie ? 'Lien copié' : 'Partager'}
+                </button>
+                {user && likeCount > 0 && (
+                  <button onClick={() => setActiveModal({ mode: 'likes' })} className="text-sm text-gray-500 hover:text-[#0C5C6C] underline-offset-2 hover:underline">
+                    Voir les j&apos;aime
+                  </button>
+                )}
+              </div>
             </div>
-          )}
-          {annonce.type_vente === 'don' && (
-            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">Don</p>
-          )}
-          {!isPortee && !isSaillie && !equideFormule && annonce.type_vente !== 'don' && annonce.prix != null && (
-            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">
-              {annonce.type_vente === 'adoption' && <span className="block text-xs font-semibold text-gray-500">Frais d’adoption</span>}
-              {annonce.prix} €
-            </p>
-          )}
-          {isSaillie && annonce.saillie_prix != null && (
-            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">{Number(annonce.saillie_prix)} €</p>
-          )}
-          {isPortee && (annonce.prix_min_portee != null || annonce.prix_max_portee != null) && (
-            <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">
-              {annonce.prix_min_portee != null && annonce.prix_max_portee != null
-                ? `${annonce.prix_min_portee} – ${annonce.prix_max_portee} €`
-                : annonce.prix_min_portee != null ? `À partir de ${annonce.prix_min_portee} €`
-                : `Jusqu'à ${annonce.prix_max_portee} €`}
-            </p>
-          )}
+
+            {/* Annonceur */}
+            {vendeur && (
+              <section className="bg-white rounded-2xl p-5" style={{ border: `1px solid ${BORDURE}` }}>
+                <p className="text-sm font-semibold text-gray-500 mb-3">{vendeur.libelle}</p>
+                <div className="flex items-center gap-3">
+                  {vendeur.href ? (
+                    <Link href={vendeur.href} className="w-14 h-14 rounded-full bg-[#E8F4F6] overflow-hidden flex-shrink-0 relative block text-[#0C5C6C]">
+                      {vendeur.avatar
+                        ? <Image src={vendeur.avatar} alt={vendeur.nom} fill className="object-cover" sizes="56px" unoptimized />
+                        : <span className="w-full h-full flex items-center justify-center"><Icone nom="maison" taille={24} /></span>}
+                    </Link>
+                  ) : (
+                    <span className="w-14 h-14 rounded-full bg-[#E8F4F6] flex-shrink-0 flex items-center justify-center text-[#0C5C6C]"><Icone nom="maison" taille={24} /></span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {vendeur.href
+                        ? <Link href={vendeur.href} className="font-bold text-lg text-[#1E2025] hover:text-[#0C5C6C] truncate">{vendeur.nom}</Link>
+                        : <p className="font-bold text-lg text-[#1E2025] truncate">{vendeur.nom}</p>}
+                      {vendeur.badge}
+                    </div>
+                    {vendeur.ville && <p className="text-sm text-gray-500 inline-flex items-center gap-1"><Icone nom="pin" taille={14} />{vendeur.ville}</p>}
+                  </div>
+                </div>
+                {(peutContacter || vendeur.href || !user) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                    {peutContacter && (
+                      <button onClick={handleContact} disabled={sending || sent}
+                        className={`${bouton} bg-[#0C5C6C] hover:bg-[#094F5D] text-white disabled:opacity-60`}>
+                        <Icone nom="enveloppe" taille={17} />
+                        {sent ? 'Message envoyé' : sending ? 'Envoi…' : libelleContact}
+                      </button>
+                    )}
+                    {!user && (
+                      <Link href="/connexion" className={`${bouton} bg-[#0C5C6C] hover:bg-[#094F5D] text-white`}>
+                        <Icone nom="enveloppe" taille={17} /> Se connecter pour contacter
+                      </Link>
+                    )}
+                    {vendeur.href && (
+                      <Link href={vendeur.href} className={`${bouton} bg-white text-[#0C5C6C] hover:bg-[#E8F4F6]`} style={{ border: '1px solid rgba(12,92,108,0.45)' }}>
+                        Voir le profil
+                      </Link>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Annonceur introuvable : le contact reste possible. */}
+            {!vendeur && (peutContacter || !user) && (
+              peutContacter ? (
+                <button onClick={handleContact} disabled={sending || sent} className={`${bouton} w-full bg-[#0C5C6C] hover:bg-[#094F5D] text-white disabled:opacity-60`}>
+                  <Icone nom="enveloppe" taille={17} />{sent ? 'Message envoyé' : sending ? 'Envoi…' : libelleContact}
+                </button>
+              ) : (
+                <Link href="/connexion" className={`${bouton} w-full bg-[#0C5C6C] hover:bg-[#094F5D] text-white`}>
+                  <Icone nom="enveloppe" taille={17} /> Se connecter pour contacter
+                </Link>
+              )
+            )}
+
+            {/* Informations */}
+            <section className="bg-white rounded-2xl p-5" style={{ border: `1px solid ${BORDURE}` }}>
+              <h2 className="font-bold text-lg text-[#1E2025] mb-1">{isPortee ? 'La portée' : 'Informations'}</h2>
+              <dl>
+                {annonce.espece && <Ligne label="Espèce">{especeLabel(annonce.espece, annonce.espece_autre)}</Ligne>}
+                {annonce.race && annonce.race !== annonce.espece && <Ligne label="Race">{annonce.race}</Ligne>}
+                <Ligne label="Destination">{destination}</Ligne>
+                {annonce.sexe && <Ligne label="Sexe">{annonce.sexe === 'male' ? 'Mâle' : 'Femelle'}</Ligne>}
+                {ageLabel(dateNaissStr) && <Ligne label="Âge">{annonce.age_estime ? `Environ ${ageLabel(dateNaissStr)!}` : ageLabel(dateNaissStr)!}</Ligne>}
+                {fmtDate(dateNaissStr) && (
+                  <Ligne label="Naissance">{annonce.age_estime ? `Vers ${new Date(dateNaissStr!).getFullYear()}` : fmtDate(dateNaissStr)}</Ligne>
+                )}
+                {annonce.couleur && <Ligne label="Couleur / robe">{annonce.couleur}</Ligne>}
+                {annonce.couleur_yeux && <Ligne label="Couleur des yeux">{annonce.couleur_yeux}</Ligne>}
+                {annonce.sterilise && <Ligne label="Stérilisation">Stérilisé(e)</Ligne>}
+                {isPortee && annonce.nb_nes != null && <Ligne label="Nés">{annonce.nb_nes} bébé{annonce.nb_nes > 1 ? 's' : ''}</Ligne>}
+                {isPortee && annonce.nb_attendu != null && <Ligne label="Attendus">{annonce.nb_attendu}</Ligne>}
+                {annonce.ville_eleveur && <Ligne label="Lieu">{annonce.ville_eleveur}</Ligne>}
+                {fmtDate(annonce.created_at) && <Ligne label="Publiée le">{fmtDate(annonce.created_at)}</Ligne>}
+              </dl>
+              {annonce.age_estime && (
+                <p className="text-sm text-[#92400E] bg-[#FFFBEB] rounded-xl px-3 py-2 mt-3">
+                  Âge estimé par l&apos;association : la date de naissance exacte de cet animal n&apos;est pas connue.
+                </p>
+              )}
+            </section>
+          </div>
         </div>
 
-        {/* Description */}
-        {annonce.description && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">Description</h2>
-            <p className="font-['Galey'] text-[#444] text-sm leading-relaxed whitespace-pre-wrap">{annonce.description}</p>
-          </div>
-        )}
+        {/* ── Sections de lecture ───────────────────────────────────────── */}
+        <div className="space-y-5 mt-6 sm:mt-8">
+          {annonce.description && (
+            <Bloc titre="Description">
+              <p className="text-[15px] text-[#41525A] leading-relaxed whitespace-pre-wrap">{annonce.description}</p>
+            </Bloc>
+          )}
 
-        {/* Cheval — sport & vidéos */}
-        {annonce.espece === 'cheval' && hasEquideSport && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
-            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide">Cheval — sport</h2>
-            {annonce.niveau_recommande && (
-              <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C]">
-                Niveau : {annonce.niveau_recommande}
-              </span>
-            )}
-            {(annonce.indice_iso || annonce.indice_idr || annonce.indice_icc) && (
-              <p className="font-['Galey'] font-bold text-[#1F2A2E] text-sm">
-                {[
-                  annonce.indice_iso ? `ISO ${annonce.indice_iso}` : null,
-                  annonce.indice_idr ? `IDR ${annonce.indice_idr}` : null,
-                  annonce.indice_icc ? `ICC ${annonce.indice_icc}` : null,
-                ].filter(Boolean).join('  ·  ')}
+          {/* Santé et conformité (mêmes rubriques que l'appli) */}
+          <Bloc titre="Santé et conformité">
+            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+              {([
+                ['Vacciné(e)', annonce.vaccines],
+                ['Vermifugé(e)', annonce.vermifuge],
+                ['Pucé(e) / tatoué(e)', annonce.identification],
+                ['Bilan de santé vétérinaire', annonce.bilan_sante],
+              ] as [string, boolean | undefined][]).map(([l, ok]) => (
+                <li key={l} className={`flex items-center gap-2.5 text-[15px] ${ok ? 'text-[#1E2025]' : 'text-gray-400'}`}>
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${ok ? 'bg-[#EAF5EC] text-[#2F7D3A]' : 'bg-gray-100 text-gray-400'}`}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">{ok ? <path d="M5 12l5 5L20 7" /> : <path d="M6 6l12 12M18 6L6 18" />}</svg>
+                  </span>
+                  {l}
+                </li>
+              ))}
+            </ul>
+            {annonce.semaines != null && !isSaillie && (
+              <p className="text-[15px] text-[#1E2025] mt-3">
+                Cession à partir de {annonce.semaines} semaines
+                {annonce.semaines < 8 && <span className="ml-2 text-sm font-semibold text-[#B45309]">minimum légal : 8 semaines</span>}
               </p>
             )}
-            {annonce.palmares && (
-              <p className="font-['Galey'] text-[#444] text-sm leading-relaxed whitespace-pre-wrap">{annonce.palmares}</p>
-            )}
-            {annonce.video_monte_url && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 mb-1">Sous selle</p>
-                <video src={annonce.video_monte_url} controls className="w-full max-w-md rounded-xl border border-gray-200" />
-              </div>
-            )}
-            {annonce.video_libre_url && (
-              <div>
-                <p className="text-xs font-medium text-gray-500 mb-1">En liberté</p>
-                <video src={annonce.video_libre_url} controls className="w-full max-w-md rounded-xl border border-gray-200" />
-              </div>
-            )}
-          </div>
-        )}
+          </Bloc>
 
-        {/* Conditions saillie */}
-        {isSaillie && annonce.saillie_conditions && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">Conditions de saillie</h2>
-            <p className="font-['Galey'] text-[#444] text-sm leading-relaxed">{annonce.saillie_conditions}</p>
-          </div>
-        )}
+          {/* Pedigree */}
+          {annonce.registre_type && (
+            <Bloc titre={`Pedigree et ${annonce.espece === 'chien' ? 'LOF' : annonce.espece === 'chat' ? 'LOOF' : annonce.espece === 'cheval' ? 'SIRE' : 'registre'}`}>
+              <dl>
+                <Ligne label="Registre">{annonce.registre_type}</Ligne>
+                {annonce.numero_registre && <Ligne label="N° d’inscription">{annonce.numero_registre}</Ligne>}
+                {annonce.studbook && <Ligne label="Studbook">{annonce.studbook}</Ligne>}
+                {annonce.club_pedigree && <Ligne label="Club de race">{annonce.club_pedigree}</Ligne>}
+              </dl>
+            </Bloc>
+          )}
 
-        {/* Saillie — statut génétique de l'étalon + fertilité */}
-        {isSaillie && (() => {
-          const maladies = etalonTests.filter(t => t.categorie === 'maladie');
-          const adnEtabli = etalonInfo?.profil_adn_etabli === true
-            || etalonTests.some(t => t.categorie === 'adn' && t.resultat === 'etabli');
-          const genLibre = (annonce.saillie_genetique ?? '').trim();
-          const hasGen = maladies.length > 0 || adnEtabli || genLibre.length > 0;
-          const nb = etalonInfo?.nb_petits_produits;
-          const hist = (etalonInfo?.historique_fertilite ?? '').trim();
-          const hasFert = nb != null || hist.length > 0;
-          if (!hasGen && !hasFert) return null;
-          return (
-            <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
-              {hasGen && (
-                <div>
-                  <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-2">Statut génétique de l&apos;étalon</h2>
-                  {(maladies.length > 0 || adnEtabli) ? (
+          {/* Cheval — sport & vidéos */}
+          {annonce.espece === 'cheval' && hasEquideSport && (
+            <Bloc titre="Sport et vidéos">
+              <dl>
+                {annonce.niveau_recommande && <Ligne label="Niveau">{annonce.niveau_recommande}</Ligne>}
+                {(annonce.indice_iso || annonce.indice_idr || annonce.indice_icc) && (
+                  <Ligne label="Indices">{[
+                    annonce.indice_iso ? `ISO ${annonce.indice_iso}` : null,
+                    annonce.indice_idr ? `IDR ${annonce.indice_idr}` : null,
+                    annonce.indice_icc ? `ICC ${annonce.indice_icc}` : null,
+                  ].filter(Boolean).join(' · ')}</Ligne>
+                )}
+              </dl>
+              {annonce.palmares && <p className="text-[15px] text-[#41525A] leading-relaxed whitespace-pre-wrap mt-2">{annonce.palmares}</p>}
+              {(annonce.video_monte_url || annonce.video_libre_url) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  {annonce.video_monte_url && (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-500 mb-1">Sous selle</p>
+                      <video src={annonce.video_monte_url} controls className="w-full rounded-xl" style={{ border: `1px solid ${BORDURE}` }} />
+                    </div>
+                  )}
+                  {annonce.video_libre_url && (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-500 mb-1">En liberté</p>
+                      <video src={annonce.video_libre_url} controls className="w-full rounded-xl" style={{ border: `1px solid ${BORDURE}` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </Bloc>
+          )}
+
+          {/* Conditions saillie */}
+          {isSaillie && annonce.saillie_conditions && (
+            <Bloc titre="Conditions de saillie">
+              <p className="text-[15px] text-[#41525A] leading-relaxed whitespace-pre-wrap">{annonce.saillie_conditions}</p>
+            </Bloc>
+          )}
+
+          {/* Saillie — statut génétique de l'étalon + fertilité */}
+          {isSaillie && (() => {
+            const maladies = etalonTests.filter(t => t.categorie === 'maladie');
+            const adnEtabli = etalonInfo?.profil_adn_etabli === true
+              || etalonTests.some(t => t.categorie === 'adn' && t.resultat === 'etabli');
+            const genLibre = (annonce.saillie_genetique ?? '').trim();
+            const hasGen = maladies.length > 0 || adnEtabli || genLibre.length > 0;
+            const nb = etalonInfo?.nb_petits_produits;
+            const hist = (etalonInfo?.historique_fertilite ?? '').trim();
+            const hasFert = nb != null || hist.length > 0;
+            if (!hasGen && !hasFert) return null;
+            return (
+              <Bloc titre="Génétique et fertilité de l’étalon">
+                {hasGen && (
+                  (maladies.length > 0 || adnEtabli) ? (
                     <div className="flex flex-wrap gap-2">
-                      {adnEtabli && (
-                        <span className="inline-flex items-center gap-1 bg-[#EEF5EA] text-[#4d7a3c] text-xs font-semibold px-2.5 py-1 rounded-full">✓ Profil ADN établi</span>
-                      )}
+                      {adnEtabli && <span className="inline-flex items-center gap-1 bg-[#EAF5EC] text-[#2F7D3A] text-xs font-semibold px-2.5 py-1 rounded-full">Profil ADN établi</span>}
                       {maladies.map((t, i) => (
                         <span key={i} className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${resultatChipClass(t.resultat)}`}>
                           {testChipLabel(t)}
                           {t.lien_resultat && (
-                            <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="ml-1 underline" title="Résultat en ligne">🔗</a>
+                            <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="ml-1.5 underline">résultat</a>
                           )}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <p className="font-['Galey'] text-[#444] text-sm leading-relaxed whitespace-pre-line">{genLibre}</p>
-                  )}
-                </div>
-              )}
-              {hasFert && (
-                <div>
-                  <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-1">Fertilité</h2>
-                  {nb != null && <p className="text-sm font-semibold text-[#1F2A2E]">{nb} poulains produits</p>}
-                  {hist && <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line mt-1">{hist}</p>}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Bébés portée */}
-        {isPortee && bebes.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">
-              Bébés ({bebes.filter(b => b.statut === 'disponible').length} disponible{bebes.filter(b => b.statut === 'disponible').length > 1 ? 's' : ''})
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {bebes.map((b, i) => (
-                <div key={i} ref={el => { bebeRefs.current[i] = el; }}
-                  className={selectedBebe != null && parseInt(selectedBebe, 10) === i
-                    ? 'ring-2 ring-[#0C5C6C] rounded-xl' : ''}>
-                  <BebeCard bebe={b} index={i}
-                    annonceId={annonce.id}
-                    uidEleveur={annonce.uid_eleveur}
-                    currentUser={user}
-                    onOpenLightbox={(p, pi) => setLightbox({ photos: p, idx: pi })}
-                    onShowLikers={() => setActiveModal({ mode: 'likes', bebeIndex: i })} />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Parents */}
-        {!isSaillie && (annonce.pere_nom || annonce.mere_nom || annonce.pere_race || annonce.mere_race ||
-          annonce.pere_photo_url || annonce.mere_photo_url) && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">Parents</h2>
-            <div className="grid grid-cols-2 gap-3">
-              {/* Père */}
-              {(annonce.pere_nom || annonce.pere_race || annonce.pere_photo_url) && (
-                <div className="bg-[#F0F7FF] rounded-xl overflow-hidden">
-                  {annonce.pere_photo_url && (
-                    <div className="aspect-square relative bg-[#E8F0FF] cursor-zoom-in"
-                      onClick={() => setLightbox({ photos: [annonce.pere_photo_url!], idx: 0 })}>
-                      <Image src={annonce.pere_photo_url} alt="Père" fill className="object-cover"
-                        sizes="(max-width: 672px) 50vw, 300px" unoptimized />
-                    </div>
-                  )}
-                  <div className="p-3 space-y-0.5">
-                    <p className="text-xs font-bold text-[#0C5C6C] uppercase mb-1">♂ Père</p>
-                    {annonce.pere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.pere_nom}</p>}
-                    {annonce.pere_race && <p className="text-xs text-gray-500">{annonce.pere_race}</p>}
-                    {annonce.pere_couleur && <p className="text-xs text-gray-500">🎨 {annonce.pere_couleur}</p>}
-                    {annonce.pere_couleur_yeux && <p className="text-xs text-gray-500">👁 {annonce.pere_couleur_yeux}</p>}
-                    {annonce.pere_puce && (
-                      <p className="text-xs text-gray-400 font-mono break-all">🔖 {annonce.pere_puce}</p>
-                    )}
-                    {annonce.pere_registre && (
-                      <p className="text-xs text-[#6E9E57] font-semibold">📜 {annonce.pere_registre}</p>
-                    )}
-                    {annonce.pere_description && (
-                      <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{annonce.pere_description}</p>
-                    )}
+                    <p className="text-[15px] text-[#41525A] leading-relaxed whitespace-pre-line">{genLibre}</p>
+                  )
+                )}
+                {hasFert && (
+                  <div className={hasGen ? 'mt-4' : ''}>
+                    <p className="text-sm font-semibold text-gray-500 mb-1">Fertilité</p>
+                    {nb != null && <p className="text-[15px] font-semibold text-[#1E2025]">{nb} poulains produits</p>}
+                    {hist && <p className="text-[15px] text-[#41525A] leading-relaxed whitespace-pre-line mt-1">{hist}</p>}
                   </div>
-                </div>
-              )}
-              {/* Mère */}
-              {(annonce.mere_nom || annonce.mere_race || annonce.mere_photo_url) && (
-                <div className="bg-[#FFF0F6] rounded-xl overflow-hidden">
-                  {annonce.mere_photo_url && (
-                    <div className="aspect-square relative bg-[#FFE8F2] cursor-zoom-in"
-                      onClick={() => setLightbox({ photos: [annonce.mere_photo_url!], idx: 0 })}>
-                      <Image src={annonce.mere_photo_url} alt="Mère" fill className="object-cover"
-                        sizes="(max-width: 672px) 50vw, 300px" unoptimized />
-                    </div>
-                  )}
-                  <div className="p-3 space-y-0.5">
-                    <p className="text-xs font-bold text-[#EC4899] uppercase mb-1">♀ Mère</p>
-                    {annonce.mere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.mere_nom}</p>}
-                    {annonce.mere_race && <p className="text-xs text-gray-500">{annonce.mere_race}</p>}
-                    {annonce.mere_couleur && <p className="text-xs text-gray-500">🎨 {annonce.mere_couleur}</p>}
-                    {annonce.mere_couleur_yeux && <p className="text-xs text-gray-500">👁 {annonce.mere_couleur_yeux}</p>}
-                    {annonce.mere_puce && (
-                      <p className="text-xs text-gray-400 font-mono break-all">🔖 {annonce.mere_puce}</p>
-                    )}
-                    {annonce.mere_registre && (
-                      <p className="text-xs text-[#6E9E57] font-semibold">📜 {annonce.mere_registre}</p>
-                    )}
-                    {annonce.mere_description && (
-                      <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{annonce.mere_description}</p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                )}
+              </Bloc>
+            );
+          })()}
 
-        {/* Likes / Favoris */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 flex-wrap">
-          <button
-            onClick={toggleLike}
-            disabled={likeLoading}
-            className="flex items-center gap-2 px-4 py-2 rounded-full border transition-all disabled:opacity-50 cursor-pointer"
-            style={{
-              background: isLiked ? '#FDECEA' : '#F9F9F9',
-              borderColor: isLiked ? '#F87171' : '#E5E7EB',
-              color: isLiked ? '#EF4444' : '#6B7280',
-            }}
-          >
-            <span className="text-base">{isLiked ? '❤️' : '🤍'}</span>
-            <span className="font-['Galey'] font-semibold text-sm">
-              {likeCount > 0 ? likeCount : "J'aime"}
-            </span>
-          </button>
-          {user && likeCount > 0 && (
-            <button
-              onClick={() => setActiveModal({ mode: 'likes' })}
-              className="font-['Galey'] text-xs text-gray-500 hover:text-red-400 transition-colors">
-              Voir les {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
-            </button>
+          {/* Bébés portée */}
+          {isPortee && bebes.length > 0 && (
+            <Bloc titre={`Bébés · ${bebes.filter(b => b.statut === 'disponible').length} disponible${bebes.filter(b => b.statut === 'disponible').length > 1 ? 's' : ''}`}>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {bebes.map((b, i) => (
+                  <div key={i} ref={el => { bebeRefs.current[i] = el; }}
+                    className={selectedBebe != null && parseInt(selectedBebe, 10) === i
+                      ? 'ring-2 ring-[#0C5C6C] rounded-xl' : ''}>
+                    <BebeCard bebe={b} index={i}
+                      annonceId={annonce.id}
+                      uidEleveur={annonce.uid_eleveur}
+                      currentUser={user}
+                      onOpenLightbox={(p, pi) => setLightbox({ photos: p, idx: pi })}
+                      onShowLikers={() => setActiveModal({ mode: 'likes', bebeIndex: i })} />
+                  </div>
+                ))}
+              </div>
+            </Bloc>
           )}
-          {!user && likeCount > 0 && (
-            <span className="font-['Galey'] text-xs text-gray-400">
-              {likeCount} j&apos;aime{likeCount > 1 ? 's' : ''}
-            </span>
+
+          {/* Parents : deux cartes de même structure */}
+          {parents.length > 0 && (
+            <Bloc titre={isPortee ? 'Les parents' : 'Ses parents'}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {parents.map(p => {
+                  const photo = p.photo ? (
+                    <span className="relative block w-full sm:w-40 aspect-[4/3] sm:aspect-square rounded-xl overflow-hidden bg-[#EEF1EF] flex-shrink-0">
+                      <Image src={p.photo} alt={`${p.libelle}${p.nom ? ` ${p.nom}` : ''}`} fill className="object-cover" sizes="(max-width: 640px) 100vw, 160px" unoptimized />
+                    </span>
+                  ) : (
+                    <span className="flex w-full sm:w-40 aspect-[4/3] sm:aspect-square rounded-xl bg-[#EEF1EF] text-[#0C5C6C] items-center justify-center flex-shrink-0"><Icone nom="patte" taille={32} /></span>
+                  );
+                  return (
+                    <div key={p.cle} className="rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row gap-4 bg-white" style={{ border: `1px solid ${BORDURE}` }}>
+                      {p.href
+                        ? <Link href={p.href} aria-label={`Voir la fiche du ${p.libelle.toLowerCase()}`}>{photo}</Link>
+                        : p.photo
+                          ? <button type="button" className="cursor-zoom-in text-left" onClick={() => setLightbox({ photos: [p.photo!], idx: 0 })} aria-label="Agrandir la photo">{photo}</button>
+                          : photo}
+                      <div className="min-w-0 flex-1 flex flex-col">
+                        <p className="text-sm font-bold text-[#0C5C6C]">{p.libelle}</p>
+                        {p.nom && (p.href
+                          ? <Link href={p.href} className="text-lg font-bold text-[#1E2025] hover:text-[#0C5C6C] break-words">{p.nom}</Link>
+                          : <p className="text-lg font-bold text-[#1E2025] break-words">{p.nom}</p>)}
+                        <dl className="text-sm text-gray-600 mt-1 space-y-0.5">
+                          {p.race && <div>{p.race}</div>}
+                          {p.couleur && <div>Robe : {p.couleur}</div>}
+                          {p.yeux && <div>Yeux : {p.yeux}</div>}
+                          {p.registre && <div>Registre : {p.registre}</div>}
+                          {p.puce && <div className="break-all">Identification : <span className="tabular-nums">{p.puce}</span></div>}
+                        </dl>
+                        {p.description && <p className="text-sm text-gray-500 leading-relaxed mt-2">{p.description}</p>}
+                        {p.href && (
+                          <Link href={p.href}
+                            className={`${bouton} mt-3 self-start bg-white text-[#0C5C6C] hover:bg-[#E8F4F6]`} style={{ border: '1px solid rgba(12,92,108,0.45)' }}>
+                            Voir la fiche du parent <Icone nom="fleche" taille={16} />
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Bloc>
           )}
-          {user?.uid === annonce.uid_eleveur && favoriCount > 0 && (
-            <button
-              onClick={() => setActiveModal({ mode: 'favoris' })}
-              className="flex items-center gap-2 px-4 py-2 rounded-full border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all">
-              <span className="text-base">🔖</span>
-              <span className="font-['Galey'] font-semibold text-sm">{favoriCount} en favoris</span>
-            </button>
+
+          {user && !isOwner && user.uid !== annonce.uid_eleveur && (
+            <div className="text-center">
+              <button type="button"
+                onClick={() => { setShowSigModal(true); setSigDesc(''); setSigRaison('contenu_inapproprie'); }}
+                className="text-sm text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline py-1">
+                Signaler cette annonce
+              </button>
+            </div>
           )}
         </div>
-
-        {/* Profil éleveur ou association */}
-        {annonce.profil_source === 'association' ? (
-          assoData && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h2 className="font-['Galey'] font-bold text-sm text-teal-700 uppercase tracking-wide mb-3">💚 L'association</h2>
-              <div className="flex items-center gap-3">
-                {annonce.uid_eleveur ? (
-                  <Link href={`/associations/${assoProfileId ?? annonce.uid_eleveur}`} className="w-12 h-12 rounded-full bg-teal-50 overflow-hidden flex-shrink-0 relative block hover:opacity-90 transition-opacity">
-                    {assoData.avatar ? (
-                      <Image src={assoData.avatar} alt={assoData.nom} fill className="object-cover" sizes="64px" unoptimized />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xl">💚</div>
-                    )}
-                  </Link>
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-teal-50 overflow-hidden flex-shrink-0 flex items-center justify-center text-xl">💚</div>
-                )}
-                <div className="flex-1 min-w-0">
-                  {annonce.uid_eleveur ? (
-                    <Link href={`/associations/${assoProfileId ?? annonce.uid_eleveur}`} className="font-['Galey'] font-bold text-[#1E2025] hover:text-teal-700 transition-colors block truncate">
-                      {assoData.nom}
-                    </Link>
-                  ) : (
-                    <p className="font-['Galey'] font-bold text-[#1E2025] truncate">{assoData.nom}</p>
-                  )}
-                  {assoData.ville && (
-                    <p className="text-xs text-gray-500">📍 {assoData.ville}</p>
-                  )}
-                </div>
-                {annonce.uid_eleveur && (
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    <Link href={`/associations/${assoProfileId ?? annonce.uid_eleveur}`}
-                      className="text-xs font-semibold text-teal-700 border border-teal-600 px-3 py-1.5 rounded-xl hover:bg-teal-700 hover:text-white transition-colors text-center">
-                      Voir le profil
-                    </Link>
-                    {user && user.uid !== annonce.uid_eleveur && (
-                      <button
-                        onClick={handleContact}
-                        disabled={sending}
-                        className="text-xs font-semibold bg-[#0C5C6C] text-white px-3 py-1.5 rounded-xl hover:bg-[#094F5D] transition-colors disabled:opacity-60">
-                        💬 Contacter
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        ) : (pro || annonce.nom_eleveur) ? (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">L'éleveur</h2>
-            <div className="flex items-center gap-3">
-              {annonce.uid_eleveur ? (
-                <Link href={`/elevages/${annonce.uid_eleveur}`} className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative block hover:opacity-90 transition-opacity">
-                  {pro?.profile_picture_url_elevage ? (
-                    <Image src={pro.profile_picture_url_elevage} alt="éleveur" fill className="object-cover" sizes="64px" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xl">🏡</div>
-                  )}
-                </Link>
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-[#EEF5EA] overflow-hidden flex-shrink-0 relative flex items-center justify-center text-xl">🏡</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {annonce.uid_eleveur ? (
-                    <Link href={`/elevages/${annonce.uid_eleveur}`} className="font-['Galey'] font-bold text-[#1E2025] hover:text-[#0C5C6C] transition-colors">
-                      {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
-                    </Link>
-                  ) : (
-                    <p className="font-['Galey'] font-bold text-[#1E2025]">
-                      {pro?.name_elevage || annonce.nom_eleveur || 'Éleveur'}
-                    </p>
-                  )}
-                  {pro && <VerificationBadge level={getBadgeLevel({ statutPro: pro.statut_pro, siret: pro.siret, isPremium: pro.is_premium })} size="sm" />}
-                </div>
-                {(pro?.ville_elevage || annonce.ville_eleveur) && (
-                  <p className="text-xs text-gray-500">
-                    📍 {pro?.ville_elevage || annonce.ville_eleveur}
-                    {pro?.pays_elevage && pro.pays_elevage !== 'France' ? `, ${pro.pays_elevage}` : ''}
-                  </p>
-                )}
-              </div>
-              {annonce.uid_eleveur && (
-                <Link href={`/elevages/${annonce.uid_eleveur}`}
-                  className="flex-shrink-0 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C] px-3 py-1.5 rounded-xl hover:bg-[#0C5C6C] hover:text-white transition-colors">
-                  Voir le profil
-                </Link>
-              )}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Boost — propriétaire de l'annonce */}
-        {isOwner && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-amber-100">
-            {isBoostActive ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xl">⚡</span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-['Galey'] font-bold text-[#1E2025] text-sm">Annonce boostée</p>
-                  <p className="text-xs text-gray-500">
-                    Mise en avant jusqu&apos;au {new Date(annonce.boost_until!).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowBoostModal(true)}
-                  className="text-xs font-semibold text-amber-700 border border-amber-500 px-3 py-1.5 rounded-xl hover:bg-amber-500 hover:text-white transition-colors">
-                  Prolonger
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowBoostModal(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-['Galey'] font-bold text-white text-sm transition-opacity hover:opacity-90"
-                style={{ background: '#FF8A00' }}>
-                ⚡ Booster mon annonce
-              </button>
-            )}
-            <p className="text-[11px] text-gray-400 mt-2 leading-snug">
-              Un boost place votre annonce en tête des résultats de recherche et du fil.
-            </p>
-          </div>
-        )}
-
-        {/* Bouton contact */}
-        {annonce.statut === 'disponible' && user?.uid !== annonce.uid_eleveur && (
-          <button
-            onClick={handleContact}
-            disabled={sending || sent}
-            className="w-full py-4 rounded-2xl font-['Galey'] font-bold text-white text-base transition-opacity disabled:opacity-60"
-            style={{ background: '#0C5C6C' }}>
-            {sent ? '✓ Message envoyé' : sending ? 'Envoi...' : annonce.profil_source === 'association' ? '💬 Contacter l\'association' : '💬 Contacter l\'éleveur'}
-          </button>
-        )}
-
-        {!user && (
-          <Link href="/connexion"
-            className="block w-full py-4 rounded-2xl font-['Galey'] font-bold text-white text-base text-center"
-            style={{ background: '#0C5C6C' }}>
-            Se connecter pour contacter
-          </Link>
-        )}
-
-        {user && annonce && user.uid !== annonce.uid_eleveur && (
-          <button
-            type="button"
-            onClick={() => { setShowSigModal(true); setSigDesc(''); setSigRaison('contenu_inapproprie'); }}
-            className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
-          >
-            ⚑ Signaler cette annonce
-          </button>
-        )}
-
       </div>
     </div>
 
@@ -1358,7 +1306,7 @@ function AnnonceDetailPageInner() {
             rows={3}
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-4 focus:outline-none focus:border-[#6E9E57] resize-none"
           />
-          {sigSent && <p className="text-[#6E9E57] text-sm text-center mb-3">✓ Signalement envoyé. Merci.</p>}
+          {sigSent && <p className="text-[#2F7D3A] text-sm text-center mb-3">Signalement envoyé. Merci.</p>}
           <div className="flex gap-2">
             <button
               type="button"
@@ -1376,51 +1324,6 @@ function AnnonceDetailPageInner() {
               {sigLoading ? 'Envoi…' : 'Envoyer'}
             </button>
           </div>
-        </div>
-      </div>
-    )}
-
-    {/* Modal boost */}
-    {showBoostModal && (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-          <h3 className="font-['Galey'] font-bold text-[#1F2A2E] mb-1 flex items-center gap-2">
-            <span>⚡</span> Booster mon annonce
-          </h3>
-          <p className="text-xs text-gray-500 mb-4">
-            Paiement sécurisé via Stripe. Le boost démarre dès le paiement confirmé.
-          </p>
-          <div className="space-y-2 mb-4">
-            {boostProducts.length === 0 && (
-              <p className="text-sm text-gray-400 py-2">Chargement des offres…</p>
-            )}
-            {boostProducts.map(p => (
-              <button
-                key={p.code}
-                disabled={boosting}
-                onClick={() => boostAnnonce(p.code)}
-                className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 text-left hover:border-[#FF8A00] hover:bg-amber-50 transition-colors disabled:opacity-60"
-              >
-                <span>
-                  <span className="block text-sm font-semibold text-[#1F2A2E]">{p.label}</span>
-                  {p.duree_heures != null && (
-                    <span className="block text-xs text-gray-400">
-                      {p.duree_heures >= 24 ? `${Math.round(p.duree_heures / 24)} j` : `${p.duree_heures} h`} de mise en avant
-                    </span>
-                  )}
-                </span>
-                <span className="text-sm font-bold text-[#FF8A00]">{p.prix.toFixed(2)} €</span>
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowBoostModal(false)}
-            disabled={boosting}
-            className="w-full border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-60"
-          >
-            {boosting ? 'Redirection…' : 'Annuler'}
-          </button>
         </div>
       </div>
     )}

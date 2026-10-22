@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'package:PetsMatch/widgets/annonces/formulaire_annonce_kit.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -41,7 +42,6 @@ String? _toUuidOrNull(String? s) => (s != null && _uuidRe.hasMatch(s)) ? s : nul
 
 class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
   static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
 
   final _titreCtrl = TextEditingController();
   final _descCtrl  = TextEditingController();
@@ -363,242 +363,131 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
 
   @override
   Widget build(BuildContext context) {
+    final edition = widget.annonceId != null;
     return Scaffold(
       backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text(widget.annonceId != null ? 'Modifier l\'annonce' : 'Mettre en adoption',
+        title: Text(edition ? 'Modifier l\'annonce' : 'Mettre en adoption',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        actions: [
-          _saving
-              ? const Padding(padding: EdgeInsets.all(14),
-                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-              : TextButton(
-                  onPressed: _save,
-                  child: const Text('Publier', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
-        ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          // Sélecteur animal
-          _Section(
-            title: 'Animal concerné',
-            child: OutlinedButton.icon(
-              onPressed: _selectAnimal,
-              icon: const Icon(Icons.pets_outlined),
-              label: Text(
-                _linkedAnimalNom != null ? 'Animal : $_linkedAnimalNom' : 'Sélectionner un animal',
-                style: const TextStyle(fontFamily: 'Galey'),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _teal,
-                side: const BorderSide(color: Color(0xFF0C5C6C)),
-                minimumSize: const Size(double.infinity, 44),
-                alignment: Alignment.centerLeft,
+          FormSection(titre: 'Informations principales', children: [
+            FormChamp(
+              label: 'Animal concerné',
+              aide: 'Relie l\'annonce à la fiche de l\'animal de l\'association.',
+              child: OutlinedButton.icon(
+                onPressed: _selectAnimal,
+                icon: const Icon(Icons.pets_outlined, size: 18),
+                label: Text(_linkedAnimalNom != null ? 'Animal : $_linkedAnimalNom' : 'Sélectionner un animal',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal, side: BorderSide(color: _teal.withValues(alpha: 0.5)),
+                  minimumSize: const Size(double.infinity, 48), alignment: Alignment.centerLeft,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Espèce
-          _Section(
-            title: 'Espèce',
-            child: DashListeDeroulante<String>(
+            FormChamp(label: 'Espèce', requis: true, child: DashListeDeroulante<String>(
               valeur: _espece,
               options: [for (final e in _especes) (e.$1, e.$2)],
               onChanged: (v) { if (v != null) setState(() => _espece = v); },
-            ),
-          ),
-
-          if (_espece == 'autre') ...[
-            const SizedBox(height: 12),
-            _Section(
-              title: 'Préciser l\'espèce',
-              child: TextField(
+            )),
+            if (_espece == 'autre')
+              FormChamp(label: 'Préciser l\'espèce', child: TextField(
                 controller: _especeAutreCtrl,
-                decoration: const InputDecoration(
-                  hintText: 'Ex : Furet, Tortue...',
-                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                ),
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 16),
-
-          // Titre + race
-          _Section(
-            title: 'Titre de l\'annonce',
-            child: TextField(
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: formDeco('Ex : furet, tortue…'),
+              )),
+            FormChamp(label: 'Titre de l\'annonce', child: TextField(
               controller: _titreCtrl,
-              decoration: const InputDecoration(
-                hintText: 'Ex : Bella cherche une famille aimante',
-                hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-            ),
-          ),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: formDeco('Ex : Bella cherche une famille aimante'),
+            )),
+            FormChamp(label: 'Race', child: TextField(
+              controller: _raceCtrl,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: formDeco('Ex : Labrador, croisé…'),
+            )),
+            FormChamp(label: 'Sexe', child: DropdownButtonFormField<String>(
+              value: _sexe,
+              decoration: formDeco(''),
+              items: const [
+                DropdownMenuItem(value: 'male',    child: Text('Mâle',        style: TextStyle(fontFamily: 'Galey'))),
+                DropdownMenuItem(value: 'femelle', child: Text('Femelle',     style: TextStyle(fontFamily: 'Galey'))),
+                DropdownMenuItem(value: 'inconnu', child: Text('Non précisé', style: TextStyle(fontFamily: 'Galey'))),
+              ],
+              onChanged: (v) { if (v != null) setState(() => _sexe = v); },
+            )),
+          ]),
 
-          const SizedBox(height: 12),
-
-          Row(children: [
-            Expanded(
-              child: _Section(
-                title: 'Race',
-                child: TextField(
-                  controller: _raceCtrl,
-                  decoration: const InputDecoration(
-                    hintText: 'Ex : Labrador, Croisé…',
-                    hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _Section(
-                title: 'Sexe',
-                child: DropdownButtonFormField<String>(
-                  value: _sexe,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'male',    child: Text('Mâle',   style: TextStyle(fontFamily: 'Galey'))),
-                    DropdownMenuItem(value: 'femelle', child: Text('Femelle',style: TextStyle(fontFamily: 'Galey'))),
-                    DropdownMenuItem(value: 'inconnu', child: Text('N/A',    style: TextStyle(fontFamily: 'Galey'))),
+          FormSection(titre: 'Photos et médias', description: 'La première photo est la photo principale.', children: [
+            if (_photosUrls.isNotEmpty || _photosFiles.isNotEmpty) ...[
+              SizedBox(
+                height: 96,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    ..._photosUrls.asMap().entries.map((e) => _PhotoThumb(
+                      url: e.value,
+                      onRemove: () => setState(() => _photosUrls.removeAt(e.key)),
+                    )),
+                    ..._photosFiles.asMap().entries.map((e) => _PhotoThumb(
+                      file: e.value,
+                      onRemove: () => setState(() => _photosFiles.removeAt(e.key)),
+                    )),
                   ],
-                  onChanged: (v) { if (v != null) setState(() => _sexe = v); },
                 ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            OutlinedButton.icon(
+              onPressed: _addPhoto,
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+              label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal, side: const BorderSide(color: kDashBorder),
+                minimumSize: const Size(double.infinity, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ]),
 
-          const SizedBox(height: 16),
-
-          // Description
-          _Section(
-            title: 'Description',
-            child: TextField(
+          FormSection(titre: 'Description', children: [
+            TextField(
               controller: _descCtrl,
               maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: 'Décrivez l\'animal, son caractère, ses besoins…',
-                hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: formDeco('Décrivez l\'animal, son caractère, ses besoins…'),
             ),
-          ),
+          ]),
 
-          const SizedBox(height: 16),
+          FormSection(titre: 'Santé et identification', children: [
+            _CheckRow(label: 'Vacciné(e)', value: _vaccines,        onChanged: (v) => setState(() => _vaccines = v)),
+            _CheckRow(label: 'Vermifugé(e)', value: _vermifuge,     onChanged: (v) => setState(() => _vermifuge = v)),
+            _CheckRow(label: 'Identifié(e) (puce)', value: _identification, onChanged: (v) => setState(() => _identification = v)),
+            _CheckRow(label: 'Stérilisé(e)', value: _sterilise,     onChanged: (v) => setState(() => _sterilise = v)),
+          ]),
 
-          // Photos
-          _Section(
-            title: 'Photos',
-            child: Column(children: [
-              if (_photosUrls.isNotEmpty || _photosFiles.isNotEmpty) ...[
-                SizedBox(
-                  height: 100,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      ..._photosUrls.asMap().entries.map((e) => _PhotoThumb(
-                        url: e.value,
-                        onRemove: () => setState(() => _photosUrls.removeAt(e.key)),
-                      )),
-                      ..._photosFiles.asMap().entries.map((e) => _PhotoThumb(
-                        file: e.value,
-                        onRemove: () => setState(() => _photosFiles.removeAt(e.key)),
-                      )),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-              OutlinedButton.icon(
-                onPressed: _addPhoto,
-                icon: const Icon(Icons.add_photo_alternate_outlined),
-                label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey')),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _green,
-                  side: const BorderSide(color: Color(0xFF6E9E57)),
-                  minimumSize: const Size(double.infinity, 44),
-                ),
-              ),
-            ]),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Santé
-          _Section(
-            title: 'Santé & identification',
-            child: Column(children: [
-              _CheckRow(label: 'Vacciné(e)', value: _vaccines,        onChanged: (v) => setState(() => _vaccines = v)),
-              _CheckRow(label: 'Vermifugé(e)', value: _vermifuge,     onChanged: (v) => setState(() => _vermifuge = v)),
-              _CheckRow(label: 'Identifié(e) (puce)', value: _identification, onChanged: (v) => setState(() => _identification = v)),
-              _CheckRow(label: 'Stérilisé(e)', value: _sterilise,     onChanged: (v) => setState(() => _sterilise = v)),
-            ]),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Contrat d'adoption
-          _Section(
-            title: 'Conditions d\'adoption',
-            child: _CheckRow(
+          FormSection(titre: 'Conditions d\'adoption', children: [
+            _CheckRow(
               label: 'Contrat d\'adoption obligatoire',
               value: _contratAdoption,
               onChanged: (v) => setState(() => _contratAdoption = v),
             ),
-          ),
-
-          const SizedBox(height: 32),
-
-          ElevatedButton(
-            onPressed: _saving ? null : _save,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _teal,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 50),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            child: _saving
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Publier l\'annonce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-          ),
-
-          const SizedBox(height: 24),
+          ]),
         ],
       ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _Section({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
-        const SizedBox(height: 8),
-        child,
-      ],
+      // Zone d'actions unique (l'ancien bouton « Publier » de la barre du haut faisait doublon).
+      bottomNavigationBar: FormActions(
+        saving: _saving,
+        libelle: edition ? 'Enregistrer les modifications' : 'Publier l\'annonce',
+        onEnregistrer: _save,
+      ),
     );
   }
 }

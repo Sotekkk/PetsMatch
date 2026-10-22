@@ -12,11 +12,12 @@ import 'package:PetsMatch/pages/annonces/publier_annonce_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
 import 'package:PetsMatch/utils/annonces_droits.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/widgets/annonces/gestion_annonces_kit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -70,12 +71,12 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
   PlanConfig? _planConfig;
 
   static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
 
   late String _type = widget.typeInitial;
   String _statut = 'all';
-  int _nbAnimaux = 0;
-  int _nbMateriel = 0;
+  int? _nbAnimaux;
+  int? _nbMateriel;
+  String _recherche = '';
 
   /// Annonces d'animaux du profil : éleveur / association (liste et quota
   /// d'origine), particulier (chevaux), aucune pour un profil pro.
@@ -151,14 +152,11 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
     final config    = _planConfig ?? const PlanConfig(
         code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
         hasRegistres: false, badge: '');
-    final atLimit   = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
-    final progress  = config.maxAnnonces == -1
-        ? 0.0 : (_activeCount / config.maxAnnonces).clamp(0.0, 1.0);
     final aAnimaux = _animaux != 'aucun';
     final voirAnimaux = _type == 'animaux' || (_type == 'toutes' && aAnimaux);
     final voirMateriel = _type != 'animaux';
     final quota = (_animaux == 'eleveur' || _animaux == 'association') && voirAnimaux && !_planLoading;
-    final total = (aAnimaux ? _nbAnimaux : 0) + _nbMateriel;
+    final total = (aAnimaux ? (_nbAnimaux ?? 0) : 0) + (_nbMateriel ?? 0);
 
     return Scaffold(
       backgroundColor: kDashFond,
@@ -171,8 +169,8 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
         elevation: 0,
         actions: [
           IconButton(
-            tooltip: 'Achats & crédits',
-            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Mes achats',
+            icon: const Icon(Icons.shopping_cart_outlined),
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => MesAchatsPage(
                     abonnement: !widget.isAssociation && User_Info.isElevage ? const AbonnementPage() : null))),
@@ -185,10 +183,23 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
         child: ListView(
           padding: EdgeInsets.fromLTRB(dashMargeLaterale(context), 14, dashMargeLaterale(context), 100),
           children: [
-            Text('$total annonce${total > 1 ? 's' : ''}',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted)),
+            GestionEntete(total: total, onPublier: _publier),
+            const SizedBox(height: 14),
+
+            // ── Quota (annonces d'animaux, éleveur / association) ────────────
+            if (quota) ...[
+              GestionBandeauQuota(
+                actives: _activeCount, max: config.maxAnnonces, formule: config.label,
+                changerFormule: _planCode == 'free',
+                onGerer: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AbonnementPage())),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // ── Recherche et filtres ─────────────────────────────────────────
+            GestionRecherche(onChanged: (v) => setState(() => _recherche = v)),
             const SizedBox(height: 10),
-            // ── Filtres compacts ─────────────────────────────────────────────
             Row(children: [
               Expanded(child: _Liste(
                 libelle: 'Type', valeur: _type,
@@ -198,119 +209,45 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage> {
               const SizedBox(width: 10),
               Expanded(child: _Liste(
                 libelle: 'Statut', valeur: _statut,
-                options: const [('all', 'Tous les statuts'), ('actives', 'En ligne'), ('pause', 'En pause'), ('terminees', 'Terminées')],
+                options: const [('all', 'Tous'), ('actives', 'En ligne'), ('pause', 'En pause'), ('terminees', 'Terminées')],
                 onChanged: (v) => setState(() => _statut = v),
               )),
             ]),
-            const SizedBox(height: 14),
-
-            // ── Quota (annonces d'animaux, éleveur / association) ────────────
-            if (quota) ...[
-              GestureDetector(
-                onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const AbonnementPage())),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: atLimit ? Colors.red.shade200 : kDashBorder),
-                    boxShadow: kDashOmbre,
-                  ),
-                  child: Row(children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Text('Plan ${config.label}',
-                            style: const TextStyle(fontFamily: 'Galey',
-                                fontWeight: FontWeight.w700, fontSize: 13, color: kDashInk)),
-                        const SizedBox(width: 8),
-                        Text(
-                          config.maxAnnonces == -1
-                              ? 'Illimité'
-                              : '$_activeCount / ${config.maxAnnonces}',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                              color: atLimit ? Colors.red : kDashMuted),
-                        ),
-                        if (atLimit) ...[
-                          const SizedBox(width: 4),
-                          const Text('· Limite atteinte',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                                  color: Colors.red, fontWeight: FontWeight.w600)),
-                        ],
-                      ]),
-                      if (config.maxAnnonces != -1) ...[
-                        const SizedBox(height: 6),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            backgroundColor: Colors.grey.shade100,
-                            color: atLimit ? Colors.red.shade300 : _green,
-                            minHeight: 4,
-                          ),
-                        ),
-                      ],
-                    ])),
-                    const SizedBox(width: 10),
-                    if (_planCode == 'free')
-                      const DashPuce('Pro', fg: _teal, bg: Color(0xFFE8F4F6)),
-                    const Icon(Icons.chevron_right, color: kDashMuted, size: 18),
-                  ]),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+            const SizedBox(height: 16),
 
             // ── Animaux ──────────────────────────────────────────────────────
-            if (voirAnimaux) ...[
-              if (_type == 'toutes') const _TitreType('Animaux'),
+            if (voirAnimaux)
               if (!aAnimaux)
-                const DashCarte(
-                  child: Text('Les annonces d\'animaux ne sont pas proposées pour ce profil. '
-                      'Vous pouvez publier du matériel et des équipements.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
-                )
-              else if (_animaux == 'particulier')
-                MesAnnoncesChevalListe(statut: _statut, refreshKey: _refreshKey,
-                    onCompte: (n) { if (mounted && n != _nbAnimaux) setState(() => _nbAnimaux = n); })
+                const GestionVide(icon: Icons.pets_outlined,
+                    texte: 'Les annonces d\'animaux ne sont pas proposées pour ce profil. '
+                        'Vous pouvez publier du matériel et des équipements.')
               else
-                _AnnoncesList(uid: _ownerUid ?? _uid, filter: _statut, refreshKey: _refreshKey,
-                    isAssociation: widget.isAssociation, embedded: true,
-                    onCompte: (n) { if (mounted && n != _nbAnimaux) setState(() => _nbAnimaux = n); }),
-              const SizedBox(height: 18),
-            ],
+                GestionRubrique(
+                  titre: widget.isAssociation ? 'Animaux à l\'adoption' : 'Animaux',
+                  icon: Icons.pets_outlined,
+                  nombre: _nbAnimaux,
+                  child: _animaux == 'particulier'
+                      ? MesAnnoncesChevalListe(statut: _statut, recherche: _recherche, refreshKey: _refreshKey,
+                          onCompte: (n) { if (mounted && n != _nbAnimaux) setState(() => _nbAnimaux = n); })
+                      : _AnnoncesList(uid: _ownerUid ?? _uid, filter: _statut, recherche: _recherche, refreshKey: _refreshKey,
+                          isAssociation: widget.isAssociation, embedded: true,
+                          onCompte: (n) { if (mounted && n != _nbAnimaux) setState(() => _nbAnimaux = n); }),
+                ),
 
             // ── Matériel & équipements ───────────────────────────────────────
-            if (voirMateriel) ...[
-              if (_type == 'toutes' && voirAnimaux) const _TitreType('Matériel & équipements'),
-              MesAnnoncesObjetsListe(statut: _statut, refreshKey: _refreshKey,
-                  onCompte: (n) { if (mounted && n != _nbMateriel) setState(() => _nbMateriel = n); }),
-            ],
+            if (voirMateriel)
+              GestionRubrique(
+                titre: 'Matériel & équipements',
+                icon: Icons.inventory_2_outlined,
+                nombre: _nbMateriel,
+                child: MesAnnoncesObjetsListe(statut: _statut, recherche: _recherche, refreshKey: _refreshKey,
+                    onCompte: (n) { if (mounted && n != _nbMateriel) setState(() => _nbMateriel = n); }),
+              ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _publier,
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('Publier une annonce',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-      ),
     );
   }
-}
-
-class _TitreType extends StatelessWidget {
-  final String texte;
-  const _TitreType(this.texte);
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(texte, style: const TextStyle(fontFamily: 'Galey', fontSize: 17,
-            fontWeight: FontWeight.w700, color: kDashInk)),
-      );
 }
 
 /// Liste déroulante compacte (filtre).
@@ -325,12 +262,12 @@ class _Liste extends StatelessWidget {
   Widget build(BuildContext context) => DropdownButtonFormField<String>(
         initialValue: valeur,
         isExpanded: true,
-        isDense: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded, color: kDashMuted),
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: kDashInk),
         decoration: InputDecoration(
           labelText: libelle,
           labelStyle: const TextStyle(fontFamily: 'Galey', color: kDashMuted),
+          isDense: true,
           filled: true, fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kDashBorder)),
@@ -426,12 +363,14 @@ class _QuotaSheet extends StatelessWidget {
 class _AnnoncesList extends StatefulWidget {
   final String? uid;
   final String filter;
+  /// Texte de la barre de recherche (titre, espèce, race, ville).
+  final String recherche;
   final int refreshKey;
   final bool isAssociation;
   /// Intégrée à la page « Mes annonces » (pas de défilement propre).
   final bool embedded;
   final ValueChanged<int>? onCompte;
-  const _AnnoncesList({required this.uid, required this.filter, required this.refreshKey,
+  const _AnnoncesList({required this.uid, required this.filter, this.recherche = '', required this.refreshKey,
       this.isAssociation = false, this.embedded = false, this.onCompte});
 
   @override
@@ -523,28 +462,18 @@ class _AnnoncesListState extends State<_AnnoncesList> {
       return const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: _teal)));
     }
     if (widget.embedded) {
-      if (_rows.isEmpty) {
-        return DashCarte(
-          padding: const EdgeInsets.all(20),
-          child: Column(children: [
-            Container(
-              width: 44, height: 44,
-              decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
-              child: const Icon(Icons.pets_outlined, color: _teal, size: 21),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              widget.filter == 'pause' ? 'Aucune annonce d\'animal en pause.'
-                  : widget.filter == 'terminees' ? 'Aucune annonce d\'animal terminée.'
-                  : widget.filter == 'actives' ? 'Aucune annonce d\'animal en ligne.'
-                  : 'Aucune annonce d\'animal pour le moment.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
-          ]),
-        );
+      final liste = _rows.where((r) => correspondRecherche(widget.recherche,
+          [r['titre'] as String?, r['espece'] as String?, r['race'] as String?, r['ville_eleveur'] as String?])).toList();
+      if (liste.isEmpty) {
+        return GestionVide(icon: Icons.pets_outlined, texte:
+            widget.recherche.trim().isNotEmpty ? 'Aucune annonce d\'animal ne correspond à la recherche.'
+                : widget.filter == 'pause' ? 'Aucune annonce d\'animal en pause.'
+                : widget.filter == 'terminees' ? 'Aucune annonce d\'animal terminée.'
+                : widget.filter == 'actives' ? 'Aucune annonce d\'animal en ligne.'
+                : 'Aucune annonce d\'animal pour le moment.');
       }
       return Column(children: [
-        for (final r in _rows)
+        for (final r in liste)
           _AnnonceCard(id: r['id'] as String, data: r, onRefresh: _load, isAssociation: widget.isAssociation),
       ]);
     }
@@ -592,9 +521,6 @@ class _AnnonceCard extends StatefulWidget {
 }
 
 class _AnnonceCardState extends State<_AnnonceCard> {
-  static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
-
   late String _statut;
 
   @override
@@ -609,16 +535,6 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     final incoming = (widget.data['statut'] as String?) ?? 'disponible';
     if (incoming != _statut) setState(() => _statut = incoming);
   }
-
-  Color _statutColor(String s) => switch (s) {
-    'disponible' => _green,
-    'reserve'    => const Color(0xFFF59E0B),
-    'pause'      => const Color(0xFF9CA3AF),
-    'vendu' || 'cede' => Colors.blueGrey,
-    'quota_depasse' => Colors.redAccent,
-    'brouillon'  => const Color(0xFF9CA3AF),
-    _            => Colors.redAccent,
-  };
 
   String _statutLabel(String s) => switch (s) {
     'disponible' => 'En ligne',
@@ -761,219 +677,93 @@ class _AnnonceCardState extends State<_AnnonceCard> {
       }
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: InkWell(
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => AnnonceDetailPage(annonceId: widget.id, initialData: widget.data))),
-        borderRadius: BorderRadius.circular(16),
-        child: Column(children: [
-          // ── Row principale : photo + infos ────────────────────────────────
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Photo
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
-              child: SizedBox(
-                width: 90, height: 110,
-                child: photos.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: photos.first, fit: BoxFit.cover,
-                        placeholder: (_, __) => _placeholder(espece),
-                        errorWidget: (_, __, ___) => _placeholder(espece))
-                    : _placeholder(espece),
-              ),
-            ),
-            // Infos
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // Badges : type + statut
-                  Wrap(spacing: 6, runSpacing: 4, children: [
-                    if (isBoosted)
-                      _badge('Boostée', const Color(0xFFB45309)),
-                    _badge(type == 'portee' ? 'Portée' : 'Animal',
-                        type == 'portee' ? _teal : _green),
-                    _badge(_statutLabel(_statut), _statutColor(_statut)),
-                    if (expiryLabel.isNotEmpty)
-                      _badge(expiryLabel, Colors.redAccent),
-                  ]),
-                  const SizedBox(height: 6),
-                  // Titre
-                  Row(children: [
-                    speciesIcon(espece, 12, _teal),
-                    const SizedBox(width: 4),
-                    Expanded(child: Text(displayTitle,
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                            fontSize: 14, color: Color(0xFF1F2A2E)),
-                        maxLines: 1, overflow: TextOverflow.ellipsis)),
-                  ]),
-                  const SizedBox(height: 3),
-                  // Prix + date
-                  Row(children: [
-                    if (prixLabel.isNotEmpty)
-                      Text(prixLabel,
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 14, color: typeVente == 'adoption' ? _green : _teal)),
-                    const Spacer(),
-                    if (createdAt != null)
-                      Text(DateFormat('dd/MM/yy').format(createdAt.toDate()),
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                              color: Colors.grey.shade400)),
-                  ]),
-                  const SizedBox(height: 6),
-                  // Stats vues / contacts
-                  Row(children: [
-                    _statChip(Icons.visibility_outlined, '$vues vue${vues > 1 ? 's' : ''}'),
-                    const SizedBox(width: 10),
-                    _statChip(Icons.chat_outlined, '$contacts contact${contacts > 1 ? 's' : ''}'),
-                  ]),
-                ]),
-              ),
-            ),
-          ]),
+    void voir() => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => AnnonceDetailPage(annonceId: widget.id, initialData: widget.data)));
+    void modifier() {
+      if (widget.isAssociation) {
+        Navigator.push(context, MaterialPageRoute(
+            builder: (_) => CreateAnnonceAssoPage(annonceId: widget.id, initialData: widget.data)))
+            .then((_) { if (mounted) widget.onRefresh(); });
+      } else {
+        Navigator.push(context, MaterialPageRoute(
+            builder: (_) => CreateAnnoncePage(annonceId: widget.id, initialData: widget.data)));
+      }
+    }
+    final supprimer = GestionAction('Supprimer', Icons.delete_outline, () => _confirmDelete(context), danger: true);
 
-          // ── Séparateur ────────────────────────────────────────────────────
-          Divider(height: 1, color: Colors.grey.shade100),
+    List<GestionAction> principales;
+    List<GestionAction> menu;
+    String? note;
+    if (_statut == 'quota_depasse') {
+      principales = [GestionAction('Passer à un plan payant', Icons.workspace_premium_outlined,
+          () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AbonnementPage())))];
+      menu = [supprimer];
+      note = 'Annonce bloquée : passez à un plan payant pour la republier.';
+    } else if (!isTermine) {
+      principales = [
+        GestionAction('Voir', Icons.visibility_outlined, voir),
+        GestionAction(_statut == 'brouillon' ? 'Reprendre' : 'Modifier', Icons.edit_outlined, modifier),
+      ];
+      menu = [
+        // Boost : point d'entrée unique (retiré de la fiche de l'annonce).
+        GestionAction(isBoosted ? 'Prolonger le boost' : 'Booster l\'annonce', Icons.bolt,
+            () => ouvrirBoostAnnonce(context, annonceId: widget.id,
+                boostUntil: widget.data['boost_until']?.toString(), association: widget.isAssociation),
+            actif: isBoosted),
+        GestionAction('Statistiques', Icons.bar_chart_outlined, _showStats),
+        GestionAction(isPaused ? 'Activer' : 'Mettre en pause',
+            isPaused ? Icons.play_arrow_outlined : Icons.pause_outlined, _togglePause),
+        // Renouveler (proactif — visible dès J-7, pas besoin d'attendre
+        // l'expiration complète, utile notamment pour les associations
+        // dont le processus d'adoption dépasse souvent 30 jours).
+        if (expiryLabel.isNotEmpty) GestionAction('Renouveler', Icons.refresh_outlined, _renew),
+        supprimer,
+      ];
+    } else if (_statut == 'expiree') {
+      principales = [GestionAction('Renouveler', Icons.refresh_outlined, _renew)];
+      menu = [GestionAction('Voir', Icons.visibility_outlined, voir), supprimer];
+    } else {
+      principales = [GestionAction('Voir', Icons.visibility_outlined, voir)];
+      menu = const [];
+    }
 
-          // ── Actions ───────────────────────────────────────────────────────
-          if (_statut == 'quota_depasse')
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: Row(children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const AbonnementPage())),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD97706),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    child: const Text('Passer à un plan payant pour republier',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _ActionBtn(
-                  icon: Icons.delete_outline,
-                  label: 'Supprimer',
-                  color: Colors.redAccent,
-                  onTap: () => _confirmDelete(context),
-                ),
-              ]),
-            )
-          else if (!isTermine)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: Row(children: [
-                // Stats
-                _ActionBtn(
-                  icon: Icons.bar_chart_outlined,
-                  label: 'Stats',
-                  color: _teal,
-                  onTap: _showStats,
-                ),
-                const SizedBox(width: 8),
-                // Pause / Activer
-                _ActionBtn(
-                  icon: isPaused ? Icons.play_arrow_outlined : Icons.pause_outlined,
-                  label: isPaused ? 'Activer' : 'Pause',
-                  color: isPaused ? _green : const Color(0xFF9CA3AF),
-                  onTap: _togglePause,
-                ),
-                if (expiryLabel.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  // Renouveler (proactif — visible dès J-7, pas besoin d'attendre
-                  // l'expiration complète, utile notamment pour les associations
-                  // dont le processus d'adoption dépasse souvent 30 jours).
-                  _ActionBtn(
-                    icon: Icons.refresh_outlined,
-                    label: 'Renouveler',
-                    color: Colors.orange.shade800,
-                    onTap: _renew,
-                  ),
-                ],
-                const SizedBox(width: 8),
-                // Modifier
-                _ActionBtn(
-                  icon: Icons.edit_outlined,
-                  label: _statut == 'brouillon' ? 'Reprendre' : 'Modifier',
-                  color: _teal,
-                  onTap: () {
-                    if (widget.isAssociation) {
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => CreateAnnonceAssoPage(annonceId: widget.id, initialData: widget.data)))
-                          .then((_) { if (mounted) widget.onRefresh(); });
-                    } else {
-                      Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => CreateAnnoncePage(annonceId: widget.id, initialData: widget.data)));
-                    }
-                  },
-                ),
-                const Spacer(),
-                // Supprimer
-                _ActionBtn(
-                  icon: Icons.delete_outline,
-                  label: 'Supprimer',
-                  color: Colors.redAccent,
-                  onTap: () => _confirmDelete(context),
-                ),
-              ]),
-            )
-          else if (_statut == 'expiree')
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: Row(children: [
-                _ActionBtn(
-                  icon: Icons.refresh_outlined,
-                  label: 'Renouveler',
-                  color: _teal,
-                  onTap: _renew,
-                ),
-                const Spacer(),
-                _ActionBtn(
-                  icon: Icons.delete_outline,
-                  label: 'Supprimer',
-                  color: Colors.redAccent,
-                  onTap: () => _confirmDelete(context),
-                ),
-              ]),
-            )
-          else
-            const SizedBox(height: 8),
-        ]),
-      ),
+    final ville = (widget.data['ville_eleveur'] as String?) ?? '';
+    return GestionCarteAnnonce(
+      onTap: voir,
+      photo: photos.isNotEmpty
+          ? CachedNetworkImage(
+              imageUrl: photos.first, fit: BoxFit.cover,
+              placeholder: (_, __) => _placeholder(espece),
+              errorWidget: (_, __, ___) => _placeholder(espece))
+          : _placeholder(espece),
+      titre: displayTitle,
+      sousTitre: [speciesLabel(espece), if (race.isNotEmpty && race != displayTitle) race, if (ville.isNotEmpty) ville]
+          .where((e) => e.isNotEmpty).join(' · '),
+      etiquettes: [
+        puceStatut(_statutLabel(_statut), _statutTeinte(_statut)),
+        puceType(type == 'portee' ? 'Portée' : typeVente == 'saillie' ? 'Saillie' : typeVente == 'adoption' ? 'Adoption' : 'Animal'),
+        if (isBoosted) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
+        if (expiryLabel.isNotEmpty) puceStatut(expiryLabel, 'rouge'),
+      ],
+      prix: prixLabel,
+      indicateurs: [
+        (Icons.visibility_outlined, '$vues vue${vues > 1 ? 's' : ''}'),
+        (Icons.chat_bubble_outline, '$contacts contact${contacts > 1 ? 's' : ''}'),
+        if (createdAt != null) (Icons.calendar_today_outlined, DateFormat('dd/MM/yy').format(createdAt.toDate())),
+      ],
+      principales: principales,
+      menu: menu,
+      note: note,
     );
   }
 
-  Widget _badge(String label, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-    decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-    child: Text(label,
-        style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-            fontWeight: FontWeight.w600, color: color)),
-  );
-
-  Widget _statChip(IconData icon, String label) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Icon(icon, size: 13, color: Colors.grey.shade400),
-      const SizedBox(width: 3),
-      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-          color: Colors.grey.shade500)),
-    ],
-  );
+  String _statutTeinte(String s) => switch (s) {
+    'disponible' => 'vert',
+    'reserve'    => 'ambre',
+    'pause' || 'brouillon' => 'gris',
+    'vendu' || 'cede' => 'bleu',
+    _            => 'rouge',
+  };
 
   Widget _placeholder(String espece) => Container(
     color: const Color(0xFFEEF5EA),
@@ -1088,72 +878,92 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-      initialChildSize: 0.75,
+      initialChildSize: 0.8,
       maxChildSize: 0.95,
       minChildSize: 0.4,
       expand: false,
       builder: (_, sc) => Container(
         decoration: const BoxDecoration(
-          color: Color(0xFFF8F8F6),
+          color: kDashFond,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(children: [
-          // Poignée
-          Container(margin: const EdgeInsets.symmetric(vertical: 10),
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          // Header
+          // En-tête blanc : titre, période, fermeture
           Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)]),
-              borderRadius: BorderRadius.circular(16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              border: Border(bottom: BorderSide(color: kDashBorder)),
             ),
-            child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Statistiques', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white.withValues(alpha: 0.7))),
-                Text(widget.titre.isNotEmpty ? widget.titre : 'Annonce',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                if (_typeVente != null)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
-                    child: Text(
-                      _typeVente == 'saillie' ? 'Saillie' : _typeVente == 'portee' ? 'Portée' : 'Animal',
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white),
-                    ),
-                  ),
-              ])),
-              // Sélecteur période
-              Row(children: [7, 30].map((p) => GestureDetector(
-                onTap: () { setState(() => _period = p); _load(); },
-                child: Container(
-                  margin: const EdgeInsets.only(left: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _period == p ? Colors.white : Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text('${p}j', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: _period == p ? _teal : Colors.white)),
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 12),
+            child: Column(children: [
+              Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(child: Text(
+                    'Statistiques de ${widget.titre.isNotEmpty ? widget.titre : 'l\'annonce'}',
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: kDashInk))),
+                IconButton(
+                  tooltip: 'Fermer',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: kDashMuted),
                 ),
-              )).toList()),
+              ]),
+              const SizedBox(height: 4),
+              Row(children: [
+                if (_typeVente != null)
+                  puceType(_typeVente == 'saillie' ? 'Saillie' : _typeVente == 'portee' ? 'Portée' : 'Animal'),
+                const Spacer(),
+                // Sélecteur de période
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(color: const Color(0xFFF3F6F5), borderRadius: BorderRadius.circular(10)),
+                  child: Row(children: [7, 30].map((p) => GestureDetector(
+                    onTap: () { setState(() => _period = p); _load(); },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _period == p ? _teal : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('$p jours', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                          fontWeight: FontWeight.w700, color: _period == p ? Colors.white : kDashMuted)),
+                    ),
+                  )).toList()),
+                ),
+                const SizedBox(width: 8),
+              ]),
             ]),
           ),
           // Contenu
           Expanded(child: _loading
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)))
+              ? const Center(child: CircularProgressIndicator(color: _teal))
               : _error != null
-                  ? Center(child: Text('Erreur : $_error', style: const TextStyle(color: Colors.red)))
+                  ? Center(child: Text('Erreur : $_error', style: const TextStyle(fontFamily: 'Galey', color: Colors.red)))
                   : _buildContent(sc)),
         ]),
       ),
     );
   }
+
+  Widget _carte(Widget child) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: kDashBorder)),
+        child: child,
+      );
+
+  Widget _titreCarte(String texte, IconData icon) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(children: [
+          Icon(icon, size: 18, color: _teal),
+          const SizedBox(width: 8),
+          Text(texte, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: kDashInk)),
+        ]),
+      );
 
   Widget _buildContent(ScrollController sc) {
     final s = _stats!;
@@ -1163,129 +973,199 @@ class _AnnonceStatsSheetState extends State<_AnnonceStatsSheet> {
     final taux     = s['tauxConversion'] as int;
     final score    = s['score'] as int;
     final portee   = s['portee'] as List<dynamic>;
+    final daily    = s['daily'] as List<dynamic>;
     final isSaillie = _typeVente == 'saillie';
+    final couleurScore = score >= 70 ? _green : score >= 40 ? const Color(0xFFD97706) : const Color(0xFFDC2626);
+    final (puceFg, puceBg, puceTexte) = taux >= 5 ? (const Color(0xFF2F7D3A), const Color(0xFFEAF5EC), 'Bon')
+        : taux >= 2 ? (const Color(0xFFB45309), const Color(0xFFFEF3C7), 'Moyen')
+        : (const Color(0xFFB91C1C), const Color(0xFFFEF2F2), 'Faible');
 
-    return ListView(controller: sc, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
-      // KPIs principaux
-      Row(children: [
-        _KpiCard(icon: Icons.visibility_outlined, label: 'Vues', value: '$vues', color: _teal),
-        const SizedBox(width: 10),
-        _KpiCard(icon: isSaillie ? Icons.handshake_outlined : Icons.chat_bubble_outline, label: isSaillie ? 'Demandes' : 'Contacts', value: '$contacts', color: _green),
-        const SizedBox(width: 10),
-        _KpiCard(icon: Icons.favorite_border, label: 'Favoris', value: '$favoris', color: const Color(0xFFEC4899)),
-      ]),
+    return ListView(controller: sc, padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), children: [
+      // Indicateurs principaux
+      GridView.count(
+        crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1.75,
+        children: [
+          _KpiCard(icon: Icons.visibility_outlined, label: 'Vues', value: '$vues', color: _teal),
+          _KpiCard(icon: isSaillie ? Icons.handshake_outlined : Icons.people_outline,
+              label: isSaillie ? 'Demandes' : 'Contacts', value: '$contacts', color: _teal),
+          _KpiCard(icon: Icons.favorite_border, label: 'Favoris', value: '$favoris', color: const Color(0xFFE0457B)),
+          _KpiCard(icon: Icons.bar_chart_rounded, label: 'Conversion', value: '$taux %', color: _teal,
+              puce: DashPuce(puceTexte, fg: puceFg, bg: puceBg)),
+        ],
+      ),
       const SizedBox(height: 12),
 
-      // Score attractivité
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade100)),
-        child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Score attractivité', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 6),
-            ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
-              value: score / 100,
-              minHeight: 8,
-              backgroundColor: Colors.grey.shade100,
-              valueColor: AlwaysStoppedAnimation(score >= 70 ? _green : score >= 40 ? Colors.amber : Colors.redAccent),
-            )),
-            const SizedBox(height: 4),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Taux contact : $taux%', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
-              Text('Score : $score/100', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.bold,
-                  color: score >= 70 ? _green : score >= 40 ? Colors.amber.shade700 : Colors.redAccent)),
-            ]),
-          ])),
+      // Évolution des vues (données réelles, jours sans visite = 0)
+      _carte(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Évolution des vues', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: kDashInk)),
+        const SizedBox(height: 10),
+        if (daily.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Center(child: Text('Pas encore de données sur cette période.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted))),
+          )
+        else
+          SizedBox(height: 170, width: double.infinity,
+              child: CustomPaint(painter: _CourbeVuesPainter(_serieVues(daily)))),
+      ])),
+      const SizedBox(height: 12),
+
+      // Score d'attractivité
+      _carte(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _titreCarte('Score d\'attractivité', Icons.star_outline_rounded),
+        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          Text('$score', style: TextStyle(fontFamily: 'Galey', fontSize: 26, fontWeight: FontWeight.w700, color: couleurScore)),
+          const Text(' / 100', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted)),
+          const Spacer(),
+          Text('Taux de contact : $taux %', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
         ]),
-      ),
+        const SizedBox(height: 8),
+        ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(
+          value: score / 100, minHeight: 8,
+          backgroundColor: Colors.grey.shade100,
+          valueColor: AlwaysStoppedAnimation(couleurScore),
+        )),
+      ])),
       const SizedBox(height: 12),
 
       // Section portée (seulement si portée, pas saillie)
       if (!isSaillie && portee.isNotEmpty) ...[
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade100)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Portée — podium', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 10),
-            Row(children: [
-              // Top vues
-              Expanded(child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12)),
-                child: Column(children: [
-                  const Text('Plus consulté', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706), fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text('Chiot #${(portee.first['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFB45309))),
-                  Text('${portee.first['vues']} vues', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFD97706))),
-                ]),
-              )),
-              const SizedBox(width: 10),
-              // Top favoris
-              Expanded(child: (){
-                final topFav = [...portee]..sort((a, b) => (b['favoris'] as int).compareTo(a['favoris'] as int));
-                return Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFFFFF1F2), borderRadius: BorderRadius.circular(12)),
-                  child: Column(children: [
-                    const Text('Plus aimé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48), fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 4),
-                    Text('Chiot #${(topFav.first['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFFBE123C))),
-                    Text('${topFav.first['favoris']} favoris', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFE11D48))),
-                  ]),
-                );
-              }()),
-            ]),
-            // Classement complet
-            if (portee.length > 1) ...[
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 8),
-              ...portee.take(6).toList().asMap().entries.map((e) {
-                final rank = e.key + 1;
-                final b = e.value as Map<String, dynamic>;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(children: [
-                    Text('#$rank', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade400)),
-                    const SizedBox(width: 8),
-                    Text('Chiot #${(b['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF374151))),
-                    const Spacer(),
-                    Text('${b['vues']} vues', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
-                    const SizedBox(width: 12),
-                    Text('${b['favoris']} favoris', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6B7280))),
-                  ]),
-                );
-              }),
-            ],
+        _carte(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _titreCarte('Portée : podium', Icons.pets_outlined),
+          Row(children: [
+            Expanded(child: _podium('Plus consulté', 'Chiot n° ${(portee.first['index'] as int) + 1}', '${portee.first['vues']} vues')),
+            const SizedBox(width: 10),
+            Expanded(child: (){
+              final topFav = [...portee]..sort((a, b) => (b['favoris'] as int).compareTo(a['favoris'] as int));
+              return _podium('Plus aimé', 'Chiot n° ${(topFav.first['index'] as int) + 1}', '${topFav.first['favoris']} favoris');
+            }()),
           ]),
-        ),
+          // Classement complet
+          if (portee.length > 1) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: kDashBorder),
+            const SizedBox(height: 8),
+            ...portee.take(6).toList().asMap().entries.map((e) {
+              final rank = e.key + 1;
+              final b = e.value as Map<String, dynamic>;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(children: [
+                  SizedBox(width: 22, child: Text('$rank', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey.shade400))),
+                  Text('Chiot n° ${(b['index'] as int) + 1}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashInk)),
+                  const Spacer(),
+                  const Icon(Icons.visibility_outlined, size: 14, color: kDashMuted),
+                  const SizedBox(width: 3),
+                  Text('${b['vues']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                  const SizedBox(width: 12),
+                  const Icon(Icons.favorite_border, size: 14, color: kDashMuted),
+                  const SizedBox(width: 3),
+                  Text('${b['favoris']}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+                ]),
+              );
+            }),
+          ],
+        ])),
         const SizedBox(height: 12),
       ],
 
       // Section saillie spécifique
       if (isSaillie) ...[
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade100)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Données saillie', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 8),
-            _InfoRow('Demandes de contact', '$contacts'),
-            _InfoRow('Intérêt (favoris)', '$favoris éleveurs'),
-            _InfoRow('Taux de demande', '${vues > 0 ? (contacts / vues * 100).round() : 0}% des visiteurs'),
-          ]),
-        ),
+        _carte(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _titreCarte('Données saillie', Icons.handshake_outlined),
+          _InfoRow('Demandes de contact', '$contacts'),
+          _InfoRow('Intérêt (favoris)', '$favoris éleveurs'),
+          _InfoRow('Taux de demande', '${vues > 0 ? (contacts / vues * 100).round() : 0} % des visiteurs'),
+        ])),
         const SizedBox(height: 12),
       ],
-
-      const SizedBox(height: 20),
     ]);
   }
+
+  Widget _podium(String titre, String valeur, String detail) => Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: const Color(0xFFF3F6F5), borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: kDashMuted, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(valeur, style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: kDashInk)),
+          Text(detail, style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: kDashMuted)),
+        ]),
+      );
+
+  /// Vues jour par jour sur la période (jours sans ligne = 0 vue).
+  List<(DateTime, int)> _serieVues(List<dynamic> daily) {
+    final parJour = <String, int>{};
+    for (final d in daily) {
+      final k = (d['date']?.toString() ?? '');
+      if (k.length >= 10) parJour[k.substring(0, 10)] = ((d['vues'] as num?)?.toInt() ?? 0);
+    }
+    final now = DateTime.now();
+    final debut = DateTime(now.year, now.month, now.day);
+    return [
+      for (var i = _period - 1; i >= 0; i--)
+        (debut.subtract(Duration(days: i)),
+            parJour[DateFormat('yyyy-MM-dd').format(debut.subtract(Duration(days: i)))] ?? 0),
+    ];
+  }
+}
+
+/// Courbe des vues (aire légère, points, graduations et dates).
+class _CourbeVuesPainter extends CustomPainter {
+  final List<(DateTime, int)> serie;
+  _CourbeVuesPainter(this.serie);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (serie.isEmpty) return;
+    const g = 26.0, b = 20.0, d = 6.0, h0 = 6.0;
+    final maxV = serie.map((e) => e.$2).fold<int>(4, (a, v) => v > a ? v : a);
+    final pas = maxV <= 8 ? 2 : (maxV / 4).ceil();
+    final haut = (maxV / pas).ceil() * pas;
+    double x(int i) => g + i * (size.width - g - d) / (serie.length > 1 ? serie.length - 1 : 1);
+    double y(num v) => h0 + (size.height - b - h0) * (1 - v / haut);
+    const style = TextStyle(fontFamily: 'Galey', fontSize: 10, color: kDashMuted);
+    void texte(String t, Offset o, {bool droite = false, bool centre = false}) {
+      final tp = TextPainter(text: TextSpan(text: t, style: style), textDirection: TextDirection.ltr)..layout();
+      tp.paint(canvas, Offset(droite ? o.dx - tp.width : centre ? o.dx - tp.width / 2 : o.dx, o.dy - tp.height / 2));
+    }
+    final grille = Paint()..color = const Color(0xFFEEF0EE)..strokeWidth = 1;
+    for (var v = 0; v <= haut; v += pas) {
+      canvas.drawLine(Offset(g, y(v)), Offset(size.width - d, y(v)), grille);
+      texte('$v', Offset(g - 6, y(v)), droite: true);
+    }
+    final ligne = Path();
+    for (var i = 0; i < serie.length; i++) {
+      if (i == 0) {
+        ligne.moveTo(x(i), y(serie[i].$2));
+      } else {
+        ligne.lineTo(x(i), y(serie[i].$2));
+      }
+    }
+    final aire = Path.from(ligne)
+      ..lineTo(x(serie.length - 1), y(0))
+      ..lineTo(x(0), y(0))
+      ..close();
+    canvas.drawPath(aire, Paint()..color = kDashTeal.withValues(alpha: 0.08));
+    canvas.drawPath(ligne, Paint()
+      ..color = kDashTeal
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeJoin = StrokeJoin.round);
+    final point = Paint()..color = kDashTeal;
+    for (var i = 0; i < serie.length; i++) {
+      canvas.drawCircle(Offset(x(i), y(serie[i].$2)), serie.length > 14 ? 2.2 : 3.2, point);
+    }
+    final intervalle = (serie.length / 5).round().clamp(1, 1000);
+    for (var i = 0; i < serie.length; i += intervalle) {
+      texte(DateFormat('d MMM', 'fr_FR').format(serie[i].$1), Offset(x(i), size.height - b / 2 + 2), centre: true);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CourbeVuesPainter old) => old.serie != serie;
 }
 
 Widget _InfoRow(String label, String value) => Padding(
@@ -1300,47 +1180,22 @@ class _KpiCard extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final Color color;
-  const _KpiCard({required this.icon, required this.label, required this.value, required this.color});
+  final Widget? puce;
+  const _KpiCard({required this.icon, required this.label, required this.value, required this.color, this.puce});
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade100)),
-      child: Column(children: [
-        Icon(icon, size: 19, color: color),
-        const SizedBox(height: 4),
-        Text(value, style: TextStyle(fontFamily: 'Galey', fontSize: 18, fontWeight: FontWeight.bold, color: color)),
-        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF9CA3AF))),
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kDashBorder)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Icon(icon, size: 20, color: color),
+        const Spacer(),
+        if (puce != null) puce!,
       ]),
-    ),
-  );
-}
-
-// ─── Bouton action compact ────────────────────────────────────────────────────
-
-class _ActionBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _ActionBtn({required this.icon, required this.label,
-      required this.color, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-            fontWeight: FontWeight.w600, color: color)),
-      ]),
-    ),
+      const Spacer(),
+      Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 20, fontWeight: FontWeight.w700, color: kDashInk)),
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+    ]),
   );
 }

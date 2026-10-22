@@ -10,6 +10,8 @@ import { useAuth } from '@/lib/auth-context';
 import {
   ANNONCE_OBJET_TRANSACTIONS, ANNONCE_OBJET_ETATS, categorieLabel,
 } from '@/lib/annonce-objet-categories';
+import { Icone, Puce, BORDURE } from '@/components/dashboard/kit';
+import { TEINTES_STATUT } from '@/components/annonces/GestionAnnonces';
 
 interface AnnonceObjet {
   id: string;
@@ -93,64 +95,96 @@ export default function AnnonceObjetDetailPage() {
     } catch { setSending(false); }
   }
 
+  const statut = a.statut === 'pause' ? { label: 'En pause', t: TEINTES_STATUT.gris } : { label: 'En ligne', t: TEINTES_STATUT.vert };
+  const bouton = 'inline-flex items-center justify-center gap-2 rounded-xl text-sm font-semibold transition-colors min-h-11 px-4';
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8 pb-16">
-      <Link href="/annonces/objets" className="text-sm text-[#0C5C6C] hover:underline">← Matériel & équipements</Link>
+    <div className="min-h-screen bg-[#F6F7F5]" style={{ fontFamily: 'Galey, sans-serif' }}>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
+        <Link href="/annonces/objets" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#0C5C6C] hover:underline mb-4">
+          <span className="rotate-180 inline-flex"><Icone nom="fleche" taille={16} /></span> Matériel & équipements
+        </Link>
 
-      {photos.length > 0 && (
-        <div className="mt-3">
-          <div className="aspect-[4/3] bg-[#EEF3F0] rounded-2xl overflow-hidden">
-            <img src={photos[photoIdx]} alt={a.titre} className="w-full h-full object-cover" />
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-5 lg:gap-8 items-start">
+          {/* Galerie */}
+          <div className="min-w-0">
+            {photos.length > 0 ? (
+              <>
+                <div className="aspect-[4/3] bg-[#EEF1EF] rounded-2xl overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photos[photoIdx]} alt={a.titre} className="w-full h-full object-contain" />
+                </div>
+                {photos.length > 1 && (
+                  <div className="grid grid-cols-4 sm:grid-cols-5 gap-2 mt-3">
+                    {photos.map((p, i) => (
+                      <button key={p} onClick={() => setPhotoIdx(i)} aria-label={`Photo ${i + 1}`}
+                        className={`aspect-[4/3] rounded-xl overflow-hidden bg-[#EEF1EF] ${i === photoIdx ? 'ring-2 ring-[#0C5C6C] ring-offset-2' : 'opacity-80 hover:opacity-100'}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="aspect-[4/3] bg-[#EEF1EF] rounded-2xl flex items-center justify-center text-[#0C5C6C]"><Icone nom="caisse" taille={56} /></div>
+            )}
           </div>
-          {photos.length > 1 && (
-            <div className="flex gap-2 mt-2 overflow-x-auto">
-              {photos.map((p, i) => (
-                <button key={p} onClick={() => setPhotoIdx(i)}
-                  className={`w-16 h-16 rounded-lg overflow-hidden border-2 flex-shrink-0 ${i === photoIdx ? 'border-[#0C5C6C]' : 'border-transparent'}`}>
-                  <img src={p} alt="" className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
-      <div className="flex flex-wrap gap-2 mt-4">
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C]">
-          {categorieLabel(a.categorie)}
-        </span>
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#6E9E57]/10 text-[#6E9E57]">
-          {ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}
-        </span>
-        {a.etat && (
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-            {ANNONCE_OBJET_ETATS[a.etat] ?? a.etat}
-          </span>
+          {/* Résumé, vendeur, informations */}
+          <div className="min-w-0 space-y-4">
+            <div>
+              <div className="flex items-start justify-between gap-4">
+                <h1 className="text-[28px] sm:text-4xl font-bold text-[#1E2025] leading-tight break-words min-w-0">{a.titre}</h1>
+                <p className="text-2xl sm:text-3xl font-bold text-[#0C5C6C] tabular-nums text-right flex-shrink-0">{prixLabel(a)}</p>
+              </div>
+              <p className="text-base text-gray-600 mt-1">{[categorieLabel(a.categorie), a.ville].filter(Boolean).join(' · ')}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <Puce texte={statut.label} fg={statut.t.fg} bg={statut.t.bg} point />
+                <Puce texte={ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'} fg="#41525A" bg="#FFFFFF" />
+              </div>
+            </div>
+
+            {/* Vendeur : contact jamais proposé au propriétaire (la gestion est dans « Mes annonces »). */}
+            <section className="bg-white rounded-2xl p-5" style={{ border: `1px solid ${BORDURE}` }}>
+              <p className="text-sm font-semibold text-gray-500 mb-1">Vendeur</p>
+              <p className="font-bold text-lg text-[#1E2025]">{a.nom_vendeur ?? 'Particulier'}</p>
+              {(a.ville || a.code_postal) && <p className="text-sm text-gray-500 inline-flex items-center gap-1"><Icone nom="pin" taille={14} />{[a.ville, a.code_postal].filter(Boolean).join(' · ')}</p>}
+              {!isOwner && (
+                <button onClick={contact} disabled={sending || sent}
+                  className={`${bouton} w-full mt-4 bg-[#0C5C6C] hover:bg-[#094F5D] text-white disabled:opacity-60`}>
+                  <Icone nom="enveloppe" taille={17} />
+                  {!user ? 'Se connecter pour contacter' : sent ? 'Message envoyé' : sending ? 'Envoi…' : 'Contacter le vendeur'}
+                </button>
+              )}
+            </section>
+
+            <section className="bg-white rounded-2xl p-5" style={{ border: `1px solid ${BORDURE}` }}>
+              <h2 className="font-bold text-lg text-[#1E2025] mb-1">Informations</h2>
+              <dl className="text-[15px]">
+                {[
+                  ['Catégorie', categorieLabel(a.categorie)],
+                  ['Transaction', ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'],
+                  ['État', a.etat ? (ANNONCE_OBJET_ETATS[a.etat] ?? a.etat) : null],
+                  ['Lieu', [a.ville, a.code_postal].filter(Boolean).join(' · ') || null],
+                  ['Publiée le', a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : null],
+                ].filter(([, v]) => v).map(([k, v]) => (
+                  <div key={k} className="grid grid-cols-[minmax(0,9rem)_1fr] gap-3 py-1.5">
+                    <dt className="text-gray-500">{k}</dt><dd className="text-[#1E2025] break-words">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          </div>
+        </div>
+
+        {a.description && (
+          <section className="bg-white rounded-2xl p-5 sm:p-6 mt-6 sm:mt-8" style={{ border: `1px solid ${BORDURE}` }}>
+            <h2 className="font-bold text-lg sm:text-xl text-[#1E2025] mb-3">Description</h2>
+            <p className="text-[15px] text-[#41525A] leading-relaxed whitespace-pre-line">{a.description}</p>
+          </section>
         )}
       </div>
-
-      <h1 className="text-2xl font-bold text-[#1F2A2E] mt-3" style={{ fontFamily: 'Galey, sans-serif' }}>{a.titre}</h1>
-      <p className="text-xl font-bold text-[#0C5C6C] mt-1">{prixLabel(a)}</p>
-
-      {a.description && <p className="text-[#2C3A40] text-sm leading-relaxed whitespace-pre-line mt-4">{a.description}</p>}
-
-      <div className="text-sm text-gray-500 mt-4 space-y-1">
-        {(a.ville || a.code_postal) && <p>{[a.ville, a.code_postal].filter(Boolean).join(' · ')}</p>}
-        <p>{a.nom_vendeur ?? 'Particulier'}{a.created_at ? ` · ${new Date(a.created_at).toLocaleDateString('fr-FR')}` : ''}</p>
-      </div>
-
-      {isOwner ? (
-        <Link href={`/annonces/creer-objet?edit=${a.id}`}
-          className="block w-full text-center mt-6 py-3.5 rounded-2xl border border-[#0C5C6C] text-[#0C5C6C] font-bold hover:bg-[#E8F4F6] transition-colors">
-          Modifier mon annonce
-        </Link>
-      ) : (
-        <button onClick={contact} disabled={sending || sent}
-          className="w-full mt-6 py-3.5 rounded-2xl text-white font-bold disabled:opacity-60"
-          style={{ background: '#0C5C6C', fontFamily: 'Galey, sans-serif' }}>
-          {sent ? 'Message envoyé' : sending ? 'Envoi…' : 'Contacter le vendeur'}
-        </button>
-      )}
     </div>
   );
 }

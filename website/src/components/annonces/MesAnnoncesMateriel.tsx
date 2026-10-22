@@ -4,11 +4,11 @@
 // (modifier, pause / activer, supprimer).
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { categorieLabel, ANNONCE_OBJET_TRANSACTIONS } from '@/lib/annonce-objet-categories';
-import { Icone, Puce, BORDURE, OMBRE } from '@/components/dashboard/kit';
+import { Puce } from '@/components/dashboard/kit';
+import { CarteAnnonce, EtatVide, Chargement, correspondRecherche, TEINTES_STATUT } from '@/components/annonces/GestionAnnonces';
 
 interface AnnonceObjet {
   id: string;
@@ -33,8 +33,9 @@ function prixLabel(a: AnnonceObjet): string {
 }
 const boostActif = (s: string | null) => !!s && new Date(s) > new Date();
 
-/** `statut` : filtre de statut commun de la page ('toutes', 'disponible', 'pause'…). */
-export default function MesAnnoncesMateriel({ statut = 'toutes', onCompte }: { statut?: string; onCompte?: (n: number) => void }) {
+/** `statut` : filtre de statut commun de la page ('toutes', 'disponible', 'pause'…) ;
+ *  `recherche` : texte de la barre de recherche (titre, catégorie). */
+export default function MesAnnoncesMateriel({ statut = 'toutes', recherche = '', onCompte }: { statut?: string; recherche?: string; onCompte?: (n: number) => void }) {
   const { user, activeProfileId } = useAuth();
   const [rows, setRows] = useState<AnnonceObjet[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -71,65 +72,44 @@ export default function MesAnnoncesMateriel({ statut = 'toutes', onCompte }: { s
     setBusy(null);
   }
 
-  if (rows === null) {
-    return <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
-  }
-  const liste = statut === 'toutes' ? rows : rows.filter(a => (a.statut ?? 'disponible') === statut);
+  if (rows === null) return <Chargement />;
+  const liste = (statut === 'toutes' ? rows : rows.filter(a => (a.statut ?? 'disponible') === statut))
+    .filter(a => correspondRecherche(recherche, a.titre, categorieLabel(a.categorie)));
 
   if (liste.length === 0) {
-    return (
-      <div className={`bg-white rounded-2xl p-8 text-center ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
-        <span className="w-11 h-11 mx-auto mb-2 rounded-full bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center"><Icone nom="caisse" /></span>
-        {/* Pas de bouton ici : « Publier une annonce » (bouton principal de
-            Mes annonces) propose déjà « Matériel & équipements ». */}
-        <p className="text-sm text-gray-500">
-          {statut === 'toutes' ? 'Aucune annonce de matériel ou d’équipement pour le moment.' : 'Aucune annonce de matériel avec ce statut.'}
-        </p>
-      </div>
-    );
+    if (rows.length === 0) return null; // « Aucune annonce » est affiché par la rubrique.
+    return <EtatVide icone="caisse" texte={recherche.trim() ? 'Aucune annonce de matériel ne correspond à la recherche.' : 'Aucune annonce de matériel avec ce statut.'} />;
   }
 
   return (
-    <div className="space-y-2.5">
-      {liste.map(a => (
-        <div key={a.id} className={`bg-white rounded-2xl ${OMBRE}`} style={{ border: `1px solid ${BORDURE}` }}>
-          <Link href={`/annonces/objets/${a.id}`} className="flex items-center gap-3 sm:gap-4 p-3">
-            <div className="w-16 h-16 rounded-xl overflow-hidden bg-[#E8F4F6] text-[#0C5C6C] flex-shrink-0 flex items-center justify-center">
-              {a.photos?.[0]
-                // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={a.photos[0]} alt="" className="w-full h-full object-cover" />
-                : <Icone nom="caisse" taille={24} />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-[#1E2025] text-[15px] truncate">{a.titre}</p>
-              <p className="text-xs text-gray-500 truncate">
-                {categorieLabel(a.categorie)} · {ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}
-              </p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-                {a.statut === 'pause'
-                  ? <Puce texte="En pause" fg="#6B7280" bg="#F3F4F6" point />
-                  : <Puce texte="En ligne" fg="#2F7D3A" bg="#EAF5EC" point />}
-                {boostActif(a.boost_until) && <Puce texte="Boostée" fg="#B45309" bg="#FEF3C7" icone="eclair" />}
-                <span className="inline-flex items-center gap-1 text-xs text-gray-500 tabular-nums"><Icone nom="oeil" taille={14} />{a.vues ?? 0}</span>
-                <span className="inline-flex items-center gap-1 text-xs text-gray-500 tabular-nums"><Icone nom="enveloppe" taille={14} />{a.contacts ?? 0}</span>
-              </div>
-            </div>
-            <span className="text-sm font-bold text-[#0C5C6C] whitespace-nowrap self-start sm:self-center">{prixLabel(a)}</span>
-          </Link>
-          <div className="flex items-center gap-2 px-3 py-2 border-t border-[#EEF0EE]">
-            <Link href={`/annonces/creer-objet?edit=${a.id}`}
-              className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#E8F4F6] transition-colors">Modifier</Link>
-            <button onClick={() => togglePause(a)} disabled={busy === a.id}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 border border-gray-200 px-3 py-1.5 rounded-lg hover:border-[#0C5C6C]/40 disabled:opacity-50">
-              <Icone nom={a.statut === 'pause' ? 'lecture' : 'pause'} taille={13} />{a.statut === 'pause' ? 'Activer' : 'Mettre en pause'}
-            </button>
-            <button onClick={() => remove(a)} disabled={busy === a.id} aria-label="Supprimer" title="Supprimer"
-              className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 border border-red-100 px-3 py-1.5 rounded-lg hover:bg-red-50 disabled:opacity-50">
-              <Icone nom="corbeille" taille={13} />Supprimer
-            </button>
-          </div>
-        </div>
-      ))}
+    <div className="space-y-3">
+      {liste.map(a => {
+        const pause = a.statut === 'pause';
+        const t = TEINTES_STATUT[pause ? 'gris' : 'vert'];
+        return (
+          <CarteAnnonce key={a.id} href={`/annonces/objets/${a.id}`} photo={a.photos?.[0]} iconeVide="caisse"
+            titre={a.titre}
+            sousTitre={`${categorieLabel(a.categorie)} · ${ANNONCE_OBJET_TRANSACTIONS[a.type_transaction] ?? 'Vente'}`}
+            etiquettes={<>
+              <Puce texte={pause ? 'En pause' : 'En ligne'} fg={t.fg} bg={t.bg} point />
+              {boostActif(a.boost_until) && <Puce texte="Boostée" fg="#B45309" bg="#FEF3C7" icone="eclair" />}
+            </>}
+            prix={prixLabel(a)}
+            indicateurs={[
+              { icone: 'oeil', texte: `${a.vues ?? 0} vue${(a.vues ?? 0) > 1 ? 's' : ''}` },
+              { icone: 'enveloppe', texte: `${a.contacts ?? 0} contact${(a.contacts ?? 0) > 1 ? 's' : ''}` },
+              ...(a.created_at ? [{ icone: 'calendrier', texte: new Date(a.created_at).toLocaleDateString('fr-FR') }] : []),
+            ]}
+            principales={[
+              { label: 'Voir', icone: 'oeil', href: `/annonces/objets/${a.id}` },
+              { label: 'Modifier', icone: 'crayon', href: `/annonces/creer-objet?edit=${a.id}` },
+            ]}
+            menu={[
+              { label: pause ? 'Activer' : 'Mettre en pause', icone: pause ? 'lecture' : 'pause', disabled: busy === a.id, onClick: () => togglePause(a) },
+              { label: 'Supprimer', icone: 'corbeille', danger: true, disabled: busy === a.id, onClick: () => remove(a) },
+            ]} />
+        );
+      })}
     </div>
   );
 }

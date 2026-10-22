@@ -4,7 +4,9 @@ import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausib
 import { enregistrerModificationAnnonce } from '@/lib/annonce-paiement';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import {
+  PageFormulaire, SectionFormulaire, Champ, Colonnes, CaseACocher, GrillePhotos, classeChamp, styleChamp,
+} from '@/components/annonces/FormulaireAnnonce';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
@@ -72,12 +74,11 @@ function CreerAnnonceChevalInner() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [erreurs, setErreurs] = useState<Record<string, string>>({});
   // Statut de paiement de l'annonce en cours d'édition ('paye' = déjà publiée
   // et payée → édition simple ; sinon on (re)passe par le paiement).
   const [paiementStatut, setPaiementStatut] = useState<string | null>(null);
 
-  const iCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
-  const iSm = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
 
   useEffect(() => {
     fetch('/breeds/horse_breeds.json').then(r => r.json()).then(d => setBreeds(d as string[])).catch(() => setBreeds([]));
@@ -186,14 +187,16 @@ function CreerAnnonceChevalInner() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setError('');
     const priced = formule !== 'valorisation';
-    if (!titre.trim()) { setError('Un titre est requis.'); return; }
     const erreurDate = erreurNaissanceAnimal(dateNaissance, 'cheval');
-    if (erreurDate) { setError(erreurDate); return; }
-    if (numSIRE.trim().length < 6) { setError('Le n° SIRE est obligatoire (Décret 2013-879).'); return; }
-    if (existingPhotos.length + croppedBlobs.length === 0) { setError('Ajoutez au moins une photo.'); return; }
-    if (priced && prixUnite !== 'convenir' && (!prix || isNaN(Number(prix)))) {
-      setError('Indiquez un prix (ou passez en « à convenir »).'); return;
-    }
+    const ec: Record<string, string> = {};
+    if (!titre.trim()) ec.titre = 'Un titre est requis.';
+    if (erreurDate) ec.naissance = erreurDate;
+    if (numSIRE.trim().length < 6) ec.sire = 'Le n° SIRE est obligatoire (Décret 2013-879).';
+    if (existingPhotos.length + croppedBlobs.length === 0) ec.photos = 'Ajoutez au moins une photo.';
+    if (priced && prixUnite !== 'convenir' && (!prix || isNaN(Number(prix)))) ec.prix = 'Indiquez un prix (ou passez en « à convenir »).';
+    setErreurs(ec);
+    const premiere = Object.values(ec)[0];
+    if (premiere) { setError(premiere); return; }
     setSaving(true);
     try {
       const pid = activeProfileId || null;
@@ -316,224 +319,177 @@ function CreerAnnonceChevalInner() {
   }
 
   const showCadence = formule === 'location' || formule === 'demi_pension' || formule === 'pension_complete';
-  const allPreviews = [...existingPhotos, ...previews];
+
+  const choix = (actif: boolean) => `min-h-10 px-3.5 rounded-xl text-sm font-semibold border transition-colors ${actif ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-700 hover:border-[#0C5C6C]/50'}`;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-10">
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/mes-annonces" className="text-sm text-[#0C5C6C] hover:underline">← Mes annonces</Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-xl font-bold text-[#1F2A2E]">{editId ? 'Modifier l\'annonce' : 'Annonce cheval'}</h1>
-      </div>
+    <>
+    <PageFormulaire retourHref="/mes-annonces" titre={editId ? 'Modifier l’annonce' : 'Annonce cheval'}
+      sousTitre="Les champs marqués d’un astérisque sont obligatoires."
+      erreur={error} onSubmit={handleSubmit} annulerHref="/mes-annonces" enregistrement={saving}
+      libelleEnregistrer={paiementStatut === 'paye' ? 'Enregistrer les modifications' : 'Payer et publier — 4,99 €'}>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <form onSubmit={handleSubmit} className="space-y-5">
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Formule</label>
-            <div className="grid grid-cols-2 gap-2">
-              {FORMULES.map(([v, l]) => (
-                <button key={v} type="button" onClick={() => selectFormule(v)}
-                  className={`py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
-                    formule === v ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C]' : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}>{l}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mon cheval <span className="text-gray-400 font-normal">(optionnel)</span></label>
-            <button type="button"
-              onClick={async () => { if (!showPicker) await loadMyHorses(); setShowPicker(!showPicker); }}
-              className="w-full flex items-center gap-2 px-3 py-2.5 border border-[#0C5C6C] text-[#0C5C6C] rounded-xl text-sm font-medium hover:bg-[#E8F4F6]">
-              <span>🐴</span><span>{linkedNom ? `Lié : ${linkedNom}` : 'Lier un de mes chevaux'}</span>
-            </button>
-            {showPicker && (
-              <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
-                {myHorses.length === 0
-                  ? <p className="text-sm text-gray-400 text-center py-4">Aucun cheval — saisie libre ci-dessous.</p>
-                  : myHorses.map(h => (
-                    <button key={h.id} type="button" onClick={() => pickHorse(h)}
-                      className="w-full text-left px-3 py-2.5 hover:bg-[#E8F4F6] border-b border-gray-50 last:border-0">
-                      <p className="text-sm font-semibold text-gray-800">{h.nom || 'Sans nom'}</p>
-                      {h.race && <p className="text-xs text-gray-400">{h.race}</p>}
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Titre</label>
-            <input value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex : Jument PS, 8 ans, prête club 1" className={iCls} />
-          </div>
-
-          {formule !== 'valorisation' && (
-            <div className="flex gap-3 items-end">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Prix (€)</label>
-                <input type="number" min="0" value={prix} onChange={e => setPrix(e.target.value)}
-                  disabled={prixUnite === 'convenir'} placeholder={prixUnite === 'convenir' ? 'À convenir' : '800'} className={iCls} />
-              </div>
-              {showCadence && (
-                <select value={prixUnite} onChange={e => setPrixUnite(e.target.value as Cadence)} className={iSm + ' w-32'}>
-                  <option value="mois">/ mois</option>
-                  <option value="semaine">/ semaine</option>
-                  <option value="convenir">à convenir</option>
-                </select>
-              )}
-            </div>
-          )}
-          {formule !== 'valorisation' && (
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={prixNegociable} onChange={e => setPrixNegociable(e.target.checked)} />
-              Prix négociable
-            </label>
-          )}
-
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Race</label>
-              <input value={race} onChange={e => setRace(e.target.value)} list="horse-breeds" placeholder="Selle Français, PS…" className={iCls} />
-              <datalist id="horse-breeds">{breeds.map(b => <option key={b} value={b} />)}</datalist>
-            </div>
-            <div className="w-36">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sexe</label>
-              <select value={sexe} onChange={e => setSexe(e.target.value as typeof sexe)} className={iCls}>
-                <option value="jument">Jument</option>
-                <option value="hongre">Hongre</option>
-                <option value="entier">Entier</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Robe</label>
-              <input value={robe} onChange={e => setRobe(e.target.value)} placeholder="Bai, alezan…" className={iCls} />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Couleur des yeux</label>
-              <input value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} placeholder="Marron, bleu…" className={iCls} />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>
-              <input type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={iCls}
-                min={bornesNaissanceAnimal('cheval').min} max={bornesNaissanceAnimal('cheval').max} />
-            </div>
-          </div>
-
-          <div className="border border-amber-200 bg-amber-50 rounded-xl p-4">
-            <label className="block text-xs font-semibold text-amber-800 mb-1">Numéro SIRE <span className="text-red-500">*</span></label>
-            <input value={numSIRE} onChange={e => setNumSIRE(e.target.value)} placeholder="250 00X XXX XXX XXX"
-              className={`${iCls} ${numSIRE.trim().length < 6 ? 'border-amber-300' : 'border-[#6E9E57]'}`} />
-            <p className="text-xs text-amber-700 mt-1">Obligatoire pour tout équidé (Décret n°2013-879).</p>
-          </div>
-
-          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
-            <p className="text-sm font-semibold text-gray-700">🏆 Niveau &amp; résultats</p>
-            <div className="flex flex-wrap gap-2">
-              {NIVEAUX.map(n => (
-                <button key={n} type="button" onClick={() => setNiveau(niveau === n ? '' : n)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    niveau === n ? 'border-[#0C5C6C] bg-[#0C5C6C] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}>{n}</button>
-              ))}
-            </div>
-            <textarea value={palmares} onChange={e => setPalmares(e.target.value)} rows={3}
-              placeholder="Palmarès / résultats (optionnel)" className={`${iSm} resize-none`} />
-            <div className="flex gap-3">
-              <input type="number" value={iso} onChange={e => setIso(e.target.value)} placeholder="ISO" className={iSm} />
-              <input type="number" value={idr} onChange={e => setIdr(e.target.value)} placeholder="IDR" className={iSm} />
-              <input type="number" value={icc} onChange={e => setIcc(e.target.value)} placeholder="ICC" className={iSm} />
-            </div>
-          </div>
-
-          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
-            <p className="text-sm font-semibold text-gray-700">🎬 Vidéos</p>
-            {([['monte', 'Sous selle', videoMonteUrl] as const, ['libre', 'En liberté', videoLibreUrl] as const]).map(([which, label, url]) => (
-              <div key={which}>
-                <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                {url ? (
-                  <div className="flex items-center gap-2">
-                    <video src={url} controls className="w-40 rounded-lg border border-gray-200" />
-                    <button type="button" onClick={() => which === 'monte' ? setVideoMonteUrl(null) : setVideoLibreUrl(null)}
-                      className="text-xs text-red-500 hover:text-red-700 font-medium">Retirer</button>
-                  </div>
-                ) : (
-                  <label className="inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 cursor-pointer hover:border-[#0C5C6C] hover:text-[#0C5C6C]">
-                    {uploadingVideo === which ? 'Envoi…' : '＋ Ajouter une vidéo'}
-                    <input type="file" accept="video/*" className="hidden" disabled={uploadingVideo !== null}
-                      onChange={e => handleVideo(e, which)} />
-                  </label>
-                )}
-              </div>
+      <SectionFormulaire titre="Informations principales">
+        <Champ label="Formule">
+          <div className="flex flex-wrap gap-2">
+            {FORMULES.map(([v, l]) => (
+              <button key={v} type="button" onClick={() => selectFormule(v)} aria-pressed={formule === v}
+                className={choix(formule === v)} style={formule === v ? undefined : styleChamp}>{l}</button>
             ))}
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Photos <span className="text-gray-400 font-normal">(max {MAX_PHOTOS})</span></label>
-            <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-6 cursor-pointer text-gray-400 hover:text-[#0C5C6C]">
-              <span className="text-2xl">📷</span><span className="text-sm font-medium">Choisir des photos</span>
-              <input type="file" accept="image/*" multiple onChange={handlePhotos} className="hidden" />
-            </label>
-            {allPreviews.length > 0 && (
-              <div className="flex gap-2 mt-3 flex-wrap">
-                {allPreviews.map((p, i) => (
-                  <div key={i} className="relative w-16 h-16 rounded-xl overflow-hidden border border-gray-200">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p} alt="" className="w-full h-full object-cover" />
-                    <button type="button"
-                      onClick={() => {
-                        if (i < existingPhotos.length) setExistingPhotos(prev => prev.filter((_, j) => j !== i));
-                        else {
-                          const k = i - existingPhotos.length;
-                          setCroppedBlobs(prev => prev.filter((_, j) => j !== k));
-                          setPreviews(prev => prev.filter((_, j) => j !== k));
-                        }
-                      }}
-                      className="absolute top-0.5 right-0.5 w-4 h-4 bg-black/60 rounded-full text-white text-xs leading-none">×</button>
-                  </div>
+        </Champ>
+        <div className="relative">
+          <Champ label="Mon cheval" aide="Facultatif : relie l’annonce à la fiche de votre cheval.">
+            <button type="button"
+              onClick={async () => { if (!showPicker) await loadMyHorses(); setShowPicker(!showPicker); }}
+              className="min-h-11 w-full rounded-xl text-sm font-semibold text-[#0C5C6C] bg-white hover:bg-[#E8F4F6] text-left px-3.5"
+              style={{ border: '1px solid rgba(12,92,108,0.45)' }}>
+              {linkedNom ? `Lié : ${linkedNom}` : 'Lier un de mes chevaux'}
+            </button>
+          </Champ>
+          {showPicker && (
+            <div className="absolute z-20 left-0 right-0 mt-1 bg-white rounded-xl shadow-lg max-h-56 overflow-y-auto" style={styleChamp}>
+              {myHorses.length === 0
+                ? <p className="text-sm text-gray-500 text-center py-4">Aucun cheval : saisie libre ci-dessous.</p>
+                : myHorses.map(h => (
+                  <button key={h.id} type="button" onClick={() => pickHorse(h)}
+                    className="w-full text-left px-3.5 py-2.5 hover:bg-[#F3F6F5]">
+                    <p className="text-sm font-semibold text-[#1E2025]">{h.nom || 'Sans nom'}</p>
+                    {h.race && <p className="text-xs text-gray-500">{h.race}</p>}
+                  </button>
                 ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
-              placeholder="Caractère, aptitudes, conditions…" className={`${iCls} resize-none`} />
-          </div>
-
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-
-          {paiementStatut !== 'paye' && (
-            <p className="text-xs text-gray-500 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
-              Publier une annonce cheval est payant&nbsp;: <b>4,99&nbsp;€</b>, visible 60&nbsp;jours.
-              Le paiement sécurisé se fait juste après.
-            </p>
+            </div>
           )}
+        </div>
+        <Champ label="Titre" requis htmlFor="titre" erreur={erreurs.titre}>
+          <input id="titre" value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex : Jument PS, 8 ans, prête club 1" className={classeChamp} style={styleChamp} />
+        </Champ>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Champ label="Race" htmlFor="race">
+            <input id="race" value={race} onChange={e => setRace(e.target.value)} list="horse-breeds" placeholder="Selle Français, PS…" className={classeChamp} style={styleChamp} />
+            <datalist id="horse-breeds">{breeds.map(b => <option key={b} value={b} />)}</datalist>
+          </Champ>
+          <Champ label="Sexe" htmlFor="sexe">
+            <select id="sexe" value={sexe} onChange={e => setSexe(e.target.value as typeof sexe)} className={classeChamp} style={styleChamp}>
+              <option value="jument">Jument</option>
+              <option value="hongre">Hongre</option>
+              <option value="entier">Entier</option>
+            </select>
+          </Champ>
+          <Champ label="Date de naissance" htmlFor="naissance" erreur={erreurs.naissance}>
+            <input id="naissance" type="date" value={dateNaissance} onChange={e => setDateNaissance(e.target.value)} className={classeChamp} style={styleChamp}
+              min={bornesNaissanceAnimal('cheval').min} max={bornesNaissanceAnimal('cheval').max} />
+          </Champ>
+        </div>
+      </SectionFormulaire>
 
-          <button type="submit" disabled={saving}
-            className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors">
-            {saving
-              ? 'Un instant…'
-              : paiementStatut === 'paye'
-                ? 'Enregistrer'
-                : 'Payer et publier — 4,99 €'}
-          </button>
-        </form>
-      </div>
+      <SectionFormulaire titre="Photos et médias">
+        <Champ label="Photos" requis erreur={erreurs.photos} aide={`Jusqu’à ${MAX_PHOTOS} photos, recadrées au format carré.`}>
+          <GrillePhotos max={MAX_PHOTOS}
+            photos={[...existingPhotos.map((u, i) => ({ url: u, cle: `e${i}${u}` })), ...previews.map((u, i) => ({ url: u, cle: `n${i}` }))]}
+            onAjouter={handlePhotos}
+            onRetirer={i => {
+              if (i < existingPhotos.length) { setExistingPhotos(prev => prev.filter((_, j) => j !== i)); return; }
+              const k = i - existingPhotos.length;
+              setCroppedBlobs(prev => prev.filter((_, j) => j !== k));
+              setPreviews(prev => prev.filter((_, j) => j !== k));
+            }} />
+        </Champ>
+        <Colonnes>
+          {([['monte', 'Vidéo sous selle', videoMonteUrl] as const, ['libre', 'Vidéo en liberté', videoLibreUrl] as const]).map(([which, label, url]) => (
+            <Champ key={which} label={label} aide="Fichier vidéo, 60 Mo maximum.">
+              {url ? (
+                <div className="flex items-center gap-3">
+                  <video src={url} controls className="w-48 rounded-xl" style={styleChamp} />
+                  <button type="button" onClick={() => which === 'monte' ? setVideoMonteUrl(null) : setVideoLibreUrl(null)}
+                    className="text-sm font-semibold text-[#B91C1C] hover:underline">Retirer</button>
+                </div>
+              ) : (
+                <label className="min-h-11 inline-flex items-center gap-2 px-4 rounded-xl border border-dashed text-sm font-semibold text-gray-600 cursor-pointer hover:border-[#0C5C6C] hover:text-[#0C5C6C]" style={styleChamp}>
+                  {uploadingVideo === which ? 'Envoi…' : 'Ajouter une vidéo'}
+                  <input type="file" accept="video/*" className="hidden" disabled={uploadingVideo !== null}
+                    onChange={e => handleVideo(e, which)} />
+                </label>
+              )}
+            </Champ>
+          ))}
+        </Colonnes>
+      </SectionFormulaire>
 
-      {cropSrc && (
-        <ImageCropModal src={cropSrc} aspect={1} title="Recadrer la photo"
-          onConfirm={handleCropConfirm}
-          onCancel={() => {
-            if (cropSrc) URL.revokeObjectURL(cropSrc);
-            setCropQueue(q => { if (q.length) { setCropSrc(URL.createObjectURL(q[0])); return q.slice(1); } setCropSrc(null); return []; });
-          }} />
+      <SectionFormulaire titre="Description">
+        <Champ label="Présentation" htmlFor="description">
+          <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={5}
+            placeholder="Caractère, aptitudes, conditions…" className={`${classeChamp} resize-y`} style={styleChamp} />
+        </Champ>
+      </SectionFormulaire>
+
+      <SectionFormulaire titre="Caractéristiques et identification">
+        <Colonnes>
+          <Champ label="Robe" htmlFor="robe">
+            <input id="robe" value={robe} onChange={e => setRobe(e.target.value)} placeholder="Bai, alezan…" className={classeChamp} style={styleChamp} />
+          </Champ>
+          <Champ label="Couleur des yeux" htmlFor="yeux">
+            <input id="yeux" value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} placeholder="Marron, bleu…" className={classeChamp} style={styleChamp} />
+          </Champ>
+        </Colonnes>
+        <Champ label="Numéro SIRE" requis htmlFor="sire" erreur={erreurs.sire} aide="Obligatoire pour tout équidé (décret n° 2013-879).">
+          <input id="sire" value={numSIRE} onChange={e => setNumSIRE(e.target.value)} placeholder="250 00X XXX XXX XXX" className={classeChamp} style={styleChamp} />
+        </Champ>
+        <Champ label="Niveau recommandé">
+          <div className="flex flex-wrap gap-2">
+            {NIVEAUX.map(n => (
+              <button key={n} type="button" onClick={() => setNiveau(niveau === n ? '' : n)} aria-pressed={niveau === n}
+                className={choix(niveau === n)} style={niveau === n ? undefined : styleChamp}>{n}</button>
+            ))}
+          </div>
+        </Champ>
+        <Champ label="Palmarès / résultats" htmlFor="palmares" aide="Facultatif.">
+          <textarea id="palmares" value={palmares} onChange={e => setPalmares(e.target.value)} rows={3} className={`${classeChamp} resize-y`} style={styleChamp} />
+        </Champ>
+        <div className="grid grid-cols-3 gap-3">
+          <Champ label="ISO" htmlFor="iso"><input id="iso" type="number" value={iso} onChange={e => setIso(e.target.value)} className={classeChamp} style={styleChamp} /></Champ>
+          <Champ label="IDR" htmlFor="idr"><input id="idr" type="number" value={idr} onChange={e => setIdr(e.target.value)} className={classeChamp} style={styleChamp} /></Champ>
+          <Champ label="ICC" htmlFor="icc"><input id="icc" type="number" value={icc} onChange={e => setIcc(e.target.value)} className={classeChamp} style={styleChamp} /></Champ>
+        </div>
+      </SectionFormulaire>
+
+      {formule !== 'valorisation' && (
+        <SectionFormulaire titre="Prix et conditions">
+          <Colonnes>
+            <Champ label="Prix (€)" requis={prixUnite !== 'convenir'} htmlFor="prix" erreur={erreurs.prix}>
+              <input id="prix" type="number" min="0" inputMode="decimal" value={prix} onChange={e => setPrix(e.target.value)}
+                disabled={prixUnite === 'convenir'} placeholder={prixUnite === 'convenir' ? 'À convenir' : '800'} className={`${classeChamp} disabled:bg-gray-50`} style={styleChamp} />
+            </Champ>
+            {showCadence && (
+              <Champ label="Cadence" htmlFor="cadence">
+                <select id="cadence" value={prixUnite} onChange={e => setPrixUnite(e.target.value as Cadence)} className={classeChamp} style={styleChamp}>
+                  <option value="mois">par mois</option>
+                  <option value="semaine">par semaine</option>
+                  <option value="convenir">à convenir</option>
+                </select>
+              </Champ>
+            )}
+          </Colonnes>
+          <CaseACocher label="Prix négociable" checked={prixNegociable} onChange={setPrixNegociable} />
+        </SectionFormulaire>
       )}
-    </div>
+
+      {paiementStatut !== 'paye' && (
+        <p className="text-sm text-[#92400E] bg-[#FFFBEB] rounded-xl px-4 py-3" style={{ border: '1px solid #FDE68A' }}>
+          Publier une annonce cheval est payant : <b>4,99 €</b>, visible 60 jours. Le paiement sécurisé se fait juste après.
+        </p>
+      )}
+    </PageFormulaire>
+
+    {cropSrc && (
+      <ImageCropModal src={cropSrc} aspect={1} title="Recadrer la photo"
+        onConfirm={handleCropConfirm}
+        onCancel={() => {
+          if (cropSrc) URL.revokeObjectURL(cropSrc);
+          setCropQueue(q => { if (q.length) { setCropSrc(URL.createObjectURL(q[0])); return q.slice(1); } setCropSrc(null); return []; });
+        }} />
+    )}
+    </>
   );
 }
 

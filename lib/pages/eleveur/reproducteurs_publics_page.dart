@@ -206,6 +206,62 @@ class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
   }
 }
 
+// ── Accès depuis une annonce (parents) ───────────────────────────────────────
+
+const _selectFichePublique = 'id, nom, nom_pedigree, espece, espece_autre, race, sexe, '
+    'photo_url, date_naissance, couleur, couleur_yeux, pedigree_lof, pedigree_numero, '
+    'club_registre, description, is_retraite, '
+    'nb_petits_produits, historique_fertilite, profil_adn_etabli';
+
+/// Profil élevage dont la vitrine est consultable (mêmes règles que la page).
+Future<String?> _profilVitrine(String uidEleveur) async {
+  final prof = await Supabase.instance.client.from('user_profiles_complet')
+      .select('id, montre_reproducteurs, statut_pro')
+      .eq('uid', uidEleveur).eq('profile_type', 'eleveur').maybeSingle();
+  final id = prof?['id'] as String?;
+  if (id == null || prof?['montre_reproducteurs'] != true) return null;
+  final statut = (prof?['statut_pro'] ?? '').toString();
+  if (User_Info.uid != uidEleveur && statut != 'actif' && statut != 'validated') return null;
+  return id;
+}
+
+/// Parmi [ids], ceux dont la fiche publique de reproducteur est consultable
+/// (annonce → « Voir la fiche du parent »). Miroir site : fichesParents
+/// (app/annonces/[id]/page.tsx).
+Future<Set<String>> reproducteursPublicsVisibles(String uidEleveur, List<String> ids) async {
+  if (uidEleveur.isEmpty || ids.isEmpty) return {};
+  try {
+    final profileId = await _profilVitrine(uidEleveur);
+    if (profileId == null) return {};
+    final rows = await Supabase.instance.client.from('animaux').select('id')
+        .inFilter('id', ids).eq('profile_id', profileId).eq('uid_eleveur', uidEleveur)
+        .eq('reproducteur_public', true);
+    return {for (final r in rows as List) r['id'].toString()};
+  } catch (_) {
+    return {};
+  }
+}
+
+/// Ouvre la fiche publique (lecture seule) d'un reproducteur, en feuille :
+/// à la fermeture, l'annonce reste à sa position de défilement.
+Future<void> ouvrirFicheReproducteurPublic(BuildContext context,
+    {required String uidEleveur, required String animalId}) async {
+  final profileId = await _profilVitrine(uidEleveur);
+  if (profileId == null) return;
+  final a = await Supabase.instance.client.from('animaux').select(_selectFichePublique)
+      .eq('id', animalId).eq('profile_id', profileId).eq('uid_eleveur', uidEleveur)
+      .eq('reproducteur_public', true).maybeSingle();
+  if (a == null || !context.mounted) return;
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (_) => _ReproFichePublique(data: Map<String, dynamic>.from(a)),
+  );
+}
+
 // ── Utilitaires ──────────────────────────────────────────────────────────────
 
 String _ageLabel(dynamic raw) {
@@ -498,7 +554,7 @@ class _TestsBadgesState extends State<_TestsBadges> {
                 ? () => launchUrl(Uri.parse(t['lien_resultat'] as String), mode: LaunchMode.externalApplication)
                 : null,
             child: _chip(
-              '${_testChipLabel(t)}${(t['lien_resultat'] as String?)?.isNotEmpty == true ? ' 🔗' : ''}',
+              '${_testChipLabel(t)}${(t['lien_resultat'] as String?)?.isNotEmpty == true ? ' (résultat)' : ''}',
               resultatBg(t['resultat'] as String?),
               resultatColor(t['resultat'] as String?),
             ),

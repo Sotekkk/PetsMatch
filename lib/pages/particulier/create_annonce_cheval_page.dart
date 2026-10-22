@@ -1,3 +1,5 @@
+import 'package:PetsMatch/widgets/annonces/formulaire_annonce_kit.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:convert';
@@ -597,23 +599,23 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
     final priced = _typeVente != 'valorisation';
     final showCadence = const {'location', 'demi_pension', 'pension_complete'}.contains(_typeVente);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
+      backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         title: Text(widget.annonceId != null ? 'Modifier l\'annonce' : 'Annonce cheval',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        actions: [
-          _saving
-              ? const Padding(padding: EdgeInsets.all(14),
-                  child: SizedBox(width: 20, height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-              : TextButton(onPressed: _save,
-                  child: const Text('Publier', style: TextStyle(color: Colors.white,
-                      fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
-        ],
       ),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+      // Zone d'actions unique (l'ancien bouton « Publier » de la barre du haut faisait doublon).
+      bottomNavigationBar: FormActions(
+        saving: _saving,
+        libelle: widget.annonceId != null ? 'Enregistrer les modifications' : 'Publier l\'annonce',
+        onEnregistrer: _save,
+      ),
+      body: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), children: [
+       FormSection(titre: 'Informations principales', children: [
         _section('Type d\'annonce', child: Wrap(spacing: 8, runSpacing: 8, children: [
           for (final t in _types)
             ChoiceChip(
@@ -636,7 +638,6 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
             ),
         ])),
 
-        const SizedBox(height: 16),
         _section('Mon cheval (optionnel)', child: OutlinedButton.icon(
           onPressed: _selectAnimal,
           icon: const Icon(Icons.pets_outlined),
@@ -650,11 +651,100 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
           ),
         )),
 
-        const SizedBox(height: 16),
         _section('Titre', child: _tf(_titreCtrl, 'Ex : Jument PS, 8 ans, prête club 1')),
 
-        const SizedBox(height: 12),
-        if (priced) ...[
+        _section('Race', child: GestureDetector(
+          onTap: _breeds.isEmpty ? null : _pickBreed,
+          child: AbsorbPointer(
+            absorbing: _breeds.isNotEmpty,
+            child: _tf(_raceCtrl, _breeds.isEmpty ? 'Ex : Selle Français, PS, Poney…' : 'Choisir une race'),
+          ),
+        )),
+        _section('Sexe', child: DropdownButtonFormField<String>(
+          value: _sexe,
+          decoration: _deco(''),
+          items: const [
+            DropdownMenuItem(value: 'jument', child: Text('Jument', style: TextStyle(fontFamily: 'Galey'))),
+            DropdownMenuItem(value: 'hongre', child: Text('Hongre', style: TextStyle(fontFamily: 'Galey'))),
+            DropdownMenuItem(value: 'entier', child: Text('Entier', style: TextStyle(fontFamily: 'Galey'))),
+          ],
+          onChanged: (v) => setState(() => _sexe = v ?? 'hongre'),
+        )),
+        _section('Date de naissance', child: InkWell(
+          onTap: () async {
+            final d = await showDatePicker(
+              context: context,
+              initialDate: borner(_dateNaissance ?? DateTime(DateTime.now().year - 8), premiereNaissanceAnimal('cheval'), DateTime.now()),
+              firstDate: premiereNaissanceAnimal('cheval'),
+              lastDate: DateTime.now(),
+            );
+            if (d != null) setState(() => _dateNaissance = d);
+          },
+          child: InputDecorator(
+            decoration: _deco(''),
+            child: Text(
+              _dateNaissance == null ? 'Choisir…'
+                  : '${_dateNaissance!.day.toString().padLeft(2, '0')}/${_dateNaissance!.month.toString().padLeft(2, '0')}/${_dateNaissance!.year}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            ),
+          ),
+        )),
+       ]),
+       FormSection(titre: 'Photos et médias', children: [
+        _section('Photos (max $_maxPhotos)', child: Column(children: [
+          if (_photosUrls.isNotEmpty || _photosFiles.isNotEmpty)
+            SizedBox(height: 90, child: ListView(scrollDirection: Axis.horizontal, children: [
+              for (var i = 0; i < _photosUrls.length; i++)
+                _thumb(url: _photosUrls[i], onRemove: () => setState(() => _photosUrls.removeAt(i))),
+              for (var i = 0; i < _photosFiles.length; i++)
+                _thumb(file: _photosFiles[i], onRemove: () => setState(() => _photosFiles.removeAt(i))),
+            ])),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _addPhoto,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+            label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey')),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _teal, side: const BorderSide(color: kDashBorder),
+              minimumSize: const Size(double.infinity, 48)),
+          ),
+        ])),
+        _section('Vidéo sous selle', child: _videoSlot(_videoMonteUrl, monte: true)),
+        _section('Vidéo en liberté', child: _videoSlot(_videoLibreUrl, monte: false)),
+       ]),
+       FormSection(titre: 'Description', children: [
+        _tf(_descCtrl, 'Caractère, aptitudes, conditions…', maxLines: 5),
+       ]),
+       FormSection(titre: 'Caractéristiques et identification', children: [
+        _section('Robe', child: _tf(_couleurCtrl, 'Bai, alezan…')),
+        _section('Couleur des yeux', child: _tf(_couleurYeuxCtrl, 'Marron, bleu…')),
+        _section('N° SIRE', requis: true, aide: 'Obligatoire pour tout équidé (décret n° 2013-879).',
+            child: _tf(_sireCtrl, '250 00X XXX XXX XXX', keyboardType: TextInputType.number)),
+        _section('Niveau recommandé', child: Wrap(spacing: 8, runSpacing: 6, children: [
+          for (final n in _niveaux)
+            ChoiceChip(
+              label: Text(n, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              selected: _niveau == n,
+              onSelected: (_) => setState(() => _niveau = _niveau == n ? '' : n),
+              selectedColor: _teal,
+              labelStyle: TextStyle(color: _niveau == n ? Colors.white : Colors.black87),
+              backgroundColor: Colors.white,
+              side: BorderSide(color: _niveau == n ? _teal : Colors.grey.shade300),
+            ),
+        ])),
+
+        _section('Palmarès / résultats (optionnel)',
+            child: _tf(_palmaresCtrl, 'Ex : 3e Amateur 2 GP Lamotte 2025…', maxLines: 3)),
+
+        _section('Indices (optionnel)', child: Row(children: [
+          Expanded(child: _tf(_isoCtrl, 'ISO', keyboardType: TextInputType.number)),
+          const SizedBox(width: 8),
+          Expanded(child: _tf(_idrCtrl, 'IDR', keyboardType: TextInputType.number)),
+          const SizedBox(width: 8),
+          Expanded(child: _tf(_iccCtrl, 'ICC', keyboardType: TextInputType.number)),
+        ])),
+       ]),
+       if (priced) FormSection(titre: 'Prix et conditions', children: [
           _section(_typeVente == 'valorisation' ? 'Rémunération' : 'Prix', child: Row(children: [
             Expanded(child: _tf(_prixCtrl, _prixUnite == 'convenir' ? 'À convenir' : '€',
                 keyboardType: TextInputType.number, enabled: _prixUnite != 'convenir')),
@@ -677,131 +767,9 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               onChanged: (v) => setState(() => _prixNegociable = v ?? false),
             ),
-            const Text('Prix négociable', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const Text('Prix négociable', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
           ]),
-          const SizedBox(height: 4),
-        ],
-
-        _section('Race', child: GestureDetector(
-          onTap: _breeds.isEmpty ? null : _pickBreed,
-          child: AbsorbPointer(
-            absorbing: _breeds.isNotEmpty,
-            child: _tf(_raceCtrl, _breeds.isEmpty ? 'Ex : Selle Français, PS, Poney…' : 'Choisir une race'),
-          ),
-        )),
-
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: _section('Sexe', child: DropdownButtonFormField<String>(
-            value: _sexe,
-            decoration: _deco(''),
-            items: const [
-              DropdownMenuItem(value: 'jument', child: Text('Jument', style: TextStyle(fontFamily: 'Galey'))),
-              DropdownMenuItem(value: 'hongre', child: Text('Hongre', style: TextStyle(fontFamily: 'Galey'))),
-              DropdownMenuItem(value: 'entier', child: Text('Entier', style: TextStyle(fontFamily: 'Galey'))),
-            ],
-            onChanged: (v) => setState(() => _sexe = v ?? 'hongre'),
-          ))),
-          const SizedBox(width: 12),
-          Expanded(child: _section('Robe', child: _tf(_couleurCtrl, 'Bai, alezan…'))),
-          const SizedBox(width: 10),
-          Expanded(child: _section('Couleur des yeux', child: _tf(_couleurYeuxCtrl, 'Marron, bleu…'))),
-        ]),
-
-        const SizedBox(height: 12),
-        _section('Date de naissance', child: InkWell(
-          onTap: () async {
-            final d = await showDatePicker(
-              context: context,
-              initialDate: borner(_dateNaissance ?? DateTime(DateTime.now().year - 8), premiereNaissanceAnimal('cheval'), DateTime.now()),
-              firstDate: premiereNaissanceAnimal('cheval'),
-              lastDate: DateTime.now(),
-            );
-            if (d != null) setState(() => _dateNaissance = d);
-          },
-          child: InputDecorator(
-            decoration: _deco(''),
-            child: Text(
-              _dateNaissance == null ? 'Choisir…'
-                  : '${_dateNaissance!.day.toString().padLeft(2, '0')}/${_dateNaissance!.month.toString().padLeft(2, '0')}/${_dateNaissance!.year}',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-            ),
-          ),
-        )),
-
-        const SizedBox(height: 12),
-        _section('N° SIRE (obligatoire)', child: _tf(_sireCtrl, '250 00X XXX XXX XXX',
-            keyboardType: TextInputType.number)),
-
-        const SizedBox(height: 16),
-        _section('Niveau recommandé', child: Wrap(spacing: 8, runSpacing: 6, children: [
-          for (final n in _niveaux)
-            ChoiceChip(
-              label: Text(n, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              selected: _niveau == n,
-              onSelected: (_) => setState(() => _niveau = _niveau == n ? '' : n),
-              selectedColor: _teal,
-              labelStyle: TextStyle(color: _niveau == n ? Colors.white : Colors.black87),
-              backgroundColor: Colors.white,
-              side: BorderSide(color: _niveau == n ? _teal : Colors.grey.shade300),
-            ),
-        ])),
-
-        const SizedBox(height: 16),
-        _section('Palmarès / résultats (optionnel)',
-            child: _tf(_palmaresCtrl, 'Ex : 3e Amateur 2 GP Lamotte 2025…', maxLines: 3)),
-
-        const SizedBox(height: 12),
-        _section('Indices (optionnel)', child: Row(children: [
-          Expanded(child: _tf(_isoCtrl, 'ISO', keyboardType: TextInputType.number)),
-          const SizedBox(width: 8),
-          Expanded(child: _tf(_idrCtrl, 'IDR', keyboardType: TextInputType.number)),
-          const SizedBox(width: 8),
-          Expanded(child: _tf(_iccCtrl, 'ICC', keyboardType: TextInputType.number)),
-        ])),
-
-        const SizedBox(height: 16),
-        _section('Photos (max $_maxPhotos)', child: Column(children: [
-          if (_photosUrls.isNotEmpty || _photosFiles.isNotEmpty)
-            SizedBox(height: 90, child: ListView(scrollDirection: Axis.horizontal, children: [
-              for (var i = 0; i < _photosUrls.length; i++)
-                _thumb(url: _photosUrls[i], onRemove: () => setState(() => _photosUrls.removeAt(i))),
-              for (var i = 0; i < _photosFiles.length; i++)
-                _thumb(file: _photosFiles[i], onRemove: () => setState(() => _photosFiles.removeAt(i))),
-            ])),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _addPhoto,
-            icon: const Icon(Icons.add_photo_alternate_outlined),
-            label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey')),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _green, side: const BorderSide(color: _green),
-              minimumSize: const Size(double.infinity, 44)),
-          ),
-        ])),
-
-        const SizedBox(height: 16),
-        _section('Vidéo sous selle', child: _videoSlot(_videoMonteUrl, monte: true)),
-        const SizedBox(height: 12),
-        _section('Vidéo en liberté', child: _videoSlot(_videoLibreUrl, monte: false)),
-
-        const SizedBox(height: 16),
-        _section('Description', child: _tf(_descCtrl, 'Caractère, aptitudes, conditions…', maxLines: 5)),
-
-        const SizedBox(height: 28),
-        ElevatedButton(
-          onPressed: _saving ? null : _save,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _teal, foregroundColor: Colors.white,
-            minimumSize: const Size(double.infinity, 50),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          ),
-          child: _saving
-              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : const Text('Publier l\'annonce',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        ),
-        const SizedBox(height: 24),
+       ]),
       ]),
     );
   }
@@ -831,26 +799,16 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
     );
   }
 
-  Widget _section(String title, {required Widget child}) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-          fontSize: 14, color: Color(0xFF1F2A2E))),
-      const SizedBox(height: 8),
-      child,
-    ]);
+  Widget _section(String title, {required Widget child, bool requis = false, String? aide}) =>
+      FormChamp(label: title, requis: requis, aide: aide, child: child);
 
-  InputDecoration _deco(String hint) => InputDecoration(
-    hintText: hint,
-    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 13),
-    border: const OutlineInputBorder(),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-  );
+  InputDecoration _deco(String hint) => formDeco(hint);
 
   Widget _tf(TextEditingController c, String hint,
           {int maxLines = 1, TextInputType? keyboardType, bool enabled = true}) =>
       TextField(
         controller: c, maxLines: maxLines, keyboardType: keyboardType, enabled: enabled,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: _deco(hint),
       );
 

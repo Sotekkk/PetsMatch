@@ -1,3 +1,5 @@
+import 'package:PetsMatch/widgets/annonces/formulaire_annonce_kit.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -24,7 +26,6 @@ class CreateAnnonceObjetPage extends StatefulWidget {
 
 class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
   static const _teal  = Color(0xFF0C5C6C);
-  static const _green = Color(0xFF6E9E57);
   static const _maxPhotos = 6;
 
   final _supa = Supabase.instance.client;
@@ -234,251 +235,227 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
   Widget build(BuildContext context) {
     final cat = kAnnonceObjetCategories.firstWhere((c) => c.slug == _categorie,
         orElse: () => kAnnonceObjetCategories.last);
+    const espace = SizedBox(height: 14);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
+      backgroundColor: kDashFond,
       appBar: AppBar(
         backgroundColor: _teal,
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text(_isEdit ? 'Modifier l\'annonce' : 'Matériel & équipements',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
       ),
+      bottomNavigationBar: FormActions(
+        saving: _saving,
+        libelle: _isEdit ? 'Enregistrer les modifications' : 'Publier gratuitement',
+        onEnregistrer: _save,
+      ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _green.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text(
               'Matériel destiné aux animaux et aux activités professionnelles : paniers, '
               'grilles de chenil, parcs, caisses de transport, équipements de mise bas… '
               'La vente d\'un animal n\'est pas autorisée ici.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF41525A), height: 1.4),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted, height: 1.4),
             ),
           ),
-          const SizedBox(height: 18),
 
-          // Photos
-          _label('Photos (${_photosUrls.length + _photosFiles.length}/$_maxPhotos)'),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 88,
-            child: ListView(scrollDirection: Axis.horizontal, children: [
-              for (var i = 0; i < _photosUrls.length; i++)
-                _thumb(child: Image.network(_photosUrls[i], width: 88, height: 88, fit: BoxFit.cover),
-                    onRemove: () => setState(() => _photosUrls.removeAt(i))),
-              for (var i = 0; i < _photosFiles.length; i++)
-                _thumb(child: Image.file(_photosFiles[i], width: 88, height: 88, fit: BoxFit.cover),
-                    onRemove: () => setState(() => _photosFiles.removeAt(i))),
-              if (_photosUrls.length + _photosFiles.length < _maxPhotos)
-                GestureDetector(
-                  onTap: _addPhoto,
-                  child: Container(
-                    width: 88, height: 88,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.add_a_photo_outlined, color: _teal),
-                  ),
-                ),
-            ]),
-          ),
-          const SizedBox(height: 18),
-
-          _label('Titre'),
-          _field(_titreCtrl, hint: 'Ex : Cage à lapin XXL, Harnais taille L, Foin 2024…'),
-          const SizedBox(height: 16),
-
-          _label('Catégorie'),
-          const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: _categorie,
-            isExpanded: true,
-            decoration: _dec(),
-            items: [
-              for (final c in kAnnonceObjetCategories)
-                DropdownMenuItem(value: c.slug, child: Text(c.label,
-                    overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged: (v) => setState(() => _categorie = v ?? _categorie),
-          ),
-          const SizedBox(height: 4),
-          Text(cat.exemples, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500)),
-          const SizedBox(height: 16),
-
-          _label('Type d\'annonce'),
-          const SizedBox(height: 6),
-          Wrap(spacing: 8, children: [
-            for (final e in kAnnonceObjetTransactions.entries)
-              ChoiceChip(
-                label: Text(e.value),
-                selected: _transaction == e.key,
-                onSelected: (_) => setState(() => _transaction = e.key),
-                selectedColor: _teal.withValues(alpha: 0.15),
-                labelStyle: TextStyle(
-                    fontFamily: 'Galey',
-                    color: _transaction == e.key ? _teal : Colors.grey.shade700,
-                    fontWeight: FontWeight.w600),
-              ),
-          ]),
-          const SizedBox(height: 16),
-
-          if (_priced) ...[
-            _label(_transaction == 'location' ? 'Prix (par mois)' : 'Prix'),
-            _field(_prixCtrl, hint: 'En euros', keyboard: TextInputType.number,
-                formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))]),
+          FormSection(titre: 'Informations principales', children: [
+            _label('Titre *'),
+            _field(_titreCtrl, hint: 'Ex : Cage à lapin XXL, Harnais taille L, Foin 2024…'),
+            espace,
+            _label('Catégorie'),
             const SizedBox(height: 6),
-            Row(children: [
-              Checkbox(
-                value: _negociable,
-                activeColor: _teal,
-                onChanged: (v) => setState(() => _negociable = v ?? false),
-              ),
-              const Text('Prix négociable', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            ]),
-            const SizedBox(height: 8),
-            _label('État'),
+            DropdownButtonFormField<String>(
+              initialValue: _categorie,
+              isExpanded: true,
+              decoration: _dec(),
+              items: [
+                for (final c in kAnnonceObjetCategories)
+                  DropdownMenuItem(value: c.slug, child: Text(c.label,
+                      overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (v) => setState(() => _categorie = v ?? _categorie),
+            ),
+            const SizedBox(height: 4),
+            Text(cat.exemples, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
+            espace,
+            _label('Type d\'annonce'),
             const SizedBox(height: 6),
-            Wrap(spacing: 8, children: [
-              for (final e in kAnnonceObjetEtats.entries)
+            Wrap(spacing: 8, runSpacing: 6, children: [
+              for (final e in kAnnonceObjetTransactions.entries)
                 ChoiceChip(
                   label: Text(e.value),
-                  selected: _etat == e.key,
-                  onSelected: (_) => setState(() => _etat = _etat == e.key ? null : e.key),
-                  selectedColor: _green.withValues(alpha: 0.15),
+                  selected: _transaction == e.key,
+                  onSelected: (_) => setState(() => _transaction = e.key),
+                  selectedColor: _teal.withValues(alpha: 0.15),
                   labelStyle: TextStyle(
                       fontFamily: 'Galey',
-                      color: _etat == e.key ? _green : Colors.grey.shade700,
+                      color: _transaction == e.key ? _teal : Colors.grey.shade700,
                       fontWeight: FontWeight.w600),
                 ),
             ]),
-            const SizedBox(height: 16),
-          ],
+          ]),
 
-          _label('Description'),
-          _field(_descCtrl, hint: 'Dimensions, marque, état, retrait sur place / envoi…', maxLines: 5),
-          const SizedBox(height: 16),
-
-          _sectionTitle('Localisation'),
-          const SizedBox(height: 10),
-          _label('Code postal'),
-          _field(_cpCtrl, hint: '5 chiffres', keyboard: TextInputType.number,
-              formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
-              onChanged: (v) {
-                final cp = v.trim();
-                if (cp.length == 5) {
-                  setState(() => _applyGeoFromCp(cp));
-                  _fetchVilles(cp);
-                } else {
-                  setState(() { _villes = []; _ville = null; });
-                }
-              }),
-          const SizedBox(height: 12),
-          _label('Commune'),
-          const SizedBox(height: 6),
-          if (_loadingVilles)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Row(children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                SizedBox(width: 10),
-                Text('Recherche des communes…', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          FormSection(titre: 'Photos et médias',
+              description: 'Photos (${_photosUrls.length + _photosFiles.length}/$_maxPhotos) : la première est la photo principale.',
+              children: [
+            SizedBox(
+              height: 88,
+              child: ListView(scrollDirection: Axis.horizontal, children: [
+                for (var i = 0; i < _photosUrls.length; i++)
+                  _thumb(child: Image.network(_photosUrls[i], width: 88, height: 88, fit: BoxFit.cover),
+                      onRemove: () => setState(() => _photosUrls.removeAt(i))),
+                for (var i = 0; i < _photosFiles.length; i++)
+                  _thumb(child: Image.file(_photosFiles[i], width: 88, height: 88, fit: BoxFit.cover),
+                      onRemove: () => setState(() => _photosFiles.removeAt(i))),
+                if (_photosUrls.length + _photosFiles.length < _maxPhotos)
+                  GestureDetector(
+                    onTap: _addPhoto,
+                    child: Container(
+                      width: 88, height: 88,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: kDashBorder),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.add_a_photo_outlined, color: _teal),
+                    ),
+                  ),
               ]),
-            )
-          else if (_villes.isEmpty)
-            Text(
-              _cpCtrl.text.trim().length == 5
-                  ? 'Aucune commune trouvée pour ce code postal.'
-                  : 'Saisissez d\'abord le code postal.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade500),
-            )
-          else if (_villes.length == 1)
-            _readonlyBox(_villes.first)
-          else
-            DropdownButtonFormField<String>(
-              initialValue: _villes.contains(_ville) ? _ville : null,
-              isExpanded: true,
-              decoration: _dec(hint: 'Sélectionnez votre commune'),
-              items: [
-                for (final v in _villes) DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (v) => setState(() => _ville = v),
             ),
-          const SizedBox(height: 12),
+          ]),
 
-          _label('Région'),
-          const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: FrenchGeo.regions.contains(_region) ? _region : null,
-            isExpanded: true,
-            decoration: _dec(hint: 'Région'),
-            items: [
-              for (final r in FrenchGeo.regions)
-                DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged: (v) => setState(() { _region = v; _departement = null; }),
-          ),
-          const SizedBox(height: 12),
+          FormSection(titre: 'Description', children: [
+            _field(_descCtrl, hint: 'Dimensions, marque, état, retrait sur place / envoi…', maxLines: 5),
+          ]),
 
-          _label('Département'),
-          const SizedBox(height: 6),
-          DropdownButtonFormField<String>(
-            initialValue: (_region != null &&
-                    FrenchGeo.departmentsInRegion(_region!).contains(_departement))
-                ? _departement
-                : null,
-            isExpanded: true,
-            decoration: _dec(hint: _region == null ? 'Choisissez d\'abord une région' : 'Département'),
-            items: [
-              if (_region != null)
-                for (final d in FrenchGeo.departmentsInRegion(_region!))
-                  DropdownMenuItem(value: d, child: Text(d, overflow: TextOverflow.ellipsis)),
-            ],
-            onChanged: _region == null ? null : (v) => setState(() => _departement = v),
-          ),
-          const SizedBox(height: 24),
+          if (_priced)
+            FormSection(titre: 'Prix et état', children: [
+              _label(_transaction == 'location' ? 'Prix (par mois)' : 'Prix'),
+              _field(_prixCtrl, hint: 'En euros', keyboard: TextInputType.number,
+                  formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))]),
+              const SizedBox(height: 6),
+              Row(children: [
+                Checkbox(
+                  value: _negociable,
+                  activeColor: _teal,
+                  onChanged: (v) => setState(() => _negociable = v ?? false),
+                ),
+                const Text('Prix négociable', style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+              ]),
+              const SizedBox(height: 8),
+              _label('État'),
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                for (final e in kAnnonceObjetEtats.entries)
+                  ChoiceChip(
+                    label: Text(e.value),
+                    selected: _etat == e.key,
+                    onSelected: (_) => setState(() => _etat = _etat == e.key ? null : e.key),
+                    selectedColor: _teal.withValues(alpha: 0.15),
+                    labelStyle: TextStyle(
+                        fontFamily: 'Galey',
+                        color: _etat == e.key ? _teal : Colors.grey.shade700,
+                        fontWeight: FontWeight.w600),
+                  ),
+              ]),
+            ]),
 
-          SizedBox(
-            height: 50,
-            child: ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _teal, foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          FormSection(titre: 'Localisation', children: [
+            _label('Code postal *'),
+            _field(_cpCtrl, hint: '5 chiffres', keyboard: TextInputType.number,
+                formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
+                onChanged: (v) {
+                  final cp = v.trim();
+                  if (cp.length == 5) {
+                    setState(() => _applyGeoFromCp(cp));
+                    _fetchVilles(cp);
+                  } else {
+                    setState(() { _villes = []; _ville = null; });
+                  }
+                }),
+            espace,
+            _label('Commune *'),
+            const SizedBox(height: 6),
+            if (_loadingVilles)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Row(children: [
+                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  SizedBox(width: 10),
+                  Text('Recherche des communes…', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                ]),
+              )
+            else if (_villes.isEmpty)
+              Text(
+                _cpCtrl.text.trim().length == 5
+                    ? 'Aucune commune trouvée pour ce code postal.'
+                    : 'Saisissez d\'abord le code postal.',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted),
+              )
+            else if (_villes.length == 1)
+              _readonlyBox(_villes.first)
+            else
+              DropdownButtonFormField<String>(
+                initialValue: _villes.contains(_ville) ? _ville : null,
+                isExpanded: true,
+                decoration: _dec(hint: 'Sélectionnez votre commune'),
+                items: [
+                  for (final v in _villes) DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setState(() => _ville = v),
               ),
-              child: _saving
-                  ? const SizedBox(width: 22, height: 22,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text(_isEdit ? 'Enregistrer' : 'Publier gratuitement',
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+            espace,
+            _label('Région'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: FrenchGeo.regions.contains(_region) ? _region : null,
+              isExpanded: true,
+              decoration: _dec(hint: 'Région'),
+              items: [
+                for (final r in FrenchGeo.regions)
+                  DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (v) => setState(() { _region = v; _departement = null; }),
             ),
-          ),
+            espace,
+            _label('Département'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: (_region != null &&
+                      FrenchGeo.departmentsInRegion(_region!).contains(_departement))
+                  ? _departement
+                  : null,
+              isExpanded: true,
+              decoration: _dec(hint: _region == null ? 'Choisissez d\'abord une région' : 'Département'),
+              items: [
+                if (_region != null)
+                  for (final d in FrenchGeo.departmentsInRegion(_region!))
+                    DropdownMenuItem(value: d, child: Text(d, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: _region == null ? null : (v) => setState(() => _departement = v),
+            ),
+          ]),
         ],
       ),
     );
   }
 
-  Widget _label(String t) => Text(t,
-      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E)));
+  /// Libellé au-dessus du champ (« * » : obligatoire, en rouge).
+  Widget _label(String t) {
+    final requis = t.endsWith(' *');
+    return Text.rich(TextSpan(children: [
+      TextSpan(text: requis ? t.substring(0, t.length - 2) : t),
+      if (requis) const TextSpan(text: ' *', style: TextStyle(color: Color(0xFFB91C1C))),
+    ]), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5, color: kDashInk));
+  }
 
-  Widget _sectionTitle(String t) => Text(t,
-      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _teal));
-
-  InputDecoration _dec({String? hint}) => InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal, width: 1.5)),
-      );
+  InputDecoration _dec({String? hint}) => formDeco(hint ?? '');
 
   Widget _field(TextEditingController c,
       {String? hint, int maxLines = 1, TextInputType? keyboard,

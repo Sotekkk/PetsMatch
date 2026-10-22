@@ -1,5 +1,6 @@
 'use client';
 
+import { Icone } from '@/components/dashboard/kit';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Image from 'next/image';
@@ -112,7 +113,7 @@ export default function ReproDetailPage() {
             {repro.photo_url ? (
               <Image src={repro.photo_url} alt={repro.nom ?? ''} fill className="object-cover" sizes="(max-width:768px) 100vw, 640px" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-6xl">🐾</div>
+              <div className="w-full h-full flex items-center justify-center text-[#0C5C6C]"><Icone nom="patte" taille={56} /></div>
             )}
             {repro.is_retraite && (
               <span className="absolute top-3 left-3 bg-[#B45309] text-white text-xs font-semibold px-2 py-1 rounded-lg">
@@ -155,14 +156,14 @@ export default function ReproDetailPage() {
                   <div className="flex flex-wrap gap-2">
                     {adnEtabli && (
                       <span className="inline-flex items-center gap-1.5 bg-[#EEF5EA] text-[#4d7a3c] text-xs font-semibold px-2.5 py-1 rounded-full">
-                        ✓ Profil ADN établi
+                        Profil ADN établi
                       </span>
                     )}
                     {maladies.map((t, i) => (
                       <span key={i} className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${resultatChipClass(t.resultat)}`}>
                         {testChipLabel(t)}
                         {t.lien_resultat && (
-                          <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="ml-1 underline" title="Résultat en ligne">🔗</a>
+                          <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="ml-1 underline" title="Résultat en ligne">résultat</a>
                         )}
                       </span>
                     ))}

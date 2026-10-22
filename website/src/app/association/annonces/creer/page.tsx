@@ -1,11 +1,14 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { loadBreeds } from '@/lib/breeds';
 import { Icone } from '@/components/dashboard/kit';
+import {
+  PageFormulaire, SectionFormulaire, Champ, Colonnes, CaseACocher, GrillePhotos, classeChamp, styleChamp,
+} from '@/components/annonces/FormulaireAnnonce';
 
 const ESPECES = ['chien', 'chat', 'lapin', 'oiseau', 'cheval', 'nac', 'autre'];
 const ESPECE_LABEL: Record<string, string> = {
@@ -52,7 +55,7 @@ function CreerAnnonceAssoPageInner() {
   const [loading, setLoading] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [error, setError] = useState('');
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [erreursChamps, setErreursChamps] = useState<{ espece?: string; photos?: string }>({});
 
   const [mesAnimaux, setMesAnimaux] = useState<any[]>([]);
   const [showPicker, setShowPicker] = useState(false);
@@ -164,8 +167,12 @@ function CreerAnnonceAssoPageInner() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!espece) { setError('Veuillez choisir une espèce.'); return; }
-    if (photos.length === 0 && existingPhotoUrls.length === 0) { setError('Ajoutez au moins une photo.'); return; }
+    const erreurs = {
+      espece: !espece ? 'Veuillez choisir une espèce.' : undefined,
+      photos: photos.length === 0 && existingPhotoUrls.length === 0 ? 'Ajoutez au moins une photo.' : undefined,
+    };
+    setErreursChamps(erreurs);
+    if (erreurs.espece || erreurs.photos) { setError(erreurs.espece ?? erreurs.photos ?? ''); return; }
     setLoading(true);
     setError('');
     try {
@@ -248,16 +255,6 @@ function CreerAnnonceAssoPageInner() {
     }
   };
 
-  const Toggle = ({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) => (
-    <label className="flex items-center justify-between cursor-pointer py-2 border-b border-gray-100 last:border-0">
-      <span className="text-sm font-galey text-gray-700">{label}</span>
-      <button type="button" onClick={() => onChange(!value)}
-        className={`w-11 h-6 rounded-full transition-colors ${value ? 'bg-[#0C5C6C]' : 'bg-gray-300'} relative flex-shrink-0`}>
-        <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
-      </button>
-    </label>
-  );
-
   if (loadingEdit) {
     return (
       <div className="flex justify-center py-24">
@@ -266,177 +263,130 @@ function CreerAnnonceAssoPageInner() {
     );
   }
 
+  const photosGrille = [
+    ...existingPhotoUrls.map((url, i) => ({ url, cle: `e${i}${url}` })),
+    ...previews.map((url, i) => ({ url, cle: `n${i}` })),
+  ];
+
   return (
-    <div className="space-y-6 max-w-xl">
-      <div className="flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
-        <h1 className="text-2xl font-bold font-galey text-[#1F2A2E]">
-          {editId ? 'Modifier l\'annonce' : linkedAnimalNom ? `Adoption — ${linkedAnimalNom}` : 'Nouvelle annonce d\'adoption'}
-        </h1>
-      </div>
+    <PageFormulaire retourHref="/association/annonces"
+      titre={editId ? 'Modifier l’annonce' : linkedAnimalNom ? `Adoption · ${linkedAnimalNom}` : 'Nouvelle annonce d’adoption'}
+      sousTitre="Les champs marqués d’un astérisque sont obligatoires."
+      erreur={error} onSubmit={handleSubmit} annulerHref="/association/annonces" enregistrement={loading}
+      libelleEnregistrer={editId ? 'Enregistrer les modifications' : 'Publier l’annonce'}>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-
-        {/* Sélecteur d'animal */}
-        <div className="bg-[#E8F4F6] border border-[#0C5C6C]/30 rounded-2xl p-4">
-          <p className="text-sm font-galey font-semibold text-[#0C5C6C] mb-2">Lier à un animal</p>
+      {/* Informations principales */}
+      <SectionFormulaire titre="Informations principales">
+        <Champ label="Animal de l’association" aide="Facultatif : relie l’annonce à la fiche de l’animal.">
           {linkedAnimalId ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-galey font-semibold text-[#0C5C6C]">
-                  {linkedAnimalNom ?? linkedAnimalId}
-                </span>
-              </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl px-3.5 min-h-11 bg-[#F3F6F5]" style={styleChamp}>
+              <span className="text-[15px] font-semibold text-[#1E2025]">{linkedAnimalNom ?? 'Animal lié'}</span>
               <button type="button" onClick={() => { setLinkedAnimalId(null); setLinkedAnimalNom(null); }}
-                className="text-xs text-gray-400 hover:text-gray-600">Retirer</button>
+                className="text-sm font-semibold text-[#B91C1C] hover:underline">Retirer</button>
             </div>
           ) : (
             <button type="button" onClick={() => setShowPicker(!showPicker)}
-              className="w-full text-sm text-[#0C5C6C] border border-[#0C5C6C]/40 bg-white rounded-xl py-2 font-galey hover:bg-[#E8F4F6] transition-colors">
+              className="min-h-11 w-full rounded-xl text-sm font-semibold text-[#0C5C6C] bg-white hover:bg-[#E8F4F6]" style={{ border: '1px solid rgba(12,92,108,0.45)' }}>
               Sélectionner un animal disponible
             </button>
           )}
           {showPicker && (
-            <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-              {mesAnimaux.length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-4">Aucun animal disponible</p>
-              )}
+            <div className="mt-2 space-y-1 max-h-56 overflow-y-auto rounded-xl p-1.5" style={styleChamp}>
+              {mesAnimaux.length === 0 && <p className="text-sm text-gray-500 text-center py-4">Aucun animal disponible</p>}
               {mesAnimaux.map(a => (
                 <button key={a.id} type="button" onClick={() => selectAnimal(a)}
-                  className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-[#D5ECEF] text-left transition-colors">
-                  {a.photo_url ? (
-                    <img src={a.photo_url} alt={a.nom} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-lg bg-gray-100 text-gray-400 flex items-center justify-center flex-shrink-0"><Icone nom="patte" taille={18} /></div>
-                  )}
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-[#F3F6F5] text-left transition-colors">
+                  {a.photo_url
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={a.photo_url} alt={a.nom} className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                    : <div className="w-10 h-10 rounded-lg bg-[#EEF1EF] text-[#0C5C6C] flex items-center justify-center flex-shrink-0"><Icone nom="patte" taille={18} /></div>}
                   <div>
-                    <p className="text-sm font-galey font-semibold text-gray-800">{a.nom}</p>
+                    <p className="text-sm font-semibold text-[#1E2025]">{a.nom}</p>
                     <p className="text-xs text-gray-500">{a.race || a.espece}</p>
                   </div>
                 </button>
               ))}
             </div>
           )}
-        </div>
-
-        {/* Titre */}
-        <div>
-          <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Titre</label>
-          <input value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex : Rex cherche une famille aimante"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C]" />
-        </div>
-
-        {/* Espèce */}
-        <div>
-          <label className="block text-sm font-galey font-semibold text-gray-700 mb-2">Espèce *</label>
+        </Champ>
+        <Champ label="Titre" htmlFor="titre" aide="Par défaut : « [espèce] cherche une famille ».">
+          <input id="titre" value={titre} onChange={e => setTitre(e.target.value)} placeholder="Ex : Rex cherche une famille aimante"
+            className={classeChamp} style={styleChamp} />
+        </Champ>
+        <Champ label="Espèce" requis erreur={erreursChamps.espece}>
           <div className="flex flex-wrap gap-2">
             {ESPECES.map(e => (
-              <button key={e} type="button" onClick={() => setEspece(e)}
-                className={`px-3 py-1.5 rounded-full text-xs font-galey font-semibold border transition-all ${
-                  espece === e ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]/40'
-                }`}>
+              <button key={e} type="button" onClick={() => setEspece(e)} aria-pressed={espece === e}
+                className={`min-h-10 px-3.5 rounded-xl text-sm font-semibold border transition-colors ${espece === e ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-700 hover:border-[#0C5C6C]/50'}`}
+                style={espece === e ? undefined : styleChamp}>
                 {ESPECE_LABEL[e]}
               </button>
             ))}
           </div>
           {espece === 'autre' && (
-            <input value={especeAutre} onChange={e => setEspeceAutre(e.target.value)}
-              placeholder="Préciser l'espèce (ex : Furet, Tortue...)"
-              className="mt-2 w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C]" />
+            <input value={especeAutre} onChange={e => setEspeceAutre(e.target.value)} aria-label="Préciser l’espèce"
+              placeholder="Préciser l'espèce (ex : furet, tortue…)" className={`${classeChamp} mt-2`} style={styleChamp} />
           )}
-        </div>
-
-        {/* Race / Sexe */}
-        <div className="grid grid-cols-2 gap-3">
+        </Champ>
+        <Colonnes>
           <div className="relative">
-            <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Race</label>
-            <input value={raceQuery}
-              onChange={e => { setRaceQuery(e.target.value); setRace(e.target.value); }}
-              placeholder={espece ? 'Rechercher…' : 'Choisir une espèce d\'abord'}
-              disabled={!espece}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C] disabled:bg-gray-50" />
-            {raceQuery.length >= 1 && filteredBreeds.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg max-h-48 overflow-y-auto">
+            <Champ label="Race" htmlFor="race">
+              <input id="race" value={raceQuery}
+                onChange={e => { setRaceQuery(e.target.value); setRace(e.target.value); }}
+                placeholder={espece ? 'Rechercher…' : 'Choisir une espèce d’abord'} disabled={!espece}
+                className={`${classeChamp} disabled:bg-gray-50`} style={styleChamp} />
+            </Champ>
+            {raceQuery.length >= 1 && filteredBreeds.length > 0 && filteredBreeds[0] !== race && (
+              <div className="absolute z-10 mt-1 w-full bg-white rounded-xl shadow-lg max-h-48 overflow-y-auto" style={styleChamp}>
                 {filteredBreeds.map(b => (
                   <button key={b} type="button" onClick={() => { setRace(b); setRaceQuery(b); }}
-                    className="w-full text-left px-3 py-2 text-sm font-galey hover:bg-[#E8F4F6] transition-colors">
-                    {b}
-                  </button>
+                    className="w-full text-left px-3.5 py-2.5 text-sm hover:bg-[#F3F6F5] transition-colors">{b}</button>
                 ))}
               </div>
             )}
           </div>
-          <div>
-            <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Sexe</label>
-            <select value={sexe} onChange={e => setSexe(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C] bg-white">
-              <option value="">–</option>
+          <Champ label="Sexe" htmlFor="sexe">
+            <select id="sexe" value={sexe} onChange={e => setSexe(e.target.value)} className={classeChamp} style={styleChamp}>
+              <option value="">Non précisé</option>
               <option value="male">Mâle</option>
               <option value="femelle">Femelle</option>
             </select>
-          </div>
+          </Champ>
+        </Colonnes>
+      </SectionFormulaire>
+
+      {/* Photos */}
+      <SectionFormulaire titre="Photos et médias">
+        <Champ label="Photos" requis erreur={erreursChamps.photos} aide="Jusqu’à 6 photos ; la première est la photo principale.">
+          <GrillePhotos photos={photosGrille} max={6}
+            onAjouter={e => { handleFiles(e.target.files); e.target.value = ''; }}
+            onRetirer={i => i < existingPhotoUrls.length ? removeExistingPhoto(existingPhotoUrls[i]) : removePhoto(i - existingPhotoUrls.length)} />
+        </Champ>
+      </SectionFormulaire>
+
+      {/* Description */}
+      <SectionFormulaire titre="Description">
+        <Champ label="Présentation" htmlFor="description">
+          <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={5}
+            placeholder="Décrivez le caractère, les besoins, l'histoire de l'animal…" className={`${classeChamp} resize-y`} style={styleChamp} />
+        </Champ>
+      </SectionFormulaire>
+
+      {/* Santé */}
+      <SectionFormulaire titre="Santé">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+          <CaseACocher label="Vacciné(e)" checked={vaccines} onChange={setVaccines} />
+          <CaseACocher label="Vermifugé(e)" checked={vermifuge} onChange={setVermifuge} />
+          <CaseACocher label="Identifié(e) (puce / tatouage)" checked={identification} onChange={setIdentification} />
+          <CaseACocher label="Stérilisé(e)" checked={sterilise} onChange={setSterilise} />
         </div>
+      </SectionFormulaire>
 
-        {/* Description */}
-        <div>
-          <label className="block text-sm font-galey font-semibold text-gray-700 mb-1">Description</label>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={4}
-            placeholder="Décrivez le caractère, les besoins, l'histoire de l'animal…"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-galey focus:outline-none focus:border-[#0C5C6C] resize-none" />
-        </div>
-
-        {/* Photos */}
-        <div>
-          <label className="block text-sm font-galey font-semibold text-gray-700 mb-2">Photos * (max 6)</label>
-          <div className="flex flex-wrap gap-2">
-            {existingPhotoUrls.map((url, i) => (
-              <div key={`existing-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-[#0C5C6C]/30">
-                <img src={url} alt="" className="w-full h-full object-cover" />
-                <button type="button" onClick={() => removeExistingPhoto(url)}
-                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
-              </div>
-            ))}
-            {previews.map((src, i) => (
-              <div key={`new-${i}`} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200">
-                <img src={src} alt="" className="w-full h-full object-cover" />
-                <button type="button" onClick={() => removePhoto(i)}
-                  className="absolute top-0.5 right-0.5 bg-black/50 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
-              </div>
-            ))}
-            {(existingPhotoUrls.length + photos.length) < 6 && (
-              <button type="button" onClick={() => fileRef.current?.click()}
-                className="w-20 h-20 rounded-xl border-2 border-dashed border-[#0C5C6C]/40 flex items-center justify-center text-[#0C5C6C] hover:bg-[#E8F4F6] transition-colors">
-                <span className="text-2xl">+</span>
-              </button>
-            )}
-          </div>
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
-            onChange={e => handleFiles(e.target.files)} />
-        </div>
-
-        {/* Santé */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <p className="text-sm font-galey font-semibold text-gray-700 mb-3">Santé</p>
-          <Toggle label="Vacciné(e)" value={vaccines} onChange={setVaccines} />
-          <Toggle label="Vermifugé(e)" value={vermifuge} onChange={setVermifuge} />
-          <Toggle label="Identifié(e) (puce/tatouage)" value={identification} onChange={setIdentification} />
-          <Toggle label="Stérilisé(e)" value={sterilise} onChange={setSterilise} />
-        </div>
-
-        {/* Conditions */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <p className="text-sm font-galey font-semibold text-gray-700 mb-3">Conditions d'adoption</p>
-          <Toggle label="Contrat d'adoption obligatoire" value={contratAdoption} onChange={setContratAdoption} />
-        </div>
-
-        {error && <p className="text-red-500 text-sm font-galey">{error}</p>}
-
-        <button type="submit" disabled={loading}
-          className="w-full bg-[#0C5C6C] text-white py-3.5 rounded-xl font-galey font-bold text-base hover:bg-[#094F5D] transition-colors disabled:opacity-50">
-          {loading ? (editId ? 'Sauvegarde…' : 'Publication…') : (editId ? 'Sauvegarder les modifications' : 'Publier l\'annonce')}
-        </button>
-      </form>
-    </div>
+      {/* Conditions */}
+      <SectionFormulaire titre="Conditions d’adoption">
+        <CaseACocher label="Contrat d’adoption obligatoire" checked={contratAdoption} onChange={setContratAdoption} />
+      </SectionFormulaire>
+    </PageFormulaire>
   );
 }
 

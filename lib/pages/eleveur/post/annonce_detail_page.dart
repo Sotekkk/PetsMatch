@@ -1,8 +1,6 @@
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
@@ -10,6 +8,9 @@ import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/widgets/inline_video.dart';
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/widgets/annonces/gestion_annonces_kit.dart';
+import 'package:PetsMatch/pages/eleveur/reproducteurs_publics_page.dart' show reproducteursPublicsVisibles, ouvrirFicheReproducteurPublic;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
@@ -47,7 +48,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   bool _isLiked = false;
   int  _likeCount = 0;
-  int  _favoriCount = 0;
   List<Map<String, dynamic>> _likers = [];
 
   static const _sigRaisons = [
@@ -203,7 +203,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     super.initState();
     _loadAnnonce();
     _loadLikeState();
-    _loadFavoriState();
     final uid = widget.initialData?['uidEleveur'] as String?
         ?? widget.initialData?['uid_eleveur'] as String?;
     if (uid != null) {
@@ -244,17 +243,6 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         _isLiked   = liked;
         _likers    = likers;
       });
-    } catch (_) {}
-  }
-
-  Future<void> _loadFavoriState() async {
-    try {
-      final rows = await Supabase.instance.client
-          .from('favoris')
-          .select('user_uid')
-          .eq('annonce_id', widget.annonceId)
-          .isFilter('bebe_index', null);
-      if (mounted) setState(() => _favoriCount = (rows as List).length);
     } catch (_) {}
   }
 
@@ -464,224 +452,209 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         : race.isNotEmpty ? race
         : (espece == 'autre' && especeAutre.isNotEmpty) ? especeAutre : speciesLabel(espece);
 
+    final uidEleveur = (data['uidEleveur'] as String?) ?? '';
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
-      body: Stack(children: [
-        CustomScrollView(slivers: [
-          // ── AppBar avec photo ────────────────────────────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: photos.isNotEmpty ? 300 : 0,
-            backgroundColor: _teal,
-            foregroundColor: Colors.white,
-            title: Text(displayTitle,
-                style: const TextStyle(fontFamily: 'Galey',
-                    fontWeight: FontWeight.w700, fontSize: 16),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-            flexibleSpace: photos.isNotEmpty
-                ? FlexibleSpaceBar(
-                    background: _PhotoCarousel(
-                          photos: photos, espece: espece,
-                          currentIndex: _photoIndex,
-                          onChanged: (i) => setState(() => _photoIndex = i),
-                        ))
-                    : null,
-                actions: [
-                  if (isOwner)
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      tooltip: 'Modifier',
-                      onPressed: () => Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => CreateAnnoncePage(
-                              annonceId: widget.annonceId, initialData: data))),
-                    ),
-                  if (!isOwner && FirebaseAuth.instance.currentUser != null)
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert),
-                      onSelected: (v) {
-                        if (v == 'signaler') _showSignalementDialog();
-                      },
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: 'signaler',
-                          child: Row(children: [
-                            Icon(Icons.flag_outlined, color: Colors.red),
-                            SizedBox(width: 8),
-                            Text('Signaler'),
-                          ]),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-              // ── Contenu ──────────────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _HeaderCard(data: data),
-                      const SizedBox(height: 8),
-                      _LikesRow(
-                        annonceId: widget.annonceId,
-                        count: _likeCount,
-                        isLiked: _isLiked,
-                        likers: _likers,
-                        onLike: _toggleLike,
-                        onShowList: FirebaseAuth.instance.currentUser != null
-                            ? () => showModalBottomSheet(
-                                context: context,
-                                isScrollControlled: true,
-                                backgroundColor: Colors.transparent,
-                                builder: (_) => _LikersSheet(annonceId: widget.annonceId))
-                            : null,
-                      ),
-                      if (isOwner && _favoriCount > 0) ...[
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: () => showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Colors.transparent,
-                            builder: (_) => _FavorisSheet(annonceId: widget.annonceId),
-                          ),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.shade50,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.amber.shade200),
-                            ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.bookmark_outline, color: Colors.amber.shade700, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                '$_favoriCount en favoris',
-                                style: TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: Colors.amber.shade700,
-                                ),
-                              ),
-                            ]),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 4),
-                      if (desc.isNotEmpty)
-                        ...[_DescCard(desc: desc), const SizedBox(height: 12)],
-                      if (espece == 'cheval' && _EquideCard.hasContent(data))
-                        ...[_EquideCard(data: data), const SizedBox(height: 12)],
-                      if (type == 'portee')
-                        ...[_PorteeCard(data: data, annonceId: widget.annonceId, uidEleveur: data['uidEleveur'] as String?), const SizedBox(height: 12)],
-                      if (type != 'portee')
-                        ...[_AnimalCard(data: data), const SizedBox(height: 12)],
-                      if (typeVente == 'saillie')
-                        ...[_SaillieCard(data: data), const SizedBox(height: 12)],
-                      if (typeVente != 'saillie') ...[_ParentsCard(data: data), const SizedBox(height: 12)],
-                      _SanteCard(data: data),
-                      if (registreType.isNotEmpty)
-                        ...[const SizedBox(height: 12),
-                            _PedigreeCard(data: data, espece: espece)],
-                      const SizedBox(height: 12),
-                      _EleveurCard(
-                        eleveurData: _eleveurData,
-                        uidEleveur: (data['uidEleveur'] as String?) ?? '',
-                        isAssociation: data['profil_source'] == 'association',
-                      ),
-                    ],
-                  ),
+      backgroundColor: kDashFond,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text(displayTitle,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        // Gestion (modifier, booster, statistiques) : uniquement dans « Mes annonces ».
+        actions: [
+          if (!isOwner && FirebaseAuth.instance.currentUser != null)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (v) {
+                if (v == 'signaler') _showSignalementDialog();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'signaler',
+                  child: Row(children: [
+                    Icon(Icons.flag_outlined, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Signaler'),
+                  ]),
                 ),
-              ),
-            ]),
-            // ── Barre basse ──────────────────────────────────────────────
-            Positioned(
-              bottom: 0, left: 0, right: 0,
-              child: _BottomBar(
-                isOwner: isOwner,
-                annonceId: widget.annonceId,
-                data: data,
-                uidEleveur: (data['uidEleveur'] as String?) ?? '',
-                eleveurData: _eleveurData,
-              ),
+              ],
             ),
-          ]),
-        );
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        children: [
+          _Galerie(photos: photos, espece: espece,
+              index: _photoIndex, onChanged: (i) => setState(() => _photoIndex = i)),
+          const SizedBox(height: 14),
+          _HeaderCard(data: data),
+          const SizedBox(height: 10),
+          _LikesRow(
+            annonceId: widget.annonceId,
+            count: _likeCount,
+            isLiked: _isLiked,
+            likers: _likers,
+            onLike: _toggleLike,
+            onShowList: FirebaseAuth.instance.currentUser != null
+                ? () => showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => _LikersSheet(annonceId: widget.annonceId))
+                : null,
+          ),
+          const SizedBox(height: 12),
+          _EleveurCard(
+            eleveurData: _eleveurData,
+            uidEleveur: uidEleveur,
+            isAssociation: data['profil_source'] == 'association',
+          ),
+          const SizedBox(height: 12),
+          if (desc.isNotEmpty)
+            ...[_DescCard(desc: desc), const SizedBox(height: 12)],
+          if (type != 'portee')
+            ...[_AnimalCard(data: data), const SizedBox(height: 12)],
+          if (espece == 'cheval' && _EquideCard.hasContent(data))
+            ...[_EquideCard(data: data), const SizedBox(height: 12)],
+          _SanteCard(data: data),
+          if (registreType.isNotEmpty)
+            ...[const SizedBox(height: 12), _PedigreeCard(data: data, espece: espece)],
+          const SizedBox(height: 12),
+          if (typeVente == 'saillie')
+            ...[_SaillieCard(data: data), const SizedBox(height: 12)],
+          if (type == 'portee')
+            ...[_PorteeCard(data: data, annonceId: widget.annonceId, uidEleveur: data['uidEleveur'] as String?), const SizedBox(height: 12)],
+          if (typeVente != 'saillie') _ParentsCard(data: data, uidEleveur: uidEleveur),
+        ],
+      ),
+      // Contact : jamais proposé au propriétaire de l'annonce.
+      bottomNavigationBar: isOwner ? null : _BottomBar(
+        isOwner: isOwner,
+        annonceId: widget.annonceId,
+        data: data,
+        uidEleveur: uidEleveur,
+        eleveurData: _eleveurData,
+      ),
+    );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Carousel photos
+// Galerie : photo entière (proportions respectées) + miniatures
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _PhotoCarousel extends StatelessWidget {
+class _Galerie extends StatefulWidget {
   final List<String> photos;
   final String espece;
-  final int currentIndex;
+  final int index;
   final ValueChanged<int> onChanged;
-  const _PhotoCarousel({required this.photos, required this.espece,
-      required this.currentIndex, required this.onChanged});
+  const _Galerie({required this.photos, required this.espece, required this.index, required this.onChanged});
+  @override
+  State<_Galerie> createState() => _GalerieState();
+}
+
+class _GalerieState extends State<_Galerie> {
+  late final PageController _ctrl = PageController(initialPage: widget.index);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _plein(int i) => Navigator.push(context, MaterialPageRoute(
+      builder: (_) => _PhotoPleinEcran(photos: widget.photos, initial: i)));
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (_, constraints) {
-      final h = constraints.maxHeight > 0 ? constraints.maxHeight : 300.0;
-      return Stack(fit: StackFit.expand, children: [
-        CarouselSlider(
-          options: CarouselOptions(
-            height: h,
-            viewportFraction: 1.0,
-            enableInfiniteScroll: photos.length > 1,
-            onPageChanged: (i, _) => onChanged(i),
+    final photos = widget.photos;
+    if (photos.isEmpty) {
+      return AspectRatio(aspectRatio: 4 / 3, child: Container(
+        decoration: BoxDecoration(color: const Color(0xFFEEF1EF), borderRadius: BorderRadius.circular(16)),
+        child: Center(child: speciesIcon(widget.espece, 48, _teal)),
+      ));
+    }
+    return Column(children: [
+      AspectRatio(
+        aspectRatio: 4 / 3,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            color: const Color(0xFFEEF1EF),
+            child: Stack(fit: StackFit.expand, children: [
+              PageView.builder(
+                controller: _ctrl,
+                itemCount: photos.length,
+                onPageChanged: widget.onChanged,
+                itemBuilder: (_, i) => GestureDetector(
+                  onTap: () => _plein(i),
+                  child: CachedNetworkImage(
+                    imageUrl: photos[i], fit: BoxFit.contain,
+                    placeholder: (_, __) => const SizedBox.shrink(),
+                    errorWidget: (_, __, ___) => Center(child: speciesIcon(widget.espece, 40, _teal)),
+                  ),
+                ),
+              ),
+              if (photos.length > 1)
+                Positioned(bottom: 10, right: 10, child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
+                  child: Text('${widget.index + 1} / ${photos.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                )),
+            ]),
           ),
-          items: photos.map((url) => CachedNetworkImage(
-            imageUrl: url, fit: BoxFit.cover, width: double.infinity,
-            placeholder: (_, __) => Container(color: const Color(0xFFEEF5EA)),
-            errorWidget: (_, __, ___) => Container(
-                color: const Color(0xFFEEF5EA),
-                child: Center(child: speciesIcon(espece, 40, _green))),
-          )).toList(),
         ),
-        // Dégradé haut
-        Positioned(top: 0, left: 0, right: 0, height: 90,
-          child: DecoratedBox(decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter, end: Alignment.bottomCenter,
-              colors: [Colors.black45, Colors.transparent])))),
-        // Dégradé bas
-        Positioned(bottom: 0, left: 0, right: 0, height: 60,
-          child: DecoratedBox(decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.bottomCenter, end: Alignment.topCenter,
-              colors: [Colors.black45, Colors.transparent])))),
-        // Compteur
-        if (photos.length > 1)
-          Positioned(bottom: 14, right: 14,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(color: Colors.black54,
-                  borderRadius: BorderRadius.circular(12)),
-              child: Text('${currentIndex + 1}/${photos.length}',
-                  style: const TextStyle(color: Colors.white, fontSize: 11,
-                      fontFamily: 'Galey', fontWeight: FontWeight.w600)))),
-        // Dots
-        if (photos.length > 1)
-          Positioned(bottom: 16, left: 0, right: 0,
-            child: Row(mainAxisAlignment: MainAxisAlignment.center,
-              children: photos.asMap().entries.map((e) => AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: currentIndex == e.key ? 20 : 7, height: 7,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
+      ),
+      if (photos.length > 1) ...[
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 58,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: photos.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => _ctrl.animateToPage(i, duration: const Duration(milliseconds: 250), curve: Curves.easeOut),
+              child: Container(
+                width: 76,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: currentIndex == e.key
-                      ? Colors.white : Colors.white.withValues(alpha: 0.45)),
-              )).toList())),
-      ]);
-    });
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: i == widget.index ? _teal : Colors.transparent, width: 2),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(imageUrl: photos[i], fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Container(color: const Color(0xFFEEF1EF))),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ]);
   }
+}
+
+/// Photo en plein écran (zoom), proportions respectées.
+class _PhotoPleinEcran extends StatelessWidget {
+  final List<String> photos;
+  final int initial;
+  const _PhotoPleinEcran({required this.photos, required this.initial});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, elevation: 0),
+        body: PageView.builder(
+          controller: PageController(initialPage: initial),
+          itemCount: photos.length,
+          itemBuilder: (_, i) => InteractiveViewer(
+            child: Center(child: CachedNetworkImage(imageUrl: photos[i], fit: BoxFit.contain)),
+          ),
+        ),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -692,11 +665,13 @@ class _HeaderCard extends StatelessWidget {
   final Map<String, dynamic> data;
   const _HeaderCard({required this.data});
 
-  Color _statutColor(String s) => switch (s) {
-    'disponible' => _green,
-    'reserve'    => const Color(0xFFF59E0B),
-    'vendu' || 'cede' => Colors.blueGrey,
-    _ => Colors.redAccent,
+  String _statutTeinte(String s) => switch (s) {
+    'disponible' => 'vert',
+    'reserve'    => 'ambre',
+    'vendu'      => 'bleu',
+    'cede'       => 'teal',
+    'pause'      => 'gris',
+    _ => 'rouge',
   };
 
   String _typeVenteLabel(String s) => switch (s) {
@@ -718,6 +693,8 @@ class _HeaderCard extends StatelessWidget {
     'vendu'   => 'Vendu',
     'cede'    => 'Cédé',
     'expire'  => 'Expiré',
+    'expiree' => 'Expirée',
+    'pause'   => 'En pause',
     _ => s,
   };
 
@@ -748,12 +725,6 @@ class _HeaderCard extends StatelessWidget {
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
                   color: _teal, fontWeight: FontWeight.w600)),
           const Spacer(),
-          if ((data['vues'] as num?) != null && (data['vues'] as num) > 0) ...[
-            Icon(Icons.visibility_outlined, size: 12, color: Colors.grey.shade400),
-            const SizedBox(width: 3),
-            Text('${data['vues']}', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
-            const SizedBox(width: 10),
-          ],
           if (createdAt != null)
             Text('Publié le ${fmt.format(createdAt.toDate())}',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11,
@@ -762,20 +733,12 @@ class _HeaderCard extends StatelessWidget {
         const SizedBox(height: 8),
         Text(titre.isNotEmpty ? titre : race.isNotEmpty ? race : especeDisplay,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
-                fontSize: 20, color: _dark)),
+                fontSize: 24, color: kDashInk)),
         const SizedBox(height: 10),
         Wrap(spacing: 8, runSpacing: 6, children: [
-          _Badge(type == 'portee' ? 'Portée' : 'Animal individuel',
-              type == 'portee' ? _teal : _green),
-          _Badge(_typeVenteLabel(typeVente),
-            const {
-              'vente': Color(0xFF6366F1),
-              'adoption': _green,
-              'don': _green,
-              'saillie': Color(0xFFEC4899),
-            }[typeVente] ?? _teal,
-          ),
-          _Badge(_statutLabel(statut), _statutColor(statut)),
+          puceStatut(_statutLabel(statut), _statutTeinte(statut)),
+          puceType(_typeVenteLabel(typeVente)),
+          puceType(type == 'portee' ? 'Portée' : 'Animal individuel'),
         ]),
         const SizedBox(height: 14),
         if (const {'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(typeVente)) ...[
@@ -1082,7 +1045,7 @@ class _BabyCardState extends State<_BabyCard> {
           await Supabase.instance.client.from('notifications').insert({
             'uid': widget.uidEleveur,
             'type': 'like',
-            'title': '❤️ Nouveau like sur votre portée',
+            'title': 'Nouveau j\'aime sur votre portée',
             'body': 'Quelqu\'un a aimé un bébé de votre portée',
             'data': {'annonceId': widget.annonceId, 'bebeIndex': widget.bebeIndex},
             'read': false,
@@ -1186,7 +1149,7 @@ class _BabyCardState extends State<_BabyCard> {
                   fontWeight: FontWeight.w700, fontSize: 13, color: _dark),
               maxLines: 1, overflow: TextOverflow.ellipsis),
             Text(
-              '${animal['sexe'] == 'male' ? '♂' : '♀'}'
+              '${animal['sexe'] == 'male' ? 'Mâle' : 'Femelle'}'
               '${(animal['couleur'] as String?)?.isNotEmpty == true ? ' · ${animal['couleur']}' : ''}',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
                   color: Color(0xFF6F767B))),
@@ -1219,7 +1182,7 @@ class _BabyCardState extends State<_BabyCard> {
                   ),
                 ),
                 child: Text(
-                  '❤️ $_likeCount j\'aime${_likeCount > 1 ? 's' : ''}',
+                  '$_likeCount j\'aime${_likeCount > 1 ? 's' : ''}',
                   style: const TextStyle(
                     fontFamily: 'Galey',
                     fontSize: 10,
@@ -1253,7 +1216,7 @@ class _BabyDetailSheetState extends State<_BabyDetailSheet> {
     final photos = List<String>.from(animal['photos'] ?? []);
     final nom    = (animal['nom'] as String?)?.isNotEmpty == true
         ? animal['nom'] as String : 'Bébé';
-    final sexe   = animal['sexe'] == 'male' ? '♂ Mâle' : '♀ Femelle';
+    final sexe   = animal['sexe'] == 'male' ? 'Mâle' : 'Femelle';
     final couleur = (animal['couleur'] as String?) ?? '';
     final couleurYeux = (animal['couleur_yeux'] as String?) ?? '';
     final desc    = (animal['description'] as String?) ?? '';
@@ -1412,7 +1375,7 @@ class _AnimalCard extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
-            "⚠ Âge estimé par l'association — date de naissance exacte inconnue",
+            "Âge estimé par l'association : date de naissance exacte inconnue",
             style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                 color: Colors.grey.shade600, fontStyle: FontStyle.italic),
           ),
@@ -1512,7 +1475,7 @@ class _SaillieCardState extends State<_SaillieCard> {
                 onTap: (t['lien_resultat'] as String?)?.isNotEmpty == true
                     ? () => launchUrl(Uri.parse(t['lien_resultat'] as String), mode: LaunchMode.externalApplication)
                     : null,
-                child: _genChip('${_testLabel(t)}${(t['lien_resultat'] as String?)?.isNotEmpty == true ? ' 🔗' : ''}',
+                child: _genChip('${_testLabel(t)}${(t['lien_resultat'] as String?)?.isNotEmpty == true ? ' (résultat)' : ''}',
                     _resBg(t['resultat'] as String?), _resFg(t['resultat'] as String?)),
               ),
           ])
@@ -1574,49 +1537,60 @@ class _SaillieCardState extends State<_SaillieCard> {
 // Parents (mère + père) avec photos
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ParentsCard extends StatelessWidget {
+class _ParentsCard extends StatefulWidget {
   final Map<String, dynamic> data;
-  const _ParentsCard({required this.data});
+  final String uidEleveur;
+  const _ParentsCard({required this.data, required this.uidEleveur});
+  @override
+  State<_ParentsCard> createState() => _ParentsCardState();
+}
+
+class _ParentsCardState extends State<_ParentsCard> {
+  /// Parents dont la fiche publique de reproducteur est consultable.
+  Set<String> _fiches = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final ids = [widget.data['pereAnimalId'], widget.data['mereAnimalId']]
+        .whereType<String>().where((e) => e.isNotEmpty).toList();
+    if (ids.isNotEmpty && widget.data['profil_source'] != 'association') {
+      reproducteursPublicsVisibles(widget.uidEleveur, ids)
+          .then((v) { if (mounted) setState(() => _fiches = v); });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final mereNom      = (data['mereNom'] as String?) ?? '';
-    final merePuce     = (data['merePuce'] as String?) ?? '';
-    final mereRace     = (data['mereRace'] as String?) ?? '';
-    final mereCouleur  = (data['mereCouleur'] as String?) ?? '';
-    final mereCouleurYeux = (data['mereCouleurYeux'] as String?) ?? '';
-    final mereDesc     = (data['mereDescription'] as String?) ?? '';
-    final mereRegistre = (data['mereRegistre'] as String?) ?? '';
-    final merePhoto    = data['merePhotoUrl'] as String?;
-    final pereNom      = (data['pereNom'] as String?) ?? '';
-    final perePuce     = (data['perePuce'] as String?) ?? '';
-    final pereRace     = (data['pereRace'] as String?) ?? '';
-    final pereCouleur  = (data['pereCouleur'] as String?) ?? '';
-    final pereCouleurYeux = (data['pereCouleurYeux'] as String?) ?? '';
-    final pereDesc     = (data['pereDescription'] as String?) ?? '';
-    final pereRegistre = (data['pereRegistre'] as String?) ?? '';
-    final perePhoto    = data['perePhotoUrl'] as String?;
+    final data = widget.data;
+    String t(String k) => (data[k] as String?) ?? '';
+    final pereId = data['pereAnimalId'] as String?;
+    final mereId = data['mereAnimalId'] as String?;
+    final parents = [
+      (label: 'Père', sexe: 'male', nom: t('pereNom'), puce: t('perePuce'), race: t('pereRace'),
+        couleur: t('pereCouleur'), yeux: t('pereCouleurYeux'), desc: t('pereDescription'),
+        registre: t('pereRegistre'), photo: data['perePhotoUrl'] as String?,
+        fiche: pereId != null && _fiches.contains(pereId) ? pereId : null),
+      (label: 'Mère', sexe: 'femelle', nom: t('mereNom'), puce: t('merePuce'), race: t('mereRace'),
+        couleur: t('mereCouleur'), yeux: t('mereCouleurYeux'), desc: t('mereDescription'),
+        registre: t('mereRegistre'), photo: data['merePhotoUrl'] as String?,
+        fiche: mereId != null && _fiches.contains(mereId) ? mereId : null),
+    ].where((p) => p.nom.isNotEmpty || p.race.isNotEmpty || p.photo != null).toList();
+    if (parents.isEmpty) return const SizedBox.shrink();
 
-    final hasParents = mereNom.isNotEmpty || pereNom.isNotEmpty
-        || merePhoto != null || perePhoto != null;
-    if (!hasParents) return const SizedBox.shrink();
-
-    return _sectionCard('Parents', Icons.family_restroom_outlined, [
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: _ParentColumn(
-          sexe: 'femelle', label: 'Mère',
-          color: const Color(0xFFEC4899),
-          nom: mereNom, puce: merePuce, race: mereRace,
-          couleur: mereCouleur, couleurYeux: mereCouleurYeux, description: mereDesc,
-          registre: mereRegistre, photoUrl: merePhoto)),
-        const SizedBox(width: 12),
-        Expanded(child: _ParentColumn(
-          sexe: 'male', label: 'Père',
-          color: _teal,
-          nom: pereNom, puce: perePuce, race: pereRace,
-          couleur: pereCouleur, couleurYeux: pereCouleurYeux, description: pereDesc,
-          registre: pereRegistre, photoUrl: perePhoto)),
-      ]),
+    return _sectionCard(data['type'] == 'portee' ? 'Les parents' : 'Ses parents', Icons.family_restroom_outlined, [
+      for (final p in parents) ...[
+        _ParentColumn(
+          sexe: p.sexe, label: p.label, color: _teal,
+          nom: p.nom, puce: p.puce, race: p.race,
+          couleur: p.couleur, couleurYeux: p.yeux, description: p.desc,
+          registre: p.registre, photoUrl: p.photo,
+          // Photo, nom et bouton ouvrent la même fiche du bon parent.
+          onFiche: p.fiche == null ? null : () => ouvrirFicheReproducteurPublic(
+              context, uidEleveur: widget.uidEleveur, animalId: p.fiche!),
+        ),
+        if (p != parents.last) const SizedBox(height: 10),
+      ],
     ]);
   }
 }
@@ -1625,20 +1599,16 @@ class _ParentColumn extends StatelessWidget {
   final String sexe, label, nom, puce, race, couleur, couleurYeux, description, registre;
   final Color color;
   final String? photoUrl;
+  /// Fiche publique du parent (null : renseignements de l'annonce seulement).
+  final VoidCallback? onFiche;
   const _ParentColumn({
     required this.sexe, required this.label, required this.color,
     required this.nom, required this.puce,
     required this.race, required this.couleur, this.couleurYeux = '', required this.description,
-    required this.registre, this.photoUrl,
+    required this.registre, this.photoUrl, this.onFiche,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final hasData = nom.isNotEmpty || photoUrl != null;
-    final tappable = photoUrl != null || nom.isNotEmpty;
-
-    return GestureDetector(
-      onTap: tappable ? () => showModalBottomSheet(
+  void _details(BuildContext context) => showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
@@ -1648,69 +1618,74 @@ class _ParentColumn extends StatelessWidget {
           couleur: couleur, couleurYeux: couleurYeux, description: description,
           registre: registre, photoUrl: photoUrl,
         ),
-      ) : null,
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.18)),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(sexe == 'femelle' ? Icons.female : Icons.male, color: color, size: 16),
-            const SizedBox(width: 4),
-            Text(label, style: TextStyle(fontFamily: 'Galey',
-                fontWeight: FontWeight.w700, fontSize: 13, color: color)),
-            const Spacer(),
-            if (tappable)
-              Icon(Icons.open_in_new, size: 13, color: color.withValues(alpha: 0.5)),
-          ]),
-          const SizedBox(height: 8),
-          // Photo parent (thumbnail)
-          if (photoUrl != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Container(color: const Color(0xFFEEF5EA),
-                child: CachedNetworkImage(
-                imageUrl: photoUrl!, height: 100, width: double.infinity,
-                fit: BoxFit.contain,
-                placeholder: (_, __) => Container(
-                    height: 100, color: const Color(0xFFEEF5EA)),
-                errorWidget: (_, __, ___) => Container(
-                    height: 100,
-                    color: const Color(0xFFEEF5EA),
-                    child: Center(child: Icon(
-                        sexe == 'femelle' ? Icons.female : Icons.male,
-                        color: color.withValues(alpha: 0.4), size: 36))),
-              ))),
-            const SizedBox(height: 8),
-          ],
-          if (!hasData)
-            Text('Non renseigné', style: TextStyle(fontFamily: 'Galey',
-                fontSize: 12, color: Colors.grey.shade400,
-                fontStyle: FontStyle.italic))
-          else ...[
-            if (nom.isNotEmpty)
-              Text(nom, style: const TextStyle(fontFamily: 'Galey',
-                  fontWeight: FontWeight.w600, fontSize: 13, color: _dark)),
-            if (puce.isNotEmpty) ...[
-              const SizedBox(height: 3),
-              Text('Puce : $puce', style: TextStyle(fontFamily: 'Galey',
-                  fontSize: 11, color: Colors.grey.shade500)),
-            ],
-            if (registre.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6)),
-                child: Text(registre, style: TextStyle(fontFamily: 'Galey',
-                    fontSize: 10, fontWeight: FontWeight.w700, color: color))),
-            ],
-          ],
-        ]),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    // Avec fiche publique : photo et nom ouvrent la fiche ; sinon les
+    // renseignements saisis dans l'annonce, en détail.
+    final ouvrir = onFiche ?? () => _details(context);
+    final resume = [
+      if (race.isNotEmpty) race,
+      if (couleur.isNotEmpty) 'Robe : $couleur',
+      if (couleurYeux.isNotEmpty) 'Yeux : $couleurYeux',
+      if (registre.isNotEmpty) 'Registre : $registre',
+      if (puce.isNotEmpty) 'Identification : $puce',
+    ];
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kDashBorder),
       ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        GestureDetector(
+          onTap: ouvrir,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 96, height: 96, color: const Color(0xFFEEF1EF),
+              child: photoUrl != null
+                  ? CachedNetworkImage(imageUrl: photoUrl!, fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Icon(sexe == 'femelle' ? Icons.female : Icons.male, color: _teal, size: 32))
+                  : Icon(sexe == 'femelle' ? Icons.female : Icons.male, color: _teal, size: 32),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
+          if (nom.isNotEmpty)
+            GestureDetector(
+              onTap: ouvrir,
+              child: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: kDashInk)),
+            ),
+          if (resume.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            for (final r in resume)
+              Text(r, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: kDashMuted)),
+          ],
+          if (onFiche != null) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onFiche,
+              icon: const Icon(Icons.arrow_forward, size: 16),
+              label: const Text('Voir la fiche du parent',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal, side: BorderSide(color: _teal.withValues(alpha: 0.5)),
+                minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ] else if (description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(description, maxLines: 3, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: kDashMuted, height: 1.35)),
+          ],
+        ])),
+      ]),
     );
   }
 }
@@ -2047,76 +2022,6 @@ class _BottomBar extends StatefulWidget {
 class _BottomBarState extends State<_BottomBar> {
   bool _loading = false;
 
-  bool get _isBoosted {
-    final raw = widget.data['boost_until']?.toString();
-    if (raw == null || raw.isEmpty) return false;
-    final dt = DateTime.tryParse(raw);
-    return dt != null && dt.isAfter(DateTime.now());
-  }
-
-  // Le paiement in-app est interdit (commission Apple/Google) : le boost se
-  // finalise sur le site, comme la publication payante d'une annonce.
-  Future<void> _showBoostSheet() async {
-    final until = widget.data['boost_until']?.toString();
-    final untilDt = until != null ? DateTime.tryParse(until) : null;
-    final active = untilDt != null && untilDt.isAfter(DateTime.now());
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).padding.bottom + 20),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
-                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 18),
-            Row(children: [
-              const Icon(Icons.bolt, color: Color(0xFFFF8A00), size: 22),
-              const SizedBox(width: 8),
-              Text(active ? 'Annonce boostée' : 'Booster mon annonce',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _teal)),
-            ]),
-            const SizedBox(height: 8),
-            Text(
-              active
-                  ? 'Votre annonce est mise en avant jusqu\'au '
-                      '${DateFormat('dd/MM/yyyy à HH:mm').format(untilDt.toLocal())}. '
-                      'Vous pouvez prolonger la mise en avant sur le site.'
-                  : 'Un boost place votre annonce en tête des résultats de recherche '
-                      'et dans le fil. Le paiement se fait sur le site, en quelques secondes.',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF41525A), height: 1.4),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(width: double.infinity, child: ElevatedButton.icon(
-              onPressed: () async {
-                Navigator.pop(ctx);
-                final uri = Uri.parse('$kSiteBaseUrl/annonces/${widget.annonceId}');
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              },
-              icon: const Icon(Icons.open_in_new, size: 18),
-              label: Text(active ? 'Prolonger sur le site' : 'Booster sur le site',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFF8A00), foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            )),
-            const SizedBox(height: 6),
-            Center(child: TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Plus tard',
-                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
-            )),
-          ]),
-        ),
-      ),
-    );
-  }
-
   void _share() {
     final data = widget.data;
     final espece    = (data['espece'] as String?) ?? '';
@@ -2128,14 +2033,14 @@ class _BottomBarState extends State<_BottomBar> {
     final displayTitle = titre.isNotEmpty ? titre : race.isNotEmpty ? race : espece;
     final annonceUrl = 'https://www.petsmatchapp.com/annonces/${widget.annonceId}';
 
-    final lines = <String>['🐾 $displayTitle'];
+    final lines = <String>[displayTitle];
     if (espece.isNotEmpty || race.isNotEmpty)
       lines.add([espece, race].where((s) => s.isNotEmpty).join(' · '));
-    if (typeVente == 'vente' && prix != null) lines.add('💰 $prix €');
-    if (typeVente == 'adoption') lines.add('💚 Adoption / Don');
-    if (typeVente == 'saillie') lines.add('💜 Saillie');
-    if (ville.isNotEmpty) lines.add('📍 $ville');
-    lines.addAll(['', 'Voir l\'annonce sur PetsMatch 🐾', annonceUrl]);
+    if (typeVente == 'vente' && prix != null) lines.add('Prix : $prix €');
+    if (typeVente == 'adoption') lines.add('Adoption / Don');
+    if (typeVente == 'saillie') lines.add('Saillie');
+    if (ville.isNotEmpty) lines.add('Lieu : $ville');
+    lines.addAll(['', 'Voir l\'annonce sur PetsMatch', annonceUrl]);
 
     showModalBottomSheet(
       context: context,
@@ -2234,41 +2139,6 @@ class _BottomBarState extends State<_BottomBar> {
             color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))],
       ),
       child: Row(children: [
-        if (widget.isOwner) ...[
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => CreateAnnoncePage(
-                      annonceId: widget.annonceId, initialData: widget.data))),
-              icon: const Icon(Icons.edit_outlined, size: 18, color: _teal),
-              label: const Text('Modifier',
-                  style: TextStyle(fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700, fontSize: 15, color: _teal)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _teal),
-                minimumSize: const Size(0, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _showBoostSheet,
-              icon: Icon(_isBoosted ? Icons.bolt : Icons.bolt_outlined, size: 18),
-              label: Text(_isBoosted ? 'Boostée' : 'Booster',
-                  style: const TextStyle(fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700, fontSize: 15)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isBoosted ? _green : const Color(0xFFFF8A00),
-                foregroundColor: Colors.white,
-                minimumSize: const Size(0, 50),
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              ),
-            ),
-          ),
-        ],
         if (!widget.isOwner)
         Expanded(
           child: ElevatedButton(
@@ -2336,9 +2206,7 @@ class _BottomBarState extends State<_BottomBar> {
 BoxDecoration _cardDeco() => BoxDecoration(
   color: Colors.white,
   borderRadius: BorderRadius.circular(16),
-  boxShadow: [BoxShadow(
-      color: Colors.black.withValues(alpha: 0.05),
-      blurRadius: 8, offset: const Offset(0, 2))],
+  border: Border.all(color: kDashBorder),
 );
 
 Widget _sectionCard(String title, IconData icon, List<Widget> children) =>
@@ -2347,28 +2215,14 @@ Widget _sectionCard(String title, IconData icon, List<Widget> children) =>
       decoration: _cardDeco(),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(icon, color: _teal, size: 18), const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontFamily: 'Galey',
-              fontWeight: FontWeight.w700, fontSize: 14, color: _teal)),
+          Icon(icon, color: _teal, size: 19), const SizedBox(width: 8),
+          Expanded(child: Text(title, style: const TextStyle(fontFamily: 'Galey',
+              fontWeight: FontWeight.w700, fontSize: 16, color: kDashInk))),
         ]),
         const SizedBox(height: 12),
         ...children,
       ]),
     );
-
-class _Badge extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _Badge(this.label, this.color);
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8)),
-    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-        fontWeight: FontWeight.w700, color: color)),
-  );
-}
 
 class _InfoChip extends StatelessWidget {
   final IconData icon;

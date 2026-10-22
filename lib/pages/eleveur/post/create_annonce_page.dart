@@ -1,3 +1,4 @@
+import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
 import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:PetsMatch/utils/especes_elevees.dart';
 import 'package:PetsMatch/services/annonce_paiement.dart';
@@ -1098,6 +1099,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       if (_espece == 'cheval' && !isSaillie) ...[_sectionEquide(), gap],
       _recap(),
     ];
+    // Modification d'une annonce publiée : une seule page, sections dans
+    // l'ordre de lecture, une seule zone « Annuler / Enregistrer ». La
+    // création et la reprise d'un brouillon gardent les trois étapes.
+    if (widget.annonceId != null && !_estBrouillon) {
+      return _pageModification(
+        isSaillie: isSaillie, isRetraite: isRetraite, chienChat: chienChat);
+    }
     final peutBrouillon = widget.annonceId == null || _estBrouillon;
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1218,6 +1226,104 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     );
   }
 
+  /// « Modifier l'annonce » : mêmes sections et règles qu'à la publication,
+  /// regroupées sur une page (pas de boost ni de statistiques ici).
+  Widget _pageModification({required bool isSaillie, required bool isRetraite, required bool chienChat}) {
+    const gap = SizedBox(height: 12);
+    Widget titre(String t) => Padding(
+          padding: const EdgeInsets.fromLTRB(2, 10, 2, 8),
+          child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
+              color: kDashMuted, letterSpacing: 0.2)),
+        );
+    final sections = <Widget>[
+      titre('Informations principales'),
+      _lockable(_sectionType()), gap,
+      _lockable(_sectionEspece()), gap,
+      if (_type == 'portee') ...[_sectionPortee(), gap],
+      if (_type == 'animal') ...[_sectionAnimal(), gap],
+      titre('Photos et médias'),
+      _sectionPhotos(), gap,
+      titre('Description'),
+      _sectionDescription(), gap,
+      titre('Caractéristiques et renseignements'),
+      if (_espece == 'cheval') ...[_sectionIdentificationEquin(), gap],
+      if (chienChat && _type != 'portee') ...[_sectionIdentificationAnimal(), gap],
+      _sectionSante(), gap,
+      _sectionPedigree(), gap,
+      if (_espece == 'cheval' && !isSaillie) ...[_sectionEquide(), gap],
+      titre('Prix et conditions'),
+      _sectionPublication(), gap,
+      if (isSaillie) ...[_sectionSaillie(), gap],
+      if (_type == 'portee') ...[titre('Bébés de la portée'), _sectionAnimauxPortee(), gap],
+      if (!isSaillie && !isRetraite) ...[
+        titre('Parents'),
+        _lockable(_sectionMere()), gap,
+        _lockable(_sectionPere()), gap,
+      ],
+    ];
+    return Scaffold(
+      backgroundColor: kDashFond,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Modifier l\'annonce',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+      ),
+      body: Column(children: [
+        Expanded(child: SingleChildScrollView(
+          controller: _scroll,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Le type, l\'espèce, la race et les parents ne sont plus modifiables après publication.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: kDashMuted)),
+            ),
+            ...sections,
+          ]),
+        )),
+        // Zone d'actions unique (au-dessus du clavier, sans recouvrir les champs).
+        SafeArea(top: false, child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: kDashBorder))),
+          child: Row(children: [
+            Expanded(child: OutlinedButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kDashInk, side: const BorderSide(color: kDashBorder),
+                minimumSize: const Size(0, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+            const SizedBox(width: 10),
+            Expanded(flex: 2, child: ElevatedButton(
+              onPressed: _saving ? null : () {
+                // Mêmes contrôles légaux que les étapes de la création.
+                final err = _erreurEtape(1) ?? _erreurEtape(2);
+                if (err != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(err, style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red.shade700));
+                  return;
+                }
+                _save();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
+                minimumSize: const Size(0, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: _saving
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Enregistrer les modifications', maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        )),
+      ]),
+    );
+  }
+
   /// Récapitulatif avant publication.
   Widget _recap() {
     final prix = _typeVente == 'saillie'
@@ -1310,12 +1416,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // Bloc sobre : fond blanc, bordure fine, titre texte (l'icône n'est plus affichée).
   Widget _card(String title, IconData icon, List<Widget> children) => Container(
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300)),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kDashBorder)),
     padding: const EdgeInsets.all(16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-          fontSize: 15, color: _dark)),
+          fontSize: 16, color: kDashInk)),
       const SizedBox(height: 12),
       ...children,
     ]),

@@ -7,7 +7,9 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
-import Link from 'next/link';
+import {
+  PageFormulaire, SectionFormulaire, Champ, Colonnes, CaseACocher, InfosVerrouillees, GrillePhotos, classeChamp, styleChamp,
+} from '@/components/annonces/FormulaireAnnonce';
 
 const ESPECE_LABEL: Record<string, string> = {
   chien: 'Chien', chat: 'Chat', lapin: 'Lapin', oiseau: 'Oiseau',
@@ -80,18 +82,6 @@ interface BabyEdit {
   existingPhotos: string[];
   newBlobs: Blob[];
   newPreviews: string[];
-}
-
-function LockedField({ label, value }: { label: string; value?: string }) {
-  return (
-    <div>
-      <label className="text-xs text-gray-400 block mb-1">{label}</label>
-      <div className="flex items-center gap-2 w-full border border-gray-100 rounded-xl px-4 py-2.5 text-sm bg-gray-50 text-gray-500">
-        <span className="flex-1">{value || '—'}</span>
-        <span className="text-gray-300 text-xs" title="Non modifiable après publication">🔒</span>
-      </div>
-    </div>
-  );
 }
 
 export default function ModifierAnnoncePage() {
@@ -376,342 +366,212 @@ export default function ModifierAnnoncePage() {
 
   const isSaillie = annonce.type_vente === 'saillie';
   const isPortee  = annonce.type === 'portee';
-  const iCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
-  const totalMainPhotos = existingPhotos.length + newBlobs.length;
+  const isCheval = annonce.espece === 'cheval';
+  const photosGrille = [
+    ...existingPhotos.map((url, i) => ({ url, cle: `e${i}${url}` })),
+    ...newPreviews.map((url, i) => ({ url, cle: `n${i}${url}` })),
+  ];
+  const majBebe = (idx: number, champ: Partial<BabyEdit>) =>
+    setBabies(prev => prev.map((x, i) => i === idx ? { ...x, ...champ } : x));
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-6">
-        <Link href="/mes-annonces" className="text-gray-400 hover:text-[#0C5C6C] text-xl">←</Link>
-        <div>
-          <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Modifier l&apos;annonce</h1>
-          <p className="text-xs text-gray-400">Les champs identitaires ne peuvent pas être modifiés</p>
-        </div>
-      </div>
+    <>
+    <PageFormulaire retourHref="/mes-annonces" titre="Modifier l’annonce"
+      sousTitre="Les informations d’identité de l’annonce ne peuvent pas être modifiées."
+      erreur={error} onSubmit={handleSubmit} annulerHref="/mes-annonces" enregistrement={saving}>
 
-      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>}
+      {/* Informations principales (non modifiables) */}
+      <InfosVerrouillees lignes={[
+        { label: 'Type', valeur: TYPE_LABEL[annonce.type_vente ?? annonce.type ?? ''] ?? annonce.type_vente ?? annonce.type },
+        { label: 'Titre', valeur: annonce.titre },
+        { label: 'Espèce', valeur: ESPECE_LABEL[annonce.espece ?? ''] ?? annonce.espece },
+        { label: 'Race', valeur: annonce.race },
+        { label: 'Sexe', valeur: annonce.sexe ? (annonce.sexe === 'male' ? 'Mâle' : 'Femelle') : null },
+        { label: 'Naissance', valeur: fmtDate(annonce.type === 'portee' ? annonce.date_naissance : annonce.date_naissance_animal) ?? 'non renseignée' },
+      ]} />
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-
-        {/* Champs verrouillés */}
-        <div className="bg-gray-50 rounded-2xl p-4 space-y-3 border border-gray-100">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
-            🔒 Identité — non modifiable
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <LockedField label="Type d'annonce" value={TYPE_LABEL[annonce.type_vente ?? annonce.type ?? ''] ?? annonce.type_vente ?? annonce.type} />
-            <LockedField label="Espèce" value={ESPECE_LABEL[annonce.espece ?? ''] ?? annonce.espece} />
-            <LockedField label="Race" value={annonce.race} />
-            {annonce.sexe && <LockedField label="Sexe" value={annonce.sexe === 'male' ? 'Mâle' : 'Femelle'} />}
-            {annonce.titre && <LockedField label="Titre" value={annonce.titre} />}
-            <LockedField
-              label="Date de naissance"
-              value={fmtDate(annonce.type === 'portee' ? annonce.date_naissance : annonce.date_naissance_animal)}
-            />
-            {annonce.mere_puce && <LockedField label="Puce mère" value={annonce.mere_puce} />}
-            {annonce.pere_puce && <LockedField label="Puce père" value={annonce.pere_puce} />}
-          </div>
-        </div>
-
-        {/* Description */}
-        <div>
-          <label className="text-xs text-gray-400 block mb-1">Description</label>
-          <textarea className={iCls + ' resize-none'} rows={4} value={description} onChange={e => setDescription(e.target.value)} placeholder="Présentez votre annonce…" />
-        </div>
-
-        {/* Prix */}
-        {isSaillie && (
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">Prix de saillie (€)</label>
-            <input type="number" min="0" className={iCls} value={sailliePrix} onChange={e => setSailliePrix(e.target.value)} />
-          </div>
-        )}
-        {isPortee && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Prix min (€)</label>
-              <input type="number" min="0" className={iCls} value={prixMin} onChange={e => setPrixMin(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">Prix max (€)</label>
-              <input type="number" min="0" className={iCls} value={prixMax} onChange={e => setPrixMax(e.target.value)} />
-            </div>
-          </div>
-        )}
-        {!isSaillie && !isPortee && (
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">Prix (€)</label>
-            <input type="number" min="0" className={iCls} value={prix} onChange={e => setPrix(e.target.value)} />
-          </div>
-        )}
-
-        {/* Cheval — cadence + sport & vidéos */}
-        {annonce.espece === 'cheval' && (
-          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
-            {['location', 'demi_pension', 'pension_complete'].includes(annonce.type_vente ?? '') && (
-              <div>
-                <label className="text-xs text-gray-400 block mb-1">Cadence du prix</label>
-                <select className={iCls} value={prixUnite} onChange={e => setPrixUnite(e.target.value)}>
-                  <option value="mois">par mois</option>
-                  <option value="semaine">par semaine</option>
-                  <option value="convenir">à convenir</option>
-                </select>
-              </div>
-            )}
-            <p className="text-sm font-semibold text-gray-700">🏆 Niveau &amp; résultats</p>
-            <div className="flex flex-wrap gap-2">
-              {['Débutant', 'Galops 1-4', 'Galops 5-7', 'Club', 'Amateur', 'Pro', 'Tous niveaux'].map(n => (
-                <button key={n} type="button" onClick={() => setNiveauEquide(niveauEquide === n ? '' : n)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    niveauEquide === n ? 'border-[#0C5C6C] bg-[#0C5C6C] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}>{n}</button>
-              ))}
-            </div>
-            <textarea className={iCls + ' resize-none'} rows={3} value={palmares} onChange={e => setPalmares(e.target.value)}
-              placeholder="Palmarès / résultats (optionnel)" />
-            <div className="flex gap-3">
-              <input type="number" className={iCls} value={iso} onChange={e => setIso(e.target.value)} placeholder="ISO" />
-              <input type="number" className={iCls} value={idr} onChange={e => setIdr(e.target.value)} placeholder="IDR" />
-              <input type="number" className={iCls} value={icc} onChange={e => setIcc(e.target.value)} placeholder="ICC" />
-            </div>
+      {/* Photos et médias */}
+      <SectionFormulaire titre="Photos et médias" description="La première photo est la photo principale de l’annonce.">
+        <GrillePhotos photos={photosGrille} max={5} onAjouter={handleMainPhotos}
+          onRetirer={i => {
+            if (i < existingPhotos.length) { setExistingPhotos(prev => prev.filter((_, j) => j !== i)); return; }
+            const k = i - existingPhotos.length;
+            URL.revokeObjectURL(newPreviews[k]);
+            setNewBlobs(prev => prev.filter((_, j) => j !== k));
+            setNewPreviews(prev => prev.filter((_, j) => j !== k));
+          }} />
+        {isCheval && (
+          <Colonnes>
             {([['monte', 'Vidéo sous selle', videoMonteUrl] as const, ['libre', 'Vidéo en liberté', videoLibreUrl] as const]).map(([which, label, url]) => (
-              <div key={which}>
-                <label className="text-xs text-gray-400 block mb-1">{label}</label>
+              <Champ key={which} label={label} aide="Fichier vidéo, 60 Mo maximum.">
                 {url ? (
-                  <div className="flex items-center gap-2">
-                    <video src={url} controls className="w-40 rounded-lg border border-gray-200" />
+                  <div className="flex items-center gap-3">
+                    <video src={url} controls className="w-48 rounded-xl" style={styleChamp} />
                     <button type="button" onClick={() => which === 'monte' ? setVideoMonteUrl(null) : setVideoLibreUrl(null)}
-                      className="text-xs text-red-500 hover:text-red-700 font-medium">Retirer</button>
+                      className="text-sm font-semibold text-[#B91C1C] hover:underline">Retirer</button>
                   </div>
                 ) : (
-                  <label className="inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 cursor-pointer hover:border-[#0C5C6C] hover:text-[#0C5C6C]">
-                    {uploadingVideo === which ? 'Envoi…' : '＋ Ajouter une vidéo'}
+                  <label className="min-h-11 inline-flex items-center gap-2 px-4 rounded-xl border border-dashed text-sm font-semibold text-gray-600 cursor-pointer hover:border-[#0C5C6C] hover:text-[#0C5C6C]" style={styleChamp}>
+                    {uploadingVideo === which ? 'Envoi…' : 'Ajouter une vidéo'}
                     <input type="file" accept="video/*" className="hidden" disabled={uploadingVideo !== null}
                       onChange={e => handleEquideVideo(e, which)} />
                   </label>
                 )}
-              </div>
+              </Champ>
             ))}
-          </div>
+          </Colonnes>
         )}
+      </SectionFormulaire>
 
-        {/* Couleur */}
+      {/* Description */}
+      <SectionFormulaire titre="Description">
+        <Champ label="Présentation" htmlFor="description">
+          <textarea id="description" className={`${classeChamp} resize-y`} style={styleChamp} rows={5}
+            value={description} onChange={e => setDescription(e.target.value)} placeholder="Présentez votre annonce…" />
+        </Champ>
+      </SectionFormulaire>
+
+      {/* Caractéristiques et renseignements spécifiques */}
+      <SectionFormulaire titre="Caractéristiques et santé">
         {!isPortee && (
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">Couleur / robe</label>
-            <input className={iCls} value={couleur} onChange={e => setCouleur(e.target.value)} />
-          </div>
+          <Colonnes>
+            <Champ label="Couleur / robe" htmlFor="couleur">
+              <input id="couleur" className={classeChamp} style={styleChamp} value={couleur} onChange={e => setCouleur(e.target.value)} />
+            </Champ>
+            <Champ label="Couleur des yeux" htmlFor="yeux">
+              <input id="yeux" className={classeChamp} style={styleChamp} value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} />
+            </Champ>
+          </Colonnes>
         )}
-
-        {!isPortee && (
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">Couleur des yeux</label>
-            <input className={iCls} value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} />
-          </div>
-        )}
-
-        {/* Santé */}
-        <div className="border border-gray-100 rounded-xl p-4 space-y-3">
-          <p className="text-xs font-semibold text-gray-500">Santé & conformité</p>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'Vacciné(s)',       value: vaccines,       set: setVaccines },
-              { label: 'Vermifugé(s)',     value: vermifuge,      set: setVermifuge },
-              { label: 'Identifié(s)',     value: identification, set: setIdentification },
-              { label: 'Bilan de santé',   value: bilanSante,     set: setBilanSante },
-            ].map(({ label, value, set }) => (
-              <label key={label} className="flex items-center gap-2 cursor-pointer select-none">
-                <div onClick={() => set(!value)}
-                  className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 border-2 transition-colors cursor-pointer ${value ? 'bg-[#6E9E57] border-[#6E9E57]' : 'border-gray-300'}`}>
-                  {value && <span className="text-white text-xs">✓</span>}
-                </div>
-                <span className="text-sm text-gray-700">{label}</span>
-              </label>
-            ))}
-          </div>
-          {!isSaillie && (
-            <div>
-              <label className="text-xs text-gray-400 block mb-1">
-                Âge au départ : <strong>{semaines} semaines</strong>
-              </label>
-              <input type="range" min={8} max={26} value={semaines} onChange={e => setSemaines(Number(e.target.value))}
-                className="w-full accent-[#6E9E57]" />
-            </div>
-          )}
-        </div>
-
-        {/* Pedigree */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">Club / registre pedigree</label>
-            <input className={iCls} value={clubPedigree} onChange={e => setClubPedigree(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 block mb-1">N° registre / LOF</label>
-            <input className={iCls} value={numRegistre} onChange={e => setNumRegistre(e.target.value)} />
-          </div>
-        </div>
-
-        {/* Photos principales de l'annonce */}
         <div>
-          <label className="text-xs text-gray-400 block mb-2">
-            Photos de l&apos;annonce ({totalMainPhotos}/5)
-          </label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {existingPhotos.map((url, i) => (
-              <div key={url} className="relative w-20 h-20 rounded-xl overflow-hidden bg-gray-100 group">
-                <img src={url} alt="" className="w-full h-full object-cover" />
-                <button type="button"
-                  onClick={() => setExistingPhotos(prev => prev.filter((_, j) => j !== i))}
-                  className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-lg transition-opacity">
-                  ✕
-                </button>
-              </div>
-            ))}
-            {newPreviews.map((url, i) => (
-              <div key={url} className="relative w-20 h-20 rounded-xl overflow-hidden bg-gray-100 group">
-                <img src={url} alt="" className="w-full h-full object-cover" />
-                <button type="button"
-                  onClick={() => {
-                    URL.revokeObjectURL(url);
-                    setNewBlobs(prev => prev.filter((_, j) => j !== i));
-                    setNewPreviews(prev => prev.filter((_, j) => j !== i));
-                  }}
-                  className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-lg transition-opacity">
-                  ✕
-                </button>
-              </div>
-            ))}
-            {totalMainPhotos < 5 && (
-              <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-[#0C5C6C]/40 transition-colors">
-                <span className="text-2xl text-gray-300">+</span>
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleMainPhotos} />
-              </label>
-            )}
+          <p className="text-sm font-semibold text-[#1E2025] mb-1">Santé et conformité</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6">
+            <CaseACocher label="Vacciné(s)" checked={vaccines} onChange={setVaccines} />
+            <CaseACocher label="Vermifugé(s)" checked={vermifuge} onChange={setVermifuge} />
+            <CaseACocher label="Identifié(s)" checked={identification} onChange={setIdentification} />
+            <CaseACocher label="Bilan de santé" checked={bilanSante} onChange={setBilanSante} />
           </div>
         </div>
-
-        {/* Section bébés (portée uniquement) */}
-        {isPortee && babies.length > 0 && (
-          <div className="border border-[#0C5C6C]/20 rounded-2xl p-4 space-y-4">
-            <p className="text-xs font-semibold text-[#0C5C6C] uppercase tracking-wide">
-              🐾 Bébés de la portée
-            </p>
-            {babies.map((b, babyIdx) => {
-              const totalBabyPhotos = b.existingPhotos.length + b.newBlobs.length;
-              return (
-                <div key={babyIdx} className="border border-gray-100 rounded-xl p-3 space-y-3">
-                  {/* Nom + sexe (locked) */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-[#1F2A2E]">
-                      {b.nom || `Bébé ${babyIdx + 1}`}
-                    </span>
-                    {b.sexe && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${b.sexe === 'male' ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
-                        {b.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}
-                      </span>
-                    )}
-                    <span className="ml-auto text-xs text-gray-300 flex items-center gap-1">🔒 nom/sexe</span>
-                  </div>
-
-                  {/* Photos du bébé */}
-                  <div>
-                    <label className="text-xs text-gray-400 block mb-1.5">
-                      Photos ({totalBabyPhotos}/5)
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {b.existingPhotos.map((url, pi) => (
-                        <div key={pi} className="relative w-16 h-16 rounded-lg overflow-hidden bg-gray-100 group">
-                          <img src={url} alt="" className="w-full h-full object-cover" />
-                          <button type="button"
-                            onClick={() => removeBabyExistingPhoto(babyIdx, pi)}
-                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-base transition-opacity">
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                      {b.newPreviews.map((url, pi) => (
-                        <div key={pi} className="relative w-16 h-16 rounded-lg overflow-hidden bg-gray-100 group">
-                          <img src={url} alt="" className="w-full h-full object-cover" />
-                          <button type="button"
-                            onClick={() => removeBabyNewPhoto(babyIdx, pi)}
-                            className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-base transition-opacity">
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                      {totalBabyPhotos < 5 && (
-                        <label className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-[#0C5C6C]/40 transition-colors">
-                          <span className="text-xl text-gray-300">+</span>
-                          <input type="file" accept="image/*" multiple className="hidden"
-                            onChange={e => handleBabyPhotos(babyIdx, e)} />
-                        </label>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Couleur, prix, statut */}
-                  <div className="grid grid-cols-4 gap-2">
-                    <div>
-                      <label className="text-xs text-gray-400 block mb-1">Couleur</label>
-                      <input className={iCls + ' text-xs'} value={b.couleur}
-                        onChange={e => setBabies(prev => prev.map((x, i) => i === babyIdx ? { ...x, couleur: e.target.value } : x))}
-                        placeholder="Ex: fauve" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 block mb-1">Couleur des yeux</label>
-                      <input className={iCls + ' text-xs'} value={b.couleur_yeux}
-                        onChange={e => setBabies(prev => prev.map((x, i) => i === babyIdx ? { ...x, couleur_yeux: e.target.value } : x))}
-                        placeholder="Ex: marron" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 block mb-1">Prix (€)</label>
-                      <input type="number" min="0" className={iCls + ' text-xs'} value={b.prix}
-                        onChange={e => setBabies(prev => prev.map((x, i) => i === babyIdx ? { ...x, prix: e.target.value } : x))} />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-400 block mb-1">Statut</label>
-                      <select className={iCls + ' text-xs'} value={b.statut}
-                        onChange={e => setBabies(prev => prev.map((x, i) => i === babyIdx ? { ...x, statut: e.target.value } : x))}>
-                        <option value="disponible">Disponible</option>
-                        <option value="reserve">Réservé</option>
-                        <option value="vendu">Vendu</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {!isSaillie && (
+          <Champ label={`Âge au départ : ${semaines} semaines`} htmlFor="semaines" aide="Entre 8 et 26 semaines.">
+            <input id="semaines" type="range" min={8} max={26} value={semaines} onChange={e => setSemaines(Number(e.target.value))}
+              className="w-full accent-[#0C5C6C]" />
+          </Champ>
         )}
+        <Colonnes>
+          <Champ label="Club / registre pedigree" htmlFor="club">
+            <input id="club" className={classeChamp} style={styleChamp} value={clubPedigree} onChange={e => setClubPedigree(e.target.value)} />
+          </Champ>
+          <Champ label="N° registre / LOF" htmlFor="registre">
+            <input id="registre" className={classeChamp} style={styleChamp} value={numRegistre} onChange={e => setNumRegistre(e.target.value)} />
+          </Champ>
+        </Colonnes>
+        {isCheval && (
+          <>
+            <Champ label="Niveau recommandé">
+              <div className="flex flex-wrap gap-2">
+                {['Débutant', 'Galops 1-4', 'Galops 5-7', 'Club', 'Amateur', 'Pro', 'Tous niveaux'].map(n => (
+                  <button key={n} type="button" onClick={() => setNiveauEquide(niveauEquide === n ? '' : n)} aria-pressed={niveauEquide === n}
+                    className={`min-h-10 px-3.5 rounded-xl text-sm font-semibold border transition-colors ${niveauEquide === n ? 'border-[#0C5C6C] bg-[#0C5C6C] text-white' : 'bg-white text-gray-700 hover:border-[#0C5C6C]/50'}`}
+                    style={niveauEquide === n ? undefined : styleChamp}>{n}</button>
+                ))}
+              </div>
+            </Champ>
+            <Champ label="Palmarès / résultats" htmlFor="palmares" aide="Facultatif.">
+              <textarea id="palmares" className={`${classeChamp} resize-y`} style={styleChamp} rows={3} value={palmares} onChange={e => setPalmares(e.target.value)} />
+            </Champ>
+            <div className="grid grid-cols-3 gap-3">
+              <Champ label="ISO" htmlFor="iso"><input id="iso" type="number" className={classeChamp} style={styleChamp} value={iso} onChange={e => setIso(e.target.value)} /></Champ>
+              <Champ label="IDR" htmlFor="idr"><input id="idr" type="number" className={classeChamp} style={styleChamp} value={idr} onChange={e => setIdr(e.target.value)} /></Champ>
+              <Champ label="ICC" htmlFor="icc"><input id="icc" type="number" className={classeChamp} style={styleChamp} value={icc} onChange={e => setIcc(e.target.value)} /></Champ>
+            </div>
+          </>
+        )}
+      </SectionFormulaire>
 
-        {/* Submit */}
-        <div className="flex gap-3 pt-2">
-          <Link href="/mes-annonces"
-            className="flex-1 text-center border border-gray-200 text-gray-600 py-3 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
-            style={{ fontFamily: 'Galey, sans-serif' }}>
-            Annuler
-          </Link>
-          <button type="submit" disabled={saving}
-            className="flex-1 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white py-3 rounded-xl text-sm font-semibold transition-colors"
-            style={{ fontFamily: 'Galey, sans-serif' }}>
-            {saving ? (
-              <span className="inline-flex items-center gap-2 justify-center">
-                <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Enregistrement…
-              </span>
-            ) : '💾 Enregistrer les modifications'}
-          </button>
-        </div>
-      </form>
+      {/* Prix et conditions */}
+      <SectionFormulaire titre="Prix et conditions">
+        {isSaillie && (
+          <Champ label="Prix de saillie (€)" htmlFor="saillie">
+            <input id="saillie" type="number" min="0" inputMode="decimal" className={classeChamp} style={styleChamp} value={sailliePrix} onChange={e => setSailliePrix(e.target.value)} />
+          </Champ>
+        )}
+        {isPortee && (
+          <Colonnes>
+            <Champ label="Prix minimum (€)" htmlFor="pmin">
+              <input id="pmin" type="number" min="0" inputMode="decimal" className={classeChamp} style={styleChamp} value={prixMin} onChange={e => setPrixMin(e.target.value)} />
+            </Champ>
+            <Champ label="Prix maximum (€)" htmlFor="pmax">
+              <input id="pmax" type="number" min="0" inputMode="decimal" className={classeChamp} style={styleChamp} value={prixMax} onChange={e => setPrixMax(e.target.value)} />
+            </Champ>
+          </Colonnes>
+        )}
+        {!isSaillie && !isPortee && (
+          <Colonnes>
+            <Champ label="Prix (€)" htmlFor="prix">
+              <input id="prix" type="number" min="0" inputMode="decimal" className={classeChamp} style={styleChamp} value={prix} onChange={e => setPrix(e.target.value)} />
+            </Champ>
+            {isCheval && ['location', 'demi_pension', 'pension_complete'].includes(annonce.type_vente ?? '') && (
+              <Champ label="Cadence du prix" htmlFor="cadence">
+                <select id="cadence" className={classeChamp} style={styleChamp} value={prixUnite} onChange={e => setPrixUnite(e.target.value)}>
+                  <option value="mois">par mois</option>
+                  <option value="semaine">par semaine</option>
+                  <option value="convenir">à convenir</option>
+                </select>
+              </Champ>
+            )}
+          </Colonnes>
+        )}
+      </SectionFormulaire>
 
-      {cropSrc && (
-        <ImageCropModal
-          src={cropSrc}
-          onConfirm={handleCropConfirm}
-          onCancel={handleCropSkip}
-        />
+      {/* Bébés de la portée */}
+      {isPortee && babies.length > 0 && (
+        <SectionFormulaire titre="Bébés de la portée" description="Le nom et le sexe des bébés ne sont pas modifiables.">
+          {babies.map((b, babyIdx) => (
+            <div key={babyIdx} className="rounded-xl p-3 sm:p-4 space-y-3" style={{ border: `1px solid ${styleChamp.borderColor}` }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[15px] font-bold text-[#1E2025]">{b.nom || `Bébé ${babyIdx + 1}`}</span>
+                {b.sexe && <span className="text-xs font-semibold text-gray-600 bg-[#F3F6F5] px-2 py-0.5 rounded-full">{b.sexe === 'male' ? 'Mâle' : 'Femelle'}</span>}
+              </div>
+              <GrillePhotos max={5}
+                photos={[...b.existingPhotos.map((url, i) => ({ url, cle: `e${i}${url}` })), ...b.newPreviews.map((url, i) => ({ url, cle: `n${i}${url}` }))]}
+                onAjouter={e => handleBabyPhotos(babyIdx, e)}
+                onRetirer={i => i < b.existingPhotos.length ? removeBabyExistingPhoto(babyIdx, i) : removeBabyNewPhoto(babyIdx, i - b.existingPhotos.length)} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <Champ label="Couleur"><input className={classeChamp} style={styleChamp} value={b.couleur} onChange={e => majBebe(babyIdx, { couleur: e.target.value })} placeholder="Ex : fauve" /></Champ>
+                <Champ label="Couleur des yeux"><input className={classeChamp} style={styleChamp} value={b.couleur_yeux} onChange={e => majBebe(babyIdx, { couleur_yeux: e.target.value })} placeholder="Ex : marron" /></Champ>
+                <Champ label="Prix (€)"><input type="number" min="0" inputMode="decimal" className={classeChamp} style={styleChamp} value={b.prix} onChange={e => majBebe(babyIdx, { prix: e.target.value })} /></Champ>
+                <Champ label="Statut">
+                  <select className={classeChamp} style={styleChamp} value={b.statut} onChange={e => majBebe(babyIdx, { statut: e.target.value })}>
+                    <option value="disponible">Disponible</option>
+                    <option value="reserve">Réservé</option>
+                    <option value="vendu">Vendu</option>
+                  </select>
+                </Champ>
+              </div>
+            </div>
+          ))}
+        </SectionFormulaire>
       )}
-    </div>
+
+      {/* Parents (renseignés à la création, non modifiables) */}
+      {(annonce.mere_nom || annonce.mere_puce || annonce.pere_nom || annonce.pere_puce) && (
+        <InfosVerrouillees titre="Parents" lignes={[
+          { label: 'Père', valeur: annonce.pere_nom },
+          { label: 'Puce du père', valeur: annonce.pere_puce },
+          { label: 'Mère', valeur: annonce.mere_nom },
+          { label: 'Puce de la mère', valeur: annonce.mere_puce },
+        ]} />
+      )}
+    </PageFormulaire>
+
+    {cropSrc && (
+      <ImageCropModal
+        src={cropSrc}
+        onConfirm={handleCropConfirm}
+        onCancel={handleCropSkip}
+      />
+    )}
+    </>
   );
 }

@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_objet_page.dart';
 import 'package:PetsMatch/widgets/dashboard/dashboard_kit.dart';
+import 'package:PetsMatch/widgets/annonces/gestion_annonces_kit.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -29,9 +30,11 @@ class MesAnnoncesObjetsPage extends StatelessWidget {
 /// supprimer). [statut] : 'all', 'actives', 'pause', 'terminees'.
 class MesAnnoncesObjetsListe extends StatefulWidget {
   final String statut;
+  /// Texte de la barre de recherche (titre, catégorie).
+  final String recherche;
   final int refreshKey;
   final ValueChanged<int>? onCompte;
-  const MesAnnoncesObjetsListe({super.key, this.statut = 'all', this.refreshKey = 0, this.onCompte});
+  const MesAnnoncesObjetsListe({super.key, this.statut = 'all', this.recherche = '', this.refreshKey = 0, this.onCompte});
 
   @override
   State<MesAnnoncesObjetsListe> createState() => _MesAnnoncesObjetsListeState();
@@ -139,26 +142,16 @@ class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
       return const Padding(padding: EdgeInsets.all(24),
           child: Center(child: CircularProgressIndicator(color: _teal)));
     }
-    final liste = _rows.where(_garde).toList();
+    final liste = _rows.where(_garde).where((r) => correspondRecherche(widget.recherche,
+        [r['titre']?.toString(), annonceObjetCategorieLabel(r['categorie'] as String?)])).toList();
     if (liste.isEmpty) {
-      return DashCarte(
-        padding: const EdgeInsets.all(20),
-        child: Column(children: [
-          Container(
-            width: 44, height: 44,
-            decoration: const BoxDecoration(color: Color(0xFFE8F4F6), shape: BoxShape.circle),
-            child: const Icon(Icons.inventory_2_outlined, color: _teal, size: 21),
-          ),
-          const SizedBox(height: 10),
-          Text(widget.statut == 'all'
-                  ? 'Aucune annonce de matériel ou d\'équipement pour le moment.'
-                  : 'Aucune annonce de matériel avec ce statut.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: kDashMuted)),
-          // Pas de bouton ici : « Publier une annonce » (bouton principal de
-          // Mes annonces) propose déjà « Matériel & équipements ».
-        ]),
-      );
+      // Aucune annonce du tout : « Aucune annonce » est affiché par la rubrique.
+      if (_rows.isEmpty) return const SizedBox.shrink();
+      // Pas de bouton ici : « Publier une annonce » (bouton principal de
+      // Mes annonces) propose déjà « Matériel & équipements ».
+      return GestionVide(icon: Icons.inventory_2_outlined,
+          texte: widget.recherche.trim().isNotEmpty ? 'Aucune annonce de matériel ne correspond à la recherche.'
+              : 'Aucune annonce de matériel avec ce statut.');
     }
     return Column(children: liste.map(_card).toList());
   }
@@ -168,91 +161,42 @@ class _MesAnnoncesObjetsListeState extends State<MesAnnoncesObjetsListe> {
     final statut = (r['statut'] ?? 'disponible').toString();
     final isPause = statut == 'pause';
     final created = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: kDashBorder),
-        boxShadow: kDashOmbre,
-      ),
-      child: Column(children: [
-        InkWell(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => AnnonceObjetDetailPage(data: r))),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  width: 60, height: 60,
-                  child: photos.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _ph())
-                      : _ph(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text((r['titre'] ?? '').toString(),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15, color: kDashInk)),
-                const SizedBox(height: 2),
-                Text(annonceObjetCategorieLabel(r['categorie'] as String?),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: kDashMuted)),
-                const SizedBox(height: 6),
-                Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  isPause
-                      ? const DashPuce('En pause', fg: Color(0xFF6B7280), bg: Color(0xFFF3F4F6), point: true)
-                      : const DashPuce('En ligne', fg: Color(0xFF2F7D3A), bg: Color(0xFFEAF5EC), point: true),
-                  if (_boosted(r)) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
-                ]),
-              ])),
-              const SizedBox(width: 8),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(annonceObjetPrixLabel(r),
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
-                if (created != null) ...[
-                  const SizedBox(height: 4),
-                  Text(DateFormat('dd/MM/yy').format(created),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: kDashMuted)),
-                ],
-              ]),
-            ]),
-          ),
-        ),
-        Divider(height: 1, color: Colors.grey.shade200),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(children: [
-            _act(Icons.edit_outlined, 'Modifier', _teal, () => _create(edit: r)),
-            const SizedBox(width: 4),
-            _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
-                isPause ? 'Activer' : 'Mettre en pause', const Color(0xFF4B5563), () => _togglePause(r)),
-            const Spacer(),
-            _act(Icons.delete_outline, 'Supprimer', const Color(0xFFC0392B), () => _delete(r)),
-          ]),
-        ),
-      ]),
+    final vues = (r['vues'] as num?)?.toInt() ?? 0;
+    final contacts = (r['contacts'] as num?)?.toInt() ?? 0;
+    void voir() => Navigator.push(context,
+        MaterialPageRoute(builder: (_) => AnnonceObjetDetailPage(data: r)));
+    return GestionCarteAnnonce(
+      onTap: voir,
+      photo: photos.isNotEmpty
+          ? CachedNetworkImage(imageUrl: photos.first, fit: BoxFit.cover, errorWidget: (_, __, ___) => _ph())
+          : _ph(),
+      titre: (r['titre'] ?? '').toString(),
+      sousTitre: annonceObjetCategorieLabel(r['categorie'] as String?),
+      etiquettes: [
+        isPause ? puceStatut('En pause', 'gris') : puceStatut('En ligne', 'vert'),
+        if (_boosted(r)) const DashPuce('Boostée', fg: Color(0xFFB45309), bg: Color(0xFFFEF3C7), icon: Icons.bolt),
+      ],
+      prix: annonceObjetPrixLabel(r),
+      indicateurs: [
+        (Icons.visibility_outlined, '$vues vue${vues > 1 ? 's' : ''}'),
+        (Icons.chat_bubble_outline, '$contacts contact${contacts > 1 ? 's' : ''}'),
+        if (created != null) (Icons.calendar_today_outlined, DateFormat('dd/MM/yy').format(created)),
+      ],
+      principales: [
+        GestionAction('Voir', Icons.visibility_outlined, voir),
+        GestionAction('Modifier', Icons.edit_outlined, () => _create(edit: r)),
+      ],
+      menu: [
+        GestionAction(isPause ? 'Activer' : 'Mettre en pause',
+            isPause ? Icons.play_arrow_outlined : Icons.pause_outlined, () => _togglePause(r)),
+        GestionAction('Supprimer', Icons.delete_outline, () => _delete(r), danger: true),
+      ],
     );
   }
 
   Widget _ph() => Container(
         color: const Color(0xFFE8F4F6),
         child: const Center(child: Icon(Icons.inventory_2_outlined, color: _teal, size: 24)),
-      );
-
-  Widget _act(IconData icon, String label, Color color, VoidCallback onTap) => TextButton.icon(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: color, visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-        ),
-        icon: Icon(icon, size: 16),
-        label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
       );
 }
 
