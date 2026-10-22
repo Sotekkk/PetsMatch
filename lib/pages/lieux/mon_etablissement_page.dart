@@ -28,6 +28,15 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
   bool _loading = true;
   String? _profileId;
 
+  /// Métiers qui créent et gèrent des établissements (parcours existant).
+  bool get _metierEtablissement => User_Info.catPro == 'restauration' || User_Info.catPro == 'pension';
+
+  /// Gestionnaire vérifié d'au moins une fiche (revendication validée par
+  /// l'équipe PetsMatch), quelle que soit sa catégorie professionnelle. Les
+  /// droits réels restent contrôlés en base (petfriendly_places : seul le
+  /// gestionnaire, fixé par l'administration, peut modifier la fiche).
+  bool get _gestionnaireVerifie => _places.any((p) => p['uid_pro'] == _uid && p['verification'] == 'verifie');
+
   @override
   void initState() {
     super.initState();
@@ -42,15 +51,25 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
         // d'un AUTRE profil du même compte (ex. pension vu depuis éleveur).
         _profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       }
-      final filterCol = _profileId != null ? 'pro_profile_id' : 'uid_pro';
-      final filterVal = _profileId ?? _uid!;
-      final data = await _supabase
-          .from('petfriendly_places')
-          .select()
-          .eq(filterCol, filterVal)
-          .order('created_at', ascending: false);
+      final List data;
+      if (_metierEtablissement) {
+        final filterCol = _profileId != null ? 'pro_profile_id' : 'uid_pro';
+        final filterVal = _profileId ?? _uid!;
+        data = await _supabase
+            .from('petfriendly_places')
+            .select()
+            .eq(filterCol, filterVal)
+            .order('created_at', ascending: false);
+      } else {
+        // Autres profils : uniquement les fiches dont ils sont gestionnaires
+        // vérifiés, rattachées au profil actif (ou sans profil précisé).
+        var q = _supabase.from('petfriendly_places').select()
+            .eq('uid_pro', _uid).eq('verification', 'verifie');
+        if (_profileId != null) q = q.or('pro_profile_id.eq.$_profileId,pro_profile_id.is.null');
+        data = await q.order('created_at', ascending: false);
+      }
       setState(() {
-        _places = List<Map<String, dynamic>>.from(data as List);
+        _places = List<Map<String, dynamic>>.from(data);
         _loading = false;
       });
     } catch (_) {
@@ -141,6 +160,25 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
 
   Future<void> _deleteLieu(Map<String, dynamic> place) async {
     final id = place['id'].toString();
+    // Les avis clients ne sont jamais supprimés par l'établissement : une
+    // fiche ajoutée par la communauté, ou qui porte des avis d'autres membres,
+    // ne peut être supprimée que par l'équipe PetsMatch (contrôle aussi en
+    // base : supabase/migration_lieux_avis_suppression.sql). Vérifié avant de
+    // toucher aux photos, pour ne rien effacer en cas de refus.
+    try {
+      final avisClients = await _supabase.from('petfriendly_reviews').select('id')
+          .eq('place_id', id).neq('user_uid', _uid ?? '').limit(1);
+      if ((place['origine'] == 'communaute' && place['ajoute_par_uid'] != _uid) || (avisClients as List).isNotEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+              'Cette fiche porte des avis de membres ou a été ajoutée par la communauté : '
+              'sa suppression doit être demandée à l\'équipe PetsMatch.')));
+        }
+        return;
+      }
+    } catch (_) {
+      return;
+    }
     setState(() => _loading = true);
     try {
       // Suppression des photos (stockage Supabase, bucket media)
@@ -152,7 +190,8 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
 
       // Suppression Supabase (enfants d'abord)
       await _supabase.from('place_disponibilites').delete().eq('place_id', id);
-      await _supabase.from('petfriendly_reviews').delete().eq('place_id', id);
+      // Seuls ses propres avis éventuels (les autres bloquent la suppression ci-dessus).
+      await _supabase.from('petfriendly_reviews').delete().eq('place_id', id).eq('user_uid', _uid ?? '');
       await _supabase.from('place_likes').delete().eq('place_id', id);
       await _supabase.from('place_favoris').delete().eq('place_id', id);
       await _supabase.from('petfriendly_places').delete().eq('id', id);
@@ -174,8 +213,17 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Seuls les profils restauration (et pension pour compatibilité) peuvent gérer des établissements
-    final allowed = User_Info.catPro == 'restauration' || User_Info.catPro == 'pension';
+    // Profils restauration / pension (création et gestion), ou gestionnaire
+    // vérifié d'une fiche revendiquée, quelle que soit sa catégorie.
+    if (!_metierEtablissement && _loading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F8),
+        appBar: AppBar(backgroundColor: _teal, foregroundColor: Colors.white,
+            title: const Text('Mon établissement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        body: const Center(child: CircularProgressIndicator(color: _teal)),
+      );
+    }
+    final allowed = _metierEtablissement || _gestionnaireVerifie;
     if (!allowed) {
       return Scaffold(
         backgroundColor: const Color(0xFFF8F8F8),
@@ -198,7 +246,7 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'La gestion d\'établissements est réservée aux profils\nHébergement / Restauration.',
+                'La gestion d\'établissements est réservée aux profils\nHébergement / Restauration et aux gestionnaires\nvérifiés d\'une fiche revendiquée.',
                 style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.5),
                 textAlign: TextAlign.center,
               ),
@@ -250,7 +298,8 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
                     },
                   ),
                 ),
-      floatingActionButton: _places.isNotEmpty
+      // Création d'établissement : métiers restauration / pension seulement.
+      floatingActionButton: _places.isNotEmpty && _metierEtablissement
           ? FloatingActionButton.extended(
               onPressed: () {
                 Navigator.push(context, MaterialPageRoute(

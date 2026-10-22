@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { Icone } from '@/components/dashboard/kit';
 import { usePlan, PLAN_CONFIG } from '@/lib/use-plan';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -23,7 +24,6 @@ const TYPE_LABELS: Record<string, string> = {
 interface Place {
   id: string;
   nom?: string;
-  vue_count?: number;
   nb_avis?: number;
   note_moyenne?: number;
   statut?: string;
@@ -45,11 +45,13 @@ interface Profile {
   verification_status?: string;
 }
 
+// Liens vers des pages existantes (les anciennes adresses /mes-etablissements,
+// /restauration/profil et /notifications n'existaient pas sur le site).
 const QUICK_LINKS = [
-  { href: '/mes-etablissements',          label: 'Mes établissements',    icon: '🏪' },
-  { href: '/restauration/profil',         label: 'Mon profil',            icon: '🏡' },
-  { href: '/abonnement',                  label: 'Mon abonnement',        icon: '⭐' },
-  { href: '/notifications',               label: 'Notifications',         icon: '🔔' },
+  { href: '#mes-etablissements',          label: 'Mes établissements',    icon: 'maison' },
+  { href: '/profil',                      label: 'Mon profil',            icon: 'personne' },
+  { href: '/abonnement',                  label: 'Mon abonnement',        icon: 'couronne' },
+  { href: '/messages',                    label: 'Messages',              icon: 'message' },
 ];
 
 export default function RestaurationDashboard() {
@@ -76,7 +78,7 @@ export default function RestaurationDashboard() {
           .maybeSingle(),
         supabase
           .from('petfriendly_places')
-          .select('id, nom, vue_count, nb_avis, note_moyenne, statut')
+          .select('id, nom, nb_avis, note_moyenne, statut')
           .eq('uid_pro', uid),
       ]);
 
@@ -109,7 +111,6 @@ export default function RestaurationDashboard() {
     );
   }
 
-  const vuesTotales  = places.reduce((s, p) => s + (p.vue_count ?? 0), 0);
   const nbAvis       = places.reduce((s, p) => s + (p.nb_avis ?? 0), 0);
   const noteMoyenne  = nbAvis > 0
     ? places.reduce((s, p) => s + ((p.note_moyenne ?? 0) * (p.nb_avis ?? 0)), 0) / nbAvis
@@ -134,7 +135,7 @@ export default function RestaurationDashboard() {
             {avatar ? (
               <Image src={avatar} alt="" width={80} height={80} className="object-cover w-full h-full" />
             ) : (
-              <span className="text-3xl">🏡</span>
+              <span className="text-white"><Icone nom="maison" taille={30} /></span>
             )}
           </div>
           <div className="flex-1 min-w-0">
@@ -143,7 +144,7 @@ export default function RestaurationDashboard() {
             </h1>
             <p className="text-white/70 text-sm">{typeLabel}</p>
             {profile?.ville_pro && (
-              <p className="text-white/60 text-xs mt-0.5">📍 {profile.ville_pro}</p>
+              <p className="text-white/60 text-xs mt-0.5 inline-flex items-center gap-1"><Icone nom="pin" taille={13} />{profile.ville_pro}</p>
             )}
             <div className="mt-2 flex gap-2 flex-wrap">
               {!planLoading && (
@@ -153,9 +154,9 @@ export default function RestaurationDashboard() {
                   {planConfig.badge} {planConfig.label}
                 </Link>
               )}
-              <Link href="/restauration/profil"
+              <Link href="/profil"
                 className="inline-flex items-center gap-1.5 text-xs border border-white/40 rounded-full px-3 py-1 hover:bg-white/10 transition-colors">
-                ✏️ Mon profil
+                Mon profil
               </Link>
             </div>
           </div>
@@ -167,12 +168,11 @@ export default function RestaurationDashboard() {
         <ValidationBanner status={verifStatus} />
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {[
-            { value: places.length, label: 'Établissements', icon: '🏪', href: '/mes-etablissements' },
-            { value: vuesTotales,   label: 'Vues totales',   icon: '👀', href: null },
-            { value: nbAvis > 0 ? `${noteMoyenne.toFixed(1)} ⭐` : '–',
-              label: `${nbAvis} avis`, icon: null, href: null },
+            { value: places.length, label: 'Établissements', icon: 'maison', href: '#mes-etablissements' },
+            { value: nbAvis > 0 ? `${noteMoyenne.toFixed(1)} / 5` : '–',
+              label: `${nbAvis} avis`, icon: 'etoile', href: null },
           ].map((s) => (
             <StatCard key={s.label} {...s} />
           ))}
@@ -187,7 +187,7 @@ export default function RestaurationDashboard() {
             {QUICK_LINKS.map((l) => (
               <Link key={l.href} href={l.href}
                 className="bg-white rounded-2xl p-4 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition-shadow">
-                <span className="text-2xl">{l.icon}</span>
+                <span className="text-[#0C5C6C]"><Icone nom={l.icon} taille={24} /></span>
                 <span className="text-xs font-semibold text-[#0C5C6C] text-center"
                   style={{ fontFamily: 'Galey, sans-serif' }}>{l.label}</span>
               </Link>
@@ -197,29 +197,26 @@ export default function RestaurationDashboard() {
 
         {/* Mes établissements */}
         {places.length > 0 && (
-          <div>
+          <div id="mes-etablissements" className="scroll-mt-24">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
                 Mes établissements
               </h2>
-              <Link href="/mes-etablissements" className="text-sm text-[#0C5C6C] hover:underline">
-                Voir tout →
-              </Link>
             </div>
             <div className="space-y-2">
-              {places.slice(0, 3).map(p => (
-                <Link key={p.id} href={`/lieux/${p.id}`}
+              {places.map(p => (
+                <Link key={p.id} href={`/animal-friendly/${p.id}`}
                   className="flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
-                    <span className="text-xl">🏪</span>
+                  <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] text-[#0C5C6C] flex items-center justify-center flex-shrink-0">
+                    <Icone nom="maison" taille={20} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-[#1F2A2E] text-sm truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
                       {p.nom ?? 'Établissement'}
                     </p>
                     <p className="text-xs text-gray-400">
-                      {p.vue_count ?? 0} vues · {p.nb_avis ?? 0} avis
-                      {p.nb_avis ? ` · ${(p.note_moyenne ?? 0).toFixed(1)} ⭐` : ''}
+                      {p.nb_avis ?? 0} avis
+                      {p.nb_avis ? ` · ${(p.note_moyenne ?? 0).toFixed(1)} / 5` : ''}
                     </p>
                   </div>
                   <StatusBadge statut={p.statut} />
@@ -262,14 +259,16 @@ export default function RestaurationDashboard() {
         {/* CTA premier établissement */}
         {places.length === 0 && verifStatus === 'approved' && (
           <div className="bg-white rounded-2xl p-8 flex flex-col items-center gap-3 shadow-sm">
-            <span className="text-4xl">🏪</span>
+            <span className="text-[#0C5C6C]"><Icone nom="maison" taille={40} /></span>
             <p className="text-[#1F2A2E] font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
               Créez votre premier établissement
             </p>
             <p className="text-gray-400 text-sm text-center">
               Ajoutez votre restaurant, hôtel ou café pour être visible par la communauté PetsMatch.
+              S’il figure déjà dans le guide, revendiquez sa fiche depuis cette fiche.
             </p>
-            <Link href="/mes-etablissements/creer"
+            {/* Parcours existant : recherche préalable (anti-doublon), puis ajout. */}
+            <Link href="/animal-friendly/recommander"
               className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-colors">
               Créer un établissement
             </Link>
@@ -289,22 +288,22 @@ function ValidationBanner({ status }: { status: string }) {
     none: {
       bg: 'bg-amber-50 border border-amber-200',
       text: 'text-amber-800',
-      icon: '📝',
+      icon: 'crayon',
       titre: 'Complétez votre profil',
       sub: 'Ajoutez vos informations pour soumettre votre dossier à l\'équipe PetsMatch.',
-      href: '/restauration/profil',
+      href: '/profil',
     },
     pending: {
       bg: 'bg-blue-50 border border-blue-200',
       text: 'text-blue-800',
-      icon: '⏳',
+      icon: 'horloge',
       titre: 'Dossier en cours d\'examen',
       sub: 'Notre équipe vérifie votre profil (SIRET, activité…). Vous serez notifié sous 48h.',
     },
     rejected: {
       bg: 'bg-red-50 border border-red-200',
       text: 'text-red-800',
-      icon: '❌',
+      icon: 'cloche',
       titre: 'Profil refusé',
       sub: 'Contactez support@petsmatch.fr pour comprendre la raison du refus.',
     },
@@ -314,7 +313,7 @@ function ValidationBanner({ status }: { status: string }) {
 
   const inner = (
     <div className={`rounded-2xl p-4 flex items-start gap-3 ${c.bg}`}>
-      <span className="text-2xl flex-shrink-0">{c.icon}</span>
+      <span className={`flex-shrink-0 ${c.text}`}><Icone nom={c.icon} taille={22} /></span>
       <div>
         <p className={`font-bold text-sm ${c.text}`} style={{ fontFamily: 'Galey, sans-serif' }}>{c.titre}</p>
         <p className={`text-xs mt-0.5 ${c.text} opacity-80`}>{c.sub}</p>
@@ -331,7 +330,7 @@ function ValidationBanner({ status }: { status: string }) {
 function StatCard({ value, label, icon, href }: { value: string | number; label: string; icon: string | null; href: string | null }) {
   const inner = (
     <div className="bg-white rounded-2xl p-4 flex flex-col items-center shadow-sm hover:shadow-md transition-shadow h-full">
-      {icon && <span className="text-xl mb-1">{icon}</span>}
+      {icon && <span className="text-[#0C5C6C] mb-1"><Icone nom={icon} taille={20} /></span>}
       <span className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
         {value}
       </span>
