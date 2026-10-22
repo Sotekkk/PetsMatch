@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 // Inscription : adresse prise par une inscription ABANDONNÉE (compte jamais
 // validé) → la Cloud Function libererEmailInscription la supprime pour que la
 // nouvelle inscription passe. Un compte validé n'est jamais touché.
@@ -29,7 +30,17 @@ Future<String?> changerEmailInscription(String jeton, String email) async {
     final r = await http.post(Uri.parse(_kChangerUrl),
         headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $jeton'},
         body: jsonEncode({'email': email.trim()})).timeout(const Duration(seconds: 20));
-    if (r.statusCode == 200) return null;
+    if (r.statusCode == 200) {
+      // Adresse changée = session fermée par Firebase : reconnexion automatique
+      // (jeton fourni par la Cloud Function), sans rien demander à la personne.
+      try {
+        final jetonReco = (jsonDecode(r.body) as Map)['customToken'] as String?;
+        if (jetonReco != null && jetonReco.isNotEmpty) {
+          await FirebaseAuth.instance.signInWithCustomToken(jetonReco);
+        }
+      } catch (_) {}
+      return null;
+    }
     try { return (jsonDecode(r.body) as Map)['error']?.toString() ?? 'Changement impossible. Réessayez.'; } catch (_) {
       return 'Changement impossible. Réessayez.';
     }

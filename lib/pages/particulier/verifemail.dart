@@ -25,6 +25,13 @@ class VerifyEmailPage extends StatefulWidget {
 
 
 
+/// Date de naissance saisie à l'inscription (JJ/MM/AAAA) au format de la base,
+/// recopiée dans le profil par trigger (migration_inscription_date_naissance.sql).
+String? dateNaissanceIso() {
+  final m = RegExp(r'^(\d{2})/(\d{2})/(\d{4})$').firstMatch(User_Info.dateofbirth.trim());
+  return m == null ? null : '${m[3]}-${m[2]}-${m[1]}';
+}
+
 Future<bool> registerUser(String email, String password) async {
   try {
     String uid = User_Info.uid;
@@ -79,6 +86,7 @@ Future<bool> registerUser(String email, String password) async {
       await ecrireLigne('users', {
         'uid':                 uid,
         'firstname':           User_Info.firstname,
+        if (dateNaissanceIso() != null) 'date_of_birth': dateNaissanceIso(),
         'lastname':            User_Info.lastname,
         'email':               User_Info.email,
         'phone_number':        User_Info.phone_number,
@@ -231,6 +239,7 @@ Future<Object> registerElevage(String email, String password) async {
       await ecrireLigne('users', {
         'uid':                   uid,
         'firstname':             User_Info.firstname,
+        if (dateNaissanceIso() != null) 'date_of_birth':   dateNaissanceIso(),
         'lastname':              User_Info.lastname,
         'email':                 User_Info.email,
         'phone_number':          User_Info.phone_number,
@@ -385,26 +394,31 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
 
   bool _reconnexionProposee = false;
 
+  /// Session plus valable (adresse changée côté serveur, lien expiré, appli
+  /// restée ouverte) : on propose de se reconnecter (une seule fois) ; les
+  /// informations sont gardées et un nouveau lien pourra être envoyé.
+  Future<void> _proposerReconnexion() async {
+    if (!mounted || _reconnexionProposee) return;
+    _reconnexionProposee = true;
+    _pollTimer?.cancel();
+    await showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
+      title: const Text('Reconnectez-vous', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text("Votre session a expiré. Reconnectez-vous avec $_currentEmail et votre mot de passe : "
+          "vos informations sont conservées et vous pourrez recevoir un nouveau lien de validation.",
+          style: const TextStyle(fontFamily: 'Galey')),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Me reconnecter'))],
+    ));
+    if (!mounted) return;
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    await FirebaseAuth.instance.signOut();
+  }
+
   Future<void> _checkEmailVerified() async {
     User? user = FirebaseAuth.instance.currentUser;
     try {
       await user?.reload();
     } catch (_) {
-      // Adresse changée côté serveur : cette session n'est plus valable. On
-      // propose de se reconnecter avec la nouvelle adresse (une seule fois).
-      if (!mounted || _reconnexionProposee) return;
-      _reconnexionProposee = true;
-      _pollTimer?.cancel();
-      await showDialog(context: context, barrierDismissible: false, builder: (ctx) => AlertDialog(
-        title: const Text('Reconnectez-vous', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Text("Votre adresse a été modifiée en $_currentEmail. Après avoir cliqué sur le lien de validation, "
-            "reconnectez-vous avec cette adresse et votre mot de passe pour terminer l'inscription.",
-            style: const TextStyle(fontFamily: 'Galey')),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Me reconnecter'))],
-      ));
-      if (!mounted) return;
-      Navigator.of(context).popUntil((r) => r.isFirst);
-      await FirebaseAuth.instance.signOut();
+      await _proposerReconnexion();
       return;
     }
     user = FirebaseAuth.instance.currentUser;
@@ -441,9 +455,15 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
 
   Future<void> _resendVerificationEmail() async {
     User? user = FirebaseAuth.instance.currentUser;
-    if (user != null && !user.emailVerified) {
+    String jeton = '';
+    try { jeton = await user?.getIdToken(true) ?? ''; } catch (_) {}
+    if (user == null || jeton.isEmpty) {
+      await _proposerReconnexion();
+      return;
+    }
+    if (!user.emailVerified) {
       // Renvoi par le serveur (l'envoi direct échoue souvent en silence).
-      final err = await changerEmailInscription(await user.getIdToken() ?? '', user.email ?? '');
+      final err = await changerEmailInscription(jeton, user.email ?? '');
       if (err != null) {
         try { await user.sendEmailVerification(); } catch (_) {}
       }

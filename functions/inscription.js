@@ -207,8 +207,17 @@ exports.changerEmailInscription = functions
             // l'appli porte encore l'ancienne adresse juste après le changement.
             const lien = await admin.auth().generateEmailVerificationLink(email);
             const envoye = await envoyerValidation(email, lien, m[1]);
+            // Changer l'adresse ferme la session en cours (Firebase) : jeton de
+            // reconnexion automatique, pour ne pas faire se reconnecter quelqu'un
+            // en pleine création de compte.
+            let customToken = null;
+            try {
+                customToken = await admin.auth().createCustomToken(uid);
+            } catch (e) {
+                console.error("[inscription] jeton de reconnexion:", e.message);
+            }
             console.log(`[inscription] adresse corrigée avant validation uid=${uid} envoi=${envoye}`);
-            res.json({ok: true, envoye});
+            res.json({ok: true, envoye, customToken});
         } catch (e) {
             console.error("[inscription] changerEmailInscription:", e.message);
             res.status(500).json({error: "Changement impossible. Réessayez."});

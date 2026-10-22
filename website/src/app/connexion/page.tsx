@@ -44,7 +44,13 @@ export default function ConnexionPage() {
     setNoAccount(false);
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      // Inscription pas encore validée : retour sur la page de validation
+      // (renvoi du lien, correction de l'adresse), jamais sur le site connecté.
+      if (!cred.user.emailVerified) {
+        router.push(`/verifier-email?suite=${encodeURIComponent(suite())}`);
+        return;
+      }
       router.push(suite());
     } catch (err) {
       const code = (err as { code?: string })?.code ?? '';

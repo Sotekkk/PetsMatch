@@ -33,6 +33,9 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   final TextEditingController _elevagePhoneController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   final TextEditingController _pseudoController = TextEditingController(); // pseudo Pets Social
+  // Réponses de l'inscription (animaux, projet d'adoption) + présentation.
+  final TextEditingController _presentationController = TextEditingController();
+  final TextEditingController _projetController = TextEditingController();
   final TextEditingController _rueController = TextEditingController();
   final TextEditingController _villeController = TextEditingController();
   final TextEditingController _codePostalController = TextEditingController();
@@ -93,6 +96,8 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     _searchDebounce?.cancel();
     _addressSearchCtrl.dispose();
     _pseudoController.dispose();
+    _presentationController.dispose();
+    _projetController.dispose();
     super.dispose();
   }
 
@@ -186,6 +191,8 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
         (row['lastname'] ?? User_Info.lastname).toString();
     _dobController.text = (row['date_of_birth'] ?? '').toString();
     _pseudoController.text = (row['social_pseudo'] ?? '').toString();
+    _presentationController.text = (row['description'] ?? '').toString();
+    _projetController.text = (row['projet_adoption'] ?? '').toString();
     _phoneISOCodeController.text = User_Info.codeISO;
     _phoneController.text =
         (row['phone_number'] ?? row['telephone'] ?? '').toString();
@@ -268,6 +275,8 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       'lastname': _lastnameController.text.trim(),
       'date_of_birth': _dobOrNull,
       'social_pseudo': _pseudoController.text.trim().isEmpty ? null : _pseudoController.text.trim(),
+      'description': _presentationController.text.trim().isEmpty ? null : _presentationController.text.trim(),
+      'projet_adoption': _projetController.text.trim().isEmpty ? null : _projetController.text.trim(),
       'phone_number': _phoneController.text.trim(),
       'telephone': _phoneController.text.trim(),
       'rue': rue,
@@ -660,6 +669,14 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                 ),
               ],
             ]),
+            if (_isParticulierProfile) ...[
+              const SizedBox(height: 12),
+              _card('Présentation et projet', [
+                _champLong('Présentation', _presentationController, 'Quelques mots sur vous et vos animaux'),
+                _champLong("Vos animaux et votre projet d'adoption", _projetController,
+                    "Ex. : J'ai déjà un chien. Projet : adopter un chat."),
+              ]),
+            ],
             const SizedBox(height: 12),
             _card('Coordonnées', [
               if (_isParticulierProfile || (!User_Info.isElevage && !User_Info.isPro)) ...[
@@ -868,6 +885,29 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       ]),
     );
   }
+
+  Widget _champLong(String label, TextEditingController ctrl, String aide) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextFormField(
+          controller: ctrl,
+          minLines: 2,
+          maxLines: 5,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: aide,
+            alignLabelWithHint: true,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _green, width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            isDense: true,
+          ),
+        ),
+      );
 
   Widget _field(String label, TextEditingController ctrl,
       {TextInputType? inputType}) {

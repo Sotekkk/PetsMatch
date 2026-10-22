@@ -2217,6 +2217,10 @@ export default function ProfilPage() {
   const [firstname, setFirstname] = useState('');
   const [lastname, setLastname] = useState('');
   const [dob, setDob] = useState('');
+  // Réponses de l'inscription (« Avez-vous déjà un animal ? », projet
+  // d'adoption) et présentation : profil particulier, modifiables ici.
+  const [presentation, setPresentation] = useState('');
+  const [projetAdoption, setProjetAdoption] = useState('');
   const [phone, setPhone] = useState('');
   const [ville, setVille] = useState('');
   const [cpParticulier, setCpParticulier] = useState('');
@@ -2301,6 +2305,21 @@ export default function ProfilPage() {
     ? resolvedType === 'particulier'
     : !(userData?.isElevage === true);
   const isEleveur = userData?.isElevage === true && !editingParticulier;
+
+  useEffect(() => {
+    if (!activeProfileLoaded || !user || !editingParticulier) return;
+    let annule = false;
+    const q = supabase.from('user_profiles_complet').select('description, projet_adoption');
+    (activeProfileId ? q.eq('id', activeProfileId) : q.eq('uid', user.uid).eq('profile_type', 'particulier'))
+      .maybeSingle()
+      .then(({ data }) => {
+        if (annule || !data) return;
+        const r = data as { description?: string | null; projet_adoption?: string | null };
+        setPresentation(r.description ?? '');
+        setProjetAdoption(r.projet_adoption ?? '');
+      });
+    return () => { annule = true; };
+  }, [activeProfileLoaded, activeProfileId, user, editingParticulier]);
 
   // « Mes annonces » (particulier) : lien visible seulement si le particulier
   // a déjà au moins une annonce cheval. La création reste accessible depuis
@@ -2718,6 +2737,10 @@ export default function ProfilPage() {
           .filter(Boolean).join(', ');
       }
       if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
+      if (editingParticulier) {
+        profileUpdate.description = presentation.trim() || null;
+        profileUpdate.projet_adoption = projetAdoption.trim() || null;
+      }
       if (isEleveur) {
         profileUpdate.nom            = nameElevage;
         profileUpdate.phone_number   = phoneElevage;
@@ -3376,6 +3399,19 @@ export default function ProfilPage() {
               min={bornesNaissancePersonne().min} max={bornesNaissancePersonne().max} />
           </Field>
         </Card>
+
+        {editingParticulier && (
+          <Card title="Présentation et projet">
+            <Field label="Présentation">
+              <textarea value={presentation} onChange={e => setPresentation(e.target.value)} rows={3}
+                placeholder="Quelques mots sur vous et vos animaux" className={inputCls} />
+            </Field>
+            <Field label="Vos animaux et votre projet d'adoption">
+              <textarea value={projetAdoption} onChange={e => setProjetAdoption(e.target.value)} rows={2}
+                placeholder="Ex. : J'ai déjà un chien. Projet : adopter un chat." className={inputCls} />
+            </Field>
+          </Card>
+        )}
 
         {/* ── Élevage info ── */}
         {isEleveur && (

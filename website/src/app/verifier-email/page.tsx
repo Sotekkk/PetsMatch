@@ -66,9 +66,17 @@ function VerifierEmail() {
 
   async function renvoyer() {
     const u = auth.currentUser;
-    if (!u) return;
+    // Session plus valable (lien expiré, adresse changée, onglet resté ouvert) :
+    // on propose de se reconnecter au lieu de ne rien faire.
+    let jeton = '';
+    try { if (u) jeton = await u.getIdToken(true); } catch { /* session expirée */ }
+    if (!u || !jeton) {
+      setSessionExpiree(true);
+      setMessage('Votre session a expiré : reconnectez-vous pour recevoir un nouveau lien.');
+      return;
+    }
     // Renvoi par le serveur (l'envoi direct du navigateur échoue souvent en silence).
-    const err = await changerEmailInscription(await u.getIdToken(), u.email ?? '');
+    const err = await changerEmailInscription(jeton, u.email ?? '');
     if (err) {
       try { await sendEmailVerification(u); setMessage('E-mail renvoyé. Pensez à regarder dans les spams.'); }
       catch { setMessage('Trop de demandes : réessayez dans quelques minutes.'); }
@@ -95,8 +103,8 @@ function VerifierEmail() {
         {sessionExpiree && !verifie ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-600 leading-relaxed">
-              Votre adresse a été modifiée{adresseEnvoi ? <> en <strong className="text-[#1F2A2E]">{adresseEnvoi}</strong></> : null}.
-              Après avoir cliqué sur le lien de validation, reconnectez-vous avec cette adresse et votre mot de passe pour terminer l&apos;inscription.
+              Votre session a expiré{adresseEnvoi ? <> (adresse : <strong className="text-[#1F2A2E]">{adresseEnvoi}</strong>)</> : null}.
+              Reconnectez-vous avec votre adresse et votre mot de passe : vos informations sont conservées et vous pourrez recevoir un nouveau lien de validation.
             </p>
             <button onClick={async () => {
               const mail = adresseEnvoi ?? auth.currentUser?.email ?? '';

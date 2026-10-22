@@ -1,3 +1,5 @@
+import { signInWithCustomToken } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 // Inscription : adresse prise par une inscription ABANDONNÉE (compte jamais
 // validé) → la Cloud Function libererEmailInscription la supprime pour que la
 // nouvelle inscription passe. Un compte validé n'est jamais touché.
@@ -25,8 +27,14 @@ export async function changerEmailInscription(jeton: string, email: string): Pro
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jeton}` },
       body: JSON.stringify({ email: email.trim() }),
     });
-    if (r.ok) return null;
-    return ((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Changement impossible. Réessayez.';
+    const corps = (await r.json().catch(() => ({}))) as { error?: string; customToken?: string | null };
+    if (!r.ok) return corps.error ?? 'Changement impossible. Réessayez.';
+    // Adresse changée = session fermée par Firebase : reconnexion automatique
+    // (jeton fourni par la Cloud Function), sans rien demander à la personne.
+    if (corps.customToken) {
+      try { await signInWithCustomToken(auth, corps.customToken); } catch { /* repli : reconnexion proposée */ }
+    }
+    return null;
   } catch {
     return 'Pas de connexion. Réessayez.';
   }
