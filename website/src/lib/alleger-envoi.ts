@@ -16,6 +16,21 @@ const MO = 1024 * 1024;
 export const TAILLE_MAX_DOCUMENT = 15 * MO;
 export const TAILLE_MAX_VIDEO = 50 * MO;
 
+/** Chemin accepté par Supabase Storage : accents retirés, autres caractères
+ *  non ASCII remplacés par « _ » (« santé reproducteur.webp » était refusé —
+ *  « Invalid key »). Un chemin ASCII reste identique (fichiers existants). */
+export function cheminStockage(chemin: string): string {
+  if (/^[\x20-\x7E]*$/.test(chemin)) return chemin;
+  return chemin.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/œ/g, 'oe').replace(/Œ/g, 'OE').replace(/æ/g, 'ae').replace(/Æ/g, 'AE')
+    .replace(/[^\x20-\x7E]/g, '_');
+}
+
+/** Formats acceptés pour les documents d'une fiche animal (stockage `media` :
+ *  PDF et images seulement). Miroir appli : kFormatsDocuments. */
+export const ACCEPT_DOCUMENTS = '.pdf,.jpg,.jpeg,.png,.webp';
+export const FORMATS_DOCUMENTS = 'PDF, JPG, PNG ou WEBP — 15 Mo maximum';
+
 export type ResultatAllegement =
   | { ok: true; body: unknown; jpeg: boolean }
   | { ok: false; message: string };

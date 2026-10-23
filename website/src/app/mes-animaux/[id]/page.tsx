@@ -14,6 +14,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
 import { useAuth } from '@/lib/auth-context';
 import { RichText } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -1029,7 +1030,9 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
         });
       }
       setExpiration('');
-    } catch { /* ignore */ }
+    } catch (e) {
+      alert(`Envoi impossible : ${e instanceof Error ? e.message : String(e)}\nFormats acceptés : ${FORMATS_DOCUMENTS}.`);
+    }
     finally { setUploading(false); }
   }
 
@@ -1078,10 +1081,11 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
         <label className={`text-xs font-semibold px-3 py-1.5 rounded-full cursor-pointer transition-colors ${uploading ? 'bg-gray-200 text-gray-400' : 'bg-[#0C5C6C] text-white hover:bg-[#094F5D]'}`}>
           {uploading ? 'Envoi…' : '+ Ajouter'}
           <input type="file" className="hidden" disabled={uploading}
-            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+            accept={ACCEPT_DOCUMENTS}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ''; }} />
         </label>
       </div>
+      <p className="text-[11px] text-gray-400 mt-1.5">Formats acceptés : {FORMATS_DOCUMENTS}.</p>
       {expiration && <p className="text-[11px] text-gray-400 mt-1.5">Un rappel sera ajouté à votre agenda 30 jours avant l&apos;expiration.</p>}
       <div className="mt-3 divide-y divide-gray-50">
         {libres.length === 0 && <p className="text-sm text-gray-400 py-2">Aucun document ajouté.</p>}
@@ -3619,7 +3623,9 @@ function AnimalFichePageInner() {
       const newDocs = [...(animal.documents ?? []), { nom: file.name, url: publicUrl, type: file.type, categorie: pendingDocType }];
       await supabase.from('animaux').update({ documents: newDocs }).eq('id', id);
       set('documents', newDocs);
-    } catch { /* ignore */ }
+    } catch (e) {
+      alert(`Envoi impossible : ${e instanceof Error ? e.message : String(e)}\nFormats acceptés : ${FORMATS_DOCUMENTS}.`);
+    }
     finally { setUploading(false); }
   }
 
@@ -4727,10 +4733,11 @@ function AnimalFichePageInner() {
                 <label className={`text-xs font-semibold px-3 py-1.5 rounded-full cursor-pointer transition-colors ${uploading ? 'bg-gray-200 text-gray-400' : 'bg-[#0C5C6C] text-white hover:bg-[#094F5D]'}`}>
                   {uploading ? 'Envoi…' : '+ Ajouter'}
                   <input type="file" className="hidden" disabled={uploading}
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+                    accept={ACCEPT_DOCUMENTS}
                     onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f); e.target.value = ''; }} />
                 </label>
               </div>
+              <p className="px-4 pt-2 text-[11px] text-gray-400">Formats acceptés : {FORMATS_DOCUMENTS}.</p>
               <div className="divide-y divide-gray-50">
                 {(animal.documents ?? []).length === 0 && (
                   <p className="p-4 text-sm text-gray-400">Aucun document</p>

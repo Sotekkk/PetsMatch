@@ -7,6 +7,33 @@ import 'package:video_player/video_player.dart';
 
 const _bucket = 'media';
 
+const _sansAccent = {
+  'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a', 'ã': 'a', 'å': 'a', 'ç': 'c', 'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+  'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i', 'ñ': 'n', 'ó': 'o', 'ò': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o',
+  'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ý': 'y', 'ÿ': 'y', 'œ': 'oe', 'æ': 'ae',
+};
+
+/// Chemin accepté par Supabase Storage : accents retirés, autres caractères
+/// non ASCII remplacés par « _ » (un nom comme « santé reproducteur.webp »
+/// était refusé — « Invalid key »). Un chemin ASCII reste identique (les
+/// fichiers déjà stockés gardent leur adresse).
+String cheminStockage(String chemin) {
+  final buf = StringBuffer();
+  for (final r in chemin.runes) {
+    final c = String.fromCharCode(r);
+    final bas = c.toLowerCase();
+    final remplace = _sansAccent[bas];
+    if (remplace != null) {
+      buf.write(c == bas ? remplace : remplace.toUpperCase());
+    } else if (r >= 32 && r <= 126) {
+      buf.write(c);
+    } else {
+      buf.write('_');
+    }
+  }
+  return buf.toString();
+}
+
 /// Compress [file] then upload to Supabase Storage at [storagePath].
 /// Returns the public URL.
 Future<String> uploadPhoto(
@@ -33,6 +60,7 @@ Future<String> uploadPhotoPrive(File file, String storagePath, {int maxDim = 160
     quality: quality, keepExif: false,
   );
   final bytes = result ?? await file.readAsBytes();
+  storagePath = cheminStockage(storagePath);
   final supa = Supabase.instance.client;
   await supa.storage.from('documents').uploadBinary(
     storagePath, bytes,
@@ -52,6 +80,7 @@ Future<String> uploadPhotoBytes(
 }
 
 Future<String> _upload(Uint8List bytes, String storagePath) async {
+  storagePath = cheminStockage(storagePath);
   final supa = Supabase.instance.client;
   await supa.storage.from(_bucket).uploadBinary(
     storagePath,
@@ -75,6 +104,7 @@ Future<String> uploadRawFile(File file, String storagePath) async {
 /// Octets déjà encodés (PDF généré…) → bucket PRIVÉ `documents`.
 Future<String> uploadDocumentBytes(Uint8List bytes, String storagePath,
     {String contentType = 'application/pdf'}) async {
+  storagePath = cheminStockage(storagePath);
   final supa = Supabase.instance.client;
   await supa.storage.from('documents').uploadBinary(
     storagePath, bytes,
@@ -86,6 +116,11 @@ Future<String> uploadDocumentBytes(Uint8List bytes, String storagePath,
 Future<String> uploadDocument(File file, String storagePath) async {
   return _uploadDoc(file, storagePath, 'documents');
 }
+
+/// Formats acceptés pour les documents d'une fiche animal (stockage `media` :
+/// PDF et images seulement). Les photos HEIC (iPhone) sont converties en JPEG.
+const kExtensionsDocuments = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'];
+const kFormatsDocuments = 'PDF, JPG, PNG ou WEBP — 15 Mo maximum';
 
 /// Poids maximal d'un document non compressible (PDF…) : au-delà, chaque
 /// ouverture coûte cher en trafic Supabase (« Cached Egress »).
@@ -115,6 +150,7 @@ Future<File> compresserVideo(File video) async {
 }
 
 Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
+  storagePath = cheminStockage(storagePath);
   final ext = file.path.split('.').last.toLowerCase();
   final estVideo = const {'mp4', 'mov', 'webm', '3gp', 'm4v'}.contains(ext);
   final estImage = const {'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'}.contains(ext);
@@ -124,7 +160,7 @@ Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
     final v = await compresserVideo(file);
     videoReencodee = v.path != file.path;
     bytes = await v.readAsBytes();
-  } else if (estImage && await file.length() > 500 * 1024) {
+  } else if (estImage && (ext == 'heic' || ext == 'heif' || await file.length() > 500 * 1024)) {
     // Photo de document (scan, radio…) : 2000 px restent lisibles.
     final c = await FlutterImageCompress.compressWithFile(
       file.absolute.path, minWidth: 2000, minHeight: 2000, quality: 85, keepExif: false,
@@ -142,6 +178,8 @@ Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
     _ when estImage && bytes.isNotEmpty && bytes[0] == 0xFF => 'image/jpeg', // JPEG (réencodé ou d'origine)
     'png'           => 'image/png',
     'jpg' || 'jpeg' => 'image/jpeg',
+    'webp'          => 'image/webp',
+    'gif'           => 'image/gif',
     _ when videoReencodee => 'video/mp4',
     'mp4'           => 'video/mp4',
     'mov'           => 'video/quicktime',

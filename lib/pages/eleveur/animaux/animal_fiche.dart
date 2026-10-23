@@ -2275,7 +2275,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               child: const Icon(Icons.insert_drive_file_outlined, color: Color(0xFF5F9EAA)),
             ),
             title: const Text('Importer un fichier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-            subtitle: const Text('PDF, JPG, PNG...', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            subtitle: const Text(kFormatsDocuments, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
             onTap: () => Navigator.pop(context, 'file'),
           ),
         ]),
@@ -2291,7 +2291,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       docFile = File(picked.path);
     } else {
       final result = await FilePicker.pickFiles(
-          type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'png', 'jpeg']);
+          type: FileType.custom, allowedExtensions: kExtensionsDocuments);
       if (result?.files.single.path == null || !mounted) return;
       docFile = File(result!.files.single.path!);
     }
@@ -8274,14 +8274,15 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
             onTap: () => Navigator.pop(context, 'gallery')),
         ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('Appareil photo'),
             onTap: () => Navigator.pop(context, 'camera')),
-        ListTile(leading: const Icon(Icons.insert_drive_file_outlined), title: const Text('Fichier (PDF, image)'),
+        ListTile(leading: const Icon(Icons.insert_drive_file_outlined), title: const Text('Fichier'),
+            subtitle: const Text(kFormatsDocuments, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
             onTap: () => Navigator.pop(context, 'file')),
       ])),
     );
     if (choice == null || !mounted) return;
     File? f;
     if (choice == 'file') {
-      final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+      final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: kExtensionsDocuments);
       if (r?.files.single.path == null) return;
       f = File(r!.files.single.path!);
     } else {

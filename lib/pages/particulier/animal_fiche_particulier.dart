@@ -2323,6 +2323,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           ListTile(
             leading: const Icon(Icons.picture_as_pdf_outlined, color: _teal),
             title: const Text('Fichier / PDF', style: TextStyle(fontFamily: 'Galey')),
+            subtitle: const Text(kFormatsDocuments, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
             onTap: () => Navigator.pop(ctx, 'file'),
           ),
           const SizedBox(height: 8),
@@ -2334,7 +2335,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     File file;
     if (source == 'file') {
       final res = await FilePicker.pickFiles(
-          type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
+          type: FileType.custom, allowedExtensions: kExtensionsDocuments);
       final path = res?.files.single.path;
       if (path == null) return;
       file = File(path);
@@ -2876,14 +2877,15 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               onTap: () => Navigator.pop(context, 'gallery')),
           ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('Appareil photo'),
               onTap: () => Navigator.pop(context, 'camera')),
-          ListTile(leading: const Icon(Icons.insert_drive_file_outlined), title: const Text('Fichier (PDF, image)'),
+          ListTile(leading: const Icon(Icons.insert_drive_file_outlined), title: const Text('Fichier'),
+              subtitle: const Text(kFormatsDocuments, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
               onTap: () => Navigator.pop(context, 'file')),
         ])),
       );
       if (choice == null) return;
       File? f;
       if (choice == 'file') {
-        final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+        final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: kExtensionsDocuments);
         if (r?.files.single.path == null) return;
         f = File(r!.files.single.path!);
       } else {
@@ -2897,7 +2899,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
         final name = '${DateTime.now().millisecondsSinceEpoch}_${f.path.split('/').last}';
         url = await uploadRawFile(f, 'documents/$uid/$name');
-      } catch (_) {}
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Envoi impossible ($kFormatsDocuments) : $e'), backgroundColor: Colors.red));
+        }
+      }
       ss(() => uploading = false);
     }
 
@@ -6916,6 +6923,7 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
           ListTile(
             leading: const Icon(Icons.picture_as_pdf_outlined, color: _kTealDoc),
             title: const Text('Fichier / PDF', style: TextStyle(fontFamily: 'Galey')),
+            subtitle: const Text(kFormatsDocuments, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
             onTap: () => Navigator.pop(ctx, 'file'),
           ),
           const SizedBox(height: 8),
@@ -6927,7 +6935,7 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
     File file;
     if (source == 'file') {
       final res = await FilePicker.pickFiles(
-          type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
+          type: FileType.custom, allowedExtensions: kExtensionsDocuments);
       final path = res?.files.single.path;
       if (path == null) return;
       file = File(path);

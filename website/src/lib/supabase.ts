@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { allegerEnvoi } from '@/lib/alleger-envoi';
+import { allegerEnvoi, cheminStockage } from '@/lib/alleger-envoi';
 import { auth } from '@/lib/firebase';
 
 // Le token Firebase est transmis à chaque requête (Third-Party Auth Firebase
@@ -27,8 +27,15 @@ function brancherAllegement<C extends { storage: ReturnType<typeof createClient>
       const r = await allegerEnvoi(bucket, body);
       // Même forme qu'un refus du serveur : les pages affichent error.message.
       if (!r.ok) return { data: null, error: Object.assign(new Error(r.message), { __isStorageError: true }) } as unknown as Awaited<ReturnType<typeof upload>>;
-      return upload(path, r.body as typeof body, r.jpeg ? { ...options, contentType: 'image/jpeg' } : options);
+      return upload(cheminStockage(path), r.body as typeof body, r.jpeg ? { ...options, contentType: 'image/jpeg' } : options);
     }) as typeof api.upload;
+    // Même chemin nettoyé à la lecture qu'à l'envoi (noms de fichier accentués).
+    const getPublicUrl = api.getPublicUrl.bind(api);
+    api.getPublicUrl = ((path: string, opts?: Parameters<typeof getPublicUrl>[1]) =>
+      getPublicUrl(cheminStockage(path), opts)) as typeof api.getPublicUrl;
+    const createSignedUrl = api.createSignedUrl.bind(api);
+    api.createSignedUrl = ((path: string, expiresIn: number, opts?: Parameters<typeof createSignedUrl>[2]) =>
+      createSignedUrl(cheminStockage(path), expiresIn, opts)) as typeof api.createSignedUrl;
     return api;
   }) as typeof client.storage.from;
   return client;
