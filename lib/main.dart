@@ -17,6 +17,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/settings/avertissements_page.dart';
+import 'package:PetsMatch/pages/communaute/forum_page.dart' show openForumSujet;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -254,6 +255,16 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
       ),
     ));
     return;
+  }
+
+  // Forum (réponse ou citation) : la discussion directement.
+  final sujetId = data['sujetId']?.toString() ?? '';
+  if ((type == 'forum_reponse' || type == 'forum_mention') && sujetId.isNotEmpty) {
+    final c = navigatorKey.currentContext;
+    if (c != null) {
+      await openForumSujet(c, sujetId);
+      return;
+    }
   }
 
   // Décision de modération : Paramètres → Connexion et sécurité → Avertissements.

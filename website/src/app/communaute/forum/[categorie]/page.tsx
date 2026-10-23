@@ -1,18 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { loadBreeds } from '@/lib/breeds';
+import ChampMention, { TexteAvecMentions, mentionsEnTexte, versBalisage } from '@/components/ChampMention';
 
-const CAT_INFO: Record<string, { label: string; emoji: string }> = {
-  sante:       { label: 'Santé',         emoji: '🏥' },
-  alimentation:{ label: 'Alimentation',  emoji: '🍖' },
-  education:   { label: 'Éducation',     emoji: '🎓' },
-  elevage:     { label: 'Élevage',       emoji: '🐣' },
-  bien_etre:   { label: 'Bien-être',     emoji: '💆' },
-  general:     { label: 'Général',       emoji: '💬' },
+const CAT_INFO: Record<string, { label: string }> = {
+  sante:       { label: 'Santé' },
+  alimentation:{ label: 'Alimentation' },
+  education:   { label: 'Éducation' },
+  elevage:     { label: 'Élevage' },
+  bien_etre:   { label: 'Bien-être' },
+  general:     { label: 'Général' },
 };
 
 // « Animal concerné » — même liste que l'appli (forum_page.dart _kAnimalTypes).
@@ -174,7 +175,10 @@ export default function ForumCategoriePage() {
   const { categorie } = useParams<{ categorie: string }>();
   const router = useRouter();
   const { user, activeProfileId } = useAuth();
-  const cat = CAT_INFO[categorie] ?? { label: categorie, emoji: '💬' };
+  const cat = CAT_INFO[categorie] ?? { label: categorie };
+  // Personnes citées (@) dans la réponse / le nouveau sujet en cours.
+  const nomsReponse = useRef(new Map<string, string>());
+  const nomsSujet = useRef(new Map<string, string>());
 
   const [sujets, setSujets] = useState<Sujet[]>([]);
   const [authors, setAuthors] = useState<Record<string, Author>>({});
@@ -220,6 +224,14 @@ export default function ForumCategoriePage() {
 
   useEffect(() => { loadSujets(); }, [loadSujets]);
 
+  useEffect(() => {
+    const sujetId = new URLSearchParams(window.location.search).get('sujet');
+    if (!sujetId) return;
+    supabase.from('forum_sujets').select('*').eq('id', sujetId).maybeSingle()
+      .then(({ data }) => { if (data) openSujetDetail(data as Sujet); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function openSujetDetail(sujet: Sujet) {
     setOpenSujet(sujet);
     setLoadingReponses(true);
@@ -240,7 +252,7 @@ export default function ForumCategoriePage() {
       const { data } = await supabase.from('forum_reponses').insert({
         sujet_id: openSujet.id, auteur_uid: user.uid,
         auteur_profile_id: activeProfileId || null,
-        contenu: newReponse.trim(), created_at: new Date().toISOString(),
+        contenu: versBalisage(newReponse.trim(), nomsReponse.current), created_at: new Date().toISOString(),
         ...(photoUrl ? { photo_url: photoUrl } : {}),
       }).select().single();
       if (data) {
@@ -252,6 +264,7 @@ export default function ForumCategoriePage() {
         }
       }
       setNewReponse('');
+      nomsReponse.current.clear();
       setReplyPhoto(null);
     } finally { setSending(false); }
   }
@@ -264,7 +277,7 @@ export default function ForumCategoriePage() {
       const { data } = await supabase.from('forum_sujets').insert({
         categorie_slug: categorie, auteur_uid: user.uid,
         auteur_profile_id: activeProfileId || null,
-        titre: newTitre.trim(), contenu: newContenu.trim(),
+        titre: newTitre.trim(), contenu: versBalisage(newContenu.trim(), nomsSujet.current),
         created_at: new Date().toISOString(),
         ...(photoUrl ? { photo_url: photoUrl } : {}),
         ...(newAnimaux.length ? { animal_types: newAnimaux } : {}),
@@ -275,6 +288,7 @@ export default function ForumCategoriePage() {
       setShowCreate(false);
       setNewTitre('');
       setNewContenu('');
+      nomsSujet.current.clear();
       setNewPhoto(null);
       setNewAnimaux([]);
       setNewRace('');
@@ -290,7 +304,6 @@ export default function ForumCategoriePage() {
             ← Forum
           </button>
           <div className="flex items-center gap-3">
-            <span className="text-4xl">{cat.emoji}</span>
             <div>
               <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{cat.label}</h1>
               <p className="text-white/70 text-sm">{sujets.length} sujet{sujets.length !== 1 ? 's' : ''}</p>
@@ -336,7 +349,7 @@ export default function ForumCategoriePage() {
                     <p className="font-bold text-[#1E2025] text-sm mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
                       {(s.video_url ? '🎥 ' : s.photo_url ? '📷 ' : '')}{s.titre}
                     </p>
-                    <p className="text-xs text-gray-500 line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{s.contenu}</p>
+                    <p className="text-xs text-gray-500 line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{mentionsEnTexte(s.contenu)}</p>
                     {libelleAnimaux(s) && (
                       <span className="inline-block mt-2 text-[11px] font-semibold text-[#00838F] bg-[#00ACC1]/10 rounded-full px-2 py-0.5">{libelleAnimaux(s)}</span>
                     )}
@@ -365,7 +378,7 @@ export default function ForumCategoriePage() {
               {/* Message principal */}
               <div className="bg-[#E0F7FA] rounded-2xl p-4 mb-4">
                 <div className="mb-3"><AuthorBadge author={authors[authorKey(openSujet)]} /></div>
-                <p className="text-sm text-[#1E2025] leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{openSujet.contenu}</p>
+                <p className="text-sm text-[#1E2025] leading-relaxed whitespace-pre-line" style={{ fontFamily: 'Galey, sans-serif' }}><TexteAvecMentions texte={openSujet.contenu} /></p>
                 {(openSujet.photo_url || openSujet.video_url) && (
                   <div className="mt-3">
                     <ForumMedia photoUrl={openSujet.photo_url} videoUrl={openSujet.video_url} />
@@ -385,7 +398,7 @@ export default function ForumCategoriePage() {
                       <div key={r.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA]' : 'bg-gray-100'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
                           {!isMe && <div className="mb-1.5"><AuthorBadge author={authors[authorKey(r)]} size={20} /></div>}
-                          {r.contenu && <p className="text-[#1E2025]">{r.contenu}</p>}
+                          {r.contenu && <p className="text-[#1E2025] whitespace-pre-line"><TexteAvecMentions texte={r.contenu} /></p>}
                           {(r.photo_url || r.video_url) && (
                             <div className={r.contenu ? 'mt-2' : ''}>
                               <ForumMedia photoUrl={r.photo_url} videoUrl={r.video_url} />
@@ -419,13 +432,14 @@ export default function ForumCategoriePage() {
                   <input type="file" accept="image/*" className="hidden"
                     onChange={e => setReplyPhoto(e.target.files?.[0] ?? null)} />
                 </label>
-                <input
-                  value={newReponse}
-                  onChange={e => setNewReponse(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendReponse()}
-                  placeholder="Votre réponse…"
-                  className="flex-1 bg-gray-50 rounded-full px-4 py-2 text-sm focus:outline-none border border-gray-200 focus:border-[#00ACC1]"
-                  style={{ fontFamily: 'Galey, sans-serif' }}
+                <ChampMention
+                  valeur={newReponse}
+                  onChange={setNewReponse}
+                  noms={nomsReponse.current}
+                  onEntree={sendReponse}
+                  uidExclu={user.uid}
+                  placeholder="Votre réponse… (@ pour citer quelqu'un)"
+                  className="w-full bg-gray-50 rounded-full px-4 py-2 text-sm focus:outline-none border border-gray-200 focus:border-[#00ACC1]"
                 />
                 <button
                   onClick={sendReponse}
@@ -507,13 +521,15 @@ export default function ForumCategoriePage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Contenu *</label>
-                  <textarea
-                    value={newContenu}
-                    onChange={e => setNewContenu(e.target.value)}
-                    placeholder="Décrivez votre sujet en détail…"
-                    rows={5}
+                  <ChampMention
+                    valeur={newContenu}
+                    onChange={setNewContenu}
+                    noms={nomsSujet.current}
+                    multiligne
+                    lignes={5}
+                    uidExclu={user?.uid}
+                    placeholder="Décrivez votre sujet en détail… (@ pour citer quelqu'un)"
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#00ACC1] resize-none"
-                    style={{ fontFamily: 'Galey, sans-serif' }}
                   />
                 </div>
                 <div>

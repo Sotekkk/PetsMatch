@@ -811,18 +811,8 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
           _sending = false;
         });
       }
-      unawaited(() async {
-        final me = pid != null ? await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', pid).maybeSingle() : null;
-        final actorName = me != null ? socialProfileName(me) : 'Quelqu\'un';
-        await notifyMentions(
-          text: texte,
-          actorUid: _uid,
-          notifType: 'forum_mention',
-          title: '📣 Tu as été mentionné(e)',
-          body: '$actorName t\'a mentionné(e) dans une réponse du forum',
-          data: {'sujetId': widget.sujet['id']},
-        );
-      }());
+      // Notifications (auteur du sujet, participants, personnes citées) :
+      // créées par la base — trigger trg_forum_reponse_notifs.
     } catch (_) {
       if (mounted) setState(() => _sending = false);
     }
@@ -1122,7 +1112,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
       final pid = await resolveActiveAuthorProfileId(_uid);
       final media = await _uploadForumMedia(_uid, _photo, _video);
       final contenu = _contenuCtrl.resolveMarkup().trim();
-      final inserted = await _supa.from('forum_sujets').insert({
+      await _supa.from('forum_sujets').insert({
         'categorie_slug': widget.categorieSlug,
         'auteur_uid': _uid,
         if (pid != null) 'auteur_profile_id': pid,
@@ -1136,18 +1126,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         if (media.photoUrl != null) 'photo_url': media.photoUrl,
         if (media.videoUrl != null) 'video_url': media.videoUrl,
       }).select('id').single();
-      unawaited(() async {
-        final me = pid != null ? await _supa.from('user_profiles_complet').select(kSocialAuthorCols).eq('id', pid).maybeSingle() : null;
-        final actorName = me != null ? socialProfileName(me) : 'Quelqu\'un';
-        await notifyMentions(
-          text: contenu,
-          actorUid: _uid,
-          notifType: 'forum_mention',
-          title: '📣 Tu as été mentionné(e)',
-          body: '$actorName t\'a mentionné(e) dans un sujet du forum',
-          data: {'sujetId': inserted['id']},
-        );
-      }());
+      // Personnes citées : notifiées par la base (trigger trg_forum_sujet_notifs).
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {

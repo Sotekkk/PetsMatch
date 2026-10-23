@@ -820,6 +820,10 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     // Lieu pet-friendly : publié / à compléter / refusé, correction, revendication.
     case 'lieu_moderation':
       return '/animal-friendly/mes-contributions';
+    // Forum : réponse ou citation → la discussion ouverte directement.
+    case 'forum_reponse':
+    case 'forum_mention':
+      return d.sujetId ? `/communaute/forum/${d.categorie ?? 'general'}?sujet=${d.sujetId}` : '/communaute/forum';
     // Avertissement, suspension, contenu retiré : Paramètres → Avertissements.
     case 'moderation':
       return '/profil/avertissements';

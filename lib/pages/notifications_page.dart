@@ -1151,7 +1151,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       // La story elle-même est éphémère (24h) — pas de lien direct fiable,
       // on ramène sur le fil Pets Social où vit le bandeau de stories.
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialFeedPage()));
-    } else if (type == 'forum_mention') {
+    } else if (type == 'forum_mention' || type == 'forum_reponse') {
       final sujetId = data is Map ? data['sujetId'] as String? : null;
       if (sujetId != null) await openForumSujet(context, sujetId);
     } else if (type == 'groupe_mention') {
@@ -1388,6 +1388,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_mention':
       case 'forum_mention':
       case 'groupe_mention': return Icons.alternate_email;
+      case 'forum_reponse':  return Icons.forum_outlined;
       case 'groupe_demande': return Icons.group_add_outlined;
       case 'groupe_accepte': return Icons.how_to_reg_outlined;
       case 'groupe_refuse': return Icons.group_off_outlined;
@@ -1480,6 +1481,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_mention':
       case 'forum_mention':
       case 'groupe_mention': return const Color(0xFF1565C0);
+      case 'forum_reponse':  return const Color(0xFF00ACC1);
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'rappel_vaccin': return const Color(0xFF26A69A);
       case 'tache':         return const Color(0xFF6E9E57);

@@ -5,12 +5,12 @@ import { useEffect, useState } from 'react';
 import { ACTIVE_PROFILE_TYPE_KEY } from '@/hooks/useActiveProfile';
 
 const ALL_CATEGORIES = [
-  { slug: 'sante', label: 'Santé', emoji: '🏥', desc: 'Maladies, traitements, conseils vétérinaires' },
-  { slug: 'alimentation', label: 'Alimentation', emoji: '🍖', desc: 'Nutrition, régimes, marques' },
-  { slug: 'education', label: 'Éducation', emoji: '🎓', desc: 'Dressage, comportement, astuces' },
-  { slug: 'elevage', label: 'Élevage', emoji: '🐣', desc: 'Reproduction, portées, naissances' },
-  { slug: 'bien_etre', label: 'Bien-être', emoji: '💆', desc: 'Grooming, confort, bien-être animal' },
-  { slug: 'general', label: 'Général', emoji: '💬', desc: 'Discussions libres entre passionnés' },
+  { slug: 'sante', label: 'Santé', desc: 'Maladies, traitements, conseils vétérinaires' },
+  { slug: 'alimentation', label: 'Alimentation', desc: 'Nutrition, régimes, marques' },
+  { slug: 'education', label: 'Éducation', desc: 'Dressage, comportement, astuces' },
+  { slug: 'elevage', label: 'Élevage', desc: 'Reproduction, portées, naissances' },
+  { slug: 'bien_etre', label: 'Bien-être', desc: 'Grooming, confort, bien-être animal' },
+  { slug: 'general', label: 'Général', desc: 'Discussions libres entre passionnés' },
 ];
 
 export default function ForumPage() {
@@ -46,9 +46,6 @@ export default function ForumPage() {
               href={`/communaute/forum/${cat.slug}`}
               className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex items-center gap-4 hover:shadow-md hover:border-[#0C5C6C]/20 transition-all group"
             >
-              <div className="w-14 h-14 rounded-2xl bg-[#E0F7FA] flex items-center justify-center flex-shrink-0 text-3xl group-hover:scale-105 transition-transform">
-                {cat.emoji}
-              </div>
               <div className="flex-1">
                 <p className="font-bold text-[#1E2025] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>
                   {cat.label}
