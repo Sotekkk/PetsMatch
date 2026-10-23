@@ -65,7 +65,9 @@ function VerifierEmail() {
   }, [router, suite, refreshUserData]);
 
   // Pas connecté → connexion ; vérification automatique toutes les 5 s.
+  // Lien expiré : simple message, ni redirection ni reconnexion.
   useEffect(() => {
+    if (lienExpire) return;
     if (!loading && !user && !auth.currentUser) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       if (derniereAdresse) { setSessionExpiree(true); return; }
@@ -73,7 +75,7 @@ function VerifierEmail() {
     }
     const t = setInterval(() => { void verifier(); }, 5000);
     return () => clearInterval(t);
-  }, [user, loading, router, verifier, derniereAdresse]);
+  }, [user, loading, router, verifier, derniereAdresse, lienExpire]);
 
   useEffect(() => {
     if (attente <= 0) return;
@@ -109,6 +111,17 @@ function VerifierEmail() {
   }
 
   const email = auth.currentUser?.email ?? user?.email ?? derniereAdresse;
+
+  if (lienExpire) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center px-4 py-10 bg-[#F8F8F6]">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-sm border border-gray-100 p-7 text-center">
+          <h1 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Lien expiré</h1>
+          <p className="text-sm text-gray-600">Renvoyez-en un.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4 py-10 bg-[#F8F8F6]">
