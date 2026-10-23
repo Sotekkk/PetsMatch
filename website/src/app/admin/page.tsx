@@ -1322,10 +1322,16 @@ export default function AdminPage() {
           },
         }),
       });
+      const json = await res.json().catch(() => ({}));
       if (res.ok) {
-        setProduits(prev => prev.map(p => p.id === produit.id ? produit : p));
+        // Rechargement : le price ID peut avoir été créé côté serveur.
+        await loadTarification();
         setEditingProduit(null);
+      } else {
+        alert(`Erreur lors de l'enregistrement : ${json.error ?? res.statusText}`);
       }
+    } catch (err) {
+      alert(`Erreur réseau : ${err instanceof Error ? err.message : String(err)}`);
     } finally { setTarifSaving(false); }
   }
 
@@ -2697,7 +2703,7 @@ export default function AdminPage() {
                             onChange={e => setEditingProduit({ ...editingProduit, description: e.target.value })} />
                         </label>
                         <label className="block">
-                          <span className="text-xs text-gray-400">Stripe Price ID</span>
+                          <span className="text-xs text-gray-400">Stripe Price ID (vide = créé automatiquement à l&apos;enregistrement)</span>
                           <input className="w-full border border-gray-200 rounded-xl px-3 py-1.5 text-sm mt-0.5 font-mono"
                             value={editingProduit.stripe_price_id ?? ''}
                             onChange={e => setEditingProduit({ ...editingProduit, stripe_price_id: e.target.value })} />

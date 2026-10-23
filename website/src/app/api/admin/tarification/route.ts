@@ -66,12 +66,24 @@ async function rotatePlanPrice(
   }
 }
 
+// Si le produit n'a encore aucun prix Stripe (ex : annonce cheval particulier,
+// modification / renouvellement d'annonce), crée le produit + le prix Stripe
+// au premier enregistrement — avant, le montant changeait en base mais le
+// paiement restait « prix Stripe non configuré ».
 async function rotateProduitPrice(
   oldPriceId: string | null,
   newAmount: number,
   code: string,
+  label: string,
 ): Promise<string | null> {
-  if (!oldPriceId) return null;
+  if (!oldPriceId) {
+    if (newAmount <= 0) return null;
+    const product = await stripe.products.create({ name: `PetsMatch — ${label}`, metadata: { code } });
+    const newPrice = await stripe.prices.create({
+      currency: 'eur', unit_amount: newAmount, product: product.id, metadata: { code },
+    });
+    return newPrice.id;
+  }
   try {
     const oldPrice = await stripe.prices.retrieve(oldPriceId);
     if (oldPrice.unit_amount === newAmount) return null;
@@ -165,10 +177,28 @@ export async function PUT(req: NextRequest) {
       const { data: current } = await supabaseAdmin
         .from('produits_ponctuels').select('*').eq('id', id).single();
 
-      if (current && data.prix !== undefined) {
+      const saisi = typeof data.stripe_price_id === 'string' ? data.stripe_price_id.trim() : '';
+      if (current && saisi && saisi !== current.stripe_price_id) {
+        // Price ID collé à la main : on vérifie qu'il existe dans le compte
+        // Stripe du site (piège : prix créé en mode live, clé du site en test)
+        // et on le garde tel quel, sans rotation.
+        try {
+          const price = await stripe.prices.retrieve(saisi);
+          if (!price.active) {
+            return NextResponse.json({ error: `Le prix Stripe ${saisi} est archivé.` }, { status: 400 });
+          }
+        } catch {
+          return NextResponse.json({
+            error: `Prix Stripe ${saisi} introuvable dans ce compte Stripe (mode ${process.env.STRIPE_SECRET_KEY?.startsWith('sk_live') ? 'live' : 'test'}). Laissez le champ vide pour qu'il soit créé automatiquement.`,
+          }, { status: 400 });
+        }
+        data.stripe_price_id = saisi;
+      } else if (current && data.prix !== undefined) {
         const newAmt = Math.round(Number(data.prix) * 100);
-        const newId = await rotateProduitPrice(current.stripe_price_id, newAmt, current.code);
+        const newId = await rotateProduitPrice(current.stripe_price_id, newAmt, current.code, String(data.label ?? current.label));
         if (newId) stripeUpdates.stripe_price_id = newId;
+        // Champ vidé dans le formulaire : ne pas effacer le prix existant.
+        if (!saisi && !newId) delete data.stripe_price_id;
       }
 
       const { error } = await supabaseAdmin.from('produits_ponctuels')
