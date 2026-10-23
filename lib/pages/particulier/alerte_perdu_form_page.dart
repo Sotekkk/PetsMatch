@@ -1165,9 +1165,12 @@ class _DateField extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: () async {
+      // Disparition au plus tôt le 1er janvier d'il y a deux ans (miroir site).
+      final premier = DateTime(DateTime.now().year - 2);
+      final initiale = date ?? DateTime.now();
       final d = await showDatePicker(context: context,
-          initialDate: date ?? DateTime.now(),
-          firstDate: DateTime(2020), lastDate: DateTime.now());
+          initialDate: initiale.isBefore(premier) ? premier : initiale,
+          firstDate: premier, lastDate: DateTime.now());
       if (d != null) onPicked(d);
     },
     child: Container(

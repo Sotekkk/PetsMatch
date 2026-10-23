@@ -309,7 +309,7 @@ export default function ParticulierDashboard() {
             <div className="bg-white rounded-[18px] px-6 py-5 shadow-[0_1px_4px_rgba(15,40,45,0.08)] border-t-4 border-[#D9822B] flex flex-col gap-3">
               <h2 className="text-xl font-extrabold text-[#1F2A2E]">Perdus et trouvés</h2>
               <p className="text-sm text-gray-500 leading-relaxed">Consultez les signalements près de chez vous ou déclarez un animal perdu ou trouvé.</p>
-              <Link href="/mes-alertes" className="block text-center py-2.5 rounded-xl bg-[#A85A12] hover:bg-[#8A4A0F] text-white text-sm font-bold">Signaler un animal</Link>
+              <Link href="/animaux-perdus/declarer" className="block text-center py-2.5 rounded-xl bg-[#A85A12] hover:bg-[#8A4A0F] text-white text-sm font-bold">Signaler un animal</Link>
               <Link href="/animaux-perdus" className="block text-center py-2.5 rounded-xl border border-[#E6CBAE] text-[#8A4A0F] text-sm font-bold">Voir les signalements</Link>
               <Link href="/mes-alertes" className="text-center text-[13px] font-bold text-[#8A4A0F]">
                 Mes alertes{nbAlertes > 0 ? ` (${nbAlertes} en cours)` : ''}

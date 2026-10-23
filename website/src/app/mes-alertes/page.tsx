@@ -135,7 +135,7 @@ export default function MesAlertesPage() {
           </p>
         </div>
         <button
-          onClick={() => { setEditAlerte(null); setShowForm(true); }}
+          onClick={() => router.push('/animaux-perdus/declarer')}
           className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
           + Nouvelle alerte
         </button>
@@ -151,7 +151,7 @@ export default function MesAlertesPage() {
           <p className="text-gray-600 font-semibold mb-1">Aucune alerte active</p>
           <p className="text-gray-400 text-sm mb-4">Déclarez un animal perdu depuis sa fiche ou le bouton ci-dessus</p>
           <button
-            onClick={() => { setEditAlerte(null); setShowForm(true); }}
+            onClick={() => router.push('/animaux-perdus/declarer')}
             className="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
             Déclarer un animal perdu
           </button>
@@ -363,6 +363,8 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
   const [couleur, setCouleur] = useState(alerte?.couleur ?? '');
   const [couleurYeux, setCouleurYeux] = useState(alerte?.couleur_yeux ?? '');
   const [datePerte, setDatePerte] = useState(alerte?.date_perte?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+  // Même borne que /animaux-perdus/declarer : au plus tôt le 1er janvier d'il y a deux ans.
+  const datePerteMin = `${new Date().getFullYear() - 2}-01-01`;
   const [localisation, setLocalisation] = useState(alerte?.derniere_localisation ?? '');
   const [description, setDescription] = useState(alerte?.description ?? '');
   const [contact, setContact] = useState(alerte?.contact ?? '');
@@ -372,6 +374,7 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!nom.trim()) { setError('Le nom de l\'animal est requis.'); return; }
+    if (datePerte && datePerte < datePerteMin) { setError(`La date de disparition ne peut pas être antérieure au ${new Date(datePerteMin).toLocaleDateString('fr-FR')}.`); return; }
     setSaving(true);
     setError('');
     try {
@@ -389,17 +392,17 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
         contact: contact.trim() || null,
         statut: alerte?.statut ?? 'perdu',
       };
-      if (isEdit) {
-        await supabase.from('alertes_perdus')
-          .update(profileId ? { ...payload, profile_id: profileId } : payload)
-          .eq('id', alerte!.id);
-      } else {
-        await supabase.from('alertes_perdus').insert({
-          ...payload,
-          ...(profileId ? { profile_id: profileId } : {}),
-          numero_alerte: genNumero(),
-        });
-      }
+      // Erreur de la base remontée (avant : ignorée, l'alerte semblait enregistrée).
+      const { error: errBase } = isEdit
+        ? await supabase.from('alertes_perdus')
+            .update(profileId ? { ...payload, profile_id: profileId } : payload)
+            .eq('id', alerte!.id)
+        : await supabase.from('alertes_perdus').insert({
+            ...payload,
+            ...(profileId ? { profile_id: profileId } : {}),
+            numero_alerte: genNumero(),
+          });
+      if (errBase) throw new Error(errBase.message);
       onSaved();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
@@ -466,7 +469,8 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
             {/* Date de perte */}
             <div>
               <label className={labelCls}>Date de perte</label>
-              <input type="date" value={datePerte} onChange={e => setDatePerte(e.target.value)} className={inputCls} />
+              <input type="date" value={datePerte} onChange={e => setDatePerte(e.target.value)} className={inputCls}
+                min={datePerteMin} max={new Date().toISOString().slice(0, 10)} />
             </div>
 
             {/* Localisation */}

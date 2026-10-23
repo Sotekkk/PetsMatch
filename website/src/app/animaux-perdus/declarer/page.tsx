@@ -271,6 +271,7 @@ function DeclarerPerduPageInner() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs: string[] = [];
+    if (datePerte && datePerte < DATE_PERTE_MIN) errs.push(`Date de disparition : pas avant le ${new Date(DATE_PERTE_MIN).toLocaleDateString('fr-FR')}`);
     if (!nom.trim())    errs.push('Nom de l\'animal');
     if (!race.trim())   errs.push('Race');
     if (!sexe)          errs.push('Sexe');
@@ -487,7 +488,7 @@ function DeclarerPerduPageInner() {
             <label className="block text-sm font-semibold text-gray-700 mb-1">Date de disparition *</label>
             <input type="date" value={datePerte}
               onChange={e => { setDatePerte(e.target.value); if (!dateDerniereLoc) setDateDerniereLoc(e.target.value); }}
-              max={new Date().toISOString().slice(0, 10)}
+              min={DATE_PERTE_MIN} max={new Date().toISOString().slice(0, 10)}
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
           </div>
           <div>
@@ -495,7 +496,7 @@ function DeclarerPerduPageInner() {
             <p className="text-xs text-gray-400 mb-1">Si différente de la date de disparition</p>
             <input type="date" value={dateDerniereLoc || datePerte}
               onChange={e => setDateDerniereLoc(e.target.value)}
-              max={new Date().toISOString().slice(0, 10)}
+              min={DATE_PERTE_MIN} max={new Date().toISOString().slice(0, 10)}
               className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
           </div>
         </div>
@@ -638,6 +639,10 @@ function DeclarerPerduPageInner() {
     </div>
   );
 }
+
+// Disparition déclarée au plus tôt le 1er janvier d'il y a deux ans (miroir
+// appli : alerte_perdu_form_page.dart).
+const DATE_PERTE_MIN = `${new Date().getFullYear() - 2}-01-01`;
 
 export default function DeclarerPerduPage() {
   return (
