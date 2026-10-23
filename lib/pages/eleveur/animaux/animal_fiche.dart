@@ -17,6 +17,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:PetsMatch/utils/controle_dates.dart';
+import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/repartition.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
@@ -6384,10 +6385,12 @@ class _SanteCard extends StatelessWidget {
     'image_url': 'Pièce jointe', 'doc_url': 'Document',
     'intitule': 'Intervention', 'statut': 'Statut', 'clinique': 'Clinique',
     'protocole_preop': 'Protocole pré-opératoire', 'protocole_postop': 'Protocole post-opératoire',
+    'etape': 'Étape', 'description_maladie': 'Maladie',
   };
 
   static String _fmtVal(String key, dynamic val) {
     if (val == null || val.toString().isEmpty) return '';
+    if (key == 'statut' || key == 'type') return kLibellesSante[val.toString()] ?? val.toString();
     if (val is String && key.contains('date') && val.isNotEmpty) {
       final dt = DateTime.tryParse(val);
       if (dt != null) return DateFormat('dd/MM/yyyy').format(dt);
@@ -6404,7 +6407,8 @@ class _SanteCard extends StatelessWidget {
       case 'vermifuges':       return v('dosage') ?? v('notes');
       case 'vaccinations':     return v('veterinaire');
       case 'antiparasitaires': return v('frequence') ?? v('notes');
-      case 'traitements':      return v('posologie') ?? v('notes');
+      // Étape, posologie, période, rappels — sur plusieurs lignes (miroir site).
+      case 'traitements':      return resumeTraitement(data).join('\n');
       case 'visites':          return v('diagnostic') ?? v('notes');
       case 'radios':           return v('notes');
       case 'chirurgies': {
@@ -6424,13 +6428,30 @@ class _SanteCard extends StatelessWidget {
                    'rappel_fin', 'rappel_heures'};
     final entries = data.entries.where((e) =>
         !_skip.contains(e.key) && e.value != null && e.value.toString().isNotEmpty).toList();
+    // Traitement : ordre de lecture (nom → posologie → période → notes), type en
+    // clair, étape « 2 sur 3 » au lieu du préfixe technique « Phase 2/3 ».
+    if (collection == 'traitements') {
+      const ordre = ['nom', 'type', 'description_maladie', 'posologie', 'date', 'date_fin', 'notes'];
+      int rang(String k) => ordre.contains(k) ? ordre.indexOf(k) : ordre.length;
+      entries.sort((a, b) => rang(a.key).compareTo(rang(b.key)));
+      final etape = etapeTraitement(data);
+      for (var i = 0; i < entries.length; i++) {
+        final k = entries[i].key;
+        if (k == 'type') entries[i] = MapEntry(k, kLibellesSante[entries[i].value] ?? entries[i].value);
+        if (k == 'notes') entries[i] = MapEntry(k, notesTraitement(data));
+      }
+      if (etape != null) entries.insert(0, MapEntry('etape', etape));
+    }
     final visiteRef = data['visite_ref'] as String?;
     final rdvId = data['rdv_id'] as String?;
     // Résumé lisible des rappels récurrents (traitements) — les colonnes
     // brutes (rappel_frequence_jours, rappel_fin...) sont exclues ci-dessus
     // et remplacées par cette seule ligne formatée.
     String? rappelSummary;
-    if (data['rappel_actif'] == true) {
+    if (collection == 'traitements') {
+      final r = ligneRappelTraitement(data);
+      rappelSummary = r.isEmpty ? null : r;
+    } else if (data['rappel_actif'] == true) {
       final freq = data['rappel_frequence_jours'];
       final fin  = data['rappel_fin'] as String?;
       final heuresRaw = data['rappel_heures'];
@@ -6584,7 +6605,7 @@ class _SanteCard extends StatelessWidget {
               if (sub == null || sub.isEmpty) return const SizedBox.shrink();
               return Text(sub,
                 style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
-                maxLines: 1, overflow: TextOverflow.ellipsis);
+                maxLines: collection == 'traitements' ? 4 : 1, overflow: TextOverflow.ellipsis);
             }),
             if (isVet) ...[
               const SizedBox(height: 3),

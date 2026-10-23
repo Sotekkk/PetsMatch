@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/controle_dates.dart';
+import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/repartition.dart';
 import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
@@ -2155,18 +2156,22 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               records: _traitements,
               onAdd: _showTraitementSheet,
               renderRecord: (r) {
-                final traitementTrailing = [
-                  if ((r['posologie'] as String?)?.isNotEmpty == true) r['posologie'] as String,
-                  if (r['rappel_actif'] == true) 'Rappels actifs',
-                ].join(' · ');
+                // Résumé lisible : étape, posologie, période, rappels (miroir site).
+                final resume = resumeTraitement(r);
                 return _RecordTile(
                   title: r['nom'] ?? r['type'] ?? 'Inconnu',
-                  subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-                  trailing: traitementTrailing.isEmpty ? null : traitementTrailing,
+                  subtitle: resume.isEmpty ? null : resume.join('\n'),
                   onDelete: () => _deleteRecord('traitements', r['id'], _traitements),
-                  onTap: () => _showRecordDetail('Traitement', r, [
-                    ('Nom', 'nom'), ('Type', 'type'), ('Maladie', 'description_maladie'),
-                    ('Posologie', 'posologie'), ('Date début', 'date'), ('Date fin', 'date_fin'),
+                  onTap: () => _showRecordDetail('Traitement', {
+                    ...r,
+                    'etape': etapeTraitement(r),
+                    'type': kLibellesSante[r['type']] ?? r['type'],
+                    'periode': periodeTraitement(r),
+                    'rappels': ligneRappelTraitement(r),
+                    'notes': notesTraitement(r),
+                  }, [
+                    ('Nom', 'nom'), ('Étape', 'etape'), ('Type', 'type'), ('Maladie', 'description_maladie'),
+                    ('Posologie', 'posologie'), ('Période', 'periode'), ('Rappels', 'rappels'),
                     ('Commentaires', 'notes'),
                   ]),
                 );
