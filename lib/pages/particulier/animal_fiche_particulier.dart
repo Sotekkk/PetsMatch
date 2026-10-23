@@ -945,11 +945,6 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               onPressed: () => showPartageAnimalSheet(
                   context, _animalId!, _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text),
             ),
-            IconButton(
-              icon: const Icon(Icons.share_outlined, size: 20),
-              tooltip: 'Partager avec mon vétérinaire',
-              onPressed: () => showVetShareSheet(context, _animalId!),
-            ),
           ],
           if (_saving)
             const Padding(

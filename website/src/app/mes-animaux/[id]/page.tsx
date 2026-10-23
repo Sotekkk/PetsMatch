@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
 import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe } from '@/lib/controle-dates';
+import PartageAnimalModal from '@/components/animaux/PartageAnimalModal';
 import { useAuth } from '@/lib/auth-context';
 import { RichText } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -2502,6 +2503,8 @@ function AnimalFichePageInner() {
   const { user, userData, availableProfiles } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
+  // Partage de la fiche (lien + QR code, onglets au choix).
+  const [partageOuvert, setPartageOuvert] = useState(false);
   // Profil actif particulier : pas de vente ni de réservation, seulement
   // confier l'animal à une association (abandon).
   const profilActif = activeProfileId
@@ -4267,6 +4270,24 @@ function AnimalFichePageInner() {
                 Retrouvé !
               </button>
             </div>
+          )}
+          {!isNew && isOwner && (
+            <button type="button" onClick={() => setPartageOuvert(true)}
+              className="w-full flex items-center gap-3 border border-[#6E9E57]/30 rounded-2xl p-4 hover:bg-[#6E9E57]/5 transition-colors text-left">
+              <svg className="w-6 h-6 text-[#6E9E57]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.2 10.8a4 4 0 010 5.6l-2 2a4 4 0 01-5.6-5.6l1-1m3.2-1.6a4 4 0 010-5.6l2-2a4 4 0 015.6 5.6l-1 1" />
+              </svg>
+              <span className="flex-1">
+                <span className="block text-sm font-medium text-[#1F2A2E]">Partager la fiche</span>
+                <span className="block text-xs text-gray-500">Lien et QR code en lecture seule, onglets au choix (carnet de santé…)</span>
+              </span>
+              <span className="text-gray-400">›</span>
+            </button>
+          )}
+          {partageOuvert && user && id && (
+            <PartageAnimalModal animalId={String(id)} animalNom={animal.nom ?? 'Animal'} uid={user.uid}
+              profileId={activeProfileId || availableProfiles.find(p => p.is_main)?.id || null}
+              onClose={() => setPartageOuvert(false)} />
           )}
           {!isNew && !alerteId && (
             <Link href={`/animaux-perdus/declarer?animal=${id}`}

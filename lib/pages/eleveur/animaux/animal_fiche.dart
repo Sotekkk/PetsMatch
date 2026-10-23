@@ -51,6 +51,7 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
+import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
@@ -2318,12 +2319,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.animalId == null || widget.readOnly) return [];
     final actions = <_QuickAction>[];
     if (!widget.vetMode) {
+      // Lien + QR code en lecture seule, onglets au choix (carnet de santé
+      // pour le vétérinaire, etc.) — remplace le lien « vétérinaire ».
       actions.add(_QuickAction(
         icon: Icons.ios_share,
-        tooltip: 'Partager avec mon vétérinaire',
+        tooltip: 'Partager la fiche',
         iconOnly: true,
         color: const Color(0xFF5F9EAA),
-        onTap: () => showVetShareSheet(context, widget.animalId!),
+        onTap: () => showPartageAnimalSheet(context, widget.animalId!,
+            _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text),
       ));
     }
     // mes_animaux.dart passe TOUJOURS eleveurUidOverride (= _ownerUid de

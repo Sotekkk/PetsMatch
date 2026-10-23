@@ -7,6 +7,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _kBaseUrl = 'https://www.petsmatchapp.com/partage/';
 
+/// Onglets que le lien peut ouvrir (partage_animal.sections). Identité
+/// toujours incluse. Miroir site : SECTIONS_PARTAGE (PartageAnimalModal).
+const kSectionsPartage = [
+  ('identite', 'Identité'),
+  ('sante', 'Carnet de santé'),
+  ('poids', 'Poids'),
+  ('alimentation', 'Alimentation'),
+  ('documents', 'Documents'),
+  ('genealogie', 'Généalogie'),
+];
+
+String libellesSections(List<String> sections) => kSectionsPartage
+    .where((s) => sections.contains(s.$1)).map((s) => s.$2).join(', ');
+
 Future<void> showPartageAnimalSheet(BuildContext context, String animalId, String animalNom) async {
   await showModalBottomSheet(
     context: context,
@@ -38,6 +52,8 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
   ];
 
   int _dureeJours = 7;
+  // Identité toujours ; carnet de santé coché par défaut (usage le plus courant).
+  final Set<String> _sections = {'identite', 'sante'};
   bool _creating = false;
   bool _loading = true;
   List<Map<String, dynamic>> _liens = [];
@@ -94,6 +110,7 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
             if (_profileId != null) 'partageur_profile_id': _profileId,
             'expire_at': expireAt.toIso8601String(),
             'actif': true,
+            'sections': kSectionsPartage.map((s) => s.$1).where(_sections.contains).toList(),
           })
           .select('token')
           .single();
@@ -165,9 +182,28 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
               ],
             ),
             const SizedBox(height: 6),
-            const Text('Lien lecture seule — la personne voit la fiche complète sans pouvoir modifier.',
+            const Text('Lien en lecture seule : la personne voit uniquement les onglets cochés, sans rien pouvoir modifier.',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 20),
+
+            // Onglets visibles
+            const Text('Onglets visibles',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 4),
+            for (final s in kSectionsPartage)
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                activeColor: const Color(0xFF6E9E57),
+                value: _sections.contains(s.$1),
+                // Identité : toujours partagée (sans elle la fiche n'a pas de sens).
+                onChanged: s.$1 == 'identite' ? null
+                    : (v) => setState(() => v == true ? _sections.add(s.$1) : _sections.remove(s.$1)),
+                title: Text(s.$1 == 'identite' ? '${s.$2} (toujours)' : s.$2,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              ),
+            const SizedBox(height: 12),
 
             // Durée
             const Text('Durée du lien',
@@ -308,6 +344,9 @@ class _PartageAnimalSheetState extends State<_PartageAnimalSheet> {
                             Text('.../${t.substring(0, 8)}...',
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                             Text(_formatExpiry(expiry),
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                    color: Colors.grey.shade600)),
+                            Text(libellesSections(List<String>.from((lien['sections'] as List?) ?? const ['identite'])),
                                 style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                                     color: Colors.grey.shade600)),
                           ],
