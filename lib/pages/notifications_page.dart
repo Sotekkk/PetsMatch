@@ -452,7 +452,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
-    if (type == 'sante_vet') {
+    // Chirurgie prévue : vétérinaire → sa fiche patient ; propriétaire → santé.
+    if (type == 'sante_vet' || type == 'chirurgie_prevue') {
       final animalId = data is Map ? (data['animalId'] as String?) : null;
       if (animalId != null) {
         await Navigator.push(context, MaterialPageRoute(
@@ -1399,6 +1400,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'chaleur':       return Icons.spa;
       case 'animal_evolution': return Icons.auto_awesome;
       case 'rappel_vaccin': return Icons.vaccines_outlined;
+      case 'chirurgie_prevue': return Icons.local_hospital_outlined;
       case 'tache':         return Icons.task_alt;
       case 'employee_invite': return Icons.handshake_outlined;
       case 'annonce_expiration': return Icons.warning_amber_outlined;
@@ -1484,6 +1486,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'forum_reponse':  return const Color(0xFF00ACC1);
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'rappel_vaccin': return const Color(0xFF26A69A);
+      case 'chirurgie_prevue': return const Color(0xFF7B5EA7);
       case 'tache':         return const Color(0xFF6E9E57);
       case 'employee_invite': return const Color(0xFF0C5C6C);
       case 'annonce_expiration': return Colors.orange;

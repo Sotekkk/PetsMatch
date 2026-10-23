@@ -48,6 +48,7 @@ exports.sendRdvReminders = rdvRemindersFunctions.sendRdvReminders;
 exports.sendCoursCollectifReminders = rdvRemindersFunctions.sendCoursCollectifReminders;
 exports.notifyProNewRdv = agendaFunctions.notifyProNewRdv;
 exports.sendMiseBasReminders = agendaFunctions.sendMiseBasReminders;
+exports.sendChirurgieReminders = agendaFunctions.sendChirurgieReminders;
 exports.sendExerciceReminders = agendaFunctions.sendExerciceReminders;
 exports.generateCoursCollectifsOccurrences = agendaFunctions.generateCoursCollectifsOccurrences;
 

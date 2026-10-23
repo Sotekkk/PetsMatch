@@ -27,6 +27,7 @@ import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob } from '@/lib/ordonnance-pdf';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
+import { erreursDatesSante } from '@/lib/controle-dates';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -657,6 +658,8 @@ function PatientDetailPageInner() {
   const [formPoids, setFormPoids] = useState('');
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
+  // Contrôle des dates de l'acte (miroir carnet de santé du propriétaire).
+  const [formErreurs, setFormErreurs] = useState<string[]>([]);
   // Patient créé par la clinique : client du fichier (propriétaire hors appli).
   const [clientClinique, setClientClinique] = useState<{ nom: string; prenom: string | null; telephone: string | null;
     email: string | null; adresse: string | null; code_postal: string | null; ville: string | null; notes: string | null; uid_lie: string | null } | null>(null);
@@ -1110,6 +1113,13 @@ function PatientDetailPageInner() {
 
   async function saveForm() {
     if (!user?.uid || !animalId) return;
+    if (addingType !== 'mesure') {
+      const erreurs = erreursDatesSante(
+        { date: formDate, date_rappel: formRappel, date_fin: formDateFin, ...(addingType === 'chirurgie' ? { statut: formStatut } : {}) },
+        [{ key: 'date', label: 'Date', required: true }, { key: 'date_rappel', label: 'Date de rappel' }, { key: 'date_fin', label: 'Date de fin' }]);
+      setFormErreurs(erreurs);
+      if (erreurs.length) return;
+    }
     setSavingForm(true);
     const vetName = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || '';
     const base = { animal_id: animalId, vet_id: user.uid, source: 'veterinaire', veterinaire: vetName || undefined };
@@ -3385,8 +3395,13 @@ function PatientDetailPageInner() {
               {animal.poids != null && <p className="text-xs text-gray-400">Poids actuel : {animal.poids} kg{animal.taille ? ` · ${animal.taille} cm` : ''}</p>}
             </>)}
 
+            {formErreurs.length > 0 && (
+              <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
+                {formErreurs.map(e => <li key={e}>{e}</li>)}
+              </ul>
+            )}
             <div className="flex gap-3 pt-1">
-              <button onClick={() => setAddingType(null)}
+              <button onClick={() => { setAddingType(null); setFormErreurs([]); }}
                 className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
                 Annuler
               </button>

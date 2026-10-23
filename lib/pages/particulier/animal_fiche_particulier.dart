@@ -9,6 +9,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/repartition.dart';
 import 'package:PetsMatch/pages/particulier/balades/choix_animaux_balade.dart';
@@ -2508,6 +2509,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SDate(label: 'Valide à partir de', date: dateValidite, onPicked: (d) => ss(() => dateValidite = d)),
       _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
     ], () async {
+      if (vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
+      controlerDatesSante(date: date, rappel: dateRappel, validite: dateValidite);
       await _supa.from('vaccinations').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
@@ -2576,8 +2579,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFld(ctrl: notes, label: 'Commentaires', maxLines: 3,
           hint: 'Ex: impressions de tolérance au traitement, effets observés...'),
     ], () async {
+      if (nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du traitement.');
+      controlerDatesSante(date: date, fin: dateFin);
       if (rappelActif && rappelHeures.isEmpty) {
-        throw 'Ajoute au moins une heure de rappel.';
+        throw const SaisieInvalide('Ajoutez au moins une heure de rappel.');
       }
       final frequenceJours = int.tryParse(rappelFrequenceCtrl.text) ?? 1;
       final dureeValeur = int.tryParse(rappelDureeCtrl.text) ?? 7;
@@ -2618,6 +2623,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFld(ctrl: diag, label: 'Diagnostic', hint: 'Diagnostic posé'),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
+      controlerDatesSante(date: date);
       await _supa.from('visites').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
@@ -2673,10 +2679,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       const SizedBox(height: 10),
       AutresAnimauxSection(animalId: _animalId!, options: options),
       const SizedBox(height: 10),
-      _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
+      // Calculée à partir de la date et de la fréquence : non modifiable.
+      _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
       if (options.erreur != null) throw Exception(options.erreur);
+      controlerDatesSante(date: date, rappel: dateRappel);
       final n = int.tryParse(frequenceValeur.text.trim());
       final freqLabel = (n != null && n > 0)
           ? '$n ${frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}' : frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois'}'
@@ -2740,9 +2748,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFreq(valeurCtrl: frequenceValeur, unite: frequenceUnite,
         onValeurChanged: () => recomputeRappel(ss),
         onUniteChanged: (v) { ss(() => frequenceUnite = v); recomputeRappel(ss); }),
-      _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
+      // Calculée à partir de la date et de la fréquence : non modifiable.
+      _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
+      controlerDatesSante(date: date, rappel: dateRappel);
       final n = int.tryParse(frequenceValeur.text.trim());
       final freqLabel = (n != null && n > 0)
           ? '$n ${frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}' : frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois'}'
@@ -2819,7 +2829,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFld(ctrl: postop, label: 'Protocole post-opératoire', hint: 'Analgésie, soins de plaie, repos, contrôle...', maxLines: 3),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
-      if (intitule.text.trim().isEmpty || date == null) return;
+      if (intitule.text.trim().isEmpty) throw const SaisieInvalide('Indiquez l\'intervention.');
+      controlerDatesSante(date: date, statut: statut);
       await _supa.from('chirurgies').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
@@ -3135,7 +3146,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                                 ss(() => saving = false);
                                 if (ctx.mounted) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                                      content: Text('Erreur: $e'),
+                                      content: Text(e is SaisieInvalide ? e.message : 'Erreur: $e'),
                                       backgroundColor: Colors.red));
                                 }
                               }
@@ -3502,7 +3513,7 @@ class _SDrop extends StatelessWidget {
         DropdownButtonFormField<String>(
           initialValue: options.contains(value) ? value : null,
           isExpanded: true,
-          items: options.map((o) => DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
+          items: options.map((o) => DropdownMenuItem(value: o, child: Text(kLibellesSante[o] ?? o, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
           onChanged: onChanged,
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.black87),
           decoration: InputDecoration(
@@ -3571,7 +3582,8 @@ class _SFreq extends StatelessWidget {
 class _SDate extends StatelessWidget {
   final String label;
   final DateTime? date;
-  final ValueChanged<DateTime> onPicked;
+  /// null : date calculée, affichée sans pouvoir être modifiée.
+  final ValueChanged<DateTime>? onPicked;
   const _SDate({required this.label, required this.date, required this.onPicked});
 
   @override
@@ -3583,27 +3595,28 @@ class _SDate extends StatelessWidget {
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 6),
         GestureDetector(
-          onTap: () async {
+          onTap: onPicked == null ? null : () async {
             final d = await showDatePicker(
               context: context,
               initialDate: date ?? DateTime.now(),
               firstDate: DateTime(2000),
               lastDate: DateTime(2100),
             );
-            if (d != null) onPicked(d);
+            if (d != null) onPicked?.call(d);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
+              color: onPicked == null ? const Color(0xFFEDEDED) : const Color(0xFFF5F5F5),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               children: [
-                const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                Icon(onPicked == null ? Icons.lock_outline : Icons.calendar_today, size: 16, color: Colors.grey),
                 const SizedBox(width: 8),
                 Text(
-                  date != null ? DateFormat('dd/MM/yyyy').format(date!) : 'Sélectionner une date',
+                  date != null ? DateFormat('dd/MM/yyyy').format(date!)
+                      : onPicked == null ? 'Selon la date et la fréquence' : 'Sélectionner une date',
                   style: TextStyle(
                       fontFamily: 'Galey',
                       fontSize: 14,

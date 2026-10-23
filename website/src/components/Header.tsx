@@ -1033,6 +1033,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     }
     case 'sante_vet':
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
+    // Chirurgie prévue : le vétérinaire ouvre sa fiche patient, le propriétaire la santé de l'animal.
+    case 'chirurgie_prevue':
+      return d.animalId ? (proType === 'veterinaire' ? `/mes-patients/${d.animalId}` : `/mes-animaux/${d.animalId}?cat=chirurgies`) : null;
     case 'vet_access_reponse':
       return '/mes-patients';
     case 'profil_en_attente':

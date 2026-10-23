@@ -16,6 +16,7 @@ import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/repartition.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
@@ -6814,6 +6815,15 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
       setState(() => _error = 'Ajoute au moins une heure de rappel.');
       return;
     }
+    try {
+      controlerDatesSante(date: _date,
+          rappel: widget.collection == 'vaccinations' ? _dateRappel : null,
+          validite: widget.collection == 'vaccinations' ? _dateValidite : null,
+          statut: widget.collection == 'chirurgies' ? widget.data['statut'] as String? : null);
+    } on SaisieInvalide catch (e) {
+      setState(() => _error = e.message);
+      return;
+    }
     setState(() { _saving = true; _error = null; });
     try {
       final updates = <String, dynamic>{ 'date': _date.toIso8601String() };
@@ -7455,7 +7465,8 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     _DD('Valide à partir de', _validite, (d) => setState(() => _validite = d)),
     _DD('Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
   ], onSave: () async {
-    if (_vaccin.text.isEmpty || _date == null) return false;
+    if (_vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
+    controlerDatesSante(date: _date, rappel: _rappel, validite: _validite);
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     await Supabase.instance.client.from('vaccinations').insert({
       'id': id, 'animal_id': widget.animalId,
@@ -7594,8 +7605,9 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
     _DCustom(_buildRappelSection()),
     _DF('Commentaires', _notes, maxLines: 3),
   ], onSave: () async {
-    if (_nom.text.isEmpty || _date == null) return false;
-    if (_rappelActif && _rappelHeures.isEmpty) return false;
+    if (_nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du produit.');
+    controlerDatesSante(date: _date, fin: _dateFin);
+    if (_rappelActif && _rappelHeures.isEmpty) throw const SaisieInvalide('Ajoutez au moins une heure de rappel.');
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final frequenceJours = int.tryParse(_rappelFrequenceCtrl.text) ?? 1;
     final dureeValeur = int.tryParse(_rappelDureeCtrl.text) ?? 7;
@@ -7672,8 +7684,8 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
     _DF('Diagnostic / Observations', _diag),
     _DF('Notes', _notes, maxLines: 3),
   ], onSave: () async {
-    if (_date == null) return false;
-    if (_isVaccin && _vaccin.text.trim().isEmpty) return false;
+    controlerDatesSante(date: _date, rappel: _isVaccin ? _dateRappel : null);
+    if (_isVaccin && _vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
     final supa = Supabase.instance.client;
     final visiteId = DateTime.now().microsecondsSinceEpoch.toString();
     String? vetProfileId;
@@ -7807,10 +7819,13 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
     _DCustom(PrisesVermifugeSection(options: _options)),
     // Saisie groupée : réservée au propriétaire (pas au vétérinaire).
     if (widget.vetId == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
-    _DD('Prochain rappel', _dateRappel, (d) => setState(() => _dateRappel = d)),
+    // Calculé à partir de la date et de la fréquence : non modifiable.
+    _DLecture('Prochain rappel (calculé)',
+        _dateRappel != null ? DateFormat('dd/MM/yyyy').format(_dateRappel!) : 'Selon la date et la fréquence'),
     _DF('Notes', _notes, maxLines: 2),
   ], onSave: () async {
-    if (_produit.text.isEmpty || _date == null) return false;
+    if (_produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
+    controlerDatesSante(date: _date, rappel: _dateRappel);
     if (_options.erreur != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_options.erreur!)));
       return false;
@@ -7927,10 +7942,13 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
     ])),
     // Saisie groupée : réservée au propriétaire (pas au vétérinaire).
     if (widget.vetId == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
-    _DD('Prochain rappel', _dateRappel, (d) => setState(() => _dateRappel = d)),
+    // Calculé à partir de la date et de la fréquence : non modifiable.
+    _DLecture('Prochain rappel (calculé)',
+        _dateRappel != null ? DateFormat('dd/MM/yyyy').format(_dateRappel!) : 'Selon la date et la fréquence'),
     _DF('Notes', _notes, maxLines: 2),
   ], onSave: () async {
-    if (_produit.text.isEmpty || _date == null) return false;
+    if (_produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
+    controlerDatesSante(date: _date, rappel: _dateRappel);
     final cibles = [widget.animalId, ..._options.autresAnimaux];
     final base = DateTime.now().microsecondsSinceEpoch;
     for (var i = 0; i < cibles.length; i++) {
@@ -8023,7 +8041,8 @@ class _AddChirurgieDialogState extends State<AddChirurgieDialog> {
       _DF('Notes', _notes, maxLines: 2),
     ],
     onSave: () async {
-      if (_intitule.text.trim().isEmpty || _date == null) return false;
+      if (_intitule.text.trim().isEmpty) throw const SaisieInvalide('Indiquez l\'intitulé.');
+      controlerDatesSante(date: _date, statut: _statut);
       final id = DateTime.now().microsecondsSinceEpoch.toString();
       await Supabase.instance.client.from('chirurgies').insert({
         'id': id, 'animal_id': widget.animalId,
@@ -10135,6 +10154,8 @@ class _DD { final String label; final DateTime? value; final ValueChanged<DateTi
 class _DDrop { final String label; final String? value; final List<String> options; final ValueChanged<String?> onChanged;
   const _DDrop(this.label, this.value, this.options, this.onChanged); }
 class _DCustom { final Widget child; const _DCustom(this.child); }
+/// Valeur calculée, affichée sans pouvoir être modifiée.
+class _DLecture { final String label; final String valeur; const _DLecture(this.label, this.valeur); }
 
 // ─── Dialog de base générique ─────────────────────────────────────────────────
 
@@ -10173,6 +10194,16 @@ class _BaseDialog extends StatelessWidget {
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF6E9E57))),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true)));
 
+                if (f is _DLecture) return Padding(padding: const EdgeInsets.only(bottom: 10),
+                  child: InputDecorator(
+                    decoration: InputDecoration(labelText: f.label,
+                      labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                      filled: true, fillColor: const Color(0xFFF1F1EF),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+                      suffixIcon: const Icon(Icons.lock_outline, size: 16, color: Color(0xFF9AA3A6))),
+                    child: Text(f.valeur, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700))));
                 if (f is _DD) return Padding(padding: const EdgeInsets.only(bottom: 10),
                   child: GestureDetector(onTap: () async {
                       final p = await showDatePicker(context: context,
@@ -10200,7 +10231,7 @@ class _BaseDialog extends StatelessWidget {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
                     items: f.options.map((o) => DropdownMenuItem(value: o,
-                        child: Text(o, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
+                        child: Text(kLibellesSante[o] ?? o, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
                     onChanged: f.onChanged));
 
                 if (f is _DCustom) return Padding(padding: const EdgeInsets.only(bottom: 10), child: f.child);
@@ -10221,7 +10252,7 @@ class _BaseDialog extends StatelessWidget {
                   if (ok && context.mounted) Navigator.pop(context);
                 } catch (e) {
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+                    SnackBar(content: Text(e is SaisieInvalide ? e.message : 'Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
                         backgroundColor: Colors.redAccent));
                 }
               },
@@ -13987,7 +14018,13 @@ class _VetAddVaccinDialogState extends State<_VetAddVaccinDialog> {
   void dispose() { _vaccin.dispose(); _lot.dispose(); super.dispose(); }
 
   Future<void> _save() async {
-    if (_vaccin.text.trim().isEmpty || _date == null) return;
+    try {
+      if (_vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
+      controlerDatesSante(date: _date, rappel: _rappel);
+    } on SaisieInvalide catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent));
+      return;
+    }
     setState(() => _saving = true);
     try {
       final id = DateTime.now().microsecondsSinceEpoch.toString();
@@ -14095,7 +14132,13 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
   void dispose() { _nom.dispose(); _posologie.dispose(); super.dispose(); }
 
   Future<void> _save() async {
-    if (_nom.text.trim().isEmpty || _date == null) return;
+    try {
+      if (_nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du traitement.');
+      controlerDatesSante(date: _date, fin: _dateFin);
+    } on SaisieInvalide catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent));
+      return;
+    }
     setState(() => _saving = true);
     try {
       await Supabase.instance.client.from('traitements').insert({

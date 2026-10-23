@@ -15,6 +15,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
+import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe } from '@/lib/controle-dates';
 import { useAuth } from '@/lib/auth-context';
 import { RichText } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -268,9 +269,51 @@ function SelectField({ label, value, onChange, options }:
   );
 }
 
+// Heures de rappel d'un traitement : choisies à l'horloge (format HH:MM
+// imposé), stockées « 08:00, 20:00 » comme avant (relu par lireHeures).
+function ChampHeures({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [heure, setHeure] = useState('08:00');
+  const heures = lireHeures(value).heures;
+  const maj = (liste: string[]) => onChange([...new Set(liste)].sort().join(', '));
+  return (
+    <div>
+      <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">{label}</label>
+      <div className="flex gap-2">
+        <input type="time" value={heure} onChange={e => setHeure(e.target.value)} step={300}
+          className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
+        <button type="button" onClick={() => heure && maj([...heures, heure])}
+          className="px-3 py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-semibold hover:bg-[#E6F4F7]">Ajouter</button>
+      </div>
+      {heures.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {heures.map(h => (
+            <span key={h} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] bg-[#0C5C6C]/10 rounded-full pl-2.5 pr-1 py-1">
+              {h}
+              <button type="button" onClick={() => maj(heures.filter(x => x !== h))} aria-label={`Retirer ${h}`}
+                className="w-4 h-4 rounded-full hover:bg-[#0C5C6C]/20 leading-none">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Section santé générique ──────────────────────────────────────────────────
 // Types de vaccins par espèce : voir @/lib/vaccinTypes (partagé avec
 // association/animaux/[id]/page.tsx pour ne jamais diverger entre profils).
+
+// Champs d'un traitement — ajout, modification et affichage (rappel visible).
+const CHAMPS_TRAITEMENT = [
+  { key: 'nom', label: 'Nom', required: true }, { key: 'type', label: 'Type' },
+  { key: 'description_maladie', label: 'Description de la maladie' }, { key: 'posologie', label: 'Posologie' },
+  { key: 'date', label: 'Date de début', type: 'date', required: true }, { key: 'date_fin', label: 'Date de fin', type: 'date' },
+  { key: 'rappel_actif', label: 'Rappels récurrents', type: 'checkbox' },
+  { key: 'rappel_frequence_jours', label: 'Répéter tous les X jours', type: 'number' },
+  { key: 'rappel_duree_jours', label: 'Durée du traitement (jours)', type: 'number' },
+  { key: 'rappel_heures', label: 'Heures de rappel', type: 'heures' },
+  { key: 'notes', label: 'Commentaires (ex : tolérance au traitement)' },
+];
 
 function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories, extra }:
   { fields: { key:string; label:string; type?:string; required?:boolean; options?:{value:string;label:string}[] }[];
@@ -279,6 +322,13 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
     extra?: React.ReactNode }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
+  const [erreurs, setErreurs] = useState<string[]>([]);
+  function enregistrer() {
+    const avecStatut = fields.some(f => f.key === 'statut') ? { ...form, statut: form.statut || 'prevu' } : form;
+    const e = erreursDatesSante(avecStatut, fields.filter(f => f.type === 'date'));
+    setErreurs(e);
+    if (!e.length) void onSave(form);
+  }
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
   // Fréquence (ex: antiparasitaires) : valeur + unité au lieu d'un texte
@@ -322,6 +372,17 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
             </select>
           </div>
         </div>
+      ) : f.key === 'date_rappel' && fields.some(ff => ff.type === 'frequence') ? (
+        // Rappel calculé à partir de la date et de la fréquence : non modifiable.
+        <div key={f.key}>
+          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">{f.label} (calculée)</label>
+          <p className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-600">
+            {form.date_rappel ? fmtDate(form.date_rappel) : 'Selon la date et la fréquence'}
+          </p>
+        </div>
+      ) : f.type === 'heures' ? (
+        <ChampHeures key={f.key} label={f.label} value={form[f.key] ?? ''}
+          onChange={v => setForm(p => ({ ...p, [f.key]: v }))} />
       ) : f.type === 'select' ? (
         <SelectField key={f.key} label={f.label} value={form[f.key]??''} options={f.options ?? []}
           onChange={v => setForm(p=>{
@@ -339,7 +400,10 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
             return next;
           })} />
       ) : (
-        <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required}
+        <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required || (f.type === 'date' && f.key === 'date')}
+          // Dates : bornes proposées par le calendrier (contrôlées à l'enregistrement).
+          min={f.type === 'date' ? (f.key !== 'date' && form.date ? form.date : PREMIERE_DATE_ACTE) : undefined}
+          max={f.type === 'date' && f.key === 'date' ? derniereDateActe() : undefined}
           type={f.type??'text'} onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
             // Date d'injection changée (y compris une correction après un
@@ -365,9 +429,14 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
           })} />
       ))}
       {extra}
+      {erreurs.length > 0 && (
+        <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
+          {erreurs.map(e => <li key={e}>{e}</li>)}
+        </ul>
+      )}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
-        <button onClick={() => onSave(form)} disabled={saving}
+        <button onClick={enregistrer} disabled={saving}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -390,7 +459,8 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
 
   if (editing && onSave) {
     const initial: Record<string,string> = {};
-    fields.forEach(f => { initial[f.key] = String(record[f.key] ?? ''); });
+    // Dates enregistrées par l'appli avec l'heure (…T00:00:00) : jour seul pour le champ date.
+    fields.forEach(f => { initial[f.key] = f.type === 'date' ? String(record[f.key] ?? '').slice(0, 10) : String(record[f.key] ?? ''); });
     return (
       <div className="px-4 py-3">
         <AddHealthForm saving={!!saving} onCancel={()=>setEditing(false)}
@@ -424,7 +494,11 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
           {fields.map(f => record[f.key] ? (
             <div key={f.key} className="flex gap-2 text-xs">
               <span className="text-gray-400 w-24 flex-shrink-0">{f.label}</span>
-              <span className="text-gray-700">{f.type === 'date' ? fmtDate(record[f.key] as string) : String(record[f.key])}</span>
+              <span className="text-gray-700">{f.type === 'date' ? fmtDate(record[f.key] as string)
+                : f.type === 'checkbox' ? 'Oui'
+                : f.type === 'select' ? (f.options?.find(o => o.value === record[f.key])?.label ?? String(record[f.key]))
+                : f.type === 'heures' && Array.isArray(record[f.key]) ? (record[f.key] as string[]).join(', ')
+                : String(record[f.key])}</span>
             </div>
           ) : null)}
           {isVetEntry && (
@@ -3371,12 +3445,12 @@ function AnimalFichePageInner() {
   // 3 semaines) : transforme les champs texte du formulaire générique en
   // colonnes typées (booléen, entiers, tableau d'heures, date de fin
   // calculée) avant l'insert.
-  async function saveTraitement(data: Record<string,string>) {
+  async function saveTraitement(data: Record<string,string>, recordId?: string) {
     if (!id) return;
     setSavingHealth(true);
     const rappelActif = data.rappel_actif === 'true';
     const payload: Record<string, unknown> = {
-      animal_id: id, id: crypto.randomUUID(),
+      ...(recordId ? {} : { animal_id: id, id: crypto.randomUUID() }),
       nom: data.nom, type: data.type, description_maladie: data.description_maladie || null,
       posologie: data.posologie,
       date: data.date || null, date_fin: data.date_fin || null,
@@ -3386,7 +3460,7 @@ function AnimalFichePageInner() {
     if (rappelActif) {
       const frequence = parseInt(data.rappel_frequence_jours || '1', 10) || 1;
       const duree = parseInt(data.rappel_duree_jours || '7', 10) || 7;
-      const heures = (data.rappel_heures || '').split(',').map(h => h.trim()).filter(Boolean);
+      const heures = lireHeures(data.rappel_heures || '').heures;
       payload.rappel_frequence_jours = frequence;
       payload.rappel_duree_jours = duree;
       payload.rappel_heures = heures;
@@ -3396,8 +3470,13 @@ function AnimalFichePageInner() {
         payload.rappel_fin = fin.toISOString().slice(0, 10);
       }
     }
-    await supabase.from('traitements').insert(payload);
-    await writeRegistreActe('traitements', payload.id as string, payload as Record<string,unknown>);
+    if (recordId) {
+      await supabase.from('traitements').update(payload).eq('id', recordId);
+      await writeRegistreActe('traitements', recordId, payload as Record<string,unknown>);
+    } else {
+      await supabase.from('traitements').insert(payload);
+      await writeRegistreActe('traitements', payload.id as string, payload as Record<string,unknown>);
+    }
     await loadHealth();
     setAddOpen(null);
     setSavingHealth(false);
@@ -4982,15 +5061,11 @@ function AnimalFichePageInner() {
             addFormOpen={addOpen==='traitements'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={saveTraitement}
-              fields={[{key:'nom',label:'Nom',required:true},{key:'type',label:'Type'},{key:'description_maladie',label:'Description de la maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Date début',type:'date'},{key:'date_fin',label:'Date fin',type:'date'},
-                {key:'rappel_actif',label:'Activer les rappels récurrents',type:'checkbox'},
-                {key:'rappel_frequence_jours',label:'Répéter tous les X jours',type:'number'},
-                {key:'rappel_duree_jours',label:'Durée du traitement (jours)',type:'number'},
-                {key:'rappel_heures',label:'Heures de rappel (ex: 08:00, 20:00)'},
-                {key:'notes',label:'Commentaires (ex: impressions de tolérance au traitement)'}]}/>}>
+              fields={CHAMPS_TRAITEMENT}/>}>
             {health.traitements.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('traitements',r.id)}
-                fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'description_maladie',label:'Maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'},{key:'notes',label:'Commentaires'}]}/>
+                onSave={d=>saveTraitement(d, r.id)} saving={savingHealth} canWrite={canWriteSante}
+                fields={CHAMPS_TRAITEMENT}/>
             ))}
             {health.traitements.length===0 && <p className="p-4 text-sm text-gray-400">Aucun traitement</p>}
           </HealthSection>
@@ -5017,7 +5092,9 @@ function AnimalFichePageInner() {
                 onSave={d=>updateHealthRecord('chirurgies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
                 fields={[
                   {key:'intitule',label:'Intervention',required:true},
-                  {key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'statut',label:'Statut'},
+                  {key:'type',label:'Type',type:'select',options:[{value:'chirurgie',label:'Chirurgie'},{value:'hospitalisation',label:'Hospitalisation'}]},
+                  {key:'date',label:'Date',type:'date',required:true},
+                  {key:'statut',label:'Statut',type:'select',options:[{value:'prevu',label:'Prévue'},{value:'realise',label:'Réalisée'},{value:'annule',label:'Annulée'}]},
                   {key:'clinique',label:'Clinique / vétérinaire'},
                   {key:'protocole_preop',label:'Protocole pré-opératoire',type:'textarea'},
                   {key:'protocole_postop',label:'Protocole post-opératoire',type:'textarea'},

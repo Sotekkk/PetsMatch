@@ -601,6 +601,79 @@ async function sendOverdueMiseBasReminders() {
 }
 
 /**
+ * Chirurgie / hospitalisation prévue : notification J-7, la veille et le jour
+ * même (8h Paris) au(x) propriétaire(s) actuel(s) de l'animal et au
+ * vétérinaire qui l'a saisie. Marqueurs rappel_j7/j1/j0_envoye (remis à zéro
+ * par la base si la date ou le statut change — migration_chirurgies_planification.sql).
+ */
+exports.sendChirurgieReminders = functions
+    .region("europe-west1")
+    .runWith({timeoutSeconds: 300, memory: "256MB"})
+    .pubsub.schedule("0 8 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const paliers = [
+            {days: 7, field: "rappel_j7_envoye", quand: "dans 7 jours"},
+            {days: 1, field: "rappel_j1_envoye", quand: "demain"},
+            {days: 0, field: "rappel_j0_envoye", quand: "aujourd'hui"},
+        ];
+        let sent = 0;
+        for (const {days, field, quand} of paliers) {
+            const cible = new Date(parisNow);
+            cible.setDate(cible.getDate() + days);
+            const dateStr = toDateStr(cible);
+            let rows = [];
+            try {
+                rows = await supabaseSelect("chirurgies",
+                    `statut=eq.prevu&${field}=eq.false&date=eq.${encodeURIComponent(dateStr)}`);
+            } catch (e) {
+                console.error("[chirurgie] lecture:", e.message);
+                continue;
+            }
+            for (const c of rows) {
+                const nomAnimal = await getAnimalNom(c.animal_id);
+                const quoi = c.type === "hospitalisation" ? "Hospitalisation" : "Intervention";
+                const title = `${quoi} prévue ${quand}`;
+                const body = `${c.intitule || quoi} — ${nomAnimal || "votre animal"}` +
+                    (c.clinique ? ` (${c.clinique})` : "") +
+                    (c.protocole_preop ? `. Préparation : ${String(c.protocole_preop).slice(0, 120)}` : "");
+                const data = {type: "chirurgie_prevue", animalId: String(c.animal_id), chirurgieId: String(c.id)};
+
+                // Propriétaires actuels (co-propriétaires compris), sinon le détenteur de la fiche.
+                const destinataires = await getCoproprietaires(c.animal_id, null);
+                if (!destinataires.length) {
+                    try {
+                        const a = (await supabaseSelect("animaux", `id=eq.${c.animal_id}`))[0];
+                        const uid = a && (a.uid_proprietaire || a.uid_eleveur);
+                        if (uid) destinataires.push({uid, profileId: a.profile_id || null});
+                    } catch (_) {/* pas bloquant */}
+                }
+                // Vétérinaire qui a saisi l'intervention.
+                if (c.vet_id && !destinataires.some((d) => d.uid === c.vet_id)) {
+                    destinataires.push({uid: c.vet_id, profileId: null});
+                }
+
+                for (const d of destinataires) {
+                    try {
+                        await sendPush(d.uid, title, body, data, {profileId: d.profileId});
+                        await supabaseInsert("notifications", [{
+                            uid: d.uid, type: "chirurgie_prevue", title, body, data, read: false,
+                            ...(d.profileId ? {profile_id: d.profileId} : {}),
+                        }]);
+                        sent++;
+                    } catch (e) {
+                        console.error(`[chirurgie] notif ${c.id} → ${d.uid}:`, e.message);
+                    }
+                }
+                await supabasePatch("chirurgies", c.id, {[field]: true});
+            }
+        }
+        console.log(`[chirurgie] ${sent} notification(s) envoyée(s)`);
+        return null;
+    });
+
+/**
  * Rappel quotidien (8h Paris) à la famille pour chaque exercice d'éducation
  * attribué avec rappels actifs, tant qu'il n'est pas fait/abandonné et que
  * l'échéance n'est pas dépassée. Dédupe par jour (notifs_sent :
