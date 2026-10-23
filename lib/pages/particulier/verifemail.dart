@@ -118,14 +118,29 @@ Future<bool> registerUser(String email, String password) async {
 
     // « Vos animaux & votre projet » → profil particulier créé par le trigger
     // (présentation + projet d'adoption, partagés avec le site).
-    if (User_Info.desc.isNotEmpty || User_Info.adoptProject.isNotEmpty) {
+    if (User_Info.desc.isNotEmpty || User_Info.adoptProject.isNotEmpty
+        || User_Info.especesPossedees.isNotEmpty || User_Info.especesProjet.isNotEmpty) {
+      final base = {
+        if (User_Info.desc.isNotEmpty) 'description': User_Info.desc,
+        if (User_Info.adoptProject.isNotEmpty) 'projet_adoption': User_Info.adoptProject,
+      };
       try {
         await Supabase.instance.client.from('user_profiles').update({
-          if (User_Info.desc.isNotEmpty) 'description': User_Info.desc,
-          if (User_Info.adoptProject.isNotEmpty) 'projet_adoption': User_Info.adoptProject,
+          ...base,
+          if (User_Info.especesPossedees.isNotEmpty) 'especes_possedees': User_Info.especesPossedees,
+          if (User_Info.especesProjet.isNotEmpty) 'especes_projet': User_Info.especesProjet,
         }).eq('uid', uid).eq('profile_type', 'particulier');
       } catch (e) {
-        debugPrint('Profil particulier (description / projet) : $e');
+        debugPrint('Profil particulier (description / projet / espèces) : $e');
+        // Colonnes espèces absentes (migration pas passée) : le reste est gardé.
+        if (base.isNotEmpty) {
+          try {
+            await Supabase.instance.client.from('user_profiles').update(base)
+                .eq('uid', uid).eq('profile_type', 'particulier');
+          } catch (e2) {
+            debugPrint('Profil particulier (description / projet) : $e2');
+          }
+        }
       }
     }
 

@@ -1,5 +1,6 @@
 'use client';
 
+import ChoixEspecesPastilles from '@/components/ChoixEspecesPastilles';
 import { bornesNaissancePersonne, erreurNaissancePersonne } from '@/lib/ages-plausibles';
 import { useProfessionPlanCode, vetFormuleOk } from '@/lib/use-plan';
 import { TARIFS_VETO_GROUPES } from '@/lib/tarifs-veto';
@@ -2247,6 +2248,10 @@ export default function ProfilPage() {
   // d'adoption) et présentation : profil particulier, modifiables ici.
   const [presentation, setPresentation] = useState('');
   const [projetAdoption, setProjetAdoption] = useState('');
+  // Espèces cochées (user_profiles.especes_possedees / especes_projet) ;
+  // null = colonnes absentes (migration_particulier_especes.sql pas passée).
+  const [especesPossedees, setEspecesPossedees] = useState<string[] | null>(null);
+  const [especesProjet, setEspecesProjet] = useState<string[] | null>(null);
   const [phone, setPhone] = useState('');
   const [ville, setVille] = useState('');
   const [cpParticulier, setCpParticulier] = useState('');
@@ -2335,14 +2340,16 @@ export default function ProfilPage() {
   useEffect(() => {
     if (!activeProfileLoaded || !user || !editingParticulier) return;
     let annule = false;
-    const q = supabase.from('user_profiles_complet').select('description, projet_adoption');
+    const q = supabase.from('user_profiles_complet').select('*');
     (activeProfileId ? q.eq('id', activeProfileId) : q.eq('uid', user.uid).eq('profile_type', 'particulier'))
       .maybeSingle()
       .then(({ data }) => {
         if (annule || !data) return;
-        const r = data as { description?: string | null; projet_adoption?: string | null };
+        const r = data as { description?: string | null; projet_adoption?: string | null; especes_possedees?: string[] | null; especes_projet?: string[] | null };
         setPresentation(r.description ?? '');
         setProjetAdoption(r.projet_adoption ?? '');
+        if ('especes_possedees' in r) setEspecesPossedees(r.especes_possedees ?? []);
+        if ('especes_projet' in r) setEspecesProjet(r.especes_projet ?? []);
       });
     return () => { annule = true; };
   }, [activeProfileLoaded, activeProfileId, user, editingParticulier]);
@@ -2766,6 +2773,8 @@ export default function ProfilPage() {
       if (editingParticulier) {
         profileUpdate.description = presentation.trim() || null;
         profileUpdate.projet_adoption = projetAdoption.trim() || null;
+        if (especesPossedees) profileUpdate.especes_possedees = especesPossedees;
+        if (especesProjet) profileUpdate.especes_projet = especesProjet;
       }
       if (isEleveur) {
         profileUpdate.nom            = nameElevage;
@@ -3169,6 +3178,17 @@ export default function ProfilPage() {
 
       {/* Accès rapide */}
       <div className="flex gap-3 mb-5 flex-wrap">
+        <a href="#modifier-profil"
+          onClick={e => { e.preventDefault(); document.getElementById('modifier-profil')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+          className="flex items-center gap-2 bg-[#0C5C6C] text-white shadow-sm rounded-2xl px-4 py-3 hover:bg-[#094F5D] transition-colors">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.2 5.2l3.6 3.6M4 20l4.2-1 10.6-10.6a2.5 2.5 0 00-3.6-3.6L4.6 15.4 4 20z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>Modifier mes informations</p>
+            <p className="text-xs text-white/75">Photo, identité, présentation, adresse</p>
+          </div>
+        </a>
         <Link href="/favoris"
           className="flex items-center gap-2 bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3 hover:shadow-md transition-shadow">
           <span className="text-xl">❤️</span>
@@ -3303,6 +3323,9 @@ export default function ProfilPage() {
         </Link>
       </div>
 
+      <h2 id="modifier-profil" className="scroll-mt-24 text-lg font-bold text-[#1F2A2E] mt-2 mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+        Modifier mes informations
+      </h2>
       <form onSubmit={handleSave} className="space-y-4">
 
         {/* ── Bannière + photo (éleveur) ── */}
@@ -3428,16 +3451,35 @@ export default function ProfilPage() {
         </Card>
 
         {editingParticulier && (
-          <Card title="Présentation et projet">
-            <Field label="Présentation">
-              <textarea value={presentation} onChange={e => setPresentation(e.target.value)} rows={3}
-                placeholder="Quelques mots sur vous et vos animaux" className={inputCls} />
-            </Field>
-            <Field label="Vos animaux et votre projet d'adoption">
-              <textarea value={projetAdoption} onChange={e => setProjetAdoption(e.target.value)} rows={2}
-                placeholder="Ex. : J'ai déjà un chien. Projet : adopter un chat." className={inputCls} />
-            </Field>
-          </Card>
+          <>
+            <Card title="Présentation">
+              <Field label="Quelques mots sur vous">
+                <textarea value={presentation} onChange={e => setPresentation(e.target.value)} rows={3}
+                  placeholder="Votre mode de vie, votre expérience avec les animaux…" className={inputCls} />
+              </Field>
+            </Card>
+            {especesPossedees && (
+              <Card title="Mes animaux">
+                <Field label="Espèces que vous avez">
+                  <ChoixEspecesPastilles selection={especesPossedees} onChange={setEspecesPossedees} />
+                </Field>
+                <p className="text-xs text-gray-500 mt-2">
+                  Les fiches de vos animaux se gèrent dans <Link href="/mes-animaux" className="text-[#0C5C6C] font-semibold">Mes animaux</Link>.
+                </p>
+              </Card>
+            )}
+            <Card title="Mon projet d'adoption">
+              {especesProjet && (
+                <Field label="Espèces recherchées">
+                  <ChoixEspecesPastilles selection={especesProjet} onChange={setEspecesProjet} />
+                </Field>
+              )}
+              <Field label="Précisions">
+                <textarea value={projetAdoption} onChange={e => setProjetAdoption(e.target.value)} rows={2}
+                  placeholder="Ex. : adopter un chat d'ici l'été, en appartement." className={inputCls} />
+              </Field>
+            </Card>
+          </>
         )}
 
         {/* ── Élevage info ── */}

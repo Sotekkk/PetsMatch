@@ -1,5 +1,6 @@
 'use client';
 
+import ChoixEspecesPastilles, { ESPECES_PARTICULIER } from '@/components/ChoixEspecesPastilles';
 import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -34,10 +35,7 @@ type Role = 'particulier' | 'eleveur' | 'pro';
 type Step = 'role' | 'info' | 'docs' | 'animaux' | 'account';
 
 // « Vos animaux & votre projet » (particulier) — miroir appli description_page.dart.
-const ESPECES_PROJET: [string, string][] = [
-  ['chien', 'Chien'], ['chat', 'Chat'], ['lapin', 'Lapin'], ['cheval', 'Cheval'],
-  ['oiseau', 'Oiseau'], ['nac', 'NAC'], ['reptile', 'Reptile'], ['autre', 'Autre'],
-];
+const ESPECES_PROJET = ESPECES_PARTICULIER;
 function texteProjetAdoption(aDejaAnimal: boolean, projet: boolean, especes: string[], precisions: string): string {
   if (!projet) return '';
   const labels = ESPECES_PROJET.filter(([k]) => especes.includes(k)).map(([, l]) => l.split(' ').pop()!.toLowerCase());
@@ -223,6 +221,7 @@ export default function InscriptionPage() {
   const [aDejaAnimal, setADejaAnimal] = useState<boolean | null>(null);
   const [projetAdoption, setProjetAdoption] = useState<boolean | null>(null);
   const [especesProjet, setEspecesProjet] = useState<string[]>([]);
+  const [especesPossedees, setEspecesPossedees] = useState<string[]>([]);
   const [precisionsProjet, setPrecisionsProjet] = useState('');
   const [bio, setBio] = useState('');
 
@@ -450,11 +449,22 @@ export default function InscriptionPage() {
     // Particulier : présentation + projet d'adoption sur le profil créé.
     if (!isEleveurOrPro) {
       const projet = texteProjetAdoption(!!aDejaAnimal, !!projetAdoption, especesProjet, precisionsProjet);
-      if (bio.trim() || projet) {
-        await supabase.from('user_profiles').update({
+      const possedees = aDejaAnimal ? especesPossedees : [];
+      const especesDuProjet = projetAdoption ? especesProjet : [];
+      if (bio.trim() || projet || possedees.length || especesDuProjet.length) {
+        const base = {
           ...(bio.trim() ? { description: bio.trim() } : {}),
           ...(projet ? { projet_adoption: projet } : {}),
+        };
+        const { error: errEsp } = await supabase.from('user_profiles').update({
+          ...base,
+          ...(possedees.length ? { especes_possedees: possedees } : {}),
+          ...(especesDuProjet.length ? { especes_projet: especesDuProjet } : {}),
         }).eq('uid', uid).eq('profile_type', 'particulier');
+        // Colonnes espèces absentes (migration pas passée) : le reste est gardé.
+        if (errEsp && Object.keys(base).length) {
+          await supabase.from('user_profiles').update(base).eq('uid', uid).eq('profile_type', 'particulier');
+        }
       }
     }
   }
@@ -849,7 +859,13 @@ export default function InscriptionPage() {
                       </button>
                     ))}
                   </div>
-                  {aDejaAnimal && <p className="text-xs text-gray-500 mt-1">Vous pourrez créer leur fiche juste après l&apos;inscription.</p>}
+                  {aDejaAnimal && (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-semibold text-gray-600">Quelle(s) espèce(s) avez-vous ?</p>
+                      <ChoixEspecesPastilles selection={especesPossedees} onChange={setEspecesPossedees} />
+                      <p className="text-xs text-gray-500">Vous pourrez créer leur fiche juste après l&apos;inscription.</p>
+                    </div>
+                  )}
                 </div>
                 {aDejaAnimal !== null && (
                   <div>
@@ -867,35 +883,7 @@ export default function InscriptionPage() {
                     {projetAdoption && (
                       <div className="mt-3 space-y-2">
                         <p className="text-xs font-semibold text-gray-600">Quelle(s) espèce(s) ?</p>
-                        <details className="group border border-gray-200 rounded-xl bg-white">
-                          <summary className="list-none cursor-pointer flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-                            <span className={especesProjet.length ? 'text-[#1F2A2E]' : 'text-gray-400'}>
-                              {especesProjet.length === 0 ? 'Choisir les espèces'
-                                : especesProjet.length === ESPECES_PROJET.length ? 'Toutes les espèces'
-                                : ESPECES_PROJET.filter(([k]) => especesProjet.includes(k)).map(([, l]) => l).join(', ')}
-                            </span>
-                            <svg className="w-4 h-4 text-gray-400 shrink-0 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </summary>
-                          <div className="border-t border-gray-100 py-1">
-                            <label className="flex items-center gap-3 px-3 py-2 text-sm font-semibold cursor-pointer hover:bg-gray-50">
-                              <input type="checkbox" className="w-4 h-4 accent-[#6E9E57]"
-                                checked={especesProjet.length === ESPECES_PROJET.length}
-                                onChange={e => setEspecesProjet(e.target.checked ? ESPECES_PROJET.map(([k]) => k) : [])} />
-                              Tout cocher
-                            </label>
-                            <div className="border-t border-gray-100 my-1" />
-                            {ESPECES_PROJET.map(([k, l]) => (
-                              <label key={k} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
-                                <input type="checkbox" className="w-4 h-4 accent-[#6E9E57]"
-                                  checked={especesProjet.includes(k)}
-                                  onChange={() => setEspecesProjet(e => e.includes(k) ? e.filter(x => x !== k) : [...e, k])} />
-                                {l}
-                              </label>
-                            ))}
-                          </div>
-                        </details>
+                        <ChoixEspecesPastilles selection={especesProjet} onChange={setEspecesProjet} />
                         <textarea value={precisionsProjet} onChange={e => setPrecisionsProjet(e.target.value)} rows={2}
                           placeholder="Précisions (race, délai, mode de vie…) — optionnel" className={inputCls} />
                       </div>

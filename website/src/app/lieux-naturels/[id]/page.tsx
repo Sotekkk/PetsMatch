@@ -197,9 +197,19 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const amenityFileInput = useRef<HTMLInputElement>(null);
   const [amenityFieldPending, setAmenityFieldPending] = useState<{ field: string; value: boolean } | null>(null);
 
+  // Explication avant la photo : elle sert de preuve à l'équipe PetsMatch,
+  // qui valide le signalement avant de mettre la fiche à jour.
+  const [amenityExplication, setAmenityExplication] = useState<{ field: string; value: boolean } | null>(null);
+
   function suggestAmenity(field: string, value: boolean) {
     if (!user) return;
-    setAmenityFieldPending({ field, value });
+    setAmenityExplication({ field, value });
+  }
+
+  function choisirPhotoAmenity() {
+    if (!amenityExplication) return;
+    setAmenityFieldPending(amenityExplication);
+    setAmenityExplication(null);
     amenityFileInput.current?.click();
   }
 
@@ -227,8 +237,10 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
         submitted_by_profile_id: profileId || null,
       });
       setPendingAmenityFields(prev => new Set(prev).add(pending.field));
+      alert('Merci ! Ton signalement et sa photo sont envoyés à l’équipe PetsMatch pour validation.');
     } catch (e) {
       console.error(e);
+      alert('Envoi impossible, réessaie.');
     } finally {
       setAmenityUploading(null);
     }
@@ -475,7 +487,38 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
         <h2 className="font-bold text-base text-[#1F2A2E] mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
           Équipements & caractéristiques
         </h2>
+        {user && (
+          <p className="text-xs text-gray-500 -mt-1 mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Touchez un équipement pour signaler qu&apos;il existe (ou qu&apos;il n&apos;existe plus) : une photo prise sur place est demandée pour la validation.
+          </p>
+        )}
         <input ref={amenityFileInput} type="file" accept="image/*" className="hidden" onChange={onAmenityPhotoSelected} />
+        {amenityExplication && (() => {
+          const label = AMENITIES.find(a => a.field === amenityExplication.field)?.label ?? '';
+          return (
+            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setAmenityExplication(null)}>
+              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+                <h3 className="font-bold text-lg text-[#1F2A2E] mb-2">
+                  {amenityExplication.value ? `Ajouter « ${label} »` : `Signaler « ${label} » absent`}
+                </h3>
+                <p className="text-sm text-gray-600 mb-2">
+                  {amenityExplication.value
+                    ? `Envoyez une photo de l’élément sur place (par exemple : ${label.toLowerCase()}).`
+                    : `Envoyez une photo de l’endroit qui montre que « ${label} » n’est plus disponible.`}
+                </p>
+                <p className="text-sm text-gray-600 mb-5">
+                  L&apos;équipe PetsMatch vérifie la photo avant de mettre la fiche à jour. Vous suivez la demande dans « Mes contributions ».
+                </p>
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setAmenityExplication(null)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50">Annuler</button>
+                  <button type="button" onClick={choisirPhotoAmenity}
+                    className="flex-1 py-2.5 rounded-xl bg-[#0C5C6C] text-white font-semibold text-sm hover:bg-[#094F5D]">Choisir la photo</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         <div className="grid grid-cols-2 gap-2 mb-6">
           {AMENITIES.map(({ field, icon, label }) => {
             const active = place[field] === true;

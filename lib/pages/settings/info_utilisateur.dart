@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:PetsMatch/pages/particulier/numberadressregistration.dart';
+import 'package:PetsMatch/widgets/choix_especes_pastilles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -36,6 +37,11 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   // Réponses de l'inscription (animaux, projet d'adoption) + présentation.
   final TextEditingController _presentationController = TextEditingController();
   final TextEditingController _projetController = TextEditingController();
+  // Espèces cochées (user_profiles.especes_possedees / especes_projet).
+  final Set<String> _especesPossedees = {};
+  final Set<String> _especesProjet = {};
+  // false tant que migration_particulier_especes.sql n'est pas passée.
+  bool _colonnesEspeces = false;
   final TextEditingController _rueController = TextEditingController();
   final TextEditingController _villeController = TextEditingController();
   final TextEditingController _codePostalController = TextEditingController();
@@ -193,6 +199,9 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     _pseudoController.text = (row['social_pseudo'] ?? '').toString();
     _presentationController.text = (row['description'] ?? '').toString();
     _projetController.text = (row['projet_adoption'] ?? '').toString();
+    _colonnesEspeces = row.containsKey('especes_possedees');
+    _especesPossedees..clear()..addAll(((row['especes_possedees'] as List?) ?? const []).map((e) => e.toString()));
+    _especesProjet..clear()..addAll(((row['especes_projet'] as List?) ?? const []).map((e) => e.toString()));
     _phoneISOCodeController.text = User_Info.codeISO;
     _phoneController.text =
         (row['phone_number'] ?? row['telephone'] ?? '').toString();
@@ -277,6 +286,10 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       'social_pseudo': _pseudoController.text.trim().isEmpty ? null : _pseudoController.text.trim(),
       'description': _presentationController.text.trim().isEmpty ? null : _presentationController.text.trim(),
       'projet_adoption': _projetController.text.trim().isEmpty ? null : _projetController.text.trim(),
+      if (_isParticulierProfile && _colonnesEspeces) ...{
+        'especes_possedees': kEspecesParticulier.map((e) => e.$1).where(_especesPossedees.contains).toList(),
+        'especes_projet': kEspecesParticulier.map((e) => e.$1).where(_especesProjet.contains).toList(),
+      },
       'phone_number': _phoneController.text.trim(),
       'telephone': _phoneController.text.trim(),
       'rue': rue,
@@ -671,10 +684,37 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             ]),
             if (_isParticulierProfile) ...[
               const SizedBox(height: 12),
-              _card('Présentation et projet', [
-                _champLong('Présentation', _presentationController, 'Quelques mots sur vous et vos animaux'),
-                _champLong("Vos animaux et votre projet d'adoption", _projetController,
-                    "Ex. : J'ai déjà un chien. Projet : adopter un chat."),
+              _card('Présentation', [
+                _champLong('Quelques mots sur vous', _presentationController,
+                    'Votre mode de vie, votre expérience avec les animaux…'),
+              ]),
+              if (_colonnesEspeces) ...[
+                const SizedBox(height: 12),
+                _card('Mes animaux', [
+                  _libelleEspeces('Espèces que vous avez'),
+                  ChoixEspecesPastilles(
+                    selection: _especesPossedees,
+                    onChanged: (v) => setState(() => _especesPossedees..clear()..addAll(v)),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, top: 8),
+                    child: Text('Les fiches de vos animaux se gèrent dans Mes animaux.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF8A938C))),
+                  ),
+                ]),
+              ],
+              const SizedBox(height: 12),
+              _card("Mon projet d'adoption", [
+                if (_colonnesEspeces) ...[
+                  _libelleEspeces('Espèces recherchées'),
+                  ChoixEspecesPastilles(
+                    selection: _especesProjet,
+                    onChanged: (v) => setState(() => _especesProjet..clear()..addAll(v)),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                _champLong('Précisions', _projetController,
+                    "Ex. : adopter un chat d'ici l'été, en appartement."),
               ]),
             ],
             const SizedBox(height: 12),
@@ -885,6 +925,11 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
       ]),
     );
   }
+
+  Widget _libelleEspeces(String t) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 6),
+        child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+      );
 
   Widget _champLong(String label, TextEditingController ctrl, String aide) => Padding(
         padding: const EdgeInsets.only(bottom: 12),

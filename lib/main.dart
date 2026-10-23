@@ -455,6 +455,9 @@ class User_Info {
   static List<Map<String, dynamic>> documentElevage = [];
   static bool validateAccountElevage = true;
   static String adoptProject = "";
+  // Inscription particulier : espèces cochées (user_profiles.especes_possedees / especes_projet).
+  static List<String> especesPossedees = [];
+  static List<String> especesProjet = [];
   static String uid = "";
   static bool isPub = false;
   static bool isPro = false;

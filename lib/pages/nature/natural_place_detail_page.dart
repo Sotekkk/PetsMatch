@@ -469,6 +469,30 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     final id = _place['id']?.toString();
     if (id == null) return;
 
+    // Explication avant la photo : elle sert de preuve à l'équipe PetsMatch,
+    // qui valide le signalement avant de mettre la fiche à jour.
+    final label = _AmenitiesGrid._items.firstWhere((i) => i.$1 == field, orElse: () => (field, Icons.check, field)).$3;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(value ? 'Ajouter « $label »' : 'Signaler « $label » absent',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18)),
+        content: Text(
+          "${value ? "Envoie une photo de l'élément sur place (par exemple : ${label.toLowerCase()})." : "Envoie une photo de l'endroit qui montre que « $label » n'est plus disponible."}\n\n"
+          "L'équipe PetsMatch vérifie la photo avant de mettre la fiche à jour. Tu suis la demande dans « Mes contributions ».",
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.4)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Choisir la photo'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
     final file = await pickAndCropBanner();
     if (file == null) return;
 
@@ -495,6 +519,10 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
       debugPrint('[NaturalDetail] suggest amenity error: $e');
       if (mounted) {
         setState(() => _pendingAmenityFields = {..._pendingAmenityFields}..remove(field));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Envoi impossible, réessaie.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
       }
     }
   }
@@ -722,6 +750,14 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
 
                   // ── Équipements ────────────────────────────────────────
                   _SectionTitle(title: 'Équipements & caractéristiques'),
+                  if (_uid.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Touche un équipement pour signaler qu\'il existe (ou qu\'il n\'existe plus) : '
+                        'une photo prise sur place est demandée pour la validation.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                    ),
                   const SizedBox(height: 10),
                   _AmenitiesGrid(
                     place: _place,
