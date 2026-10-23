@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/association/admin/chenil_planning_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
 import 'package:PetsMatch/pages/association/association_home.dart';
@@ -234,6 +235,42 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                  ],
+                ),
+                // Agenda & RDV (miroir site) : les RDV de visite d'adoption pris
+                // sur les annonces arrivent dans « Mon agenda RDV ».
+                _DrawerSection(
+                  icon: Icons.event_outlined,
+                  label: 'Agenda & RDV',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Agenda',
+                      icon: Icons.calendar_month_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        setState(() => _selectedIndex = 3);
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mon agenda RDV',
+                      icon: Icons.event_available_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ProAgendaPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes créneaux de visite',
+                      icon: Icons.schedule_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ProAgendaPage(initialTabIndex: 3),
                         ));
                       },
                     ),

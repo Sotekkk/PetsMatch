@@ -580,7 +580,9 @@ const MENU_ASSOCIATION = [
     icon: '🗓️',
     items: [
       { href: '/association/agenda', label: 'Agenda',    icon: '🗓️' },
-      { href: '/mes-rdv',            label: 'Mes RDV',   icon: '📅' },
+      // RDV de visite d'adoption pris sur les annonces (miroir appli).
+      { href: '/mes-rdv',            label: 'Mon agenda RDV',   icon: '📅' },
+      { href: '/pro/creneaux',       label: 'Mes créneaux de visite', icon: '🕒' },
       { href: '/mes-taches',         label: 'Mes tâches', icon: '✅' },
     ],
   },
