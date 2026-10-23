@@ -14,6 +14,7 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/services/alertes_notifications.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -569,6 +570,37 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           content: Text('Champs requis : ${errors.join(' · ')}'),
           backgroundColor: Colors.red, duration: const Duration(seconds: 4)));
       return;
+    }
+
+    // Animal déjà déclaré perdu (par moi ou un co-propriétaire) : pas de
+    // seconde déclaration — l'alerte existante est partagée dans Mes alertes.
+    final animalChoisi = widget.animalId ?? _animalIdChoisi;
+    if (!_isEdit && animalChoisi != null) {
+      try {
+        final deja = await _supa.from('alertes_perdus').select('id, numero_alerte')
+            .eq('animal_id', animalChoisi).eq('statut', 'perdu').limit(1).maybeSingle();
+        if (deja != null) {
+          if (!mounted) return;
+          final numero = (deja['numero_alerte'] ?? '').toString();
+          final voir = await showDialog<bool>(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: const Text('Déjà déclaré perdu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+              content: Text('${_nomCtrl.text.trim().isEmpty ? 'Cet animal' : _nomCtrl.text.trim()} est déjà déclaré(e) perdu(e)'
+                  "${numero.isNotEmpty ? ' (alerte N° $numero)' : ''}. L'alerte est partagée entre les co-propriétaires : "
+                  'vous la retrouvez et pouvez la modifier dans Mes alertes.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Fermer')),
+                ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Voir Mes alertes')),
+              ],
+            ),
+          );
+          if (voir == true && mounted) {
+            Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MesAlertesPage()));
+          }
+          return;
+        }
+      } catch (_) {}
     }
 
     setState(() => _saving = true);

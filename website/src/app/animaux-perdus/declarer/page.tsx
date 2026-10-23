@@ -216,6 +216,16 @@ function DeclarerPerduPageInner() {
 
   // Animal choisi : l'alerte lui est rattachée (avant : animal_id jamais enregistré).
   const [animalIdChoisi, setAnimalIdChoisi] = useState<string | null>(null);
+  // Animal déjà déclaré perdu (par moi ou un co-propriétaire) : pas de seconde
+  // déclaration — l'alerte existante est partagée dans « Mes alertes ».
+  const [alerteExistante, setAlerteExistante] = useState<{ id: string; numero_alerte: string | null } | null>(null);
+  useEffect(() => {
+    setAlerteExistante(null);
+    if (!animalIdChoisi) return;
+    supabase.from('alertes_perdus').select('id, numero_alerte')
+      .eq('animal_id', animalIdChoisi).eq('statut', 'perdu').limit(1).maybeSingle()
+      .then(({ data }) => setAlerteExistante(data as typeof alerteExistante));
+  }, [animalIdChoisi]);
 
   function fillFromAnimal(a: UserAnimal) {
     setAnimalIdChoisi(a.id);
@@ -281,6 +291,13 @@ function DeclarerPerduPageInner() {
     if (contactEmail.trim() && !isValidEmail(contactEmail.trim())) errs.push('Email invalide');
     setErrors(errs);
     if (errs.length > 0) return;
+
+    // Contrôle au dernier moment (un co-propriétaire a pu déclarer entre-temps).
+    if (animalIdChoisi) {
+      const { data: deja } = await supabase.from('alertes_perdus').select('id, numero_alerte')
+        .eq('animal_id', animalIdChoisi).eq('statut', 'perdu').limit(1).maybeSingle();
+      if (deja) { setAlerteExistante(deja as typeof alerteExistante); return; }
+    }
 
     setSaving(true);
     try {
@@ -588,8 +605,15 @@ function DeclarerPerduPageInner() {
           </div>
         </div>
 
+        {alerteExistante && (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-900">
+            <p className="font-semibold">{nom || 'Cet animal'} est déjà déclaré(e) perdu(e){alerteExistante.numero_alerte ? ` (alerte N° ${alerteExistante.numero_alerte})` : ''}.</p>
+            <p className="mt-1">L&apos;alerte est partagée entre les co-propriétaires : retrouvez-la et modifiez-la dans <Link href="/mes-alertes" className="font-semibold underline">Mes alertes</Link>.</p>
+          </div>
+        )}
+
         {/* Submit */}
-        <button type="submit" disabled={saving}
+        <button type="submit" disabled={saving || !!alerteExistante}
           className="w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
           {saving ? (
             <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Publication…</>
