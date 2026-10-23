@@ -499,28 +499,19 @@ function DeclarerPerduPageInner() {
             placeholder="Ex : marron, bleu, vairon…" />
         </div>
 
-        {/* Dates */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Date de disparition *</label>
-            <input type="date" value={datePerte}
-              onChange={e => { setDatePerte(e.target.value); if (!dateDerniereLoc) setDateDerniereLoc(e.target.value); }}
-              min={DATE_PERTE_MIN} max={new Date().toISOString().slice(0, 10)}
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1">Dernière localisation vue</label>
-            <p className="text-xs text-gray-400 mb-1">Si différente de la date de disparition</p>
-            <input type="date" value={dateDerniereLoc || datePerte}
-              onChange={e => setDateDerniereLoc(e.target.value)}
-              min={DATE_PERTE_MIN} max={new Date().toISOString().slice(0, 10)}
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
-          </div>
+        {/* Date de disparition */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-1">Date de disparition *</label>
+          <input type="date" value={datePerte}
+            onChange={e => { setDatePerte(e.target.value); if (!dateDerniereLoc) setDateDerniereLoc(e.target.value); }}
+            min={DATE_PERTE_MIN} max={new Date().toISOString().slice(0, 10)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
         </div>
 
-        {/* Localisation */}
+        {/* Lieu où l'animal a été vu pour la dernière fois (adresse Google) */}
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1">Dernière localisation *</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-1">Lieu où il / elle a été vu(e) pour la dernière fois *</label>
+          <p className="text-xs text-gray-400 mb-1">Tapez une adresse ou une ville et choisissez-la dans la liste.</p>
           <div className="space-y-2">
             {/* Address search with autocomplete */}
             <div className="relative">
@@ -563,6 +554,16 @@ function DeclarerPerduPageInner() {
                 placeholder="Région" />
             </div>
           </div>
+        </div>
+
+        {/* Date de dernière observation (si l'animal a été revu depuis la disparition) */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-1">Vu(e) pour la dernière fois le</label>
+          <p className="text-xs text-gray-400 mb-1">À changer seulement si l&apos;animal a été revu après la disparition.</p>
+          <input type="date" value={dateDerniereLoc || datePerte}
+            onChange={e => setDateDerniereLoc(e.target.value)}
+            min={datePerte || DATE_PERTE_MIN} max={new Date().toISOString().slice(0, 10)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white" />
         </div>
 
         {/* Description */}

@@ -868,18 +868,8 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           })),
           const SizedBox(height: 18),
 
-          // ── Date dernière localisation (edit ou si différente) ─────────────
-          const _FLabel('Date de dernière localisation'),
-          const SizedBox(height: 4),
-          Text('Par défaut = date de disparition. Mettez à jour si vous avez vu l\'animal depuis.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-          const SizedBox(height: 6),
-          _DateField(date: _dateDerniereLoc ?? _datePerte,
-              onPicked: (d) => setState(() => _dateDerniereLoc = d)),
-          const SizedBox(height: 18),
-
           // ── Localisation ───────────────────────────────────────────────────
-          const _FLabel('Dernière localisation *'),
+          const _FLabel('Lieu où il / elle a été vu(e) pour la dernière fois *'),
           const SizedBox(height: 6),
           _buildAddressSearch(),
           const SizedBox(height: 8),
@@ -907,6 +897,16 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.green.shade600)),
               ]),
             ),
+          const SizedBox(height: 18),
+
+          // ── Date de dernière observation (si revu après la disparition) ───
+          const _FLabel('Vu(e) pour la dernière fois le'),
+          const SizedBox(height: 4),
+          Text('À changer seulement si l\'animal a été revu après la disparition.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          const SizedBox(height: 6),
+          _DateField(date: _dateDerniereLoc ?? _datePerte,
+              onPicked: (d) => setState(() => _dateDerniereLoc = d)),
           const SizedBox(height: 18),
 
           // ── Description ────────────────────────────────────────────────────
