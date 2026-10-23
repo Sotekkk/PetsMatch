@@ -303,6 +303,38 @@ function ChampHeures({ label, value, onChange }: { label: string; value: string;
 // Types de vaccins par espèce : voir @/lib/vaccinTypes (partagé avec
 // association/animaux/[id]/page.tsx pour ne jamais diverger entre profils).
 
+// Résumé d'un traitement / d'une phase : posologie, période, fréquence, heures.
+function resumeTraitement(r: HealthRecord): string[] {
+  const jour = (v: unknown) => (v ? fmtDate(String(v).slice(0, 10)) : '');
+  const debut = jour(r.date), fin = jour(r.date_fin);
+  const freq = Number(r.rappel_frequence_jours) || 0;
+  const heures = Array.isArray(r.rappel_heures) ? (r.rappel_heures as string[]).filter(Boolean) : [];
+  const lignes: string[] = [];
+  if (r.posologie) lignes.push(String(r.posologie));
+  lignes.push(debut && fin ? `Du ${debut} au ${fin}` : debut ? `Depuis le ${debut}` : '');
+  if (r.rappel_actif === true) {
+    const rythme = freq > 1 ? `Tous les ${freq} jours` : 'Tous les jours';
+    lignes.push(`${rythme}${heures.length ? ` à ${heures.join(', ')}` : ''}${r.rappel_duree_jours ? ` · ${r.rappel_duree_jours} jours` : ''}`);
+  }
+  return lignes.filter(Boolean);
+}
+
+// Phases d'une même prescription (« Phase 1/3 » dans les notes, même produit
+// et même prescripteur) : affichées ensemble, dans l'ordre des dates.
+function grouperTraitements(rows: HealthRecord[]): { cle: string; phases: HealthRecord[] }[] {
+  const groupes: { cle: string; phases: HealthRecord[] }[] = [];
+  const index = new Map<string, { cle: string; phases: HealthRecord[] }>();
+  for (const r of rows) {
+    const enPhases = /^Phase \d+\/\d+/.test(String(r.notes ?? ''));
+    const cle = enPhases ? `${r.nom}|${r.vet_id ?? r.source ?? ''}|${String(r.created_at ?? '').slice(0, 16)}` : String(r.id);
+    let g = index.get(cle);
+    if (!g) { g = { cle, phases: [] }; index.set(cle, g); groupes.push(g); }
+    g.phases.push(r);
+  }
+  for (const g of groupes) g.phases.sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+  return groupes;
+}
+
 // Champs d'un traitement — ajout, modification et affichage (rappel visible).
 const CHAMPS_TRAITEMENT = [
   { key: 'nom', label: 'Nom', required: true }, { key: 'type', label: 'Type' },
@@ -445,10 +477,14 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
   );
 }
 
-function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espece, existingCategories, onRappel }:
+function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espece, existingCategories, onRappel, resume, titre }:
   { fields:{key:string;label:string;type?:string;required?:boolean;options?:{value:string;label:string}[]}[]; record:HealthRecord; onDelete:()=>void;
     onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean; espece?: string; existingCategories?: string[];
-    onRappel?:()=>void }) {
+    onRappel?:()=>void;
+    /** Lignes de résumé affichées sous le titre, repliées (ex. traitement). */
+    resume?: string[];
+    /** Titre affiché à la place du premier champ (ex. « Étape 2 »). */
+    titre?: string }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const mainField = fields[0];
@@ -475,10 +511,12 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
       <div className="flex items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
         <div className="flex-1">
           <p className="text-sm font-medium text-[#1F2A2E] flex items-center gap-1.5">
-            {String(record[mainField.key] ?? '—')}
+            {titre ?? String(record[mainField.key] ?? '—')}
             {isVetEntry && <span title="Certifié par un vétérinaire" className="text-xs">🔒</span>}
           </p>
-          {(() => {
+          {resume?.length ? resume.map((l, i) => (
+            <p key={i} className={`text-xs ${i === 0 ? 'text-gray-600' : 'text-gray-400'}`}>{l}</p>
+          )) : (() => {
             const dateField = fields.find(f => f.type === 'date');
             return dateField && record[dateField.key]
               ? <p className="text-xs text-gray-400">{fmtDate(record[dateField.key] as string)}</p>
@@ -5062,10 +5100,22 @@ function AnimalFichePageInner() {
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={saveTraitement}
               fields={CHAMPS_TRAITEMENT}/>}>
-            {health.traitements.map(r=>(
-              <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('traitements',r.id)}
-                onSave={d=>saveTraitement(d, r.id)} saving={savingHealth} canWrite={canWriteSante}
-                fields={CHAMPS_TRAITEMENT}/>
+            {grouperTraitements(health.traitements).map(g => g.phases.length === 1 ? (
+              <HealthRecord key={g.cle} record={g.phases[0]} onDelete={()=>deleteHealthRecord('traitements',g.phases[0].id)}
+                onSave={d=>saveTraitement(d, g.phases[0].id)} saving={savingHealth} canWrite={canWriteSante}
+                fields={CHAMPS_TRAITEMENT} resume={resumeTraitement(g.phases[0])}/>
+            ) : (
+              <div key={g.cle} className="border-l-4 border-[#0C5C6C]/20">
+                <p className="px-4 pt-3 text-sm font-semibold text-[#1F2A2E]">
+                  {String(g.phases[0].nom ?? '')}
+                  <span className="ml-2 text-xs font-normal text-gray-500">posologie en {g.phases.length} étapes</span>
+                </p>
+                {g.phases.map((r, i) => (
+                  <HealthRecord key={r.id} record={r} titre={`Étape ${i + 1}`} onDelete={()=>deleteHealthRecord('traitements',r.id)}
+                    onSave={d=>saveTraitement(d, r.id)} saving={savingHealth} canWrite={canWriteSante}
+                    fields={CHAMPS_TRAITEMENT} resume={resumeTraitement(r)}/>
+                ))}
+              </div>
             ))}
             {health.traitements.length===0 && <p className="p-4 text-sm text-gray-400">Aucun traitement</p>}
           </HealthSection>
