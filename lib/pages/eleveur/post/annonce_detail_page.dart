@@ -2138,65 +2138,75 @@ class _BottomBarState extends State<_BottomBar> {
         boxShadow: [BoxShadow(
             color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))],
       ),
-      child: Row(children: [
-        if (!widget.isOwner)
-        Expanded(
-          child: ElevatedButton(
-                  onPressed: _loading ? null : _openChat,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _teal, foregroundColor: Colors.white,
-                    minimumSize: const Size(0, 50),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
-                  ),
-                  child: _loading
-                      ? const SizedBox(width: 22, height: 22,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          const Icon(Icons.chat_outlined, size: 18),
-                          const SizedBox(width: 8),
-                          Text(widget.data['profil_source'] == 'association'
-                                  ? 'Contacter l\'association' : 'Contacter l\'éleveur',
-                              style: const TextStyle(
-                                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-                        ]),
+      // Deux actions (association : contacter + RDV visite) : « Contacter » sur
+      // toute la largeur, RDV + partage dessous — sur une seule ligne, le texte
+      // débordait sur les petits écrans.
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        if (!widget.isOwner && _avecRdvVisite) Row(children: [Expanded(child: _boutonContact())]),
+        if (!widget.isOwner && _avecRdvVisite) const SizedBox(height: 8),
+        Row(children: [
+          if (!widget.isOwner && !_avecRdvVisite) Expanded(child: _boutonContact()),
+          if (!widget.isOwner && _avecRdvVisite)
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _openRdvVisite,
+                icon: const Icon(Icons.favorite_border, size: 18, color: _green),
+                label: const Text('Prendre RDV pour une visite',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700, fontSize: 14, color: _green)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: _green),
+                  minimumSize: const Size(0, 50),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-        ),
-        if (!widget.isOwner &&
-            widget.data['profil_source'] == 'association' &&
-            widget.data['typeVente'] == 'adoption') ...[
-          const SizedBox(width: 10),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _openRdvVisite,
-              icon: const Icon(Icons.favorite_border, size: 18, color: _green),
-              label: const Text('RDV visite',
-                  style: TextStyle(fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700, fontSize: 14, color: _green)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: _green),
-                minimumSize: const Size(0, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
-          ),
-        ],
-        const SizedBox(width: 10),
-        SizedBox(
-          height: 50, width: 50,
-          child: OutlinedButton(
-            onPressed: _share,
-            style: OutlinedButton.styleFrom(
-              padding: EdgeInsets.zero,
-              side: BorderSide(color: Colors.grey.shade300),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          if (!widget.isOwner) const SizedBox(width: 10),
+          SizedBox(
+            height: 50, width: 50,
+            child: OutlinedButton(
+              onPressed: _share,
+              style: OutlinedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                side: BorderSide(color: Colors.grey.shade300),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Icon(Icons.share_outlined, color: _teal, size: 22),
             ),
-            child: const Icon(Icons.share_outlined, color: _teal, size: 22),
           ),
-        ),
+        ]),
       ]),
     );
   }
+
+  bool get _avecRdvVisite =>
+      widget.data['profil_source'] == 'association' && widget.data['typeVente'] == 'adoption';
+
+  Widget _boutonContact() => ElevatedButton(
+        onPressed: _loading ? null : _openChat,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _teal, foregroundColor: Colors.white,
+          minimumSize: const Size(0, 50),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
+        ),
+        child: _loading
+            ? const SizedBox(width: 22, height: 22,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.chat_outlined, size: 18),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(widget.data['profil_source'] == 'association'
+                          ? 'Contacter l\'association' : 'Contacter l\'éleveur',
+                      overflow: TextOverflow.ellipsis, maxLines: 1,
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ]),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
