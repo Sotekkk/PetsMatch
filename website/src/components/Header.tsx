@@ -10,6 +10,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
+import { useAvertissementsNonVus } from '@/lib/avertissements';
 import { supabase } from '@/lib/supabase';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
@@ -819,6 +820,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     // Lieu pet-friendly : publié / à compléter / refusé, correction, revendication.
     case 'lieu_moderation':
       return '/animal-friendly/mes-contributions';
+    // Avertissement, suspension, contenu retiré : Paramètres → Avertissements.
+    case 'moderation':
+      return '/profil/avertissements';
     case 'groupe_demande':
     case 'groupe_accepte':
     case 'groupe_refuse':
@@ -1071,6 +1075,12 @@ export default function Header() {
   // profil que /mes-factures (useActiveProfile).
   const profilFactures = useActiveProfile();
   const [facturesNonVues, setFacturesNonVues] = useState(0);
+  // Avertissement de modération pas encore vu : bulle rouge sur l'accès aux paramètres (/profil).
+  const avertissementsNonVus = useAvertissementsNonVus(user?.uid);
+  const pastilleAvertissements = avertissementsNonVus > 0 && (
+    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center"
+      aria-label="Nouvel avertissement de la modération">{avertissementsNonVus}</span>
+  );
   useEffect(() => {
     if (!user?.uid) return;
     const uid = user.uid;
@@ -1645,6 +1655,7 @@ export default function Header() {
                   <span className="text-[#0C5C6C]"><IconeMenu code={sec.icon} /></span>
                   <span className="flex-1 text-left">{sec.section}</span>
                   {items.some(i => i.href === '/mes-factures') && pastilleFactures}
+                  {items.some(i => i.href === '/profil') && pastilleAvertissements}
                   {chevron(ouvert)}
                 </button>
                 {ouvert && (
@@ -1664,6 +1675,7 @@ export default function Header() {
                             actif ? 'bg-[#E8F4F6] text-[#0C5C6C] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
                           <span className="flex-1">{it.label}</span>
                           {it.href === '/mes-factures' && pastilleFactures}
+                          {it.href === '/profil' && pastilleAvertissements}
                         </Link>
                       );
                     })}
@@ -1679,7 +1691,8 @@ export default function Header() {
           {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
             <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={onNavigate}
               className={`${ligne} text-[#1F2A2E] font-medium hover:bg-gray-50`}>
-              <span className="text-[#0C5C6C]"><IconeMenu code="👤" /></span> Mon Profil
+              <span className="text-[#0C5C6C]"><IconeMenu code="👤" /></span> <span className="flex-1">Mon Profil</span>
+              {!effectiveIsEleveur && pastilleAvertissements}
             </Link>
           )}
           {tarifsHref && !menuSections.some((sec) => sec.section === 'Mon Profil') && (
@@ -1769,6 +1782,7 @@ export default function Header() {
                   {sec.items.some(i => i.href === '/mes-factures') && facturesNonVues > 0 && (
                     <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{facturesNonVues}</span>
                   )}
+                  {sec.items.some(i => i.href === '/profil') && pastilleAvertissements}
                   {chevron(ouvert)}
                 </button>
                 {ouvert && (
@@ -1777,7 +1791,8 @@ export default function Header() {
                       <Link key={it.href} href={it.href} onClick={onNavigate} aria-current={actifMenu(it.href) ? 'page' : undefined}
                         className={`flex items-center px-3 min-h-[38px] rounded-md text-sm transition-colors ${
                           actifMenu(it.href) ? 'bg-[#E8F4F6] text-[#0C5C6C] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}>
-                        {it.label}
+                        <span className="flex-1">{it.label}</span>
+                        {it.href === '/profil' && pastilleAvertissements}
                       </Link>
                     ))}
                   </div>
@@ -1833,7 +1848,8 @@ export default function Header() {
         {estParticulier && (
           <Link href="/profil" aria-label="Paramètres du compte" title="Paramètres du compte"
             onClick={() => { setDropdownOpen(false); setMenuOpen(false); }}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0">
+            className="relative w-9 h-9 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 flex-shrink-0">
+            {avertissementsNonVus > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" aria-hidden />}
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
               <circle cx="12" cy="12" r="3" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z" />

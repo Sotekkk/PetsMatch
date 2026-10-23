@@ -12,6 +12,7 @@ import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
 import 'package:PetsMatch/pages/settings/about_us.dart';
 import 'package:PetsMatch/pages/settings/connectionSecu.dart';
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/parametre_config.dart';
 import 'package:PetsMatch/pages/settings/utilisateurs_bloques_page.dart';
@@ -49,6 +50,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
   @override
   void initState() {
     super.initState();
+    Avertissements.rafraichir();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
@@ -252,9 +254,11 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 context,
                 icon: Icons.security_outlined,
                 text: 'Connexion et sécurité',
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
+                trailing: const BulleAvertissements(),
+                onTap: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => SecuConnectionSetting()));
+                  Avertissements.rafraichir();
                 },
               ),
               buildSettingsOption(
@@ -499,7 +503,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
   }
 
   Widget buildSettingsOption(BuildContext context,
-      {required IconData icon, required String text, required Function onTap, Color? iconColor}) {
+      {required IconData icon, required String text, required Function onTap, Color? iconColor, Widget? trailing}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: GestureDetector(
@@ -527,6 +531,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 child: Text(text,
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15, color: Color(0xFF1F2A2E))),
               ),
+              if (trailing != null) trailing,
               const Icon(Icons.arrow_forward_ios, color: Color(0xFF9CA3AF), size: 16),
             ],
           ),

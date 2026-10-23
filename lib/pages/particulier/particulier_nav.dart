@@ -2,6 +2,7 @@ import 'package:PetsMatch/pages/pro/pension_reservation_page.dart' show MesSejou
 import 'package:PetsMatch/pages/particulier/mes_galeries_photo_page.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:PetsMatch/services/factures_non_vues.dart';
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/pages/particulier/particulier_home.dart';
@@ -437,6 +438,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 _DrawerItem(
                   icon: Icons.settings_outlined,
                   label: 'Paramètres',
+                  pastilleAvertissements: true,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsMainPage()));
@@ -535,11 +537,16 @@ class _DrawerItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _DrawerItem({required this.icon, required this.label, required this.onTap});
+  /// Pastille rouge : avertissement de modération pas encore vu.
+  final bool pastilleAvertissements;
+  const _DrawerItem({required this.icon, required this.label, required this.onTap,
+      this.pastilleAvertissements = false});
 
   @override
   Widget build(BuildContext context) => ListTile(
-        leading: Icon(icon, color: const Color(0xFF0C5C6C), size: 22),
+        leading: pastilleAvertissements
+            ? PastilleAvertissements(child: Icon(icon, color: const Color(0xFF0C5C6C), size: 22))
+            : Icon(icon, color: const Color(0xFF0C5C6C), size: 22),
         title: Text(label,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15)),
         onTap: onTap,

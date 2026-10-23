@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'dart:async';
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1156,6 +1157,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       // Demande d'adhésion (admin : onglet Demandes du groupe) / réponse à ma demande.
       final groupeId = data is Map ? data['groupe_id']?.toString() : null;
       if (groupeId != null) await openGroupeById(context, groupeId);
+    } else if (type == 'moderation') {
+      // Avertissement / suspension / contenu retiré : Paramètres → Connexion et sécurité → Avertissements.
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const AvertissementsPage()));
     } else if (type == 'lieu_moderation') {
       // Lieu publié / à compléter / refusé, correction, revendication.
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesContributionsLieuxPage()));
@@ -1447,6 +1451,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'sterilisation_validee':  return Icons.content_cut;
       case 'cession_anniversaire':   return Icons.cake_outlined;
       case 'inventaire_alerte':      return Icons.inventory_2_outlined;
+      case 'moderation':             return Icons.warning_amber_rounded;
       case 'profil_en_attente':      return Icons.hourglass_empty_outlined;
       case 'profil_valide':          return Icons.verified_outlined;
       case 'lieu_naturel_valide':
@@ -1524,6 +1529,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'cession_signature_demandee': return Color(0xFFB45309);
       case 'cession_revoquee':       return Colors.redAccent;
       case 'inventaire_alerte':      return const Color(0xFFD97706);
+      case 'moderation':             return const Color(0xFFD97706);
       case 'profil_en_attente':      return Colors.orange;
       case 'profil_valide':          return const Color(0xFF6E9E57);
       case 'lieu_naturel_valide':

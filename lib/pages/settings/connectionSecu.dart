@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -87,6 +88,20 @@ class _SecuConnectionSettingState extends State<SecuConnectionSetting> {
           ),
           const SizedBox(height: 10),
 
+          // Décisions de modération sur le compte (la notif « moderation » ouvre cette page)
+          _SettingsTile(
+            icon: Icons.warning_amber_rounded,
+            title: 'Avertissements',
+            subtitle: 'Décisions de la modération sur votre compte',
+            iconColor: const Color(0xFFD97706),
+            trailing: const BulleAvertissements(),
+            onTap: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const AvertissementsPage()));
+              Avertissements.rafraichir();
+            },
+          ),
+          const SizedBox(height: 10),
+
           // Poser une question
           _SettingsTile(
             icon: Icons.help_outline,
@@ -105,8 +120,9 @@ class _SettingsTile extends StatelessWidget {
   final String title;
   final String? subtitle;
   final Color? iconColor;
+  final Widget? trailing;
   final VoidCallback onTap;
-  const _SettingsTile({required this.icon, required this.title, this.subtitle, this.iconColor, required this.onTap});
+  const _SettingsTile({required this.icon, required this.title, this.subtitle, this.iconColor, this.trailing, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +152,7 @@ class _SettingsTile extends StatelessWidget {
                 Text(subtitle!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF9CA3AF))),
             ]),
           ),
+          if (trailing != null) trailing!,
           const Icon(Icons.arrow_forward_ios, color: Color(0xFF9CA3AF), size: 16),
         ]),
       ),

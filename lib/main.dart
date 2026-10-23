@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialNo
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -252,6 +253,12 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
         eleveurUidOverride: eleveurUidOverride,
       ),
     ));
+    return;
+  }
+
+  // Décision de modération : Paramètres → Connexion et sécurité → Avertissements.
+  if (type == 'moderation') {
+    ctx.push(MaterialPageRoute(builder: (_) => const AvertissementsPage()));
     return;
   }
 

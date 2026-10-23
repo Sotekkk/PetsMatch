@@ -80,6 +80,7 @@ import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/widgets/menu_pro.dart';
@@ -1691,6 +1692,7 @@ class _EleveurNavState extends State<EleveurNav> {
                 _DrawerItem(
                   icon: Icons.settings_outlined,
                   label: 'Paramètres',
+                  pastilleAvertissements: true,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
@@ -1743,17 +1745,21 @@ class _DrawerItem extends StatelessWidget {
   final String badgeLabel;
   final bool showSocialDot;
   final bool active;
+  /// Pastille rouge : avertissement de modération pas encore vu.
+  final bool pastilleAvertissements;
 
   const _DrawerItem({
     required this.icon, required this.label, required this.onTap,
     this.locked = false, this.badgeLabel = 'Pro', this.showSocialDot = false, this.active = false,
+    this.pastilleAvertissements = false,
   });
 
   @override
   Widget build(BuildContext context) => MenuProItem(
     icon: icon, label: label, onTap: onTap, active: active,
     locked: locked, badgeLabel: badgeLabel,
-    enveloppeIcone: showSocialDot ? (i) => _SocialNotifDot(child: i) : null,
+    enveloppeIcone: showSocialDot ? (i) => _SocialNotifDot(child: i)
+        : pastilleAvertissements ? (i) => PastilleAvertissements(child: i) : null,
   );
 }
 

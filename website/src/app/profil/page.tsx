@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { updateProfile, EmailAuthProvider, reauthenticateWithCredential, deleteUser, sendPasswordResetEmail, getAuth } from 'firebase/auth';
 import { doc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useAvertissementsNonVus } from '@/lib/avertissements';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
@@ -2162,6 +2163,31 @@ function SettingsAction({ icon, iconBg, title, subtitle, onClick }: {
   );
 }
 
+// ── Lien « Avertissements » (décisions de modération) + bulle rouge ───────────
+
+function AvertissementsLink({ uid }: { uid?: string }) {
+  const nonVus = useAvertissementsNonVus(uid);
+  return (
+    <Link href="/profil/avertissements"
+      className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
+      <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] flex items-center justify-center flex-shrink-0">
+        <svg className="w-5 h-5 text-[#D97706]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/>
+        </svg>
+      </div>
+      <div className="flex-1">
+        <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Avertissements</p>
+        <p className="text-xs text-gray-400">Décisions de la modération sur votre compte</p>
+      </div>
+      {nonVus > 0 && (
+        <span className="min-w-5 h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center"
+          aria-label={`${nonVus} nouvel${nonVus > 1 ? 's' : ''} avertissement${nonVus > 1 ? 's' : ''}`}>{nonVus}</span>
+      )}
+      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+    </Link>
+  );
+}
+
 // ── Lien "Mes employeurs" conditionnel ────────────────────────────────────────
 
 function EmployeursLink({ uid }: { uid: string }) {
@@ -3221,6 +3247,7 @@ export default function ProfilPage() {
       {/* ── Sécurité & aide ── */}
       <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>Sécurité & aide</p>
       <div className="space-y-3 mb-6">
+        <AvertissementsLink uid={user?.uid} />
         <Link href="/abonnement"
           className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
           <div className="w-10 h-10 rounded-xl bg-[#FFF8E8] flex items-center justify-center flex-shrink-0 text-xl">⭐</div>

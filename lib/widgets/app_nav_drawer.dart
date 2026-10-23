@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/settings/avertissements_page.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/menu_annonces.dart';
 import 'package:PetsMatch/widgets/menu_pro.dart';
@@ -157,6 +158,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                 _DrawerItem(
                   icon: Icons.settings_outlined,
                   label: 'Paramètres',
+                  pastilleAvertissements: true,
                   onTap: () => _push(SettingsMainPage()),
                 ),
               ],
@@ -573,16 +575,18 @@ class _DrawerItem extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final bool active;
+  /// Pastille rouge : avertissement de modération pas encore vu.
+  final bool pastilleAvertissements;
 
   const _DrawerItem({
     required this.icon, required this.label, required this.onTap, this.active = false,
+    this.pastilleAvertissements = false,
   });
 
   @override
   Widget build(BuildContext context) => MenuProItem(
     icon: icon, label: label, onTap: onTap, active: active,
-    
-    
+    enveloppeIcone: pastilleAvertissements ? (i) => PastilleAvertissements(child: i) : null,
   );
 }
 
