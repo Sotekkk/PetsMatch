@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:video_player/video_player.dart';
 
 const _bucket = 'media';
 
@@ -85,13 +87,62 @@ Future<String> uploadDocument(File file, String storagePath) async {
   return _uploadDoc(file, storagePath, 'documents');
 }
 
+/// Poids maximal d'un document non compressible (PDF…) : au-delà, chaque
+/// ouverture coûte cher en trafic Supabase (« Cached Egress »).
+const tailleMaxDocument = 15 * 1024 * 1024;
+
+/// Vidéo réencodée en 960×540 (comme les stories : relue avant d'être
+/// retenue) ; repli sur l'original si la compression échoue ou n'allège pas.
+Future<File> compresserVideo(File video) async {
+  try {
+    final info = await VideoCompress.compressVideo(
+      video.path, quality: VideoQuality.Res960x540Quality, deleteOrigin: false,
+    );
+    final f = info?.file;
+    if (f == null || !await f.exists()) return video;
+    final taille = await f.length();
+    if (taille < 10000 || taille >= await video.length()) return video;
+    final ctrl = VideoPlayerController.file(f);
+    try {
+      await ctrl.initialize().timeout(const Duration(seconds: 10));
+      if (ctrl.value.isInitialized && ctrl.value.duration.inMilliseconds > 0) return f;
+    } catch (_) {
+    } finally {
+      await ctrl.dispose();
+    }
+  } catch (_) {}
+  return video;
+}
+
 Future<String> _uploadDoc(File file, String storagePath, String bucket) async {
-  final bytes = await file.readAsBytes();
   final ext = file.path.split('.').last.toLowerCase();
+  final estVideo = const {'mp4', 'mov', 'webm', '3gp', 'm4v'}.contains(ext);
+  final estImage = const {'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'}.contains(ext);
+  Uint8List bytes;
+  var videoReencodee = false;
+  if (estVideo) {
+    final v = await compresserVideo(file);
+    videoReencodee = v.path != file.path;
+    bytes = await v.readAsBytes();
+  } else if (estImage && await file.length() > 500 * 1024) {
+    // Photo de document (scan, radio…) : 2000 px restent lisibles.
+    final c = await FlutterImageCompress.compressWithFile(
+      file.absolute.path, minWidth: 2000, minHeight: 2000, quality: 85, keepExif: false,
+    );
+    bytes = c ?? await file.readAsBytes();
+  } else {
+    bytes = await file.readAsBytes();
+  }
+  if (!estVideo && bytes.length > tailleMaxDocument) {
+    throw Exception('Fichier trop lourd (${(bytes.length / 1048576).toStringAsFixed(0)} Mo, 15 Mo maximum). '
+        'Pour un document scanné, envoyez plutôt une photo.');
+  }
   final contentType = switch (ext) {
     'pdf'           => 'application/pdf',
+    _ when estImage && bytes.isNotEmpty && bytes[0] == 0xFF => 'image/jpeg', // JPEG (réencodé ou d'origine)
     'png'           => 'image/png',
     'jpg' || 'jpeg' => 'image/jpeg',
+    _ when videoReencodee => 'video/mp4',
     'mp4'           => 'video/mp4',
     'mov'           => 'video/quicktime',
     'webm'          => 'video/webm',

@@ -12,6 +12,8 @@ export async function compressImage(
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) { resolve(file); return; }
+      // Sortie JPEG : une zone transparente (PNG) deviendrait noire sans fond.
+      const fondBlanc = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); };
 
       if (square) {
         const side = Math.min(img.width, img.height);
@@ -20,6 +22,7 @@ export async function compressImage(
         const out = Math.min(side, maxDim);
         canvas.width = out;
         canvas.height = out;
+        fondBlanc();
         ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
       } else {
         let { width, height } = img;
@@ -30,6 +33,7 @@ export async function compressImage(
         }
         canvas.width  = width;
         canvas.height = height;
+        fondBlanc();
         ctx.drawImage(img, 0, 0, width, height);
       }
 

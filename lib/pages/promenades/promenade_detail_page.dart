@@ -516,7 +516,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
   Future<void> _sendPhoto() async {
     if (_uid.isEmpty) return;
     final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75, maxWidth: 1600, maxHeight: 1600);
     if (xfile == null) return;
     setState(() => _uploadingPhoto = true);
     try {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { allegerEnvoi } from '@/lib/alleger-envoi';
 import { auth } from '@/lib/firebase';
 
 // Le token Firebase est transmis à chaque requête (Third-Party Auth Firebase
@@ -15,11 +16,29 @@ const firebaseAccessToken = async () => {
   }
 };
 
-export const supabase = createClient(
+// Tous les envois vers le stockage passent par allegerEnvoi (photos réduites,
+// documents / vidéos trop lourds refusés) — voir lib/alleger-envoi.ts.
+function brancherAllegement<C extends { storage: ReturnType<typeof createClient>['storage'] }>(client: C): C {
+  const from = client.storage.from.bind(client.storage);
+  client.storage.from = ((bucket: string) => {
+    const api = from(bucket);
+    const upload = api.upload.bind(api);
+    api.upload = (async (path, body, options) => {
+      const r = await allegerEnvoi(bucket, body);
+      // Même forme qu'un refus du serveur : les pages affichent error.message.
+      if (!r.ok) return { data: null, error: Object.assign(new Error(r.message), { __isStorageError: true }) } as unknown as Awaited<ReturnType<typeof upload>>;
+      return upload(path, r.body as typeof body, r.jpeg ? { ...options, contentType: 'image/jpeg' } : options);
+    }) as typeof api.upload;
+    return api;
+  }) as typeof client.storage.from;
+  return client;
+}
+
+export const supabase = brancherAllegement(createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   { accessToken: firebaseAccessToken }
-);
+));
 
 // Client des pages ouvertes par LIEN secret (/album, /partage, /suivi,
 // /reclamer-animal…) : envoie le token du lien dans l'en-tête `x-pm-token`
@@ -30,11 +49,11 @@ const clientsLien = new Map<string, typeof supabase>();
 export function supabaseLien(token: string): typeof supabase {
   let c = clientsLien.get(token);
   if (!c) {
-    c = createClient(
+    c = brancherAllegement(createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { accessToken: firebaseAccessToken, global: { headers: { 'x-pm-token': token } } }
-    );
+    ));
     clientsLien.set(token, c);
   }
   return c;
