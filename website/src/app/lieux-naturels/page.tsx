@@ -198,6 +198,11 @@ export default function LieuxNaturelsPage() {
           </div>
           <p className="text-white/70 text-sm mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
             Plages, lacs, parcs & forêts accessibles avec vos animaux
+            {user && (
+              <Link href="/lieux-naturels/mes-contributions" className="block mt-1 text-xs text-white/75 hover:text-white underline">
+                Mes contributions
+              </Link>
+            )}
           </p>
           <input
             value={search}

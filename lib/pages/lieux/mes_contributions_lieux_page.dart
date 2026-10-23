@@ -62,6 +62,35 @@ class _MesContributionsLieuxPageState extends State<MesContributionsLieuxPage> {
     }
   }
 
+  Future<void> _supprimer(Map<String, dynamic> l) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Supprimer ce lieu ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+        content: Text('« ${l['nom']} » sera définitivement supprimé.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(c, true),
+              child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      // .select() : une suppression refusée par la base ne renvoie aucune ligne.
+      final r = await _supa.from('petfriendly_places').delete().eq('id', l['id']).select('id');
+      if ((r as List).isEmpty) throw Exception('refus');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Suppression impossible : la fiche a peut-être déjà été publiée.'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+    _charger();
+  }
+
   Widget _pastille(String statut) {
     final s = _statuts[statut] ?? (statut, Colors.grey);
     return Container(
@@ -133,6 +162,14 @@ class _MesContributionsLieuxPageState extends State<MesContributionsLieuxPage> {
                             if (ok == true) _charger();
                           },
                           child: Text(l['statut'] == 'en_attente_validation' ? 'Modifier' : 'Compléter et renvoyer'),
+                        ),
+                      // Comme la base (pf_delete + pf_garde_suppression_fiche) : l'auteur
+                      // retire sa fiche tant qu'elle n'est pas publiée ; ensuite, l'équipe.
+                      if (['a_corriger', 'brouillon', 'en_attente_validation', 'refuse'].contains(l['statut']))
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: BorderSide(color: Colors.red.shade200)),
+                          onPressed: () => _supprimer(l),
+                          child: const Text('Supprimer'),
                         ),
                       if (l['statut'] == 'actif')
                         OutlinedButton(

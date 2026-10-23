@@ -4,7 +4,7 @@
 // de la modération, fiche à compléter), corrections proposées, revendications.
 // Miroir appli : lib/pages/lieux/mes_contributions_lieux_page.dart.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -32,7 +32,7 @@ export default function MesContributionsLieuxPage() {
   const [revendications, setRevendications] = useState<Ligne[]>([]);
   const [charge, setCharge] = useState(false);
 
-  useEffect(() => {
+  const charger = useCallback(() => {
     if (!user) return;
     Promise.all([
       supabase.from('petfriendly_places').select('*').eq('ajoute_par_uid', user.uid).order('created_at', { ascending: false }),
@@ -43,6 +43,16 @@ export default function MesContributionsLieuxPage() {
       setCharge(true);
     });
   }, [user]);
+  useEffect(() => { charger(); }, [charger]);
+
+  // Comme la base (pf_delete + pf_garde_suppression_fiche) : l'auteur retire sa
+  // fiche tant qu'elle n'est pas publiée ; ensuite, l'équipe PetsMatch.
+  async function supprimer(l: Ligne) {
+    if (!window.confirm(`Supprimer « ${String(l.nom ?? '')} » ? Cette action est définitive.`)) return;
+    const { data, error } = await supabase.from('petfriendly_places').delete().eq('id', l.id).select('id');
+    if (error || !data?.length) alert('Suppression impossible : la fiche a peut-être déjà été publiée.');
+    charger();
+  }
 
   if (loading) return null;
   if (!user) {
@@ -79,9 +89,13 @@ export default function MesContributionsLieuxPage() {
         {charge && lieux.length === 0 && <p className="text-sm text-gray-500">Vous n&apos;avez pas encore recommandé de lieu. <Link href="/animal-friendly/recommander" className="text-[#0C5C6C] font-semibold">Recommander un lieu</Link></p>}
         {lieux.map(l => <div key={l.id}>{carte(String(l.nom ?? ''), `${String(l.ville ?? '')} · proposé le ${date(l.created_at)}`, l.statut,
           ['a_corriger', 'refuse', 'masque'].includes(l.statut) ? l.motif_moderation : null,
-          ['a_corriger', 'brouillon', 'en_attente_validation'].includes(l.statut)
-            ? <Link href={`/animal-friendly/recommander?id=${l.id}`} className="px-4 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-bold">{l.statut === 'en_attente_validation' ? 'Modifier' : 'Compléter et renvoyer'}</Link>
-            : l.statut === 'actif' ? <Link href={`/animal-friendly/${l.id}`} className="px-4 py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Voir la fiche</Link> : undefined)}</div>)}
+          <>
+            {['a_corriger', 'brouillon', 'en_attente_validation'].includes(l.statut) &&
+              <Link href={`/animal-friendly/recommander?id=${l.id}`} className="px-4 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-bold">{l.statut === 'en_attente_validation' ? 'Modifier' : 'Compléter et renvoyer'}</Link>}
+            {['a_corriger', 'brouillon', 'en_attente_validation', 'refuse'].includes(l.statut) &&
+              <button type="button" onClick={() => supprimer(l)} className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-bold hover:bg-red-50">Supprimer</button>}
+            {l.statut === 'actif' && <Link href={`/animal-friendly/${l.id}`} className="px-4 py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Voir la fiche</Link>}
+          </>)}</div>)}
         <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Corrections proposées</h2>
         {charge && corrections.length === 0 && <p className="text-sm text-gray-500">Aucune correction proposée.</p>}
         {corrections.map(c => <div key={c.id}>{carte(c.place?.nom ?? 'Lieu', `Proposée le ${date(c.created_at)}`, c.statut, c.statut === 'refusee' ? c.motif : null)}</div>)}

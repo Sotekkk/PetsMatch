@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'dart:async';
 import 'package:PetsMatch/pages/settings/avertissements_page.dart';
+import 'package:PetsMatch/pages/nature/mes_contributions_nature_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -996,9 +997,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Profil validé / en attente → rester sur BottomNav (pas de page profil dédiée)
     if (type == 'profil_en_attente' || type == 'profil_valide') return;
-    if (type == 'lieu_naturel_valide' || type == 'lieu_naturel_refuse' ||
-        type == 'amenity_valide' || type == 'amenity_refuse' ||
-        type == 'photo_lieu_validee' || type == 'photo_lieu_refusee') {
+    // Refus (lieu, photo, équipement) : Mes contributions, avec le motif et,
+    // pour un lieu, « Modifier et renvoyer » / « Supprimer ».
+    if (type == 'lieu_naturel_refuse' || type == 'amenity_refuse' || type == 'photo_lieu_refusee') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesContributionsNaturePage()));
+      return;
+    }
+    if (type == 'lieu_naturel_valide' || type == 'amenity_valide' || type == 'photo_lieu_validee') {
       final lieuId = data is Map ? data['lieuId'] as String? : null;
       if (lieuId != null) {
         final supa = Supabase.instance.client;

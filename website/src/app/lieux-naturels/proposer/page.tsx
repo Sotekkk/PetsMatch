@@ -41,9 +41,36 @@ export default function ProposerLieuPage() {
   const [error, setError] = useState<string | null>(null);
   const [geocoding, setGeocoding] = useState(false);
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Modification (?edit=<id>, depuis Mes contributions) : lieu non publié de
+  // l'auteur, renvoyé en validation. Photos déjà en ligne conservées sauf retrait.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [photosExistantes, setPhotosExistantes] = useState<string[]>([]);
+  const prefill = useRef(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const id = new URLSearchParams(window.location.search).get('edit');
+    if (!id) return;
+    supabase.from('natural_places').select('*').eq('id', id).eq('submitted_by_uid', user.uid).maybeSingle()
+      .then(({ data }) => {
+        if (!data) { setError('Lieu introuvable.'); return; }
+        if (data.statut === 'valide') { setError('Ce lieu est publié : il ne peut plus être modifié directement.'); return; }
+        prefill.current = true;
+        setEditId(id);
+        setNom(data.nom ?? '');
+        if (CAT_LABEL[data.categorie]) setCategorie(data.categorie);
+        setAdresse(data.adresse ?? '');
+        setDescription(data.description ?? '');
+        if (data.lat != null && data.lng != null) { setPos({ lat: data.lat, lng: data.lng }); setPosSet(true); }
+        const urls = (data.photos as string[] | null) ?? [];
+        setPhotosExistantes(urls.length ? urls : data.photo_url ? [data.photo_url] : []);
+      });
+  }, [user]);
 
   useEffect(() => {
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
+    // Adresse pré-remplie : on garde la position enregistrée.
+    if (prefill.current) { prefill.current = false; return; }
     const val = adresse.trim();
     if (val.length < 4) return;
     geocodeTimer.current = setTimeout(async () => {
@@ -68,8 +95,9 @@ export default function ProposerLieuPage() {
   function selectPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
-    setPhotos(prev => [...prev, ...files].slice(0, 8));
-    setPhotoPreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))].slice(0, 8));
+    const place = 8 - photosExistantes.length;
+    setPhotos(prev => [...prev, ...files].slice(0, place));
+    setPhotoPreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))].slice(0, place));
     e.target.value = '';
   }
 
@@ -95,7 +123,7 @@ export default function ProposerLieuPage() {
     setSaving(true);
     setError(null);
     try {
-      const photoUrls: string[] = [];
+      const photoUrls: string[] = [...photosExistantes];
       for (let i = 0; i < photos.length; i++) {
         const f = photos[i];
         const path = `natural_places/${Date.now()}_${i}_${user.uid}.jpg`;
@@ -106,7 +134,7 @@ export default function ProposerLieuPage() {
         photoUrls.push(supabase.storage.from('media').getPublicUrl(path).data.publicUrl);
       }
 
-      const { error: insErr } = await supabase.from('natural_places').insert({
+      const champs = {
         nom: nom.trim(),
         categorie,
         lat: pos.lat,
@@ -116,6 +144,17 @@ export default function ProposerLieuPage() {
         photos: photoUrls,
         photo_url: photoUrls[0] ?? null,
         statut: 'en_attente',
+      };
+      if (editId) {
+        // Renvoyé en validation : l'ancien motif de refus n'a plus lieu d'être.
+        const { error: upErr } = await supabase.from('natural_places')
+          .update({ ...champs, rejection_reason: null }).eq('id', editId);
+        if (upErr) throw upErr;
+        router.push('/lieux-naturels/mes-contributions?renvoye=1');
+        return;
+      }
+      const { error: insErr } = await supabase.from('natural_places').insert({
+        ...champs,
         submitted_by_uid: user.uid,
         submitted_by_profile_id: profileId || null,
       });
@@ -135,7 +174,7 @@ export default function ProposerLieuPage() {
       <div className="bg-[#0C5C6C] text-white px-4 py-6">
         <div className="max-w-2xl mx-auto">
           <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
-            📍 Proposer un lieu
+            {editId ? 'Modifier mon lieu' : '📍 Proposer un lieu'}
           </h1>
         </div>
       </div>
@@ -226,6 +265,19 @@ export default function ProposerLieuPage() {
               Photos
             </label>
             <div className="flex flex-wrap gap-2">
+              {photosExistantes.map((src, i) => (
+                <div key={src} className="relative w-24 h-24 rounded-xl overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => setPhotosExistantes(prev => prev.filter((_, j) => j !== i))}
+                    aria-label="Retirer la photo"
+                    className="absolute top-1 right-1 bg-black/55 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
               {photoPreviews.map((src, i) => (
                 <div key={i} className="relative w-24 h-24 rounded-xl overflow-hidden">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -238,7 +290,7 @@ export default function ProposerLieuPage() {
                   </button>
                 </div>
               ))}
-              {photos.length < 8 && (
+              {photos.length + photosExistantes.length < 8 && (
                 <label className="flex flex-col items-center justify-center w-24 h-24 rounded-xl border border-dashed border-gray-300 bg-white cursor-pointer hover:border-[#0C5C6C] transition-colors">
                   <span className="text-xl">📷</span>
                   <span className="text-[10px] text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter</span>
@@ -246,7 +298,7 @@ export default function ProposerLieuPage() {
                 </label>
               )}
             </div>
-            {photoPreviews.length === 0 && (
+            {photoPreviews.length === 0 && photosExistantes.length === 0 && (
               <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>Optionnel — plusieurs photos possibles</p>
             )}
           </div>

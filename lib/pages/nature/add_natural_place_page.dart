@@ -22,7 +22,10 @@ const _catLabel = {
 };
 
 class AddNaturalPlacePage extends StatefulWidget {
-  const AddNaturalPlacePage({super.key});
+  /// Lieu non publié de l'auteur (en attente / refusé) à modifier depuis
+  /// « Mes contributions » : renvoyé en validation à l'enregistrement.
+  final Map<String, dynamic>? existant;
+  const AddNaturalPlacePage({super.key, this.existant});
 
   @override
   State<AddNaturalPlacePage> createState() => _AddNaturalPlacePageState();
@@ -38,6 +41,8 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
   LatLng _position   = const LatLng(46.603354, 1.888334);
   bool _positionSet  = false;
   final List<File> _photos = [];
+  /// Photos déjà en ligne (modification) — conservées sauf retrait.
+  final List<String> _photosExistantes = [];
   bool _saving       = false;
   bool _locating     = true;
   bool _geocoding    = false;
@@ -46,7 +51,22 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
   @override
   void initState() {
     super.initState();
-    _fetchInitialPosition();
+    final e = widget.existant;
+    if (e != null) {
+      _nomCtrl.text = (e['nom'] ?? '').toString();
+      _adresseCtrl.text = (e['adresse'] ?? '').toString();
+      _descCtrl.text = (e['description'] ?? '').toString();
+      if (_catLabel.containsKey(e['categorie'])) _categorie = e['categorie'] as String;
+      final lat = (e['lat'] as num?)?.toDouble(), lng = (e['lng'] as num?)?.toDouble();
+      if (lat != null && lng != null) { _position = LatLng(lat, lng); _positionSet = true; }
+      _photosExistantes.addAll(((e['photos'] as List?) ?? const []).map((p) => p.toString()));
+      if (_photosExistantes.isEmpty && (e['photo_url'] ?? '').toString().isNotEmpty) {
+        _photosExistantes.add(e['photo_url'].toString());
+      }
+      _locating = false;
+    } else {
+      _fetchInitialPosition();
+    }
     _adresseCtrl.addListener(_onAddressChanged);
   }
 
@@ -120,7 +140,7 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
     if (picked.isEmpty || !mounted) return;
     setState(() {
       for (final x in picked) {
-        if (_photos.length >= 8) break;
+        if (_photos.length + _photosExistantes.length >= 8) break;
         _photos.add(File(x.path));
       }
     });
@@ -144,13 +164,13 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
 
     setState(() => _saving = true);
     try {
-      final List<String> photos = [];
+      final List<String> photos = [..._photosExistantes];
       for (var i = 0; i < _photos.length; i++) {
         final path = 'natural_places/${DateTime.now().millisecondsSinceEpoch}_${i}_${User_Info.uid}.jpg';
         photos.add(await uploadPhoto(_photos[i], path));
       }
 
-      await _supa.from('natural_places').insert({
+      final champs = {
         'nom':                     nom,
         'categorie':               _categorie,
         'lat':                     _position.latitude,
@@ -160,15 +180,27 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
         'photos':                  photos,
         'photo_url':               photos.isNotEmpty ? photos.first : null,
         'statut':                  'en_attente',
-        'submitted_by_uid':        User_Info.uid,
-        'submitted_by_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-      });
+      };
+      final existant = widget.existant;
+      if (existant != null) {
+        // Renvoyé en validation : l'ancien motif de refus n'a plus lieu d'être.
+        await _supa.from('natural_places')
+            .update({...champs, 'rejection_reason': null}).eq('id', existant['id']);
+      } else {
+        await _supa.from('natural_places').insert({
+          ...champs,
+          'submitted_by_uid':        User_Info.uid,
+          'submitted_by_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        });
+      }
 
       if (mounted) {
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Merci ! Ton lieu sera visible après validation par un admin (sous 48h).',
-              style: TextStyle(fontFamily: 'Galey')),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(existant != null
+                  ? 'Modifications envoyées : ton lieu sera revu par un admin (sous 48h).'
+                  : 'Merci ! Ton lieu sera visible après validation par un admin (sous 48h).',
+              style: const TextStyle(fontFamily: 'Galey')),
           backgroundColor: _green,
         ));
       }
@@ -193,7 +225,7 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Proposer un lieu',
+        title: Text(widget.existant != null ? 'Modifier mon lieu' : 'Proposer un lieu',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: ListView(
@@ -271,8 +303,10 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
           const SizedBox(height: 8),
           _PhotoPicker(
             photos: _photos,
+            urls: _photosExistantes,
             onTap: _pickPhoto,
             onRemove: (i) => setState(() => _photos.removeAt(i)),
+            onRemoveUrl: (i) => setState(() => _photosExistantes.removeAt(i)),
           ),
           const SizedBox(height: 16),
 
@@ -314,13 +348,31 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
 
 class _PhotoPicker extends StatelessWidget {
   final List<File> photos;
+  final List<String> urls;
   final VoidCallback onTap;
   final void Function(int) onRemove;
-  const _PhotoPicker({required this.photos, required this.onTap, required this.onRemove});
+  final void Function(int) onRemoveUrl;
+  const _PhotoPicker({required this.photos, this.urls = const [], required this.onTap,
+      required this.onRemove, required this.onRemoveUrl});
+
+  Widget _vignette(Widget image, VoidCallback retirer) => Stack(children: [
+        ClipRRect(borderRadius: BorderRadius.circular(12), child: image),
+        Positioned(
+          top: 4, right: 4,
+          child: GestureDetector(
+            onTap: retirer,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              child: const Icon(Icons.close, color: Colors.white, size: 14),
+            ),
+          ),
+        ),
+      ]);
 
   @override
   Widget build(BuildContext context) {
-    if (photos.isEmpty) {
+    if (photos.isEmpty && urls.isEmpty) {
       return GestureDetector(
         onTap: onTap,
         child: Container(
@@ -340,24 +392,13 @@ class _PhotoPicker extends StatelessWidget {
       );
     }
     return Wrap(spacing: 8, runSpacing: 8, children: [
-      ...photos.asMap().entries.map((e) => Stack(children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.file(e.value, height: 96, width: 96, fit: BoxFit.cover),
-            ),
-            Positioned(
-              top: 4, right: 4,
-              child: GestureDetector(
-                onTap: () => onRemove(e.key),
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                  child: const Icon(Icons.close, color: Colors.white, size: 14),
-                ),
-              ),
-            ),
-          ])),
-      if (photos.length < 8)
+      ...urls.asMap().entries.map((e) => _vignette(
+            Image.network(e.value, height: 96, width: 96, fit: BoxFit.cover),
+            () => onRemoveUrl(e.key))),
+      ...photos.asMap().entries.map((e) => _vignette(
+            Image.file(e.value, height: 96, width: 96, fit: BoxFit.cover),
+            () => onRemove(e.key))),
+      if (photos.length + urls.length < 8)
         GestureDetector(
           onTap: onTap,
           child: Container(
