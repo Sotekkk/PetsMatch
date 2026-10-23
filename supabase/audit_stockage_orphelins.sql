@@ -13,6 +13,8 @@
 -- supprimer directement dans storage.objects), après relecture de la liste.
 -- Limite : un fichier référencé hors de la base (Firestore, code, e-mail
 -- déjà envoyé) apparaît comme orphelin — d'où la relecture.
+-- Tableaux text[] castés en texte ({a,b}) : accolades exclues des chemins
+-- (sinon le dernier élément était pris pour « …/photo.jpg} » → faux orphelin).
 -- ════════════════════════════════════════════════════════════════════════
 
 create temp table refs_stockage (bucket text, chemin text) on commit preserve rows;
@@ -33,7 +35,7 @@ begin
       insert into refs_stockage
       select m[1], m[2]
         from (select %1$I::text as v from public.%2$I where %1$I::text like '%%/object/%%') t,
-             regexp_matches(t.v, '/object/(?:public|sign|authenticated)/([^/"\s]+)/([^"?\s,\\]+)', 'g') as m
+             regexp_matches(t.v, '/object/(?:public|sign|authenticated)/([^/"\s]+)/([^"?\s,\\{}]+)', 'g') as m
     $q$, c.column_name, c.table_name);
     -- Chemins bruts (sans bucket).
     execute format($q$

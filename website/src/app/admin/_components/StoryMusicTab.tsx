@@ -55,6 +55,12 @@ export default function StoryMusicTab() {
 
   async function addTrack() {
     if (!file || !form.titre.trim()) { setError('Titre et fichier audio requis.'); return; }
+    // Bibliothèque allégée (23/10/2026) : extraits de 60 s max en MP3 96 kbit/s
+    // (≈ 0,7 Mo). Chaque écoute dans le sélecteur télécharge le fichier entier.
+    if (file.size > 1.5 * 1024 * 1024) {
+      setError(`Fichier trop lourd (${(file.size / 1048576).toFixed(1)} Mo, 1,5 Mo maximum) : coupez l'extrait à 60 secondes et exportez-le en MP3 96 kbit/s.`);
+      return;
+    }
     setUploading(true);
     setError(null);
     try {
