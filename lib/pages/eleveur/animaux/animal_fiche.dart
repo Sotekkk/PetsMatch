@@ -2770,7 +2770,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece, canWrite: !_tabReadOnly('write_sante')),
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _AlimentationTab(this),
-                            ConsultationsProprietaireTab(animalId: widget.animalId, espece: _espece),
+                            ConsultationsProprietaireTab(animalId: widget.animalId, espece: _espece, canWrite: !_tabReadOnly('write_sante')),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ])),
         )),
@@ -5776,8 +5776,11 @@ class _CarnetSanteTab extends StatelessWidget {
             ],
           ]),
         );
+    // Radios / examens : onglet Consultations côté propriétaire (actes du
+    // vétérinaire, miroir du site) ; le vétérinaire les garde dans le carnet.
+    final cats = [for (final c in _cats) if (vetMode || c.key != 'radios') c];
     Widget ligne(int i) {
-        final cat = _cats[i];
+        final cat = cats[i];
         return _SanteTile(
           animalId: animalId!,
           collection: cat.key,
@@ -5795,7 +5798,7 @@ class _CarnetSanteTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         panneau([
-          for (var i = 0; i < _cats.length; i++) ligne(i),
+          for (var i = 0; i < cats.length; i++) ligne(i),
         ]),
       ],
     );
@@ -13721,7 +13724,9 @@ class _EducationTabState extends State<_EducationTab> {
 class ConsultationsProprietaireTab extends StatefulWidget {
   final String? animalId;
   final String espece;
-  const ConsultationsProprietaireTab({super.key, required this.animalId, required this.espece});
+  /// Ajout / suppression des radios (employé sans write_sante : lecture seule).
+  final bool canWrite;
+  const ConsultationsProprietaireTab({super.key, required this.animalId, required this.espece, this.canWrite = true});
 
   @override
   State<ConsultationsProprietaireTab> createState() => _ConsultationsProprietaireTabState();
@@ -13734,6 +13739,8 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   bool _loading = true;
   List<Map<String, dynamic>> _crs   = [];
   List<Map<String, dynamic>> _ordos = [];
+  /// Radios / imagerie : déposées par le vétérinaire ou par le propriétaire.
+  List<Map<String, dynamic>> _radios = [];
   int _seancesOsteoCount = 0;
   Map<String, String> _vetNames = {};
   /// Comptes rendus de séance partagés (ostéo, kiné, rééducation, bilans).
@@ -13757,6 +13764,11 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
       final ordos = await _supa.from('ordonnances').select()
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+      var radios = <Map<String, dynamic>>[];
+      try {
+        radios = List<Map<String, dynamic>>.from(await _supa.from('radios').select()
+            .eq('animal_id', widget.animalId!).order('date', ascending: false));
+      } catch (_) {}
       int seancesOsteoCount = 0;
       try {
         final seances = await _supa.from('seances_osteo').select('id').eq('animal_id', widget.animalId!);
@@ -13839,6 +13851,7 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
         _toilettages = toilettages;
         _crs      = allCrs;
         _ordos    = allOrdos;
+        _radios   = radios;
         _vetNames = vetNames;
         _seancesOsteoCount = seancesOsteoCount;
         _seances  = seances;
@@ -13859,13 +13872,25 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty && _toilettages.isEmpty;
+    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _radios.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty && _toilettages.isEmpty;
+    final Widget? ajouterRadio = !widget.canWrite || widget.animalId == null ? null : Align(
+      alignment: Alignment.centerRight,
+      child: TextButton.icon(
+        onPressed: () async {
+          await showDialog(context: context, builder: (_) => _AddRadioDialog(animalId: widget.animalId!));
+          _load();
+        },
+        icon: const Icon(Icons.add, size: 18, color: _teal),
+        label: const Text('Ajouter une radio / imagerie',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
+      ),
+    );
     // Catégories présentes seulement (pas de filtre vide).
     // Ordre : Ostéopathie, Kiné, Vétérinaire, Autres — catégories présentes seulement.
     final presentes = <String>[
       for (final c in kCategoriesConsultation)
         if (_seances.any((x) => x['_categorie'] == c.$1)
-            || (c.$1 == 'veterinaire' && (_crs.isNotEmpty || _ordos.isNotEmpty))
+            || (c.$1 == 'veterinaire' && (_crs.isNotEmpty || _ordos.isNotEmpty || _radios.isNotEmpty))
             || (c.$1 == 'toilettage' && _toilettages.isNotEmpty)
             || (c.$1 == 'osteopathie' && _seancesOsteoCount > 0)) c.$1,
     ];
@@ -13876,6 +13901,7 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
       color: _teal,
       child: isEmpty
           ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+              if (ajouterRadio != null) Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: ajouterRadio),
               Padding(
                 padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -13897,6 +13923,7 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (ajouterRadio != null) ajouterRadio,
                 // Filtres dès qu'il y a un compte rendu : le métier se lit
                 // d'un coup d'œil (catégories vides jamais affichées).
                 if (presentes.isNotEmpty) ...[
@@ -13937,6 +13964,27 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
                   ..._ordos.map((o) => _OwnerConsultOrdoCard(ordo: o, color: _teal,
                       vetName: _vetNames[o['pro_uid']?.toString()] ?? 'Professionnel',
                       fmtDate: _fmtDate)),
+                  const SizedBox(height: 20),
+                ],
+                if (voir('veterinaire') && _radios.isNotEmpty) ...[
+                  _VetConsultSectionHeader(label: 'Radios / Imagerie', count: _radios.length,
+                      icon: Icons.image_search_outlined, color: _teal),
+                  const SizedBox(height: 10),
+                  for (final r in _radios)
+                    _OwnerRadioCard(radio: r, color: _teal, fmtDate: _fmtDate,
+                        // Seules les radios déposées par le propriétaire se suppriment.
+                        onDelete: widget.canWrite && r['source'] != 'veterinaire' ? () async {
+                          final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+                            title: const Text('Supprimer cette radio ?', style: TextStyle(fontFamily: 'Galey')),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+                              TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+                            ],
+                          ));
+                          if (ok != true) return;
+                          await _supa.from('radios').delete().eq('id', r['id']);
+                          _load();
+                        } : null),
                   const SizedBox(height: 20),
                 ],
                 if (seancesVues.isNotEmpty) ...[
@@ -14136,6 +14184,61 @@ class _OwnerConsultCrCard extends StatelessWidget {
               Expanded(child: Text('Document joint', maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                       color: color, decoration: TextDecoration.underline))),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+/// Radio / imagerie (vétérinaire ou propriétaire) : titre, date, auteur, fichier.
+class _OwnerRadioCard extends StatelessWidget {
+  final Map<String, dynamic> radio; final Color color;
+  final String Function(String?) fmtDate;
+  final VoidCallback? onDelete;
+  const _OwnerRadioCard({required this.radio, required this.color, required this.fmtDate, this.onDelete});
+
+  @override
+  Widget build(BuildContext context) {
+    final url = radio['image_url']?.toString() ?? '';
+    final notes = radio['notes']?.toString().trim() ?? '';
+    final veto = radio['veterinaire']?.toString().trim() ?? '';
+    final auteur = radio['source'] == 'veterinaire' ? (veto.isNotEmpty ? veto : 'Vétérinaire') : 'Ajoutée par le propriétaire';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))]),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
+            child: Text(auteur, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+          ),
+          const Spacer(),
+          Text(fmtDate(radio['date']?.toString()), style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          if (onDelete != null)
+            IconButton(onPressed: onDelete, icon: Icon(Icons.delete_outline, size: 18, color: Colors.grey.shade500),
+                visualDensity: VisualDensity.compact, tooltip: 'Supprimer'),
+        ]),
+        const SizedBox(height: 8),
+        Text(radio['titre']?.toString() ?? 'Radio / Examen',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color)),
+        if (notes.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(notes, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+        ],
+        if (url.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => ouvrirDocument(context, url),
+            child: Row(children: [
+              Icon(Icons.attach_file, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text("Voir l'image / le fichier", style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: color, decoration: TextDecoration.underline)),
             ]),
           ),
         ],
