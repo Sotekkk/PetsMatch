@@ -419,7 +419,11 @@ export default function ForumCategoriePage() {
               ) : (
                 <div className="flex flex-col gap-2">
                   {reponses.map(r => {
-                    const isMe = r.auteur_uid === user?.uid;
+                    // Par profil : une réponse d'un autre de mes profils s'affiche avec
+                    // son nom. Lignes anciennes sans auteur_profile_id : par compte.
+                    const isMe = r.auteur_profile_id
+                      ? r.auteur_profile_id === activeProfileId
+                      : r.auteur_uid === user?.uid;
                     return (
                       <div key={r.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA]' : 'bg-gray-100'}`} style={{ fontFamily: 'Galey, sans-serif' }}>

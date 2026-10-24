@@ -740,11 +740,15 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   File? _replyVideo;
   bool _sending = false;
   bool _muet = false; // notifications de ce sujet coupées (forum_sujets_muets)
+  // Profil avec lequel on écrit (profil actif) : seules SES réponses sont
+  // « les miennes » — celles de mes autres profils s'affichent avec leur nom.
+  String? _monPid;
 
   @override
   void initState() {
     super.initState();
     _chargerMuet();
+    resolveActiveAuthorProfileId(_uid).then((pid) { if (mounted) setState(() => _monPid = pid); });
     _mentionCtrl = MentionController(
       textController: _reponseCtrl,
       excludeUid: _uid,
@@ -940,7 +944,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                       );
                     }
                     final r = _reponses[i - 1];
-                    return _ReponseCard(reponse: r, author: _authors[_authorKey(r)]);
+                    return _ReponseCard(reponse: r, author: _authors[_authorKey(r)], monPid: _monPid);
                   },
                 ),
         ),
@@ -1045,7 +1049,9 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
 class _ReponseCard extends StatelessWidget {
   final Map<String, dynamic> reponse;
   final Map<String, dynamic>? author;
-  const _ReponseCard({required this.reponse, required this.author});
+  /// Profil actif de l'utilisateur (null tant qu'il n'est pas résolu).
+  final String? monPid;
+  const _ReponseCard({required this.reponse, required this.author, this.monPid});
 
   static String _fmtDate(String iso) {
     try {
@@ -1060,7 +1066,12 @@ class _ReponseCard extends StatelessWidget {
     final contenu = reponse['contenu']?.toString() ?? '';
     final auteur = reponse['auteur_uid']?.toString() ?? '';
     final date = reponse['created_at']?.toString() ?? '';
-    final isMe = auteur == (FirebaseAuth.instance.currentUser?.uid ?? '');
+    // Par profil : une réponse d'un autre de mes profils n'est pas « à moi ».
+    // Lignes anciennes sans auteur_profile_id : comparaison par compte.
+    final pidAuteur = reponse['auteur_profile_id']?.toString() ?? '';
+    final isMe = pidAuteur.isNotEmpty
+        ? pidAuteur == monPid
+        : auteur == (FirebaseAuth.instance.currentUser?.uid ?? '');
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
