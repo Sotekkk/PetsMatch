@@ -255,11 +255,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       _likeCount = (_likeCount + (wasLiked ? -1 : 1)).clamp(0, 9999999);
     });
     try {
-      // Toujours supprimer d'abord (évite les doublons si l'utilisateur a liké depuis un autre profil)
-      await Supabase.instance.client.from('likes').delete()
+      // « J'aime » par profil : on remplace seulement celui du profil actif.
+      var q = Supabase.instance.client.from('likes').delete()
           .eq('user_uid', uid)
-          .eq('annonce_id', widget.annonceId)
-          .isFilter('bebe_index', null);
+          .eq('annonce_id', widget.annonceId);
+      q = User_Info.activeProfileId.isNotEmpty
+            ? q.or('profile_id.eq.${User_Info.activeProfileId},profile_id.is.null')
+            : q.isFilter('profile_id', null);
+      await q.isFilter('bebe_index', null);
       if (!wasLiked) {
         await Supabase.instance.client.from('likes').insert({
           'user_uid':    uid,
@@ -1028,11 +1031,14 @@ class _BabyCardState extends State<_BabyCard> {
     final was = _isLiked;
     setState(() { _isLiked = !was; _likeCount = (_likeCount + (was ? -1 : 1)).clamp(0, 99999); });
     try {
-      // Toujours supprimer d'abord pour éviter les doublons multi-profil
-      await Supabase.instance.client.from('likes').delete()
+      // « J'aime » par profil : on remplace seulement celui du profil actif.
+      var q = Supabase.instance.client.from('likes').delete()
           .eq('user_uid', uid)
-          .eq('annonce_id', widget.annonceId)
-          .eq('bebe_index', widget.bebeIndex);
+          .eq('annonce_id', widget.annonceId);
+      q = User_Info.activeProfileId.isNotEmpty
+            ? q.or('profile_id.eq.${User_Info.activeProfileId},profile_id.is.null')
+            : q.isFilter('profile_id', null);
+      await q.eq('bebe_index', widget.bebeIndex);
       if (!was) {
         await Supabase.instance.client.from('likes').insert({
           'user_uid': uid,

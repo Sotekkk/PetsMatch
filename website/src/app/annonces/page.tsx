@@ -153,10 +153,12 @@ function AnnoncesListe() {
     setLikeCounts(prev => ({ ...prev, [key]: Math.max(0, (prev[key] ?? 0) + (wasLiked ? -1 : 1)) }));
     try {
       if (wasLiked) {
-        const q = supabase.from('likes').delete().eq('user_uid', user.uid).eq('annonce_id', annonceId);
+        // « J'aime » par profil : on ne retire que celui du profil actif.
+        const base = supabase.from('likes').delete().eq('user_uid', user.uid).eq('annonce_id', annonceId);
+        const q = activeProfileId ? base.or(`profile_id.eq.${activeProfileId},profile_id.is.null`) : base.is('profile_id', null);
         bebeIndex !== null ? await q.eq('bebe_index', bebeIndex) : await q.is('bebe_index', null);
       } else {
-        await supabase.from('likes').upsert({ user_uid: user.uid, annonce_id: annonceId, bebe_index: bebeIndex, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
+        await supabase.from('likes').insert({ user_uid: user.uid, annonce_id: annonceId, bebe_index: bebeIndex, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
         if (uidEleveur && uidEleveur !== user.uid) {
           supabase.from('notifications').insert({
             uid: uidEleveur, type: 'like',

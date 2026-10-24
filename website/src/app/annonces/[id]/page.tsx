@@ -318,6 +318,7 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
   onShowLikers?: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const { activeProfileId } = useAuth();
   const [idx, setIdx] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -367,16 +368,15 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
     setIsLiked(!wasLiked);
     setLikeCount(c => c + (wasLiked ? -1 : 1));
     try {
-      // Toujours supprimer d'abord pour éviter les doublons multi-profil
-      await supabase.from('likes')
-        .delete()
-        .eq('user_uid', currentUser.uid)
-        .eq('annonce_id', annonceId)
-        .eq('bebe_index', index);
+      // « J'aime » par profil : on remplace seulement celui du profil actif.
+      const base = supabase.from('likes').delete()
+        .eq('user_uid', currentUser.uid).eq('annonce_id', annonceId);
+      await (activeProfileId ? base.or(`profile_id.eq.${activeProfileId},profile_id.is.null`) : base.is('profile_id', null)).eq('bebe_index', index);
       if (!wasLiked) {
         await supabase.from('likes')
           .insert({ user_uid: currentUser.uid, annonce_id: annonceId, bebe_index: index,
-            uid_eleveur: uidEleveur ?? null });
+            uid_eleveur: uidEleveur ?? null,
+            ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
       }
     } catch {
       setIsLiked(wasLiked);
@@ -750,9 +750,9 @@ function AnnonceDetailPageInner() {
     setIsLiked(!wasLiked);
     setLikeCount(c => c + (wasLiked ? -1 : 1));
     try {
-      // Toujours supprimer d'abord (supprime les doublons multi-profil éventuels)
-      await supabase.from('likes').delete()
-        .eq('user_uid', user.uid).eq('annonce_id', id!).is('bebe_index', null);
+      // « J'aime » par profil : on remplace seulement celui du profil actif.
+      const base = supabase.from('likes').delete().eq('user_uid', user.uid).eq('annonce_id', id!);
+      await (activeProfileId ? base.or(`profile_id.eq.${activeProfileId},profile_id.is.null`) : base.is('profile_id', null)).is('bebe_index', null);
       if (!wasLiked) {
         await supabase.from('likes').insert({
           user_uid: user.uid, annonce_id: id!, bebe_index: null,

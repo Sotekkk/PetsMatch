@@ -555,11 +555,15 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     });
     try {
       if (wasLiked) {
+        // « J'aime » par profil : on ne retire que celui du profil actif.
         var q = Supabase.instance.client.from('likes').delete()
             .eq('user_uid', uid).eq('annonce_id', item.annonceId);
+        q = User_Info.activeProfileId.isNotEmpty
+            ? q.or('profile_id.eq.${User_Info.activeProfileId},profile_id.is.null')
+            : q.isFilter('profile_id', null);
         item.bebeIndex != null ? await q.eq('bebe_index', item.bebeIndex!) : await q.isFilter('bebe_index', null);
       } else {
-        await Supabase.instance.client.from('likes').upsert({
+        await Supabase.instance.client.from('likes').insert({
           'user_uid': uid, 'annonce_id': item.annonceId, 'bebe_index': item.bebeIndex,
           'profile_type': User_Info.activeType,
           if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,

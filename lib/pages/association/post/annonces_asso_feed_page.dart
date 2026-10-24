@@ -127,11 +127,16 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
     });
     try {
       if (wasLiked) {
-        await Supabase.instance.client
+        // « J'aime » par profil : on ne retire que celui du profil actif.
+        var q = Supabase.instance.client
             .from('likes')
             .delete()
             .eq('annonce_id', annonceId)
             .eq('user_uid', uid);
+        q = User_Info.activeProfileId.isNotEmpty
+            ? q.or('profile_id.eq.${User_Info.activeProfileId},profile_id.is.null')
+            : q.isFilter('profile_id', null);
+        await q;
       } else {
         await Supabase.instance.client
             .from('likes')
