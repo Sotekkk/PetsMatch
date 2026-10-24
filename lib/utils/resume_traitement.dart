@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import 'package:PetsMatch/widgets/carnet/prises_traitement.dart' show prisesTexte;
 
 /// Résumé lisible d'un traitement (ou d'une étape d'une posologie
 /// progressive) — miroir du site (resumeTraitement, mes-animaux/[id]).
@@ -16,17 +17,16 @@ String periodeTraitement(Map data) {
   return '';
 }
 
-/// « Tous les jours à 08:00, 19:00 · 7 jours » (rappels récurrents actifs).
+/// « Tous les jours à 08:00 (1 cp), 19:00 (½ cp) · 7 jours » (rappels récurrents actifs).
 String ligneRappelTraitement(Map data) {
   if (data['rappel_actif'] != true) return '';
   final freq = int.tryParse('${data['rappel_frequence_jours'] ?? ''}') ?? 1;
-  final heures = data['rappel_heures'] is List
-      ? (data['rappel_heures'] as List).map((h) => h.toString()).where((h) => h.isNotEmpty).toList()
-      : <String>[];
+  // « 08:00 (1 cp), 20:00 (1/2 cp) » : quantité de chaque prise si renseignée.
+  final prises = prisesTexte(data);
   final duree = int.tryParse('${data['rappel_duree_jours'] ?? ''}');
   return [
     freq > 1 ? 'Tous les $freq jours' : 'Tous les jours',
-    if (heures.isNotEmpty) 'à ${heures.join(', ')}',
+    if (prises.isNotEmpty) 'à $prises',
   ].join(' ') + (duree != null && duree > 0 ? ' · $duree jours' : '');
 }
 

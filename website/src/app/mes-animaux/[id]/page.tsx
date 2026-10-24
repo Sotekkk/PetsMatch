@@ -3,6 +3,7 @@
 import { profilPourAnimal } from '@/lib/cloisonnement-profils';
 import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
 import { erreurPoids, poidsKg } from '@/lib/poids';
+import FormTraitementEtapes, { lignesEtapes, libelleEtape, type Etape } from '@/components/animaux/EtapesTraitement';
 import { progression, libelleDuree, majValidation } from '@/lib/exercices-progression';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { SterilisationCedee } from '@/components/animaux/SterilisationCedee';
@@ -214,7 +215,8 @@ function poidsLabel(kg: number): string {
 }
 function fmtDate(d?: string | null) {
   if (!d) return '';
-  try { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'2-digit' }); } catch { return d; }
+  // JJ/MM/AAAA (année sur 4 chiffres : dates de rappel lisibles sans ambiguïté).
+  try { return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' }); } catch { return d; }
 }
 function age(dob?: string | null) {
   if (!dob) return '';
@@ -300,6 +302,116 @@ function ChampHeures({ label, value, onChange }: { label: string; value: string;
   );
 }
 
+// Prises d'un traitement : heure + quantité (« 08:00 · 1 cp », « 20:00 · ½ cp »).
+// Écrit rappel_heures (« 08:00, 20:00 ») et rappel_quantites (« 1 cp|1/2 cp »,
+// même ordre) dans le formulaire. Miroir appli : PrisesTraitementEditor.
+function ChampPrises({ label, heures: heuresTexte, quantites: quantitesTexte, onChange }: {
+  label: string; heures: string; quantites: string; onChange: (heures: string, quantites: string) => void;
+}) {
+  const [heure, setHeure] = useState('08:00');
+  const [quantite, setQuantite] = useState('');
+  const heures = lireHeures(heuresTexte).heures;
+  const quantites = quantitesTexte ? quantitesTexte.split('|') : [];
+  const prises = heures.map((h, i) => ({ h, q: (quantites[i] ?? '').trim() }));
+  const maj = (liste: { h: string; q: string }[]) => {
+    const triees = [...new Map(liste.map(p => [p.h, p])).values()].sort((a, b) => a.h.localeCompare(b.h));
+    onChange(triees.map(p => p.h).join(', '), triees.some(p => p.q) ? triees.map(p => p.q).join('|') : '');
+  };
+  return (
+    <div>
+      <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">{label}</label>
+      <div className="flex gap-2 flex-wrap">
+        <input type="time" value={heure} onChange={e => setHeure(e.target.value)} step={300}
+          className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
+        <input value={quantite} onChange={e => setQuantite(e.target.value)} placeholder="Quantité (ex. 1 cp, 1/2 cp, 5 ml)"
+          className="flex-1 min-w-[140px] border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
+        <button type="button" onClick={() => { if (heure) { maj([...prises, { h: heure, q: quantite.trim() }]); setQuantite(''); } }}
+          className="px-3 py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-semibold hover:bg-[#E6F4F7]">Ajouter</button>
+      </div>
+      {prises.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {prises.map(p => (
+            <span key={p.h} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] bg-[#0C5C6C]/10 rounded-full pl-2.5 pr-1 py-1">
+              {p.h}{p.q ? ` · ${p.q}` : ''}
+              <button type="button" onClick={() => maj(prises.filter(x => x.h !== p.h))} aria-label={`Retirer ${p.h}`}
+                className="w-4 h-4 rounded-full hover:bg-[#0C5C6C]/20 leading-none">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-gray-400 mt-1">Une prise par heure, avec sa quantité si elle change (1 cp le matin, ½ cp le soir…).</p>
+    </div>
+  );
+}
+
+/** Formulaire de l'étape suivante : même produit et mêmes prises, à partir du
+ *  lendemain de la fin de l'étape précédente. */
+function initialEtape(r: HealthRecord): { nom: string; type: string; description_maladie: string; date: string; etape: Etape; rappels: boolean } {
+  const debut = String(r.date ?? '').slice(0, 10);
+  let fin = String(r.date_fin ?? '').slice(0, 10);
+  const duree = Number(r.rappel_duree_jours) || 0;
+  if (!fin && debut && duree) {
+    const d = new Date(`${debut}T12:00:00`); d.setDate(d.getDate() + duree - 1); fin = d.toISOString().slice(0, 10);
+  }
+  let suivant = '';
+  if (fin) { const d = new Date(`${fin}T12:00:00`); d.setDate(d.getDate() + 1); suivant = d.toISOString().slice(0, 10); }
+  const heures = Array.isArray(r.rappel_heures) ? (r.rappel_heures as string[]) : [];
+  const q = Array.isArray(r.rappel_quantites) ? (r.rappel_quantites as string[]) : [];
+  return {
+    nom: String(r.nom ?? ''), type: String(r.type ?? ''), description_maladie: String(r.description_maladie ?? ''),
+    date: suivant, rappels: r.rappel_actif === true,
+    etape: { duree: 3, frequence: Number(r.rappel_frequence_jours) || 1, prises: heures.map((h, k) => ({ h, q: q[k] ?? '' })) },
+  };
+}
+
+/** Modification d'un vermifuge : mêmes champs et mêmes options de prise qu'à la création. */
+function EditionVermifuge({ record, champs, saving, onCancel, onSave }: {
+  record: HealthRecord; champs: { key: string; label: string; type?: string; required?: boolean; options?: { value: string; label: string }[] }[];
+  saving: boolean; onCancel: () => void; onSave: (d: Record<string, string>, o: OptionsVermifuge) => Promise<void>;
+}) {
+  const [opts, setOpts] = useState<OptionsVermifuge>({
+    dureeJours: Number(record.duree_jours) || Number(record.rappel_duree_jours) || 1,
+    rappel: record.rappel_actif === true,
+    heures: Array.isArray(record.rappel_heures) ? (record.rappel_heures as string[]) : [],
+    autres: [],
+  });
+  const initial: Record<string, string> = {};
+  champs.forEach(f => { initial[f.key] = f.type === 'date' ? String(record[f.key] ?? '').slice(0, 10) : String(record[f.key] ?? ''); });
+  return (
+    <AddHealthForm saving={saving} onCancel={onCancel} initial={initial} fields={champs}
+      extra={<VermifugeOptions animalId={String(record.animal_id ?? '')} value={opts} onChange={setOpts} groupe={false} />}
+      onSave={d => onSave(d, opts)} />
+  );
+}
+
+/** Formulaire de modification d'un traitement : toutes ses étapes. */
+function initialGroupe(phases: HealthRecord[]): { nom: string; type: string; description_maladie: string; date: string; etapes: Etape[]; rappels: boolean; notes: string; posologie: string } {
+  const p0 = phases[0];
+  const jours = (r: HealthRecord) => {
+    const d = String(r.date ?? '').slice(0, 10), f = String(r.date_fin ?? '').slice(0, 10);
+    if (d && f) return Math.max(1, Math.round((new Date(`${f}T12:00:00`).getTime() - new Date(`${d}T12:00:00`).getTime()) / 86400000) + 1);
+    return Number(r.rappel_duree_jours) || 7;
+  };
+  return {
+    nom: String(p0.nom ?? ''), type: String(p0.type ?? ''), description_maladie: String(p0.description_maladie ?? ''),
+    date: String(p0.date ?? '').slice(0, 10), rappels: phases.some(r => r.rappel_actif === true),
+    notes: String(p0.notes ?? '').replace(/^Phase \d+\/\d+( — )?/, '').trim(),
+    posologie: phases.length === 1 ? String(p0.posologie ?? '') : '',
+    etapes: phases.map(r => {
+      const heures = Array.isArray(r.rappel_heures) ? (r.rappel_heures as string[]) : [];
+      const q = Array.isArray(r.rappel_quantites) ? (r.rappel_quantites as string[]) : [];
+      return { duree: jours(r), frequence: Number(r.rappel_frequence_jours) || 1, prises: heures.map((h, k) => ({ h, q: q[k] ?? '' })) };
+    }),
+  };
+}
+
+/** « 08:00 (1 cp), 20:00 (1/2 cp) » — ou les heures seules. */
+function prisesTexte(r: HealthRecord): string {
+  const heures = Array.isArray(r.rappel_heures) ? (r.rappel_heures as string[]).filter(Boolean) : [];
+  const q = Array.isArray(r.rappel_quantites) ? (r.rappel_quantites as string[]) : [];
+  return heures.map((h, i) => (q[i] ? `${h} (${q[i]})` : h)).join(', ');
+}
+
 // ─── Section santé générique ──────────────────────────────────────────────────
 // Types de vaccins par espèce : voir @/lib/vaccinTypes (partagé avec
 // association/animaux/[id]/page.tsx pour ne jamais diverger entre profils).
@@ -315,7 +427,7 @@ function resumeTraitement(r: HealthRecord): string[] {
   lignes.push(debut && fin ? `Du ${debut} au ${fin}` : debut ? `Depuis le ${debut}` : '');
   if (r.rappel_actif === true) {
     const rythme = freq > 1 ? `Tous les ${freq} jours` : 'Tous les jours';
-    lignes.push(`${rythme}${heures.length ? ` à ${heures.join(', ')}` : ''}${r.rappel_duree_jours ? ` · ${r.rappel_duree_jours} jours` : ''}`);
+    lignes.push(`${rythme}${heures.length ? ` à ${prisesTexte(r)}` : ''}${r.rappel_duree_jours ? ` · ${r.rappel_duree_jours} jours` : ''}`);
   }
   return lignes.filter(Boolean);
 }
@@ -327,7 +439,8 @@ function grouperTraitements(rows: HealthRecord[]): { cle: string; phases: Health
   const index = new Map<string, { cle: string; phases: HealthRecord[] }>();
   for (const r of rows) {
     const enPhases = /^Phase \d+\/\d+/.test(String(r.notes ?? ''));
-    const cle = enPhases ? `${r.nom}|${r.vet_id ?? r.source ?? ''}|${String(r.created_at ?? '').slice(0, 16)}` : String(r.id);
+    const cle = r.groupe_id ? `g:${String(r.groupe_id)}`
+      : enPhases ? `${r.nom}|${r.vet_id ?? r.source ?? ''}|${String(r.created_at ?? '').slice(0, 16)}` : String(r.id);
     let g = index.get(cle);
     if (!g) { g = { cle, phases: [] }; index.set(cle, g); groupes.push(g); }
     g.phases.push(r);
@@ -344,7 +457,7 @@ const CHAMPS_TRAITEMENT = [
   { key: 'rappel_actif', label: 'Rappels récurrents', type: 'checkbox' },
   { key: 'rappel_frequence_jours', label: 'Répéter tous les X jours', type: 'number' },
   { key: 'rappel_duree_jours', label: 'Durée du traitement (jours)', type: 'number' },
-  { key: 'rappel_heures', label: 'Heures de rappel', type: 'heures' },
+  { key: 'rappel_heures', label: 'Prises (heure et quantité)', type: 'prises' },
   { key: 'notes', label: 'Commentaires (ex : tolérance au traitement)' },
 ];
 
@@ -416,6 +529,9 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
       ) : f.type === 'heures' ? (
         <ChampHeures key={f.key} label={f.label} value={form[f.key] ?? ''}
           onChange={v => setForm(p => ({ ...p, [f.key]: v }))} />
+      ) : f.type === 'prises' ? (
+        <ChampPrises key={f.key} label={f.label} heures={form[f.key] ?? ''} quantites={form.rappel_quantites ?? ''}
+          onChange={(h, q) => setForm(p => ({ ...p, [f.key]: h, rappel_quantites: q }))} />
       ) : f.type === 'select' ? (
         <SelectField key={f.key} label={f.label} value={form[f.key]??''} options={f.options ?? []}
           onChange={v => setForm(p=>{
@@ -478,14 +594,20 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
   );
 }
 
-function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espece, existingCategories, onRappel, resume, titre }:
+function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espece, existingCategories, onRappel, resume, titre, onEtape, champsEdition, formulaireEdition }:
   { fields:{key:string;label:string;type?:string;required?:boolean;options?:{value:string;label:string}[]}[]; record:HealthRecord; onDelete:()=>void;
     onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean; espece?: string; existingCategories?: string[];
     onRappel?:()=>void;
     /** Lignes de résumé affichées sous le titre, repliées (ex. traitement). */
     resume?: string[];
     /** Titre affiché à la place du premier champ (ex. « Étape 2 »). */
-    titre?: string }) {
+    titre?: string;
+    /** Traitement : ajouter l'étape suivante d'une posologie progressive. */
+    onEtape?: () => void;
+    /** Champs du formulaire de modification (= ceux de la création) ; à défaut [fields]. */
+    champsEdition?: {key:string;label:string;type?:string;required?:boolean;options?:{value:string;label:string}[]}[];
+    /** Formulaire de modification sur mesure (mêmes éléments qu'à la création). */
+    formulaireEdition?: (fermer: () => void) => React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const mainField = fields[0];
@@ -494,15 +616,22 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
   // peut (depuis son propre espace pro).
   const isVetEntry = record.source === 'veterinaire';
 
+  if (editing && formulaireEdition) {
+    return <div className="px-4 py-3">{formulaireEdition(() => setEditing(false))}</div>;
+  }
   if (editing && onSave) {
+    const champs = champsEdition ?? fields;
     const initial: Record<string,string> = {};
     // Dates enregistrées par l'appli avec l'heure (…T00:00:00) : jour seul pour le champ date.
-    fields.forEach(f => { initial[f.key] = f.type === 'date' ? String(record[f.key] ?? '').slice(0, 10) : String(record[f.key] ?? ''); });
+    champs.forEach(f => { initial[f.key] = f.type === 'date' ? String(record[f.key] ?? '').slice(0, 10) : String(record[f.key] ?? ''); });
+    if (fields.some(f => f.type === 'prises') && Array.isArray(record.rappel_quantites)) {
+      initial.rappel_quantites = (record.rappel_quantites as string[]).join('|');
+    }
     return (
       <div className="px-4 py-3">
         <AddHealthForm saving={!!saving} onCancel={()=>setEditing(false)}
           onSave={async d => { await onSave(d); setEditing(false); }}
-          initial={initial} fields={fields} espece={espece} existingCategories={existingCategories} />
+          initial={initial} fields={champs} espece={espece} existingCategories={existingCategories} />
       </div>
     );
   }
@@ -537,6 +666,7 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
                 : f.type === 'checkbox' ? 'Oui'
                 : f.type === 'select' ? (f.options?.find(o => o.value === record[f.key])?.label ?? String(record[f.key]))
                 : f.type === 'heures' && Array.isArray(record[f.key]) ? (record[f.key] as string[]).join(', ')
+                : f.type === 'prises' ? prisesTexte(record)
                 : String(record[f.key])}</span>
             </div>
           ) : null)}
@@ -549,7 +679,10 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
             {canWrite && onRappel && (
               <button onClick={onRappel} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">+ Rappel</button>
             )}
-            {!isVetEntry && canWrite && onSave && (
+            {canWrite && onEtape && !isVetEntry && (
+              <button onClick={onEtape} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">+ Étape suivante</button>
+            )}
+            {!isVetEntry && canWrite && (onSave || formulaireEdition) && (
               <button onClick={()=>setEditing(true)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">Modifier</button>
             )}
             {!isVetEntry && (
@@ -2639,6 +2772,8 @@ function AnimalFichePageInner() {
     vaccinations:[], traitements:[], visites:[], vermifuges:[], antiparasitaires:[], chirurgies:[], allergies:[], poids:[]
   });
   const [addOpen, setAddOpen] = useState<string|null>(null);
+  // Traitement dont on ajoute l'étape suivante (posologie progressive).
+  const [etapeDe, setEtapeDe] = useState<HealthRecord | null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
   const [optsVermifuge, setOptsVermifuge] = useState<OptionsVermifuge>(optionsVermifugeVides());
   const [optsAntiparasitaire, setOptsAntiparasitaire] = useState<OptionsVermifuge>(optionsVermifugeVides());
@@ -2646,6 +2781,12 @@ function AnimalFichePageInner() {
   // "+ Rappel" sur un vaccin : pré-remplit le formulaire d'ajout avec le
   // même vaccin/vétérinaire, il ne reste qu'à changer date et lot.
   const [rappelPrefill, setRappelPrefill] = useState<Record<string,string>|null>(null);
+  // « + Rappel » : le formulaire s'ouvre en haut de la rubrique — souvent hors
+  // de l'écran quand le soin est plus bas dans la liste (le bouton semblait ne
+  // rien faire). On y amène la page.
+  const allerAuFormulaire = (sectionId: string) => {
+    setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
 
   // ── État documents vétérinaires
   const [ordonnances, setOrdonnances] = useState<HealthRecord[]>([]);
@@ -3539,17 +3680,95 @@ function AnimalFichePageInner() {
   // 3 semaines) : transforme les champs texte du formulaire générique en
   // colonnes typées (booléen, entiers, tableau d'heures, date de fin
   // calculée) avant l'insert.
-  async function saveTraitement(data: Record<string,string>, recordId?: string) {
+  // Ajout d'un traitement en étapes (une ligne par étape, dates enchaînées) ;
+  // [etapeDe] : étapes ajoutées à une posologie existante (même groupe).
+  async function saveTraitementEtapes(d: { base: Record<string, string | null>; debut: string; etapes: Etape[]; rappels: boolean; notes: string }, etapeDe?: HealthRecord) {
     if (!id) return;
     setSavingHealth(true);
+    const lignes = lignesEtapes({ base: { ...d.base, animal_id: id }, debut: d.debut, etapes: d.etapes, rappels: d.rappels, notes: d.notes });
+    if (etapeDe) {
+      const gid = String(etapeDe.groupe_id ?? etapeDe.id);
+      const { data: freres } = await supabase.from('traitements').select('id, notes, date')
+        .eq('animal_id', id).or(`groupe_id.eq.${gid},id.eq.${etapeDe.id}`);
+      const liste = ((freres ?? []) as { id: string; notes: string | null; date: string | null }[])
+        .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+      const n = liste.length + lignes.length;
+      for (const [k, f] of liste.entries()) {
+        const sans = String(f.notes ?? '').replace(/^Phase \d+\/\d+( — )?/, '').trim();
+        await supabase.from('traitements').update({ groupe_id: gid, notes: [`Phase ${k + 1}/${n}`, sans].filter(Boolean).join(' — ') }).eq('id', f.id);
+      }
+      lignes.forEach((l, k) => {
+        l.groupe_id = gid;
+        l.notes = [`Phase ${liste.length + k + 1}/${n}`, d.notes.trim()].filter(Boolean).join(' — ');
+      });
+    }
+    const { error } = await supabase.from('traitements').insert(lignes);
+    if (error) alert(`Enregistrement impossible : ${error.message}`);
+    else await writeRegistreActe('traitements', String(lignes[0].id), {
+      ...lignes[0], posologie: d.etapes.map(libelleEtape).join(', puis '),
+    } as Record<string, unknown>);
+    await loadHealth();
+    setAddOpen(null);
+    setSavingHealth(false);
+  }
+
+  // Traitement modifié : ses étapes sont réécrites (mêmes éléments qu'à la création).
+  async function remplacerTraitement(phases: HealthRecord[], d: { base: Record<string, string | null>; debut: string; etapes: Etape[]; rappels: boolean; notes: string }) {
+    if (!id) return;
+    setSavingHealth(true);
+    const lignes = lignesEtapes({ base: { ...d.base, animal_id: id }, debut: d.debut, etapes: d.etapes, rappels: d.rappels, notes: d.notes });
+    const gid = phases.find(p => p.groupe_id)?.groupe_id;
+    if (gid && lignes.length > 1) lignes.forEach(l => { l.groupe_id = gid; });
+    const { error } = await supabase.from('traitements').insert(lignes);
+    if (error) { alert(`Enregistrement impossible : ${error.message}`); setSavingHealth(false); return; }
+    for (const p of phases) {
+      await supabase.from('traitements').delete().eq('id', p.id);
+      await deleteRegistreActe('traitements', String(p.id));
+    }
+    await writeRegistreActe('traitements', String(lignes[0].id), { ...lignes[0], posologie: d.etapes.map(libelleEtape).join(', puis ') } as Record<string, unknown>);
+    await loadHealth();
+    setSavingHealth(false);
+  }
+
+  async function updateVermifuge(recordId: string, data: Record<string,string>, o: OptionsVermifuge) {
+    if (o.rappel && o.heures.length === 0) { alert('Ajoutez au moins une heure de rappel.'); return; }
+    setSavingHealth(true);
+    const maj = { ...data, ...colonnesPrises(o, data.date) };
+    await supabase.from('vermifuges').update(maj).eq('id', recordId);
+    await writeRegistreActe('vermifuges', recordId, maj as Record<string, unknown>);
+    await loadHealth();
+    setSavingHealth(false);
+  }
+
+  async function saveTraitement(data: Record<string,string>, recordId?: string, etapeDe?: HealthRecord) {
+    if (!id) return;
+    setSavingHealth(true);
+    // Étape suivante d'une posologie progressive : même groupe, notes « Phase i/n ».
+    let groupe: { id: string; n: number } | null = null;
+    if (etapeDe && !recordId) {
+      const gid = String(etapeDe.groupe_id ?? etapeDe.id);
+      const { data: freres } = await supabase.from('traitements').select('id, notes, date')
+        .eq('animal_id', id).or(`groupe_id.eq.${gid},id.eq.${etapeDe.id}`);
+      const liste = ((freres ?? []) as { id: string; notes: string | null; date: string | null }[])
+        .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')));
+      const n = liste.length + 1;
+      for (const [i, f] of liste.entries()) {
+        const sans = String(f.notes ?? '').replace(/^Phase \d+\/\d+( — )?/, '').trim();
+        await supabase.from('traitements').update({
+          groupe_id: gid, notes: [`Phase ${i + 1}/${n}`, sans].filter(Boolean).join(' — '),
+        }).eq('id', f.id);
+      }
+      groupe = { id: gid, n };
+    }
     const rappelActif = data.rappel_actif === 'true';
     const payload: Record<string, unknown> = {
       ...(recordId ? {} : { animal_id: id, id: crypto.randomUUID() }),
       nom: data.nom, type: data.type, description_maladie: data.description_maladie || null,
       posologie: data.posologie,
       date: data.date || null, date_fin: data.date_fin || null,
-      notes: data.notes || null,
+      notes: groupe ? [`Phase ${groupe.n}/${groupe.n}`, data.notes].filter(Boolean).join(' — ') : (data.notes || null),
       rappel_actif: rappelActif,
+      ...(groupe ? { groupe_id: groupe.id } : {}),
     };
     if (rappelActif) {
       const frequence = parseInt(data.rappel_frequence_jours || '1', 10) || 1;
@@ -3558,10 +3777,15 @@ function AnimalFichePageInner() {
       payload.rappel_frequence_jours = frequence;
       payload.rappel_duree_jours = duree;
       payload.rappel_heures = heures;
+      // Quantité de chaque prise (même ordre que les heures) ; aucune → posologie générale.
+      const quantites = (data.rappel_quantites ?? '').split('|').map(q => q.trim());
+      payload.rappel_quantites = quantites.some(Boolean) ? heures.map((_, i) => quantites[i] ?? '') : null;
       if (data.date) {
-        const fin = new Date(data.date);
-        fin.setDate(fin.getDate() + duree);
+        // Dernier jour inclus : la durée correspond aux dates de la fiche.
+        const fin = new Date(`${data.date.slice(0, 10)}T12:00:00`);
+        fin.setDate(fin.getDate() + duree - 1);
         payload.rappel_fin = fin.toISOString().slice(0, 10);
+        payload.date_fin = payload.rappel_fin;
       }
     }
     if (recordId) {
@@ -3587,7 +3811,14 @@ function AnimalFichePageInner() {
   }
 
   async function deleteHealthRecord(table: string, recordId: string) {
-    await supabase.from(table).delete().eq('id', recordId);
+    if (!confirm('Supprimer cette entrée du carnet ?')) return;
+    // .select() : une suppression refusée par la base ne renvoie aucune ligne
+    // (avant : rien ne se passait, sans message).
+    const { data: supprime, error } = await supabase.from(table).delete().eq('id', recordId).select('id');
+    if (error || !supprime?.length) {
+      alert('Suppression impossible : seuls les propriétaires de l’animal (et les cogérants de l’élevage) peuvent supprimer une entrée du carnet.');
+      return;
+    }
     await deleteRegistreActe(table, recordId);
     await loadHealth();
     await rafraichirPoidsFiche(table);
@@ -5113,11 +5344,13 @@ function AnimalFichePageInner() {
             {health.vaccinations.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vaccinations',r.id)}
                 onSave={d=>updateHealthRecord('vaccinations',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                champsEdition={[{key:'categorie',label:'Type de vaccin',type:'select',options:categorieOptions(animal.espece)},{key:'vaccin',label:'Vaccin (marque/produit)',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}
                 espece={animal.espece}
                 existingCategories={health.vaccinations.map(v=>String(v.categorie??'')).filter(Boolean)}
                 onRappel={canWriteSante ? ()=>{
                   setRappelPrefill({ vaccin: String(r.vaccin??''), veterinaire: String(r.veterinaire??''), categorie: String(r.categorie??'') });
                   setAddOpen('vaccinations');
+                  allerAuFormulaire('health-vaccinations');
                 } : undefined}
                 fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'categorie',label:'Type de vaccin',type:'select',options:categorieOptions(animal.espece)},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
             ))}
@@ -5137,9 +5370,15 @@ function AnimalFichePageInner() {
             {health.vermifuges.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vermifuges',r.id)}
                 onSave={d=>updateHealthRecord('vermifuges',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                champsEdition={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}
+                formulaireEdition={fermer => (
+                  <EditionVermifuge record={r} champs={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]} saving={savingHealth}
+                    onCancel={fermer} onSave={async (d, o) => { await updateVermifuge(r.id, d, o); fermer(); }} />
+                )}
                 onRappel={canWriteSante ? ()=>{
                   setRappelPrefill({ produit: String(r.produit??''), dosage: String(r.dosage??''), frequence: String(r.frequence??'') });
                   setAddOpen('vermifuges');
+                  allerAuFormulaire('health-vermifuges');
                 } : undefined}
                 fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>
             ))}
@@ -5159,9 +5398,11 @@ function AnimalFichePageInner() {
             {health.antiparasitaires.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('antiparasitaires',r.id)}
                 onSave={d=>updateHealthRecord('antiparasitaires',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                champsEdition={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'notes',label:'Notes'}]}
                 onRappel={canWriteSante ? ()=>{
                   setRappelPrefill({ produit: String(r.produit??''), type: String(r.type??''), frequence: String(r.frequence??'') });
                   setAddOpen('antiparasitaires');
+                  allerAuFormulaire('health-antiparasitaires');
                 } : undefined}
                 fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
@@ -5173,11 +5414,23 @@ function AnimalFichePageInner() {
             title="Traitements" icon="💊" color={SANTE_COULEURS.traitements} count={health.traitements.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='traitements'?null:'traitements') : undefined}
             addFormOpen={addOpen==='traitements'}
-            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={saveTraitement}
-              fields={CHAMPS_TRAITEMENT}/>}>
+            addForm={<FormTraitementEtapes saving={savingHealth} onCancel={()=>setAddOpen(null)}
+              onSave={d => saveTraitementEtapes(d)} />}>
+            {etapeDe && (
+              <div className="px-4 py-3 bg-[#E6F4F7]/40 border-b border-gray-100">
+                <p className="text-sm font-semibold text-[#1F2A2E] mb-2">Étape suivante — {String(etapeDe.nom ?? '')}</p>
+                <FormTraitementEtapes key={String(etapeDe.id)} saving={savingHealth} onCancel={() => setEtapeDe(null)}
+                  onSave={async d => { await saveTraitementEtapes(d, etapeDe); setEtapeDe(null); }}
+                  initial={initialEtape(etapeDe)} />
+              </div>
+            )}
             {grouperTraitements(health.traitements).map(g => g.phases.length === 1 ? (
               <HealthRecord key={g.cle} record={g.phases[0]} onDelete={()=>deleteHealthRecord('traitements',g.phases[0].id)}
+                formulaireEdition={fermer => (
+                  <FormTraitementEtapes saving={savingHealth} onCancel={fermer} initial={initialGroupe(g.phases)}
+                    onSave={async d => { await remplacerTraitement(g.phases, d); fermer(); }} />
+                )}
+                onEtape={() => { setEtapeDe(g.phases[0]); allerAuFormulaire('health-traitements'); }}
                 onSave={d=>saveTraitement(d, g.phases[0].id)} saving={savingHealth} canWrite={canWriteSante}
                 fields={CHAMPS_TRAITEMENT} resume={resumeTraitement(g.phases[0])}/>
             ) : (
@@ -5188,6 +5441,11 @@ function AnimalFichePageInner() {
                 </p>
                 {g.phases.map((r, i) => (
                   <HealthRecord key={r.id} record={r} titre={`Étape ${i + 1}`} onDelete={()=>deleteHealthRecord('traitements',r.id)}
+                    formulaireEdition={fermer => (
+                      <FormTraitementEtapes saving={savingHealth} onCancel={fermer} initial={initialGroupe(g.phases)}
+                        onSave={async d => { await remplacerTraitement(g.phases, d); fermer(); }} />
+                    )}
+                    onEtape={i === g.phases.length - 1 ? () => { setEtapeDe(r); allerAuFormulaire('health-traitements'); } : undefined}
                     onSave={d=>saveTraitement(d, r.id)} saving={savingHealth} canWrite={canWriteSante}
                     fields={CHAMPS_TRAITEMENT} resume={resumeTraitement(r)}/>
                 ))}
@@ -5216,6 +5474,16 @@ function AnimalFichePageInner() {
             {health.chirurgies.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('chirurgies',r.id)}
                 onSave={d=>updateHealthRecord('chirurgies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                champsEdition={[
+                {key:'type',label:'Type',type:'select',options:[{value:'chirurgie',label:'Chirurgie'},{value:'hospitalisation',label:'Hospitalisation'}]},
+                {key:'intitule',label:'Intervention (ex : stérilisation, détartrage sous AG)',required:true},
+                {key:'date',label:'Date (prévue ou réalisée)',type:'date',required:true},
+                {key:'statut',label:'Statut',type:'select',options:[{value:'prevu',label:'Prévue'},{value:'realise',label:'Réalisée'},{value:'annule',label:'Annulée'}]},
+                {key:'clinique',label:'Clinique / vétérinaire'},
+                {key:'protocole_preop',label:'Protocole pré-opératoire (jeûne, prémédication, anesthésie…)',type:'textarea'},
+                {key:'protocole_postop',label:'Protocole post-opératoire (analgésie, soins de plaie, repos, contrôle…)',type:'textarea'},
+                {key:'notes',label:'Notes'},
+              ]}
                 fields={[
                   {key:'intitule',label:'Intervention',required:true},
                   {key:'type',label:'Type',type:'select',options:[{value:'chirurgie',label:'Chirurgie'},{value:'hospitalisation',label:'Hospitalisation'}]},
@@ -5240,6 +5508,7 @@ function AnimalFichePageInner() {
             {health.allergies.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('allergies',r.id)}
                 onSave={d=>updateHealthRecord('allergies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                champsEdition={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité (légère/modérée/sévère)'},{key:'date',label:'Date constatée',type:'date'},{key:'notes',label:'Notes'}]}
                 fields={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.allergies.length===0 && <p className="p-4 text-sm text-gray-400">Aucune allergie</p>}

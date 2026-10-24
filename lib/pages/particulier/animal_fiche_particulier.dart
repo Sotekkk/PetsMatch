@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/controle_dates.dart';
+import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/repartition.dart';
@@ -2114,6 +2115,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('vaccinations', r['id'], _vaccinations),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _showVaccinationSheet(existant: r),
                 onTap: () => _showRecordDetail('Vaccination', r, [
                   ('Vaccin', 'vaccin'), ('Date', 'date'), ('Rappel', 'date_rappel'),
                   ('N° de lot', 'lot'), ('Vétérinaire', 'veterinaire'),
@@ -2131,6 +2133,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('vermifuges', r['id'], _vermifuges),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _showVermifugeSheet(existant: r),
                 onRappel: () => _showVermifugeSheet(prefill: r),
                 onTap: () => _showRecordDetail('Vermifuge', r, [
                   ('Produit', 'produit'), ('Dosage', 'dosage'), ('Date', 'date'),
@@ -2149,6 +2152,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('antiparasitaires', r['id'], _antiparasitaires),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _showAntiparasitaireSheet(existant: r),
                 onRappel: () => _showAntiparasitaireSheet(prefill: r),
                 onTap: () => _showRecordDetail('Antiparasitaire', r, [
                   ('Produit', 'produit'), ('Type', 'type'), ('Fréquence', 'frequence'),
@@ -2169,6 +2173,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                   title: r['nom'] ?? r['type'] ?? 'Inconnu',
                   subtitle: resume.isEmpty ? null : resume.join('\n'),
                   onDelete: () => _deleteRecord('traitements', r['id'], _traitements),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _modifierTraitement(r),
+                  onEtape: r['source'] == 'veterinaire' ? null : () => _showTraitementSheet(etapeDe: r),
                   onTap: () => _showRecordDetail('Traitement', {
                     ...r,
                     'etape': etapeTraitement(r),
@@ -2199,6 +2205,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                   subtitle: r['date'] != null ? '$label le ${_fmtDate(r['date'])}' : label,
                   trailing: r['clinique'] ?? r['veterinaire'],
                   onDelete: () => _deleteRecord('chirurgies', r['id'], _chirurgies),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _showChirurgieSheet(existant: r),
                   onTap: () => _showRecordDetail('Chirurgie / Hospitalisation', r, [
                     ('Intervention', 'intitule'), ('Type', 'type'), ('Date', 'date'),
                     ('Statut', 'statut'), ('Clinique / vétérinaire', 'clinique'),
@@ -2220,6 +2227,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 subtitle: r['type'],
                 trailing: r['severite'],
                 onDelete: () => _deleteRecord('allergies', r['id'], _allergies),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _showAllergieSheet(existant: r),
                 onTap: () => _showRecordDetail('Allergie', r, [
                   ('Description', 'description'), ('Type', 'type'), ('Sévérité', 'severite'),
                   ('Date', 'date'), ('Notes', 'notes'),
@@ -2244,6 +2252,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
                 trailing: r['veterinaire'],
                 onDelete: () => _deleteRecord('visites', r['id'], _visites),
+                  onEdit: r['source'] == 'veterinaire' ? null : () => _showVisiteSheet(existant: r),
                 onTap: () => _showRecordDetail('Visite vétérinaire', r, [
                   ('Motif', 'motif'), ('Date', 'date'), ('Vétérinaire', 'veterinaire'),
                   ('Diagnostic', 'diagnostic'), ('Notes', 'notes'),
@@ -2459,7 +2468,19 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   // ── Health form sheets ────────────────────────────────────────────────────────
 
-  void _showVaccinationSheet({Map<String, dynamic>? prefill}) {
+  /// Ajout d'une entrée du carnet, ou modification de [existant] (mêmes
+  /// éléments qu'à la création).
+  Future<void> _enregistrerSante(String table, Map<String, dynamic>? existant, Map<String, dynamic> ligne) async {
+    if (existant == null) {
+      await _supa.from(table).insert(ligne);
+      return;
+    }
+    final maj = {...ligne}..remove('id')..remove('animal_id')..remove('created_at');
+    await _supa.from(table).update(maj).eq('id', existant['id']);
+  }
+
+  void _showVaccinationSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? existant}) {
+    prefill ??= existant;
     final vaccin = TextEditingController(text: prefill?['vaccin'] ?? ''),
         lot = TextEditingController(text: prefill?['lot'] ?? ''),
         veto = TextEditingController(text: prefill?['veterinaire'] ?? '');
@@ -2502,7 +2523,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       }
     }
 
-    _openSheet('Ajouter une vaccination', (ss) => [
+    _openSheet(existant != null ? 'Modifier la vaccination' : 'Ajouter une vaccination', (ss) => [
       _SDrop(
         label: 'Type de vaccin',
         value: categorie,
@@ -2523,7 +2544,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     ], () async {
       if (vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
       controlerDatesSante(date: date, rappel: dateRappel, validite: dateValidite);
-      await _supa.from('vaccinations').insert({
+      await _enregistrerSante('vaccinations', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'vaccin': vaccin.text.trim(),
@@ -2535,7 +2556,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'categorie': categorie,
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
-      if (dateRappel != null) {
+      // Rappel d'agenda : à la création, ou si la date de rappel a changé.
+      if (dateRappel != null && (existant == null || existant['date_rappel']?.toString().substring(0, 10) != dateRappel!.toIso8601String().substring(0, 10))) {
         await _scheduleRappelAgenda(
           dateRappel: dateRappel!,
           titre: 'Rappel vaccin — ${vaccin.text.trim()} (${_nomCtrl.text})',
@@ -2545,90 +2567,130 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showTraitementSheet({Map<String, dynamic>? prefill}) {
+  /// [etapeDe] : étape suivante d'une posologie progressive (pré-remplie,
+  /// même groupe, notes « Phase i/n »).
+  /// Modifier un traitement : toutes ses étapes (même groupe), comme à la création.
+  Future<void> _modifierTraitement(Map<String, dynamic> r) async {
+    var groupe = [r];
+    final gid = r['groupe_id']?.toString();
+    if (gid != null && gid.isNotEmpty) {
+      try {
+        final rows = await _supa.from('traitements').select().eq('animal_id', _animalId!).eq('groupe_id', gid);
+        groupe = List<Map<String, dynamic>>.from(rows as List)
+          ..sort((a, b) => (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()));
+      } catch (_) {}
+    }
+    if (mounted) _showTraitementSheet(groupe: groupe);
+  }
+
+  void _showTraitementSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? etapeDe, List<Map<String, dynamic>>? groupe}) {
+    if (groupe != null && groupe.isNotEmpty) {
+      prefill = {
+        ...groupe.first,
+        'notes': notesTraitement(groupe.first),
+        if (groupe.length > 1) 'posologie': '',
+      };
+    }
+    if (etapeDe != null) {
+      prefill = {
+        'nom': etapeDe['nom'], 'type': etapeDe['type'], 'description_maladie': etapeDe['description_maladie'],
+        'posologie': etapeDe['posologie'], 'date': debutEtapeSuivante(etapeDe).toIso8601String(),
+      };
+    }
     final nom = TextEditingController(text: prefill?['nom'] ?? ''),
         type = TextEditingController(text: prefill?['type'] ?? ''),
         descriptionMaladie = TextEditingController(text: prefill?['description_maladie'] ?? ''),
         posologie = TextEditingController(text: prefill?['posologie'] ?? ''),
         notes = TextEditingController(text: prefill?['notes'] ?? '');
-    DateTime? date = DateTime.tryParse(prefill?['date'] ?? ''),
-        dateFin = DateTime.tryParse(prefill?['date_fin'] ?? '');
+    DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
 
-    // ── Rappels récurrents (ex: piqûre tous les 3 jours pendant 3 semaines),
-    // même fonctionnalité que côté éleveur.
-    bool rappelActif = false;
-    final rappelFrequenceCtrl = TextEditingController(text: '1');
-    final rappelDureeCtrl = TextEditingController(text: '7');
-    String rappelDureeUnite = 'jours'; // 'jours' | 'semaines'
-    List<String> rappelHeures = [];
-
-    Future<void> addHeure(StateSetter ss) async {
-      final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-      if (t == null) return;
-      final s = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-      if (!rappelHeures.contains(s)) ss(() => rappelHeures = [...rappelHeures, s]..sort());
+    // ── Posologie en étapes (ex. 4 jours matin et soir, puis 3 jours le
+    // matin seulement), chaque prise avec sa quantité ; rappel à chaque prise.
+    bool rappelActif = groupe != null
+        ? groupe.any((g) => g['rappel_actif'] == true)
+        : (etapeDe == null || etapeDe['rappel_actif'] == true);
+    int jours(Map g) {
+      final d = DateTime.tryParse(g['date']?.toString() ?? ''), f = DateTime.tryParse(g['date_fin']?.toString() ?? '');
+      if (d != null && f != null) return f.difference(DateTime(d.year, d.month, d.day)).inDays + 1;
+      return int.tryParse('${g['rappel_duree_jours'] ?? ''}') ?? 7;
     }
+    final etapes = groupe != null && groupe.isNotEmpty
+        ? [for (final g in groupe) EtapeTraitement(dureeJours: jours(g).clamp(1, 3650),
+            frequenceJours: int.tryParse('${g['rappel_frequence_jours'] ?? ''}') ?? 1, prises: prisesDepuis(g))]
+        : <EtapeTraitement>[
+      etapeDe != null
+          ? EtapeTraitement(dureeJours: 3,
+              frequenceJours: int.tryParse('${etapeDe['rappel_frequence_jours'] ?? ''}') ?? 1,
+              prises: prisesDepuis(etapeDe))
+          : EtapeTraitement(),
+    ];
 
-    _openSheet('Ajouter un traitement', (ss) => [
+    _openSheet(groupe != null ? 'Modifier le traitement' : etapeDe != null ? 'Étape suivante' : 'Ajouter un traitement', (ss) => [
       _SFld(ctrl: nom, label: 'Nom du traitement', hint: 'Ex: Amoxicilline...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Antibiotique, Anti-inflammatoire...'),
       _SFld(ctrl: descriptionMaladie, label: 'Description de la maladie',
           hint: 'Ex: Otite, gastro-entérite...', maxLines: 3),
-      _SFld(ctrl: posologie, label: 'Posologie', hint: 'Ex: 1 comprimé 2x/jour'),
+      _SFld(ctrl: posologie, label: 'Posologie (résumé, facultatif)', hint: 'Ex: dégressif sur 7 jours'),
       _SDate(label: 'Date de début', date: date, onPicked: (d) => ss(() => date = d)),
-      _SDate(label: 'Date de fin', date: dateFin, onPicked: (d) => ss(() => dateFin = d)),
-      _SRappelRecurrent(
-        actif: rappelActif,
-        onActifChanged: (v) => ss(() => rappelActif = v),
-        frequenceCtrl: rappelFrequenceCtrl,
-        dureeCtrl: rappelDureeCtrl,
-        dureeUnite: rappelDureeUnite,
-        onDureeUniteChanged: (v) => ss(() => rappelDureeUnite = v),
-        heures: rappelHeures,
-        onAddHeure: () => addHeure(ss),
-        onRemoveHeure: (h) => ss(() => rappelHeures = rappelHeures.where((x) => x != h).toList()),
-      ),
+      Row(children: [
+        const Expanded(child: Text('Rappel à chaque prise',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13))),
+        Switch(value: rappelActif, activeThumbColor: const Color(0xFF6E9E57),
+            onChanged: (v) => ss(() => rappelActif = v)),
+      ]),
+      EtapesTraitementEditor(etapes: etapes, debut: date, onChanged: () => ss(() {})),
+      const SizedBox(height: 12),
       _SFld(ctrl: notes, label: 'Commentaires', maxLines: 3,
           hint: 'Ex: impressions de tolérance au traitement, effets observés...'),
     ], () async {
       if (nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du traitement.');
-      controlerDatesSante(date: date, fin: dateFin);
-      if (rappelActif && rappelHeures.isEmpty) {
-        throw const SaisieInvalide('Ajoutez au moins une heure de rappel.');
+      controlerDatesSante(date: date, fin: finTraitement(date, etapes));
+      if (etapes.isEmpty) throw const SaisieInvalide('Ajoutez au moins une étape.');
+      if (rappelActif && etapes.any((e) => e.prises.isEmpty)) {
+        throw const SaisieInvalide('Ajoutez au moins une prise à chaque étape (ou désactivez les rappels).');
       }
-      final frequenceJours = int.tryParse(rappelFrequenceCtrl.text) ?? 1;
-      final dureeValeur = int.tryParse(rappelDureeCtrl.text) ?? 7;
-      final dureeJours = rappelDureeUnite == 'semaines' ? dureeValeur * 7 : dureeValeur;
-      final rappelFin = rappelActif && date != null ? date!.add(Duration(days: dureeJours)) : null;
-      await _supa.from('traitements').insert({
-        'id': '${DateTime.now().millisecondsSinceEpoch}',
-        'animal_id': _animalId!,
-        'nom': nom.text.trim(),
-        'type': type.text.trim().isEmpty ? null : type.text.trim(),
-        'description_maladie': descriptionMaladie.text.trim().isEmpty ? null : descriptionMaladie.text.trim(),
-        'posologie': posologie.text.trim().isEmpty ? null : posologie.text.trim(),
-        'date': date?.toIso8601String().substring(0, 10),
-        'date_fin': dateFin?.toIso8601String().substring(0, 10),
-        'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'rappel_actif': rappelActif,
-        if (rappelActif) 'rappel_frequence_jours': frequenceJours,
-        if (rappelActif) 'rappel_duree_jours': dureeJours,
-        if (rappelFin != null) 'rappel_fin': rappelFin.toIso8601String().substring(0, 10),
-        if (rappelActif) 'rappel_heures': rappelHeures,
-      });
+      final lignes = lignesEtapes(
+        base: {
+          'animal_id': _animalId!,
+          'nom': nom.text.trim(),
+          'type': type.text.trim().isEmpty ? null : type.text.trim(),
+          'description_maladie': descriptionMaladie.text.trim().isEmpty ? null : descriptionMaladie.text.trim(),
+          if (posologie.text.trim().isNotEmpty) 'posologie': posologie.text.trim(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        debut: date!, etapes: etapes, rappels: rappelActif, notes: notes.text,
+      );
+      // Étape(s) ajoutée(s) à une posologie existante : même groupe, numérotation suivie.
+      if (etapeDe != null) {
+        final g = await preparerEtapeSuivante(_animalId!, etapeDe, nouvelles: lignes.length);
+        for (var k = 0; k < lignes.length; k++) {
+          lignes[k]['groupe_id'] = g.id;
+          lignes[k]['notes'] = ['Phase ${g.existantes + k + 1}/${g.total}', if (notes.text.trim().isNotEmpty) notes.text.trim()]
+              .join(' — ');
+        }
+      }
+      // Modification : même groupe, les anciennes étapes sont remplacées.
+      final gid = groupe?.firstWhere((g) => (g['groupe_id'] ?? '').toString().isNotEmpty, orElse: () => {})['groupe_id'];
+      if (gid != null && lignes.length > 1) {
+        for (final l in lignes) { l['groupe_id'] = gid; }
+      }
+      await _supa.from('traitements').insert(lignes);
+      for (final g in groupe ?? const <Map<String, dynamic>>[]) {
+        await _supa.from('traitements').delete().eq('id', g['id']);
+      }
       await _loadHealthRecords();
     });
   }
 
-  void _showVisiteSheet({Map<String, dynamic>? prefill}) {
+  void _showVisiteSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? existant}) {
+    prefill ??= existant;
     final motif = TextEditingController(text: prefill?['motif'] ?? ''),
         veto = TextEditingController(text: prefill?['veterinaire'] ?? ''),
         diag = TextEditingController(text: prefill?['diagnostic'] ?? ''),
         notes = TextEditingController(text: prefill?['notes'] ?? '');
     DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
     final isFirstVisit = _visites.isEmpty;
-    _openSheet('Ajouter une visite', (ss) => [
+    _openSheet(existant != null ? 'Modifier la visite' : 'Ajouter une visite', (ss) => [
       _SFld(ctrl: motif, label: 'Motif', hint: 'Ex: Contrôle annuel, Blessure...'),
       _SFld(ctrl: veto, label: 'Vétérinaire', hint: 'Nom du vétérinaire'),
       _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d)),
@@ -2636,7 +2698,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
       controlerDatesSante(date: date);
-      await _supa.from('visites').insert({
+      await _enregistrerSante('visites', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'motif': motif.text.trim(),
@@ -2660,7 +2722,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     return (m.group(1)!, m.group(2)!.toLowerCase());
   }
 
-  void _showVermifugeSheet({Map<String, dynamic>? prefill, bool prefillDates = false}) {
+  void _showVermifugeSheet({Map<String, dynamic>? prefill, bool prefillDates = false, Map<String, dynamic>? existant}) {
+    if (existant != null) { prefill = existant; prefillDates = true; }
     final produit = TextEditingController(text: prefill?['produit'] ?? '');
     final dosage = TextEditingController(text: prefill?['dosage'] ?? '');
     final notes = TextEditingController(text: prefill?['notes'] ?? '');
@@ -2671,6 +2734,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     String frequenceUnite = parsedFreq?.$2 ?? 'mois';
     // Durée / rappels de prise + autres animaux (widgets/carnet/vermifuge_options.dart).
     final options = OptionsVermifuge();
+    if (existant != null) {
+      options.dureeJours = int.tryParse('${existant['duree_jours'] ?? existant['rappel_duree_jours'] ?? ''}') ?? 1;
+      options.rappel = existant['rappel_actif'] == true;
+      options.heures.addAll(((existant['rappel_heures'] as List?) ?? const []).map((h) => h.toString()));
+    }
 
     void recomputeRappel(StateSetter ss) {
       if (date == null) return;
@@ -2680,7 +2748,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ss(() => dateRappel = date!.add(Duration(days: days)));
     }
 
-    _openSheet('Ajouter un vermifuge', (ss) => [
+    _openSheet(existant != null ? 'Modifier le vermifuge' : 'Ajouter un vermifuge', (ss) => [
       _SFld(ctrl: produit, label: 'Produit', hint: 'Ex: Milbemax, Drontal...'),
       _SFld(ctrl: dosage, label: 'Dosage', hint: 'Ex: 1 comprimé'),
       _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeRappel(ss); }),
@@ -2689,8 +2757,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         onUniteChanged: (v) { ss(() => frequenceUnite = v); recomputeRappel(ss); }),
       PrisesVermifugeSection(options: options),
       const SizedBox(height: 10),
-      AutresAnimauxSection(animalId: _animalId!, options: options),
-      const SizedBox(height: 10),
+      if (existant == null) ...[
+        AutresAnimauxSection(animalId: _animalId!, options: options),
+        const SizedBox(height: 10),
+      ],
       // Calculée à partir de la date et de la fréquence : non modifiable.
       _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
@@ -2704,7 +2774,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final cibles = [_animalId!, ...options.autresAnimaux];
       final base = DateTime.now().millisecondsSinceEpoch;
       for (var i = 0; i < cibles.length; i++) {
-        await _supa.from('vermifuges').insert({
+        await _enregistrerSante('vermifuges', existant, {
           'id': '${base + i}',
           'animal_id': cibles[i],
           'produit': produit.text.trim(),
@@ -2717,8 +2787,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           if (date != null) ...options.colonnes(date!),
         });
       }
-      // Prochain rappel : un seul événement pour tous les animaux.
-      if (dateRappel != null) {
+      // Prochain rappel : un seul événement pour tous les animaux (à la création,
+      // ou si la date de rappel a changé).
+      if (dateRappel != null && (existant == null || existant['date_rappel']?.toString().substring(0, 10) != dateRappel!.toIso8601String().substring(0, 10))) {
         var noms = _nomCtrl.text;
         if (options.autresAnimaux.isNotEmpty) {
           try {
@@ -2735,7 +2806,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showAntiparasitaireSheet({Map<String, dynamic>? prefill, bool prefillDates = false}) {
+  void _showAntiparasitaireSheet({Map<String, dynamic>? prefill, bool prefillDates = false, Map<String, dynamic>? existant}) {
+    if (existant != null) { prefill = existant; prefillDates = true; }
     final produit = TextEditingController(text: prefill?['produit'] ?? '');
     final type = TextEditingController(text: prefill?['type'] ?? '');
     final notes = TextEditingController(text: prefill?['notes'] ?? '');
@@ -2753,7 +2825,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ss(() => dateRappel = date!.add(Duration(days: days)));
     }
 
-    _openSheet('Ajouter un antiparasitaire', (ss) => [
+    _openSheet(existant != null ? 'Modifier l\'antiparasitaire' : 'Ajouter un antiparasitaire', (ss) => [
       _SFld(ctrl: produit, label: 'Produit', hint: 'Ex: Frontline, Advantix...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Pipette, Collier, Spray...'),
       _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeRappel(ss); }),
@@ -2769,7 +2841,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final freqLabel = (n != null && n > 0)
           ? '$n ${frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}' : frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois'}'
           : null;
-      await _supa.from('antiparasitaires').insert({
+      await _enregistrerSante('antiparasitaires', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'produit': produit.text.trim(),
@@ -2790,20 +2862,21 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showAllergieSheet({Map<String, dynamic>? prefill}) {
+  void _showAllergieSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? existant}) {
+    prefill ??= existant;
     final desc = TextEditingController(text: prefill?['description'] ?? ''),
         type = TextEditingController(text: prefill?['type'] ?? ''),
         severite = TextEditingController(text: prefill?['severite'] ?? ''),
         notes = TextEditingController(text: prefill?['notes'] ?? '');
     DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
-    _openSheet('Ajouter une allergie', (ss) => [
+    _openSheet(existant != null ? 'Modifier l\'allergie' : 'Ajouter une allergie', (ss) => [
       _SFld(ctrl: desc, label: 'Description', hint: 'Ex: Allergie au pollen...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Alimentaire, Cutanée...'),
       _SFld(ctrl: severite, label: 'Sévérité', hint: 'Ex: Légère, Modérée, Sévère'),
       _SDate(label: 'Date de détection', date: date, onPicked: (d) => ss(() => date = d)),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
-      await _supa.from('allergies').insert({
+      await _enregistrerSante('allergies', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'description': desc.text.trim(),
@@ -2817,7 +2890,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showChirurgieSheet({Map<String, dynamic>? prefill}) {
+  void _showChirurgieSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? existant}) {
+    prefill ??= existant;
     final intitule = TextEditingController(text: prefill?['intitule'] ?? ''),
         clinique = TextEditingController(text: prefill?['clinique'] ?? ''),
         preop = TextEditingController(text: prefill?['protocole_preop'] ?? ''),
@@ -2843,7 +2917,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     ], () async {
       if (intitule.text.trim().isEmpty) throw const SaisieInvalide('Indiquez l\'intervention.');
       controlerDatesSante(date: date, statut: statut);
-      await _supa.from('chirurgies').insert({
+      await _enregistrerSante('chirurgies', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'type': type,
@@ -3443,6 +3517,11 @@ class _RecordTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onTap;
   final VoidCallback? onRappel;
+  /// Traitement : ajouter l'étape suivante (posologie progressive).
+  final VoidCallback? onEtape;
+  /// Modifier l'entrée (même formulaire qu'à la création) ; absent pour un
+  /// acte saisi par un vétérinaire (certifié).
+  final VoidCallback? onEdit;
 
   const _RecordTile({
     required this.title,
@@ -3451,6 +3530,8 @@ class _RecordTile extends StatelessWidget {
     required this.onDelete,
     this.onTap,
     this.onRappel,
+    this.onEtape,
+    this.onEdit,
   });
 
   @override
@@ -3475,6 +3556,22 @@ class _RecordTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (onEdit != null)
+            IconButton(
+              icon: Icon(Icons.edit_outlined, color: Colors.grey.shade600, size: 18),
+              tooltip: 'Modifier',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onEdit,
+            ),
+          if (onEtape != null)
+            IconButton(
+              icon: const Icon(Icons.playlist_add_outlined, color: Color(0xFF6E9E57), size: 20),
+              tooltip: 'Étape suivante (posologie progressive)',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onEtape,
+            ),
           if (onRappel != null)
             IconButton(
               icon: const Icon(Icons.add_alarm_outlined, color: Color(0xFF6E9E57), size: 18),
@@ -3680,106 +3777,6 @@ class _SDate extends StatelessWidget {
   }
 }
 
-// Rappels récurrents d'un traitement (ex: piqûre tous les 3 jours pendant 3
-// semaines), même fonctionnalité que côté éleveur.
-class _SRappelRecurrent extends StatelessWidget {
-  final bool actif;
-  final ValueChanged<bool> onActifChanged;
-  final TextEditingController frequenceCtrl;
-  final TextEditingController dureeCtrl;
-  final String dureeUnite;
-  final ValueChanged<String> onDureeUniteChanged;
-  final List<String> heures;
-  final VoidCallback onAddHeure;
-  final ValueChanged<String> onRemoveHeure;
-  const _SRappelRecurrent({
-    required this.actif,
-    required this.onActifChanged,
-    required this.frequenceCtrl,
-    required this.dureeCtrl,
-    required this.dureeUnite,
-    required this.onDureeUniteChanged,
-    required this.heures,
-    required this.onAddHeure,
-    required this.onRemoveHeure,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE4E7E2)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(
-              child: Text('Rappels récurrents',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade800))),
-          Switch(value: actif, activeThumbColor: const Color(0xFF6E9E57), onChanged: onActifChanged),
-        ]),
-        if (actif) ...[
-          const SizedBox(height: 8),
-          Row(children: [
-            const Text('Répéter tous les', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(width: 8),
-            SizedBox(
-                width: 50,
-                child: TextField(
-                  controller: frequenceCtrl,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                      isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: OutlineInputBorder()),
-                )),
-            const SizedBox(width: 8),
-            const Text('jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-          ]),
-          const SizedBox(height: 10),
-          Row(children: [
-            const Text('Pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(width: 8),
-            SizedBox(
-                width: 50,
-                child: TextField(
-                  controller: dureeCtrl,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(
-                      isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: OutlineInputBorder()),
-                )),
-            const SizedBox(width: 8),
-            DropdownButton<String>(
-              value: dureeUnite,
-              isDense: true,
-              items: const [
-                DropdownMenuItem(value: 'jours', child: Text('jours', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                DropdownMenuItem(value: 'semaines', child: Text('semaines', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-              ],
-              onChanged: (v) { if (v != null) onDureeUniteChanged(v); },
-            ),
-          ]),
-          const SizedBox(height: 10),
-          const Text('Heures de rappel', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-          const SizedBox(height: 6),
-          Wrap(spacing: 6, runSpacing: 6, children: [
-            ...heures.map((h) => Chip(
-                label: Text(h, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                onDeleted: () => onRemoveHeure(h),
-                backgroundColor: const Color(0xFF6E9E57).withOpacity(0.12))),
-            ActionChip(
-                avatar: const Icon(Icons.add, size: 16),
-                label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                onPressed: onAddHeure),
-          ]),
-        ],
-      ]),
-    );
-  }
-}
 
 // ── Recherche d'un contact PetsMatch (Contacts urgence) ────────────────────────
 // Alternative à la saisie manuelle : cherche un utilisateur PetsMatch par

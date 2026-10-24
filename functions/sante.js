@@ -671,13 +671,19 @@ exports.sendTraitementReminders = functions
             const frequence = row.rappel_frequence_jours || 1;
             if (joursEcoules < 0 || joursEcoules % frequence !== 0) continue;
 
-            const heureDue = row.rappel_heures.find((h) => {
+            const idxDue = row.rappel_heures.findIndex((h) => {
                 const [hh, mm] = String(h).split(":").map((v) => parseInt(v, 10));
                 if (Number.isNaN(hh) || Number.isNaN(mm)) return false;
                 const minutesAvantRappel = hh * 60 + mm - PREAVIS_MIN;
                 return minutesAvantRappel >= bucketStart && minutesAvantRappel < bucketStart + 15;
             });
-            if (!heureDue) continue;
+            if (idxDue < 0) continue;
+            const heureDue = row.rappel_heures[idxDue];
+            // Quantité de CETTE prise (rappel_quantites, alignée sur les heures) :
+            // « 1 cp » le matin, « 1/2 cp » le soir ; sinon la posologie générale.
+            const quantite = Array.isArray(row.rappel_quantites) && row.rappel_quantites[idxDue] ?
+                String(row.rappel_quantites[idxDue]).trim() : "";
+            const dose = quantite || row.posologie || "";
 
             const prefixe = row._table === "vermifuges" ? "vermifuge" : "traitement";
             const dedupKey = `${prefixe}_${row.id}_${todayStr}_${heureDue}`;
@@ -699,25 +705,27 @@ exports.sendTraitementReminders = functions
             if (!profileId && animal.uid_eleveur === uid && animal.profile_id) profileId = animal.profile_id;
 
             const nomSoin = row.nom || "Traitement";
-            const cle = [uid, profileId || "", row._table, nomSoin.toLowerCase(), row.posologie || "", heureDue]
+            const cle = [uid, profileId || "", row._table, nomSoin.toLowerCase(), dose, heureDue]
                 .join("|");
             if (!groupes.has(cle)) {
                 groupes.set(cle, {
-                    uid, profileId, animal, nomSoin, posologie: row.posologie, heureDue, table: row._table, items: [],
+                    uid, profileId, animal, nomSoin, posologie: dose, quantite, heureDue, table: row._table, items: [],
                 });
             }
             groupes.get(cle).items.push({row, dedupKey, nomAnimal: animal.nom || "Votre animal"});
         }
 
         for (const g of groupes.values()) {
-            const {uid, profileId, animal, nomSoin, posologie, heureDue, table, items} = g;
+            const {uid, profileId, animal, nomSoin, posologie, quantite, heureDue, table, items} = g;
             const noms = items.map((i) => i.nomAnimal);
             const plusieurs = items.length > 1;
             const listeNoms = noms.length > 4 ?
                 `${noms.slice(0, 4).join(", ")} +${noms.length - 4}` : noms.join(", ");
             const premier = String(items[0].row.animal_id);
             const title = `💊 Dans ${PREAVIS_MIN} min — ${plusieurs ? `${items.length} animaux` : noms[0]}`;
-            const body = `${nomSoin} à ${heureDue} pour ${listeNoms}` + (posologie ? ` — ${posologie}` : "");
+            const body = quantite ?
+                `${quantite} de ${nomSoin} à ${heureDue} pour ${listeNoms}` :
+                `${nomSoin} à ${heureDue} pour ${listeNoms}` + (posologie ? ` — ${posologie}` : "");
 
             const pushed = await sendPush(uid, title, body, {type: "sante", animalId: premier, table}, {profileId});
             if (pushed) sent++;
@@ -737,7 +745,7 @@ exports.sendTraitementReminders = functions
 
             // Tâche agenda cochable (une pour le groupe).
             try {
-                const titre = `💊 ${nomSoin} — ${plusieurs ? listeNoms : noms[0]}`;
+                const titre = `💊 ${quantite ? `${quantite} de ` : ""}${nomSoin} — ${plusieurs ? listeNoms : noms[0]}`;
                 const notes = [posologie || null, plusieurs ? `Animaux : ${noms.join(", ")}` : null]
                     .filter(Boolean).join(" — ") || null;
                 const inserted = await supabaseInsertReturning("taches_elevage", [{

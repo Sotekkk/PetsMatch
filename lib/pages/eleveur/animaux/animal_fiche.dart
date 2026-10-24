@@ -17,6 +17,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:PetsMatch/utils/controle_dates.dart';
+import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/utils/repartition.dart';
@@ -5986,7 +5987,38 @@ class _SanteListState extends State<_SanteList> {
     }
   }
 
-  void _edit(Map<String, dynamic> data) {
+  void _edit(Map<String, dynamic> data) async {
+    // Vaccins, vermifuges, antiparasitaires, traitements : même formulaire
+    // qu'à la création (dates, fréquence, prises, étapes…).
+    Widget? dialogue;
+    switch (widget.collection) {
+      case 'vaccinations':
+        dialogue = _AddVaccinDialog(animalId: widget.animalId, espece: widget.espece, existant: data);
+      case 'vermifuges':
+        dialogue = AddVermifugeDialog(animalId: widget.animalId, existant: data);
+      case 'antiparasitaires':
+        dialogue = AddAntiparasitaireDialog(animalId: widget.animalId, existant: data);
+      case 'traitements':
+        var groupe = [data];
+        final gid = data['groupe_id']?.toString();
+        if (gid != null && gid.isNotEmpty) {
+          try {
+            final rows = await Supabase.instance.client.from('traitements').select()
+                .eq('animal_id', widget.animalId).eq('groupe_id', gid);
+            groupe = List<Map<String, dynamic>>.from(rows as List)
+              ..sort((a, b) => (a['date'] ?? '').toString().compareTo((b['date'] ?? '').toString()));
+          } catch (_) {}
+        }
+        dialogue = _AddTraitementDialog(animalId: widget.animalId, groupe: groupe);
+    }
+    if (dialogue != null) {
+      if (!mounted) return;
+      final d = dialogue;
+      await showDialog(context: context, builder: (_) => d);
+      _refresh();
+      return;
+    }
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
@@ -6038,6 +6070,13 @@ class _SanteListState extends State<_SanteList> {
         }
       },
     );
+    _refresh();
+  }
+
+  /// Traitement : étape suivante d'une posologie progressive.
+  Future<void> _addEtape(Map<String, dynamic> data) async {
+    await showDialog(context: context,
+        builder: (_) => _AddTraitementDialog(animalId: widget.animalId, etapeDe: data));
     _refresh();
   }
 
@@ -6098,6 +6137,8 @@ class _SanteListState extends State<_SanteList> {
                           onEdit: canEdit ? () => _edit(d) : null,
                           onRappel: (!widget.vetMode && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
                               ? () => _addRappel(d) : null,
+                          onEtape: (canEdit && widget.canWrite && widget.collection == 'traitements')
+                              ? () => _addEtape(d) : null,
                           collection: widget.collection,
                           canDelete: canDelete,
                         );
@@ -6364,10 +6405,12 @@ class _SanteCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
   final VoidCallback? onRappel;
+  /// Traitement : ajouter l'étape suivante (posologie progressive).
+  final VoidCallback? onEtape;
   final String? collection;
   final bool canDelete;
   const _SanteCard({required this.title, required this.data, required this.icon,
-      required this.onDelete, this.onTap, this.onEdit, this.onRappel, this.collection, this.canDelete = true});
+      required this.onDelete, this.onTap, this.onEdit, this.onRappel, this.onEtape, this.collection, this.canDelete = true});
 
   static const _overdueTables = {'vaccinations', 'vermifuges', 'antiparasitaires'};
 
@@ -6647,6 +6690,10 @@ class _SanteCard extends StatelessWidget {
             ],
           ])),
           const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 18),
+          if (onEtape != null)
+            IconButton(icon: const Icon(Icons.playlist_add_outlined, size: 20, color: Color(0xFF0C5C6C)),
+                tooltip: 'Étape suivante (posologie progressive)',
+                onPressed: onEtape, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
           if (onRappel != null)
             IconButton(icon: const Icon(Icons.add_alarm_outlined, size: 18, color: Color(0xFF0C5C6C)),
                 tooltip: 'Ajouter un rappel (même vaccin)',
@@ -6708,7 +6755,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
   bool _rappelActif = false;
   late final TextEditingController _rappelFrequenceCtrl;
   late final TextEditingController _rappelDureeCtrl;
-  List<String> _rappelHeures = [];
+  List<PriseTraitement> _prises = []; // heure + quantité de chaque prise
 
   bool get _isTraitement => widget.collection == 'traitements';
 
@@ -6726,8 +6773,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     _rappelActif = widget.data['rappel_actif'] == true;
     _rappelFrequenceCtrl = TextEditingController(text: (widget.data['rappel_frequence_jours'] ?? 1).toString());
     _rappelDureeCtrl = TextEditingController(text: (widget.data['rappel_duree_jours'] ?? 7).toString());
-    final heuresRaw = widget.data['rappel_heures'];
-    _rappelHeures = heuresRaw is List ? heuresRaw.map((h) => h.toString()).toList() : <String>[];
+    _prises = prisesDepuis(widget.data);
   }
 
   @override
@@ -6736,13 +6782,6 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     _rappelFrequenceCtrl.dispose();
     _rappelDureeCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _addHeure() async {
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-    if (t == null) return;
-    final s = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-    if (!_rappelHeures.contains(s)) setState(() { _rappelHeures = [..._rappelHeures, s]..sort(); });
   }
 
   Widget _buildRappelSection() => Container(
@@ -6783,17 +6822,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
           const Text('jours', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
         ]),
         const SizedBox(height: 10),
-        const Text('Heures de rappel', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-        const SizedBox(height: 6),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          ..._rappelHeures.map((h) => Chip(
-              label: Text(h, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              onDeleted: () => setState(() => _rappelHeures = _rappelHeures.where((x) => x != h).toList()),
-              backgroundColor: const Color(0xFF6E9E57).withOpacity(0.12))),
-          ActionChip(avatar: const Icon(Icons.add, size: 16),
-              label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              onPressed: _addHeure),
-        ]),
+        PrisesTraitementEditor(prises: _prises, onChanged: (l) => setState(() => _prises = l)),
       ],
     ]),
   );
@@ -6855,7 +6884,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
         return;
       }
     }
-    if (_isTraitement && _rappelActif && _rappelHeures.isEmpty) {
+    if (_isTraitement && _rappelActif && _prises.isEmpty) {
       setState(() => _error = 'Ajoute au moins une heure de rappel.');
       return;
     }
@@ -6887,13 +6916,18 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
           final dureeJours = int.tryParse(_rappelDureeCtrl.text) ?? 7;
           updates['rappel_frequence_jours'] = frequenceJours;
           updates['rappel_duree_jours'] = dureeJours;
-          updates['rappel_fin'] = _date.add(Duration(days: dureeJours)).toIso8601String();
-          updates['rappel_heures'] = _rappelHeures;
+          // Fin = dernier jour inclus (début + durée − 1), identique pour la
+          // fiche et les rappels : le total des jours correspond aux dates.
+          final fin = DateTime(_date.year, _date.month, _date.day).add(Duration(days: dureeJours - 1));
+          updates['rappel_fin'] = fin.toIso8601String();
+          updates['date_fin'] = fin.toIso8601String();
+          updates.addAll(colonnesPrises(_prises));
         } else {
           updates['rappel_frequence_jours'] = null;
           updates['rappel_duree_jours'] = null;
           updates['rappel_fin'] = null;
           updates['rappel_heures'] = null;
+          updates['rappel_quantites'] = null;
         }
       }
       final id = widget.data['id'].toString();
@@ -7433,8 +7467,10 @@ class _AddVaccinDialog extends StatefulWidget {
   final String? prefillVaccin;
   final String? prefillVeto;
   final String? prefillCategorie;
+  /// Modification : entrée existante (même formulaire qu'à la création).
+  final Map<String, dynamic>? existant;
   const _AddVaccinDialog({required this.animalId, this.espece, this.source = 'owner', this.vetId, this.vetName,
-      this.prefillVaccin, this.prefillVeto, this.prefillCategorie});
+      this.prefillVaccin, this.prefillVeto, this.prefillCategorie, this.existant});
   @override State<_AddVaccinDialog> createState() => _AddVaccinDialogState();
 }
 class _AddVaccinDialogState extends State<_AddVaccinDialog> {
@@ -7498,10 +7534,22 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     if (widget.prefillVaccin != null) _vaccin.text = widget.prefillVaccin!;
     if (widget.prefillVeto != null) _veto.text = widget.prefillVeto!;
     _categorie = widget.prefillCategorie;
+    final e = widget.existant;
+    if (e != null) {
+      _vaccin.text = (e['vaccin'] ?? '').toString();
+      _lot.text = (e['lot'] ?? '').toString();
+      _veto.text = (e['veterinaire'] ?? '').toString();
+      _date = DateTime.tryParse(e['date']?.toString() ?? '');
+      _validite = DateTime.tryParse(e['date_validite_debut']?.toString() ?? '');
+      _rappel = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+      final c = e['categorie']?.toString();
+      _categorie = _typesDisponibles.any((t) => t.$1 == c) ? c : null;
+    }
   }
 
   @override
-  Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vaccin', fields: [
+  Widget build(BuildContext context) => _BaseDialog(
+      title: widget.existant != null ? 'Modifier le vaccin' : 'Ajouter un vaccin', fields: [
     _DDrop('Type de vaccin', _categorie, _typesDisponibles.map((t) => t.$1).toList(), _onCategorieChanged),
     _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot),
     _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
@@ -7512,7 +7560,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     if (_vaccin.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du vaccin.');
     controlerDatesSante(date: _date, rappel: _rappel, validite: _validite);
     final id = DateTime.now().microsecondsSinceEpoch.toString();
-    await Supabase.instance.client.from('vaccinations').insert({
+    final ligne = <String, dynamic>{
       'id': id, 'animal_id': widget.animalId,
       'vaccin': _vaccin.text.trim(), 'lot': _lot.text.trim(), 'veterinaire': _veto.text.trim(),
       'date': _date!.toIso8601String(),
@@ -7521,7 +7569,17 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       'categorie': _categorie,
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
-    });
+    };
+    final e = widget.existant;
+    if (e != null) {
+      await _majSante('vaccinations', e, ligne);
+      final avant = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+      if (_rappel != null && (avant == null || !DateUtils.isSameDay(avant, _rappel))) {
+        await _scheduleRappelAgenda(animalId: widget.animalId, dateRappel: _rappel!, titre: 'Rappel vaccin — ${_vaccin.text.trim()}');
+      }
+      return true;
+    }
+    await Supabase.instance.client.from('vaccinations').insert(ligne);
     if (_rappel != null) {
       await _scheduleRappelAgenda(
         animalId: widget.animalId,
@@ -7546,12 +7604,30 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   });
 }
 
+/// Modification d'une entrée du carnet : mêmes colonnes que l'ajout, sans
+/// identifiant / animal / source (inchangés).
+Future<void> _majSante(String table, Map existant, Map<String, dynamic> ligne) async {
+  final maj = {...ligne}..remove('id')..remove('animal_id')..remove('source')..remove('vet_id');
+  await Supabase.instance.client.from(table).update(maj).eq('id', existant['id']);
+}
+
+/// « 3 mois » / « 2 semaines » / « 10 jours » → (valeur, unité du formulaire).
+(String, String)? _frequenceDe(Object? f) {
+  final m = RegExp(r'^(\d+)\s*(jour|semaine|mois)', caseSensitive: false).firstMatch((f ?? '').toString());
+  return m == null ? null : (m.group(1)!, m.group(2)!.toLowerCase());
+}
+
 class _AddTraitementDialog extends StatefulWidget {
   final String animalId;
   final String source;
   final String? vetId;
   final String? vetName;
-  const _AddTraitementDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
+  /// Étape suivante d'une posologie progressive : pré-remplie depuis cette
+  /// étape, enregistrée dans le même groupe (notes « Phase i/n »).
+  final Map<String, dynamic>? etapeDe;
+  /// Modification : toutes les étapes du traitement (même groupe).
+  final List<Map<String, dynamic>>? groupe;
+  const _AddTraitementDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName, this.etapeDe, this.groupe});
   @override State<_AddTraitementDialog> createState() => _AddTraitementDialogState();
 }
 class _AddTraitementDialogState extends State<_AddTraitementDialog> {
@@ -7562,120 +7638,109 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
   DateTime? _date;
   DateTime? _dateFin;
 
-  // ── Rappels récurrents (ex: piqûre tous les 3 jours pendant 3 semaines) ──
-  bool _rappelActif = false;
-  final _rappelFrequenceCtrl = TextEditingController(text: '1');
-  final _rappelDureeCtrl = TextEditingController(text: '7');
-  String _rappelDureeUnite = 'jours'; // 'jours' | 'semaines'
-  final List<String> _rappelHeures = [];
+  // ── Posologie en étapes + rappels à chaque prise ──
+  bool _rappelActif = true;
+  List<EtapeTraitement> _etapes = [EtapeTraitement()];
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.groupe;
+    if (g != null && g.isNotEmpty) {
+      final p0 = g.first;
+      _nom.text = (p0['nom'] ?? '').toString();
+      if (g.length == 1) _posologie.text = (p0['posologie'] ?? '').toString();
+      _notes.text = notesTraitement(p0);
+      if (['antiparasitaire', 'medicament', 'autre'].contains(p0['type'])) _type = p0['type'] as String;
+      _date = DateTime.tryParse(p0['date']?.toString() ?? '');
+      _rappelActif = g.any((x) => x['rappel_actif'] == true);
+      int jours(Map x) {
+        final d = DateTime.tryParse(x['date']?.toString() ?? ''), f = DateTime.tryParse(x['date_fin']?.toString() ?? '');
+        if (d != null && f != null) return DateTime(f.year, f.month, f.day).difference(DateTime(d.year, d.month, d.day)).inDays + 1;
+        return int.tryParse('${x['rappel_duree_jours'] ?? ''}') ?? 7;
+      }
+      _etapes = [for (final x in g) EtapeTraitement(dureeJours: jours(x).clamp(1, 3650),
+          frequenceJours: int.tryParse('${x['rappel_frequence_jours'] ?? ''}') ?? 1, prises: prisesDepuis(x))];
+    }
+    final e = widget.etapeDe;
+    if (e != null) {
+      _nom.text = (e['nom'] ?? '').toString();
+      if (['antiparasitaire', 'medicament', 'autre'].contains(e['type'])) _type = e['type'] as String;
+      _date = debutEtapeSuivante(e);
+      _rappelActif = e['rappel_actif'] == true;
+      _etapes = [EtapeTraitement(dureeJours: 3,
+          frequenceJours: int.tryParse('${e['rappel_frequence_jours'] ?? ''}') ?? 1, prises: prisesDepuis(e))];
+    }
+  }
 
   @override
   void dispose() {
-    _rappelFrequenceCtrl.dispose();
-    _rappelDureeCtrl.dispose();
     _notes.dispose();
     super.dispose();
   }
 
-  Future<void> _addHeure() async {
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-    if (t == null) return;
-    final s = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
-    if (!_rappelHeures.contains(s)) setState(() { _rappelHeures.add(s); _rappelHeures.sort(); });
-  }
-
-  Widget _buildRappelSection() => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF8F8F6),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFE4E7E2)),
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Expanded(child: Text('Rappels récurrents',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade800))),
-        Switch(value: _rappelActif, activeThumbColor: const Color(0xFF6E9E57),
-            onChanged: (v) => setState(() => _rappelActif = v)),
-      ]),
-      if (_rappelActif) ...[
-        const SizedBox(height: 8),
-        Row(children: [
-          const Text('Répéter tous les', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-          const SizedBox(width: 8),
-          SizedBox(width: 50, child: TextFormField(controller: _rappelFrequenceCtrl,
-              keyboardType: TextInputType.number, textAlign: TextAlign.center,
-              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8),
-                  border: OutlineInputBorder()))),
-          const SizedBox(width: 8),
-          const Text('jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          const Text('Pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-          const SizedBox(width: 8),
-          SizedBox(width: 50, child: TextFormField(controller: _rappelDureeCtrl,
-              keyboardType: TextInputType.number, textAlign: TextAlign.center,
-              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8),
-                  border: OutlineInputBorder()))),
-          const SizedBox(width: 8),
-          DropdownButton<String>(value: _rappelDureeUnite, isDense: true,
-              items: const [DropdownMenuItem(value: 'jours', child: Text('jours', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                  DropdownMenuItem(value: 'semaines', child: Text('semaines', style: TextStyle(fontFamily: 'Galey', fontSize: 13)))],
-              onChanged: (v) => setState(() => _rappelDureeUnite = v!)),
-        ]),
-        const SizedBox(height: 10),
-        const Text('Heures de rappel', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-        const SizedBox(height: 6),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          ..._rappelHeures.map((h) => Chip(
-              label: Text(h, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              onDeleted: () => setState(() => _rappelHeures.remove(h)),
-              backgroundColor: const Color(0xFF6E9E57).withOpacity(0.12))),
-          ActionChip(avatar: const Icon(Icons.add, size: 16),
-              label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              onPressed: _addHeure),
-        ]),
-      ],
+  Widget _buildEtapesSection() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(children: [
+      Expanded(child: Text('Rappel à chaque prise',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade800))),
+      Switch(value: _rappelActif, activeThumbColor: const Color(0xFF6E9E57),
+          onChanged: (v) => setState(() => _rappelActif = v)),
     ]),
-  );
+    EtapesTraitementEditor(etapes: _etapes, debut: _date, onChanged: () => setState(() {})),
+  ]);
 
   @override
-  Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un traitement', fields: [
+  Widget build(BuildContext context) => _BaseDialog(
+      title: widget.groupe != null ? 'Modifier le traitement' : widget.etapeDe != null ? 'Étape suivante' : 'Ajouter un traitement', fields: [
     _DDrop('Type', _type, ['antiparasitaire', 'medicament', 'autre'], (v) => setState(() => _type = v!)),
-    _DF('Nom du produit *', _nom), _DF('Posologie', _posologie),
+    _DF('Nom du produit *', _nom), _DF('Posologie (résumé, facultatif)', _posologie),
     _DD('Date début *', _date, (d) => setState(() => _date = d)),
-    _DD('Date fin', _dateFin, (d) => setState(() => _dateFin = d)),
-    _DCustom(_buildRappelSection()),
+    _DCustom(_buildEtapesSection()),
     _DF('Commentaires', _notes, maxLines: 3),
   ], onSave: () async {
     if (_nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du produit.');
-    controlerDatesSante(date: _date, fin: _dateFin);
-    if (_rappelActif && _rappelHeures.isEmpty) throw const SaisieInvalide('Ajoutez au moins une heure de rappel.');
-    final id = DateTime.now().microsecondsSinceEpoch.toString();
-    final frequenceJours = int.tryParse(_rappelFrequenceCtrl.text) ?? 1;
-    final dureeValeur = int.tryParse(_rappelDureeCtrl.text) ?? 7;
-    final dureeJours = _rappelDureeUnite == 'semaines' ? dureeValeur * 7 : dureeValeur;
-    final rappelFin = _rappelActif ? _date!.add(Duration(days: dureeJours)) : null;
-    await Supabase.instance.client.from('traitements').insert({
-      'id': id, 'animal_id': widget.animalId,
-      'type': _type, 'nom': _nom.text.trim(), 'posologie': _posologie.text.trim(),
-      'date': _date!.toIso8601String(),
-      'date_fin': _dateFin?.toIso8601String(),
-      if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
-      'source': widget.source,
-      if (widget.vetId != null) 'vet_id': widget.vetId,
-      'rappel_actif': _rappelActif,
-      if (_rappelActif) 'rappel_frequence_jours': frequenceJours,
-      if (_rappelActif) 'rappel_duree_jours': dureeJours,
-      if (_rappelActif) 'rappel_fin': rappelFin!.toIso8601String(),
-      if (_rappelActif) 'rappel_heures': _rappelHeures,
-    });
+    controlerDatesSante(date: _date, fin: finTraitement(_date, _etapes));
+    if (_etapes.isEmpty) throw const SaisieInvalide('Ajoutez au moins une étape.');
+    if (_rappelActif && _etapes.any((e) => e.prises.isEmpty)) {
+      throw const SaisieInvalide('Ajoutez au moins une prise à chaque étape (ou désactivez les rappels).');
+    }
+    final lignes = lignesEtapes(
+      base: {
+        'animal_id': widget.animalId, 'type': _type, 'nom': _nom.text.trim(),
+        if (_posologie.text.trim().isNotEmpty) 'posologie': _posologie.text.trim(),
+        'source': widget.source,
+        if (widget.vetId != null) 'vet_id': widget.vetId,
+      },
+      debut: _date!, etapes: _etapes, rappels: _rappelActif, notes: _notes.text,
+    );
+    // Étape(s) ajoutée(s) à une posologie existante : même groupe, numérotation suivie.
+    if (widget.etapeDe != null) {
+      final g = await preparerEtapeSuivante(widget.animalId, widget.etapeDe!, nouvelles: lignes.length);
+      for (var k = 0; k < lignes.length; k++) {
+        lignes[k]['groupe_id'] = g.id;
+        lignes[k]['notes'] = ['Phase ${g.existantes + k + 1}/${g.total}', if (_notes.text.trim().isNotEmpty) _notes.text.trim()]
+            .join(' — ');
+      }
+    }
+    // Modification : même groupe, les anciennes étapes sont remplacées.
+    final ancien = widget.groupe;
+    if (ancien != null) {
+      final gid = ancien.map((x) => (x['groupe_id'] ?? '').toString()).firstWhere((x) => x.isNotEmpty, orElse: () => '');
+      if (gid.isNotEmpty && lignes.length > 1) {
+        for (final l in lignes) { l['groupe_id'] = gid; }
+      }
+      await Supabase.instance.client.from('traitements').insert(lignes);
+      for (final x in ancien) {
+        await Supabase.instance.client.from('traitements').delete().eq('id', x['id']);
+      }
+      return true;
+    }
+    await Supabase.instance.client.from('traitements').insert(lignes);
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'traitement', dateActe: _date!,
       intervenant: widget.vetName ?? '',
-      description: '${_nom.text.trim()}${_posologie.text.trim().isNotEmpty ? ' — ${_posologie.text.trim()}' : ''}',
-      sourceTable: 'traitements', sourceId: id,
+      description: '${_nom.text.trim()} — ${_etapes.map((e) => e.libelle()).join(', puis ')}',
+      sourceTable: 'traitements', sourceId: lignes.first['id'] as String,
     );
     if (widget.vetId != null) {
       try {
@@ -7802,8 +7867,10 @@ class AddVermifugeDialog extends StatefulWidget {
   final String? prefillDosage;
   final String? prefillFrequenceValeur;
   final String? prefillFrequenceUnite;
+  /// Modification : entrée existante (même formulaire qu'à la création).
+  final Map<String, dynamic>? existant;
   const AddVermifugeDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName,
-      this.prefillProduit, this.prefillDosage, this.prefillFrequenceValeur, this.prefillFrequenceUnite});
+      this.prefillProduit, this.prefillDosage, this.prefillFrequenceValeur, this.prefillFrequenceUnite, this.existant});
   @override State<AddVermifugeDialog> createState() => AddVermifugeDialogState();
 }
 class AddVermifugeDialogState extends State<AddVermifugeDialog> {
@@ -7815,6 +7882,24 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
   DateTime? _date, _dateRappel;
   /// Durée / rappels de prise + autres animaux (widgets/carnet/vermifuge_options.dart).
   final _options = OptionsVermifuge();
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existant;
+    if (e != null) {
+      _produit.text = (e['produit'] ?? '').toString();
+      _dosage.text = (e['dosage'] ?? '').toString();
+      _notes.text = (e['notes'] ?? '').toString();
+      final f = _frequenceDe(e['frequence']);
+      if (f != null) { _frequenceValeur.text = f.$1; _frequenceUnite = f.$2; }
+      _date = DateTime.tryParse(e['date']?.toString() ?? '');
+      _dateRappel = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+      _options.dureeJours = int.tryParse('${e['duree_jours'] ?? e['rappel_duree_jours'] ?? ''}') ?? 1;
+      _options.rappel = e['rappel_actif'] == true;
+      _options.heures.addAll(((e['rappel_heures'] as List?) ?? const []).map((h) => h.toString()));
+    }
+  }
 
   String? get _frequenceLabel {
     final n = int.tryParse(_frequenceValeur.text.trim());
@@ -7833,7 +7918,8 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vermifuge', fields: [
+  Widget build(BuildContext context) => _BaseDialog(
+      title: widget.existant != null ? 'Modifier le vermifuge' : 'Ajouter un vermifuge', fields: [
     _DF('Produit *', _produit),
     _DF('Dosage', _dosage),
     _DD('Date *', _date, (d) { setState(() => _date = d); _recomputeRappel(); }),
@@ -7862,7 +7948,7 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
     ])),
     _DCustom(PrisesVermifugeSection(options: _options)),
     // Saisie groupée : réservée au propriétaire (pas au vétérinaire).
-    if (widget.vetId == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
+    if (widget.vetId == null && widget.existant == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
     // Calculé à partir de la date et de la fréquence : non modifiable.
     _DLecture('Prochain rappel (calculé)',
         _dateRappel != null ? DateFormat('dd/MM/yyyy').format(_dateRappel!) : 'Selon la date et la fréquence'),
@@ -7873,6 +7959,21 @@ class AddVermifugeDialogState extends State<AddVermifugeDialog> {
     if (_options.erreur != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_options.erreur!)));
       return false;
+    }
+    final e = widget.existant;
+    if (e != null) {
+      await _majSante('vermifuges', e, {
+        'produit': _produit.text.trim(), 'dosage': _dosage.text.trim(),
+        'date': _date!.toIso8601String(), 'date_rappel': _dateRappel?.toIso8601String(),
+        'frequence': _frequenceLabel, 'notes': _notes.text.trim(),
+        ..._options.colonnes(_date!),
+        if (!_options.rappel) ...{'rappel_heures': null, 'rappel_fin': null},
+      });
+      final avant = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+      if (_dateRappel != null && (avant == null || !DateUtils.isSameDay(avant, _dateRappel))) {
+        await _scheduleRappelAgenda(animalId: widget.animalId, dateRappel: _dateRappel!, titre: 'Rappel vermifuge — ${_produit.text.trim()}');
+      }
+      return true;
     }
     final cibles = [widget.animalId, ..._options.autresAnimaux];
     final base = DateTime.now().microsecondsSinceEpoch;
@@ -7927,8 +8028,10 @@ class AddAntiparasitaireDialog extends StatefulWidget {
   final String? prefillType;
   final String? prefillFrequenceValeur;
   final String? prefillFrequenceUnite;
+  /// Modification : entrée existante (même formulaire qu'à la création).
+  final Map<String, dynamic>? existant;
   const AddAntiparasitaireDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName,
-      this.prefillProduit, this.prefillType, this.prefillFrequenceValeur, this.prefillFrequenceUnite});
+      this.prefillProduit, this.prefillType, this.prefillFrequenceValeur, this.prefillFrequenceUnite, this.existant});
   @override State<AddAntiparasitaireDialog> createState() => AddAntiparasitaireDialogState();
 }
 class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
@@ -7940,6 +8043,21 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
   DateTime? _date, _dateRappel;
   /// Saisie groupée « autres animaux » — même bloc que le vermifuge.
   final _options = OptionsVermifuge();
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existant;
+    if (e != null) {
+      _produit.text = (e['produit'] ?? '').toString();
+      _notes.text = (e['notes'] ?? '').toString();
+      if (['pipette', 'collier', 'comprimé', 'spray', 'autre'].contains(e['type'])) _type = e['type'] as String;
+      final f = _frequenceDe(e['frequence']);
+      if (f != null) { _frequenceValeur.text = f.$1; _frequenceUnite = f.$2; }
+      _date = DateTime.tryParse(e['date']?.toString() ?? '');
+      _dateRappel = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+    }
+  }
 
   String get _frequenceLabel {
     final n = int.tryParse(_frequenceValeur.text.trim()) ?? 1;
@@ -7957,7 +8075,8 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un antiparasitaire', fields: [
+  Widget build(BuildContext context) => _BaseDialog(
+      title: widget.existant != null ? 'Modifier l\'antiparasitaire' : 'Ajouter un antiparasitaire', fields: [
     _DDrop('Type', _type, ['pipette', 'collier', 'comprimé', 'spray', 'autre'], (v) => setState(() => _type = v!)),
     _DF('Produit *', _produit),
     _DD('Date application *', _date, (d) { setState(() => _date = d); _recomputeRappel(); }),
@@ -7985,7 +8104,7 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
     ])),
     // Saisie groupée : réservée au propriétaire (pas au vétérinaire).
-    if (widget.vetId == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
+    if (widget.vetId == null && widget.existant == null) _DCustom(AutresAnimauxSection(animalId: widget.animalId, options: _options)),
     // Calculé à partir de la date et de la fréquence : non modifiable.
     _DLecture('Prochain rappel (calculé)',
         _dateRappel != null ? DateFormat('dd/MM/yyyy').format(_dateRappel!) : 'Selon la date et la fréquence'),
@@ -7993,6 +8112,19 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
   ], onSave: () async {
     if (_produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
     controlerDatesSante(date: _date, rappel: _dateRappel);
+    final e = widget.existant;
+    if (e != null) {
+      await _majSante('antiparasitaires', e, {
+        'produit': _produit.text.trim(), 'type': _type,
+        'date': _date!.toIso8601String(), 'date_rappel': _dateRappel?.toIso8601String(),
+        'frequence': _frequenceLabel, 'notes': _notes.text.trim(),
+      });
+      final avant = DateTime.tryParse(e['date_rappel']?.toString() ?? '');
+      if (_dateRappel != null && (avant == null || !DateUtils.isSameDay(avant, _dateRappel))) {
+        await _scheduleRappelAgenda(animalId: widget.animalId, dateRappel: _dateRappel!, titre: 'Rappel antiparasitaire — ${_produit.text.trim()}');
+      }
+      return true;
+    }
     final cibles = [widget.animalId, ..._options.autresAnimaux];
     final base = DateTime.now().microsecondsSinceEpoch;
     for (var i = 0; i < cibles.length; i++) {
