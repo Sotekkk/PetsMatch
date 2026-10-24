@@ -251,8 +251,7 @@ function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espec
         { key: 'date', label: 'Date', required: true }, { key: 'date_fin', label: 'Date de fin' },
         { key: 'date_rappel', label: 'Date de rappel' }, { key: 'date_validite_debut', label: 'Date de validité' },
       ]);
-      if (erreurs.length) { alert(erreurs.join('
-')); return; }
+      if (erreurs.length) { alert(erreurs.join(' ')); return; }
     }
     setSaving(true);
     const cibles = table === 'vermifuges' ? [animalId, ...optsVermifuge.autres] : [animalId];
