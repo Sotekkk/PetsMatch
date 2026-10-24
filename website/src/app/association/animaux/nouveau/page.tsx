@@ -1,7 +1,7 @@
 'use client';
 
 import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
-import { poidsKg } from '@/lib/poids';
+import { erreurPoids, poidsKg } from '@/lib/poids';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -115,6 +115,8 @@ export default function NouvelAnimalAssoPage() {
     setError('');
     const erreurDate = erreurNaissanceAnimal(dateNaissance, espece);
     if (erreurDate) { setError(erreurDate); return; }
+    const errPoids = erreurPoids(poids, espece);
+    if (errPoids) { setError(errPoids); return; }
     setSaving(true);
     try {
       const id = `animal_${user.uid}_${Date.now()}`;
@@ -371,8 +373,8 @@ export default function NouvelAnimalAssoPage() {
           )}
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Poids (kg)</label>
-            <input type="number" className={iSmCls} value={poids}
-              onChange={e => setPoids(e.target.value)} placeholder="kg" />
+            <input type="text" inputMode="decimal" className={iSmCls} value={poids}
+              onChange={e => setPoids(e.target.value)} placeholder="ex. 8,5" />
           </div>
         </div>
 

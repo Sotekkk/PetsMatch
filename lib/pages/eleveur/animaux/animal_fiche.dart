@@ -228,6 +228,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _livretCtrl      = TextEditingController();
   final _tailleCtrl = TextEditingController();
   final _poidsCtrl  = TextEditingController();
+  double? _poidsInitial; // poids lu à l'ouverture de la fiche
   final _notesCtrl  = TextEditingController();
   // Généalogie structurée
   final _nomPereCtrl  = TextEditingController();
@@ -1144,6 +1145,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _livretCtrl.text     = d['livret_signaletique'] ?? '';
     _tailleCtrl.text = d['taille']?.toString() ?? '';
     _poidsCtrl.text  = d['poids']?.toString() ?? '';
+    _poidsInitial    = poidsKg(d['poids']);
     _notesCtrl.text  = d['notes'] ?? '';
     _nomPereCtrl.text  = d['nom_pere'] ?? '';
     _pucePereCtrl.text = d['puce_pere'] ?? '';
@@ -1296,6 +1298,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreurDate), backgroundColor: Colors.red));
       return;
     }
+    // Poids : « 8,5 » ou « 8.5 », plausible pour l'espèce (il alimente la courbe).
+    final erreurP = erreurPoids(_poidsCtrl.text, espece: _espece);
+    if (erreurP != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreurP), backgroundColor: Colors.red));
+      return;
+    }
     // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) :
     // proposer de récupérer sa fiche plutôt que d'en créer une seconde.
     if (widget.animalId == null && _identCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 8 && _identCtrl.text != _puceVerifiee) {
@@ -1342,7 +1350,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'carte_immatriculation': _espece == 'cheval' ? _carteImmatCtrl.text.trim() : null,
         'livret_signaletique':   _espece == 'cheval' ? _livretCtrl.text.trim() : null,
         'taille':              _tailleCtrl.text.trim(),
-        'poids':               poidsKg(_poidsCtrl.text),
+        // Poids inchangé : non renvoyé, pour ne pas écraser une pesée ajoutée
+        // entre-temps à la courbe (la fiche reprend le dernier point, trigger
+        // pm_poids_courbe_vers_fiche).
+        if (widget.animalId == null || poidsKg(_poidsCtrl.text) != _poidsInitial)
+          'poids':             poidsKg(_poidsCtrl.text),
         'nom_pere':            _nomPereCtrl.text.trim(),
         'puce_pere':           _pucePereCtrl.text.trim(),
         'race_pere':           _racePereCtrl.text.trim(),
@@ -8636,6 +8648,7 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
   final _notes  = TextEditingController();
   final _dateCtrl = TextEditingController();
   DateTime? _date;
+  DateTime? _naissance; // borne basse du calendrier de la pesée
   String _unite = 'kg'; // 'g' ou 'kg' — stockage toujours en kg
 
   DateTime? _parseFrDate(String s) {
@@ -8662,11 +8675,21 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
     } else {
       _prefillUnite();
     }
+    _chargerNaissance();
     if (_date != null) _dateCtrl.text = DateFormat('dd/MM/yyyy').format(_date!);
   }
 
   // Nouvelle pesée : on reprend l'unité de la dernière pesée de l'animal
   // (un bébé pesé en g reste en g par défaut).
+  Future<void> _chargerNaissance() async {
+    try {
+      final a = await Supabase.instance.client.from('animaux').select('date_naissance')
+          .eq('id', widget.animalId).maybeSingle();
+      final n = DateTime.tryParse(a?['date_naissance']?.toString() ?? '');
+      if (n != null && mounted) setState(() => _naissance = DateTime(n.year, n.month, n.day));
+    } catch (_) {}
+  }
+
   Future<void> _prefillUnite() async {
     try {
       final last = await Supabase.instance.client
@@ -8733,9 +8756,15 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
           suffixIcon: IconButton(
             icon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6E9E57)),
             onPressed: () async {
+              // Pesée : ni avant la naissance, ni après aujourd'hui.
+              final debut = _naissance ?? DateTime(2000);
+              final fin = DateTime.now();
+              var initiale = _date ?? fin;
+              if (initiale.isBefore(debut)) initiale = debut;
+              if (initiale.isAfter(fin)) initiale = fin;
               final p = await showDatePicker(
-                context: context, initialDate: _date ?? DateTime.now(),
-                firstDate: DateTime(2000), lastDate: DateTime(2100),
+                context: context, initialDate: initiale,
+                firstDate: debut, lastDate: fin,
                 builder: (ctx, child) => Theme(
                   data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
                   child: child!),
@@ -8773,9 +8802,25 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
       _DF('Notes', _notes),
     ],
     onSave: () async {
+      // Pesée : « 8,5 » ou « 8.5 », plausible pour l'espèce, datée entre la
+      // naissance et aujourd'hui (messages affichés par la feuille).
+      Map<String, dynamic>? a;
+      try {
+        a = await Supabase.instance.client.from('animaux').select('espece, date_naissance')
+            .eq('id', widget.animalId).maybeSingle();
+      } catch (_) {}
+      final err = erreurPoids(_valeur.text, espece: a?['espece']?.toString(), unite: _unite);
+      if (err != null) throw SaisieInvalide(err);
+      if (_valeur.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le poids.');
       final kg = _valeurKg;
       final d = _parseFrDate(_dateCtrl.text) ?? _date;
-      if (kg == null || d == null) return false;
+      if (d == null) throw const SaisieInvalide('Indiquez la date de la pesée (jj/mm/aaaa).');
+      if (d.isAfter(DateTime.now())) throw const SaisieInvalide('La date de la pesée ne peut pas être dans le futur.');
+      final naissance = DateTime.tryParse(a?['date_naissance']?.toString() ?? '');
+      if (naissance != null && d.isBefore(DateTime(naissance.year, naissance.month, naissance.day))) {
+        throw const SaisieInvalide('La date de la pesée est antérieure à la naissance de l\'animal.');
+      }
+      if (kg == null) return false;
       final payload = {
         'valeur': kg,
         'date':   d.toIso8601String(),

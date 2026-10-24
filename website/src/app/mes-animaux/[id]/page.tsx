@@ -2,7 +2,7 @@
 
 import { profilPourAnimal } from '@/lib/cloisonnement-profils';
 import { bornesNaissanceAnimal, erreurNaissanceAnimal } from '@/lib/ages-plausibles';
-import { poidsKg } from '@/lib/poids';
+import { erreurPoids, poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, majValidation } from '@/lib/exercices-progression';
 import { RecuperationModal, verifierPuce, type VerifPuce } from '@/components/animaux/RecuperationAnimal';
 import { SterilisationCedee } from '@/components/animaux/SterilisationCedee';
@@ -992,9 +992,11 @@ function fmtWeightInput(v: number): string {
   return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
+function WeightForm({ initial, lastKg, saving, onSave, onCancel, espece, dateNaissance }: {
   initial?: { valeur?: string; date?: string; notes?: string };
   lastKg?: number | null;
+  espece?: string | null;
+  dateNaissance?: string | null;
   saving: boolean;
   onSave: (data: Record<string, string>) => void | Promise<void>;
   onCancel: () => void;
@@ -1008,6 +1010,7 @@ function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
     Number.isFinite(initKg) ? fmtWeightInput(initUnite === 'g' ? initKg * 1000 : initKg) : '');
   const [date, setDate] = useState(initial?.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [erreur, setErreur] = useState('');
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
 
   function switchUnite(u: 'g' | 'kg') {
@@ -1018,8 +1021,14 @@ function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
   }
 
   function submit() {
+    const e = erreurPoids(value, espece, unite);
+    if (e) { setErreur(e); return; }
+    if (!date) { setErreur('Indiquez la date de la pesée.'); return; }
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+    if (date > aujourdhui) { setErreur('La date de la pesée ne peut pas être dans le futur.'); return; }
+    if (dateNaissance && date < dateNaissance.slice(0, 10)) { setErreur('La date de la pesée est antérieure à la naissance de l’animal.'); return; }
+    setErreur('');
     const v = parseFloat(value.replace(',', '.'));
-    if (!Number.isFinite(v) || !date) return;
     const kg = unite === 'g' ? v / 1000 : v;
     onSave({ valeur: String(kg), date, notes: notes.trim() });
   }
@@ -1029,8 +1038,8 @@ function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
       <div>
         <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Poids <span className="text-red-400 ml-0.5">*</span></label>
         <div className="flex gap-2">
-          <input type="number" step="any" inputMode="decimal" value={value}
-            onChange={e => setValue(e.target.value)} className={cls} />
+          <input type="text" inputMode="decimal" value={value} placeholder="ex. 8,5"
+            onChange={e => { setValue(e.target.value); setErreur(''); }} className={cls} />
           <div className="flex rounded-xl border border-gray-200 overflow-hidden shrink-0">
             {(['g', 'kg'] as const).map(u => (
               <button key={u} type="button" onClick={() => switchUnite(u)}
@@ -1043,12 +1052,15 @@ function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} className={cls} />
+        {/* Pesée : ni avant la naissance, ni après aujourd'hui. */}
+        <input type="date" value={date} onChange={e => { setDate(e.target.value); setErreur(''); }} className={cls}
+          min={dateNaissance ? dateNaissance.slice(0, 10) : undefined} max={new Date().toISOString().slice(0, 10)} />
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Notes</label>
         <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={cls} />
       </div>
+      {erreur && <p className="text-sm text-red-600">{erreur}</p>}
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onCancel}
           className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
@@ -2581,6 +2593,8 @@ function AnimalFichePageInner() {
     return () => { cancelled = true; };
   }, [animal.uid_eleveur, user]);
   const steriliseSavedRef = useRef(false);
+  // Poids lu à l'ouverture : seul un poids modifié est renvoyé à l'enregistrement.
+  const poidsSavedRef = useRef<number | null>(null);
   const [breeds, setBreeds] = useState<string[]>([]);
 
   // ── Cession
@@ -2679,6 +2693,7 @@ function AnimalFichePageInner() {
     if (data) {
       setAnimal(data as Animal);
       steriliseSavedRef.current = data.sterilise === true;
+      poidsSavedRef.current = poidsKg(data.poids);
       supabase.from('animaux_proprietes').select('uid_proprio')
         .eq('animal_id', id).is('date_fin', null).maybeSingle()
         .then(({ data: prop }) => setCurrentProprioUid(prop?.uid_proprio ?? null));
@@ -3168,6 +3183,8 @@ function AnimalFichePageInner() {
     if (!animal.nom?.trim()) { setSaveError('Le nom est requis.'); return; }
     const erreurDate = erreurNaissanceAnimal(animal.date_naissance, animal.espece);
     if (erreurDate) { setSaveError(erreurDate); return; }
+    const errPoids = erreurPoids(animal.poids, animal.espece);
+    if (errPoids) { setSaveError(errPoids); return; }
     const ident = animal.identification ?? '';
     if (isNew && ident.replace(/\D/g, '').length >= 8 && ident !== puceVerifiee) {
       try {
@@ -3189,7 +3206,10 @@ function AnimalFichePageInner() {
         carte_immatriculation: animal.espece === 'cheval' ? (animal.carte_immatriculation || undefined) : undefined,
         livret_signaletique: animal.espece === 'cheval' ? (animal.livret_signaletique || undefined) : undefined,
         description: animal.description, notes: animal.notes,
-        type_poil: animal.type_poil, taille: animal.taille, poids: poidsKg(animal.poids),
+        type_poil: animal.type_poil, taille: animal.taille,
+        // Poids inchangé : non renvoyé, pour ne pas écraser une pesée ajoutée
+        // entre-temps à la courbe (la fiche reprend le dernier point en base).
+        ...(isNew || poidsKg(animal.poids) !== poidsSavedRef.current ? { poids: poidsKg(animal.poids) } : {}),
         pedigree: animal.pedigree, pedigree_lof: animal.pedigree_lof, pedigree_numero: animal.pedigree_numero,
         club_registre: animal.club_registre, pedigree_url: animal.pedigree_url,
         passeport_europeen: animal.passeport_europeen,
@@ -3478,6 +3498,17 @@ function AnimalFichePageInner() {
     setSavingHealth(false);
   }
 
+  // Après une pesée : la fiche reprend le dernier point de la courbe (trigger
+  // pm_poids_courbe_vers_fiche) — sans cela, un enregistrement de la fiche
+  // avec l'ancien poids affiché réécrirait la courbe.
+  async function rafraichirPoidsFiche(table: string) {
+    if (table !== 'poids' || !id) return;
+    const { data } = await supabase.from('animaux').select('poids').eq('id', id).maybeSingle();
+    if (!data) return;
+    poidsSavedRef.current = poidsKg(data.poids);
+    setAnimal(a => ({ ...a, poids: data.poids }));
+  }
+
   async function saveHealthRecord(table: string, data: Record<string,string>) {
     if (!id) return;
     setSavingHealth(true);
@@ -3485,6 +3516,7 @@ function AnimalFichePageInner() {
     await supabase.from(table).insert({ ...data, animal_id: id, id: recordId });
     await writeRegistreActe(table, recordId, data);
     await loadHealth();
+    await rafraichirPoidsFiche(table);
     setAddOpen(null);
     setSavingHealth(false);
   }
@@ -3535,6 +3567,7 @@ function AnimalFichePageInner() {
     await supabase.from(table).update(data).eq('id', recordId);
     await writeRegistreActe(table, recordId, data);
     await loadHealth();
+    await rafraichirPoidsFiche(table);
     setEditPoids(null);
     setSavingHealth(false);
   }
@@ -3543,6 +3576,7 @@ function AnimalFichePageInner() {
     await supabase.from(table).delete().eq('id', recordId);
     await deleteRegistreActe(table, recordId);
     await loadHealth();
+    await rafraichirPoidsFiche(table);
   }
 
   async function saveDocRecord(table: string, file: File, notes: string, date: string) {
@@ -5202,6 +5236,7 @@ function AnimalFichePageInner() {
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='poids'?null:'poids') : undefined}
             addFormOpen={addOpen==='poids'}
             addForm={<WeightForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
+              espece={animal.espece} dateNaissance={animal.date_naissance}
               lastKg={(() => {
                 const s = [...health.poids].sort((a,b)=>String(a.date??'').localeCompare(String(b.date??'')));
                 return s.length ? (parseFloat(String(s[s.length-1].valeur??'0'))||null) : null;
@@ -5224,6 +5259,7 @@ function AnimalFichePageInner() {
                       <div key={r.id} className="px-4 py-3 border-b border-gray-50 last:border-0">
                         {isEditing ? (
                           <WeightForm saving={savingHealth} onCancel={()=>setEditPoids(null)}
+                            espece={animal.espece} dateNaissance={animal.date_naissance}
                             onSave={d=>updateHealthRecord('poids',r.id,d)}
                             initial={{ valeur: String(r.valeur??''), date: String(r.date??''), notes: String(r.notes??'') }}/>
                         ) : (

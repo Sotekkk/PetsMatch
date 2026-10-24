@@ -99,6 +99,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   final _passeportCtrl = TextEditingController();
   final _tailleCtrl   = TextEditingController();
   final _poidsCtrl    = TextEditingController();
+  double? _poidsInitial; // poids lu à l'ouverture de la fiche
 
   String _espece = 'chien';
   final _especeAutreCtrl = TextEditingController();
@@ -580,6 +581,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _passeportCtrl.text    = d['passeport_europeen'] ?? '';
     _tailleCtrl.text       = d['taille']?.toString() ?? '';
     _poidsCtrl.text        = d['poids']?.toString() ?? '';
+    _poidsInitial          = poidsKg(d['poids']);
     _typePoil              = d['type_poil'] as String?;
     _pedigree              = d['pedigree'] ?? false;
     _pedigreeLof           = d['pedigree_lof'] as String?;
@@ -696,6 +698,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreurDate), backgroundColor: Colors.red));
       return;
     }
+    // Poids : « 8,5 » ou « 8.5 », plausible pour l'espèce (il alimente la courbe).
+    final erreurP = erreurPoids(_poidsCtrl.text, espece: _espece);
+    if (erreurP != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erreurP), backgroundColor: Colors.red));
+      return;
+    }
     // Puce déjà enregistrée (ex. animal acquis auprès d'un élevage) :
     // proposer de récupérer sa fiche plutôt que d'en créer une seconde.
     if (_animalId == null && _identCtrl.text.replaceAll(RegExp(r'\D'), '').length >= 8 && _identCtrl.text != _puceVerifiee) {
@@ -732,7 +740,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'livret_signaletique': _espece == 'cheval' && _livretCtrl.text.trim().isNotEmpty ? _livretCtrl.text.trim() : null,
         'type_poil': _typePoil,
         'taille': _tailleCtrl.text.trim().isEmpty ? null : double.tryParse(_tailleCtrl.text.trim()),
-        'poids': poidsKg(_poidsCtrl.text),
+        // Poids inchangé : non renvoyé, pour ne pas écraser une pesée ajoutée
+        // entre-temps à la courbe (la fiche reprend le dernier point, trigger
+        // pm_poids_courbe_vers_fiche).
+        if (_animalId == null || poidsKg(_poidsCtrl.text) != _poidsInitial)
+          'poids': poidsKg(_poidsCtrl.text),
         'pedigree': _pedigree,
         'pedigree_lof': _pedigreeLof,
         'club_registre': _clubRegistreCtrl.text.trim().isEmpty ? null : _clubRegistreCtrl.text.trim(),
@@ -2992,10 +3004,23 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     DateTime? date;
     _openSheet('Ajouter un poids', (ss) => [
       _SFld(ctrl: valeur, label: 'Poids (kg)', hint: 'Ex: 4.5', numeric: true),
-      _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d)),
+      // Pesée : ni avant la naissance, ni après aujourd'hui.
+      _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d),
+          firstDate: _dateNaissance, lastDate: DateTime.now()),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
-      final v = double.tryParse(valeur.text.replaceAll(',', '.'));
+      // « 8,5 » ou « 8.5 », plausible pour l'espèce, date passée (avant :
+      // une saisie invalide enregistrait un point vide sur la courbe).
+      if (valeur.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le poids.');
+      final err = erreurPoids(valeur.text, espece: _espece);
+      if (err != null) throw SaisieInvalide(err);
+      final jour = date ?? DateTime.now();
+      if (jour.isAfter(DateTime.now())) throw const SaisieInvalide('La date de la pesée ne peut pas être dans le futur.');
+      if (_dateNaissance != null && jour.isBefore(DateTime(_dateNaissance!.year, _dateNaissance!.month, _dateNaissance!.day))) {
+        throw const SaisieInvalide('La date de la pesée est antérieure à la naissance de l\'animal.');
+      }
+      date = jour;
+      final v = poidsKg(valeur.text);
       await _supa.from('poids').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
@@ -3005,6 +3030,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'created_at': DateTime.now().toIso8601String(),
       });
       await _loadHealthRecords();
+      // La fiche reprend le dernier point de la courbe (trigger en base).
+      try {
+        final r = await _supa.from('animaux').select('poids').eq('id', _animalId!).maybeSingle();
+        if (mounted) setState(() { _poidsCtrl.text = r?['poids']?.toString() ?? ''; _poidsInitial = poidsKg(r?['poids']); });
+      } catch (_) {}
     });
   }
 
@@ -3584,7 +3614,9 @@ class _SDate extends StatelessWidget {
   final DateTime? date;
   /// null : date calculée, affichée sans pouvoir être modifiée.
   final ValueChanged<DateTime>? onPicked;
-  const _SDate({required this.label, required this.date, required this.onPicked});
+  /// Bornes du calendrier (ex. pesée : naissance → aujourd'hui).
+  final DateTime? firstDate, lastDate;
+  const _SDate({required this.label, required this.date, required this.onPicked, this.firstDate, this.lastDate});
 
   @override
   Widget build(BuildContext context) {
@@ -3596,11 +3628,16 @@ class _SDate extends StatelessWidget {
         const SizedBox(height: 6),
         GestureDetector(
           onTap: onPicked == null ? null : () async {
+            final debut = firstDate ?? DateTime(2000);
+            final fin = lastDate ?? DateTime(2100);
+            var initiale = date ?? DateTime.now();
+            if (initiale.isBefore(debut)) initiale = debut;
+            if (initiale.isAfter(fin)) initiale = fin;
             final d = await showDatePicker(
               context: context,
-              initialDate: date ?? DateTime.now(),
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2100),
+              initialDate: initiale,
+              firstDate: debut,
+              lastDate: fin,
             );
             if (d != null) onPicked?.call(d);
           },

@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
 import { SANTE_COULEURS } from '@/lib/sante-couleurs';
+import { erreurPoids, poidsKg } from '@/lib/poids';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
@@ -92,13 +93,13 @@ const HEALTH_SECTIONS = [
   { table: 'allergies',        label: 'Allergies',          icon: '⚠️', color: SANTE_COULEURS.allergies,
     fields: [{ key: 'description', label: 'Allergie', required: true }, { key: 'type', label: 'Type' }, { key: 'severite', label: 'Sévérité' }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'poids',            label: 'Courbe de poids',    icon: '⚖️', color: SANTE_COULEURS.poids,
-    fields: [{ key: 'valeur', label: 'Poids (kg)', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
+    fields: [{ key: 'valeur', label: 'Poids (kg, ex. 8,5)', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'visites',          label: 'Visites vétérinaires', icon: '🏥', color: '#26A69A',
     fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
 ];
 
 function AddForm({ fields, onSave, onCancel, saving, extra }:
-  { fields: { key: string; label: string; type?: string; required?: boolean }[];
+  { fields: { key: string; label: string; type?: string; required?: boolean; min?: string; max?: string }[];
     onSave: (d: Record<string, string>) => Promise<void>; onCancel: () => void; saving: boolean;
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
     extra?: React.ReactNode }) {
@@ -115,7 +116,7 @@ function AddForm({ fields, onSave, onCancel, saving, extra }:
             <textarea rows={3} value={form[f.key] ?? ''}
               onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} className={cls} />
           ) : (
-            <input type={f.type ?? 'text'} value={form[f.key] ?? ''}
+            <input type={f.type ?? 'text'} value={form[f.key] ?? ''} min={f.min} max={f.max}
               onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} className={cls} />
           )}
         </div>
@@ -214,7 +215,7 @@ function RecordRow({ record, mainKey, dateKey, onDelete }:
   );
 }
 
-function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
+function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espece?: string; dateNaissance?: string | null }) {
   const [health, setHealth] = useState<Record<string, HealthRecord[]>>({});
   const [addOpen, setAddOpen] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -234,6 +235,14 @@ function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
   const handleAdd = async (table: string, data: Record<string, string>) => {
     if (table === 'vermifuges' && optsVermifuge.rappel && optsVermifuge.heures.length === 0) {
       alert('Ajoutez au moins une heure de rappel.'); return;
+    }
+    if (table === 'poids') {
+      // Pesée : « 8,5 » ou « 8.5 », poids plausible pour l'espèce, date passée.
+      const e = erreurPoids(data.valeur, espece);
+      if (e) { alert(e); return; }
+      if (data.date && data.date > new Date().toISOString().slice(0, 10)) { alert('La date de la pesée ne peut pas être dans le futur.'); return; }
+      if (data.date && dateNaissance && data.date < dateNaissance.slice(0, 10)) { alert('La date de la pesée est antérieure à la naissance de l’animal.'); return; }
+      data = { ...data, valeur: String(poidsKg(data.valeur)), id: crypto.randomUUID(), ...(data.date ? {} : { date: new Date().toISOString().slice(0, 10) }) };
     }
     setSaving(true);
     const cibles = table === 'vermifuges' ? [animalId, ...optsVermifuge.autres] : [animalId];
@@ -267,7 +276,12 @@ function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
                   onCancel={() => setAddOpen(null)}
                   onSave={d => handleAdd(s.table, d)} />
               ) : (
-                <AddForm fields={s.fields} saving={saving}
+                <AddForm saving={saving}
+                  // Pesée : calendrier borné entre la naissance et aujourd'hui.
+                  fields={s.table === 'poids'
+                    ? s.fields.map(f => f.key === 'date'
+                      ? { ...f, min: dateNaissance?.slice(0, 10), max: new Date().toISOString().slice(0, 10) } : f)
+                    : s.fields}
                   onCancel={() => setAddOpen(null)}
                   onSave={d => handleAdd(s.table, d)}
                   extra={s.table === 'vermifuges'
@@ -554,7 +568,7 @@ export default function AnimalAssoFichePage() {
       )}
 
       {/* ─── Santé ────────────────────────────────────────────────────── */}
-      {tab === 'sante' && <SanteTab animalId={id} espece={animal.espece} />}
+      {tab === 'sante' && <SanteTab animalId={id} espece={animal.espece} dateNaissance={animal.date_naissance} />}
 
       {/* ─── Alimentation ─────────────────────────────────────────────── */}
       {tab === 'alimentation' && (
