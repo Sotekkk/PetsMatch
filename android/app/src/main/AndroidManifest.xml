@@ -83,27 +83,16 @@
                  perdus / trouvés, lieux naturels, lieux pet-friendly.
                  autoVerify => Android ouvre l'app directement si le fichier
                  /.well-known/assetlinks.json du domaine référence cette app.
-                 Routage : lib/services/deep_link_service.dart. -->
+                 Routage : lib/services/deep_link_service.dart.
+                 Pas de www : il redirige vers le domaine nu, donc n'est jamais
+                 vérifiable, et sous Android 11 et avant un seul hôte non
+                 vérifié fait échouer la vérification de tous (liens partagés
+                 sur kSiteBaseUrl = domaine nu). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https" android:host="petsmatchapp.com"/>
-                <data android:pathPrefix="/p/"/>
-                <data android:pathPrefix="/annonces/"/>
-                <data android:pathPrefix="/animaux-perdus"/>
-                <data android:pathPrefix="/lieux-naturels/"/>
-                <data android:pathPrefix="/animal-friendly/"/>
-            </intent-filter>
-            <!-- www redirige vers le domaine nu : non vérifiable. Filtre séparé
-                 sans autoVerify (Android propose d'ouvrir avec l'appli) pour ne
-                 pas faire échouer la vérification du domaine nu sous Android 11
-                 et avant (tous les hôtes d'un filtre vérifié doivent l'être). -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="www.petsmatchapp.com"/>
                 <data android:pathPrefix="/p/"/>
                 <data android:pathPrefix="/annonces/"/>
                 <data android:pathPrefix="/animaux-perdus"/>
