@@ -207,6 +207,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
         supabase.from('pension_entrees').select('logement_id').eq('pro_uid', uid).eq('statut', 'en_pension').lte('date_entree', todayStr),
         supabase.from('rdv').select('id').eq('pro_uid', uid)
           .in('statut', ['demande', 'confirme', 'contre_proposition'])
+          .or(profileId ? `pro_profile_id.eq.${profileId}` : 'pro_profile_id.is.null,pro_profile_id.eq.')
           .gte('date_heure', todayStart).lte('date_heure', todayEnd),
       ]);
       setPensionnairesCount((actives ?? []).length);
@@ -226,7 +227,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       setLogementsTotal(total);
     }
     loadDispo();
-  }, [uid, isPension]);
+  }, [uid, isPension, profileId]);
 
   async function confirmRdv(rdv: PendingRdv) {
     setSavingRdv(rdv.id);

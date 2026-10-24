@@ -55,7 +55,13 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
             .neq('statut', 'annule')
             .order('date_heure'),
       ]);
-      final cours = List<Map<String, dynamic>>.from(results[1] as List);
+      // Profil éducateur actif seulement : un même compte peut avoir un profil
+      // toiletteur / photographe dont les RDV n'ont rien à faire ici.
+      final pid = User_Info.activeProfileId;
+      bool duProfil(Map<String, dynamic> x) =>
+          pid.isEmpty || x['pro_profile_id'] == null || x['pro_profile_id'].toString() == pid;
+      final cours = List<Map<String, dynamic>>.from(results[1] as List)
+          .where(duProfil).toList();
       final coursIds = cours.map((c) => c['id'] as String).toList();
       final counts = <String, int>{};
       if (coursIds.isNotEmpty) {
@@ -68,7 +74,7 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
           counts[cid] = (counts[cid] ?? 0) + 1;
         }
       }
-      final rdvs = List<Map<String, dynamic>>.from(results[0] as List);
+      final rdvs = List<Map<String, dynamic>>.from(results[0] as List).where(duProfil).toList();
       // Résout nom du client + nom de l'animal pour l'affichage / la fiche.
       // ⚠ Multi-profil : le nom vient du profil client_profile_id du RDV
       // (pas de is_main, qui renvoie le nom d'élevage au lieu du particulier).

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -347,6 +348,7 @@ function RdvCard({ rdv, tab, onAccepter, onRefuser, onAnnuler, onTerminer, onDel
 
 export default function PensionRdvPage() {
   const { user, userData, loading, availableProfiles } = useAuth();
+  const activeProfileId = useActiveProfile();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'demandes' | 'a_venir' | 'historique'>('demandes');
   const [rdvs, setRdvs] = useState<Rdv[]>([]);
@@ -369,10 +371,11 @@ export default function PensionRdvPage() {
     if (!user) return;
     setFetching(true);
     try {
-      // Filtre uniquement par pro_uid — la page est déjà réservée aux pensions (isPension)
-      const { data } = await supabase.from('rdv').select('*')
-        .eq('pro_uid', user.uid)
-        .order('date_heure', { ascending: true });
+      // Profil pension actif : sans ce filtre, les RDV d'un autre profil pro du
+      // même compte (toiletteur, éducateur…) apparaissaient ici.
+      let rdvQ = supabase.from('rdv').select('*').eq('pro_uid', user.uid);
+      if (activeProfileId) rdvQ = rdvQ.eq('pro_profile_id', activeProfileId);
+      const { data } = await rdvQ.order('date_heure', { ascending: true });
 
       const list = (data ?? []) as Rdv[];
       const clientUids = [...new Set(list.map(r => r.client_uid).filter(Boolean))];
@@ -397,9 +400,11 @@ export default function PensionRdvPage() {
       // Compter les visites par client
       const visitCounts: Record<string, number> = {};
       if (clientUids.length) {
-        const { data: hist } = await supabase.from('rdv')
+        let histQ = supabase.from('rdv')
           .select('client_uid').eq('pro_uid', user.uid)
           .in('client_uid', clientUids).in('statut', ['confirme', 'termine']);
+        if (activeProfileId) histQ = histQ.eq('pro_profile_id', activeProfileId);
+        const { data: hist } = await histQ;
         for (const h of (hist ?? [])) {
           const cUid = (h as { client_uid: string }).client_uid;
           visitCounts[cUid] = (visitCounts[cUid] ?? 0) + 1;
@@ -413,7 +418,7 @@ export default function PensionRdvPage() {
         visitCount: visitCounts[r.client_uid] ?? 0,
       })));
     } catch { /* ignore */ } finally { setFetching(false); }
-  }, [user]);
+  }, [user, activeProfileId]);
 
   useEffect(() => { fetchRdvs(); }, [fetchRdvs]);
 

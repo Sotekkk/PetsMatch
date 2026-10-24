@@ -1671,9 +1671,11 @@ export default function MesRdvPage() {
 
       const visitCounts: Record<string, number> = {};
       if (clientUids.length) {
-        const { data: hist } = await supabase.from('rdv')
+        let histQ = supabase.from('rdv')
           .select('client_uid').eq('pro_uid', user.uid)
           .in('client_uid', clientUids).in('statut', ['confirme', 'termine']);
+        if (activeProfileId) histQ = histQ.eq('pro_profile_id', activeProfileId);
+        const { data: hist } = await histQ;
         for (const h of (hist ?? [])) {
           const cUid = (h as { client_uid: string }).client_uid;
           visitCounts[cUid] = (visitCounts[cUid] ?? 0) + 1;

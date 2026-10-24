@@ -39,6 +39,9 @@ class _EducationDashboardState extends State<EducationDashboard> {
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _seances = [];
   List<Map<String, dynamic>> _forfaits = [];
+  /// Animaux de « Mes animaux suivis » (même source que ProClientsPage :
+  /// accès accordés à ce profil + animaux vus en RDV avec ce profil).
+  Set<String> _animauxSuivis = {};
   final Map<String, String> _clients = {};
   final Map<String, Map<String, dynamic>> _animaux = {};
   final _planningKey = GlobalKey();
@@ -95,7 +98,20 @@ class _EducationDashboardState extends State<EducationDashboard> {
     } catch (_) { _seances = []; }
     try {
       _forfaits = _liste(await _supa.from('forfaits_souscrits').select().eq('pro_uid', uid).eq('statut', 'actif'));
+      // Forfaits d'un autre profil pro du même compte : jamais ici.
+      _forfaits = _forfaits.where((f) => f['pro_profile_id'] == null || f['pro_profile_id'].toString() == pid).toList();
     } catch (_) { _forfaits = []; }
+    try {
+      final r = await Future.wait([
+        _supa.from('animal_access').select('animal_id').eq('pro_profile_id', pid)
+            .inFilter('statut', ['active', 'write_requested', 'active_write']),
+        _supa.from('rdv').select('animal_id').eq('pro_uid', uid).eq('pro_profile_id', pid)
+            .inFilter('statut', ['confirme', 'termine']),
+      ]);
+      _animauxSuivis = {
+        for (final l in r) for (final x in (l as List)) if (x['animal_id'] != null) x['animal_id'].toString(),
+      };
+    } catch (_) { _animauxSuivis = {}; }
     await _chargerNoms();
     if (mounted) setState(() => _loading = false);
   }
@@ -292,7 +308,9 @@ class _EducationDashboardState extends State<EducationDashboard> {
                   final ctx = _planningKey.currentContext;
                   if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300));
                 }),
-            DashKpi(valeur: suivis.length, label: 'Suivis actifs', icon: Icons.pets_outlined, teinte: _vert,
+            // Même décompte que la page ouverte (avant : seulement les animaux
+            // avec un objectif en cours / un forfait → 0 alors que la liste en montrait 2).
+            DashKpi(valeur: _animauxSuivis.length, label: 'Animaux suivis', icon: Icons.pets_outlined, teinte: _vert,
                 onTap: () => _go(const ProClientsPage())),
             DashKpi(valeur: deplacements.length, label: 'À domicile (7 jours)', icon: Icons.home_work_outlined,
                 teinte: const Color(0xFF7B5EA7), onTap: () => _go(const ProAgendaPage(initialTabIndex: 1))),

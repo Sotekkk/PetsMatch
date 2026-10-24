@@ -50,6 +50,8 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
   const [objectifs, setObjectifs] = useState<Objectif[]>([]);
   const [seances, setSeances] = useState<Seance[]>([]);
   const [forfaitsAnimaux, setForfaitsAnimaux] = useState<string[]>([]);
+  // Animaux de « Mes animaux suivis » : accès accordés à ce profil + animaux vus en RDV avec lui.
+  const [nbAnimauxSuivis, setNbAnimauxSuivis] = useState(0);
   const [clients, setClients] = useState<Record<string, string>>({});
   const [animaux, setAnimaux] = useState<Record<string, Animal>>({});
   const [fiche, setFiche] = useState<Rdv | null>(null);
@@ -61,7 +63,7 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
     if (!pid || !uid) return;
     const t = new Date();
     const jour = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-    const [rRes, cRes, oRes, sRes, fRes] = await Promise.all([
+    const [rRes, cRes, oRes, sRes, fRes, accRes, rdvAnimRes] = await Promise.all([
       supabase.from('rdv').select('*').eq('pro_profile_id', pid).in('statut', ['confirme', 'termine'])
         .gte('date_heure', new Date(jour.getTime() - 60 * 86400000).toISOString())
         .lte('date_heure', new Date(jour.getTime() + 31 * 86400000).toISOString()).order('date_heure'),
@@ -69,13 +71,19 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
         .gte('date_heure', jour.toISOString()).lt('date_heure', new Date(jour.getTime() + 86400000).toISOString()).order('date_heure'),
       supabase.from('education_objectifs').select('*').eq('pro_uid', uid).order('ordre'),
       supabase.from('education_progression').select('*').eq('pro_uid', uid).order('date_seance', { ascending: false }).limit(300),
-      supabase.from('forfaits_souscrits').select('animal_id').eq('pro_uid', uid).eq('statut', 'actif'),
+      supabase.from('forfaits_souscrits').select('*').eq('pro_uid', uid).eq('statut', 'actif'),
+      supabase.from('animal_access').select('animal_id').eq('pro_profile_id', pid).in('statut', ['active', 'write_requested', 'active_write']),
+      supabase.from('rdv').select('animal_id').eq('pro_uid', uid).eq('pro_profile_id', pid).in('statut', ['confirme', 'termine']),
     ]);
+    setNbAnimauxSuivis(new Set([...(accRes.data ?? []), ...(rdvAnimRes.data ?? [])]
+      .map(x => (x as { animal_id: string | null }).animal_id).filter(Boolean)).size);
     const liste = (rRes.data ?? []) as Rdv[];
     const duProfil = <T extends { pro_profile_id?: string | null }>(x: T[]) => x.filter(o => !o.pro_profile_id || o.pro_profile_id === pid);
     const objs = duProfil((oRes.data ?? []) as Objectif[]);
     const ses = duProfil((sRes.data ?? []) as Seance[]);
-    const forf = ((fRes.data ?? []) as { animal_id: string | null }[]).map(f => f.animal_id).filter(Boolean) as string[];
+    // Forfaits d'un autre profil pro du même compte : jamais ici.
+    const forf = duProfil((fRes.data ?? []) as { animal_id: string | null; pro_profile_id?: string | null }[])
+      .map(f => f.animal_id).filter(Boolean) as string[];
     const suivis = new Set([...objs.filter(o => o.statut !== 'acquis').map(o => String(o.animal_id)), ...forf]);
     const profils = [...new Set(liste.map(r => r.client_profile_id).filter(Boolean) as string[])];
     const ids = [...new Set([...liste.map(r => r.animal_id).filter(Boolean) as string[], ...suivis])];
@@ -157,7 +165,7 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi valeur={duJour.length + cours.length} label="Rendez-vous aujourd'hui" icone="calendrier"
                 onClick={() => planningRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
-              <Kpi valeur={suivis.length} label="Suivis actifs" icone="patte" teinte={VERT} href="/mes-patients" />
+              <Kpi valeur={nbAnimauxSuivis} label="Animaux suivis" icone="patte" teinte={VERT} href="/mes-patients" />
               <Kpi valeur={deplacements.length} label="À domicile (7 jours)" icone="maison" teinte={VIOLET} href="/mes-rdv?onglet=a_venir" />
               <Kpi valeur={aFinaliser.length} label="Comptes rendus à finaliser" icone="crayon" teinte={AMBRE} actif={aFinaliser.length > 0}
                 onClick={() => crRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />

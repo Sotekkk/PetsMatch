@@ -83,13 +83,15 @@ function EducationPlanningPageInner() {
   const load = useCallback(async () => {
     if (!user) return;
     const windowEnd = new Date(windowStart); windowEnd.setDate(windowEnd.getDate() + DAYS);
+    // Profil éducateur actif seulement (pas les RDV du toiletteur / photographe du même compte).
+    const duProfil = activeProfileId ? `pro_profile_id.is.null,pro_profile_id.eq.${activeProfileId}` : 'pro_profile_id.is.null,pro_profile_id.neq.null';
     const [{ data: r }, { data: c }] = await Promise.all([
       supabase.from('rdv').select('id, motif, date_heure, duree_minutes')
-        .eq('pro_uid', user.uid).neq('statut', 'refuse')
+        .eq('pro_uid', user.uid).neq('statut', 'refuse').or(duProfil)
         .gte('date_heure', windowStart.toISOString()).lt('date_heure', windowEnd.toISOString())
         .order('date_heure'),
       supabase.from('cours_collectifs').select('id, titre, date_heure, duree_minutes, capacite_max, lieu, notes, statut, serie_id')
-        .eq('pro_uid', user.uid).neq('statut', 'annule')
+        .eq('pro_uid', user.uid).neq('statut', 'annule').or(duProfil)
         .gte('date_heure', windowStart.toISOString()).lt('date_heure', windowEnd.toISOString())
         .order('date_heure'),
     ]);
@@ -105,7 +107,7 @@ function EducationPlanningPageInner() {
     setCours(coursList);
     setParticipantsCount(counts);
     setLoading(false);
-  }, [user, windowStart]);
+  }, [user, windowStart, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 

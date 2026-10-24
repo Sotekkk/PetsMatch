@@ -250,10 +250,21 @@ class _ProClientsPageState extends State<ProClientsPage>
       final start = DateTime.parse('${dateStr}T00:00:00Z').toIso8601String();
       final end   = DateTime.parse('${dateStr}T23:59:59Z').toIso8601String();
 
-      final rdvs = await supa
+      // Profil pro actif seulement : sans ce filtre, l'agenda de l'éducateur
+      // montrait les RDV du toiletteur / photographe du même compte.
+      var proProfileId = User_Info.activeProfileId;
+      if (proProfileId.isEmpty && User_Info.availableProfiles.isNotEmpty) {
+        proProfileId = User_Info.availableProfiles.firstWhere(
+          (p) => p['profile_type'] != 'particulier',
+          orElse: () => User_Info.availableProfiles.first,
+        )['id']?.toString() ?? '';
+      }
+      var q = supa
           .from('rdv')
           .select()
-          .eq('pro_uid', proUid)
+          .eq('pro_uid', proUid);
+      if (proProfileId.isNotEmpty) q = q.eq('pro_profile_id', proProfileId);
+      final rdvs = await q
           .inFilter('statut', ['confirme', 'termine'])
           .gte('date_heure', start)
           .lte('date_heure', end)
