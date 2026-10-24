@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
@@ -16,6 +17,7 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -1048,16 +1050,17 @@ class _BabyCardState extends State<_BabyCard> {
           if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
         });
         if (widget.uidEleveur != null && widget.uidEleveur != uid) {
-          await Supabase.instance.client.from('notifications').insert({
-            'uid': widget.uidEleveur,
-            'type': 'like',
-            'title': 'Nouveau j\'aime sur votre portée',
-            'body': 'Quelqu\'un a aimé un bébé de votre portée',
-            'data': {'annonceId': widget.annonceId, 'bebeIndex': widget.bebeIndex},
-            'read': false,
-            if ((widget.annonceProfileId ?? '').isNotEmpty) 'profile_id': widget.annonceProfileId,
-            if (User_Info.activeProfileId.isNotEmpty) 'sender_profile_id': User_Info.activeProfileId,
-          });
+          // La fonction crée la notification ET envoie le push (un seul envoi).
+          unawaited(FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('sendLikeNotification')
+              .call({
+                'receiverUid': widget.uidEleveur,
+                'annonceId':   widget.annonceId,
+                'bebeIndex':   widget.bebeIndex,
+                'nomAnimal':   (widget.animal['nom'] ?? '').toString(),
+                if (User_Info.firstname.isNotEmpty) 'senderName': User_Info.firstname,
+                if (User_Info.activeProfileId.isNotEmpty) 'senderProfileId': User_Info.activeProfileId,
+              }).catchError((_) => null));
         }
       }
     } catch (_) {

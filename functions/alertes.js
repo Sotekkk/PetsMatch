@@ -217,7 +217,12 @@ exports.notifyUsersNearLostAnimal = functions
     });
 
 /**
- * Callable: envoie un push FCM de like à l'éleveur via Firebase Admin SDK.
+ * Callable: like d'une annonce → notification en base + push FCM à l'auteur.
+ * Seule source de cette notification : l'insert passe par
+ * SUPABASE_AUTH_HEADERS (x-pm-push: serveur), le webhook notify_push ne
+ * l'envoie donc pas une 2e fois. Avant, l'appli / le site inséraient la ligne
+ * (push brut du webhook) ET appelaient cette fonction (push avec le nom du
+ * profil) : deux notifications téléphone pour un seul like.
  */
 exports.sendLikeNotification = functions
     .region("europe-west1")
@@ -226,9 +231,19 @@ exports.sendLikeNotification = functions
             throw new functions.https.HttpsError("unauthenticated", "Auth required");
         }
 
-        const {receiverUid, annonceId, bebeIndex, nomAnimal, senderName} = data;
+        const {receiverUid, annonceId, bebeIndex, nomAnimal, senderProfileId} = data;
+        let {senderName} = data;
         if (!receiverUid) return {sent: false, reason: "no_receiverUid"};
+        if (receiverUid === context.auth.uid) return {sent: false, reason: "self"};
 
+        if (!senderName && senderProfileId) {
+            try {
+                const p = await supabaseFetch("user_profiles", {select: "firstname", id: `eq.${senderProfileId}`});
+                senderName = p[0] && p[0].firstname;
+            } catch (_) {
+                // nom facultatif
+            }
+        }
         const title = "❤️ Nouveau like sur votre annonce";
         const body = `${senderName || "Quelqu'un"} a aimé "${nomAnimal || "votre animal"}"`;
 
@@ -244,6 +259,21 @@ exports.sendLikeNotification = functions
             }
         }
         if (!profileId) profileId = await resolveProfileId(receiverUid);
+
+        try {
+            await supabaseInsert("notifications", [{
+                uid: receiverUid, type: "like", title, body, read: false,
+                data: {
+                    annonceId: annonceId || null,
+                    bebeIndex: bebeIndex != null ? bebeIndex : null,
+                    fromUid: context.auth.uid,
+                },
+                ...(profileId ? {profile_id: profileId} : {}),
+                ...(senderProfileId ? {sender_profile_id: senderProfileId} : {}),
+            }]);
+        } catch (e) {
+            console.error("sendLikeNotification insert error:", e);
+        }
 
         const sent = await sendPush(receiverUid, title, body, {
             type: "like",

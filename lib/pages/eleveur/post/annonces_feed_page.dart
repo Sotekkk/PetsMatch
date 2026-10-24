@@ -570,16 +570,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
         });
         if (item.uidEleveur != null && item.uidEleveur != uid) {
           final name = User_Info.firstname.isNotEmpty ? User_Info.firstname : 'Quelqu\'un';
-          await Supabase.instance.client.from('notifications').insert({
-            'uid': item.uidEleveur, 'type': 'like',
-            'title': '❤️ Nouveau like sur votre annonce',
-            'body': '$name a aimé "${item.nom}"',
-            'data': {'annonceId': item.annonceId, 'bebeIndex': item.bebeIndex, 'fromUid': uid},
-            'read': false,
-            if ((item.profileId ?? '').isNotEmpty) 'profile_id': item.profileId,
-            if (User_Info.activeProfileId.isNotEmpty) 'sender_profile_id': User_Info.activeProfileId,
-          });
-          // Push via Firebase Cloud Functions (même infra que les alertes)
+          // La fonction crée la notification ET envoie le push (un seul envoi :
+          // un insert ici déclenchait en plus le push automatique du webhook).
           unawaited(FirebaseFunctions.instanceFor(region: 'europe-west1')
               .httpsCallable('sendLikeNotification')
               .call({
@@ -588,6 +580,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
                 'bebeIndex':   item.bebeIndex,
                 'nomAnimal':   item.nom,
                 'senderName':  name,
+                if (User_Info.activeProfileId.isNotEmpty) 'senderProfileId': User_Info.activeProfileId,
               }));
         }
       }

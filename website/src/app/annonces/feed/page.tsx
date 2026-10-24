@@ -475,22 +475,15 @@ function FeedPageContent() {
         const likerName = userData?.firstname
           ? `${userData.firstname}${userData.lastname ? ' ' + userData.lastname : ''}`
           : 'Quelqu\'un';
-        await supabase.from('notifications').insert({
-          uid: item.uidEleveur, type: 'like',
-          title: '❤️ Nouveau like sur votre annonce',
-          body: `${likerName} a aimé "${item.nom}"`,
-          data: { annonceId: item.annonceId, bebeIndex: item.bebeIndex, fromUid: user!.uid },
-          read: false,
-          ...(item.profileId ? { profile_id: item.profileId } : {}),
-          ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
-        });
-        // Push notification via Firebase Cloud Functions (même infra que les alertes perdus)
+        // La fonction crée la notification ET envoie le push (un seul envoi :
+        // un insert ici déclenchait en plus le push automatique du webhook).
         httpsCallable(functions, 'sendLikeNotification')({
           receiverUid: item.uidEleveur,
           annonceId: item.annonceId,
           bebeIndex: item.bebeIndex,
           nomAnimal: item.nom,
           senderName: likerName,
+          ...(activeProfileId ? { senderProfileId: activeProfileId } : {}),
         }).catch(() => {});
       }
     }

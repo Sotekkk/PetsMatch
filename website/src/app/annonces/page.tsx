@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
@@ -160,15 +162,11 @@ function AnnoncesListe() {
       } else {
         await supabase.from('likes').insert({ user_uid: user.uid, annonce_id: annonceId, bebe_index: bebeIndex, ...(activeProfileId ? { profile_id: activeProfileId } : {}) });
         if (uidEleveur && uidEleveur !== user.uid) {
-          supabase.from('notifications').insert({
-            uid: uidEleveur, type: 'like',
-            title: '❤️ Nouveau like sur votre annonce',
-            body: 'Quelqu\'un a aimé votre annonce',
-            data: { annonceId, bebeIndex },
-            read: false,
-            ...(annonceProfileId ? { profile_id: annonceProfileId } : {}),
-            ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
-          }).then(() => {});
+          // La fonction crée la notification ET envoie le push (un seul envoi).
+          httpsCallable(functions, 'sendLikeNotification')({
+            receiverUid: uidEleveur, annonceId, bebeIndex,
+            ...(activeProfileId ? { senderProfileId: activeProfileId } : {}),
+          }).catch(() => {});
         }
       }
     } catch {
