@@ -5,7 +5,7 @@
 // À placer dans un HealthPanel (panneau blanc unique, lignes séparées par
 // des traits fins). La couleur est fonctionnelle (cf. lib/sante-couleurs).
 
-import { useState, ReactNode } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 
 interface Props {
   title: string;
@@ -17,6 +17,11 @@ interface Props {
   onAdd?: () => void;
   addForm?: ReactNode;
   addFormOpen?: boolean;
+  /** Titre : le formulaire s'ouvre dans une fenêtre au lieu du haut de la
+   *  rubrique (ex. « + Rappel » sur un soin plus bas dans la liste). */
+  addFormModal?: string;
+  /** Fermeture de la fenêtre (clic à côté, ×, Échap). */
+  onCloseModal?: () => void;
   id?: string;
   defaultOpen?: boolean;
 }
@@ -30,8 +35,15 @@ export function HealthPanel({ children }: { children: ReactNode }) {
   );
 }
 
-export default function HealthSection({ title, color, count, children, onAdd, addForm, addFormOpen, id, defaultOpen }: Props) {
+export default function HealthSection({ title, color, count, children, onAdd, addForm, addFormOpen, addFormModal, onCloseModal, id, defaultOpen }: Props) {
   const [open, setOpen] = useState(!!defaultOpen);
+  const enFenetre = !!addFormOpen && !!addForm && !!addFormModal;
+  useEffect(() => {
+    if (!enFenetre) return;
+    const echap = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseModal?.(); };
+    window.addEventListener('keydown', echap);
+    return () => window.removeEventListener('keydown', echap);
+  }, [enFenetre, onCloseModal]);
   // Ligne « dépliée » si la liste ou le formulaire d'ajout est affiché :
   // le chevron (ou un clic sur le titre) referme alors les deux.
   const deplie = open || !!addFormOpen;
@@ -72,8 +84,22 @@ export default function HealthSection({ title, color, count, children, onAdd, ad
       </div>
 
       {/* « + Ajouter » affiche le formulaire sans déplier la liste */}
-      {addFormOpen && addForm && (
+      {addFormOpen && addForm && !addFormModal && (
         <div className="px-4 py-4 border-t border-gray-100 bg-gray-50">{addForm}</div>
+      )}
+      {enFenetre && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4" onClick={onCloseModal}>
+          <div role="dialog" aria-modal="true" aria-label={addFormModal}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+              <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} aria-hidden />
+              <h3 className="flex-1 font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{addFormModal}</h3>
+              <button type="button" onClick={onCloseModal} aria-label="Fermer"
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50">×</button>
+            </div>
+            <div className="px-4 pb-4">{addForm}</div>
+          </div>
+        </div>
       )}
       {open && (
         <div className="border-t border-gray-100 divide-y divide-gray-100">{children}</div>

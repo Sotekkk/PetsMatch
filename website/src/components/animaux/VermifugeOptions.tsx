@@ -19,8 +19,8 @@ export function colonnesPrises(o: OptionsVermifuge, date?: string): Record<strin
     out.rappel_frequence_jours = 1;
     out.rappel_duree_jours = o.dureeJours;
     out.rappel_heures = o.heures;
-    if (date) {
-      const fin = new Date(date);
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const fin = new Date(`${date.slice(0, 10)}T12:00:00`);
       fin.setDate(fin.getDate() + o.dureeJours - 1);
       out.rappel_fin = fin.toISOString().slice(0, 10);
     }
@@ -75,7 +75,7 @@ export default function VermifugeOptions({ animalId, value, onChange, groupe = t
           <span>{value.dureeJours > 1 ? 'jours' : 'jour'}</span>
         </div>
         <label className="flex items-center gap-2 text-sm mt-3 cursor-pointer">
-          <input type="checkbox" checked={value.rappel} onChange={e => maj({ rappel: e.target.checked })} className="accent-[#0C5C6C] w-4 h-4" />
+          <input type="checkbox" checked={value.rappel} onChange={e => maj({ rappel: e.target.checked, heures: e.target.checked && value.heures.length === 0 && heure ? [heure] : value.heures })} className="accent-[#0C5C6C] w-4 h-4" />
           <span className="font-semibold text-[#1F2A2E]">Rappel à chaque prise</span>
         </label>
         {value.rappel && (

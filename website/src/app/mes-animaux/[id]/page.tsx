@@ -16,7 +16,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
-import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe } from '@/lib/controle-dates';
+import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe, dateValide } from '@/lib/controle-dates';
+import ChampDate from '@/components/ChampDate';
 import PartageAnimalModal from '@/components/animaux/PartageAnimalModal';
 import { useAuth } from '@/lib/auth-context';
 import { RichText } from '@/lib/rich-text';
@@ -259,6 +260,11 @@ function Field({ label, value, onChange, type='text', rows, required, digitsOnly
   );
 }
 
+/** Champ du carnet : date (JJ/MM/AAAA + calendrier) ou champ classique. */
+function ChampOuDate(p: { label:string; value:string; onChange:(v:string)=>void; type?:string; required?:boolean; min?:string; max?:string }) {
+  return p.type === 'date' ? <ChampDate label={p.label} value={p.value} onChange={p.onChange} required={p.required} min={p.min} max={p.max} /> : <Field {...p} />;
+}
+
 function SelectField({ label, value, onChange, options }:
   { label:string; value:string; onChange:(v:string)=>void; options:{value:string;label:string}[] }) {
   return (
@@ -476,6 +482,13 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     if (!e.length) void onSave(form);
   }
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
+  // Date en cours de saisie (vidée, incomplète) : pas de calcul — new Date('')
+  // faisait planter la page (« page couldn't load »).
+  const plusJours = (d0: string | undefined, jours: number) => {
+    if (!d0 || !dateValide(d0)) return '';
+    const d = new Date(`${d0}T12:00:00`); d.setDate(d.getDate() + jours);
+    return d.toISOString().slice(0, 10);
+  };
   const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
   // Fréquence (ex: antiparasitaires) : valeur + unité au lieu d'un texte
   // libre, pour calculer automatiquement la date de rappel. Best-effort pour
@@ -492,11 +505,8 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
       const uniteLabel = unite === 'jour' ? `jour${n>1?'s':''}` : unite === 'semaine' ? `semaine${n>1?'s':''}` : 'mois';
       next.frequence = `${n} ${uniteLabel}`;
       const d0 = dateStr ?? p.date;
-      if (d0) {
-        const days = unite === 'jour' ? n : unite === 'semaine' ? n*7 : n*30;
-        const d = new Date(d0); d.setDate(d.getDate() + days);
-        next.date_rappel = d.toISOString().slice(0,10);
-      }
+      const rappel = plusJours(d0, unite === 'jour' ? n : unite === 'semaine' ? n*7 : n*30);
+      if (rappel) next.date_rappel = rappel;
       return next;
     });
   }
@@ -519,13 +529,11 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
           </div>
         </div>
       ) : f.key === 'date_rappel' && fields.some(ff => ff.type === 'frequence') ? (
-        // Rappel calculé à partir de la date et de la fréquence : non modifiable.
-        <div key={f.key}>
-          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">{f.label} (calculée)</label>
-          <p className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 text-gray-600">
-            {form.date_rappel ? fmtDate(form.date_rappel) : 'Selon la date et la fréquence'}
-          </p>
-        </div>
+        // Rappel calculé à partir de la date et de la fréquence, corrigeable à la main.
+        <ChampDate key={f.key} label={f.label} value={form.date_rappel ?? ''}
+          min={form.date && dateValide(form.date) ? form.date : PREMIERE_DATE_ACTE}
+          aide="Calculée d'après la date et la fréquence, modifiable."
+          onChange={v => setForm(p => ({ ...p, date_rappel: v }))} />
       ) : f.type === 'heures' ? (
         <ChampHeures key={f.key} label={f.label} value={form[f.key] ?? ''}
           onChange={v => setForm(p => ({ ...p, [f.key]: v }))} />
@@ -549,9 +557,9 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
             return next;
           })} />
       ) : (
-        <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required || (f.type === 'date' && f.key === 'date')}
-          // Dates : bornes proposées par le calendrier (contrôlées à l'enregistrement).
-          min={f.type === 'date' ? (f.key !== 'date' && form.date ? form.date : PREMIERE_DATE_ACTE) : undefined}
+        // Dates : saisie JJ/MM/AAAA ou calendrier (bornes contrôlées à l'enregistrement).
+        <ChampOuDate key={f.key} label={f.label} value={form[f.key]??''} required={f.required || (f.type === 'date' && f.key === 'date')}
+          min={f.type === 'date' ? (f.key !== 'date' && form.date && dateValide(form.date) ? form.date : PREMIERE_DATE_ACTE) : undefined}
           max={f.type === 'date' && f.key === 'date' ? derniereDateActe() : undefined}
           type={f.type??'text'} onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
@@ -568,11 +576,8 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
             // antiparasitaires) : recalcule le rappel sur la nouvelle date.
             if (f.key === 'date' && fields.some(ff => ff.type === 'frequence')) {
               const n = parseInt(freqValeur, 10);
-              if (n > 0) {
-                const days = freqUnite === 'jour' ? n : freqUnite === 'semaine' ? n*7 : n*30;
-                const d = new Date(v); d.setDate(d.getDate() + days);
-                next.date_rappel = d.toISOString().slice(0,10);
-              }
+              const rappel = n > 0 ? plusJours(v, freqUnite === 'jour' ? n : freqUnite === 'semaine' ? n*7 : n*30) : '';
+              if (rappel) next.date_rappel = rappel;
             }
             return next;
           })} />
@@ -2781,9 +2786,9 @@ function AnimalFichePageInner() {
   // "+ Rappel" sur un vaccin : pré-remplit le formulaire d'ajout avec le
   // même vaccin/vétérinaire, il ne reste qu'à changer date et lot.
   const [rappelPrefill, setRappelPrefill] = useState<Record<string,string>|null>(null);
-  // « + Rappel » : le formulaire s'ouvre en haut de la rubrique — souvent hors
-  // de l'écran quand le soin est plus bas dans la liste (le bouton semblait ne
-  // rien faire). On y amène la page.
+  // « + Étape suivante » : le formulaire s'ouvre en haut de la rubrique — souvent
+  // hors de l'écran quand le soin est plus bas dans la liste. On y amène la page.
+  // (« + Rappel » s'ouvre dans une fenêtre : addFormModal.)
   const allerAuFormulaire = (sectionId: string) => {
     setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   };
@@ -3610,9 +3615,10 @@ function AnimalFichePageInner() {
 
   // Vermifuge : durée / rappels de prise + plusieurs animaux d'un coup
   // (components/animaux/VermifugeOptions.tsx).
-  async function saveVermifuge(data: Record<string,string>) {
-    if (!id) return;
-    if (optsVermifuge.rappel && optsVermifuge.heures.length === 0) { alert('Ajoutez au moins une heure de rappel.'); return; }
+  // false : rien d'enregistré, le formulaire reste ouvert avec la saisie.
+  async function saveVermifuge(data: Record<string,string>): Promise<boolean> {
+    if (!id) return false;
+    if (optsVermifuge.rappel && optsVermifuge.heures.length === 0) { alert('Ajoutez au moins une heure de rappel (ou décochez « Rappel à chaque prise »).'); return false; }
     setSavingHealth(true);
     for (const animalId of [id, ...optsVermifuge.autres]) {
       const recordId = crypto.randomUUID();
@@ -3630,6 +3636,7 @@ function AnimalFichePageInner() {
     await loadHealth();
     setAddOpen(null);
     setSavingHealth(false);
+    return true;
   }
 
   // Antiparasitaire : plusieurs animaux d'un coup (même bloc que le vermifuge).
@@ -3730,14 +3737,15 @@ function AnimalFichePageInner() {
     setSavingHealth(false);
   }
 
-  async function updateVermifuge(recordId: string, data: Record<string,string>, o: OptionsVermifuge) {
-    if (o.rappel && o.heures.length === 0) { alert('Ajoutez au moins une heure de rappel.'); return; }
+  async function updateVermifuge(recordId: string, data: Record<string,string>, o: OptionsVermifuge): Promise<boolean> {
+    if (o.rappel && o.heures.length === 0) { alert('Ajoutez au moins une heure de rappel (ou décochez « Rappel à chaque prise »).'); return false; }
     setSavingHealth(true);
     const maj = { ...data, ...colonnesPrises(o, data.date) };
     await supabase.from('vermifuges').update(maj).eq('id', recordId);
     await writeRegistreActe('vermifuges', recordId, maj as Record<string, unknown>);
     await loadHealth();
     setSavingHealth(false);
+    return true;
   }
 
   async function saveTraitement(data: Record<string,string>, recordId?: string, etapeDe?: HealthRecord) {
@@ -5335,6 +5343,8 @@ function AnimalFichePageInner() {
             title="Vaccinations" icon="💉" color={SANTE_COULEURS.vaccinations} count={health.vaccinations.length}
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vaccinations'?null:'vaccinations'); } : undefined}
             addFormOpen={addOpen==='vaccinations'}
+            addFormModal={rappelPrefill ? 'Rappel de vaccin' : undefined}
+            onCloseModal={()=>{ setAddOpen(null); setRappelPrefill(null); }}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
               onSave={async d=>{ await saveHealthRecord('vaccinations',d); setRappelPrefill(null); }}
               initial={rappelPrefill ?? undefined}
@@ -5350,7 +5360,6 @@ function AnimalFichePageInner() {
                 onRappel={canWriteSante ? ()=>{
                   setRappelPrefill({ vaccin: String(r.vaccin??''), veterinaire: String(r.veterinaire??''), categorie: String(r.categorie??'') });
                   setAddOpen('vaccinations');
-                  allerAuFormulaire('health-vaccinations');
                 } : undefined}
                 fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'categorie',label:'Type de vaccin',type:'select',options:categorieOptions(animal.espece)},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
             ))}
@@ -5362,8 +5371,10 @@ function AnimalFichePageInner() {
             title="Vermifuges" icon="🧪" color={SANTE_COULEURS.vermifuges} count={health.vermifuges.length}
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vermifuges'?null:'vermifuges'); } : undefined}
             addFormOpen={addOpen==='vermifuges'}
+            addFormModal={rappelPrefill ? 'Rappel de vermifuge' : undefined}
+            onCloseModal={()=>{ setAddOpen(null); setRappelPrefill(null); }}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
-              onSave={async d=>{ await saveVermifuge(d); setRappelPrefill(null); }}
+              onSave={async d=>{ if (await saveVermifuge(d)) setRappelPrefill(null); }}
               initial={rappelPrefill ?? undefined}
               extra={id ? <VermifugeOptions animalId={id} value={optsVermifuge} onChange={setOptsVermifuge} /> : null}
               fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>}>
@@ -5373,12 +5384,11 @@ function AnimalFichePageInner() {
                 champsEdition={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}
                 formulaireEdition={fermer => (
                   <EditionVermifuge record={r} champs={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]} saving={savingHealth}
-                    onCancel={fermer} onSave={async (d, o) => { await updateVermifuge(r.id, d, o); fermer(); }} />
+                    onCancel={fermer} onSave={async (d, o) => { if (await updateVermifuge(r.id, d, o)) fermer(); }} />
                 )}
                 onRappel={canWriteSante ? ()=>{
                   setRappelPrefill({ produit: String(r.produit??''), dosage: String(r.dosage??''), frequence: String(r.frequence??'') });
                   setAddOpen('vermifuges');
-                  allerAuFormulaire('health-vermifuges');
                 } : undefined}
                 fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>
             ))}
@@ -5390,6 +5400,8 @@ function AnimalFichePageInner() {
             title="Antiparasitaires" icon="🛡️" color={SANTE_COULEURS.antiparasitaires} count={health.antiparasitaires.length}
             onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires'); } : undefined}
             addFormOpen={addOpen==='antiparasitaires'}
+            addFormModal={rappelPrefill ? "Rappel d'antiparasitaire" : undefined}
+            onCloseModal={()=>{ setAddOpen(null); setRappelPrefill(null); }}
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
               onSave={async d=>{ await saveAntiparasitaire(d); setRappelPrefill(null); }}
               initial={rappelPrefill ?? undefined}
@@ -5402,7 +5414,6 @@ function AnimalFichePageInner() {
                 onRappel={canWriteSante ? ()=>{
                   setRappelPrefill({ produit: String(r.produit??''), type: String(r.type??''), frequence: String(r.frequence??'') });
                   setAddOpen('antiparasitaires');
-                  allerAuFormulaire('health-antiparasitaires');
                 } : undefined}
                 fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
