@@ -468,7 +468,8 @@ const CHAMPS_TRAITEMENT = [
 ];
 
 function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories, extra }:
-  { fields: { key:string; label:string; type?:string; required?:boolean; options?:{value:string;label:string}[] }[];
+  { /** passee : date qui ne peut pas être dans le futur (ex. allergie constatée). */
+    fields: { key:string; label:string; type?:string; required?:boolean; passee?:boolean; options?:{value:string;label:string}[] }[];
     onSave:(data:Record<string,string>)=>Promise<void>;
     onCancel:()=>void; saving:boolean; initial?: Record<string,string>; espece?: string; existingCategories?: string[];
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
@@ -478,6 +479,9 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
   function enregistrer() {
     const avecStatut = fields.some(f => f.key === 'statut') ? { ...form, statut: form.statut || 'prevu' } : form;
     const e = erreursDatesSante(avecStatut, fields.filter(f => f.type === 'date'));
+    const aujourdhui = new Date().toLocaleDateString('sv-SE'); // AAAA-MM-JJ local
+    fields.filter(f => f.passee && dateValide(form[f.key] ?? '') && form[f.key] > aujourdhui)
+      .forEach(f => e.push(`${f.label} : ne peut pas être dans le futur.`));
     setErreurs(e);
     if (!e.length) void onSave(form);
   }
@@ -560,7 +564,7 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
         // Dates : saisie JJ/MM/AAAA ou calendrier (bornes contrôlées à l'enregistrement).
         <ChampOuDate key={f.key} label={f.label} value={form[f.key]??''} required={f.required || (f.type === 'date' && f.key === 'date')}
           min={f.type === 'date' ? (f.key !== 'date' && form.date && dateValide(form.date) ? form.date : PREMIERE_DATE_ACTE) : undefined}
-          max={f.type === 'date' && f.key === 'date' ? derniereDateActe() : undefined}
+          max={f.type === 'date' && f.passee ? new Date().toLocaleDateString('sv-SE') : f.type === 'date' && f.key === 'date' ? derniereDateActe() : undefined}
           type={f.type??'text'} onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
             // Date d'injection changée (y compris une correction après un
@@ -600,7 +604,7 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
 }
 
 function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espece, existingCategories, onRappel, resume, titre, onEtape, champsEdition, formulaireEdition }:
-  { fields:{key:string;label:string;type?:string;required?:boolean;options?:{value:string;label:string}[]}[]; record:HealthRecord; onDelete:()=>void;
+  { fields:{key:string;label:string;type?:string;required?:boolean;passee?:boolean;options?:{value:string;label:string}[]}[]; record:HealthRecord; onDelete:()=>void;
     onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean; espece?: string; existingCategories?: string[];
     onRappel?:()=>void;
     /** Lignes de résumé affichées sous le titre, repliées (ex. traitement). */
@@ -610,7 +614,7 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
     /** Traitement : ajouter l'étape suivante d'une posologie progressive. */
     onEtape?: () => void;
     /** Champs du formulaire de modification (= ceux de la création) ; à défaut [fields]. */
-    champsEdition?: {key:string;label:string;type?:string;required?:boolean;options?:{value:string;label:string}[]}[];
+    champsEdition?: {key:string;label:string;type?:string;required?:boolean;passee?:boolean;options?:{value:string;label:string}[]}[];
     /** Formulaire de modification sur mesure (mêmes éléments qu'à la création). */
     formulaireEdition?: (fermer: () => void) => React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -5515,11 +5519,11 @@ function AnimalFichePageInner() {
             addFormOpen={addOpen==='allergies'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('allergies',d)}
-              fields={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité (légère/modérée/sévère)'},{key:'date',label:'Date constatée',type:'date'},{key:'notes',label:'Notes'}]}/>}>
+              fields={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité (légère/modérée/sévère)'},{key:'date',label:'Date constatée',type:'date',passee:true},{key:'notes',label:'Notes'}]}/>}>
             {health.allergies.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('allergies',r.id)}
                 onSave={d=>updateHealthRecord('allergies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
-                champsEdition={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité (légère/modérée/sévère)'},{key:'date',label:'Date constatée',type:'date'},{key:'notes',label:'Notes'}]}
+                champsEdition={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité (légère/modérée/sévère)'},{key:'date',label:'Date constatée',type:'date',passee:true},{key:'notes',label:'Notes'}]}
                 fields={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.allergies.length===0 && <p className="p-4 text-sm text-gray-400">Aucune allergie</p>}

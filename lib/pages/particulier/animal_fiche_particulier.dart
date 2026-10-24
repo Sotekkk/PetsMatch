@@ -2873,9 +2873,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFld(ctrl: desc, label: 'Description', hint: 'Ex: Allergie au pollen...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Alimentaire, Cutanée...'),
       _SFld(ctrl: severite, label: 'Sévérité', hint: 'Ex: Légère, Modérée, Sévère'),
-      _SDate(label: 'Date de détection', date: date, onPicked: (d) => ss(() => date = d)),
+      // Constatée : jamais dans le futur (même libellé que le site).
+      _SDate(label: 'Date constatée', date: date, lastDate: DateTime.now(), onPicked: (d) => ss(() => date = d)),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
+      if (date != null && date!.isAfter(DateTime.now())) {
+        throw const SaisieInvalide('La date constatée ne peut pas être dans le futur.');
+      }
       await _enregistrerSante('allergies', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,

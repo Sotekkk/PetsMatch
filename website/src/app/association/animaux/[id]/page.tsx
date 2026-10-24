@@ -245,6 +245,9 @@ function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espec
       if (data.date && dateNaissance && data.date < dateNaissance.slice(0, 10)) { alert('La date de la pesée est antérieure à la naissance de l’animal.'); return; }
       data = { ...data, valeur: String(poidsKg(data.valeur)), id: crypto.randomUUID(), ...(data.date ? {} : { date: new Date().toISOString().slice(0, 10) }) };
     }
+    if (table === 'allergies' && data.date && data.date > new Date().toLocaleDateString('sv-SE')) {
+      alert('Date constatée : ne peut pas être dans le futur.'); return;
+    }
     if (table !== 'poids' && table !== 'allergies') {
       // Date de l'acte obligatoire, dates réelles et cohérentes (comme mes-animaux).
       const erreurs = erreursDatesSante(data, [

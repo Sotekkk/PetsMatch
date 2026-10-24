@@ -1117,6 +1117,10 @@ function PatientDetailPageInner() {
       const erreurs = erreursDatesSante(
         { date: formDate, date_rappel: formRappel, date_fin: formDateFin, ...(addingType === 'chirurgie' ? { statut: formStatut } : {}) },
         [{ key: 'date', label: 'Date', required: true }, { key: 'date_rappel', label: 'Date de rappel' }, { key: 'date_fin', label: 'Date de fin' }]);
+      // Allergie : date constatée, jamais dans le futur.
+      if (addingType === 'allergie' && formDate && formDate > new Date().toLocaleDateString('sv-SE')) {
+        erreurs.push('Date constatée : ne peut pas être dans le futur.');
+      }
       setFormErreurs(erreurs);
       if (erreurs.length) return;
     }
