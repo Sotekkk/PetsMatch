@@ -4,7 +4,22 @@
     "details": [
       {
         "appID": "YN835L23CL.com.application.petsmatch",
-        "paths": ["/p/*"]
+        "paths": [
+          "NOT /annonces/creer*",
+          "NOT /annonces/publier*",
+          "NOT /annonces/paiement-boost*",
+          "NOT /animaux-perdus/declarer*",
+          "NOT /lieux-naturels/proposer*",
+          "NOT /lieux-naturels/mes-contributions*",
+          "NOT /animal-friendly/recommander*",
+          "NOT /animal-friendly/mes-contributions*",
+          "/p/*",
+          "/annonces/*",
+          "/animaux-perdus",
+          "/animaux-perdus/*",
+          "/lieux-naturels/*",
+          "/animal-friendly/*"
+        ]
       }
     ]
   }

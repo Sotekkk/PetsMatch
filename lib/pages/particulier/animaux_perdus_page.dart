@@ -8,6 +8,7 @@ import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
+import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -17,6 +18,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart';
 
 // ── Species colors ────────────────────────────────────────────────────────────
@@ -72,7 +74,9 @@ const _breedFiles = {
 
 class AnimauxPerdusPage extends StatefulWidget {
   final String? initialAlertId;
-  const AnimauxPerdusPage({super.key, this.initialAlertId});
+  /// Animal trouvé à ouvrir directement (lien partagé `?trouve=<id>`).
+  final String? initialTrouveId;
+  const AnimauxPerdusPage({super.key, this.initialAlertId, this.initialTrouveId});
 
   @override
   State<AnimauxPerdusPage> createState() => _AnimauxPerdusPageState();
@@ -371,6 +375,16 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
                 .addPostFrameCallback((_) => _showAlertDetail(target));
           }
         }
+        if (widget.initialTrouveId != null) {
+          final target = _trouves.firstWhere(
+            (a) => a['id']?.toString() == widget.initialTrouveId,
+            orElse: () => {},
+          );
+          if (target.isNotEmpty) {
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _showTrouveDetail(target));
+          }
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -631,7 +645,8 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     final contact = (a['contact'] as String?) ?? '';
     final numero  = (a['numero_alerte'] as String?) ?? '';
 
-    const url = 'https://www.petsmatchapp.com/animaux-perdus';
+    // Lien vers l'alerte précise ; ouvre l'appli si elle est installée.
+    final url = '$kSiteBaseUrl/animaux-perdus?alerte=${a['id']}';
     final text = [
       'ANIMAL PERDU — $nom ($espece)${numero.isNotEmpty ? ' [N° $numero]' : ''}',
       if (lieu.isNotEmpty) 'Dernière localisation : $lieu',
@@ -660,7 +675,7 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         : '';
     final desc    = (a['description'] as String?) ?? '';
 
-    const url = 'https://www.petsmatchapp.com/animaux-perdus';
+    final url = '$kSiteBaseUrl/animaux-perdus?trouve=${a['id']}';
     final nom = '${espece[0].toUpperCase()}${espece.substring(1)}'
         '${race.isNotEmpty ? ' ($race)' : ''}';
     final text = [
@@ -679,27 +694,14 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     );
   }
 
+  /// Contacter le déclarant : messagerie PetsMatch (s'il l'accepte), appel,
+  /// SMS, WhatsApp, e-mail — chaque moyen n'apparaît que s'il est renseigné.
+  /// Messagerie seule : la conversation s'ouvre directement. Miroir site :
+  /// BoutonsContact (website/src/app/animaux-perdus/page.tsx).
   Future<void> _contact(Map<String, dynamic> a, {String type = 'perdu'}) async {
-    // For trouvé with messaging disabled, show contact info directly
-    if (type == 'trouve') {
-      final accepte = a['contact_messagerie'] as bool? ?? true;
-      if (!accepte) {
-        final phone = a['contact_telephone'] as String?;
-        final email = a['contact_email'] as String?;
-        if (!mounted) return;
-        showModalBottomSheet(
-          context: context,
-          backgroundColor: Colors.transparent,
-          builder: (_) => _ContactInfoSheet(phone: phone, email: email),
-        );
-        return;
-      }
-    }
-
     final ownerId = type == 'perdu'
         ? a['uid_proprietaire'] as String?
         : a['user_uid'] as String?;
-    if (ownerId == null) return;
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (currentUid == null) return;
     if (currentUid == ownerId) {
@@ -707,7 +709,58 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
           const SnackBar(content: Text('C\'est votre propre déclaration')));
       return;
     }
+    final messagerie = ownerId != null && (a['contact_messagerie'] as bool? ?? true);
+    final ancien = (a['contact'] as String?)?.trim() ?? '';
+    final tel = ((a['contact_telephone'] as String?)?.trim().isNotEmpty ?? false)
+        ? (a['contact_telephone'] as String).trim()
+        : (ancien.isNotEmpty && !ancien.contains('@') ? ancien : null);
+    final email = ((a['contact_email'] as String?)?.trim().isNotEmpty ?? false)
+        ? (a['contact_email'] as String).trim()
+        : (ancien.contains('@') ? ancien : null);
 
+    Future<void> ouvrirMessagerie() => _ouvrirMessagerie(a, ownerId!);
+
+    if (messagerie && tel == null && email == null) {
+      await ouvrirMessagerie();
+      return;
+    }
+    final ref = (a['numero_alerte'] as String?) ?? '';
+    final nom = (a['nom_animal'] as String?) ?? (a['espece'] as String?) ?? 'l\'animal';
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(height: 4),
+            Text(type == 'perdu' ? 'Le propriétaire de $nom' : 'La personne qui a trouvé l\'animal',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+            if (tel != null) ...[
+              const SizedBox(height: 4),
+              Text(tel, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+            ],
+            const SizedBox(height: 14),
+            ContactCanaux(
+              tel: tel,
+              email: email,
+              sujet: type == 'perdu'
+                  ? 'Alerte animal perdu${ref.isNotEmpty ? ' N° $ref' : ''} : $nom'
+                  : 'Animal trouvé sur PetsMatch',
+              onMessage: messagerie ? ouvrirMessagerie : null,
+              avantMessage: () => Navigator.pop(sheetCtx),
+              texteVide: 'Aucun moyen de contact renseigné.',
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _ouvrirMessagerie(Map<String, dynamic> a, String ownerId) async {
     try {
       final alerteId = a['id'] as String?;
       final nomAnimal = a['nom_animal'] as String?;
@@ -716,6 +769,8 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
         categorie: 'animaux-perdus',
         alerteId: alerteId,
         nomAnimal: nomAnimal,
+        // Conversation avec le profil qui a déclaré (sinon son profil principal).
+        otherProfileId: (a['profile_id'] as String?)?.isNotEmpty == true ? a['profile_id'] as String : null,
       );
       if (!mounted) return;
       Navigator.push(
@@ -2391,8 +2446,8 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
                       color: Color(0xFF4A5568))),
             ],
             const SizedBox(height: 16),
-            // Contact + Share
-            if (accepte)
+            // Contact (messagerie, appel, SMS, WhatsApp, e-mail) + Share
+            if (accepte || (phone ?? '').isNotEmpty || (email ?? '').isNotEmpty)
               Row(children: [
                 Expanded(
                   child: ElevatedButton.icon(
@@ -2521,58 +2576,6 @@ class _DetailRow extends StatelessWidget {
                       fontSize: 12,
                       color: Color(0xFF1F2A2E)))),
         ],
-      );
-}
-
-// ── Contact info sheet (for trouvé with messagerie disabled) ──────────────────
-
-class _ContactInfoSheet extends StatelessWidget {
-  final String? phone, email;
-  const _ContactInfoSheet({this.phone, this.email});
-
-  @override
-  Widget build(BuildContext context) => Container(
-        decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        padding: EdgeInsets.fromLTRB(
-            20, 16, 20, MediaQuery.of(context).padding.bottom + 24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2))),
-          const Text('Coordonnées du déclarant',
-              style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16)),
-          const SizedBox(height: 16),
-          if (phone != null && phone!.isNotEmpty)
-            ListTile(
-              leading: const Icon(Icons.phone_outlined, color: Color(0xFF0C5C6C)),
-              title: Text(phone!,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
-              onTap: () => launchUrl(Uri.parse('tel:$phone')),
-            ),
-          if (email != null && email!.isNotEmpty)
-            ListTile(
-              leading: const Icon(Icons.email_outlined, color: Color(0xFF0C5C6C)),
-              title: Text(email!,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
-              onTap: () => launchUrl(Uri.parse('mailto:$email')),
-            ),
-          if ((phone == null || phone!.isEmpty) &&
-              (email == null || email!.isEmpty))
-            const Text('Aucune coordonnée disponible.',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontSize: 13,
-                    color: Color(0xFF6F767B))),
-        ]),
       );
 }
 

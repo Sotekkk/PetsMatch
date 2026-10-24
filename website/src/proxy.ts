@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const WHITELISTED_PATHS = [
   '/beta-login',
+  // Liens qui ouvrent l'appli (App Links / Universal Links) : Apple et Google
+  // lisent ces fichiers sans cookie bêta. apple-app-site-association n'a pas
+  // d'extension → il partait vers /beta-login et aucun lien n'ouvrait l'appli
+  // sur iPhone.
+  '/.well-known/',
   // Routes API : appelées par l'APPLI (e-mails de certificat, contrat,
   // cession, facture, RDV…) sans cookie bêta → redirigées vers /beta-login,
   // aucun e-mail n'était envoyé. Chaque route vérifie elle-même l'appelant

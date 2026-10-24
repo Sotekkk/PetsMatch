@@ -79,15 +79,36 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Liens de partage Pets Social : https://petsmatchapp.com/p/<id>.
+            <!-- Liens de partage : Pets Social (/p/<id>), annonces, animaux
+                 perdus / trouvés, lieux naturels, lieux pet-friendly.
                  autoVerify => Android ouvre l'app directement si le fichier
-                 /.well-known/assetlinks.json du domaine référence cette app. -->
+                 /.well-known/assetlinks.json du domaine référence cette app.
+                 Routage : lib/services/deep_link_service.dart. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="petsmatchapp.com" android:pathPrefix="/p/"/>
-                <data android:scheme="https" android:host="www.petsmatchapp.com" android:pathPrefix="/p/"/>
+                <data android:scheme="https" android:host="petsmatchapp.com"/>
+                <data android:pathPrefix="/p/"/>
+                <data android:pathPrefix="/annonces/"/>
+                <data android:pathPrefix="/animaux-perdus"/>
+                <data android:pathPrefix="/lieux-naturels/"/>
+                <data android:pathPrefix="/animal-friendly/"/>
+            </intent-filter>
+            <!-- www redirige vers le domaine nu : non vérifiable. Filtre séparé
+                 sans autoVerify (Android propose d'ouvrir avec l'appli) pour ne
+                 pas faire échouer la vérification du domaine nu sous Android 11
+                 et avant (tous les hôtes d'un filtre vérifié doivent l'être). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="www.petsmatchapp.com"/>
+                <data android:pathPrefix="/p/"/>
+                <data android:pathPrefix="/annonces/"/>
+                <data android:pathPrefix="/animaux-perdus"/>
+                <data android:pathPrefix="/lieux-naturels/"/>
+                <data android:pathPrefix="/animal-friendly/"/>
             </intent-filter>
         </activity>
         <!-- Cropper uCrop -->

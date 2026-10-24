@@ -18,6 +18,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -2040,7 +2041,7 @@ class _BottomBarState extends State<_BottomBar> {
     final prix      = (data['prix'] as num?)?.toInt();
     final ville     = (data['villeEleveur'] as String?) ?? '';
     final displayTitle = titre.isNotEmpty ? titre : race.isNotEmpty ? race : espece;
-    final annonceUrl = 'https://www.petsmatchapp.com/annonces/${widget.annonceId}';
+    final annonceUrl = '$kSiteBaseUrl/annonces/${widget.annonceId}';
 
     final lines = <String>[displayTitle];
     if (espece.isNotEmpty || race.isNotEmpty)

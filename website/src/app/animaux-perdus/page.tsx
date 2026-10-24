@@ -6,9 +6,9 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { PAYS_LIST, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
-import { db } from '@/lib/firebase';
-import { collection, addDoc, query, where, getDocs, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '@/lib/auth-context';
+import { ouvrirConversationDirecte } from '@/lib/conversation-directe';
+import { waPhone } from '@/lib/contact-acquereur';
 import type { AlerteMapItem } from '@/components/AnimauxPerdusMap';
 import { MARQUEUR_ESPECE, MARQUEUR_PERDU_DEFAUT, MARQUEUR_TROUVE } from '@/lib/perdus-couleurs';
 import { Icone } from '@/components/dashboard/kit';
@@ -37,6 +37,10 @@ interface Alerte {
   photo_url?: string;
   description?: string;
   contact?: string;
+  contact_telephone?: string | null;
+  contact_email?: string | null;
+  contact_messagerie?: boolean | null;
+  profile_id?: string | null;
   date_perte?: string;
   date_derniere_localisation?: string;
   ville?: string;
@@ -49,7 +53,8 @@ interface Alerte {
 
 interface Trouve {
   id: string;
-  uid_declarant?: string;
+  user_uid?: string;
+  profile_id?: string | null;
   espece: string;
   race?: string;
   sexe?: string;
@@ -68,7 +73,7 @@ interface Trouve {
   photos?: string[];
   contact_email?: string;
   contact_telephone?: string;
-  accepte_messagerie?: boolean;
+  contact_messagerie?: boolean | null;
   lat?: number;
   lng?: number;
 }
@@ -123,7 +128,7 @@ function extractVille(a: Alerte): string {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnimauxPerdusPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, activeProfileId } = useAuth();
   const router = useRouter();
 
   const [alertes, setAlertes]       = useState<Alerte[]>([]);
@@ -157,9 +162,16 @@ export default function AnimauxPerdusPage() {
       supabase.from('alertes_perdus').select('*').eq('statut', 'perdu').order('created_at', { ascending: false }),
       supabase.from('animaux_trouves').select('*').order('created_at', { ascending: false }),
     ]).then(([{ data: perdus }, { data: found }]) => {
-      setAlertes((perdus as Alerte[]) ?? []);
-      setTrouves((found as Trouve[]) ?? []);
+      const listeP = (perdus as Alerte[]) ?? [];
+      const listeT = (found as Trouve[]) ?? [];
+      setAlertes(listeP);
+      setTrouves(listeT);
       setLoading(false);
+      // Lien partagé : /animaux-perdus?alerte=<id> ou ?trouve=<id>.
+      const qs = new URLSearchParams(window.location.search);
+      const alerte = qs.get('alerte'), trouve = qs.get('trouve');
+      if (alerte) { const x = listeP.find(p => p.id === alerte); if (x) setSelectedAlerte(x); }
+      if (trouve) { const x = listeT.find(t => t.id === trouve); if (x) setSelectedTrouve(x); }
     });
   }, []);
 
@@ -264,50 +276,23 @@ export default function AnimauxPerdusPage() {
 
   // ── Contact via messagerie ────────────────────────────────────────────────
 
-  const contactViaMess = useCallback(async (a: Alerte) => {
+  // Messagerie PetsMatch (Supabase), avec le profil qui a déclaré. Avant : la
+  // conversation était créée dans l'ancienne messagerie Firestore et
+  // n'apparaissait jamais dans /messages ni dans l'appli.
+  const contactViaMess = useCallback(async (ownerUid?: string, ownerProfileId?: string | null) => {
     if (!user) { router.push('/connexion'); return; }
-    const ownerUid = a.uid_proprietaire;
     if (!ownerUid || ownerUid === user.uid) return;
-
     setContacting(true);
     try {
-      const ref  = a.numero_alerte ?? a.id;
-      const sexe = a.sexe ? (SEXE_LABEL[a.sexe] ?? a.sexe) : '';
-      const msg  = `Bonjour, je vous contacte au sujet de votre alerte N° ${ref} : ${a.nom_animal}${a.espece ? ` (${[a.espece, a.race, sexe].filter(Boolean).join(', ')})` : ''} perdu(e).`;
-
-      // Find or create conversation
-      const q = query(collection(db, 'conversations'), where('participants', 'array-contains', user.uid));
-      const snap = await getDocs(q);
-      let convId: string | null = null;
-      snap.forEach(doc => {
-        if ((doc.data().participants as string[])?.includes(ownerUid)) convId = doc.id;
+      const convId = await ouvrirConversationDirecte({
+        myUid: user.uid, myProfileId: activeProfileId, otherUid: ownerUid,
+        otherProfileId: ownerProfileId ?? null, categorie: 'animaux-perdus',
       });
-
-      if (!convId) {
-        const convRef = await addDoc(collection(db, 'conversations'), {
-          participants: [user.uid, ownerUid],
-          lastMessage: msg,
-          timestamp: serverTimestamp(),
-          unreadCount: { [ownerUid]: 1 },
-          categorie: 'animaux-perdus',
-        });
-        convId = convRef.id;
-        await addDoc(collection(db, `conversations/${convId}/messages`), {
-          text: msg, senderId: user.uid,
-          timestamp: serverTimestamp(), isRead: false,
-        });
-      } else {
-        // Always ensure the conversation is tagged as animaux-perdus
-        const existingDoc = snap.docs.find(d => d.id === convId);
-        if (existingDoc && existingDoc.data().categorie !== 'animaux-perdus') {
-          await updateDoc(doc(db, 'conversations', convId!), { categorie: 'animaux-perdus' });
-        }
-      }
       router.push(`/messages?conv=${convId}`);
     } catch {
       setContacting(false);
     }
-  }, [user, router]);
+  }, [user, router, activeProfileId]);
 
   // ── Owner actions (A03) ───────────────────────────────────────────────────
 
@@ -523,7 +508,7 @@ export default function AnimauxPerdusPage() {
         <AlerteDetailModal
           alerte={selectedAlerte}
           onClose={() => setSelectedAlerte(null)}
-          onContactMess={() => contactViaMess(selectedAlerte)}
+          onContactMess={() => contactViaMess(selectedAlerte.uid_proprietaire, selectedAlerte.profile_id)}
           contacting={contacting}
           actionLoading={actionLoading}
           user={user}
@@ -537,6 +522,8 @@ export default function AnimauxPerdusPage() {
         <TrouveDetailModal
           trouve={selectedTrouve}
           onClose={() => setSelectedTrouve(null)}
+          onContactMess={() => contactViaMess(selectedTrouve.user_uid, selectedTrouve.profile_id)}
+          contacting={contacting}
           actionLoading={actionLoading}
           user={user}
           onDelete={() => deleteTrouve(selectedTrouve.id)}
@@ -715,31 +702,12 @@ function AlerteDetailModal({
             </div>
           )}
 
-          {/* Boutons contact */}
+          {/* Boutons contact : messagerie (si acceptée), téléphone, WhatsApp, e-mail */}
           {!isOwner && (
-            <div className="space-y-2">
-              {a.contact && (
-                <a href={a.contact.includes('@') ? `mailto:${a.contact}` : `tel:${a.contact}`}
-                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm text-white transition-colors"
-                  style={{ background: '#0C5C6C' }}>
-                  {a.contact.includes('@') ? 'Envoyer un e-mail' : `Appeler : ${a.contact}`}
-                </a>
-              )}
-              {user && a.uid_proprietaire && (
-                <button onClick={onContactMess} disabled={contacting}
-                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white transition-colors disabled:opacity-60">
-                  {contacting
-                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Connexion…</>
-                    : 'Contacter via la messagerie'}
-                </button>
-              )}
-              {!user && (
-                <a href="/connexion"
-                  className="flex items-center justify-center w-full py-3 rounded-xl font-semibold text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
-                  Connectez-vous pour envoyer un message
-                </a>
-              )}
-            </div>
+            <BoutonsContact user={user} messagerie={a.contact_messagerie !== false && !!a.uid_proprietaire}
+              onContactMess={onContactMess} contacting={contacting}
+              tel={a.contact_telephone ?? (a.contact && !a.contact.includes('@') ? a.contact : null)}
+              email={a.contact_email ?? (a.contact?.includes('@') ? a.contact : null)} />
           )}
           {isOwner && (
             <div className="space-y-2">
@@ -801,20 +769,21 @@ function TrouveCard({ trouve: a, onClick }: { trouve: Trouve; onClick: () => voi
 // ── Trouvé detail modal ───────────────────────────────────────────────────────
 
 function TrouveDetailModal({
-  trouve: a, onClose, actionLoading, user, onDelete,
+  trouve: a, onClose, actionLoading, user, onDelete, onContactMess, contacting,
 }: {
   trouve: Trouve;
   onClose: () => void;
+  onContactMess: () => void;
+  contacting: boolean;
   actionLoading: boolean;
   user: { uid: string } | null;
   onDelete: () => void;
 }) {
   const colors  = ESPECE_COLORS[a.espece?.toLowerCase()] ?? ESPECE_COLORS.autre;
-  const isOwner = user?.uid === a.uid_declarant;
+  const isOwner = user?.uid === a.user_uid;
   const photos  = a.photos ?? [];
   const [photoIdx, setPhotoIdx] = useState(0);
   const photoUrl = photos[photoIdx];
-  const accepte  = a.accepte_messagerie !== false;
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -891,30 +860,11 @@ function TrouveDetailModal({
             </div>
           )}
 
-          {/* Contact */}
+          {/* Contact : messagerie (si acceptée), téléphone, WhatsApp, e-mail */}
           {!isOwner && (
-            <div className="space-y-2">
-              {accepte ? (
-                <p className="text-sm text-center text-gray-500 py-2 bg-[#E8F4F6] rounded-xl">
-                  Connectez-vous pour contacter via la messagerie
-                </p>
-              ) : (
-                <>
-                  {a.contact_telephone && (
-                    <a href={`tel:${a.contact_telephone}`}
-                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#0C5C6C] text-white hover:bg-[#094F5D] transition-colors">
-                      Appeler : {a.contact_telephone}
-                    </a>
-                  )}
-                  {a.contact_email && (
-                    <a href={`mailto:${a.contact_email}`}
-                      className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
-                      {a.contact_email}
-                    </a>
-                  )}
-                </>
-              )}
-            </div>
+            <BoutonsContact user={user} messagerie={a.contact_messagerie !== false && !!a.user_uid}
+              onContactMess={onContactMess} contacting={contacting}
+              tel={a.contact_telephone} email={a.contact_email} />
           )}
           {isOwner && (
             <div className="space-y-2">
@@ -930,3 +880,44 @@ function TrouveDetailModal({
   );
 }
 
+// ── Contacter : messagerie PetsMatch, appel, SMS, WhatsApp, e-mail ────────────
+// Chaque bouton n'apparaît que si le déclarant l'a renseigné / accepté.
+// Miroir appli : _contact (lib/pages/particulier/animaux_perdus_page.dart).
+function BoutonsContact({ user, messagerie, onContactMess, contacting, tel, email }: {
+  user: { uid: string } | null; messagerie: boolean; onContactMess: () => void; contacting: boolean;
+  tel?: string | null; email?: string | null;
+}) {
+  const t = (tel ?? '').trim();
+  const chiffres = t.replace(/[^0-9+]/g, '');
+  const m = (email ?? '').trim();
+  const secondaire = 'flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6] transition-colors';
+  if (!messagerie && !chiffres && !m) {
+    return <p className="text-sm text-center text-gray-500 py-2 bg-gray-50 rounded-xl">Aucun moyen de contact renseigné.</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {messagerie && (user ? (
+        <button onClick={onContactMess} disabled={contacting}
+          className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-semibold text-sm bg-[#0C5C6C] hover:bg-[#094F5D] text-white transition-colors disabled:opacity-60">
+          {contacting
+            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Connexion…</>
+            : 'Contacter via la messagerie'}
+        </button>
+      ) : (
+        <a href="/connexion"
+          className="flex items-center justify-center w-full py-3 rounded-xl font-semibold text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+          Connectez-vous pour envoyer un message
+        </a>
+      ))}
+      {chiffres && (
+        <div className="grid grid-cols-3 gap-2">
+          <a href={`tel:${chiffres}`} className={secondaire}>Appeler</a>
+          <a href={`sms:${chiffres}`} className={secondaire}>SMS</a>
+          <a href={`https://wa.me/${waPhone(t)}`} target="_blank" rel="noopener noreferrer" className={secondaire}>WhatsApp</a>
+        </div>
+      )}
+      {chiffres && <p className="text-xs text-center text-gray-500">{t}</p>}
+      {m && <a href={`mailto:${m}`} className={`${secondaire} w-full`}>E-mail : {m}</a>}
+    </div>
+  );
+}

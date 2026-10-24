@@ -27,7 +27,13 @@ class ContactCanaux extends StatelessWidget {
   final String? sujet;
   /// Appelé avant d'ouvrir la messagerie (ex. fermer une feuille).
   final VoidCallback? avantMessage;
-  const ContactCanaux({super.key, this.clientUid, this.tel, this.email, this.monProfilId, this.sujet, this.avantMessage});
+  /// Ouverture de la messagerie propre à l'écran (ex. conversation d'une
+  /// alerte « animaux perdus ») : remplace la conversation « services ».
+  final Future<void> Function()? onMessage;
+  /// Texte quand aucune coordonnée n'est disponible.
+  final String texteVide;
+  const ContactCanaux({super.key, this.clientUid, this.tel, this.email, this.monProfilId, this.sujet, this.avantMessage,
+      this.onMessage, this.texteVide = 'Aucune coordonnée pour ce client.'});
 
   Future<void> _ouvrir(BuildContext context, Uri uri) async {
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication).catchError((_) => false);
@@ -41,7 +47,12 @@ class ContactCanaux extends StatelessWidget {
     final t = (tel ?? '').trim(), m = (email ?? '').trim();
     final chiffres = t.replaceAll(RegExp(r'[^0-9+]'), '');
     final boutons = <(Widget, String, Future<void> Function())>[
-      if ((clientUid ?? '').isNotEmpty)
+      if (onMessage != null)
+        (const Icon(Icons.chat_bubble_outline, size: 16), 'Message', () async {
+          avantMessage?.call();
+          await onMessage!();
+        })
+      else if ((clientUid ?? '').isNotEmpty)
         (const Icon(Icons.chat_bubble_outline, size: 16), 'Message', () async {
           final nav = Navigator.of(context);
           avantMessage?.call();
@@ -59,7 +70,7 @@ class ContactCanaux extends StatelessWidget {
             query: (sujet ?? '').isNotEmpty ? 'subject=${Uri.encodeComponent(sujet!)}' : null))),
     ];
     if (boutons.isEmpty) {
-      return Text('Aucune coordonnée pour ce client.', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade500));
+      return Text(texteVide, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade500));
     }
     return Wrap(spacing: 8, runSpacing: 8, children: [
       for (final b in boutons)

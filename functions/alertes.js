@@ -139,7 +139,9 @@ exports.notifyUsersNearLostAnimal = functions
                     data: {alerteId: alerteId || ""},
                     read: false,
                 });
-                if (user.fcmToken) nearby.push({uid: doc.id, fcmToken: user.fcmToken});
+                // Appli si installée, sinon navigateur (comme sendPush).
+                const token = user.fcmToken || user.webFcmToken;
+                if (token) nearby.push({uid: doc.id, fcmToken: token});
             }
         }
 
@@ -167,12 +169,14 @@ exports.notifyUsersNearLostAnimal = functions
             if (profileByUid[row.uid]) row.profile_id = profileByUid[row.uid];
         }
 
-        // Pas de bloc `notification`/`android.notification` : évite le
-        // doublon d'affichage Android (natif + manuel). title/body passent
-        // par `data`, l'app les affiche elle-même sur Android. Diffusion à
-        // un nombre potentiellement grand de voisins : pas de préfixe nom de
-        // profil ici (coûteux en lookups), juste `recipient_profile_id`
-        // pour que le tap ouvre le bon profil particulier.
+        // Bloc android.notification (comme sendPush) : affiché par le SYSTÈME
+        // même appli fermée. Le message data-only d'avant était perdu sur les
+        // téléphones à économie de batterie agressive (Xiaomi / MIUI) : alerte
+        // créée dans l'appli mais aucune notification sur le téléphone.
+        // L'appli n'affiche pas elle-même un message qui porte ce bloc.
+        // Diffusion à beaucoup de voisins : pas de préfixe nom de profil ici,
+        // juste `recipient_profile_id` pour que le tap ouvre le bon profil.
+        const notifTag = `alerte_perdu_${alerteId || ""}`.slice(0, 60);
         const fcmMessages = nearby.map(({uid, fcmToken}) => ({
             token: fcmToken,
             data: {
@@ -180,9 +184,13 @@ exports.notifyUsersNearLostAnimal = functions
                 title: notifTitle,
                 body: notifBody,
                 alerteId: alerteId || "",
+                notif_tag: notifTag,
                 ...(profileByUid[uid] ? {recipient_profile_id: profileByUid[uid]} : {}),
             },
-            android: {priority: "high"},
+            android: {
+                priority: "high",
+                notification: {title: notifTitle, body: notifBody, channelId: "high_importance_channel", tag: notifTag},
+            },
             apns: {
                 headers: {"apns-priority": "10"},
                 payload: {aps: {alert: {title: notifTitle, body: notifBody}, sound: "default", badge: 1}},

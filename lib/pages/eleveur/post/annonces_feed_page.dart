@@ -15,6 +15,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' show thumbUrl;
 import 'dart:ui';
+import 'package:PetsMatch/config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -626,7 +627,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
   // ── Partage ──────────────────────────────────────────────────────────────────
 
   void _shareItem(_FeedItem item) {
-    final url = 'https://www.petsmatchapp.com/annonces/${item.annonceId}';
+    final url = '$kSiteBaseUrl/annonces/${item.annonceId}';
     final parts = <String>[
       item.nom,
       if (item.race?.isNotEmpty == true) item.race!,

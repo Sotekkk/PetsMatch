@@ -10,6 +10,8 @@ import { supabase } from '@/lib/supabase';
 import { uploadBlob } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebase';
 import { Icone } from '@/components/dashboard/kit';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -98,6 +100,9 @@ function DeclarerPerduPageInner() {
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
   const locDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Point de la dernière localisation : sert à prévenir les membres à moins de
+  // 20 km (notifyUsersNearLostAnimal) et à placer l'alerte sur la carte.
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -175,12 +180,15 @@ function DeclarerPerduPageInner() {
   function selectLocPrediction(pred: google.maps.places.AutocompletePrediction) {
     setLocPredictions([]);
     placesService.current?.getDetails(
-      { placeId: pred.place_id, fields: ['address_components'] },
+      { placeId: pred.place_id, fields: ['address_components', 'geometry'] },
       (place, status) => {
         if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place?.address_components) {
           setLocSearch(pred.description);
+          setCoords(null);
           return;
         }
+        const loc = place.geometry?.location;
+        setCoords(loc ? { lat: loc.lat(), lng: loc.lng() } : null);
         let num = '', route = '', postalCode = '', city = '', country = '', adminArea = '';
         for (const c of place.address_components) {
           if (c.types.includes('street_number')) num = c.long_name;
@@ -321,7 +329,17 @@ function DeclarerPerduPageInner() {
         }
       }
       const alerteId = `${Date.now()}`;
-      await supabase.from('alertes_perdus').insert({
+      // Adresse tapée sans choisir une suggestion : géocodage de l'adresse.
+      let point = coords;
+      if (!point && localisation) {
+        try {
+          const { Geocoder } = await importLibrary('geocoding') as google.maps.GeocodingLibrary;
+          const { results } = await new Geocoder().geocode({ address: `${localisation}, ${pays || 'France'}` });
+          const l = results?.[0]?.geometry?.location;
+          if (l) point = { lat: l.lat(), lng: l.lng() };
+        } catch { /* sans coordonnées : alerte publiée, voisins non prévenus */ }
+      }
+      const { error: errInsert } = await supabase.from('alertes_perdus').insert({
         id: alerteId,
         uid_proprietaire: porteurUid,
         ...(animalIdChoisi ? { animal_id: animalIdChoisi } : {}),
@@ -345,8 +363,21 @@ function DeclarerPerduPageInner() {
         contact_messagerie: contactMessagerie,
         numero_alerte: numeroAlerte,
         statut: 'perdu',
+        ...(point ? { lat: point.lat, lng: point.lng } : {}),
         ...(porteurProfileId ? { profile_id: porteurProfileId } : {}),
       });
+      if (errInsert) throw errInsert;
+      // Membres à moins de 20 km : notification dans l'appli + push (comme
+      // l'appli, lib/services/alertes_notifications.dart). Avant : le site ne
+      // prévenait personne et n'enregistrait pas les coordonnées.
+      if (point) {
+        try {
+          await httpsCallable(functions, 'notifyUsersNearLostAnimal')({
+            lat: point.lat, lng: point.lng, nomAnimal: nom.trim(), espece,
+            alerteId, proprietaireUid: porteurUid,
+          });
+        } catch { /* l'alerte est publiée même si l'envoi échoue */ }
+      }
       for (const p of proprietaires) {
         if (p.uid_proprio === user!.uid) continue;
         await supabase.from('notifications').insert({
