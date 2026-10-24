@@ -182,6 +182,16 @@ exports.sendSterilisationReminders = functions
                 continue; // hors fenêtre de rappel ce jour
             }
 
+            // Cession jamais aboutie (révoquée, ou pas encore signée) : l'éleveur
+            // est toujours le propriétaire principal → aucun rappel. Avant : une
+            // cession révoquée laissait uid_acquereur + sterilisation_requise et
+            // les deux comptes recevaient « stérilisation en retard » chaque jour.
+            const principal = await supabaseSelect(
+                "animaux_proprietes",
+                `animal_id=eq.${a.id}&date_fin=is.null&role_proprio=eq.principal&select=uid_proprio&limit=1`,
+            );
+            if (Array.isArray(principal) && principal[0] && principal[0].uid_proprio === eleveurUid) continue;
+
             // Propriétaire courant : uid_acquereur sinon animaux_proprietes.
             // Automatique dès lors qu'il utilise l'appli (uid résolu) — mêmes
             // paliers que l'éleveur, cf. notifications ci-dessous.

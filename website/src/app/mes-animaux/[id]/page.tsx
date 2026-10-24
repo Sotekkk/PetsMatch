@@ -2994,14 +2994,21 @@ function AnimalFichePageInner() {
     setRevokingCession(true);
     const cedantUid = animal.uid_eleveur ?? ownerUid ?? user.uid;
     if (cessionEnCours) await supabase.from('cessions').update({ statut: 'revoquee' }).eq('id', cessionEnCours.id);
+    // Cession annulée : plus d'acquéreur ni de condition de stérilisation
+    // (sinon les rappels « stérilisation en retard » continuaient chaque jour).
+    const annulation = {
+      uid_acquereur: null, profile_id_acquereur: null,
+      sterilisation_requise: false, sterilisation_echeance: null,
+      sterilisation_eleveur_uid: null, sterilisation_eleveur_profile_id: null,
+    };
     if (animal.statut === 'en_attente_cession') {
       // Cession du site : la sortie avait déjà été inscrite au registre et la
       // date de sortie posée sur la fiche — l'animal n'est finalement pas parti.
-      await supabase.from('animaux').update({ statut: 'present', date_sortie: null }).eq('id', id);
+      await supabase.from('animaux').update({ statut: 'present', date_sortie: null, ...annulation }).eq('id', id);
       await supabase.from('registre_mouvements').delete()
         .eq('animal_id', id).eq('uid_eleveur', cedantUid).eq('type', 'sortie').eq('motif', 'cession');
     } else {
-      await supabase.from('animaux').update({ statut: 'present' }).eq('id', id);
+      await supabase.from('animaux').update({ statut: 'present', ...annulation }).eq('id', id);
     }
     // Contrats de cette cession avortée : tout ce qui n'est pas signé des
     // deux côtés est supprimé (brouillon, généré, en attente, signé par une
