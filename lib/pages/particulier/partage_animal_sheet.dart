@@ -1,3 +1,4 @@
+import 'package:PetsMatch/config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,7 +6,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const _kBaseUrl = 'https://www.petsmatchapp.com/partage/';
+// Domaine nu (vérifié) : le lien ouvre l'appli si elle est installée.
+const _kBaseUrl = '$kSiteBaseUrl/partage/';
 
 /// Onglets que le lien peut ouvrir (partage_animal.sections). Identité
 /// toujours incluse. Miroir site : SECTIONS_PARTAGE (PartageAnimalModal).

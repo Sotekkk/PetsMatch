@@ -32,6 +32,9 @@ const WHITELISTED_PATHS = [
   // « proches » partagé par le client) : destinataires sans accès bêta.
   '/album/',
   '/galerie-proches/',
+  // Fiche animal partagée par lien / QR (vétérinaire, pet-sitter…) :
+  // destinataires sans accès bêta.
+  '/partage/',
   // Consignes avant un rendez-vous (lien personnel envoyé par e-mail).
   '/consignes/',
   // Pages légales — doivent être accessibles sans connexion ni mot de passe

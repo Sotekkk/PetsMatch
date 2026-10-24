@@ -18,7 +18,8 @@
           "/animaux-perdus",
           "/animaux-perdus/*",
           "/lieux-naturels/*",
-          "/animal-friendly/*"
+          "/animal-friendly/*",
+          "/partage/*"
         ]
       }
     ]

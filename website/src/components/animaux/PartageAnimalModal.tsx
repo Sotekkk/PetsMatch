@@ -21,7 +21,8 @@ const DUREES: [string, number][] = [['24 heures', 1], ['3 jours', 3], ['7 jours'
 
 type Lien = { id: string; token: string; expire_at: string; sections: string[] | null };
 
-const lienUrl = (token: string) => `https://www.petsmatchapp.com/partage/${token}`;
+// Domaine nu (vérifié) : le lien ouvre l'appli si elle est installée.
+const lienUrl = (token: string) => `https://petsmatchapp.com/partage/${token}`;
 const libelles = (s: string[] | null) =>
   SECTIONS_PARTAGE.filter(([k]) => (s ?? ['identite']).includes(k)).map(([, l]) => l).join(', ');
 

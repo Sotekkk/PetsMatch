@@ -80,7 +80,8 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             <!-- Liens de partage : Pets Social (/p/<id>), annonces, animaux
-                 perdus / trouvés, lieux naturels, lieux pet-friendly.
+                 perdus / trouvés, lieux naturels, lieux pet-friendly, fiche
+                 animal partagée (/partage/<token>).
                  autoVerify => Android ouvre l'app directement si le fichier
                  /.well-known/assetlinks.json du domaine référence cette app.
                  Routage : lib/services/deep_link_service.dart.
@@ -98,6 +99,7 @@
                 <data android:pathPrefix="/animaux-perdus"/>
                 <data android:pathPrefix="/lieux-naturels/"/>
                 <data android:pathPrefix="/animal-friendly/"/>
+                <data android:pathPrefix="/partage/"/>
             </intent-filter>
         </activity>
         <!-- Cropper uCrop -->

@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/lieux/lieu_detail_page.dart';
 import 'package:PetsMatch/pages/nature/natural_place_detail_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
+import 'package:PetsMatch/pages/particulier/partage_animal_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost;
 
 /// Gère les liens entrants (Android App Links / iOS Universal Links) du site
@@ -18,7 +19,8 @@ import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openShar
 ///   • `/p/<postId>` → publication Pets Social ;
 ///   • `/annonces/<id>` → fiche de l'annonce ;
 ///   • `/animaux-perdus?alerte=<id>` / `?trouve=<id>` → l'alerte ouverte ;
-///   • `/lieux-naturels/<id>`, `/animal-friendly/<id>` → fiche du lieu.
+///   • `/lieux-naturels/<id>`, `/animal-friendly/<id>` → fiche du lieu ;
+///   • `/partage/<token>` → fiche animal partagée (lecture seule, sans connexion).
 /// Chemins déclarés : AndroidManifest.xml + public/.well-known/apple-app-site-association.
 ///
 /// Un lien reçu avant que l'app soit prête (navigateur non monté ou utilisateur
@@ -64,7 +66,9 @@ class DeepLinkService {
     if (ouvrir == null) return;
 
     final ctx = navigatorKey.currentContext;
-    final loggedIn = FirebaseAuth.instance.currentUser != null;
+    // Fiche partagée : lien public, consultable sans être connecté.
+    final public = uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'partage';
+    final loggedIn = public || FirebaseAuth.instance.currentUser != null;
     if (ctx == null || !loggedIn) {
       _pending = uri; // rejoué par flushPending()
       return;
@@ -91,6 +95,9 @@ class DeepLinkService {
     void pousser(BuildContext c, Widget page) => Navigator.of(c).push(MaterialPageRoute(builder: (_) => page));
 
     switch (seg[0]) {
+      case 'partage':
+        if (id == null) return null;
+        return (c) => pousser(c, PartageAnimalPage(token: id));
       case 'annonces':
         if (id == null || _pagesAnnonces.contains(id)) return null;
         return (c) => pousser(c, AnnonceDetailPage(annonceId: id));
