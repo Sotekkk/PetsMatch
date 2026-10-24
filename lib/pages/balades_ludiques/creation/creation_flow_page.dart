@@ -180,7 +180,7 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
         'partenaire_nom': User_Info.isAdmin && typeEvenement == 'officiel_partenaire' ? partenaireNomCtrl.text.trim() : null,
         'event_debut': User_Info.isAdmin ? eventDebut?.toIso8601String() : null,
         'event_fin': User_Info.isAdmin ? eventFin?.toIso8601String() : null,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
       String id;
@@ -224,7 +224,7 @@ class _CreationFlowPageState extends State<CreationFlowPage> {
             'xp_total': existing?['xp_total'] ?? 0,
             'nb_parcours_completes': existing?['nb_parcours_completes'] ?? 0,
             'nb_parcours_crees': nouveauNbCrees,
-            'updated_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
           }, onConflict: 'profile_id');
 
           if (nouveauNbCrees == 1) {

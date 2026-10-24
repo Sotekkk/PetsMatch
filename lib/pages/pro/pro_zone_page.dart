@@ -84,7 +84,7 @@ class _ProZonePageState extends State<ProZonePage> {
         'rayon_km':   _rayonKm,
         'centre_lat': centre?.latitude,
         'centre_lng': centre?.longitude,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
         if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
       }, onConflict: 'pro_uid');
 

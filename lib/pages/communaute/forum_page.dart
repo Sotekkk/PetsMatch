@@ -826,7 +826,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
         'auteur_uid': _uid,
         if (pid != null) 'auteur_profile_id': pid,
         'contenu': texte,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
         if (media.photoUrl != null) 'photo_url': media.photoUrl,
         if (media.videoUrl != null) 'video_url': media.videoUrl,
       }).select().single();
@@ -1158,7 +1158,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         if (pid != null) 'auteur_profile_id': pid,
         'titre': _titre,
         'contenu': contenu,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
         if (_animalTypes.isNotEmpty) 'animal_types': _animalTypes.toList(),
         // Une seule espèce : animal_type garde la couleur / l'ancien affichage.
         if (_animalTypes.length == 1) 'animal_type': _animalTypes.first,

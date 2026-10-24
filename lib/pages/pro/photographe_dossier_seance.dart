@@ -287,7 +287,7 @@ class _DossierSeanceState extends State<_DossierSeance> {
   Future<void> _transmettreDevis() async {
     final d = _devis!;
     if (d['statut'] == 'brouillon') {
-      await _supa.from('devis').update({'statut': 'envoye', 'updated_at': DateTime.now().toIso8601String()}).eq('id', d['id']);
+      await _supa.from('devis').update({'statut': 'envoye', 'updated_at': DateTime.now().toUtc().toIso8601String()}).eq('id', d['id']);
     }
     await _notifier('devis_recu', 'Vous avez reçu un devis',
         'Un devis de ${((d['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € vous a été envoyé.',

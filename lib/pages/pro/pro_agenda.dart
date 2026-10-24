@@ -3349,7 +3349,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'granted_by_profile_id': ownerProfileId,
         'permissions':           permissions,
         'statut':                'active',
-        'granted_at':            DateTime.now().toIso8601String(),
+        'granted_at':            DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'animal_id,pro_profile_id');
     } catch (_) {}
   }

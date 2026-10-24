@@ -267,7 +267,7 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
       await _supa.from('cles_clients').update({
         'description': description,
         'notes': notes.isEmpty ? null : notes,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', cle['id']);
       await _load();
     } catch (e) {
@@ -287,7 +287,7 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
       await _supa.from('cles_clients').update({
         'statut': rendue ? 'en_possession' : 'rendue',
         if (!rendue) 'date_restitution': DateTime.now().toIso8601String().substring(0, 10),
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', cle['id']);
       await _load();
     } catch (e) {

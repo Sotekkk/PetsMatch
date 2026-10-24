@@ -139,7 +139,7 @@ class _ProprietairesAnimalSheetState extends State<_ProprietairesAnimalSheet> {
         if (profileId != null) 'recipient_profile_id': profileId,
         'data': {'animal_id': widget.animalId, 'animal_nom': widget.animalNom},
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {}
   }

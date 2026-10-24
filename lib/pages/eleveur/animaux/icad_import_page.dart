@@ -116,7 +116,7 @@ class _IcadImportPageState extends State<IcadImportPage> {
       final id = '${DateTime.now().millisecondsSinceEpoch}${i++}';
       final ligne = {
         'id': id, 'uid_eleveur': uid, if (_pid.isNotEmpty) 'profile_id': _pid,
-        ...icadLigneNouvelle(n), 'updated_at': DateTime.now().toIso8601String(),
+        ...icadLigneNouvelle(n), 'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       try {
         try {

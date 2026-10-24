@@ -166,7 +166,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         await _supa.from('cessions')
             .update({
               'sterilisation_validee': true,
-              'sterilisation_validee_at': DateTime.now().toIso8601String(),
+              'sterilisation_validee_at': DateTime.now().toUtc().toIso8601String(),
             })
             .eq('animal_id', a['id'])
             .eq('sterilisation_requise', true);

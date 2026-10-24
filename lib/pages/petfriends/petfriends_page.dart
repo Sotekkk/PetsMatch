@@ -214,7 +214,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         'uid_recepteur': targetUid,
         'recepteur_profile_id': targetProfileId,
         'statut': 'en_attente',
-        'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(), 'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
       Map<String, dynamic>? me;
       if (myProfileId.isNotEmpty) {
@@ -227,14 +227,14 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         'title': '🐾 Nouvelle demande PetFriend', 'body': '$nom veut être ton PetFriend !',
         'profile_id': targetProfileId,
         'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
-        'read': false, 'created_at': DateTime.now().toIso8601String(),
+        'read': false, 'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (mounted) setState(() => _searchStatuts[targetProfileId] = 'en_attente');
     } catch (_) {}
   }
 
   Future<void> _accept(_FriendRow row) async {
-    await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toIso8601String()}).eq('id', row.relId);
+    await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toUtc().toIso8601String()}).eq('id', row.relId);
     final myProfileId = await _myProfileId() ?? '';
     Map<String, dynamic>? me;
     if (myProfileId.isNotEmpty) {
@@ -247,7 +247,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       'title': '🐾 PetFriend accepté !', 'body': '$nom a accepté ta demande PetFriend.',
       'profile_id': row.profileId,
       'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
-      'read': false, 'created_at': DateTime.now().toIso8601String(),
+      'read': false, 'created_at': DateTime.now().toUtc().toIso8601String(),
     });
     _load();
   }

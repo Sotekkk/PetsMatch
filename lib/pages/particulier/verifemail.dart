@@ -110,7 +110,7 @@ Future<bool> registerUser(String email, String password) async {
         'is_admin':            false,
         'is_dev':              User_Info.isDev,
         'is_association':      false,
-        'cgu_accepted_at':     DateTime.now().toIso8601String(),
+        'cgu_accepted_at':     DateTime.now().toUtc().toIso8601String(),
       }, {'uid': uid});
     } catch (e) {
       debugPrint("Supabase sync error (particulier): $e");
@@ -311,7 +311,7 @@ Future<Object> registerElevage(String email, String password) async {
         },
         if (User_Info.profilePictureUrlElevage.isNotEmpty)
           'profile_picture_url_elevage': User_Info.profilePictureUrlElevage,
-        'cgu_accepted_at': DateTime.now().toIso8601String(),
+        'cgu_accepted_at': DateTime.now().toUtc().toIso8601String(),
       }, {'uid': uid});
     } catch (e) {
       print("Supabase user sync error: $e");

@@ -1395,7 +1395,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'destinataire_qualite': _destinataireQualite,
         'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
         'cause_mort':          _causeMort,
-        'updated_at':          DateTime.now().toIso8601String(),
+        'updated_at':          DateTime.now().toUtc().toIso8601String(),
         'is_association':      widget.isAssociation,
       };
 
@@ -1555,7 +1555,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       // Marquer la cession confirmée
       await _supa.from('cessions').update({
         'statut':       'confirme',
-        'confirmed_at': DateTime.now().toIso8601String(),
+        'confirmed_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', cessionId);
       // Notifier l'acquéreur (sur le profil qui reçoit l'animal)
       if (uidAcq != null) {
@@ -1642,7 +1642,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           ?? _dateSortie?.toIso8601String().split('T').first
           ?? DateTime.now().toIso8601String().split('T').first;
       if (row != null) {
-        await _supa.from('cessions').update({'statut': 'confirme', 'confirmed_at': DateTime.now().toIso8601String()}).eq('id', row['id']);
+        await _supa.from('cessions').update({'statut': 'confirme', 'confirmed_at': DateTime.now().toUtc().toIso8601String()}).eq('id', row['id']);
       }
       String? acqProfileId = row?['acquereur_profile_id'] as String?;
       if ((acqProfileId == null || acqProfileId.isEmpty) && uidAcq != null) {
@@ -1868,7 +1868,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
         'cause_mort':           _causeMort,
         'is_retraite':          _isRetraite,
-        'updated_at':           DateTime.now().toIso8601String(),
+        'updated_at':           DateTime.now().toUtc().toIso8601String(),
       }).eq('id', animalId);
 
       // Sortie/décès déclarés directement dans le registre (sans passer par
@@ -2010,7 +2010,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'statut':      'decede',
         'date_sortie': dateStr,
         'cause_mort':  cause,
-        'updated_at':  DateTime.now().toIso8601String(),
+        'updated_at':  DateTime.now().toUtc().toIso8601String(),
       }).eq('id', animalId);
       // Clôture (best-effort) de la ligne de propriété en cours, pour que
       // l'animal ne reste pas compté comme « présent » dans Mes Animaux.
@@ -2442,7 +2442,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             );
             if (confirm != true) return;
             await _supa.from('reservations_animaux')
-                .update({'statut': 'annulee', 'updated_at': DateTime.now().toIso8601String()})
+                .update({'statut': 'annulee', 'updated_at': DateTime.now().toUtc().toIso8601String()})
                 .eq('id', _reservation!['id']);
             // Association : l'animal redevient « disponible » à l'adoption
             // (« present » est un statut d'élevage, inconnu côté refuge).
@@ -5660,7 +5660,7 @@ class _ReproListState extends State<_ReproList> {
           'titre':          'Mise-bas prévue — $animalNom',
           'type':           'mise_bas',
           'date_debut':     datePrevueAt8 ?? datePrevue,
-          'animal_id':      int.tryParse(widget.animalId),
+          'animal_id':      widget.animalId,
           'notes':          'Gestation confirmée',
           'gestation_id':   id,
           'pro_profile_id': await profilPourAnimal(widget.animalId),
@@ -6385,7 +6385,7 @@ class _SanteCard extends StatelessWidget {
     try {
       await Supabase.instance.client.from('notifs_sent').upsert({
         'key': 'sante_${collection}_muted_${data['id']}',
-        'sent_at': DateTime.now().toIso8601String(),
+        'sent_at': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'key');
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -9414,7 +9414,7 @@ Future<void> _scheduleRappelAgenda({
       'titre':          finalTitre,
       'type':           'medication',
       'date_debut':     dateAt8.toIso8601String(),
-      'animal_id':      int.tryParse(animalId),
+      'animal_id':      animalId,
       'pro_profile_id': proProfileId.isNotEmpty ? proProfileId : null,
       if (proProfileId.isNotEmpty) 'profile_id': proProfileId,
     });
@@ -10898,7 +10898,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         'notes': '${_pctFoinMix.round()}|${_pctGranulesMix.round()}|${_pctCompMix.round()}|$_nbRepas'
                  '|${_mixteSepareParRepas?1:0}|${_doseManCtrl.text}|${_doseManCtrl2.text}'
                  '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}|${_pctCroquMix.round()}|${_densiteCtrl.text}',
-        'updated_at':          DateTime.now().toIso8601String(),
+        'updated_at':          DateTime.now().toUtc().toIso8601String(),
       };
       if (_existing != null) {
         await _supa.from('alimentations').update(payload).eq('id', _existing!['id']);
@@ -14792,7 +14792,7 @@ Future<void> _scheduleTraitementDailyReminders({
       'titre':          titre,
       'type':           'medication',
       'date_debut':     DateTime(day.year, day.month, day.day, 8, 0).toUtc().toIso8601String(),
-      'animal_id':      int.tryParse(animalId),
+      'animal_id':      animalId,
       'pro_profile_id': proProfileId,
     });
     day = day.add(const Duration(days: 1));
@@ -15022,7 +15022,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
           if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data': {'token': token, 'url': signingUrl},
           'read': false,
-          'created_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
         });
       }
     }

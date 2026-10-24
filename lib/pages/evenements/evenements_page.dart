@@ -115,7 +115,7 @@ class _EvenementsPageState extends State<EvenementsPage> {
           'evenement_id': evId,
           'user_uid':     _uid,
           'profile_id':   _profileId,
-          'inscrit_at':   DateTime.now().toIso8601String(),
+          'inscrit_at':   DateTime.now().toUtc().toIso8601String(),
         });
       }
     } catch (_) {
@@ -568,7 +568,7 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
         'date_debut': _dateDebut.toIso8601String(),
         'prix': _prix,
         'statut': 'publie',
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {

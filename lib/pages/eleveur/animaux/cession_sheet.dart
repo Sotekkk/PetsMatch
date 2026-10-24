@@ -997,7 +997,7 @@ class _CessionSheetState extends State<CessionSheet> {
         'notes':              _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'date_cession':       dateCessionStr,
         'statut':             finaliseNow ? 'confirme' : 'en_attente_acquereur',
-        if (finaliseNow) 'confirmed_at': DateTime.now().toIso8601String(),
+        if (finaliseNow) 'confirmed_at': DateTime.now().toUtc().toIso8601String(),
         'contrat_url':        contratUrl,
         'certificat_url':     certificatUrl,
         'sterilisation_requise':  sterilOn,
@@ -1141,7 +1141,7 @@ class _CessionSheetState extends State<CessionSheet> {
       // Clôturer la réservation d'origine s'il y en avait une
       if (widget.reservation != null) {
         await _supa.from('reservations_animaux')
-            .update({'statut': 'transformee', 'updated_at': DateTime.now().toIso8601String()})
+            .update({'statut': 'transformee', 'updated_at': DateTime.now().toUtc().toIso8601String()})
             .eq('id', widget.reservation!['id']);
       }
 

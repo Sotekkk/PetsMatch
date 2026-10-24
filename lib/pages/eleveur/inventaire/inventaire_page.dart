@@ -648,7 +648,7 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
         },
       });
       await _supa.from('inventaire_items')
-          .update({'quantite': newQte, 'updated_at': DateTime.now().toIso8601String()})
+          .update({'quantite': newQte, 'updated_at': DateTime.now().toUtc().toIso8601String()})
           .eq('id', widget.item['id']);
 
       final seuil = widget.item['quantite_alerte'] != null
@@ -1003,7 +1003,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
             : null,
         'alerte_active': _alerte,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
         if (widget.veto) ...{
           'lot': _lotCtrl.text.trim().isEmpty ? null : _lotCtrl.text.trim(),
           'date_peremption': _peremption?.toIso8601String().substring(0, 10),

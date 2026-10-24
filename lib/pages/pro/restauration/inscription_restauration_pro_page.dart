@@ -291,7 +291,7 @@ class _InscriptionRestaurationProPageState
         'statut_pro': 'en_attente',
         if (photoUrl != null) 'profile_picture_url': photoUrl,
         if (bannerUrl != null) 'banner_url': bannerUrl,
-        'cgu_accepted_at': DateTime.now().toIso8601String(),
+        'cgu_accepted_at': DateTime.now().toUtc().toIso8601String(),
       }, {'uid': uid});
 
       // 5 — Supabase user_profiles

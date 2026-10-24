@@ -101,7 +101,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
       final fsUser = await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
       final exportData = _toJsonSafe({
-        'exported_at': DateTime.now().toIso8601String(),
+        'exported_at': DateTime.now().toUtc().toIso8601String(),
         'uid': uid,
         'profil': userProfile,
         'animaux': animaux,

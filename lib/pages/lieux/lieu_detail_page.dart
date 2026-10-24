@@ -143,7 +143,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
             if (_lieu?['pro_profile_id'] != null) 'profile_id': _lieu!['pro_profile_id'],
             'data': {'fromUid': _uid, 'placeId': widget.id},
             'read': false,
-            'created_at': DateTime.now().toIso8601String(),
+            'created_at': DateTime.now().toUtc().toIso8601String(),
           });
           unawaited(FirebaseFunctions.instanceFor(region: 'europe-west1')
               .httpsCallable('notifyPlaceFavori')

@@ -6632,7 +6632,7 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
       if (pid == null) 'active_value': value,
       'active_by_profile': abp,
       'owned': owned,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     }, onConflict: 'uid,cosmetic_type');
   }
 

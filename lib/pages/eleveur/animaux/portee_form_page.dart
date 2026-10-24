@@ -392,7 +392,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         'puce_mere':           _puceMereCtrl.text.trim(),
         'race_mere':           _raceMereCtrl.text.trim(),
         'date_naissance_mere': _dateNaissanceMere?.toIso8601String(),
-        'updated_at':          DateTime.now().toIso8601String(),
+        'updated_at':          DateTime.now().toUtc().toIso8601String(),
       }).toList();
 
       await _supa.from('animaux').upsert(rows);

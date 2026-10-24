@@ -167,8 +167,8 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
         'uid_recepteur': widget.targetUid,
         if (_targetProfileId != null) 'recepteur_profile_id': _targetProfileId,
         'statut': 'en_attente',
-        'created_at': DateTime.now().toIso8601String(),
-        'updated_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).select('id').single();
 
       // Notifier la cible — nom du profil ACTIF (celui qui envoie la
@@ -187,7 +187,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
         if (_targetProfileId != null) 'profile_id': _targetProfileId,
         'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       if (mounted) {
@@ -215,7 +215,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     setState(() => _saving = true);
     await _supa.from('petfriends').update({
       'statut': 'accepte',
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', _relId!);
 
     // Notifier le demandeur — nom du profil ACTIF (celui qui accepte),
@@ -235,7 +235,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       if (_targetProfileId != null) 'profile_id': _targetProfileId,
       'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
       'read': false,
-      'created_at': DateTime.now().toIso8601String(),
+      'created_at': DateTime.now().toUtc().toIso8601String(),
     });
 
     if (mounted) {

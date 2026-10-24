@@ -180,7 +180,7 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
     } else {
       await _supa.from('plan_taches').update({
         'statut': 'fait', 'valide_par': _uid, 'valide_par_profile_id': profileId,
-        'valide_at': DateTime.now().toIso8601String(),
+        'valide_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', t['id']);
     }
     _load();

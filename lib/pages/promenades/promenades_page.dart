@@ -160,7 +160,7 @@ class _PromenadesPageState extends State<PromenadePage> {
           'user_uid': _uid,
           if (pid != null) 'user_profile_id': pid,
           'statut': 'en_attente',
-          'rejoint_at': DateTime.now().toIso8601String(),
+          'rejoint_at': DateTime.now().toUtc().toIso8601String(),
         });
         // Notifier l'organisateur
         final promenade = _promenades.firstWhere(
@@ -186,7 +186,7 @@ class _PromenadesPageState extends State<PromenadePage> {
               if (promenade['organisateur_profile_id'] != null) 'profile_id': promenade['organisateur_profile_id'],
               'data': {'promenadeId': id, 'fromUid': _uid},
               'read': false,
-              'created_at': DateTime.now().toIso8601String(),
+              'created_at': DateTime.now().toUtc().toIso8601String(),
             });
           } catch (_) {}
         }
@@ -937,7 +937,7 @@ class _CreatePromenadesSheetState extends State<_CreatePromenadesSheet> {
         'date_heure': _dateHeure.toIso8601String(),
         'duree_minutes': _dureeMinutes,
         'statut': 'ouvert',
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
         if (_lat != null) 'lat': _lat,
         if (_lng != null) 'lng': _lng,
         if (_participantsMax != null) 'participants_max': _participantsMax,

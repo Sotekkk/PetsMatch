@@ -177,7 +177,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
         'user_uid': _uid,
         'xp_total': nouveauXp,
         'nb_parcours_completes': nouveauNbCompletes,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'profile_id').select().single();
     } catch (e) {
       debugPrint('joueurs_xp upsert: $e');

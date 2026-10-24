@@ -152,7 +152,7 @@ class _DevisPageState extends State<DevisPage> {
 
   Future<void> _send(Map<String, dynamic> d) async {
     await _supa.from('devis').update({
-      'statut': 'envoye', 'updated_at': DateTime.now().toIso8601String(),
+      'statut': 'envoye', 'updated_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', d['id']);
     final docToken = await _syncContratDocument(d, d['id'] as String, 'envoye');
     if (docToken != null) setState(() => _docTokens[d['id'] as String] = docToken);

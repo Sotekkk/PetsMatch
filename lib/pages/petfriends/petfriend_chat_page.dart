@@ -887,7 +887,7 @@ class _GardeRequestCardState extends State<_GardeRequestCard> {
     setState(() => _updating = true);
     try {
       await _supa.from('garde_entraide')
-          .update({'statut': statut, 'updated_at': DateTime.now().toIso8601String()})
+          .update({'statut': statut, 'updated_at': DateTime.now().toUtc().toIso8601String()})
           .eq('id', widget.gardeId);
       if (mounted) setState(() { _row = {...?_row, 'statut': statut}; _updating = false; });
     } catch (_) {

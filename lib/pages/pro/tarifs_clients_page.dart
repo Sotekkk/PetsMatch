@@ -396,7 +396,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
             'owner_profile_id': cpid,
             'prestation_type': t.$1,
             'prix': val,
-            'updated_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
           }, onConflict: 'pro_profile_id,owner_profile_id,prestation_type');
         }
       }

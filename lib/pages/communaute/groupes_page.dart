@@ -167,7 +167,7 @@ class _GroupesPageState extends State<GroupesPage>
           if (_profileId != null) 'profile_id': _profileId,
           'role': 'membre',
           'statut': isPrive ? 'pending' : 'active',
-          'rejoint_at': DateTime.now().toIso8601String(),
+          'rejoint_at': DateTime.now().toUtc().toIso8601String(),
         });
         if (isPrive && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -652,7 +652,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
         'type': _type,
         'prive': _prive,
         'validation_adhesion': _prive || _validation,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       }).select().single();
 
       // Créateur devient admin du groupe
@@ -661,7 +661,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
         'user_uid': _uid,
         if (profileId != null) 'profile_id': profileId,
         'role': 'admin',
-        'rejoint_at': DateTime.now().toIso8601String(),
+        'rejoint_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       if (mounted) Navigator.pop(context, true);

@@ -306,7 +306,7 @@ class _AddLieuSheetState extends State<_AddLieuSheet> {
         'ville': _ville,
         'description': _description,
         'ajout_par_uid': FirebaseAuth.instance.currentUser?.uid,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {

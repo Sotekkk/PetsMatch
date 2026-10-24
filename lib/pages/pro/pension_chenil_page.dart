@@ -85,7 +85,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
       'capacite': capacite,
       'notes': notes?.isEmpty == true ? null : notes,
       'especes': especes,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
     if (id != null) {
       await _supa.from('enclos_chenil').update(payload).eq('id', id);

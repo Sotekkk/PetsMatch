@@ -70,7 +70,7 @@ Future<void> notifyMentions({
         if (targetPid != null) 'profile_id': targetPid,
         'data': data,
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     }
   } catch (_) {}

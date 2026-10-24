@@ -56,7 +56,7 @@ class _PreferencesNotificationsPageState extends State<PreferencesNotificationsP
         'uid': _uid,
         'forum_reponses': _forumReponses,
         'forum_mentions': _forumMentions,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (e) {
       if (!mounted) return;

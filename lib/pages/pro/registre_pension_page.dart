@@ -2843,7 +2843,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         if (pensionAlimentationSejourApplicable(_especeCtrl.text) && _alimSejour.isNotEmpty)
           'alimentation_sejour': _alimSejour,
         'statut':  'en_pension',
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       // Demande d'accès à la fiche en parallèle (silencieux si déjà accordé)
@@ -3264,7 +3264,7 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
         // Demande d'accès en attente — pas de lecture avant validation du propriétaire.
         await widget.supa.from('animal_access').update({
           'statut': 'pending',
-          'updated_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', existing['id']);
       } else {
         await widget.supa.from('animal_access').insert({

@@ -951,7 +951,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     setState(() => ex['rappels_actifs'] = next);
     try {
       await _supa.from('exercices_attribues')
-          .update({'rappels_actifs': next, 'updated_at': DateTime.now().toIso8601String()})
+          .update({'rappels_actifs': next, 'updated_at': DateTime.now().toUtc().toIso8601String()})
           .eq('id', ex['id']);
     } catch (_) {
       _load();

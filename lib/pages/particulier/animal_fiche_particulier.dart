@@ -756,7 +756,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'description': _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'photo_url': photoUrl,
         'date_naissance': _dateNaissance?.toIso8601String().substring(0, 10),
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 
       if (_animalId == null) {
@@ -772,7 +772,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           if (User_Info.activeProfileId.isNotEmpty)
             'profile_id': User_Info.activeProfileId,
           ...data,
-          'created_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
         });
         // Historique de propriété — SOURCE DE VÉRITÉ pour la visibilité des
         // animaux (mes_animaux.dart / user_feed.dart filtrent dessus). Sans
@@ -849,7 +849,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'partner_id': partner['id'],
         'event_type': 'lead',
         'placement': 'animal_creation',
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       if (!mounted) return;
@@ -1095,7 +1095,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               'recipient_profile_id': inviteurProfileId,
               'data': {'animal_id': _animalId, 'animal_nom': _nomCtrl.text},
               'read': false,
-              'created_at': DateTime.now().toIso8601String(),
+              'created_at': DateTime.now().toUtc().toIso8601String(),
             });
           }
         }
@@ -2533,7 +2533,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'date_validite_debut': (dateValidite ?? date)?.toIso8601String().substring(0, 10),
         'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
         'categorie': categorie,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (dateRappel != null) {
         await _scheduleRappelAgenda(
@@ -2610,7 +2610,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'date': date?.toIso8601String().substring(0, 10),
         'date_fin': dateFin?.toIso8601String().substring(0, 10),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
         'rappel_actif': rappelActif,
         if (rappelActif) 'rappel_frequence_jours': frequenceJours,
         if (rappelActif) 'rappel_duree_jours': dureeJours,
@@ -2644,7 +2644,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'date': date?.toIso8601String().substring(0, 10),
         'diagnostic': diag.text.trim().isEmpty ? null : diag.text.trim(),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       await _loadHealthRecords();
       if (isFirstVisit) {
@@ -2713,7 +2713,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
           if (freqLabel != null) 'frequence': freqLabel,
           'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-          'created_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
           if (date != null) ...options.colonnes(date!),
         });
       }
@@ -2778,7 +2778,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'date': date?.toIso8601String().substring(0, 10),
         'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (dateRappel != null) {
         await _scheduleRappelAgenda(
@@ -2811,7 +2811,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'severite': severite.text.trim().isEmpty ? null : severite.text.trim(),
         'date': date?.toIso8601String().substring(0, 10),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       await _loadHealthRecords();
     });
@@ -2854,7 +2854,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'protocole_postop': postop.text.trim().isEmpty ? null : postop.text.trim(),
         'clinique': clinique.text.trim().isEmpty ? null : clinique.text.trim(),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (statut == 'prevu' && date!.isAfter(DateTime.now())) {
         await _scheduleRappelAgenda(
@@ -2988,7 +2988,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'url': url,
         if (lienCtrl.text.trim().isNotEmpty) 'lien_resultat': lienCtrl.text.trim(),
         'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (categorie == 'adn' && resultat == 'etabli') {
         try {
@@ -3027,7 +3027,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'valeur': v,
         'date': date?.toIso8601String().substring(0, 10),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       await _loadHealthRecords();
       // La fiche reprend le dernier point de la courbe (trigger en base).
@@ -3212,13 +3212,24 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
+      // 8 h, heure de Paris (heure d'été / d'hiver gérée par toUtc) — avant :
+      // minuit UTC, affiché 1 h ou 2 h du matin.
+      final at8 = DateTime(dateRappel.year, dateRappel.month, dateRappel.day, 8).toUtc();
+      // Profil de l'animal (multi-profil), à défaut le profil actif.
+      String? pid;
+      try {
+        final a = await _supa.from('animaux').select('profile_id').eq('id', _animalId!).maybeSingle();
+        pid = (a?['profile_id'] as String?)?.isNotEmpty == true ? a!['profile_id'] as String : null;
+      } catch (_) {}
+      pid ??= User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       await _supa.from('agenda_events').insert({
         'uid':        uid,
         'titre':      titre,
         'type':       'medication',
-        'date_debut': dateRappel.toIso8601String(),
+        'date_debut': at8.toIso8601String(),
         'animal_id':  _animalId,
-        if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+        if (pid != null) 'pro_profile_id': pid,
+        if (pid != null) 'profile_id': pid,
       });
     } catch (_) {}
   }
@@ -4525,7 +4536,7 @@ class _AlimentationTabParticulierState extends State<_AlimentationTabParticulier
         'notes': '${_pctFoinMix.round()}|${_pctGranulesMix.round()}|${_pctCompMix.round()}|$_nbRepas'
                  '|${_mixteSepareParRepas ? 1 : 0}|${_doseManCtrl.text}|${_doseManCtrl2.text}'
                  '|$_typeMixte2|${_densitePateeCtrl.text}|${_densiteGranCtrl.text}',
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       if (_existing != null) {
         await _supa.from('alimentations').update(payload).eq('id', _existing!['id']);

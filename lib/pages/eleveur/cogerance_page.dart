@@ -133,7 +133,7 @@ class _CogerancePageState extends State<CogerancePage> {
         if (profileId != null) 'profile_id': profileId,
         if (profileId != null) 'recipient_profile_id': profileId,
         'read': false,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {}
   }

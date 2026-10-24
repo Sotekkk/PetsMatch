@@ -324,7 +324,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         if (_profileId != null) 'profile_id': _profileId,
         'role': 'membre',
         'statut': statut,
-        'rejoint_at': DateTime.now().toIso8601String(),
+        'rejoint_at': DateTime.now().toUtc().toIso8601String(),
       });
       setState(() => _myMembership = {'role': 'membre', 'statut': statut});
       if (!_validationRequise) setState(() => _membresCount++);
@@ -1643,7 +1643,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         if (_profileId != null) 'auteur_profile_id': _profileId,
         'contenu': text,
         if (imageUrl != null) 'image_url': imageUrl,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       }).select().single();
       await _supa.from('groupe_posts').update({
         'comment_count': (_comments.length + 1),
@@ -2009,7 +2009,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         if (profileId != null) 'auteur_profile_id': profileId,
         'contenu': text,
         if (imageUrl != null) 'image_url': imageUrl,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (text.isNotEmpty) {
         unawaited(() async {
@@ -2460,13 +2460,13 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
         // les autres signalements du même post deviennent traités
         await _supa.from('signalements').update({
           'statut': 'traite',
-          'handled_at': DateTime.now().toIso8601String(),
+          'handled_at': DateTime.now().toUtc().toIso8601String(),
           'handled_by': FirebaseAuth.instance.currentUser?.uid,
         }).eq('target_type', 'groupe_post').eq('target_id', postId);
       } else {
         await _supa.from('signalements').update({
           'statut': 'rejete',
-          'handled_at': DateTime.now().toIso8601String(),
+          'handled_at': DateTime.now().toUtc().toIso8601String(),
           'handled_by': FirebaseAuth.instance.currentUser?.uid,
         }).eq('id', id);
       }

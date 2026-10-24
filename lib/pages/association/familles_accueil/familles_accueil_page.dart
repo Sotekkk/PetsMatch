@@ -535,7 +535,7 @@ class _FaSheetState extends State<_FaSheet> {
         'code_postal': _cpCtrl.text.trim().isEmpty      ? null : _cpCtrl.text.trim(),
         'capacite_max': _capaciteMax,
         'notes':       _notesCtrl.text.trim().isEmpty   ? null : _notesCtrl.text.trim(),
-        'updated_at':  DateTime.now().toIso8601String(),
+        'updated_at':  DateTime.now().toUtc().toIso8601String(),
       };
       if (_isEdit) {
         await _supa.from('familles_accueil').update(payload).eq('id', widget.faData!['id']);

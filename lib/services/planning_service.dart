@@ -706,7 +706,7 @@ class PlanningService {
       'statut':           'fait',
       'valide_par':       validateurUid,
       'valide_par_profile_id': validateurProfileId,
-      'valide_at':        DateTime.now().toIso8601String(),
+      'valide_at':        DateTime.now().toUtc().toIso8601String(),
       if (notes != null && notes.isNotEmpty) 'notes_validation': notes,
     }).eq('id', tacheId);
 

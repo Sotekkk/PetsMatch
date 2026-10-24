@@ -58,25 +58,35 @@ export default function ChampMention({ valeur, onChange, noms, placeholder, mult
   const [requete, setRequete] = useState<string | null>(null);
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
 
-  // Mot en cours de frappe juste avant le curseur : « @dup » → recherche « dup ».
+  // Texte en cours de frappe juste avant le curseur : « @am » → recherche
+  // « am ». Dès la 1re lettre et avec les espaces (« @Ambre Kh ») — avant : il
+  // fallait 2 lettres sans espace, la liste ne s'ouvrait pas et le @ semblait
+  // ne pas marcher. Comme l'appli (mention_hashtag.dart).
   function analyser(texte: string, curseur: number) {
     const avant = texte.slice(0, curseur);
-    const m = avant.match(/(?:^|\s)@([\p{L}0-9_-]{2,30})$/u);
-    setRequete(m ? m[1] : null);
+    const m = avant.match(/(?:^|\s)@([\p{L}0-9_'-][\p{L}0-9_' -]{0,39})$/u);
+    const q = m ? m[1].trim() : '';
+    setRequete(q ? q : null);
   }
 
   useEffect(() => {
     if (!requete) { setSuggestions([]); return; }
     let annule = false;
-    const q = requete.replace(/[%,()]/g, '');
+    // Plusieurs mots (« Ambre Kh ») : recherche sur le 1er, puis filtre sur tous.
+    const mots = requete.replace(/[%,()*]/g, '').toLowerCase().split(/\s+/).filter(Boolean);
+    const q = mots[0] ?? '';
     const t = setTimeout(async () => {
       let b = supabase.from('user_profiles_complet')
         .select('id, uid, firstname, lastname, nom, social_pseudo, avatar_url, profile_picture_url_pro')
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%,social_pseudo.ilike.%${q}%`);
       if (uidExclu) b = b.neq('uid', uidExclu);
-      const { data } = await b.limit(6);
+      const { data } = await b.limit(mots.length > 1 ? 30 : 6);
       if (annule) return;
-      setSuggestions(((data ?? []) as Record<string, unknown>[]).map(p => ({
+      const rows = ((data ?? []) as Record<string, unknown>[]).filter(p => {
+        const tout = [p.firstname, p.lastname, p.nom, p.social_pseudo].map(x => String(x ?? '')).join(' ').toLowerCase();
+        return mots.every(m => tout.includes(m));
+      }).slice(0, 6);
+      setSuggestions(rows.map(p => ({
         id: String(p.id), nom: nomProfil(p),
         avatar: (p.avatar_url as string | null) ?? (p.profile_picture_url_pro as string | null) ?? null,
       })));
@@ -87,7 +97,7 @@ export default function ChampMention({ valeur, onChange, noms, placeholder, mult
   function choisir(p: Profil) {
     const el = ref.current;
     const curseur = el?.selectionStart ?? valeur.length;
-    const avant = valeur.slice(0, curseur).replace(/@([\p{L}0-9_-]{2,30})$/u, `@${p.nom} `);
+    const avant = valeur.slice(0, curseur).replace(/@([\p{L}0-9_'-][\p{L}0-9_' -]{0,39})$/u, `@${p.nom} `);
     const apres = valeur.slice(curseur);
     noms.set(p.nom, p.id);
     onChange(avant + apres);

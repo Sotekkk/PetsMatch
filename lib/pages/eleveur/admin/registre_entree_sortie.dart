@@ -876,7 +876,7 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
         'destinataire_nom':     _statut == 'sorti' ? _destinataireNomCtrl.text.trim() : '',
         'destinataire_adresse': _statut == 'sorti' ? _destinataireAdresseCtrl.text.trim() : '',
         'cause_mort':           _statut == 'decede' ? _causeMort : '',
-        'updated_at':           DateTime.now().toIso8601String(),
+        'updated_at':           DateTime.now().toUtc().toIso8601String(),
       }).eq('id', widget.animalId);
 
       final devientSorti = _statutSorti(_statut) && !_statutSorti(oldStatut);

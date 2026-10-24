@@ -149,7 +149,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     final today = DateTime.now().toIso8601String().substring(0, 10);
     await _supa.from('enclos_chenil').update({
       'dernier_nettoyage': today,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', enclosId);
     setState(() {
       _enclos = _enclos.map((e) => e.id == enclosId ? e.copyWith(dernierNettoyage: today) : e).toList();
