@@ -1,5 +1,6 @@
 'use client';
 
+import { dateValide, erreursDatesSante } from '@/lib/controle-dates';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
@@ -1015,7 +1016,7 @@ function TraitementAddForm({ type, initial, onCancel, onSave }: {
 
   function recomputeRappel(d: string, valeur: string, unite: 'jour' | 'semaine' | 'mois') {
     const n = parseInt(valeur, 10);
-    if (!d || !(n > 0)) return;
+    if (!dateValide(d) || !(n > 0)) return; // date vidée / incomplète : pas de calcul
     const days = unite === 'jour' ? n : unite === 'semaine' ? n * 7 : n * 30;
     const dt = new Date(d);
     dt.setDate(dt.getDate() + days);
@@ -1024,6 +1025,9 @@ function TraitementAddForm({ type, initial, onCancel, onSave }: {
 
   async function save() {
     if (!produit.trim()) { setErr('Produit requis'); return; }
+    const erreurs = erreursDatesSante({ date, date_rappel: dateRappel },
+      [{ key: 'date', label: 'Date', required: true }, { key: 'date_rappel', label: 'Date de rappel' }]);
+    if (erreurs.length) { setErr(erreurs.join(' ')); return; }
     setSaving(true); setErr('');
     const n = parseInt(freqValeur, 10);
     const freqLabel = n > 0

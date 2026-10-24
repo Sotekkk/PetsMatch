@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { erreursDatesSante } from '@/lib/controle-dates';
 
 export interface SoinAnimal {
   id: string;
@@ -55,6 +56,8 @@ export default function PorteeSoinModal({ animals, uid, activeProfileId, onClose
   const handleSave = useCallback(async () => {
     if (!description.trim()) { setError('Le produit / la description est obligatoire.'); return; }
     if (selectedIds.size === 0) { setError('Sélectionnez au moins un animal.'); return; }
+    const erreurs = erreursDatesSante({ date }, [{ key: 'date', label: 'Date', required: true }]);
+    if (erreurs.length) { setError(erreurs.join(' ')); return; }
     setSaving(true); setError('');
     const dateIso = new Date(date).toISOString();
     const desc    = description.trim();

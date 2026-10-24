@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
 import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import { erreurPoids, poidsKg } from '@/lib/poids';
+import { erreursDatesSante } from '@/lib/controle-dates';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
@@ -243,6 +244,15 @@ function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espec
       if (data.date && data.date > new Date().toISOString().slice(0, 10)) { alert('La date de la pesée ne peut pas être dans le futur.'); return; }
       if (data.date && dateNaissance && data.date < dateNaissance.slice(0, 10)) { alert('La date de la pesée est antérieure à la naissance de l’animal.'); return; }
       data = { ...data, valeur: String(poidsKg(data.valeur)), id: crypto.randomUUID(), ...(data.date ? {} : { date: new Date().toISOString().slice(0, 10) }) };
+    }
+    if (table !== 'poids' && table !== 'allergies') {
+      // Date de l'acte obligatoire, dates réelles et cohérentes (comme mes-animaux).
+      const erreurs = erreursDatesSante(data, [
+        { key: 'date', label: 'Date', required: true }, { key: 'date_fin', label: 'Date de fin' },
+        { key: 'date_rappel', label: 'Date de rappel' }, { key: 'date_validite_debut', label: 'Date de validité' },
+      ]);
+      if (erreurs.length) { alert(erreurs.join('
+')); return; }
     }
     setSaving(true);
     const cibles = table === 'vermifuges' ? [animalId, ...optsVermifuge.autres] : [animalId];
