@@ -10,6 +10,7 @@ import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 // GET /api/admin/moderation?type=influenceurs&statut=pending|approved|refused
 //                          ?type=pubs
 //                          ?type=lieux
+//                          ?type=retraits&nature=naturel|petfriendly&statut=en_attente|traitees
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
@@ -28,6 +29,37 @@ export async function GET(req: NextRequest) {
       .select('*').order('created_at', { ascending: false });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ items: data ?? [] });
+  }
+  if (type === 'retraits') {
+    // Demandes de retrait d'un lieu (lieu naturel / pet-friendly sans gestionnaire).
+    const nature = searchParams.get('nature') === 'petfriendly' ? 'petfriendly' : 'naturel';
+    let q = supabaseAdmin.from('lieux_demandes_retrait').select(nature === 'naturel'
+      ? '*, place:natural_places(id, nom, adresse, lat, lng, photo_url, statut)'
+      : '*, place:petfriendly_places(id, nom, adresse, ville, lat, lng, photo_url, statut, uid_pro)')
+      .eq('nature', nature);
+    q = searchParams.get('statut') === 'traitees'
+      ? q.neq('statut', 'en_attente').order('traite_le', { ascending: false }).limit(100)
+      : q.eq('statut', 'en_attente').order('created_at', { ascending: true });
+    const { data, error } = await q;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const liste = (data ?? []) as unknown as { uid: string; natural_place_id: string | null; petfriendly_place_id: string | null; statut: string }[];
+    const uids = [...new Set(liste.map(d => d.uid))];
+    const { data: profils } = uids.length
+      ? await supabaseAdmin.from('user_profiles').select('uid, profile_type, nom, firstname, lastname, is_main').in('uid', uids)
+      : { data: [] };
+    type P = { uid: string; profile_type: string; nom: string | null; firstname: string | null; lastname: string | null; is_main: boolean };
+    const pl = (profils ?? []) as P[];
+    const nomP = (p?: P) => p ? (`${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || p.nom || '') : '';
+    const nomUid = (uid: string) => nomP(pl.find(p => p.uid === uid && p.profile_type === 'particulier') ?? pl.find(p => p.uid === uid && p.is_main) ?? pl.find(p => p.uid === uid)) || uid;
+    // Plusieurs membres peuvent demander le retrait du même lieu.
+    const parLieu: Record<string, number> = {};
+    for (const d of liste) {
+      const k = d.natural_place_id ?? d.petfriendly_place_id;
+      if (k && d.statut === 'en_attente') parLieu[k] = (parLieu[k] ?? 0) + 1;
+    }
+    return NextResponse.json({
+      items: liste.map(d => ({ ...d, demandeur: nomUid(d.uid), nb_demandes: parLieu[(d.natural_place_id ?? d.petfriendly_place_id) ?? ''] ?? 1 })),
+    });
   }
   if (type === 'lieux') {
     // Files de modération des lieux pet-friendly (communauté + établissements).
@@ -282,6 +314,70 @@ export async function POST(req: NextRequest) {
             data: { place_id: cible },
           });
         }
+        return NextResponse.json({ ok: true });
+      }
+
+      // ── Demande de retrait d'un lieu ──────────────────────────────────
+      // Acceptée : lieu naturel supprimé, fiche pet-friendly masquée ; toutes
+      // les demandes en attente sur ce lieu sont closes et leurs auteurs
+      // prévenus. Refusée : motif obligatoire, transmis au demandeur.
+      case 'retrait_accepter':
+      case 'retrait_refuser': {
+        const motif = String(body.motif ?? '').trim() || null;
+        const d = (await supabaseAdmin.from('lieux_demandes_retrait').select('*').eq('id', id).maybeSingle()).data as
+          { id: string; nature: string; natural_place_id: string | null; petfriendly_place_id: string | null; place_nom: string | null; uid: string; profile_id: string | null; statut: string } | null;
+        if (!d) return NextResponse.json({ error: 'Demande introuvable' }, { status: 404 });
+        if (d.statut !== 'en_attente') return NextResponse.json({ error: 'Demande déjà traitée' }, { status: 409 });
+        if (action === 'retrait_refuser' && !motif) return NextResponse.json({ error: 'Indiquez le motif.' }, { status: 400 });
+        const naturel = d.nature === 'naturel';
+        const placeId = naturel ? d.natural_place_id : d.petfriendly_place_id;
+        const nom = d.place_nom ?? 'ce lieu';
+        const traite = { motif, traite_par: auth.uid, traite_le: new Date().toISOString() };
+        const notifier = async (dest: { uid: string; profile_id: string | null }[], accepte: boolean) => {
+          if (!dest.length) return;
+          await supabaseAdmin.from('notifications').insert(dest.map(x => ({
+            uid: x.uid, type: naturel ? 'lieu_naturel_retrait' : 'lieu_moderation', read: false,
+            ...(x.profile_id ? { profile_id: x.profile_id } : {}),
+            title: accepte ? 'Lieu retiré' : 'Demande de retrait refusée',
+            body: accepte
+              ? `Merci : « ${nom} » a été retiré${motif ? ` (${motif})` : ''}.`
+              : `« ${nom} » reste en ligne : ${motif}`,
+            data: { nature: d.nature, place_id: placeId, demande_id: d.id },
+          })));
+        };
+
+        if (action === 'retrait_refuser') {
+          const r = await supabaseAdmin.from('lieux_demandes_retrait').update({ statut: 'refusee', ...traite }).eq('id', id);
+          if (r.error) throw r.error;
+          if (!naturel && placeId) {
+            await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: placeId, objet: 'retrait', objet_id: id, action: 'refuser', motif, admin_uid: auth.uid });
+          }
+          await notifier([{ uid: d.uid, profile_id: d.profile_id }], false);
+          return NextResponse.json({ ok: true });
+        }
+
+        // Acceptée : on clôt d'abord toutes les demandes en attente du lieu
+        // (la suppression d'un lieu naturel efface ensuite le lien).
+        const col = naturel ? 'natural_place_id' : 'petfriendly_place_id';
+        const { data: closes, error: e1 } = placeId
+          ? await supabaseAdmin.from('lieux_demandes_retrait').update({ statut: 'acceptee', ...traite })
+              .eq(col, placeId).eq('statut', 'en_attente').select('uid, profile_id')
+          : await supabaseAdmin.from('lieux_demandes_retrait').update({ statut: 'acceptee', ...traite })
+              .eq('id', id).select('uid, profile_id');
+        if (e1) throw e1;
+        if (placeId) {
+          if (naturel) {
+            const r = await supabaseAdmin.from('natural_places').delete().eq('id', placeId);
+            if (r.error) throw r.error;
+          } else {
+            const r = await supabaseAdmin.from('petfriendly_places').update({ statut: 'masque', motif_moderation: motif ?? 'Retiré à la demande d\'un membre' }).eq('id', placeId);
+            if (r.error) throw r.error;
+            await supabaseAdmin.from('petfriendly_moderation_log').insert({ place_id: placeId, objet: 'retrait', objet_id: id, action: 'accepter', motif, admin_uid: auth.uid });
+          }
+        }
+        const dest = new Map<string, { uid: string; profile_id: string | null }>();
+        for (const c of (closes ?? []) as { uid: string; profile_id: string | null }[]) dest.set(c.uid, c);
+        await notifier([...dest.values()], true);
         return NextResponse.json({ ok: true });
       }
 

@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/widgets/map_point_picker.dart';
+import 'package:PetsMatch/widgets/demande_retrait_lieu.dart';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -866,6 +867,17 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
                         style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey))
                   else
                     ..._reviews.map((r) => _ReviewTile(review: r)),
+
+                  // Lieu fermé, inexistant, doublon… : demande à l'équipe PetsMatch.
+                  if (_place['statut'] == 'valide' && _place['id'] != null) ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)]),
+                      child: BoutonDemandeRetraitLieu(nature: 'naturel', placeId: _place['id'].toString(),
+                          placeNom: (_place['nom'] ?? '').toString()),
+                    ),
+                  ],
                 ]),
               ),
             ]),

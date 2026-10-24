@@ -5,6 +5,7 @@ import 'package:PetsMatch/utils/storage_helper.dart' as stockage;
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:flutter/material.dart';
 import 'package:PetsMatch/widgets/liste_especes_cocher.dart';
+import 'package:PetsMatch/widgets/demande_retrait_lieu.dart';
 import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart' show referencementLieu, kLibelleReferencement, kIconeReferencement;
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -407,6 +408,11 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
         ligne(Icons.edit_note_outlined, 'Proposer une correction', () => _proposerCorrection(lieu)),
         const Divider(height: 1),
         ligne(Icons.flag_outlined, 'Signaler une information', () => _signalerLieu(lieu)),
+        // Fiche sans gestionnaire : un membre peut en demander le retrait.
+        if (lieu['uid_pro'] == null && lieu['statut'] == 'actif') ...[
+          const Divider(height: 1),
+          BoutonDemandeRetraitLieu(nature: 'petfriendly', placeId: widget.id, placeNom: (lieu['nom'] ?? '').toString()),
+        ],
       ]),
     );
   }

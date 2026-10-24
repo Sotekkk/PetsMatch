@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/nature/add_natural_place_page.dart';
 import 'package:PetsMatch/pages/nature/natural_place_detail_page.dart';
+import 'package:PetsMatch/widgets/demande_retrait_lieu.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -21,12 +22,14 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
   static const _teal = Color(0xFF0C5C6C);
   final _supa = Supabase.instance.client;
   bool _chargement = true;
-  List<Map<String, dynamic>> _lieux = [], _photos = [], _equipements = [], _alertes = [];
+  List<Map<String, dynamic>> _lieux = [], _photos = [], _equipements = [], _alertes = [], _retraits = [];
 
   static const _statuts = {
     'en_attente': ('En attente de validation', Color(0xFFB45309)),
     'valide': ('Publié', Color(0xFF16A34A)),
     'refuse': ('Non publié', Color(0xFFDC2626)),
+    'acceptee': ('Acceptée', Color(0xFF16A34A)),
+    'refusee': ('Refusée', Color(0xFFDC2626)),
     'cyano_suspecte': ('Suspectée', Color(0xFFB45309)),
     'cyano_verification': ('Photo en vérification', Color(0xFFB45309)),
     'cyano_validee': ('Vérifiée par PetsMatch', Color(0xFFDC2626)),
@@ -65,6 +68,10 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
         _alertes = List<Map<String, dynamic>>.from(r[3] as List);
         _chargement = false;
       });
+      // À part : la page reste utilisable si la table n'existe pas encore.
+      final ret = await _supa.from('lieux_demandes_retrait').select('*, place:natural_places(id, nom)')
+          .eq('uid', uid).eq('nature', 'naturel').order('created_at', ascending: false);
+      if (mounted) setState(() => _retraits = List<Map<String, dynamic>>.from(ret as List));
     } catch (_) {
       if (mounted) setState(() => _chargement = false);
     }
@@ -272,6 +279,21 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
                     child: Text(
                       'Une alerte vérifiée par l\'équipe PetsMatch ne peut être levée que par elle : contactez-la quand l\'eau est de nouveau saine.',
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ),
+                _titre('Demandes de retrait'),
+                if (_retraits.isEmpty)
+                  Text('Aucune demande de retrait.', style: TextStyle(color: Colors.grey.shade600)),
+                for (final d in _retraits)
+                  _carte(
+                    titre: ((d['place'] as Map?)?['nom'] ?? d['place_nom'] ?? 'Lieu').toString(),
+                    sousTitre: '${libelleRaisonRetrait(d['raison']?.toString())} · demandée le ${_date(d['created_at'])}',
+                    statut: (d['statut'] ?? '').toString(),
+                    motif: d['statut'] != 'en_attente' ? d['motif']?.toString() : null,
+                    actions: [
+                      if (d['statut'] == 'en_attente')
+                        _boutonSupprimer(() => _supprimer('lieux_demandes_retrait', d['id'].toString(),
+                            'Annuler cette demande ?', 'La demande de retrait ne sera pas examinée.')),
+                    ],
                   ),
                 _titre('Photos proposées'),
                 if (_photos.isEmpty)

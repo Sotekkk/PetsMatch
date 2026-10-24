@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/lieux/lieu_detail_page.dart';
 import 'package:PetsMatch/pages/lieux/recommander_lieu_page.dart';
+import 'package:PetsMatch/widgets/demande_retrait_lieu.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -18,7 +19,7 @@ class _MesContributionsLieuxPageState extends State<MesContributionsLieuxPage> {
   static const _teal = Color(0xFF0C5C6C);
   final _supa = Supabase.instance.client;
   bool _chargement = true;
-  List<Map<String, dynamic>> _lieux = [], _corrections = [], _revendications = [];
+  List<Map<String, dynamic>> _lieux = [], _corrections = [], _revendications = [], _retraits = [];
 
   static const _statuts = {
     'brouillon': ('Brouillon', Color(0xFF64748B)),
@@ -32,6 +33,7 @@ class _MesContributionsLieuxPageState extends State<MesContributionsLieuxPage> {
     'appliquee': ('Appliquée', Color(0xFF16A34A)),
     'refusee': ('Refusée', Color(0xFFDC2626)),
     'validee': ('Validée', Color(0xFF16A34A)),
+    'acceptee': ('Acceptée', Color(0xFF16A34A)),
   };
 
   @override
@@ -57,9 +59,32 @@ class _MesContributionsLieuxPageState extends State<MesContributionsLieuxPage> {
         _revendications = List<Map<String, dynamic>>.from(r[2] as List);
         _chargement = false;
       });
+      // À part : la page reste utilisable si la table n'existe pas encore.
+      final ret = await _supa.from('lieux_demandes_retrait').select('*, place:petfriendly_places(id, nom)')
+          .eq('uid', uid).eq('nature', 'petfriendly').order('created_at', ascending: false);
+      if (mounted) setState(() => _retraits = List<Map<String, dynamic>>.from(ret as List));
     } catch (_) {
       if (mounted) setState(() => _chargement = false);
     }
+  }
+
+  Future<void> _annulerRetrait(Map<String, dynamic> d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Annuler cette demande ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+        content: const Text('La demande de retrait ne sera pas examinée.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Non')),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Annuler la demande', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from('lieux_demandes_retrait').delete().eq('id', d['id'].toString()).eq('statut', 'en_attente');
+    } catch (_) {}
+    _charger();
   }
 
   Future<void> _supprimer(Map<String, dynamic> l) async {
@@ -187,6 +212,24 @@ class _MesContributionsLieuxPageState extends State<MesContributionsLieuxPage> {
                     sousTitre: 'Proposée le ${_date(c['created_at'])}',
                     statut: (c['statut'] ?? '').toString(),
                     motif: c['statut'] == 'refusee' ? c['motif']?.toString() : null,
+                  ),
+                _titre('Demandes de retrait'),
+                if (_retraits.isEmpty)
+                  Text('Aucune demande de retrait.', style: TextStyle(color: Colors.grey.shade600)),
+                for (final d in _retraits)
+                  _carte(
+                    titre: ((d['place'] as Map?)?['nom'] ?? d['place_nom'] ?? 'Lieu').toString(),
+                    sousTitre: '${libelleRaisonRetrait(d['raison']?.toString())} · demandée le ${_date(d['created_at'])}',
+                    statut: (d['statut'] ?? '').toString(),
+                    motif: d['statut'] != 'en_attente' ? d['motif']?.toString() : null,
+                    actions: [
+                      if (d['statut'] == 'en_attente')
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: BorderSide(color: Colors.red.shade200)),
+                          onPressed: () => _annulerRetrait(d),
+                          child: const Text('Annuler la demande'),
+                        ),
+                    ],
                   ),
                 _titre('Revendications'),
                 if (_revendications.isEmpty)

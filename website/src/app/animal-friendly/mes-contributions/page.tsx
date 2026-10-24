@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { libelleRaisonRetrait } from '@/components/lieux/DemandeRetraitLieu';
 
 type Ligne = Record<string, unknown> & { id: string; statut: string; created_at: string; place?: { id?: string; nom?: string } | null };
 
@@ -22,6 +23,7 @@ const STATUTS: Record<string, [string, string]> = {
   en_attente: ['En attente', 'text-[#B45309] bg-[#FEF3C7]'],
   appliquee: ['Appliquée', 'text-[#166534] bg-[#DCFCE7]'],
   refusee: ['Refusée', 'text-[#B91C1C] bg-[#FEE2E2]'],
+  acceptee: ['Acceptée', 'text-[#166534] bg-[#DCFCE7]'],
   validee: ['Validée', 'text-[#166534] bg-[#DCFCE7]'],
 };
 
@@ -30,6 +32,7 @@ export default function MesContributionsLieuxPage() {
   const [lieux, setLieux] = useState<Ligne[]>([]);
   const [corrections, setCorrections] = useState<Ligne[]>([]);
   const [revendications, setRevendications] = useState<Ligne[]>([]);
+  const [retraits, setRetraits] = useState<Ligne[]>([]);
   const [charge, setCharge] = useState(false);
 
   const charger = useCallback(() => {
@@ -38,7 +41,9 @@ export default function MesContributionsLieuxPage() {
       supabase.from('petfriendly_places').select('*').eq('ajoute_par_uid', user.uid).order('created_at', { ascending: false }),
       supabase.from('petfriendly_corrections').select('*, place:petfriendly_places(id, nom)').eq('uid', user.uid).order('created_at', { ascending: false }),
       supabase.from('petfriendly_revendications').select('*, place:petfriendly_places(id, nom)').eq('uid', user.uid).order('created_at', { ascending: false }),
-    ]).then(([a, b, c]) => {
+      supabase.from('lieux_demandes_retrait').select('*, place:petfriendly_places(id, nom)').eq('uid', user.uid).eq('nature', 'petfriendly').order('created_at', { ascending: false }),
+    ]).then(([a, b, c, d]) => {
+      setRetraits((d.data ?? []) as Ligne[]);
       setLieux((a.data ?? []) as Ligne[]); setCorrections((b.data ?? []) as Ligne[]); setRevendications((c.data ?? []) as Ligne[]);
       setCharge(true);
     });
@@ -51,6 +56,12 @@ export default function MesContributionsLieuxPage() {
     if (!window.confirm(`Supprimer « ${String(l.nom ?? '')} » ? Cette action est définitive.`)) return;
     const { data, error } = await supabase.from('petfriendly_places').delete().eq('id', l.id).select('id');
     if (error || !data?.length) alert('Suppression impossible : la fiche a peut-être déjà été publiée.');
+    charger();
+  }
+
+  async function annulerRetrait(d: Ligne) {
+    if (!window.confirm('Annuler cette demande de retrait ? Elle ne sera pas examinée.')) return;
+    await supabase.from('lieux_demandes_retrait').delete().eq('id', d.id).eq('statut', 'en_attente');
     charger();
   }
 
@@ -82,7 +93,7 @@ export default function MesContributionsLieuxPage() {
   return (
     <div className="bg-[#F4F7F6] min-h-screen pb-16" style={{ fontFamily: 'Galey, sans-serif' }}>
       <div className="bg-[#0C5C6C] text-white"><div className="max-w-2xl mx-auto px-4 py-6"><h1 className="text-2xl font-bold">Mes contributions</h1>
-        <p className="text-white/75 text-sm">Lieux pet-friendly recommandés, corrections et revendications.</p></div></div>
+        <p className="text-white/75 text-sm">Lieux pet-friendly recommandés, corrections, demandes de retrait et revendications.</p></div></div>
       <div className="max-w-2xl mx-auto px-4 pt-6 space-y-3">
         {!charge && <p className="text-sm text-gray-500">Chargement…</p>}
         <h2 className="text-lg font-bold text-[#1F2A2E] pt-2">Lieux recommandés</h2>
@@ -99,6 +110,13 @@ export default function MesContributionsLieuxPage() {
         <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Corrections proposées</h2>
         {charge && corrections.length === 0 && <p className="text-sm text-gray-500">Aucune correction proposée.</p>}
         {corrections.map(c => <div key={c.id}>{carte(c.place?.nom ?? 'Lieu', `Proposée le ${date(c.created_at)}`, c.statut, c.statut === 'refusee' ? c.motif : null)}</div>)}
+        <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Demandes de retrait</h2>
+        {charge && retraits.length === 0 && <p className="text-sm text-gray-500">Aucune demande de retrait.</p>}
+        {retraits.map(d => <div key={d.id}>{carte(d.place?.nom ?? String(d.place_nom ?? 'Lieu'),
+          `${libelleRaisonRetrait(d.raison)} · demandée le ${date(d.created_at)}`, d.statut, d.statut !== 'en_attente' ? d.motif : null,
+          d.statut === 'en_attente'
+            ? <button type="button" onClick={() => annulerRetrait(d)} className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-bold hover:bg-red-50">Annuler la demande</button>
+            : undefined)}</div>)}
         <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Revendications</h2>
         {charge && revendications.length === 0 && <p className="text-sm text-gray-500">Aucune revendication.</p>}
         {revendications.map(r => <div key={r.id}>{carte(r.place?.nom ?? 'Lieu', `Envoyée le ${date(r.created_at)}`, r.statut, r.statut === 'refusee' ? r.motif : null,

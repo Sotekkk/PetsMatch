@@ -5,6 +5,7 @@
 // transmis à la personne concernée et trace dans l'historique.
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
+import DemandesRetraitLieuxTab from './DemandesRetraitLieuxTab';
 import { ActionBtn, Badge, InfoRow, fmtDate } from './ui';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { ESPECES_LIEUX } from '@/lib/especes-lieux';
@@ -37,7 +38,7 @@ const TROIS_ETATS: [string, string][] = [
   ['supplement_animal', 'Supplément'], ['animaux_dans_chambre', 'Animaux en chambre'], ['espace_detente', 'Espace détente'],
 ];
 const ONGLETS = [
-  ['nouvelles', 'Nouvelles fiches'], ['corrections', 'Corrections proposées'], ['revendications', 'Revendications'],
+  ['nouvelles', 'Nouvelles fiches'], ['corrections', 'Corrections proposées'], ['retraits', 'Demandes de retrait'], ['revendications', 'Revendications'],
   ['a_corriger', 'À corriger'], ['publies', 'Publiés'], ['historique', 'Historique'],
 ] as const;
 type Onglet = typeof ONGLETS[number][0];
@@ -143,6 +144,7 @@ export default function LieuxPetFriendlyTab() {
   const [enEdition, setEnEdition] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
+  const [nbRetraits, setNbRetraits] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true); setErreur(null);
@@ -154,6 +156,10 @@ export default function LieuxPetFriendlyTab() {
       revendications: j.revendications ?? [], journal: j.journal ?? [], doublons: j.doublons ?? {},
     });
     setLoading(false);
+    // Compteur de l'onglet « Demandes de retrait » (chargé à part).
+    const rr = await apiFetch('/api/admin/moderation?type=retraits&nature=petfriendly');
+    const jr = await rr.json().catch(() => ({}));
+    if (rr.ok) setNbRetraits((jr.items ?? []).length);
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -253,7 +259,7 @@ export default function LieuxPetFriendlyTab() {
 
   const vide = (t: string) => <p className="text-sm text-gray-400">{t}</p>;
   const compteurs: Record<Onglet, number> = {
-    nouvelles: donnees.enAttente.length, corrections: donnees.corrections.length, revendications: donnees.revendications.length,
+    nouvelles: donnees.enAttente.length, corrections: donnees.corrections.length, retraits: nbRetraits, revendications: donnees.revendications.length,
     a_corriger: donnees.aCorriger.length, publies: donnees.publies.length, historique: 0,
   };
 
@@ -304,6 +310,8 @@ export default function LieuxPetFriendlyTab() {
           </>) : <ActionBtn label="Traiter" color="#0C5C6C" onClick={() => { setOuvert(c.id); setMotif(''); }} />}
         </div>
       )))}
+
+      {onglet === 'retraits' && <DemandesRetraitLieuxTab nature="petfriendly" onCount={setNbRetraits} />}
 
       {onglet === 'revendications' && (donnees.revendications.length === 0 ? vide('Aucune revendication en attente.') : donnees.revendications.map(r => (
         <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm space-y-2">

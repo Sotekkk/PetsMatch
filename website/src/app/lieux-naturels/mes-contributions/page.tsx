@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { libelleRaisonRetrait } from '@/components/lieux/DemandeRetraitLieu';
 
 type Ligne = Record<string, unknown> & { id: string; statut: string; created_at: string; place?: { id?: string; nom?: string } | null };
 
@@ -18,6 +19,8 @@ const STATUTS: Record<string, [string, string]> = {
   en_attente: ['En attente de validation', 'text-[#B45309] bg-[#FEF3C7]'],
   valide: ['Publié', 'text-[#166534] bg-[#DCFCE7]'],
   refuse: ['Non publié', 'text-[#B91C1C] bg-[#FEE2E2]'],
+  acceptee: ['Acceptée', 'text-[#166534] bg-[#DCFCE7]'],
+  refusee: ['Refusée', 'text-[#B91C1C] bg-[#FEE2E2]'],
   cyano_suspecte: ['Suspectée', 'text-[#B45309] bg-[#FEF3C7]'],
   cyano_verification: ['Photo en vérification', 'text-[#B45309] bg-[#FEF3C7]'],
   cyano_validee: ['Vérifiée par PetsMatch', 'text-[#B91C1C] bg-[#FEE2E2]'],
@@ -34,6 +37,7 @@ export default function MesContributionsNaturePage() {
   const [photos, setPhotos] = useState<Ligne[]>([]);
   const [equipements, setEquipements] = useState<Ligne[]>([]);
   const [alertes, setAlertes] = useState<Ligne[]>([]);
+  const [retraits, setRetraits] = useState<Ligne[]>([]);
   const [charge, setCharge] = useState(false);
   const [renvoye, setRenvoye] = useState(false);
 
@@ -46,7 +50,9 @@ export default function MesContributionsNaturePage() {
       supabase.from('natural_place_photo_suggestions').select('*, place:natural_places(id, nom)').eq('submitted_by_uid', user.uid).order('created_at', { ascending: false }),
       supabase.from('natural_place_amenity_suggestions').select('*, place:natural_places(id, nom)').eq('submitted_by_uid', user.uid).order('created_at', { ascending: false }),
       supabase.from('natural_places').select('*').eq('alerte_cyano', true).eq('alerte_cyano_uid', user.uid).order('alerte_cyano_date', { ascending: false }),
-    ]).then(([a, b, c, d]) => {
+      supabase.from('lieux_demandes_retrait').select('*, place:natural_places(id, nom)').eq('uid', user.uid).eq('nature', 'naturel').order('created_at', { ascending: false }),
+    ]).then(([a, b, c, d, e]) => {
+      setRetraits((e.data ?? []) as Ligne[]);
       setLieux((a.data ?? []) as Ligne[]); setPhotos((b.data ?? []) as Ligne[]); setEquipements((c.data ?? []) as Ligne[]);
       setAlertes((d.data ?? []) as Ligne[]);
       setCharge(true);
@@ -143,6 +149,12 @@ export default function MesContributionsNaturePage() {
             Une alerte vérifiée par l&apos;équipe PetsMatch ne peut être levée que par elle : contactez-la quand l&apos;eau est de nouveau saine.
           </p>
         )}
+        <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Demandes de retrait</h2>
+        {charge && retraits.length === 0 && <p className="text-sm text-gray-500">Aucune demande de retrait.</p>}
+        {retraits.map(d => <div key={d.id}>{carte(d.place?.nom ?? String(d.place_nom ?? 'Lieu'),
+          `${libelleRaisonRetrait(d.raison)} · demandée le ${date(d.created_at)}`, d.statut,
+          d.statut !== 'en_attente' ? d.motif : null, null,
+          d.statut === 'en_attente' ? boutonSupprimer(() => supprimer('lieux_demandes_retrait', d.id, 'Annuler cette demande ? Elle ne sera pas examinée.')) : undefined)}</div>)}
         <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Photos proposées</h2>
         {charge && photos.length === 0 && <p className="text-sm text-gray-500">Aucune photo proposée.</p>}
         {photos.map(p => <div key={p.id}>{carte(p.place?.nom ?? 'Lieu', `Proposée le ${date(p.created_at)}`, p.statut,

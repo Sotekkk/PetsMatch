@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, use } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import DemandeRetraitLieu from '@/components/lieux/DemandeRetraitLieu';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
@@ -722,6 +723,11 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
               </div>
             ))}
           </div>
+        )}
+
+        {/* Lieu fermé, inexistant, doublon… : demande à l'équipe PetsMatch. */}
+        {(place as { statut?: string | null }).statut === 'valide' && (
+          <DemandeRetraitLieu nature="naturel" placeId={id} placeNom={place.nom} className="mt-6" />
         )}
       </div>
 

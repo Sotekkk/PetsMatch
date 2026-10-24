@@ -17,6 +17,7 @@ import PubsStoriesTab from './_components/PubsStoriesTab';
 import LieuxPetFriendlyTab from './_components/LieuxPetFriendlyTab';
 import NaturalPlacesTousTab from './_components/NaturalPlacesTousTab';
 import NaturalPlacesCyanoTab from './_components/NaturalPlacesCyanoTab';
+import DemandesRetraitLieuxTab from './_components/DemandesRetraitLieuxTab';
 import AvisContestesTab from './_components/AvisContestesTab';
 import PlanEditor from './_components/PlanEditor';
 import { apiFetch } from '@/lib/api-fetch';
@@ -365,8 +366,9 @@ export default function AdminPage() {
   const [naturalPlacesEnAttente, setNaturalPlacesEnAttente] = useState<NaturalPlaceAdmin[]>([]);
   const [naturalPlacesLoading, setNaturalPlacesLoading] = useState(false);
   const [naturalPlaceSaving, setNaturalPlaceSaving] = useState<string | null>(null);
-  const [naturalPlacesSubTab, setNaturalPlacesSubTab] = useState<'lieux' | 'equipements' | 'photos' | 'cyano' | 'tous'>('lieux');
+  const [naturalPlacesSubTab, setNaturalPlacesSubTab] = useState<'lieux' | 'equipements' | 'photos' | 'cyano' | 'retraits' | 'tous'>('lieux');
   const [cyanoAVerifier, setCyanoAVerifier] = useState(0);
+  const [retraitsNaturels, setRetraitsNaturels] = useState(0);
 
   interface PhotoSuggestionAdmin {
     id: string; place_id: string; photo_url: string;
@@ -2338,6 +2340,7 @@ export default function AdminPage() {
                 { key: 'equipements', label: '🧰 Équipements signalés', count: amenitySuggestions.length },
                 { key: 'photos',      label: '🖼️ Photos signalées',    count: photoSuggestions.length },
                 { key: 'cyano',       label: 'Alertes cyano',          count: cyanoAVerifier },
+                { key: 'retraits',    label: 'Demandes de retrait',    count: retraitsNaturels },
                 { key: 'tous',        label: '🗺️ Tous les lieux',      count: 0 },
               ] as const).map(t => (
                 <button key={t.key} onClick={() => setNaturalPlacesSubTab(t.key)}
@@ -2357,7 +2360,8 @@ export default function AdminPage() {
             </div>
 
             {naturalPlacesSubTab === 'cyano' && <NaturalPlacesCyanoTab onAVerifier={setCyanoAVerifier} />}
-            {naturalPlacesSubTab === 'cyano' ? null : naturalPlacesSubTab === 'tous' ? (
+            {naturalPlacesSubTab === 'retraits' && <DemandesRetraitLieuxTab nature="naturel" onCount={setRetraitsNaturels} />}
+            {naturalPlacesSubTab === 'cyano' || naturalPlacesSubTab === 'retraits' ? null : naturalPlacesSubTab === 'tous' ? (
               <NaturalPlacesTousTab />
             ) : naturalPlacesSubTab === 'photos' ? (
               photoSuggestionsLoading ? (

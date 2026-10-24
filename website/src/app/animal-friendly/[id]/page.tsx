@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from 'react';
 import Link from 'next/link';
+import DemandeRetraitLieu from '@/components/lieux/DemandeRetraitLieu';
 import { supabase } from '@/lib/supabase';
 import { ESPECES_LIEUX } from '@/lib/especes-lieux';
 import { referencementLieu, LIBELLE_REFERENCEMENT } from '@/lib/lieux-categories';
@@ -12,6 +13,7 @@ import { useAuth } from '@/lib/auth-context';
 interface Lieu {
   id: string;
   uid_pro?: string | null;
+  statut?: string | null;
   nom: string;
   categorie: string;
   ville?: string | null;
@@ -471,6 +473,11 @@ export default function LieuDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
         {messageContrib && <p className="text-sm text-[#0C5C6C] -mt-3 mb-5" style={{ fontFamily: 'Galey, sans-serif' }}>{messageContrib}</p>}
+
+        {/* Fiche sans gestionnaire : un membre peut en demander le retrait. */}
+        {!lieu.uid_pro && lieu.statut === 'actif' && (
+          <DemandeRetraitLieu nature="petfriendly" placeId={id} placeNom={lieu.nom ?? ''} className="mb-5" />
+        )}
 
         {/* Gestion : gestionnaire, ou revendication gratuite d'une fiche sans gestionnaire */}
         {!lieu.uid_pro && (

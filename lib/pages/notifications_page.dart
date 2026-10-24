@@ -1000,7 +1000,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'profil_en_attente' || type == 'profil_valide') return;
     // Refus (lieu, photo, équipement) : Mes contributions, avec le motif et,
     // pour un lieu, « Modifier et renvoyer » / « Supprimer ».
-    if (type == 'lieu_naturel_refuse' || type == 'amenity_refuse' || type == 'photo_lieu_refusee') {
+    if (type == 'lieu_naturel_refuse' || type == 'amenity_refuse' || type == 'photo_lieu_refusee'
+        || type == 'lieu_naturel_retrait') {
       await Navigator.push(context, MaterialPageRoute(builder: (_) => const MesContributionsNaturePage()));
       return;
     }
@@ -1466,6 +1467,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'amenity_valide':
       case 'photo_lieu_validee':     return Icons.forest_outlined;
       case 'lieu_naturel_refuse':
+      case 'lieu_naturel_retrait':
       case 'amenity_refuse':
       case 'photo_lieu_refusee':     return Icons.forest_outlined;
       default:                       return Icons.notifications_outlined;
@@ -1546,6 +1548,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'amenity_valide':
       case 'photo_lieu_validee':     return const Color(0xFF6E9E57);
       case 'lieu_naturel_refuse':
+      case 'lieu_naturel_retrait':
       case 'amenity_refuse':
       case 'photo_lieu_refusee':     return Colors.grey;
       default:                       return Colors.grey;

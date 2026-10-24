@@ -1045,6 +1045,7 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return '/profil';
     // Refus : Mes contributions (motif, « Modifier et renvoyer », « Supprimer »).
     case 'lieu_naturel_refuse':
+    case 'lieu_naturel_retrait':
     case 'amenity_refuse':
     case 'photo_lieu_refusee':
       return '/lieux-naturels/mes-contributions';
