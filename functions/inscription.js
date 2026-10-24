@@ -319,6 +319,13 @@ exports.validerLienInscription = functions
                 // ouverte dans un autre navigateur (boîte mail), sans session.
                 res.redirect(302, d && d.email ? `${expire}&email=${encodeURIComponent(d.email)}` : expire); return;
             }
+            // Validation seulement après un clic sur « Valider mon adresse »
+            // (page du site, ?ok=1). Avant : ouvrir le lien suffisait, et les
+            // analyseurs de liens des messageries (Gmail, antivirus) validaient
+            // des adresses sans que la personne ait cliqué.
+            if (String((req.query && req.query.ok) || "") !== "1") {
+                res.redirect(302, `${SITE_URL}/valider-email?t=${jeton}`); return;
+            }
             res.redirect(302, d.lien);
         } catch (e) {
             console.error("[inscription] validerLienInscription:", e.message);

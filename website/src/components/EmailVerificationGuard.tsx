@@ -9,7 +9,7 @@ import { auth } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 
 const LIBRES = [
-  '/verifier-email', '/connexion', '/inscription', '/beta-login', '/cgu', '/cgu-acceptation',
+  '/verifier-email', '/valider-email', '/connexion', '/inscription', '/beta-login', '/cgu', '/cgu-acceptation',
   '/confidentialite', '/mentions-legales', '/contact', '/a-propos', '/tarifs',
   '/signer-cession', '/signer-contrat', '/certificat', '/devis', '/facture', '/facture-pension',
   '/partage', '/album', '/reclamer-animal', '/suivi', '/p/',

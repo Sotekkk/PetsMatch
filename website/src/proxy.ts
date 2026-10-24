@@ -48,6 +48,10 @@ const WHITELISTED_PATHS = [
   // redirection vers /beta-login perdait le code du lien (« lien expiré »).
   '/mot-de-passe-oublie',
   '/__/auth/',
+  // Validation de l'adresse e-mail ouverte depuis la boîte mail (autre
+  // navigateur, sans accès bêta).
+  '/valider-email',
+  '/verifier-email',
 ];
 
 // manifest.json / service workers : le navigateur charge le manifeste SANS
