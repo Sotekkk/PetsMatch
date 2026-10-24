@@ -26,6 +26,9 @@ interface NaturalPlace {
   alerte_cyano_statut?: string | null;
   alerte_cyano_photo_url?: string | null;
   alerte_cyano_date?: string | null;
+  alerte_cyano_uid?: string | null;
+  alerte_cyano_profile_id?: string | null;
+  alerte_cyano_validee?: boolean | null;
   nb_avis: number | null;
   note_moyenne: number | null;
   niveau_difficulte?: string | null;
@@ -187,10 +190,12 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const [cyanoModal, setCyanoModal] = useState<false | 'new' | 'confirm'>(false);
 
   async function removeCyano() {
-    await supabase.from('natural_places').update({
+    if (!confirm('Lever l’alerte ? Elle ne sera plus affichée sur ce lieu ni sur la carte.')) return;
+    const { data } = await supabase.from('natural_places').update({
       alerte_cyano: false, alerte_cyano_date: null, alerte_cyano_profile_id: null,
       alerte_cyano_statut: null, alerte_cyano_lat: null, alerte_cyano_lng: null, alerte_cyano_photo_url: null,
-    }).eq('id', id);
+    }).eq('id', id).select('id');
+    if (!data?.length) alert('Impossible de lever cette alerte : seul son auteur (ou l’équipe PetsMatch une fois vérifiée) le peut.');
     loadPlace();
   }
 
@@ -297,6 +302,12 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const cat = place.categorie;
   const color = CAT_COLOR[cat] ?? '#0C5C6C';
   const cyano = place.alerte_cyano === true;
+  const cyanoValidee = place.alerte_cyano_validee === true;
+  // Auteur de l'alerte : seul à pouvoir la lever tant qu'elle n'est pas vérifiée
+  // (règle appliquée aussi en base, pm_natural_places_garde).
+  const auteurCyano = place.alerte_cyano_uid
+    ? place.alerte_cyano_uid === user?.uid
+    : !!profileId && place.alerte_cyano_profile_id === profileId;
   const photoUrl = place.photo_url || CAT_PHOTO[cat];
   const hasCoords = place.lat != null && place.lng != null;
   const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -337,15 +348,19 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
                 {place.alerte_cyano_statut === 'confirme'
-                  ? '⚠️ Cyanobactéries CONFIRMÉES — baignade et contact avec l’eau interdits.'
-                  : '⚠️ Cyanobactéries suspectées — prudence, contact avec l’eau déconseillé.'}
-                {place.alerte_cyano_date && (
+                  ? 'Cyanobactéries CONFIRMÉES — baignade et contact avec l’eau interdits.'
+                  : 'Cyanobactéries suspectées — prudence, contact avec l’eau déconseillé.'}
+                {(place.alerte_cyano_date || place.alerte_cyano_statut === 'confirme') && (
                   <span className="block font-normal text-white/80 text-xs mt-0.5">
-                    Signalée le {new Date(place.alerte_cyano_date).toLocaleDateString('fr-FR')}
+                    {[
+                      place.alerte_cyano_date ? `Signalée le ${new Date(place.alerte_cyano_date).toLocaleDateString('fr-FR')}` : '',
+                      place.alerte_cyano_statut === 'confirme'
+                        ? (cyanoValidee ? 'photo vérifiée par l’équipe PetsMatch' : 'photo en cours de vérification') : '',
+                    ].filter(Boolean).join(' · ')}
                   </span>
                 )}
               </p>
-              {profileId && (
+              {auteurCyano && !cyanoValidee && (
                 <button onClick={removeCyano} className="text-sm font-bold underline flex-shrink-0">Lever</button>
               )}
             </div>
@@ -353,7 +368,7 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
               /* eslint-disable-next-line @next/next/no-img-element */
               <img src={place.alerte_cyano_photo_url} alt="" className="mt-2 rounded-lg w-40 h-24 object-cover" />
             )}
-            {place.alerte_cyano_statut !== 'confirme' && profileId && (
+            {place.alerte_cyano_statut !== 'confirme' && !cyanoValidee && profileId && (
               <button onClick={() => setCyanoModal('confirm')}
                 className="mt-2 text-xs font-bold underline">
                 Confirmer l’alerte (avec photo)

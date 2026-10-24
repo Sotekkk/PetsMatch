@@ -356,9 +356,18 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     }
   }
 
+  /// Auteur de l'alerte : seul à pouvoir la lever tant que l'équipe PetsMatch
+  /// ne l'a pas vérifiée (règle appliquée aussi en base, pm_natural_places_garde).
+  bool get _estAuteurCyano {
+    final auteur = _place['alerte_cyano_uid']?.toString();
+    if (auteur != null && auteur.isNotEmpty) return auteur == User_Info.uid;
+    return _uid.isNotEmpty && _place['alerte_cyano_profile_id']?.toString() == _uid;
+  }
+
   Widget _cyanoBanner() {
     final statut = (_place['alerte_cyano_statut'] as String?) ?? 'suspecte';
     final confirme = statut == 'confirme';
+    final validee = _place['alerte_cyano_validee'] == true;
     final photoUrl = _place['alerte_cyano_photo_url'] as String?;
     final dateRaw = _place['alerte_cyano_date'] as String?;
     final date = dateRaw != null ? DateTime.tryParse(dateRaw)?.toLocal() : null;
@@ -378,22 +387,26 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
           Expanded(
             child: Text(
               confirme
-                  ? '⚠️ Cyanobactéries CONFIRMÉES — baignade et contact avec l\'eau interdits.'
-                  : '⚠️ Cyanobactéries suspectées — prudence, contact avec l\'eau déconseillé.',
+                  ? 'Cyanobactéries CONFIRMÉES — baignade et contact avec l\'eau interdits.'
+                  : 'Cyanobactéries suspectées — prudence, contact avec l\'eau déconseillé.',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
             ),
           ),
-          if (_uid.isNotEmpty)
+          if (_estAuteurCyano && !validee)
             TextButton(
               onPressed: _removeCyano,
               child: const Text('Lever', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             ),
         ]),
-        if (dateStr.isNotEmpty)
+        if (dateStr.isNotEmpty || confirme)
           Padding(
             padding: const EdgeInsets.only(left: 32),
-            child: Text('Signalée le $dateStr',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
+            child: Text(
+              [
+                if (dateStr.isNotEmpty) 'Signalée le $dateStr',
+                if (confirme) validee ? 'photo vérifiée par l\'équipe PetsMatch' : 'photo en cours de vérification',
+              ].join(' · '),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
           ),
         if (photoUrl != null && photoUrl.isNotEmpty)
           Padding(
@@ -403,7 +416,7 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
               child: CachedNetworkImage(imageUrl: photoUrl, height: 90, width: 140, fit: BoxFit.cover),
             ),
           ),
-        if (!confirme && _uid.isNotEmpty)
+        if (!confirme && !validee && _uid.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(left: 24, top: 4),
             child: TextButton.icon(
@@ -418,6 +431,19 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
   }
 
   Future<void> _removeCyano() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Lever l\'alerte ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+        content: const Text('L\'alerte cyanobactéries ne sera plus affichée sur ce lieu ni sur la carte.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(c, true),
+              child: const Text('Lever', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
     try {
       final id = _place['id']?.toString();
       if (id == null) return;
@@ -431,7 +457,14 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
         'alerte_cyano_photo_url':  null,
       }).eq('id', id);
       await _refreshPlace();
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Impossible de lever cette alerte : seul son auteur (ou l\'équipe PetsMatch une fois vérifiée) le peut.'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
   }
 
   bool _uploadingPhoto = false;

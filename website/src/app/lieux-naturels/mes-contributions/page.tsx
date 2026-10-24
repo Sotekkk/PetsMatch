@@ -18,6 +18,9 @@ const STATUTS: Record<string, [string, string]> = {
   en_attente: ['En attente de validation', 'text-[#B45309] bg-[#FEF3C7]'],
   valide: ['Publié', 'text-[#166534] bg-[#DCFCE7]'],
   refuse: ['Non publié', 'text-[#B91C1C] bg-[#FEE2E2]'],
+  cyano_suspecte: ['Suspectée', 'text-[#B45309] bg-[#FEF3C7]'],
+  cyano_verification: ['Photo en vérification', 'text-[#B45309] bg-[#FEF3C7]'],
+  cyano_validee: ['Vérifiée par PetsMatch', 'text-[#B91C1C] bg-[#FEE2E2]'],
 };
 
 const EQUIPEMENTS: Record<string, string> = {
@@ -30,6 +33,7 @@ export default function MesContributionsNaturePage() {
   const [lieux, setLieux] = useState<Ligne[]>([]);
   const [photos, setPhotos] = useState<Ligne[]>([]);
   const [equipements, setEquipements] = useState<Ligne[]>([]);
+  const [alertes, setAlertes] = useState<Ligne[]>([]);
   const [charge, setCharge] = useState(false);
   const [renvoye, setRenvoye] = useState(false);
 
@@ -41,8 +45,10 @@ export default function MesContributionsNaturePage() {
       supabase.from('natural_places').select('*').eq('submitted_by_uid', user.uid).order('created_at', { ascending: false }),
       supabase.from('natural_place_photo_suggestions').select('*, place:natural_places(id, nom)').eq('submitted_by_uid', user.uid).order('created_at', { ascending: false }),
       supabase.from('natural_place_amenity_suggestions').select('*, place:natural_places(id, nom)').eq('submitted_by_uid', user.uid).order('created_at', { ascending: false }),
-    ]).then(([a, b, c]) => {
+      supabase.from('natural_places').select('*').eq('alerte_cyano', true).eq('alerte_cyano_uid', user.uid).order('alerte_cyano_date', { ascending: false }),
+    ]).then(([a, b, c, d]) => {
       setLieux((a.data ?? []) as Ligne[]); setPhotos((b.data ?? []) as Ligne[]); setEquipements((c.data ?? []) as Ligne[]);
+      setAlertes((d.data ?? []) as Ligne[]);
       setCharge(true);
     });
   }, [user]);
@@ -53,6 +59,18 @@ export default function MesContributionsNaturePage() {
     // .select() : une suppression refusée par la base ne renvoie aucune ligne.
     const { data, error } = await supabase.from(table).delete().eq('id', id).select('id');
     if (error || !data?.length) alert('Suppression impossible : ce contenu a peut-être déjà été validé.');
+    charger();
+  }
+
+  // Lever une alerte cyanobactéries signalée par soi (refusé en base si elle a
+  // été vérifiée par l'équipe PetsMatch).
+  async function leverAlerte(a: Ligne) {
+    if (!window.confirm(`Lever l’alerte cyanobactéries de « ${String(a.nom ?? '')} » ? Elle ne sera plus affichée.`)) return;
+    const { data, error } = await supabase.from('natural_places').update({
+      alerte_cyano: false, alerte_cyano_date: null, alerte_cyano_profile_id: null,
+      alerte_cyano_statut: null, alerte_cyano_lat: null, alerte_cyano_lng: null, alerte_cyano_photo_url: null,
+    }).eq('id', a.id).select('id');
+    if (error || !data?.length) alert('Impossible de lever cette alerte : elle a peut-être été vérifiée par l’équipe PetsMatch.');
     charger();
   }
 
@@ -89,7 +107,7 @@ export default function MesContributionsNaturePage() {
   return (
     <div className="bg-[#F4F7F6] min-h-screen pb-16" style={{ fontFamily: 'Galey, sans-serif' }}>
       <div className="bg-[#0C5C6C] text-white"><div className="max-w-2xl mx-auto px-4 py-6"><h1 className="text-2xl font-bold">Mes contributions</h1>
-        <p className="text-white/75 text-sm">Lieux naturels proposés, photos et équipements.</p></div></div>
+        <p className="text-white/75 text-sm">Lieux naturels proposés, alertes, photos et équipements.</p></div></div>
       <div className="max-w-2xl mx-auto px-4 pt-6 space-y-3">
         {renvoye && <p className="text-sm text-[#166534] bg-[#DCFCE7] rounded-xl px-3 py-2">Modifications envoyées : ton lieu sera revu par un admin (sous 48h).</p>}
         {!charge && <p className="text-sm text-gray-500">Chargement…</p>}
@@ -107,6 +125,22 @@ export default function MesContributionsNaturePage() {
         {lieux.some(l => l.statut === 'valide') && (
           <p className="text-xs text-gray-500 px-1">
             Un lieu publié ne se modifie plus directement : proposez une photo ou un équipement depuis sa fiche. Pour le faire retirer, contactez l&apos;équipe PetsMatch.
+          </p>
+        )}
+        <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Alertes cyanobactéries</h2>
+        {charge && alertes.length === 0 && <p className="text-sm text-gray-500">Aucune alerte en cours.</p>}
+        {alertes.map(a => <div key={a.id}>{carte(String(a.nom ?? ''), `Signalée le ${date(a.alerte_cyano_date)}`,
+          a.alerte_cyano_validee === true ? 'cyano_validee' : a.alerte_cyano_statut === 'confirme' ? 'cyano_verification' : 'cyano_suspecte',
+          null, a.alerte_cyano_photo_url,
+          <>
+            <Link href={`/lieux-naturels/${a.id}`} className="px-4 py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Voir la fiche</Link>
+            {a.alerte_cyano_validee !== true && (
+              <button type="button" onClick={() => leverAlerte(a)} className="px-4 py-2 rounded-xl border border-red-200 text-red-600 text-sm font-bold hover:bg-red-50">Lever l&apos;alerte</button>
+            )}
+          </>)}</div>)}
+        {alertes.some(a => a.alerte_cyano_validee === true) && (
+          <p className="text-xs text-gray-500 px-1">
+            Une alerte vérifiée par l&apos;équipe PetsMatch ne peut être levée que par elle : contactez-la quand l&apos;eau est de nouveau saine.
           </p>
         )}
         <h2 className="text-lg font-bold text-[#1F2A2E] pt-4">Photos proposées</h2>

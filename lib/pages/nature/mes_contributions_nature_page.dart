@@ -21,12 +21,15 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
   static const _teal = Color(0xFF0C5C6C);
   final _supa = Supabase.instance.client;
   bool _chargement = true;
-  List<Map<String, dynamic>> _lieux = [], _photos = [], _equipements = [];
+  List<Map<String, dynamic>> _lieux = [], _photos = [], _equipements = [], _alertes = [];
 
   static const _statuts = {
     'en_attente': ('En attente de validation', Color(0xFFB45309)),
     'valide': ('Publié', Color(0xFF16A34A)),
     'refuse': ('Non publié', Color(0xFFDC2626)),
+    'cyano_suspecte': ('Suspectée', Color(0xFFB45309)),
+    'cyano_verification': ('Photo en vérification', Color(0xFFB45309)),
+    'cyano_validee': ('Vérifiée par PetsMatch', Color(0xFFDC2626)),
   };
 
   static const _equipementsLabels = {
@@ -51,12 +54,15 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
             .eq('submitted_by_uid', uid).order('created_at', ascending: false),
         _supa.from('natural_place_amenity_suggestions').select('*, place:natural_places(id, nom)')
             .eq('submitted_by_uid', uid).order('created_at', ascending: false),
+        _supa.from('natural_places').select().eq('alerte_cyano', true).eq('alerte_cyano_uid', uid)
+            .order('alerte_cyano_date', ascending: false),
       ]);
       if (!mounted) return;
       setState(() {
         _lieux = List<Map<String, dynamic>>.from(r[0] as List);
         _photos = List<Map<String, dynamic>>.from(r[1] as List);
         _equipements = List<Map<String, dynamic>>.from(r[2] as List);
+        _alertes = List<Map<String, dynamic>>.from(r[3] as List);
         _chargement = false;
       });
     } catch (_) {
@@ -95,6 +101,40 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
       }
       _charger();
     }
+  }
+
+  /// Lever une alerte cyanobactéries signalée par soi (refusé en base si elle
+  /// a été vérifiée par l'équipe PetsMatch).
+  Future<void> _leverAlerte(Map<String, dynamic> a) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Lever l\'alerte ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800)),
+        content: Text('L\'alerte cyanobactéries de « ${a['nom']} » ne sera plus affichée.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(c, true),
+              child: const Text('Lever', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final r = await _supa.from('natural_places').update({
+        'alerte_cyano': false, 'alerte_cyano_date': null, 'alerte_cyano_profile_id': null,
+        'alerte_cyano_statut': null, 'alerte_cyano_lat': null, 'alerte_cyano_lng': null,
+        'alerte_cyano_photo_url': null,
+      }).eq('id', a['id'].toString()).select('id');
+      if ((r as List).isEmpty) throw Exception('refus');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Impossible de lever cette alerte : elle a peut-être été vérifiée par l\'équipe PetsMatch.'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
+    _charger();
   }
 
   Widget _pastille(String statut) {
@@ -199,6 +239,38 @@ class _MesContributionsNaturePageState extends State<MesContributionsNaturePage>
                     child: Text(
                       'Un lieu publié ne se modifie plus directement : proposez une photo ou un équipement depuis sa fiche. '
                       'Pour le faire retirer, contactez l\'équipe PetsMatch.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  ),
+                _titre('Alertes cyanobactéries'),
+                if (_alertes.isEmpty)
+                  Text('Aucune alerte en cours.', style: TextStyle(color: Colors.grey.shade600)),
+                for (final a in _alertes)
+                  _carte(
+                    titre: (a['nom'] ?? '').toString(),
+                    sousTitre: 'Signalée le ${_date(a['alerte_cyano_date'])}',
+                    statut: a['alerte_cyano_validee'] == true
+                        ? 'cyano_validee'
+                        : a['alerte_cyano_statut'] == 'confirme' ? 'cyano_verification' : 'cyano_suspecte',
+                    photo: a['alerte_cyano_photo_url']?.toString(),
+                    actions: [
+                      OutlinedButton(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => NaturalPlaceDetailPage(place: a))).then((_) => _charger()),
+                        child: const Text('Voir la fiche'),
+                      ),
+                      if (a['alerte_cyano_validee'] != true)
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: BorderSide(color: Colors.red.shade200)),
+                          onPressed: () => _leverAlerte(a),
+                          child: const Text('Lever l\'alerte'),
+                        ),
+                    ],
+                  ),
+                if (_alertes.any((a) => a['alerte_cyano_validee'] == true))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                    child: Text(
+                      'Une alerte vérifiée par l\'équipe PetsMatch ne peut être levée que par elle : contactez-la quand l\'eau est de nouveau saine.',
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                   ),
                 _titre('Photos proposées'),
