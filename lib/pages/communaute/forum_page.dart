@@ -739,10 +739,12 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   File? _replyPhoto;
   File? _replyVideo;
   bool _sending = false;
+  bool _muet = false; // notifications de ce sujet coupées (forum_sujets_muets)
 
   @override
   void initState() {
     super.initState();
+    _chargerMuet();
     _mentionCtrl = MentionController(
       textController: _reponseCtrl,
       excludeUid: _uid,
@@ -756,6 +758,37 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
     _mentionCtrl?.dispose();
     _reponseCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _chargerMuet() async {
+    if (_uid.isEmpty) return;
+    try {
+      final r = await _supa.from('forum_sujets_muets').select('sujet_id')
+          .eq('uid', _uid).eq('sujet_id', widget.sujet['id']).maybeSingle();
+      if (mounted) setState(() => _muet = r != null);
+    } catch (_) {}
+  }
+
+  /// Couper / réactiver les notifications de réponse de ce sujet (les
+  /// citations restent régies par Paramètres → Notifications).
+  Future<void> _basculerMuet() async {
+    if (_uid.isEmpty) return;
+    final muet = !_muet;
+    setState(() => _muet = muet);
+    try {
+      if (muet) {
+        await _supa.from('forum_sujets_muets').upsert({'uid': _uid, 'sujet_id': widget.sujet['id']});
+      } else {
+        await _supa.from('forum_sujets_muets').delete().eq('uid', _uid).eq('sujet_id', widget.sujet['id']);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(muet
+            ? 'Vous ne serez plus notifié(e) des réponses à ce sujet.'
+            : 'Notifications des réponses réactivées pour ce sujet.')));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _muet = !muet);
+    }
   }
 
   Future<void> _loadReponses() async {
@@ -856,6 +889,13 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
               ),
+              if (_uid.isNotEmpty)
+                IconButton(
+                  tooltip: _muet ? 'Réactiver les notifications de ce sujet' : 'Ne plus être notifié(e) de ce sujet',
+                  onPressed: _basculerMuet,
+                  icon: Icon(_muet ? Icons.notifications_off_outlined : Icons.notifications_active_outlined,
+                      color: Colors.white),
+                ),
             ]),
           ),
           // ── Messages ──

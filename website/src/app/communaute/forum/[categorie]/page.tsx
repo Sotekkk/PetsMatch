@@ -184,6 +184,8 @@ export default function ForumCategoriePage() {
   const [authors, setAuthors] = useState<Record<string, Author>>({});
   const [loading, setLoading] = useState(true);
   const [openSujet, setOpenSujet] = useState<Sujet | null>(null);
+  // Notifications de réponse coupées pour le sujet ouvert (forum_sujets_muets).
+  const [muet, setMuet] = useState(false);
   const [reponses, setReponses] = useState<Reponse[]>([]);
   const [loadingReponses, setLoadingReponses] = useState(false);
   const [newReponse, setNewReponse] = useState('');
@@ -232,8 +234,25 @@ export default function ForumCategoriePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Couper / réactiver les notifications de réponse du sujet ouvert (les
+  // citations restent régies par Mon profil → Notifications).
+  async function basculerMuet() {
+    if (!user?.uid || !openSujet) return;
+    const suivant = !muet;
+    setMuet(suivant);
+    const { error } = suivant
+      ? await supabase.from('forum_sujets_muets').upsert({ uid: user.uid, sujet_id: openSujet.id })
+      : await supabase.from('forum_sujets_muets').delete().eq('uid', user.uid).eq('sujet_id', openSujet.id);
+    if (error) setMuet(!suivant);
+  }
+
   async function openSujetDetail(sujet: Sujet) {
     setOpenSujet(sujet);
+    setMuet(false);
+    if (user?.uid) {
+      supabase.from('forum_sujets_muets').select('sujet_id').eq('uid', user.uid).eq('sujet_id', sujet.id).maybeSingle()
+        .then(({ data }) => setMuet(!!data));
+    }
     setLoadingReponses(true);
     const { data } = await supabase.from('forum_reponses').select('*')
       .eq('sujet_id', sujet.id).order('created_at');
@@ -372,6 +391,13 @@ export default function ForumCategoriePage() {
             <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
               <button onClick={() => { setOpenSujet(null); setReponses([]); }} className="text-gray-400 hover:text-gray-600">←</button>
               <h3 className="font-bold text-[#1E2025] flex-1 text-sm line-clamp-1" style={{ fontFamily: 'Galey, sans-serif' }}>{openSujet.titre}</h3>
+              {user?.uid && (
+                <button type="button" onClick={basculerMuet}
+                  title={muet ? 'Réactiver les notifications de ce sujet' : 'Ne plus être notifié(e) de ce sujet'}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${muet ? 'border-gray-300 text-gray-500' : 'border-[#0C5C6C] text-[#0C5C6C]'}`}>
+                  {muet ? 'Notifications coupées' : 'Notifications activées'}
+                </button>
+              )}
               <button onClick={() => { setOpenSujet(null); setReponses([]); }} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">

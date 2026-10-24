@@ -20,6 +20,7 @@ import 'package:PetsMatch/utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/pages/settings/preferences_notifications_page.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:share_plus/share_plus.dart';
@@ -259,6 +260,15 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   await Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => SecuConnectionSetting()));
                   Avertissements.rafraichir();
+                },
+              ),
+              buildSettingsOption(
+                context,
+                icon: Icons.notifications_outlined,
+                text: 'Notifications',
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const PreferencesNotificationsPage()));
                 },
               ),
               buildSettingsOption(

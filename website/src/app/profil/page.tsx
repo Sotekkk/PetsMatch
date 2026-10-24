@@ -3268,6 +3268,19 @@ export default function ProfilPage() {
       <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>Sécurité & aide</p>
       <div className="space-y-3 mb-6">
         <AvertissementsLink uid={user?.uid} />
+        <Link href="/profil/notifications"
+          className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
+          <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 11-6 0m6 0H9"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-[#1F2A2E] text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Notifications</p>
+            <p className="text-xs text-gray-400">Choisir les notifications du forum</p>
+          </div>
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+        </Link>
         <Link href="/abonnement"
           className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow">
           <div className="w-10 h-10 rounded-xl bg-[#FFF8E8] flex items-center justify-center flex-shrink-0 text-xl">⭐</div>
