@@ -570,3 +570,145 @@ exports.sendAnimalBirthdayParticulier = functions
         console.log(`sendAnimalBirthdayParticulier: ${sent} vœux envoyés.`);
         return null;
     });
+
+/**
+ * Supprime un fichier du stockage à partir de son URL Supabase (publique ou
+ * signée). Sans effet si l'URL n'est pas un fichier de ce projet.
+ * @param {string} url - URL du fichier.
+ * @return {Promise<void>}
+ */
+function supprimerFichierStockage(url) {
+    const m = String(url || "").match(/\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/([^?]+)/);
+    if (!m || !String(url).startsWith(SUPABASE_URL)) return Promise.resolve();
+    const body = JSON.stringify({prefixes: [decodeURIComponent(m[2])]});
+    const u = new URL(`${SUPABASE_URL}/storage/v1/object/${m[1]}`);
+    return new Promise((resolve) => {
+        const req = https.request({
+            hostname: u.hostname, path: u.pathname, method: "DELETE",
+            headers: {"Content-Type": "application/json", ...SUPABASE_AUTH_HEADERS,
+                "Content-Length": Buffer.byteLength(body)},
+        }, (res) => {
+            res.resume(); res.on("end", resolve);
+        });
+        req.on("error", () => resolve());
+        req.write(body);
+        req.end();
+    });
+}
+
+/**
+ * Documents de la fiche animal (animaux.documents, JSONB) avec une date
+ * d'expiration : retirés AUTOMATIQUEMENT de la fiche le jour de l'expiration
+ * (fichier supprimé du stockage, rappel d'agenda supprimé). Le(s)
+ * propriétaire(s) sont prévenus à J-30, J-7 et la veille, puis du retrait.
+ * Destinataires : propriétaires actifs (animaux_proprietes : principal et
+ * co-propriétaires), chacun sur SON profil ; à défaut le propriétaire de la
+ * fiche (uid_proprietaire / uid_eleveur, profil de l'animal).
+ */
+exports.sendDocumentExpiryReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("30 8 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        let sent = 0;
+        let retires = 0;
+        const today = parisNow();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = ymd(today);
+
+        const animaux = [];
+        for (let offset = 0; ; offset += 1000) {
+            const rows = await supabaseSelect("animaux",
+                "documents=not.is.null&statut=neq.decede" +
+                "&select=id,nom,documents,uid_proprietaire,uid_eleveur,profile_id" +
+                `&order=id&limit=1000&offset=${offset}`);
+            animaux.push(...rows);
+            if (rows.length < 1000) break;
+        }
+
+        for (const a of animaux) {
+            const docs = Array.isArray(a.documents) ? a.documents : [];
+            const aPrevenir = []; // {doc, phrase, retire}
+            const restants = [];
+            for (const d of docs) {
+                const exp = d && d.date_expiration ?
+                    new Date(`${String(d.date_expiration).slice(0, 10)}T00:00:00`) : null;
+                if (!exp || isNaN(exp.getTime())) {
+                    restants.push(d);
+                    continue;
+                }
+                const jours = Math.round((exp - today) / 86400000);
+                const le = exp.toLocaleDateString("fr-FR");
+                if (jours <= 0) {
+                    aPrevenir.push({doc: d, retire: true,
+                        phrase: `a expiré le ${le} : il a été retiré de la fiche.`});
+                    continue; // retiré
+                }
+                restants.push(d);
+                if (jours === 30 || jours === 7 || jours === 1) {
+                    aPrevenir.push({doc: d, retire: false,
+                        phrase: `expire le ${le} : il sera retiré automatiquement de la fiche ce jour-là.` +
+                            " Pensez à ajouter le nouveau."});
+                }
+            }
+            if (!aPrevenir.length) continue;
+
+            // Retrait des documents expirés (fiche, fichier, rappel d'agenda).
+            if (restants.length !== docs.length) {
+                const st = await supabasePatch("animaux", `id=eq.${encodeURIComponent(a.id)}`, {documents: restants});
+                if (st >= 200 && st < 300) {
+                    for (const x of aPrevenir.filter((p) => p.retire)) {
+                        retires++;
+                        await supprimerFichierStockage(x.doc.url);
+                        try {
+                            await supabaseRequest("DELETE",
+                                `agenda_events?animal_id=eq.${encodeURIComponent(a.id)}` +
+                                `&titre=eq.${encodeURIComponent(`Document à renouveler : ${x.doc.nom || ""}`)}`);
+                        } catch (_) {
+                            // rappel d'agenda déjà absent
+                        }
+                    }
+                } else {
+                    console.error(`sendDocumentExpiryReminders: retrait impossible (${a.id}) HTTP ${st}`);
+                    continue;
+                }
+            }
+
+            let dest = await supabaseSelect("animaux_proprietes",
+                `animal_id=eq.${encodeURIComponent(a.id)}&date_fin=is.null` +
+                "&select=uid_proprio,profile_id_proprio,statut");
+            dest = dest.filter((p) => p.uid_proprio && (!p.statut || p.statut === "actif"))
+                .map((p) => ({uid: p.uid_proprio, profileId: p.profile_id_proprio || null}));
+            if (!dest.length) {
+                const uid = a.uid_proprietaire || a.uid_eleveur;
+                if (uid) dest = [{uid, profileId: a.profile_id || null}];
+            }
+
+            const nomAnimal = a.nom || "votre animal";
+            for (const x of aPrevenir) {
+                const nomDoc = x.doc.nom || "Un document";
+                const title = x.retire ? `Document retiré — ${nomAnimal}` : `Document bientôt retiré — ${nomAnimal}`;
+                const body = `« ${nomDoc} » ${x.phrase}`;
+                for (const p of dest) {
+                    const key = `doc_exp_${a.id}_${nomDoc}_${x.doc.date_expiration}_${p.uid}_${todayStr}`.slice(0, 250);
+                    if (await alreadySent(key)) continue;
+                    if (await sendPush(p.uid, title, body,
+                        {type: "document_expiration", animalId: String(a.id)},
+                        {profileId: p.profileId})) sent++;
+                    try {
+                        await supabaseInsert("notifications", [{
+                            uid: p.uid, type: "document_expiration", title, body, read: false,
+                            data: {animalId: String(a.id), document: nomDoc,
+                                date_expiration: x.doc.date_expiration, retire: x.retire},
+                            ...(p.profileId ? {profile_id: p.profileId} : {}),
+                        }]);
+                    } catch (e) {
+                        console.error(`notifications insert error (document ${a.id}):`, e.message);
+                    }
+                    await markSent(key);
+                }
+            }
+        }
+        console.log(`sendDocumentExpiryReminders: ${sent} notifications, ${retires} documents retirés.`);
+        return null;
+    });

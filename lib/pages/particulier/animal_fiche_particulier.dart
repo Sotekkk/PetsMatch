@@ -6881,22 +6881,40 @@ String _docCatLabel(String? v) =>
 IconData _docCatIcon(String? v) =>
     _kDocCategories.firstWhere((c) => c.$1 == v, orElse: () => _kDocCategories.last).$3;
 
+/// Rappel d'agenda 30 jours avant l'expiration d'un document (le jour même si
+/// c'est plus proche). Rangé sur le PROFIL DE L'ANIMAL et son propriétaire
+/// (multi-profil : pas le profil actif), comme le site. Les notifications et
+/// le retrait automatique du document à l'expiration : Cloud Function
+/// sendDocumentExpiryReminders.
 Future<void> _scheduleDocExpiryReminderP(String animalId, String label, DateTime expiry) async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
   if (uid == null) return;
   var d = expiry.subtract(const Duration(days: 30));
   if (d.isBefore(DateTime.now())) d = expiry;
   try {
+    final supa = Supabase.instance.client;
+    final a = await supa.from('animaux').select('profile_id, uid_proprietaire').eq('id', animalId).maybeSingle();
+    final pid = (a?['profile_id'] as String?)?.isNotEmpty == true
+        ? a!['profile_id'] as String
+        : (User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null);
     final at8 = DateTime(d.year, d.month, d.day, 8).toUtc();
-    await Supabase.instance.client.from('agenda_events').insert({
-      'uid': uid,
+    await supa.from('agenda_events').insert({
+      'uid': (a?['uid_proprietaire'] as String?) ?? uid,
       'titre': 'Document à renouveler : $label',
       'type': 'autre',
       'date_debut': at8.toIso8601String(),
       'animal_id': animalId,
-      if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
-      if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+      if (pid != null) 'profile_id': pid,
+      if (pid != null) 'pro_profile_id': pid,
     });
+  } catch (_) {}
+}
+
+/// Document retiré de la fiche : son rappel d'agenda aussi.
+Future<void> _supprimerRappelDocP(String animalId, String label) async {
+  try {
+    await Supabase.instance.client.from('agenda_events').delete()
+        .eq('animal_id', animalId).eq('titre', 'Document à renouveler : $label');
   } catch (_) {}
 }
 
@@ -7076,7 +7094,8 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
             if (expiration != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('Un rappel sera ajouté à votre agenda 30 jours avant.',
+                child: Text('Le document sera retiré automatiquement de la fiche à cette date. '
+                    'Vous serez prévenu(e) 30 jours, 7 jours et la veille (rappel aussi dans l\'agenda).',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
               ),
             const SizedBox(height: 18),
@@ -7149,8 +7168,12 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
       ),
     );
     if (confirm != true) return;
+    final doc = widget.documents[index];
     final next = [...widget.documents]..removeAt(index);
     await widget.onChanged(next);
+    if (doc['date_expiration'] != null) {
+      await _supprimerRappelDocP(widget.animalId, (doc['nom'] ?? '').toString());
+    }
   }
 
   @override

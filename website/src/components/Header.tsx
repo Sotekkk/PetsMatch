@@ -871,6 +871,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}?tab=repro` : '/mes-animaux';
     case 'rappel_vaccin':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    // Document de la fiche bientôt expiré → onglet Documents.
+    case 'document_expiration':
+      return d.animalId ? `/mes-animaux/${d.animalId}?tab=documents` : '/mes-animaux';
     case 'sante':
       return d.animalId
         ? `/mes-animaux/${d.animalId}?tab=sante${d.table ? `&cat=${d.table}` : ''}`

@@ -104,6 +104,8 @@ exports.sendCessionBirthdayReminders = cessionSterilisationFunctions.sendCession
 
 // Particulier — « Joyeux anniversaire <animal> ! » le jour de ses X ans
 exports.sendAnimalBirthdayParticulier = cessionSterilisationFunctions.sendAnimalBirthdayParticulier;
+// Documents de la fiche animal : retirés à l'expiration, prévenus à J-30, J-7, J-1.
+exports.sendDocumentExpiryReminders = cessionSterilisationFunctions.sendDocumentExpiryReminders;
 
 // Stories Pets Social — purge 24h
 exports.cleanupExpiredStories = storiesCleanupFunctions.cleanupExpiredStories;

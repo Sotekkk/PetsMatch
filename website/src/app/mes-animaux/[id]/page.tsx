@@ -1118,6 +1118,19 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
     return () => window.removeEventListener('focus', onFocus);
   }, [animalId]);
 
+  // Document retiré : son rappel d'agenda aussi (titre actuel, ou ancien
+  // titre par catégorie pour les documents ajoutés avant).
+  async function retirerLibre(i: number) {
+    const d = libres[i];
+    await saveLibres(libres.filter((_, j) => j !== i));
+    if (d?.date_expiration) {
+      const titres = [`Document à renouveler : ${d.nom}`];
+      const cat = DOC_LIBRE_CATS.find(c => c.value === d.categorie)?.label;
+      if (cat) titres.push(`Document à renouveler : ${cat}`);
+      await supabase.from('agenda_events').delete().eq('animal_id', animalId).in('titre', titres);
+    }
+  }
+
   async function saveLibres(next: DocLibre[]) {
     setLibres(next);
     await supabase.from('animaux').update({ documents: next }).eq('id', animalId);
@@ -1145,10 +1158,11 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
         const proProfileDoc = await profilPourAnimal(animalId, user.uid, activeProfileId);
         await supabase.from('agenda_events').insert({
           uid: ownerUidProp ?? user.uid,
-          titre: `Document à renouveler : ${DOC_LIBRE_CATS.find(c => c.value === cat)?.label ?? file.name}`,
+          titre: `Document à renouveler : ${entry.nom}`,
           type: 'autre',
           date_debut: rappel.toISOString(),
-          animal_id: Number.isFinite(Number(animalId)) ? Number(animalId) : null,
+          // animal_id est un texte : les identifiants non numériques étaient perdus.
+          animal_id: animalId,
           // Profil propriétaire de l'animal (un rappel de l'élevage reste dans
           // l'agenda de l'élevage, même créé depuis un autre profil).
           ...(proProfileDoc ? { profile_id: proProfileDoc, pro_profile_id: proProfileDoc } : {}),
@@ -1211,7 +1225,7 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
         </label>
       </div>
       <p className="text-[11px] text-gray-400 mt-1.5">Formats acceptés : {FORMATS_DOCUMENTS}.</p>
-      {expiration && <p className="text-[11px] text-gray-400 mt-1.5">Un rappel sera ajouté à votre agenda 30 jours avant l&apos;expiration.</p>}
+      {expiration && <p className="text-[11px] text-gray-400 mt-1.5">Le document sera retiré automatiquement de la fiche à cette date. Vous serez prévenu(e) 30 jours, 7 jours et la veille (rappel aussi dans l&apos;agenda).</p>}
       <div className="mt-3 divide-y divide-gray-50">
         {libres.length === 0 && <p className="text-sm text-gray-400 py-2">Aucun document ajouté.</p>}
         {libres.map((d, i) => {
@@ -1233,7 +1247,7 @@ function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: st
                 </p>
               </div>
               <LienDocument href={d.url} target="_blank" rel="noreferrer" className="text-xs text-[#0C5C6C] hover:underline">Voir</LienDocument>
-              <button onClick={() => saveLibres(libres.filter((_, j) => j !== i))}
+              <button onClick={() => retirerLibre(i)}
                 className="text-red-300 hover:text-red-500 text-lg leading-none">×</button>
             </div>
           );
