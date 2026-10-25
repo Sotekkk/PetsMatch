@@ -857,7 +857,9 @@ const TYPES_DE: Record<string, string> = {
 };
 
 /** methode : 'A' (kcal connues), 'B' (composition), 'C' (aucune info). */
-export function evaluerEnergie(o: { methode: string; type: string; kcalTexte?: string; unite?: string; compo?: Record<string, string> }): EvaluationEnergie {
+/** surMatiereSeche : valeurs de l'étiquette données sur matière sèche (sans
+ *  l'eau), ramenées au produit tel que servi avec l'humidité. */
+export function evaluerEnergie(o: { methode: string; type: string; kcalTexte?: string; unite?: string; compo?: Record<string, string>; surMatiereSeche?: boolean }): EvaluationEnergie {
   const out: EvaluationEnergie = { ok: false, estime: false, erreursChamps: {}, composition: {} };
   const plage = PLAGES_KCAL[o.type] ?? PLAGES_KCAL.autre;
   const plausible = (v: number) => {
@@ -891,9 +893,24 @@ export function evaluerEnergie(o: { methode: string; type: string; kcalTexte?: s
       else if (q.v != null) vals[k] = q.v;
     }
     if (Object.keys(out.erreursChamps).length) return out;
+    const horsEau = Object.entries(vals).filter(([k]) => k !== 'humidite').reduce((s, [, x]) => s + x, 0);
+    let noteSeche = '';
+    if (o.surMatiereSeche) {
+      const h = vals.humidite;
+      if (h == null) { out.info = 'Indiquez l’humidité : elle sert à ramener les valeurs sur matière sèche au produit tel que servi.'; return out; }
+      if (horsEau > 100.5) { out.err = 'La somme des valeurs sur matière sèche dépasse 100 %. Vérifiez les valeurs recopiées sur l’emballage.'; return out; }
+      const f = (100 - h) / 100;
+      for (const k of Object.keys(vals)) if (k !== 'humidite') vals[k] = Math.round(vals[k] * f * 100) / 100;
+      noteSeche = ` Valeurs ramenées au produit tel que servi (humidité ${Math.round(h)} %).`;
+    }
     out.composition = vals;
     const somme = Object.values(vals).reduce((s, x) => s + x, 0);
-    if (somme > 100.5) { out.err = 'La somme des pourcentages dépasse 100 %. Vérifiez les valeurs recopiées sur l’emballage.'; return out; }
+    if (somme > 100.5) {
+      out.err = vals.humidite != null && horsEau <= 100.5
+        ? 'La somme dépasse 100 % : ces valeurs semblent données sur matière sèche (sans l’eau). Cochez « Valeurs données sur matière sèche ».'
+        : 'La somme des pourcentages dépasse 100 %. Vérifiez les valeurs recopiées sur l’emballage.';
+      return out;
+    }
     if (vals.proteines == null || vals.matieres_grasses == null) {
       if (Object.keys(vals).length) out.info = 'Protéines et matières grasses sont nécessaires à l’estimation.';
       return out;
@@ -918,7 +935,7 @@ export function evaluerEnergie(o: { methode: string; type: string; kcalTexte?: s
     if (v <= 0) { out.err = 'Estimation impossible avec ces valeurs.'; return out; }
     out.info = `Estimation : ${Math.round(v)} kcal/100 g${vals.glucides == null ? ` (glucides estimés par différence : ${fr1(gluc)} %)` : ''}. `
       + `${industriel ? 'Méthode Atwater modifiée (NRC 2006), adaptée aux aliments industriels.' : 'Méthode Atwater (4-9-4) : estimation moins précise pour un aliment cru ou maison.'} `
-      + 'Ce n’est pas une valeur certifiée par le fabricant.';
+      + `Ce n’est pas une valeur certifiée par le fabricant.${noteSeche}`;
     plausible(v);
     out.kcal = Math.round(v);
     out.ok = true;

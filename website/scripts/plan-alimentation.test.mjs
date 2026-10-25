@@ -84,6 +84,20 @@ test('8. aliment ajouté depuis la composition analytique', () => {
   assert.match(partiel.info, /fibres brutes/);
 });
 
+test('8 bis. composition sur matière sèche (Dogfy Diet)', () => {
+  const dogfy = { proteines: '29', matieres_grasses: '44', fibres: '3', cendres: '9', glucides: '14', humidite: '66' };
+  const brut = evaluerEnergie({ methode: 'B', type: 'menagere', compo: dogfy });
+  assert.equal(brut.ok, false);
+  assert.match(brut.err, /matière sèche/);
+  const sec = evaluerEnergie({ methode: 'B', type: 'menagere', compo: dogfy, surMatiereSeche: true });
+  assert.ok(sec.ok);
+  assert.equal(sec.kcal, 193);
+  assert.equal(sec.composition.proteines, 9.86);
+  assert.match(sec.info, /humidité 66 %/);
+  assert.match(evaluerEnergie({ methode: 'B', type: 'menagere', compo: { proteines: '29', matieres_grasses: '44' }, surMatiereSeche: true }).info,
+    /Indiquez l’humidité/);
+});
+
 test('9. aliment sans valeur énergétique', () => {
   const maison = { marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere' };
   const p = plan([croq(), maison], [[0], [1]]);

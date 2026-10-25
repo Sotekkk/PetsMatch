@@ -83,6 +83,20 @@ void main() {
     expect(partiel.info, contains('fibres brutes'));
   });
 
+  test('8 bis. composition sur matière sèche (Dogfy Diet)', () {
+    const dogfy = {'proteines': '29', 'matieres_grasses': '44', 'fibres': '3', 'cendres': '9', 'glucides': '14', 'humidite': '66'};
+    final brut = evaluerEnergie(methode: 'B', type: 'menagere', compo: dogfy);
+    expect(brut.ok, isFalse);
+    expect(brut.err, contains('matière sèche'));
+    final sec = evaluerEnergie(methode: 'B', type: 'menagere', compo: dogfy, surMatiereSeche: true);
+    expect(sec.ok, isTrue);
+    expect(sec.kcal, 193);
+    expect(sec.composition['proteines'], 9.86);
+    expect(sec.info, contains('humidité 66 %'));
+    expect(evaluerEnergie(methode: 'B', type: 'menagere', compo: {'proteines': '29', 'matieres_grasses': '44'}, surMatiereSeche: true).info,
+        contains('Indiquez l’humidité'));
+  });
+
   test('9. aliment sans valeur énergétique', () {
     final maison = AlimentPlan(marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere');
     final p = plan([croq(), maison], [[0], [1]]);

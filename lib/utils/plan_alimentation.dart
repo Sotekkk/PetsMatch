@@ -936,6 +936,9 @@ const _typesDe = <String, String>{
 EvaluationEnergie evaluerEnergie({
   required String methode, required String type, String kcalTexte = '', String unite = '100g',
   Map<String, String> compo = const {},
+  /// Valeurs de l'étiquette données sur matière sèche (sans l'eau) : elles
+  /// sont ramenées au produit tel que servi avec l'humidité.
+  bool surMatiereSeche = false,
 }) {
   final out = EvaluationEnergie();
   final plage = kPlagesKcal[type] ?? kPlagesKcal['autre']!;
@@ -976,10 +979,30 @@ EvaluationEnergie evaluerEnergie({
       }
     }
     if (out.erreursChamps.isNotEmpty) return out;
+    final horsEau = vals.entries.where((e) => e.key != 'humidite').fold<double>(0, (s, e) => s + e.value);
+    String noteSeche = '';
+    if (surMatiereSeche) {
+      final h = vals['humidite'];
+      if (h == null) {
+        out.info = 'Indiquez l’humidité : elle sert à ramener les valeurs sur matière sèche au produit tel que servi.';
+        return out;
+      }
+      if (horsEau > 100.5) {
+        out.err = 'La somme des valeurs sur matière sèche dépasse 100 %. Vérifiez les valeurs recopiées sur l’emballage.';
+        return out;
+      }
+      final f = (100 - h) / 100;
+      for (final k in vals.keys.where((k) => k != 'humidite').toList()) {
+        vals[k] = (vals[k]! * f * 100).round() / 100;
+      }
+      noteSeche = ' Valeurs ramenées au produit tel que servi (humidité ${h.round()} %).';
+    }
     out.composition = vals;
     final somme = vals.values.fold<double>(0, (s, x) => s + x);
     if (somme > 100.5) {
-      out.err = 'La somme des pourcentages dépasse 100 %. Vérifiez les valeurs recopiées sur l’emballage.';
+      out.err = vals['humidite'] != null && horsEau <= 100.5
+          ? 'La somme dépasse 100 % : ces valeurs semblent données sur matière sèche (sans l’eau). Cochez « Valeurs données sur matière sèche ».'
+          : 'La somme des pourcentages dépasse 100 %. Vérifiez les valeurs recopiées sur l’emballage.';
       return out;
     }
     if (vals['proteines'] == null || vals['matieres_grasses'] == null) {
@@ -1011,7 +1034,7 @@ EvaluationEnergie evaluerEnergie({
     out.info = 'Estimation : ${v.round()} kcal/100 g'
         '${vals['glucides'] == null ? ' (glucides estimés par différence : ${_fr1(gluc)} %)' : ''}. '
         '${industriel ? 'Méthode Atwater modifiée (NRC 2006), adaptée aux aliments industriels.' : 'Méthode Atwater (4-9-4) : estimation moins précise pour un aliment cru ou maison.'} '
-        'Ce n’est pas une valeur certifiée par le fabricant.';
+        'Ce n’est pas une valeur certifiée par le fabricant.$noteSeche';
     plausible(v);
     out.kcal = v.roundToDouble();
     out.ok = true;

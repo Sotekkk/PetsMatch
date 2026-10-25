@@ -35,12 +35,14 @@ export default function AjoutAlimentModal({ espece, typeInitial, marqueInitiale 
   const [repartition, setRepartition] = useState<Record<string, string>>({});
   const [table, setTable] = useState<{ age: string; poids: string; g: string }[]>([{ age: '', poids: '', g: '' }]);
   const [warnOk, setWarnOk] = useState(false);
+  const [matiereSeche, setMatiereSeche] = useState(false);
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
 
   const prive = marque.trim() === libSansMarque;
   const repere = type === 'barf' ? REPARTITION_BARF : type === 'menagere' ? REPARTITION_MENAGERE : null;
-  const ev = useMemo(() => evaluerEnergie({ methode, type, kcalTexte: kcal, unite, compo }), [methode, type, kcal, unite, compo]);
+  const ev = useMemo(() => evaluerEnergie({ methode, type, kcalTexte: kcal, unite, compo, surMatiereSeche: matiereSeche }),
+    [methode, type, kcal, unite, compo, matiereSeche]);
   const identiteOk = !!(marque.trim() && nom.trim());
   const toucher = () => { setErreur(null); setWarnOk(false); };
 
@@ -224,6 +226,11 @@ export default function AjoutAlimentModal({ espece, typeInitial, marqueInitiale 
               {methode === 'B' && (
                 <div>
                   <p className="text-[14px] text-gray-700 mb-2">Recopiez la « composition analytique » de l&apos;emballage (pas le tableau des quantités par poids). Les glucides sont facultatifs : ils sont estimés par différence.</p>
+                  <label className="flex items-start gap-2 mb-3 min-h-[44px]">
+                    <input type="checkbox" checked={matiereSeche} onChange={e => { setMatiereSeche(e.target.checked); toucher(); }} className="w-5 h-5 mt-0.5" />
+                    <span><b className="text-[14px]">Valeurs données sur matière sèche</b><br />
+                      <span className="text-[13px] text-gray-600">Cochez si les pourcentages font 100 % sans l&apos;humidité (ex. « *Teneur en humidité : 66 % » à part).</span></span>
+                  </label>
                   <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
                     {CHAMPS_COMPOSITION.map(([k, l]) => (
                       <div key={k}>

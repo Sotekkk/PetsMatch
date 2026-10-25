@@ -48,6 +48,7 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
   String _methode = '';
   String _unite = '100g';
   bool _warnOk = false;
+  bool _matiereSeche = false;
   bool _saving = false;
   String? _erreur;
 
@@ -74,6 +75,7 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
   EvaluationEnergie get _eval => evaluerEnergie(
         methode: _methode, type: _type, kcalTexte: _kcal.text, unite: _unite,
         compo: {for (final e in _compo.entries) e.key: e.value.text},
+        surMatiereSeche: _matiereSeche,
       );
 
   /// Repère de composition (BARF / ration ménagère maison) selon le type.
@@ -315,6 +317,14 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
                 if (_methode == 'B') ...[
                   _encadre('Recopiez la « composition analytique » de l’emballage (pas le tableau des quantités par poids). '
                       'Les glucides sont facultatifs : ils sont estimés par différence.'),
+                  CheckboxListTile(
+                    value: _matiereSeche, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: _teal,
+                    title: Text('Valeurs données sur matière sèche', style: _st(14, w: FontWeight.w700)),
+                    subtitle: Text('Cochez si les pourcentages font 100 % sans l’humidité (ex. « *Teneur en humidité : 66 % » à part).',
+                        style: _st(12.5, c: _gris)),
+                    onChanged: (v) => setState(() { _matiereSeche = v ?? false; _erreur = null; _warnOk = false; }),
+                  ),
                   for (final (k, l) in kChampsComposition)
                     _champ(l, _compo[k]!, suffixe: '%', nombre: true, erreur: ev.erreursChamps[k]),
                 ],
