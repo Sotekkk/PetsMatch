@@ -220,13 +220,17 @@ class PlanAlimentation {
   /// Mise bas (« yyyy-MM-dd ») à laquelle se rapporte [nbPetits] : une
   /// nouvelle portée remplace la saisie précédente.
   String? nbPetitsMiseBas;
+  /// Part de l'énergie du jour (%) apportée par chaque aliment (alimentation
+  /// mixte, chien / chat), alignée sur [aliments]. null : partage égal à
+  /// chaque repas.
+  List<double>? parts;
   List<AlimentPlan> aliments;
   List<RepasPlan> repas;
   /// Plan reconstitué depuis l'ancien format (pas encore réenregistré).
   bool repris;
 
   PlanAlimentation({
-    this.mode = 'unique', List<String>? categories, this.activite = 'normal', this.poidsAdulte, this.nbPetits, this.nbPetitsMiseBas,
+    this.mode = 'unique', List<String>? categories, this.activite = 'normal', this.poidsAdulte, this.nbPetits, this.nbPetitsMiseBas, this.parts,
     List<AlimentPlan>? aliments, List<RepasPlan>? repas, this.repris = false,
   })  : categories = categories ?? [],
         aliments = aliments ?? [],
@@ -247,6 +251,7 @@ class PlanAlimentation {
 
   /// Ajoute un aliment ; il est proposé à tous les repas (décochable ensuite).
   void ajouterAliment(AlimentPlan a, ProfilEspece profil) {
+    parts = null;
     if (mode == 'unique') {
       aliments = [a];
       for (final r in repas) { r.items = [ItemRepas(0, libre: libreParDefaut(a.type, profil))]; }
@@ -258,6 +263,7 @@ class PlanAlimentation {
   }
 
   void retirerAliment(int idx) {
+    parts = null;
     aliments.removeAt(idx);
     for (final r in repas) {
       r.items.removeWhere((it) => it.a == idx);
@@ -293,6 +299,7 @@ class PlanAlimentation {
         'poids_adulte': poidsAdulte,
         'nb_petits': nbPetits,
         'nb_petits_mise_bas': nbPetitsMiseBas,
+        'parts': parts,
         'enregistre_le': DateTime.now().toUtc().toIso8601String(),
         'aliments': aliments.map((a) => a.toJson()).toList(),
         'repas': [
@@ -333,6 +340,8 @@ class PlanAlimentation {
       poidsAdulte: (j['poids_adulte'] as num?)?.toDouble(),
       nbPetits: (j['nb_petits'] as num?)?.toInt(),
       nbPetitsMiseBas: j['nb_petits_mise_bas']?.toString(),
+      parts: j['parts'] is List && (j['parts'] as List).length == aliments.length && (j['parts'] as List).every((x) => x is num)
+          ? (j['parts'] as List).map((x) => (x as num).toDouble()).toList() : null,
       aliments: aliments,
       repas: repas.isEmpty ? [RepasPlan()] : repas,
     );
@@ -344,6 +353,31 @@ const kRepartitionBarf = <String, double>{'muscles': 70, 'abats': 10, 'os': 10, 
 const kRepartitionMenagere = <String, double>{
   'proteines': 40, 'legumes': 20, 'feculents': 30, 'matieres_grasses': 5, 'complements': 5,
 };
+/// Densité de repère (kcal/100 g) des composants d'une préparation maison :
+/// viande crue maigre, abats, os charnus, légumes, féculents cuits, huile,
+/// complément minéral. Sert à estimer une ration ménagère / un BARF maison
+/// dont l'énergie n'est pas connue (comme l'ancien onglet).
+const kKcalComposants = <String, double>{
+  'muscles': 150, 'abats': 130, 'os': 200, 'legumes': 30,
+  'proteines': 150, 'feculents': 130, 'matieres_grasses': 900, 'complements': 250,
+};
+
+/// Densité estimée (kcal/100 g) d'après la composition en %, sinon null.
+double? kcalEstimeeComposition(Map<String, double>? r) {
+  if (r == null || r.isEmpty) return null;
+  final somme = r.values.fold<double>(0, (s, x) => s + x);
+  if (somme <= 0) return null;
+  final k = r.entries.fold<double>(0, (s, e) => s + e.value * (kKcalComposants[e.key] ?? 0)) / somme;
+  return k > 0 ? k.roundToDouble() : null;
+}
+
+/// Densité utilisée pour le calcul : celle de l'aliment, sinon l'estimation
+/// d'après sa composition (préparation maison).
+double? kcalDe(AlimentPlan a) => (a.kcal ?? 0) > 0 ? a.kcal : kcalEstimeeComposition(a.repartition);
+
+/// Densité estimée d'après la composition (pas de valeur saisie).
+bool kcalParComposition(AlimentPlan a) => (a.kcal ?? 0) <= 0 && kcalDe(a) != null;
+
 const kLibellesRepartition = <String, String>{
   'muscles': 'Muscles', 'abats': 'Abats', 'os': 'Os charnus', 'legumes': 'Légumes',
   'proteines': 'Protéines animales', 'feculents': 'Féculents', 'matieres_grasses': 'Matières grasses',
@@ -600,13 +634,16 @@ class CalculRation {
   final double totalG;
   final double? kcalServies; // null si non calculable
   final List<String> sansKcal; // aliments sans valeur énergétique
+  final List<String> kcalEstimees; // énergie estimée d'après la composition
+  final List<double?> partEnergie; // % de l'énergie servie, par aliment
   final bool recoDisponible;
   final double? ecartPct;
   final List<double?> fabricant; // g/jour par aliment
   final List<String> avertissements;
   const CalculRation({
     required this.besoin, required this.lignes, required this.totalParAliment, required this.alimentLibre,
-    required this.totalG, this.kcalServies, this.sansKcal = const [], this.recoDisponible = false,
+    required this.totalG, this.kcalServies, this.sansKcal = const [], this.kcalEstimees = const [],
+    this.partEnergie = const [], this.recoDisponible = false,
     this.ecartPct, this.fabricant = const [], this.avertissements = const [],
   });
   bool get ecartImportant => ecartPct != null && ecartPct!.abs() > 15;
@@ -650,19 +687,28 @@ CalculRation calculerRation(PlanAlimentation plan, ProfilAnimal animal, {double?
     }
   }
 
+  final partsOk = profil.methode == 'energie' && partsValides(plan);
   final lignes = <List<LigneRation>>[];
   for (var i = 0; i < n; i++) {
     final r = plan.repas[i];
     final aQuantite = r.items.where((it) => !it.libre).toList();
     final energieOk = profil.methode == 'energie' && besoin.kcal != null &&
-        aQuantite.isNotEmpty && aQuantite.every((it) => (plan.aliments[it.a].kcal ?? 0) > 0);
+        aQuantite.isNotEmpty && aQuantite.every((it) => (kcalDe(plan.aliments[it.a]) ?? 0) > 0);
     lignes.add([
       for (final it in r.items)
         () {
           if (it.libre) return LigneRation(a: it.a, libre: true);
           double? reco;
           if (profil.methode == 'energie') {
-            if (energieOk) reco = besoin.kcal! / n / aQuantite.length * 100 / plan.aliments[it.a].kcal!;
+            final k = kcalDe(plan.aliments[it.a]);
+            if (partsOk) {
+              // Part choisie de l'énergie du jour, répartie sur les repas où l'aliment est servi.
+              if (besoin.kcal != null && k != null && repasParAliment[it.a] > 0) {
+                reco = besoin.kcal! * plan.parts![it.a] / 100 / repasParAliment[it.a] * 100 / k;
+              }
+            } else if (energieOk) {
+              reco = besoin.kcal! / n / aQuantite.length * 100 / k!;
+            }
           } else if (recoJour[it.a] != null && repasParAliment[it.a] > 0) {
             reco = recoJour[it.a]! / repasParAliment[it.a];
           }
@@ -681,11 +727,19 @@ CalculRation calculerRation(PlanAlimentation plan, ProfilAnimal animal, {double?
     }
   }
   final sansKcal = <String>[];
+  final estimees = <String>[];
+  final energieAliment = List<double?>.filled(nAlim, null);
   double kcal = 0;
   for (var i = 0; i < nAlim; i++) {
     if (!servi[i] || libreSeul[i]) continue;
-    final k = plan.aliments[i].kcal;
-    if (k == null || k <= 0) { sansKcal.add(plan.aliments[i].nom); } else { kcal += total[i] * k / 100; }
+    final k = kcalDe(plan.aliments[i]);
+    if (k == null || k <= 0) {
+      sansKcal.add(plan.aliments[i].nom);
+    } else {
+      energieAliment[i] = total[i] * k / 100;
+      kcal += energieAliment[i]!;
+      if (kcalParComposition(plan.aliments[i])) estimees.add(plan.aliments[i].nom);
+    }
   }
   final toutesLignes = lignes.expand((l) => l).where((x) => !x.libre).toList();
   final recoDispo = besoin.manque == null && toutesLignes.isNotEmpty && toutesLignes.every((x) => x.reco != null);
@@ -721,6 +775,8 @@ CalculRation calculerRation(PlanAlimentation plan, ProfilAnimal animal, {double?
     totalG: total.fold(0, (s, x) => s + x),
     kcalServies: kcalServies,
     sansKcal: sansKcal,
+    kcalEstimees: estimees,
+    partEnergie: [for (final e in energieAliment) e != null && kcal > 0 && sansKcal.isEmpty ? e / kcal * 100 : null],
     recoDisponible: recoDispo,
     ecartPct: ecart,
     fabricant: [
@@ -729,6 +785,72 @@ CalculRation calculerRation(PlanAlimentation plan, ProfilAnimal animal, {double?
     ],
     avertissements: avert,
   );
+}
+
+// ── Horaires des repas ────────────────────────────────────────────────────
+
+/// Plage plausible (minutes depuis minuit) de chaque libellé de repas.
+const _plagesRepas = <String, (int, int)>{
+  'Matin': (4 * 60, 11 * 60),
+  'Milieu de matinée': (8 * 60, 12 * 60),
+  'Midi': (11 * 60, 14 * 60 + 30),
+  'Après-midi': (13 * 60, 18 * 60 + 30),
+  'Soir': (17 * 60, 23 * 60 + 59),
+};
+
+int? _minutes(String? h) {
+  final m = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(h ?? '');
+  if (m == null) return null;
+  return int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!);
+}
+
+String _hFr(int min) => '${min ~/ 60} h ${(min % 60).toString().padLeft(2, '0')}';
+
+/// Erreurs d'horaires par repas (facultatifs) : heure cohérente avec le nom
+/// du repas, et heures croissantes d'un repas au suivant.
+Map<int, String> erreursHoraires(PlanAlimentation plan) {
+  final labels = libellesRepas(plan.repas.length);
+  final out = <int, String>{};
+  int? precedent;
+  String? libPrecedent;
+  for (var i = 0; i < plan.repas.length; i++) {
+    final m = _minutes(plan.repas[i].heure);
+    if (m == null) continue;
+    final plage = _plagesRepas[labels[i]];
+    if (plage != null && (m < plage.$1 || m > plage.$2)) {
+      out[i] = '${labels[i]} : choisissez une heure entre ${_hFr(plage.$1)} et ${_hFr(plage.$2)}.';
+    } else if (precedent != null && m <= precedent) {
+      out[i] = '${labels[i]} : l’heure doit être après celle du repas précédent ($libPrecedent, ${_hFr(precedent)}).';
+    }
+    precedent = m;
+    libPrecedent = labels[i];
+  }
+  return out;
+}
+
+// ── Parts de l'énergie (mixte) ────────────────────────────────────────────
+
+/// Parts définies, une par aliment, total 100 % (à 1 % près).
+bool partsValides(PlanAlimentation plan) {
+  final p = plan.parts;
+  if (p == null || p.length != plan.aliments.length || p.any((x) => x < 0)) return false;
+  return (p.fold<double>(0, (s, x) => s + x) - 100).abs() <= 1;
+}
+
+/// Message bloquant sur les parts saisies, sinon null.
+String? erreurParts(PlanAlimentation plan) {
+  final p = plan.parts;
+  if (p == null) return null;
+  if (p.length != plan.aliments.length) return 'Parts de l’énergie : revenez au partage égal puis ajustez.';
+  final somme = p.fold<double>(0, (s, x) => s + x);
+  if ((somme - 100).abs() > 1) {
+    return 'Parts de l’énergie : le total fait ${somme.round()} % au lieu de 100 %.';
+  }
+  for (var a = 0; a < plan.aliments.length; a++) {
+    final servi = plan.repas.any((r) => r.items.any((it) => it.a == a && !it.libre));
+    if (servi && p[a] <= 0) return 'Parts de l’énergie : « ${plan.aliments[a].nom} » doit avoir une part supérieure à 0 %.';
+  }
+  return null;
 }
 
 // ── Contrôles d'étape ─────────────────────────────────────────────────────
@@ -747,6 +869,8 @@ String? erreurEtape(int etape, PlanAlimentation plan, CalculRation c,
       if (o.err != null) return 'Objectif de poids : ${o.err}';
       final pa = lireNombre(poidsAdulteTexte);
       if (pa.err != null) return 'Poids adulte estimé : ${pa.err}';
+      final h = erreursHoraires(plan);
+      if (h.isNotEmpty) return h.values.first;
       return null;
     case 3:
       if (plan.mode == 'unique' && plan.aliments.length != 1) return 'Sélectionnez un aliment.';
@@ -767,6 +891,8 @@ String? erreurEtape(int etape, PlanAlimentation plan, CalculRation c,
       return null;
     case 5:
       if (saisiesInvalides.isNotEmpty) return 'Corrigez les quantités signalées en rouge.';
+      final ep = erreurParts(plan);
+      if (ep != null) return ep;
       final labels = libellesRepas(plan.repas.length);
       for (var i = 0; i < c.lignes.length; i++) {
         for (final x in c.lignes[i]) {

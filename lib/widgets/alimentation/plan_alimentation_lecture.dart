@@ -53,7 +53,9 @@ class PlanAlimentationLecture extends StatelessWidget {
     String? energie;
     if (profil.methode == 'energie') {
       energie = calcul.kcalServies != null
-          ? '${calcul.kcalServies!.round()} kcal/jour'
+          ? calcul.kcalEstimees.isEmpty
+              ? '${calcul.kcalServies!.round()} kcal/jour'
+              : '≈ ${calcul.kcalServies!.round()} kcal/jour (estimation pour ${calcul.kcalEstimees.join(', ')})'
           : calcul.sansKcal.isNotEmpty
               ? 'Non calculable (${calcul.sansKcal.join(', ')} sans valeur énergétique)'
               : null;

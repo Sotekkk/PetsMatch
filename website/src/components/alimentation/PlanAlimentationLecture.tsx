@@ -22,7 +22,10 @@ export default function PlanAlimentationLecture({ plan, calcul, espece, consigne
   const typeTxt = `${plan.aliments.length > 1 ? 'Mixte : ' : ''}${types.join(' + ')}`;
   let energie: string | null = null;
   if (profil.methode === 'energie') {
-    energie = calcul.kcalServies != null ? `${Math.round(calcul.kcalServies)} kcal/jour`
+    energie = calcul.kcalServies != null
+      ? calcul.kcalEstimees.length
+        ? `≈ ${Math.round(calcul.kcalServies)} kcal/jour (estimation pour ${calcul.kcalEstimees.join(', ')})`
+        : `${Math.round(calcul.kcalServies)} kcal/jour`
       : calcul.sansKcal.length ? `Non calculable (${calcul.sansKcal.join(', ')} sans valeur énergétique)` : null;
   }
   const aVolonte = plan.aliments.filter((_, i) => calcul.alimentLibre[i]).map(nomAliment);

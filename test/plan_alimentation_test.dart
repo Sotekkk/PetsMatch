@@ -147,6 +147,49 @@ void main() {
     expect(p.repas.length, 2, reason: 'repas conservés');
   });
 
+  test('horaires : cohérents avec le repas et croissants (facultatifs)', () {
+    final p = plan([croq()], [[0], [0], [0]]);
+    expect(erreursHoraires(p), isEmpty);
+    p.repas[0].heure = '07:30';
+    p.repas[2].heure = '19:00';
+    expect(erreursHoraires(p), isEmpty, reason: 'midi sans heure accepté');
+    p.repas[0].heure = '15:00';
+    expect(erreursHoraires(p)[0], 'Matin : choisissez une heure entre 4 h 00 et 11 h 00.');
+    p.repas[0].heure = '10:30';
+    p.repas[1].heure = '11:00';
+    expect(erreursHoraires(p), isEmpty);
+    final quatre = plan([croq()], [[0], [0], [0], [0]]);
+    quatre.repas[1].heure = '14:00';
+    quatre.repas[2].heure = '13:30';
+    expect(erreursHoraires(quatre)[2], 'Après-midi : l’heure doit être après celle du repas précédent (Midi, 14 h 00).');
+    expect(erreurEtape(2, quatre, calculerRation(quatre, nala)), contains('Après-midi'));
+  });
+
+  test('ménagère maison estimée par la composition, parts de l\'énergie', () {
+    final maison = AlimentPlan(marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere',
+        repartition: Map.of(kRepartitionMenagere));
+    expect(kcalDe(maison), 163);
+    final p = plan([croq(), maison], [[0, 1], [0, 1]]);
+    var c = calculerRation(p, nala);
+    expect(c.sansKcal, isEmpty);
+    expect(c.kcalEstimees, ['Préparation maison — Riz poulet']);
+    expect(c.kcalServies, closeTo(995.1, 0.5));
+    expect(c.partEnergie[0], closeTo(50, 0.1));
+    // 70 % croquettes / 30 % ménagère.
+    p.parts = [70, 30];
+    c = calculerRation(p, nala);
+    expect(c.totalParAliment[0], closeTo(995.1 * 0.7 * 100 / 370, 0.5));
+    expect(c.totalParAliment[1], closeTo(995.1 * 0.3 * 100 / 163, 0.5));
+    expect(c.lignes[0][0].reco, closeTo(995.1 * 0.7 * 100 / 370 / 2, 0.3));
+    expect(c.partEnergie[0], closeTo(70, 0.1));
+    p.parts = [70, 20];
+    expect(erreurEtape(5, p, calculerRation(p, nala)), 'Parts de l\u2019énergie : le total fait 90 % au lieu de 100 %.');
+    p.parts = [100, 0];
+    expect(erreurEtape(5, p, calculerRation(p, nala)), contains('supérieure à 0 %'));
+    p.retirerAliment(1);
+    expect(p.parts, isNull);
+  });
+
   test('4 bis. repas sans aliment', () {
     final p = plan([croq()], [[0], []]);
     expect(erreurEtape(4, p, calculerRation(p, nala)),

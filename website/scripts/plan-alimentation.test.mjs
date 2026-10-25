@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calculerRation, evaluerEnergie, erreurEtape, lireNombre, revenirRecommandation, estPersonnalise,
-  ecartImportant, planDepuisLigne, planVersJson, calculEnregistre, nomAliment, detecterReproduction,
+  ecartImportant, planDepuisLigne, planVersJson, calculEnregistre, nomAliment, detecterReproduction, erreursHoraires,
+  kcalDe, REPARTITION_MENAGERE, retirerAliment,
 } from '../src/lib/plan-alimentation.ts';
 
 const proche = (v, attendu, tol, msg) => assert.ok(v != null && Math.abs(v - attendu) <= tol, `${msg ?? ''} ${v} ≠ ${attendu}`);
@@ -143,6 +144,46 @@ test('12-14. quantité aberrante, ration modifiée, retour à la recommandation'
   assert.equal(estPersonnalise(p), false);
   assert.equal(ecartImportant(c), false);
   assert.equal(p.repas.length, 2, 'repas conservés');
+});
+
+test('horaires : cohérents avec le repas et croissants (facultatifs)', () => {
+  const p = plan([croq()], [[0], [0], [0]]);
+  assert.deepEqual(erreursHoraires(p), {});
+  p.repas[0].heure = '07:30';
+  p.repas[2].heure = '19:00';
+  assert.deepEqual(erreursHoraires(p), {}, 'midi sans heure accepté');
+  p.repas[0].heure = '15:00';
+  assert.equal(erreursHoraires(p)[0], 'Matin : choisissez une heure entre 4 h 00 et 11 h 00.');
+  p.repas[0].heure = '10:30';
+  p.repas[1].heure = '11:00';
+  assert.deepEqual(erreursHoraires(p), {});
+  const quatre = plan([croq()], [[0], [0], [0], [0]]);
+  quatre.repas[1].heure = '14:00';
+  quatre.repas[2].heure = '13:30';
+  assert.equal(erreursHoraires(quatre)[2], 'Après-midi : l’heure doit être après celle du repas précédent (Midi, 14 h 00).');
+  assert.match(erreurEtape(2, quatre, calculerRation(quatre, nala)), /Après-midi/);
+});
+
+test("ménagère maison estimée par la composition, parts de l'énergie", () => {
+  const maison = { marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere', repartition: { ...REPARTITION_MENAGERE } };
+  assert.equal(kcalDe(maison), 163);
+  const p = plan([croq(), maison], [[0, 1], [0, 1]]);
+  let c = calculerRation(p, nala);
+  assert.deepEqual(c.sansKcal, []);
+  assert.deepEqual(c.kcalEstimees, ['Préparation maison — Riz poulet']);
+  proche(c.kcalServies, 995.1, 0.5);
+  proche(c.partEnergie[0], 50, 0.1);
+  p.parts = [70, 30];
+  c = calculerRation(p, nala);
+  proche(c.totalParAliment[0], 995.1 * 0.7 * 100 / 370, 0.5);
+  proche(c.totalParAliment[1], 995.1 * 0.3 * 100 / 163, 0.5);
+  proche(c.lignes[0][0].reco, 995.1 * 0.7 * 100 / 370 / 2, 0.3);
+  proche(c.partEnergie[0], 70, 0.1);
+  p.parts = [70, 20];
+  assert.equal(erreurEtape(5, p, calculerRation(p, nala)), 'Parts de l\u2019énergie : le total fait 90 % au lieu de 100 %.');
+  p.parts = [100, 0];
+  assert.match(erreurEtape(5, p, calculerRation(p, nala)), /supérieure à 0 %/);
+  assert.equal(retirerAliment(p, 1).parts, null);
 });
 
 test('4 bis. repas sans aliment', () => {

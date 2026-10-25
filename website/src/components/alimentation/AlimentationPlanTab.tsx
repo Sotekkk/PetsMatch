@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { auth } from '@/lib/firebase';
 import {
   type AlimentPlan, type CalculRation, type PlanAlimentation, ACTIVITES, LIBELLES_ACTIVITE, LIBELLES_TYPE_ALIMENT,
-  type EtatRepro, ajouterAliment, ageMois, basculer, detecterReproduction, calculerRation, changerNbRepas, colonnesHistoriques, ecartImportant, erreurEtape,
+  type EtatRepro, ajouterAliment, ageMois, basculer, detecterReproduction, erreursHoraires, kcalDe, kcalEstimeeComposition, calculerRation, changerNbRepas, colonnesHistoriques, ecartImportant, erreurEtape,
   estPersonnalise, formatQuantite, libellesRepas, lireNombre, nomAliment, planDepuisLigne, planNeuf, planVersJson,
   profilEspece, retirerAliment, revenirRecommandation, typeDepuisCatalogue,
 } from '@/lib/plan-alimentation';
@@ -50,6 +50,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
   const [erreur, setErreur] = useState<string | null>(null);
   const [ecartOk, setEcartOk] = useState(false);
   const [qte, setQte] = useState<Record<string, string>>({});
+  const [partsTxt, setPartsTxt] = useState<Record<number, string>>({});
   const [invalides, setInvalides] = useState<Record<string, string>>({});
   const [objectif, setObjectif] = useState('');
   const [poidsAdulte, setPoidsAdulte] = useState('');
@@ -185,6 +186,23 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
     if (e) { setErreur(e); return; }
     if (etape < 6) allerEtape(etape + 1);
     else enregistrer();
+  }
+
+  /** Part de l'énergie d'un aliment : la première saisie fige les parts
+   *  actuelles de tous les aliments, puis seule celle-ci change. */
+  function saisirPart(a: number, texte: string) {
+    setPartsTxt(t => ({ ...t, [a]: texte }));
+    setEcartOk(false); setErreur(null);
+    const l = lireNombre(texte, true);
+    const err = l.err ?? ((l.v ?? 0) > 100 ? 'Une part est comprise entre 0 et 100 %.' : null);
+    setInvalides(inv => { const n = { ...inv }; if (err) n[`part-${a}`] = err; else delete n[`part-${a}`]; return n; });
+    if (err) return;
+    const n = plan.aliments.length;
+    const parts = plan.parts && plan.parts.length === n ? [...plan.parts]
+      : plan.aliments.map((_, i) => Math.round(calc.partEnergie[i] ?? 100 / n));
+    parts[a] = l.v ?? 0;
+    setPlan(p => ({ ...p, parts }));
+    setPartsTxt(t => Object.fromEntries(parts.map((v, i) => [i, i === a ? texte : (invalides[`part-${i}`] ? t[i] ?? '' : fr(v))])));
   }
 
   function saisirQuantite(i: number, a: number, texte: string) {
@@ -327,6 +345,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
 
   // ── Parcours ───────────────────────────────────────────────────────────
   const labels = libellesRepas(plan.repas.length);
+  const horaires = erreursHoraires(plan);
   const age = ageMois(animal);
   const croissancePossible = profil.methode === 'energie' && age != null && age < (espece === 'chien' ? 18 : 12);
   const q = recherche.trim().toLowerCase();
@@ -339,6 +358,8 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
   const sousTitreAliment = (a: AlimentPlan) => {
     const t = LIBELLES_TYPE_ALIMENT[a.type] ?? a.type;
     if (profil.methode !== 'energie') return t;
+    const est = kcalEstimeeComposition(a.repartition);
+    if (a.kcal == null && est != null) return `${t} · ≈ ${est} kcal/100 g (estimation selon la composition)`;
     return a.kcal == null ? `${t} · valeur énergétique non renseignée` : `${t} · ${Math.round(a.kcal)} kcal/100 g${a.source === 'composition' ? ' (estimation)' : ''}`;
   };
   const fabricant = plan.aliments.map((a, i) => (calc.fabricant[i] != null ? `${nomAliment(a)} : ${formatQuantite(calc.fabricant[i]!, kg)}/jour` : null)).filter(Boolean);
@@ -431,11 +452,14 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
                 <div>
                   <p className={sousTitre}>Horaires (facultatif)</p>
                   {plan.repas.map((r, i) => (
-                    <label key={i} className="flex items-center justify-between gap-3 mb-2 text-[15px]">
-                      <span>{labels[i]}</span>
-                      <input type="time" value={r.heure ?? ''} onChange={e => majPlan({ ...plan, repas: plan.repas.map((x, j) => (j === i ? { ...x, heure: e.target.value || null } : x)) })}
-                        className="h-11 w-36 px-2 rounded-[10px] border border-gray-300" />
-                    </label>
+                    <div key={i} className="mb-2">
+                      <label className="flex items-center justify-between gap-3 text-[15px]">
+                        <span>{labels[i]}</span>
+                        <input type="time" value={r.heure ?? ''} onChange={e => majPlan({ ...plan, repas: plan.repas.map((x, j) => (j === i ? { ...x, heure: e.target.value || null } : x)) })}
+                          className={`h-11 w-36 px-2 rounded-[10px] border ${horaires[i] ? 'border-red-600' : 'border-gray-300'}`} />
+                      </label>
+                      {horaires[i] && <p className="text-[13.5px] text-red-700 mt-1">{horaires[i]}</p>}
+                    </div>
                   ))}
                 </div>
                 <div>
@@ -573,6 +597,39 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
               {profil.methode !== 'aucune' && <p className="text-[12.5px] font-extrabold text-gray-600">RATION RECOMMANDÉE PAR PETSMATCH</p>}
               {besoinBloc()}
               {calc.avertissements.map(a => <div key={a} className={`${encadre} bg-[#FFF4E0] border border-[#E9C27A]`}>{a}</div>)}
+              {profil.methode === 'energie' && calc.alimentLibre.filter(l => !l).length >= 2 && (
+                <div className="border border-gray-200 rounded-xl p-3 space-y-2">
+                  <p className="font-bold text-[15px]">Part de chaque aliment dans l&apos;énergie du jour</p>
+                  <p className="text-[13.5px] text-gray-600">
+                    {plan.parts ? 'Les quantités recommandées suivent ces parts.' : 'Partage égal à chaque repas. Indiquez une part pour l\u2019ajuster (ex. 70 % croquettes, 30 % ménagère).'}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {plan.aliments.map((a, i) => calc.alimentLibre[i] ? null : (
+                      <div key={i}>
+                        <label className="block text-[14px] font-bold mb-1" htmlFor={`part-${i}`}>{nomAliment(a)}</label>
+                        <div className={`flex h-11 rounded-[10px] border overflow-hidden ${invalides[`part-${i}`] ? 'border-red-600' : 'border-gray-300'}`}>
+                          <input id={`part-${i}`} inputMode="decimal" value={partsTxt[i] ?? (plan.parts ? fr(plan.parts[i]) : '')}
+                            placeholder={calc.partEnergie[i] != null ? String(Math.round(calc.partEnergie[i]!)) : ''}
+                            onChange={e => saisirPart(i, e.target.value)} className="flex-1 min-w-0 px-3 outline-none font-bold" />
+                          <span className="px-3 flex items-center bg-gray-100 border-l border-gray-300 font-bold">%</span>
+                        </div>
+                        {invalides[`part-${i}`] && <p className="text-[13px] text-red-700">{invalides[`part-${i}`]}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  {plan.parts && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`text-[14px] font-bold ${Math.abs(plan.parts.reduce((s, x) => s + x, 0) - 100) > 1 ? 'text-red-700' : ''}`}>
+                        Total : {Math.round(plan.parts.reduce((s, x) => s + x, 0))} %
+                      </span>
+                      <button type="button" className="h-10 text-[#0C5C6C] font-extrabold"
+                        onClick={() => { majPlan({ ...plan, parts: null }); setPartsTxt({}); setInvalides(inv => Object.fromEntries(Object.entries(inv).filter(([k]) => !k.startsWith('part-')))); }}>
+                        Revenir au partage égal
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {fabricant.length > 0 && (
                 <div className={`${encadre} bg-white border border-gray-200`}>
                   <p className="font-bold">Recommandation du fabricant (pour une alimentation 100 % avec cet aliment)</p>
@@ -603,7 +660,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
                           <p className="text-[13px] text-gray-700 mt-1">
                             {x.reco != null
                               ? `Recommandé par PetsMatch : ${formatQuantite(x.reco, kg)}${it.g != null ? ` · vous avez choisi ${formatQuantite(it.g, kg)}` : ''}`
-                              : profil.methode === 'energie' && a.kcal == null ? 'Valeur énergétique non renseignée — ration personnalisée' : 'Quantité à indiquer'}
+                              : profil.methode === 'energie' && kcalDe(a) == null ? 'Valeur énergétique non renseignée — ration personnalisée' : 'Quantité à indiquer'}
                           </p>
                           {invalides[k] && <p className="text-[13.5px] text-red-700">{invalides[k]}</p>}
                         </div>

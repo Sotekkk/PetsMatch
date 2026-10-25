@@ -124,6 +124,32 @@ export const REPARTITION_BARF: Record<string, number> = { muscles: 70, abats: 10
 export const REPARTITION_MENAGERE: Record<string, number> = {
   proteines: 40, legumes: 20, feculents: 30, matieres_grasses: 5, complements: 5,
 };
+/** Densité de repère (kcal/100 g) des composants d'une préparation maison :
+ *  viande crue maigre, abats, os charnus, légumes, féculents cuits, huile,
+ *  complément minéral. Sert à estimer une ration ménagère / un BARF maison
+ *  dont l'énergie n'est pas connue (comme l'ancien onglet). */
+export const KCAL_COMPOSANTS: Record<string, number> = {
+  muscles: 150, abats: 130, os: 200, legumes: 30,
+  proteines: 150, feculents: 130, matieres_grasses: 900, complements: 250,
+};
+
+/** Densité estimée (kcal/100 g) d'après la composition en %, sinon null. */
+export function kcalEstimeeComposition(r?: Record<string, number> | null): number | null {
+  if (!r) return null;
+  const ent = Object.entries(r);
+  const somme = ent.reduce((s, [, x]) => s + x, 0);
+  if (!ent.length || somme <= 0) return null;
+  const k = ent.reduce((s, [c, x]) => s + x * (KCAL_COMPOSANTS[c] ?? 0), 0) / somme;
+  return k > 0 ? Math.round(k) : null;
+}
+
+/** Densité utilisée pour le calcul : celle de l'aliment, sinon l'estimation
+ *  d'après sa composition (préparation maison). */
+export const kcalDe = (a: AlimentPlan): number | null => ((a.kcal ?? 0) > 0 ? a.kcal! : kcalEstimeeComposition(a.repartition));
+
+/** Densité estimée d'après la composition (pas de valeur saisie). */
+export const kcalParComposition = (a: AlimentPlan) => (a.kcal ?? 0) <= 0 && kcalDe(a) != null;
+
 export const LIBELLES_REPARTITION: Record<string, string> = {
   muscles: 'Muscles', abats: 'Abats', os: 'Os charnus', legumes: 'Légumes',
   proteines: 'Protéines animales', feculents: 'Féculents', matieres_grasses: 'Matières grasses',
@@ -192,6 +218,10 @@ export interface PlanAlimentation {
   /** Mise bas (« yyyy-MM-dd ») à laquelle se rapporte nbPetits : une
    *  nouvelle portée remplace la saisie précédente. */
   nbPetitsMiseBas?: string | null;
+  /** Part de l'énergie du jour (%) apportée par chaque aliment (alimentation
+   *  mixte, chien / chat), alignée sur aliments. null : partage égal à
+   *  chaque repas. */
+  parts?: number[] | null;
   aliments: AlimentPlan[];
   repas: RepasPlan[];
   /** Plan reconstitué depuis l'ancien format (pas encore réenregistré). */
@@ -204,7 +234,7 @@ export function planNeuf(espece: string): PlanAlimentation {
 }
 
 const copie = (p: PlanAlimentation): PlanAlimentation => ({
-  ...p, categories: [...p.categories], aliments: [...p.aliments],
+  ...p, categories: [...p.categories], aliments: [...p.aliments], parts: p.parts ? [...p.parts] : p.parts,
   repas: p.repas.map(r => ({ ...r, items: r.items.map(it => ({ ...it })) })),
 });
 
@@ -221,6 +251,7 @@ export function changerNbRepas(plan: PlanAlimentation, n: number, profil: Profil
 /** Ajoute un aliment ; il est proposé à tous les repas (décochable ensuite). */
 export function ajouterAliment(plan: PlanAlimentation, a: AlimentPlan, profil: ProfilEspece): PlanAlimentation {
   const p = copie(plan);
+  p.parts = null;
   if (p.mode === 'unique') {
     p.aliments = [a];
     p.repas = p.repas.map(r => ({ ...r, items: [{ a: 0, libre: libreParDefaut(a.type, profil) }] }));
@@ -234,6 +265,7 @@ export function ajouterAliment(plan: PlanAlimentation, a: AlimentPlan, profil: P
 
 export function retirerAliment(plan: PlanAlimentation, idx: number): PlanAlimentation {
   const p = copie(plan);
+  p.parts = null;
   p.aliments.splice(idx, 1);
   p.repas.forEach(r => {
     r.items = r.items.filter(it => it.a !== idx).map(it => (it.a > idx ? { ...it, a: it.a - 1 } : it));
@@ -273,6 +305,7 @@ export function planVersJson(plan: PlanAlimentation, c: CalculRation) {
     poids_adulte: plan.poidsAdulte ?? null,
     nb_petits: plan.nbPetits ?? null,
     nb_petits_mise_bas: plan.nbPetitsMiseBas ?? null,
+    parts: plan.parts ?? null,
     enregistre_le: new Date().toISOString(),
     aliments: plan.aliments.map(a => ({
       id: a.id ?? null, marque: a.marque, gamme: a.gamme, type: a.type, kcal: a.kcal ?? null, source: a.source ?? null,
@@ -323,6 +356,7 @@ export function planDepuisJson(j: Json): PlanAlimentation {
     poidsAdulte: nombreOuNull(j.poids_adulte),
     nbPetits: nombreOuNull(j.nb_petits),
     nbPetitsMiseBas: j.nb_petits_mise_bas != null ? String(j.nb_petits_mise_bas) : null,
+    parts: Array.isArray(j.parts) && j.parts.length === aliments.length && j.parts.every(x => typeof x === 'number') ? (j.parts as number[]) : null,
     aliments,
     repas: repas.length ? repas : [{ items: [] }],
   };
@@ -549,6 +583,10 @@ export interface CalculRation {
   totalG: number;
   kcalServies: number | null; // null si non calculable
   sansKcal: string[];
+  /** Énergie estimée d'après la composition. */
+  kcalEstimees: string[];
+  /** % de l'énergie servie, par aliment. */
+  partEnergie: (number | null)[];
   recoDisponible: boolean;
   ecartPct: number | null;
   fabricant: (number | null)[]; // g/jour par aliment
@@ -593,15 +631,24 @@ export function calculerRation(plan: PlanAlimentation, animal: ProfilAnimal, poi
     }
   }
 
+  const partsOk = profil.methode === 'energie' && partsValides(plan);
   const lignes: LigneRation[][] = plan.repas.map(r => {
     const aQuantite = r.items.filter(it => !it.libre);
     const energieOk = profil.methode === 'energie' && besoin.kcal != null &&
-      aQuantite.length > 0 && aQuantite.every(it => (plan.aliments[it.a].kcal ?? 0) > 0);
+      aQuantite.length > 0 && aQuantite.every(it => (kcalDe(plan.aliments[it.a]) ?? 0) > 0);
     return r.items.map(it => {
       if (it.libre) return { a: it.a, libre: true };
       let reco: number | null = null;
       if (profil.methode === 'energie') {
-        if (energieOk) reco = besoin.kcal! / n / aQuantite.length * 100 / plan.aliments[it.a].kcal!;
+        const k = kcalDe(plan.aliments[it.a]);
+        if (partsOk) {
+          // Part choisie de l'énergie du jour, répartie sur les repas où l'aliment est servi.
+          if (besoin.kcal != null && k != null && repasParAliment[it.a] > 0) {
+            reco = besoin.kcal * plan.parts![it.a] / 100 / repasParAliment[it.a] * 100 / k;
+          }
+        } else if (energieOk) {
+          reco = besoin.kcal! / n / aQuantite.length * 100 / k!;
+        }
       } else if (recoJour[it.a] != null && repasParAliment[it.a] > 0) {
         reco = recoJour[it.a]! / repasParAliment[it.a];
       }
@@ -617,12 +664,18 @@ export function calculerRation(plan: PlanAlimentation, animal: ProfilAnimal, poi
     if (!x.libre) { libreSeul[x.a] = false; total[x.a] += x.eff ?? 0; }
   }));
   const sansKcal: string[] = [];
+  const estimees: string[] = [];
+  const energieAliment: (number | null)[] = new Array(nAlim).fill(null);
   let kcal = 0;
   for (let i = 0; i < nAlim; i++) {
     if (!servi[i] || libreSeul[i]) continue;
-    const k = plan.aliments[i].kcal;
+    const k = kcalDe(plan.aliments[i]);
     if (k == null || k <= 0) sansKcal.push(nomAliment(plan.aliments[i]));
-    else kcal += total[i] * k / 100;
+    else {
+      energieAliment[i] = total[i] * k / 100;
+      kcal += energieAliment[i]!;
+      if (kcalParComposition(plan.aliments[i])) estimees.push(nomAliment(plan.aliments[i]));
+    }
   }
   const toutes = lignes.flat().filter(x => !x.libre);
   const recoDispo = !besoin.manque && toutes.length > 0 && toutes.every(x => x.reco != null);
@@ -654,10 +707,74 @@ export function calculerRation(plan: PlanAlimentation, animal: ProfilAnimal, poi
     besoin, lignes, totalParAliment: total,
     alimentLibre: total.map((_, i) => servi[i] && libreSeul[i]),
     totalG: total.reduce((s, x) => s + x, 0),
-    kcalServies, sansKcal, recoDisponible: recoDispo, ecartPct: ecart,
+    kcalServies, sansKcal, kcalEstimees: estimees,
+    partEnergie: energieAliment.map(e => (e != null && kcal > 0 && !sansKcal.length ? e / kcal * 100 : null)),
+    recoDisponible: recoDispo, ecartPct: ecart,
     fabricant: plan.aliments.map(a => recommandationFabricant(a, animal, !!besoin.croissance, plan.poidsAdulte)),
     avertissements: avert,
   };
+}
+
+// ── Horaires des repas ────────────────────────────────────────────────────
+
+/** Plage plausible (minutes depuis minuit) de chaque libellé de repas. */
+const PLAGES_REPAS: Record<string, [number, number]> = {
+  'Matin': [4 * 60, 11 * 60],
+  'Milieu de matinée': [8 * 60, 12 * 60],
+  'Midi': [11 * 60, 14 * 60 + 30],
+  'Après-midi': [13 * 60, 18 * 60 + 30],
+  'Soir': [17 * 60, 23 * 60 + 59],
+};
+
+const minutesDe = (h?: string | null) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(h ?? '');
+  return m ? +m[1] * 60 + +m[2] : null;
+};
+const hFr = (min: number) => `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}`;
+
+/** Erreurs d'horaires par repas (facultatifs) : heure cohérente avec le nom
+ *  du repas, et heures croissantes d'un repas au suivant. */
+export function erreursHoraires(plan: PlanAlimentation): Record<number, string> {
+  const labels = libellesRepas(plan.repas.length);
+  const out: Record<number, string> = {};
+  let precedent: number | null = null;
+  let libPrecedent = '';
+  plan.repas.forEach((r, i) => {
+    const m = minutesDe(r.heure);
+    if (m == null) return;
+    const plage = PLAGES_REPAS[labels[i]];
+    if (plage && (m < plage[0] || m > plage[1])) {
+      out[i] = `${labels[i]} : choisissez une heure entre ${hFr(plage[0])} et ${hFr(plage[1])}.`;
+    } else if (precedent != null && m <= precedent) {
+      out[i] = `${labels[i]} : l’heure doit être après celle du repas précédent (${libPrecedent}, ${hFr(precedent)}).`;
+    }
+    precedent = m;
+    libPrecedent = labels[i];
+  });
+  return out;
+}
+
+// ── Parts de l'énergie (mixte) ────────────────────────────────────────────
+
+/** Parts définies, une par aliment, total 100 % (à 1 % près). */
+export function partsValides(plan: PlanAlimentation): boolean {
+  const p = plan.parts;
+  if (!p || p.length !== plan.aliments.length || p.some(x => x < 0)) return false;
+  return Math.abs(p.reduce((s, x) => s + x, 0) - 100) <= 1;
+}
+
+/** Message bloquant sur les parts saisies, sinon null. */
+export function erreurParts(plan: PlanAlimentation): string | null {
+  const p = plan.parts;
+  if (!p) return null;
+  if (p.length !== plan.aliments.length) return 'Parts de l’énergie : revenez au partage égal puis ajustez.';
+  const somme = p.reduce((s, x) => s + x, 0);
+  if (Math.abs(somme - 100) > 1) return `Parts de l’énergie : le total fait ${Math.round(somme)} % au lieu de 100 %.`;
+  for (let a = 0; a < plan.aliments.length; a++) {
+    const servi = plan.repas.some(r => r.items.some(it => it.a === a && !it.libre));
+    if (servi && p[a] <= 0) return `Parts de l’énergie : « ${nomAliment(plan.aliments[a])} » doit avoir une part supérieure à 0 %.`;
+  }
+  return null;
 }
 
 // ── Contrôles d'étape ─────────────────────────────────────────────────────
@@ -674,6 +791,8 @@ export function erreurEtape(etape: number, plan: PlanAlimentation, c: CalculRati
       if (ob.err) return `Objectif de poids : ${ob.err}`;
       const pa = lireNombre(o.poidsAdulteTexte);
       if (pa.err) return `Poids adulte estimé : ${pa.err}`;
+      const h = Object.values(erreursHoraires(plan));
+      if (h.length) return h[0];
       return null;
     }
     case 3:
@@ -696,6 +815,8 @@ export function erreurEtape(etape: number, plan: PlanAlimentation, c: CalculRati
     }
     case 5: {
       if (o.saisiesInvalides && Object.keys(o.saisiesInvalides).length) return 'Corrigez les quantités signalées en rouge.';
+      const ep = erreurParts(plan);
+      if (ep) return ep;
       const labels = libellesRepas(plan.repas.length);
       for (let i = 0; i < c.lignes.length; i++) {
         for (const x of c.lignes[i]) {
@@ -1063,6 +1184,6 @@ export function calculEnregistre(plan: PlanAlimentation): CalculRation {
     besoin: { detail: '' }, lignes, totalParAliment: total,
     alimentLibre: total.map((_, i) => servi[i] && libreSeul[i]),
     totalG: total.reduce((s, x) => s + x, 0),
-    kcalServies: null, sansKcal: [], recoDisponible: false, ecartPct: null, fabricant: [], avertissements: [],
+    kcalServies: null, sansKcal: [], kcalEstimees: [], partEnergie: [], recoDisponible: false, ecartPct: null, fabricant: [], avertissements: [],
   };
 }

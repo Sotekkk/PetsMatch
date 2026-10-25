@@ -57,6 +57,8 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   bool _ecartOk = false;
 
   final _qte = <String, TextEditingController>{};
+  /// Parts de l'énergie (%) saisies, par aliment.
+  final _parts = <int, TextEditingController>{};
   final _invalides = <String, String>{};
   final _objectif = TextEditingController();
   final _poidsAdulte = TextEditingController();
@@ -93,7 +95,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
 
   @override
   void dispose() {
-    for (final c in [..._qte.values, _objectif, _poidsAdulte, _consignes, _recherche, _nbPetits]) {
+    for (final c in [..._qte.values, ..._parts.values, _objectif, _poidsAdulte, _consignes, _recherche, _nbPetits]) {
       c.dispose();
     }
     super.dispose();
@@ -232,6 +234,15 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   String _cle(int repas, int a) => '$repas-$a';
 
   void _syncQuantites() {
+    for (var a = 0; a < _plan.aliments.length; a++) {
+      final c = _parts.putIfAbsent(a, () => TextEditingController());
+      final txt = _plan.parts != null && a < _plan.parts!.length ? _fr(_plan.parts![a]) : '';
+      if (!_invalides.containsKey('part-$a') && c.text != txt) c.text = txt;
+    }
+    for (final a in _parts.keys.where((a) => a >= _plan.aliments.length).toList()) {
+      _parts.remove(a)?.dispose();
+      _invalides.remove('part-$a');
+    }
     final cles = <String>{};
     for (var i = 0; i < _plan.repas.length; i++) {
       for (final it in _plan.repas[i].items) {
@@ -246,6 +257,74 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
       _qte.remove(k)?.dispose();
       _invalides.remove(k);
     }
+  }
+
+  /// Part de l'énergie d'un aliment : la première saisie fige les parts
+  /// actuelles de tous les aliments, puis seule celle-ci change.
+  void _saisirPart(int a, String texte, CalculRation c) {
+    final l = lireNombre(texte, zeroAutorise: true);
+    setState(() {
+      _ecartOk = false;
+      _erreurEtape = null;
+      if (l.err != null || (l.v ?? 0) > 100) {
+        _invalides['part-$a'] = l.err ?? 'Une part est comprise entre 0 et 100 %.';
+        return;
+      }
+      _invalides.remove('part-$a');
+      final n = _plan.aliments.length;
+      final parts = _plan.parts != null && _plan.parts!.length == n
+          ? List<double>.of(_plan.parts!)
+          : [for (var i = 0; i < n; i++) ((c.partEnergie.length > i ? c.partEnergie[i] : null) ?? 100 / n).roundToDouble()];
+      parts[a] = l.v ?? 0;
+      _plan.parts = parts;
+      for (var i = 0; i < n; i++) {
+        if (i != a && _parts[i] != null && !_invalides.containsKey('part-$i')) _parts[i]!.text = _fr(parts[i]);
+      }
+    });
+  }
+
+  Widget _editeurParts(CalculRation c) {
+    final somme = _plan.parts?.fold<double>(0, (s, x) => s + x);
+    return _carte(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('Part de chaque aliment dans l\u2019énergie du jour', style: _st(15, w: FontWeight.w700)),
+      const SizedBox(height: 4),
+      Text(_plan.parts == null
+          ? 'Partage égal à chaque repas. Indiquez une part pour l\u2019ajuster (ex. 70 % croquettes, 30 % ménagère).'
+          : 'Les quantités recommandées suivent ces parts.', style: _st(13, c: _gris)),
+      const SizedBox(height: 10),
+      for (var a = 0; a < _plan.aliments.length; a++)
+        if (!c.alimentLibre[a])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextField(
+              controller: _parts.putIfAbsent(a, () => TextEditingController()),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (t) => _saisirPart(a, t, c),
+              style: _st(15, w: FontWeight.w700),
+              decoration: InputDecoration(
+                labelText: _plan.aliments[a].nom, labelStyle: _st(14, c: _gris),
+                hintText: c.partEnergie.length > a && c.partEnergie[a] != null ? c.partEnergie[a]!.round().toString() : null,
+                suffixText: '%', filled: true, fillColor: Colors.white,
+                errorText: _invalides['part-$a'],
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+      Row(children: [
+        Expanded(child: Text(somme != null ? 'Total : ${somme.round()} %' : '', style: _st(14, w: FontWeight.w700,
+            c: somme != null && (somme - 100).abs() > 1 ? const Color(0xFFB3261E) : _texte))),
+        if (_plan.parts != null)
+          TextButton(
+            onPressed: () => setState(() {
+              _plan.parts = null;
+              _invalides.removeWhere((k, _) => k.startsWith('part-'));
+              for (final p in _parts.values) { p.clear(); }
+              _erreurEtape = null;
+            }),
+            child: Text('Revenir au partage égal', style: _st(14, w: FontWeight.w800, c: _teal)),
+          ),
+      ]),
+    ]));
   }
 
   void _saisirQuantite(int repas, ItemRepas it, String texte) {
@@ -729,7 +808,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
       for (var i = 0; i < _plan.repas.length; i++)
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Row(children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [
             Expanded(child: Text(libellesRepas(_plan.repas.length)[i], style: _st(14.5))),
             OutlinedButton(
               style: OutlinedButton.styleFrom(minimumSize: const Size(120, 44)),
@@ -738,15 +817,20 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
                 final t = await showTimePicker(context: context,
                     initialTime: h != null ? TimeOfDay(hour: int.parse(h[0]), minute: int.parse(h[1])) : const TimeOfDay(hour: 8, minute: 0));
                 if (t != null) {
-                  setState(() => _plan.repas[i].heure =
-                      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}');
+                  setState(() {
+                    _plan.repas[i].heure = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+                    _erreurEtape = null;
+                  });
                 }
               },
               child: Text(_plan.repas[i].heure?.replaceFirst(':', ' h ') ?? 'Ajouter', style: _st(14.5, w: FontWeight.w700, c: _teal)),
             ),
             if (_plan.repas[i].heure != null)
               IconButton(tooltip: 'Retirer l’horaire', icon: const Icon(Icons.close, color: _gris),
-                  onPressed: () => setState(() => _plan.repas[i].heure = null)),
+                  onPressed: () => setState(() { _plan.repas[i].heure = null; _erreurEtape = null; })),
+          ]),
+          if (erreursHoraires(_plan)[i] != null)
+            Text(erreursHoraires(_plan)[i]!, style: _st(13, c: const Color(0xFFB3261E))),
           ]),
         ),
       if (_profil.methode != 'aucune') ...[
@@ -890,6 +974,8 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   String _sousTitreAliment(AlimentPlan a) {
     final t = kLibellesTypeAliment[a.type] ?? a.type;
     if (_profil.methode != 'energie') return t;
+    final est = kcalEstimeeComposition(a.repartition);
+    if (a.kcal == null && est != null) return '$t · ≈ ${est.round()} kcal/100 g (estimation selon la composition)';
     if (a.kcal == null) return '$t · valeur énergétique non renseignée';
     return '$t · ${a.kcal!.round()} kcal/100 g${a.source == 'composition' ? ' (estimation)' : ''}';
   }
@@ -955,6 +1041,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
       if (fabricant.isNotEmpty)
         _encadre('Recommandation du fabricant (pour une alimentation 100 % avec cet aliment) :\n${fabricant.join('\n')}',
             fond: Colors.white, bord: _bord),
+      if (_profil.methode == 'energie' && c.alimentLibre.where((l) => !l).length >= 2) _editeurParts(c),
       for (var i = 0; i < _plan.repas.length; i++)
         _carte(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
@@ -987,7 +1074,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
                     suffixText: unite, filled: true, fillColor: Colors.white,
                     helperText: x.reco != null
                         ? 'Recommandé par PetsMatch : ${formatQuantite(x.reco!, kg: kg)}${it.g != null ? ' · vous avez choisi ${formatQuantite(it.g!, kg: kg)}' : ''}'
-                        : _profil.methode == 'energie' && _plan.aliments[it.a].kcal == null
+                        : _profil.methode == 'energie' && kcalDe(_plan.aliments[it.a]) == null
                             ? 'Valeur énergétique non renseignée — ration personnalisée'
                             : 'Quantité à indiquer',
                     helperMaxLines: 2,
@@ -1012,7 +1099,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
             Expanded(child: Text('Énergie servie', style: _st(14.5))),
             Flexible(child: Text(
                 c.kcalServies != null
-                    ? '${c.kcalServies!.round()} kcal/jour'
+                    ? '${c.kcalEstimees.isNotEmpty ? '≈ ' : ''}${c.kcalServies!.round()} kcal/jour${c.kcalEstimees.isNotEmpty ? ' (estimation)' : ''}'
                     : c.sansKcal.isNotEmpty ? 'Non calculable (${c.sansKcal.join(', ')} sans valeur énergétique)' : '—',
                 textAlign: TextAlign.right, style: _st(14.5, w: FontWeight.w700))),
           ]),
