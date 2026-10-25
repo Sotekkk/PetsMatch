@@ -3476,7 +3476,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
                     Row(children: [
                       Icon(Icons.pets_outlined, size: 16, color: widget.teal),
                       const SizedBox(width: 8),
-                      Text(_selectedAnimalIds.isEmpty ? 'Animaux concernés (optionnel)' : '${_selectedAnimalIds.length} animal(aux) sélectionné(s)',
+                      Text(_selectedAnimalIds.isEmpty ? 'Animaux concernés (optionnel)' : (_selectedAnimalIds.length > 1 ? '${_selectedAnimalIds.length} animaux sélectionnés' : '1 animal sélectionné'),
                           style: TextStyle(fontFamily: 'Galey', fontSize: 13,
                               color: _selectedAnimalIds.isEmpty ? const Color(0xFF6F767B) : const Color(0xFF1F2A2E))),
                     ]),

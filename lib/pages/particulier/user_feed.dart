@@ -855,7 +855,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           if (_animaux.isNotEmpty) ...[
             Row(
               children: [
-                _StatChip(value: '${_animaux.length}', label: 'Animal${_animaux.length > 1 ? 'x' : ''}', icon: Icons.pets, color: _teal),
+                _StatChip(value: '${_animaux.length}', label: _animaux.length > 1 ? 'Animaux' : 'Animal', icon: Icons.pets, color: _teal),
                 const SizedBox(width: 10),
                 _StatChip(value: '${especes.length}', label: 'Espèce${especes.length > 1 ? 's' : ''}', icon: Icons.category_outlined, color: const Color(0xFF6E9E57)),
               ],

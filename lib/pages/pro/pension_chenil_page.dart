@@ -186,7 +186,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(placed == 0
             ? 'Aucun placement possible pour le moment.'
-            : '$placed animal(aux) placé(s) automatiquement.',
+            : '$placed ${placed > 1 ? 'animaux placés' : 'animal placé'} automatiquement.',
             style: const TextStyle(fontFamily: 'Galey')),
         backgroundColor: placed == 0 ? Colors.orange : const Color(0xFF6E9E57),
       ));
@@ -373,7 +373,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                 Row(children: [
                   Icon(Icons.auto_awesome_outlined, size: 16, color: Colors.orange.shade800),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('${_nonAssignes.length} animal(aux) à placer',
+                  Expanded(child: Text('${_nonAssignes.length} ${_nonAssignes.length > 1 ? 'animaux' : 'animal'} à placer',
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                           fontSize: 13, color: Colors.orange.shade900))),
                   if (_nonAssignes.length > 1)

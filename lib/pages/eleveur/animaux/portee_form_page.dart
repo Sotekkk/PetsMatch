@@ -428,7 +428,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${_animaux.length} animal(s) créé(s) avec succès'),
+          content: Text(_animaux.length > 1 ? '${_animaux.length} animaux créés avec succès' : '${_animaux.length} animal créé avec succès'),
           backgroundColor: _green,
         ));
         Navigator.pop(context, true);

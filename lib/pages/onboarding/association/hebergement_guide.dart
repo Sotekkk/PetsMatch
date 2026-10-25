@@ -153,7 +153,7 @@ Future<bool> guiderChenil(BuildContext context, {required String? profileId}) as
     }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ids.isEmpty
-          ? 'Hébergement créé !' : 'Hébergement créé, ${ids.length} animal(aux) placé(s) !')));
+          ? 'Hébergement créé !' : 'Hébergement créé, ${ids.length} ${ids.length > 1 ? 'animaux placés' : 'animal placé'} !')));
     }
     return true;
   } catch (e) {

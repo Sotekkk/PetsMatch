@@ -181,7 +181,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
         if (_logements.isNotEmpty && cap > 0)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text('${presents.length} animal${presents.length > 1 ? 'aux' : ''} pour une capacité de $cap place${cap > 1 ? 's' : ''}',
+            child: Text('${presents.length} ${presents.length > 1 ? 'animaux' : 'animal'} pour une capacité de $cap place${cap > 1 ? 's' : ''}',
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _muted)),
           ),
         const SizedBox(height: 16),
@@ -376,7 +376,7 @@ class _PensionDashboardState extends State<PensionDashboard> {
           trailing: DashLien('Planning', onTap: () => _go(const PensionPlanningPage()))),
       const SizedBox(height: 10),
       if (_logements.isEmpty)
-        Text('Pension sans box individuel : ${presents.length} animal${presents.length > 1 ? 'aux' : ''} présent${presents.length > 1 ? 's' : ''}.',
+        Text('Pension sans box individuel : ${presents.length} ${presents.length > 1 ? 'animaux' : 'animal'} présent${presents.length > 1 ? 's' : ''}.',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted))
       else
         Row(children: [

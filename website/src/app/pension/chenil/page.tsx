@@ -166,7 +166,7 @@ export default function PensionChenilPage() {
     await load();
     setAutoMsg(placed === 0
       ? { text: 'Aucun placement possible pour le moment.', ok: false }
-      : { text: `${placed} animal(aux) placé(s) automatiquement.`, ok: true });
+      : { text: `${placed} ${placed > 1 ? 'animaux placés' : 'animal placé'} automatiquement.`, ok: true });
   };
 
   if (!user || !userData) return null;
@@ -283,7 +283,7 @@ export default function PensionChenilPage() {
         <div className="rounded-xl px-4 py-3 bg-orange-50 border border-orange-200 space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm font-galey font-bold text-orange-900">
-              ✨ {nonAssignes.length} animal(aux) à placer
+              ✨ {nonAssignes.length} {nonAssignes.length > 1 ? 'animaux' : 'animal'} à placer
             </p>
             {nonAssignes.length > 1 && (
               <button onClick={assignAllAuto}

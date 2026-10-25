@@ -2462,7 +2462,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Widget _buildAnimauxGardeSection() {
     final color = widget.categoryColor;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _sectionTitle('Pour quel(s) animal(aux) ?'),
+      _sectionTitle('Pour quels animaux ?'),
       const SizedBox(height: 8),
       if (_animaux.isEmpty)
         Text('Aucun animal enregistré dans votre profil.',

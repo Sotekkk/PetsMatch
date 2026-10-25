@@ -382,7 +382,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
         children: [
           _StatCard(
             value: '$_nbAnimaux',
-            label: 'Animal${_nbAnimaux > 1 ? 'x' : ''}',
+            label: _nbAnimaux > 1 ? 'Animaux' : 'Animal',
             icon: Icons.pets,
             onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1))),

@@ -596,7 +596,7 @@ class _DossierSeanceState extends State<_DossierSeance> {
         Text('${widget.nomClient} · ${_jour(_debut)} à ${_hm(_debut)} · ${(r['duree_minutes'] as num?)?.toInt() ?? 60} min',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _muted)),
         if (widget.animal != null && widget.animal!.isNotEmpty)
-          Text('Animal${widget.animal!.contains('+') ? 'aux' : ''} : ${widget.animal}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink)),
+          Text('${widget.animal!.contains('+') ? 'Animaux' : 'Animal'} : ${widget.animal}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ink)),
         if (lieu.isNotEmpty)
           Text(lieu, style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: lieu.startsWith('Lieu à préciser') ? _ambre : _ink)),
         if (notes.isNotEmpty) Text('Demande : $notes', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _ambre)),

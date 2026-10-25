@@ -393,7 +393,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
                 Row(children: [
                   const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 18),
                   const SizedBox(width: 8),
-                  Text('$sansEnclos animal(s) sans enclos',
+                  Text('$sansEnclos ${sansEnclos > 1 ? 'animaux' : 'animal'} sans enclos',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                           fontSize: 13, color: Colors.orange)),
                 ]),
