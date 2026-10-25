@@ -300,14 +300,14 @@ List<QuickAction> _all(BuildContext ctx) => [
     keywords: ['mes compagnons', 'chien', 'chat', 'fiche animal', 'ajouter un animal'],
     icon: Icons.pets_outlined, group: 'Mes animaux',
     visible: () => _particulier,
-    open: (c) => _push(c, const UserParticulierFeed(initialTab: 1)),
+    open: (c) => _push(c, const UserParticulierFeed(initialTab: 1, animauxSeuls: true)),
   ),
   QuickAction(
     label: 'Carnet de santé',
     keywords: ['santé', 'vaccin', 'vaccination', 'vermifuge', 'antiparasitaire', 'poids', 'chirurgie', 'hospitalisation', 'allergie', 'traitement', 'radio', 'visite véto', 'anesthésie', 'protocole'],
     icon: Icons.medical_services_outlined, group: 'Mes animaux',
     visible: () => _particulier,
-    open: (c) => _push(c, const UserParticulierFeed(initialTab: 1)),
+    open: (c) => _push(c, const UserParticulierFeed(initialTab: 1, animauxSeuls: true)),
   ),
   QuickAction(
     label: 'Mes animaux acquis',

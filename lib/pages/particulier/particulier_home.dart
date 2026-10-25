@@ -385,7 +385,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             label: _nbAnimaux > 1 ? 'Animaux' : 'Animal',
             icon: Icons.pets,
             onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1))),
+                MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1, animauxSeuls: true))),
           ),
           const SizedBox(width: 12),
           _StatCard(
@@ -584,7 +584,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             TextButton(
               onPressed: () async {
                 await Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1)));
+                    MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1, animauxSeuls: true)));
                 if (mounted) _load();
               },
               child: Text('Voir tout',

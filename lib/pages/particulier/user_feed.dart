@@ -22,10 +22,13 @@ import 'package:PetsMatch/services/alertes_notifications.dart';
 
 class UserParticulierFeed extends StatefulWidget {
   final int initialTab;
+  /// Ouvert depuis « Mes animaux » : la liste des animaux seule, sans les
+  /// onglets Mon Profil et Perdus (accessibles ailleurs dans l'appli).
+  final bool animauxSeuls;
   /// Ouvrir directement en mode édition (onboarding « Complétez votre
   /// profil » : champs déjà pré-remplis avec l'inscription).
   final bool modeEdition;
-  const UserParticulierFeed({super.key, this.initialTab = 0, this.modeEdition = false});
+  const UserParticulierFeed({super.key, this.initialTab = 0, this.modeEdition = false, this.animauxSeuls = false});
 
   @override
   State<UserParticulierFeed> createState() => _UserParticulierFeedState();
@@ -645,6 +648,18 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.animauxSeuls) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F8),
+        appBar: AppBar(
+          backgroundColor: _teal,
+          iconTheme: const IconThemeData(color: Colors.white),
+          title: const Text('Mes animaux',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+        ),
+        body: _buildAnimauxTab(),
+      );
+    }
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       body: NestedScrollView(

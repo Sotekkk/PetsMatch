@@ -224,7 +224,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const UserParticulierFeed(initialTab: 1),
+                          builder: (_) => const UserParticulierFeed(initialTab: 1, animauxSeuls: true),
                         ));
                       },
                     ),

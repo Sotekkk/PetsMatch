@@ -206,7 +206,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             _DrawerSubItem(
               label: 'Mes Animaux',
               icon: Icons.pets_outlined,
-              onTap: () => _push(const UserParticulierFeed(initialTab: 1)),
+              onTap: () => _push(const UserParticulierFeed(initialTab: 1, animauxSeuls: true)),
             ),
             _DrawerSubItem(
               label: 'Mes Animaux Acquis',
