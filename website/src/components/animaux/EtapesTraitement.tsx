@@ -20,6 +20,30 @@ const fr = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(
 
 export const totalJours = (etapes: Etape[]) => etapes.reduce((s, e) => s + e.duree, 0);
 
+/** Rythme impossible : une prise « tous les 100 jours » dans une étape de 17 jours. */
+export function erreurRythme(e: Etape, i: number, n: number): string | null {
+  if (e.frequence <= e.duree) return null;
+  return `${n > 1 ? `Étape ${i + 1} : u` : 'U'}ne prise tous les ${e.frequence} jours ne tient pas dans ${e.duree} jour${e.duree > 1 ? 's' : ''} de traitement — le rythme doit être inférieur ou égal à la durée.`;
+}
+export const erreurEtapes = (etapes: Etape[]) => etapes.map((e, i) => erreurRythme(e, i, etapes.length)).find(Boolean) ?? null;
+
+/** Explication des étapes (propriétaire et vétérinaire). */
+export function AideEtapes({ mot = 'étape' }: { mot?: 'étape' | 'phase' }) {
+  const M = mot === 'phase' ? 'Phase' : 'Étape';
+  return (
+    <details className="rounded-xl border border-[#0C5C6C]/20 bg-[#E6F4F7]/50 px-3 py-2 text-xs text-[#1F2A2E]">
+      <summary className="cursor-pointer font-semibold text-[#0C5C6C]">Comment ça marche ?</summary>
+      <div className="mt-2 space-y-1.5 leading-relaxed">
+        <p>Une <b>{mot}</b> est une période pendant laquelle la dose ne change pas.</p>
+        <p><b>Pendant</b> : nombre de jours de l&apos;{mot}. <b>Tous les</b> : écart entre deux jours de prise (1 = tous les jours, 2 = un jour sur deux) — jamais plus que la durée.</p>
+        <p><b>Prises</b> : l&apos;heure et la quantité de chaque prise de la journée (ex. 08:00 · 1 cp, 20:00 · ½ cp).</p>
+        <p>Si la dose change, ajoutez une {mot} : elle commence le lendemain de la précédente.<br />
+          Exemple : {M} 1 — pendant 7 jours, tous les jours, 1 cp à 08:00 et 1 cp à 20:00 ; {M} 2 — pendant 7 jours, tous les jours, ½ cp à 08:00.</p>
+      </div>
+    </details>
+  );
+}
+
 /** « 1 cp à 08:00, ½ cp à 20:00, pendant 4 jours ». */
 export function libelleEtape(e: Etape): string {
   const p = e.prises.map(x => (x.q ? `${x.q} à ${x.h}` : x.h)).join(', ');
@@ -94,6 +118,7 @@ export function EditeurEtapes({ etapes, onChange, debut }: { etapes: Etape[]; on
   const fin = debut && total > 0 ? jourPlus(debut.slice(0, 10), total - 1) : '';
   return (
     <div className="space-y-3">
+      <AideEtapes />
       {etapes.map((e, i) => (
         <div key={i} className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-3">
           <div className="flex items-center">
@@ -110,6 +135,9 @@ export function EditeurEtapes({ etapes, onChange, debut }: { etapes: Etape[]; on
               <input type="number" min={1} value={e.frequence} onChange={ev => maj(i, { frequence: Math.max(1, parseInt(ev.target.value, 10) || 1) })} className={`${cls} w-20`} /> jour(s)
             </label>
           </div>
+          {erreurRythme(e, i, etapes.length) && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{erreurRythme(e, i, etapes.length)}</p>
+          )}
           <EditeurPrises prises={e.prises} onChange={p => maj(i, { prises: p })} />
         </div>
       ))}
@@ -144,6 +172,8 @@ export default function FormTraitementEtapes({ initial, onSave, onCancel, saving
   function enregistrer() {
     if (!nom.trim()) { setErreur('Indiquez le nom du traitement.'); return; }
     if (!debut) { setErreur('Indiquez la date de début.'); return; }
+    const rythme = erreurEtapes(etapes);
+    if (rythme) { setErreur(rythme); return; }
     if (rappels && etapes.some(e => !e.prises.length)) { setErreur('Ajoutez au moins une prise à chaque étape (ou désactivez les rappels).'); return; }
     setErreur('');
     void onSave({

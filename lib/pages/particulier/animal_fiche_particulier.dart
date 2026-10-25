@@ -2651,6 +2651,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       if (nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du traitement.');
       controlerDatesSante(date: date, fin: finTraitement(date, etapes));
       if (etapes.isEmpty) throw const SaisieInvalide('Ajoutez au moins une étape.');
+      final rythme = erreurEtapes(etapes);
+      if (rythme != null) throw SaisieInvalide(rythme);
       if (rappelActif && etapes.any((e) => e.prises.isEmpty)) {
         throw const SaisieInvalide('Ajoutez au moins une prise à chaque étape (ou désactivez les rappels).');
       }

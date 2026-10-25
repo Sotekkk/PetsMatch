@@ -495,6 +495,11 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     const cleDe = (msg: string) => fields.find(f => msg.startsWith(`${f.label} :`))?.key
       ?? (msg.startsWith('Date de rappel') ? 'date_rappel' : msg.startsWith('Date de validité') ? 'date_validite_debut'
         : msg.startsWith('Date de fin') ? 'date_fin' : msg.startsWith('Date') ? 'date' : msg.includes('heure') ? 'rappel_heures' : '');
+    // Traitement : une prise « tous les 100 jours » ne tient pas dans 17 jours.
+    const freq = parseInt(form.rappel_frequence_jours ?? '', 10), duree = parseInt(form.rappel_duree_jours ?? '', 10);
+    if (form.rappel_actif === 'true' && freq > 0 && duree > 0 && freq > duree) {
+      requis.push({ cle: 'rappel_frequence_jours', msg: `Une prise tous les ${freq} jours ne tient pas dans ${duree} jours de traitement — le rythme doit être inférieur ou égal à la durée.` });
+    }
     const toutes = [...requis, ...e.map(msg => ({ cle: cleDe(msg), msg }))];
     setErreurs(toutes);
     setSaisieEnvoyee(form);

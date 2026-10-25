@@ -6893,6 +6893,15 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
         return;
       }
     }
+    if (_isTraitement && _rappelActif) {
+      final freq = int.tryParse(_rappelFrequenceCtrl.text.trim()) ?? 1;
+      final duree = int.tryParse(_rappelDureeCtrl.text.trim()) ?? 0;
+      if (duree > 0 && freq > duree) {
+        setState(() => _error = 'Une prise tous les $freq jours ne tient pas dans $duree jours de traitement — '
+            'le rythme doit être inférieur ou égal à la durée.');
+        return;
+      }
+    }
     if (_isTraitement && _rappelActif && _prises.isEmpty) {
       setState(() => _error = 'Ajoute au moins une heure de rappel.');
       return;
@@ -7713,6 +7722,8 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
     if (_nom.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le nom du produit.');
     controlerDatesSante(date: _date, fin: finTraitement(_date, _etapes));
     if (_etapes.isEmpty) throw const SaisieInvalide('Ajoutez au moins une étape.');
+    final rythme = erreurEtapes(_etapes);
+    if (rythme != null) throw SaisieInvalide(rythme);
     if (_rappelActif && _etapes.any((e) => e.prises.isEmpty)) {
       throw const SaisieInvalide('Ajoutez au moins une prise à chaque étape (ou désactivez les rappels).');
     }

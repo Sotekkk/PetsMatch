@@ -158,6 +158,62 @@ class EtapeTraitement {
 
 int totalJours(List<EtapeTraitement> etapes) => etapes.fold(0, (s, e) => s + e.dureeJours);
 
+/// Rythme impossible : une prise « tous les 100 jours » dans une étape de
+/// 17 jours. Miroir site : erreurRythme (EtapesTraitement.tsx).
+String? erreurRythme(EtapeTraitement e, int i, int n) {
+  if (e.frequenceJours <= e.dureeJours) return null;
+  return '${n > 1 ? 'Étape ${i + 1} : u' : 'U'}ne prise tous les ${e.frequenceJours} jours ne tient pas dans ${e.dureeJours} jour${e.dureeJours > 1 ? 's' : ''} de traitement — le rythme doit être inférieur ou égal à la durée.';
+}
+
+String? erreurEtapes(List<EtapeTraitement> etapes) {
+  for (var i = 0; i < etapes.length; i++) {
+    final m = erreurRythme(etapes[i], i, etapes.length);
+    if (m != null) return m;
+  }
+  return null;
+}
+
+/// Explication des étapes (propriétaire) ou des phases (vétérinaire).
+class AideEtapes extends StatelessWidget {
+  final bool phase;
+  const AideEtapes({super.key, this.phase = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final mot = phase ? 'phase' : 'étape';
+    final m = phase ? 'Phase' : 'Étape';
+    const st = TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4, color: Color(0xFF1F2A2E));
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(color: const Color(0xFFE6F4F7), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0x330C5C6C))),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          dense: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          title: const Text('Comment ça marche ?',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Une $mot est une période pendant laquelle la dose ne change pas.', style: st),
+            const SizedBox(height: 4),
+            Text('« Pendant » : nombre de jours de la $mot. « Tous les » : écart entre deux jours de prise '
+                '(1 = tous les jours, 2 = un jour sur deux) — jamais plus que la durée.', style: st),
+            const SizedBox(height: 4),
+            const Text('Prises : l\'heure et la quantité de chaque prise de la journée (ex. 08:00 · 1 cp, 20:00 · ½ cp).', style: st),
+            const SizedBox(height: 4),
+            Text('Si la dose change, ajoutez une $mot : elle commence le lendemain de la précédente.\n'
+                'Exemple : $m 1 — pendant 7 jours, tous les jours, 1 cp à 08:00 et 1 cp à 20:00 ; '
+                '$m 2 — pendant 7 jours, tous les jours, ½ cp à 08:00.', style: st),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Dernier jour du traitement (inclus) : début + total des jours − 1.
 DateTime? finTraitement(DateTime? debut, List<EtapeTraitement> etapes) {
   if (debut == null || etapes.isEmpty) return null;
@@ -240,6 +296,7 @@ class EtapesTraitementEditor extends StatelessWidget {
     final fin = finTraitement(debut, etapes);
     String jj(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const AideEtapes(),
       for (var i = 0; i < etapes.length; i++)
         Container(
           key: ObjectKey(etapes[i]),
@@ -262,6 +319,14 @@ class EtapesTraitementEditor extends StatelessWidget {
             _nombre('Pendant', etapes[i].dureeJours, 'jour(s)', (n) { etapes[i].dureeJours = n; onChanged(); }),
             const SizedBox(height: 8),
             _nombre('Tous les', etapes[i].frequenceJours, 'jour(s)', (n) { etapes[i].frequenceJours = n; onChanged(); }),
+            if (erreurRythme(etapes[i], i, etapes.length) != null)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(8)),
+                child: Text(erreurRythme(etapes[i], i, etapes.length)!,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFFB71C1C))),
+              ),
             const SizedBox(height: 10),
             PrisesTraitementEditor(prises: etapes[i].prises, couleur: couleur,
                 onChanged: (l) { etapes[i].prises = l; onChanged(); }),

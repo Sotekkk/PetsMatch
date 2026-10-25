@@ -1,5 +1,6 @@
 'use client';
 
+import { AideEtapes } from '@/components/animaux/EtapesTraitement';
 import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, echeanceDans, DUREES_EXERCICE, DUREE_DEFAUT_JOURS } from '@/lib/exercices-progression';
 import { SyntheseVet, SyntheseOsteo, DocumentsSantePro } from '@/components/animaux/SanteProTabs';
@@ -477,6 +478,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId }
                 <button key={k} type="button" onClick={() => setTrt({ ...trt, type: k })} className={chip(trt.type === k)}>{l}</button>
               ))}
             </div>
+            <AideEtapes mot="phase" />
             {trt.phases.map((p, i) => (
               <div key={i} className="rounded-xl border border-gray-200 bg-[#F6F8F7] p-2.5 space-y-2">
                 <div className="flex items-center">
@@ -510,6 +512,12 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId }
                     <button type="button" onClick={() => majPhase(i, { dureeJours: null })} className={chip(p.dureeJours === null)}>Au long cours</button>
                   )}
                 </div>
+                {/* Rythme impossible : une prise tous les 100 jours pendant 17 jours. */}
+                {p.dureeJours != null && p.frequenceJours > p.dureeJours && (
+                  <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">
+                    Une prise tous les {p.frequenceJours} jours ne tient pas dans {p.dureeJours} jour{p.dureeJours > 1 ? 's' : ''} de traitement — le rythme doit être inférieur ou égal à la durée.
+                  </p>
+                )}
               </div>
             ))}
             <button type="button" className="text-sm font-semibold text-[#0C5C6C]"
@@ -525,7 +533,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId }
             <input value={trt.notes} onChange={e => setTrt({ ...trt, notes: e.target.value })} placeholder="Remarque (facultatif) — précautions, à jeun…" className={champ} />
             <div className="flex gap-2">
               <button type="button" onClick={() => setTrt(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
-              <button type="button" disabled={!trt.nom.trim() || trt.phases.some(p => p.prises.length === 0)} onClick={() => {
+              <button type="button" disabled={!trt.nom.trim() || trt.phases.some(p => p.prises.length === 0 || (p.dureeJours != null && p.frequenceJours > p.dureeJours))} onClick={() => {
                 const { index, ...t } = trt;
                 setTraitements(remplacer(traitements, index, { ...t, nom: t.nom.trim(), notes: t.notes.trim() })); setTrt(null);
               }} className="flex-1 py-2 rounded-xl text-sm text-white font-semibold bg-[#0C5C6C] disabled:opacity-40">

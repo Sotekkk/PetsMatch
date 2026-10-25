@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/widgets/carnet/prises_traitement.dart' show AideEtapes;
 import 'package:PetsMatch/utils/document_prive.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -697,6 +698,16 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor)),
                   ),
                 ),
+              // Rythme impossible : une prise tous les 100 jours pendant 17 jours.
+              if (_rythmeImpossible(p))
+                Container(
+                  margin: const EdgeInsets.only(top: 6),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFFDECEC), borderRadius: BorderRadius.circular(8)),
+                  child: Text('Une prise tous les ${p.frequence} jours ne tient pas dans ${p.duree.text} jours de traitement '
+                      '— le rythme doit être inférieur ou égal à la durée.',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFFB71C1C))),
+                ),
             ]),
           );
         }
@@ -724,6 +735,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               chip('Autre', type == 'autre', () => setM(() => type = 'autre')),
             ]),
             const SizedBox(height: 12),
+            const AideEtapes(phase: true),
             for (var i = 0; i < phases.length; i++) phase(i),
             OutlinedButton.icon(
               onPressed: () => setM(() {
@@ -748,7 +760,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             SizedBox(width: double.infinity, child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: nomCtrl.text.trim().isEmpty || phases.any((p) => p.prises.isEmpty) ? null : () => Navigator.pop(ctx, _TraitementCr(
+              onPressed: nomCtrl.text.trim().isEmpty || phases.any((p) => p.prises.isEmpty || _rythmeImpossible(p)) ? null : () => Navigator.pop(ctx, _TraitementCr(
                 nom: nomCtrl.text.trim(), type: type, rappels: rappels, notes: notesCtrl.text.trim(),
                 phases: [for (final p in phases) p.vers()])),
               child: Text(existant == null ? 'Ajouter' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
@@ -762,6 +774,12 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final i = existant == null ? -1 : _traitementsCr.indexOf(existant);
       if (i >= 0) { _traitementsCr[i] = res; } else { _traitementsCr.add(res); }
     });
+  }
+
+  /// Phase dont le rythme dépasse la durée (au long cours : pas de limite).
+  static bool _rythmeImpossible(_PhaseEdit p) {
+    final duree = int.tryParse(p.duree.text.trim());
+    return duree != null && duree > 0 && p.frequence > duree;
   }
 
   static const _antiparasitairesCourants = ['Bravecto', 'NexGard', 'NexGard Spectra', 'Simparica', 'Simparica Trio',
