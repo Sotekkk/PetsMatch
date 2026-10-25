@@ -222,7 +222,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
     const c = calculerRation(planAEnregistrer, animal, lireNombre(objectif).v ?? null);
     for (let e = 1; e <= 5; e++) {
       const err = erreurEtape(e, planAEnregistrer, c, { objectifTexte: objectif, poidsAdulteTexte: poidsAdulte, ecartConfirme: ecartOk, saisiesInvalides: invalides });
-      if (err) { setParcours(true); setEtape(e); setErreur(err); return; }
+      if (err) { setParcours(true); setEtape(e); setErreur(err); if (e === 3) chargerCatalogue(); return; }
     }
     setSaving(true);
     try {

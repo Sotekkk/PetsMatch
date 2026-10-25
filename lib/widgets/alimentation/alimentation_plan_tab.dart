@@ -66,7 +66,8 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   final _recherche = TextEditingController();
 
   List<Map<String, dynamic>> _catalogue = [];
-  bool _catalogueCharge = false;
+  /// 'aucun' | 'chargement' | 'pret' | 'erreur'
+  String _catalogueEtat = 'aucun';
   double? _poids;
   String _etatRepro = 'normal';
   int? _semaineLactation;
@@ -195,8 +196,8 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   }
 
   Future<void> _chargerCatalogue() async {
-    if (_catalogueCharge) return;
-    _catalogueCharge = true;
+    if (_catalogueEtat == 'chargement' || _catalogueEtat == 'pret') return;
+    setState(() => _catalogueEtat = 'chargement');
     const cols = 'id, marque, gamme, type_aliment, age_categorie, densite_kcal_100g, kcal_estime, ajoute_par_uid, doses';
     try {
       List rows;
@@ -206,9 +207,14 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
       } on PostgrestException {
         rows = await _supa.from('marques_aliments').select(cols).eq('espece', widget.espece).order('marque').limit(1000);
       }
-      if (mounted) setState(() => _catalogue = rows.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList());
+      if (mounted) {
+        setState(() {
+          _catalogue = rows.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+          _catalogueEtat = 'pret';
+        });
+      }
     } catch (_) {
-      _catalogueCharge = false;
+      if (mounted) setState(() => _catalogueEtat = 'erreur');
     }
   }
 
@@ -343,17 +349,19 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
-  void _allerEtape(int n) => setState(() {
-        _syncQuantites();
-        _etape = n;
-        _erreurEtape = null;
-      });
+  void _allerEtape(int n) {
+    setState(() {
+      _syncQuantites();
+      _etape = n;
+      _erreurEtape = null;
+    });
+    if (n == 3) _chargerCatalogue();
+  }
 
   void _suivant() {
     final err = _erreurDe(_etape);
     if (err != null) { setState(() => _erreurEtape = err); return; }
     if (_etape == 2) _plan.poidsAdulte = lireNombre(_poidsAdulte.text).v;
-    if (_etape == 3) _chargerCatalogue();
     if (_etape < 6) {
       _allerEtape(_etape + 1);
     } else {
@@ -402,6 +410,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
       final err = _erreurDe(e);
       if (err != null) {
         setState(() { _parcours = true; _etape = e; _erreurEtape = err; });
+        if (e == 3) _chargerCatalogue();
         return;
       }
     }
@@ -939,7 +948,16 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
         ),
       ),
       const SizedBox(height: 10),
-      if (!_catalogueCharge) const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: _teal))),
+      if (_catalogueEtat == 'chargement' || _catalogueEtat == 'aucun')
+        const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: _teal))),
+      if (_catalogueEtat == 'erreur')
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            Expanded(child: Text('Le catalogue n\u2019a pas pu être chargé.', style: _st(14, c: _gris))),
+            TextButton(onPressed: _chargerCatalogue, child: Text('Réessayer', style: _st(14, w: FontWeight.w800, c: _teal))),
+          ]),
+        ),
       for (final r in filtres)
         () {
           final a = _depuisCatalogue(r);
@@ -947,7 +965,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
           return _caseACocher(a.nom, false, () => _basculerAliment(a),
               sous: '${_sousTitreAliment(a)}${r['ajoute_par_uid'] != null ? ' · ajouté par un membre' : ''}');
         }(),
-      if (_catalogueCharge && filtres.isEmpty)
+      if (_catalogueEtat == 'pret' && filtres.isEmpty)
         Padding(padding: const EdgeInsets.symmetric(vertical: 8),
             child: Text(q.isEmpty ? 'Aucun aliment de ce type dans le catalogue.' : 'Aucun résultat pour « ${_recherche.text.trim()} ».',
                 style: _st(14, c: _gris))),
