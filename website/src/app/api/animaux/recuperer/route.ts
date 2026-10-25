@@ -160,6 +160,17 @@ export async function POST(req: NextRequest) {
       const { data: moi } = await admin.from('animaux_proprietes').select('id').eq('animal_id', a.id).eq('uid_proprio', uid).is('date_fin', null).limit(1);
       if ((moi ?? []).length || a.uid_acquereur === uid) return NextResponse.json({ etat: 'deja_a_vous', animal: { id: a.id, nom: a.nom } });
       const animal = { id: a.id, nom: a.nom, espece: a.espece, race: a.race, photo_url: a.photo_url, date_naissance: a.date_naissance };
+      // Fiche créée par un pro (vétérinaire, ostéo, pension…) pour un client
+      // sans appli : récupérée par le client via le rattachement de ses
+      // coordonnées (/api/clients/rattachement), pas par la puce seule.
+      const { data: fp } = await admin.from('animaux').select('cree_par_pro_profile_id, uid_proprietaire').eq('id', a.id).maybeSingle();
+      const ficheProProfil = (fp as { cree_par_pro_profile_id?: string | null; uid_proprietaire?: string | null } | null);
+      if (ficheProProfil?.cree_par_pro_profile_id && !ficheProProfil.uid_proprietaire) {
+        const { data: pro } = await admin.from('user_profiles_complet').select('nom, firstname, lastname').eq('id', ficheProProfil.cree_par_pro_profile_id).maybeSingle();
+        const p = pro as { nom?: string | null; firstname?: string | null; lastname?: string | null } | null;
+        const proNom = (p?.nom ?? '').trim() || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'un professionnel';
+        return NextResponse.json({ etat: 'fiche_pro', pro: proNom, animal: { nom: a.nom, espece: a.espece } });
+      }
       if (!recuperable(a)) return NextResponse.json({ etat: 'detenu', animal: { nom: a.nom, espece: a.espece } });
       const { data: dem } = await admin.from('animal_recuperations').select('id').eq('animal_id', a.id).eq('demandeur_uid', uid).eq('statut', 'en_attente').limit(1);
       return NextResponse.json({

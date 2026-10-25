@@ -97,8 +97,24 @@ class _VetPatientsPageState extends State<VetPatientsPage>
             .select('id, nom, espece, race, photo_url, date_naissance, identification, uid_eleveur, uid_proprietaire')
             .inFilter('id', animalIds);
       }
-      // Patients créés par la clinique : nom du client (propriétaire hors appli).
-      final clientIds = {for (final a in animals as List) if (a['client_clinique_id'] != null) a['client_clinique_id'].toString()};
+      // Client de CE pro pour l'animal : fiche rattachée (créée par un autre
+      // pro, animaux_clients_pro), sinon client de la fiche qu'il a créée.
+      final clientParAnimal = <String, String>{};
+      try {
+        final liens = await Supabase.instance.client.from('animaux_clients_pro')
+            .select('animal_id, client_id').eq('pro_profile_id', pid).inFilter('animal_id', animalIds);
+        for (final l in liens as List) {
+          if (l['client_id'] != null) clientParAnimal[l['animal_id'].toString()] = l['client_id'].toString();
+        }
+      } catch (_) {}
+      for (final a in animals as List) {
+        final id = a['id']?.toString();
+        if (id != null && !clientParAnimal.containsKey(id) && a['client_clinique_id'] != null) {
+          clientParAnimal[id] = a['client_clinique_id'].toString();
+        }
+      }
+      // Patients créés par un pro : nom du client (propriétaire hors appli).
+      final clientIds = clientParAnimal.values.toSet();
       final nomsClients = <String, String>{};
       if (clientIds.isNotEmpty) {
         try {
@@ -125,7 +141,11 @@ class _VetPatientsPageState extends State<VetPatientsPage>
         m['granted_at'] = info['granted_at'] ?? '';
         m['grant_status'] = info['status'] ?? 'pending';
         m['grant_id'] = info['grant_id'] ?? '';
-        if (m['client_clinique_id'] != null) m['_client_nom'] = nomsClients[m['client_clinique_id'].toString()] ?? '';
+        final clientId = clientParAnimal[a['id']?.toString()];
+        if (clientId != null) {
+          m['client_clinique_id'] ??= clientId;
+          m['_client_nom'] = nomsClients[clientId] ?? '';
+        }
         return m;
       }).toList();
 
@@ -288,7 +308,8 @@ class _VetPatientsPageState extends State<VetPatientsPage>
   }
 
   Future<void> _openPatient(Map<String, dynamic> animal) async {
-    if (animal['grant_status'] != 'active') {
+    // 'identite' : fiche créée par un autre pro (identité + ses propres documents).
+    if (!const ['active', 'active_write', 'write_requested', 'identite'].contains(animal['grant_status'])) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Accès en attente d\'approbation par le propriétaire',
             style: TextStyle(fontFamily: 'Galey')),
@@ -842,6 +863,7 @@ class _PatientCard extends StatelessWidget {
     }
 
     final isPending = animal['grant_status']?.toString() == 'demande';
+    final identiteSeule = animal['grant_status']?.toString() == 'identite';
 
     return GestureDetector(
       onTap: onTap,
@@ -890,6 +912,12 @@ class _PatientCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 3),
                   child: Text('🏥 Fiche clinique${(animal['_client_nom'] ?? '').toString().isNotEmpty ? ' · ${animal['_client_nom']}' : ''}',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: teal)),
+                ),
+              if (identiteSeule)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text('Identité seule · carnet privé tant que le propriétaire ne l’a pas partagé',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
                 ),
               if (isPending)
                 Container(

@@ -2384,27 +2384,44 @@ Future<Map<String, dynamic>?> pickAnimalForAdmission(BuildContext context, {bool
   return _lookupAnimalByChip(chip.trim());
 }
 
+/// Fiche existante pour cette puce (une puce = un animal) : animal_id, nom,
+/// espece, detenteur (particulier / eleveur / pro), a_vous, deja_lie,
+/// owner_uid, owner_profile_id — sinon null.
+Future<Map<String, dynamic>?> puceExistante(String puce) async {
+  if (puce.replaceAll(RegExp(r'[^0-9A-Za-z]'), '').length < 6) return null;
+  try {
+    final pid = User_Info.activeProfileId;
+    final r = await Supabase.instance.client.rpc('pm_puce_existante',
+        params: {'p_identification': puce, 'p_profile': pid.isNotEmpty ? pid : null});
+    final l = List<Map<String, dynamic>>.from(r as List);
+    return l.isEmpty ? null : l.first;
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
   final supa = Supabase.instance.client;
-  final normalized = chip.replaceAll(RegExp(r'[\s\-]'), '');
   Map<String, dynamic>? found;
   String? ownerNom, ownerContact, ownerEmail, ownerAdresse, ownerUid;
 
   try {
-    final rows = await supa
-        .from('animaux')
-        .select('id,nom,espece,race,identification,photo_url,uid_eleveur,uid_proprietaire')
-        .not('identification', 'is', null)
-        .limit(2000);
-    for (final row in rows as List) {
-      final id = ((row as Map)['identification'] ?? '').toString().replaceAll(RegExp(r'[\s\-]'), '');
-      if (id.isNotEmpty && id == normalized) {
-        found = Map<String, dynamic>.from(row);
-        break;
-      }
-    }
+    // Une puce = une fiche : recherche côté serveur (pm_puce_existante), sur
+    // toutes les fiches — avant, seules les fiches lisibles par la pension
+    // étaient parcourues (jusqu'à 2000, dans l'appli).
     String? ownerProfileId;
-    if (found != null) {
+    final hit = await puceExistante(chip);
+    if (hit != null) {
+      final row = await supa.from('animaux')
+          .select('id,nom,espece,race,identification,photo_url,uid_eleveur,uid_proprietaire')
+          .eq('id', hit['animal_id'].toString()).maybeSingle();
+      found = row != null
+          ? Map<String, dynamic>.from(row)
+          : {'id': hit['animal_id'], 'nom': hit['nom'], 'espece': hit['espece'], 'identification': chip};
+      ownerUid = hit['owner_uid']?.toString();
+      ownerProfileId = hit['owner_profile_id']?.toString();
+    }
+    if (found != null && hit?['detenteur'] != 'pro') {
       final animalId = found['id'] as String;
       // Propriétaire actuel = animaux_proprietes (source unique, date_fin IS NULL),
       // fallback sur uid_eleveur/uid_proprietaire si jamais peuplée pour cet animal.
@@ -2416,11 +2433,11 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
             .order('date_debut', ascending: false)
             .limit(1)
             .maybeSingle();
-        ownerUid = (propRow?['uid_proprio'] as String?) ??
+        ownerUid = (propRow?['uid_proprio'] as String?) ?? ownerUid ??
             (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
-        ownerProfileId = propRow?['profile_id_proprio'] as String?;
+        ownerProfileId = (propRow?['profile_id_proprio'] as String?) ?? ownerProfileId;
       } catch (_) {
-        ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
+        ownerUid ??= (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
       }
 
       if (ownerUid != null && ownerUid.isNotEmpty) {
@@ -2774,6 +2791,26 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
       // uid_eleveur = la pension (gestionnaire actuel), owner_uid sera
       // renseigné si le propriétaire réclame la fiche plus tard.
       String? animalId = widget.initialAnimalId;
+      // Une puce = une fiche : puce déjà enregistrée → on réutilise sa fiche.
+      // Créée par un autre pro → rattachement « identité seule » (son carnet et
+      // ses documents restent privés) ; propriétaire / éleveur → demande
+      // d'accès au carnet plus bas.
+      final pid = User_Info.activeProfileId;
+      final hit = await puceExistante(_puceCtrl.text.trim());
+      if (hit != null) animalId ??= hit['animal_id']?.toString();
+      final detenteur = hit?['detenteur']?.toString();
+      final dejaSuivi = hit?['a_vous'] == true || hit?['deja_lie'] == true;
+      if (hit != null && detenteur == 'pro' && !dejaSuivi && pid.isNotEmpty) {
+        await _supa.rpc('pm_rattacher_fiche_pro', params: {
+          'p_profile': pid,
+          'p_animal': animalId,
+          'p_client_id': null,
+          'p_client': _clientCtrl.text.trim().isEmpty ? null : {
+            'nom': _clientCtrl.text.trim(), 'telephone': _contactCtrl.text.trim(),
+            'email': _emailCtrl.text.trim(), 'adresse': _adresseCtrl.text.trim(),
+          },
+        });
+      }
       final justCreatedFiche = animalId == null && _nomCtrl.text.trim().isNotEmpty;
       if (justCreatedFiche) {
         animalId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -2786,6 +2823,8 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           'identification': _puceCtrl.text.trim(),
           if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
           'statut': 'present',
+          // Fiche créée par la pension pour un client sans appli.
+          if (pid.isNotEmpty) 'cree_par_pro_profile_id': pid,
         });
       }
 
@@ -2848,9 +2887,18 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
 
       // Demande d'accès à la fiche en parallèle (silencieux si déjà accordé)
       // — inutile si on vient de créer la fiche nous-mêmes (on est déjà gestionnaire)
-      if (!justCreatedFiche) _requestFicheAcces().ignore();
+      if (!justCreatedFiche && detenteur != 'pro' && !dejaSuivi) {
+        _requestFicheAcces(animalId: animalId, ownerUid: hit?['owner_uid']?.toString(),
+            ownerProfileId: hit?['owner_profile_id']?.toString()).ignore();
+      }
 
       if (mounted) Navigator.pop(context, true);
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+            e.code == '23505' || e.code == 'P0001' ? e.message : 'Erreur : ${e.message}')));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -2860,42 +2908,18 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     }
   }
 
-  Future<void> _requestFicheAcces() async {
+  /// Demande d'accès au carnet envoyée au propriétaire (ou à l'éleveur) de la
+  /// fiche trouvée par la puce (pm_puce_existante).
+  Future<void> _requestFicheAcces({String? animalId, String? ownerUid, String? ownerProfileId}) async {
     try {
-      String? animalId  = widget.initialAnimalId;
-      String? ownerUid  = widget.initialOwnerUid;
-      String  animalNom = _nomCtrl.text.trim();
-
-      // Si on n'a pas l'animalId, chercher par puce
-      if (animalId == null) {
-        final puce = _puceCtrl.text.trim();
-        if (puce.isEmpty) return;
-        final normalized = puce.replaceAll(RegExp(r'[\s\-]'), '');
-        final rows = await _supa.from('animaux')
-            .select('id, nom, uid_eleveur, uid_proprietaire')
-            .not('identification', 'is', null)
-            .limit(2000);
-        for (final row in rows as List) {
-          final id = ((row as Map)['identification'] ?? '').toString()
-              .replaceAll(RegExp(r'[\s\-]'), '');
-          if (id.isNotEmpty && id == normalized) {
-            animalId  = (row as Map)['id'] as String;
-            ownerUid  = ((row)['uid_eleveur'] ?? (row)['uid_proprietaire'])
-                ?.toString();
-            if ((row)['nom']?.toString().isNotEmpty == true) {
-              animalNom = (row)['nom'] as String;
-            }
-            break;
-          }
-        }
-      }
-
+      animalId ??= widget.initialAnimalId;
+      ownerUid ??= widget.initialOwnerUid;
+      final String animalNom = _nomCtrl.text.trim();
       if (animalId == null || ownerUid == null || ownerUid.isEmpty) return;
 
       // Résoudre profile IDs — celui PRÉCIS lié via animaux_proprietes en
       // priorité (peut différer du profil is_main du compte propriétaire).
       final pid = User_Info.activeProfileId;
-      String? ownerProfileId;
       try {
         final propRow = await _supa.from('animaux_proprietes')
             .select('profile_id_proprio').eq('animal_id', animalId)

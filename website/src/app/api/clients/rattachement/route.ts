@@ -36,8 +36,19 @@ async function propositions(uid: string) {
   const clients = (data ?? []) as ClientRow[];
   const out = [];
   for (const c of clients) {
-    const { data: an } = await admin.from('animaux').select('id, nom, espece').eq('client_clinique_id', c.id);
-    const animaux = (an ?? []) as { id: string; nom: string | null; espece: string | null }[];
+    // Animaux de ce client : fiches créées par ce pro (client_clinique_id) et
+    // fiches d'un autre pro auxquelles il est rattaché (animaux_clients_pro).
+    // Jamais un animal qui a déjà un autre propriétaire.
+    const { data: an } = await admin.from('animaux').select('id, nom, espece, uid_proprietaire').eq('client_clinique_id', c.id);
+    const { data: liens } = await admin.from('animaux_clients_pro').select('animal_id').eq('client_id', c.id);
+    const idsLies = ((liens ?? []) as { animal_id: string }[]).map(l => l.animal_id);
+    const { data: an2 } = idsLies.length
+      ? await admin.from('animaux').select('id, nom, espece, uid_proprietaire').in('id', idsLies)
+      : { data: [] };
+    const vusAnimaux = new Set<string>();
+    const animaux = ([...(an ?? []), ...(an2 ?? [])] as { id: string; nom: string | null; espece: string | null; uid_proprietaire: string | null }[])
+      .filter(x => (!x.uid_proprietaire || x.uid_proprietaire === uid) && !vusAnimaux.has(x.id) && vusAnimaux.add(x.id))
+      .map(({ id, nom, espece }) => ({ id, nom, espece }));
     if (!animaux.length) continue;
     const { data: pro } = await admin.from('user_profiles_complet').select('nom, firstname, lastname, profile_type').eq('id', c.clinique_profile_id).maybeSingle();
     const p = pro as { nom?: string | null; firstname?: string | null; lastname?: string | null; profile_type?: string | null } | null;

@@ -1,29 +1,42 @@
 import { supabase } from '@/lib/supabase';
 import type { PensionEntreePrefill } from '@/components/PensionEntreeModal';
 
-/** Recherche un animal par puce et résout son propriétaire actuel via
- * animaux_proprietes (source unique, date_fin IS NULL) — nom d'élevage
- * en priorité si le propriétaire est un pro, sinon prénom+nom. */
-export async function lookupAnimalByChip(chip: string): Promise<PensionEntreePrefill> {
-  const normalized = chip.replace(/[\s-]/g, '');
-  const { data } = await supabase.from('animaux')
-    .select('id, nom, espece, race, identification, uid_eleveur, uid_proprietaire')
-    .not('identification', 'is', null);
-  const found = (data ?? []).find(a => (a.identification ?? '').replace(/[\s-]/g, '') === normalized);
-  if (!found) return { puce: chip };
+interface PuceTrouvee {
+  animal_id: string; nom: string | null; espece: string | null; detenteur: string;
+  a_vous: boolean; deja_lie: boolean; owner_uid: string | null; owner_profile_id: string | null;
+}
+
+/** Recherche un animal par puce (une puce = une fiche, côté serveur :
+ *  pm_puce_existante) et résout son propriétaire actuel — nom d'élevage en
+ *  priorité si le propriétaire est un pro, sinon prénom+nom. Fiche créée par
+ *  un autre pro : la pension y est rattachée (identité seule, son carnet et
+ *  ses documents restent privés) si proProfileId est fourni. */
+export async function lookupAnimalByChip(chip: string, proProfileId?: string | null): Promise<PensionEntreePrefill> {
+  const { data: hits } = await supabase.rpc('pm_puce_existante', { p_identification: chip, p_profile: proProfileId ?? null });
+  const hit = ((hits ?? []) as PuceTrouvee[])[0];
+  if (!hit) return { puce: chip };
+  const { data: row } = await supabase.from('animaux')
+    .select('id, nom, espece, race, identification, uid_eleveur, uid_proprietaire').eq('id', hit.animal_id).maybeSingle();
+  const found = row ?? { id: hit.animal_id, nom: hit.nom, espece: hit.espece, race: null, identification: chip, uid_eleveur: null, uid_proprietaire: null };
 
   const next: PensionEntreePrefill = {
     animal_id: found.id, animal_nom: found.nom ?? undefined,
     espece: found.espece ?? undefined, race: found.race ?? undefined,
     puce: found.identification ?? chip,
   };
+  if (hit.detenteur === 'pro') {
+    if (proProfileId && !hit.deja_lie && !hit.a_vous) {
+      await supabase.rpc('pm_rattacher_fiche_pro', { p_profile: proProfileId, p_animal: hit.animal_id, p_client_id: null, p_client: null });
+    }
+    return next;
+  }
 
   const { data: propRow } = await supabase.from('animaux_proprietes')
     .select('uid_proprio, profile_id_proprio').eq('animal_id', found.id).is('date_fin', null)
     .order('date_debut', { ascending: false }).limit(1).maybeSingle();
-  const ownerUid = propRow?.uid_proprio ?? found.uid_eleveur ?? found.uid_proprietaire;
+  const ownerUid = propRow?.uid_proprio ?? hit.owner_uid ?? found.uid_eleveur ?? found.uid_proprietaire;
   next.owner_uid = ownerUid ?? undefined;
-  next.owner_profile_id = propRow?.profile_id_proprio ?? undefined;
+  next.owner_profile_id = propRow?.profile_id_proprio ?? hit.owner_profile_id ?? undefined;
 
   // Coordonnées du PROFIL propriétaire précis (pas du compte en général) —
   // un éleveur déclare son numéro/nom professionnel sur user_profiles

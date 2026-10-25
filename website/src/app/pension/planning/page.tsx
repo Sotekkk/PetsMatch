@@ -137,7 +137,7 @@ function PensionPlanningPageInner() {
 
   async function searchByChip(chip: string) {
     setChipSearching(true);
-    setPrefill(await lookupAnimalByChip(chip));
+    setPrefill(await lookupAnimalByChip(chip, activeProfileId || null));
     setChipSearching(false);
     if (chipStepFor) { setCreatingFor(chipStepFor); setChipStepFor(null); }
     setChipInput('');

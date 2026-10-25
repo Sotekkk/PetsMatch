@@ -7,7 +7,9 @@ import { apiFetch } from '@/lib/api-fetch';
 import { STORE_ANDROID, STORE_IOS } from '@/lib/stores';
 
 export interface VerifPuce {
-  etat: 'aucun' | 'deja_a_vous' | 'detenu' | 'recuperable';
+  etat: 'aucun' | 'deja_a_vous' | 'detenu' | 'recuperable' | 'fiche_pro';
+  /** Professionnel qui a créé la fiche (etat 'fiche_pro'). */
+  pro?: string;
   animal?: { id?: string; nom: string | null; espece?: string | null; race?: string | null; photo_url?: string | null; date_naissance?: string | null };
   elevage?: string; correspondance?: boolean; demandeEnCours?: boolean;
 }
@@ -50,6 +52,11 @@ export function RecuperationModal({ verif, profileId, onFermer, onFini }: {
           <>
             <p className="font-bold text-[#1F2A2E]">{a?.nom ?? 'Cet animal'} est déjà dans vos animaux</p>
             <p className="text-sm text-gray-600">Cette puce correspond à une fiche qui vous appartient déjà.</p>
+          </>
+        ) : verif.etat === 'fiche_pro' ? (
+          <>
+            <p className="font-bold text-[#1F2A2E]">Fiche créée par un professionnel</p>
+            <p className="text-sm text-gray-600">Cette puce correspond à la fiche créée par {verif.pro ?? 'un professionnel'} pour son client. Si c’est votre animal, elle vous est proposée à la connexion quand votre adresse e-mail est celle donnée à ce professionnel ; sinon, demandez-lui de vous la transmettre.</p>
           </>
         ) : verif.etat === 'detenu' ? (
           <>

@@ -3,7 +3,9 @@
 // Clinique — nouveau patient dont le propriétaire n'a pas (forcément)
 // PetsMatch : client du fichier de la clinique (clients_clinique) + fiche
 // animal, via pm_creer_patient_clinique (migration_patients_clinique.sql).
-// Anti-doublon : n° de puce (pm_patient_existant) et compte PetsMatch.
+// Anti-doublon : n° de puce (pm_puce_existante : une puce = une fiche ;
+// fiche créée par un autre pro → rattachement « identité seule »,
+// pm_rattacher_fiche_pro) et compte PetsMatch.
 // Miroir app : lib/pages/pro/nouveau_patient_clinique_page.dart.
 
 import { useEffect, useState } from 'react';
@@ -28,7 +30,8 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
   const [a, setA] = useState({ nom: '', espece: 'chien', race: '', sexe: '', date_naissance: '', identification: '', poids: '', couleur: '' });
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [doublon, setDoublon] = useState<{ type: 'animal' | 'compte'; texte: string } | null>(null);
+  const [doublon, setDoublon] = useState<{ type: 'animal' | 'compte' | 'pro'; texte: string; animalId?: string } | null>(null);
+  const mot = estClinique ? 'patients' : 'clients';
 
   useEffect(() => {
     supabase.from('clients_clinique').select('id, nom, prenom, telephone, email')
@@ -47,12 +50,15 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
       if (!forcer) {
         // 1. Animal déjà sur PetsMatch (puce / tatouage)
         if (a.identification.trim().length >= 6) {
-          const { data } = await supabase.rpc('pm_patient_existant', { p_clinique: cliniqueProfileId, p_identification: a.identification.trim() });
-          const ex = ((data ?? []) as { nom: string | null; deja_patient: boolean }[])[0];
+          const { data } = await supabase.rpc('pm_puce_existante', { p_identification: a.identification.trim(), p_profile: cliniqueProfileId });
+          const ex = ((data ?? []) as { animal_id: string; nom: string | null; detenteur: string; deja_lie: boolean }[])[0];
           if (ex) {
-            setDoublon({ type: 'animal', texte: ex.deja_patient
-              ? `${ex.nom ?? 'Cet animal'} est déjà dans vos patients.`
-              : `Le n° ${a.identification.trim()} correspond à ${ex.nom ?? 'un animal'} déjà enregistré par son propriétaire sur PetsMatch. Demandez plutôt l'accès à son carnet (recherche par puce dans Mes patients).` });
+            const nom = ex.nom ?? 'Cet animal';
+            setDoublon(ex.deja_lie
+              ? { type: 'animal', texte: `${nom} est déjà dans vos ${mot}.` }
+              : ex.detenteur === 'pro'
+                ? { type: 'pro', animalId: ex.animal_id, texte: `${nom} a déjà une fiche, créée par un autre professionnel pour son client. Rattachez-la à vos ${mot} : vous verrez son identité et ajouterez vos propres documents. Son carnet de santé et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.` }
+                : { type: 'animal', texte: `Le n° ${a.identification.trim()} correspond à ${nom}, déjà enregistré par son ${ex.detenteur === 'eleveur' ? 'éleveur' : 'propriétaire'} sur PetsMatch. Demandez plutôt l'accès à son carnet (recherche par puce dans Mes ${mot}).` });
             setSaving(false); return;
           }
         }
@@ -68,12 +74,22 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
       const { data, error } = await supabase.rpc('pm_creer_patient_clinique', {
         p_clinique: cliniqueProfileId, p_client_id: clientExistant?.id ?? null, p_client: c, p_animal: a,
       });
-      if (error) { setErreur(error.code === 'P0001' ? error.message : `Création impossible : ${error.message}`); setSaving(false); return; }
+      if (error) { setErreur(error.code === 'P0001' || error.code === '23505' ? error.message : `Création impossible : ${error.message}`); setSaving(false); return; }
       onCree(String(data));
     } catch (e) {
       setErreur(`Création impossible : ${(e as Error).message}`);
       setSaving(false);
     }
+  }
+
+  /** Fiche créée par un autre pro : rattachement « identité seule ». */
+  async function rattacher(animalId: string) {
+    setErreur(null); setSaving(true);
+    const { data, error } = await supabase.rpc('pm_rattacher_fiche_pro', {
+      p_profile: cliniqueProfileId, p_animal: animalId, p_client_id: clientExistant?.id ?? null, p_client: clientExistant ? null : c,
+    });
+    if (error) { setErreur(error.code === 'P0001' ? error.message : `Rattachement impossible : ${error.message}`); setSaving(false); return; }
+    onCree(String(data));
   }
 
   const champ = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
@@ -158,6 +174,12 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
             <p>{doublon.texte}</p>
             {doublon.type === 'compte' && (
               <button onClick={() => { setDoublon(null); creer(true); }} className="font-bold underline">Créer quand même</button>
+            )}
+            {doublon.type === 'pro' && doublon.animalId && (
+              <button onClick={() => rattacher(doublon.animalId!)} disabled={saving}
+                className="px-3 py-2 rounded-lg text-white font-bold disabled:opacity-50" style={{ background: TEAL }}>
+                Rattacher à mes {mot}
+              </button>
             )}
           </div>
         )}

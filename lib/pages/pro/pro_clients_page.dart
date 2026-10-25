@@ -122,9 +122,10 @@ class _ProClientsPageState extends State<ProClientsPage>
       }
       final grants = await supa
           .from('animal_access')
-          .select('id, animal_id, granted_at, granted_by_profile_id')
+          .select('id, animal_id, granted_at, granted_by_profile_id, statut')
           .eq('pro_profile_id', proProfileId)
-          .inFilter('statut', ['active', 'write_requested', 'active_write'])
+          // 'identite' : fiche créée par un autre pro, rattachée (identité seule).
+          .inFilter('statut', ['active', 'write_requested', 'active_write', 'identite'])
           .order('granted_at', ascending: false);
 
       // Compléter avec les animaux des RDVs qui n'ont pas encore d'accès accordé
@@ -142,7 +143,10 @@ class _ProClientsPageState extends State<ProClientsPage>
       final Map<String, Map<String, dynamic>> seen = {};
       for (final g in grants as List) {
         final id = g['animal_id']?.toString();
-        if (id != null) seen[id] = {'animal_id': id, 'granted_by_profile_id': g['granted_by_profile_id'], 'granted_at': g['granted_at'], 'grant_id': g['id']?.toString()};
+        if (id != null) {
+          seen[id] = {'animal_id': id, 'granted_by_profile_id': g['granted_by_profile_id'], 'granted_at': g['granted_at'],
+              'grant_id': g['id']?.toString(), 'statut': g['statut']};
+        }
       }
       for (final r in rdvAnimals as List) {
         final id = r['animal_id']?.toString();
@@ -161,6 +165,22 @@ class _ProClientsPageState extends State<ProClientsPage>
           .from('animaux')
           .select('id, nom, espece, race, sexe, photo_url, date_naissance, uid_eleveur, uid_proprietaire')
           .inFilter('id', animalIds);
+
+      // Client du fichier de CE pro (fiche créée par un pro, client sans appli).
+      final clientNoms = <String, String>{};
+      try {
+        final liens = await supa.from('animaux_clients_pro')
+            .select('animal_id, client_id').eq('pro_profile_id', proProfileId).inFilter('animal_id', animalIds);
+        final parClient = <String, String>{
+          for (final l in liens as List) if (l['client_id'] != null) l['client_id'].toString(): l['animal_id'].toString(),
+        };
+        if (parClient.isNotEmpty) {
+          final cs = await supa.from('clients_clinique').select('id, nom, prenom').inFilter('id', parClient.keys.toList());
+          for (final c in cs as List) {
+            clientNoms[parClient[c['id'].toString()]!] = '${c['prenom'] ?? ''} ${c['nom'] ?? ''}'.trim();
+          }
+        }
+      } catch (_) {}
 
       // Noms des propriétaires depuis user_profiles (granted_by_profile_id)
       final ownerProfileIds = seen.values
@@ -193,7 +213,8 @@ class _ProClientsPageState extends State<ProClientsPage>
               ...a,
               '_owner_uid': extra['owner_uid'],
               '_owner_profile_id': ownerPid,
-              '_owner_name': ownerNames[ownerPid ?? ''] ?? 'Propriétaire',
+              '_owner_name': (clientNoms[anId] ?? '').isNotEmpty ? clientNoms[anId] : (ownerNames[ownerPid ?? ''] ?? 'Propriétaire'),
+              '_identite_seule': extra['statut'] == 'identite',
               '_granted_at': extra['granted_at'],
               '_grant_id': extra['grant_id'],
             };
@@ -689,6 +710,12 @@ class _AnimalCard extends StatelessWidget {
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
                     overflow: TextOverflow.ellipsis)),
               ]),
+              if (animal['_identite_seule'] == true)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text('Identité seule · carnet privé tant que le propriétaire ne l’a pas partagé',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                ),
             ])),
             // Ostéo / kiné : une seule action, « Nouvelle consultation » (la
             // fiche s'ouvre en touchant la carte ; le reste y est accessible).

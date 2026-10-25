@@ -5331,6 +5331,7 @@ function AnimalFichePageInner() {
                 const badge = g.statut === 'active_write' ? { label: 'Écriture autorisée', cls: 'bg-green-100 text-green-700' }
                   : g.statut === 'write_requested' ? { label: 'Demande d\'accès écriture', cls: 'bg-amber-100 text-amber-700' }
                   : g.statut === 'active' ? { label: 'Accès accordé', cls: 'bg-green-100 text-green-700' }
+                  : g.statut === 'identite' ? { label: 'Identité seule · carnet non partagé', cls: 'bg-gray-100 text-gray-700' }
                   : { label: 'En attente de validation', cls: 'bg-amber-100 text-amber-700' };
                 return (
                   <div key={g.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 shadow-sm">
@@ -5343,6 +5344,16 @@ function AnimalFichePageInner() {
                       </span>
                     </div>
                     <div className="flex gap-2">
+                      {g.statut === 'identite' && (
+                        <button
+                          onClick={() => approveVetAcces(g.id)}
+                          disabled={vetAccesSaving === g.id}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#26A69A] text-white hover:bg-[#1e9087] disabled:opacity-50"
+                          style={{ fontFamily: 'Galey, sans-serif' }}
+                        >
+                          {vetAccesSaving === g.id ? '…' : 'Partager le carnet'}
+                        </button>
+                      )}
                       {g.statut === 'pending' && (
                         <button
                           onClick={() => approveVetAcces(g.id)}
@@ -5363,7 +5374,7 @@ function AnimalFichePageInner() {
                           {vetAccesSaving === g.id ? '…' : 'Autoriser l\'écriture'}
                         </button>
                       )}
-                      {(g.statut === 'active' || g.statut === 'active_write') && (
+                      {(g.statut === 'active' || g.statut === 'active_write' || g.statut === 'identite') && (
                         <button
                           onClick={() => revokeVetAcces(g.id)}
                           disabled={vetAccesSaving === g.id}

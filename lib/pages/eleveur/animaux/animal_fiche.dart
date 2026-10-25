@@ -206,6 +206,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _healthAccessStatut;
   String? _healthAccessGrantId;
   bool get _canWriteHealth => _isHealthPro || _healthAccessStatut == 'active_write';
+  /// Fiche créée par un autre pro : identité et documents de ce pro seulement,
+  /// le carnet reste privé tant que le propriétaire ne l'a pas partagé.
+  bool get _carnetPrive => _healthAccessStatut == 'identite';
   // Vet access (visible au propriétaire)
   List<Map<String, dynamic>> _vetAcces = [];
   // Owner uid (utilisé dans le mode vétérinaire)
@@ -482,9 +485,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final proProfile = await _supa.from('user_profiles_complet')
-          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
-      final pid = proProfile?['id'] as String?;
+      // Profil pro ACTIF (pas le profil principal : un compte peut être
+      // éleveur et vétérinaire), sinon le profil principal.
+      String? pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (pid == null) {
+        final proProfile = await _supa.from('user_profiles_complet')
+            .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+        pid = proProfile?['id'] as String?;
+      }
       if (pid == null) return;
       final row = await _supa.from('animal_access')
           .select('id, statut').eq('animal_id', widget.animalId!)
@@ -2542,7 +2550,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   /// Vue de l'onglet Santé du vétérinaire : carnet / reproduction / ostéo-kiné.
   String _santeVue = 'carnet';
 
-  Widget _carnetVet() => _CarnetSanteTab(
+  Widget _carnetVet() => _carnetPrive ? const _CarnetPriveTab() : _CarnetSanteTab(
         animalId: widget.animalId, vetMode: true, espece: _espece,
         canWrite: _canWriteHealth,
         writeRequested: _healthAccessStatut == 'write_requested',
@@ -2717,13 +2725,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             : widget.vetMode
             ? [
                 _IdentiteTab(this),
-                _CarnetSanteTab(
-                  animalId: widget.animalId, vetMode: true, espece: _espece,
-                  canWrite: _canWriteHealth,
-                  writeRequested: _healthAccessStatut == 'write_requested',
-                  onRequestWrite: (!_canWriteHealth && _healthAccessGrantId != null && _healthAccessStatut != 'write_requested')
-                      ? _requestHealthWriteAccess : null,
-                ),
+                _carnetVet(),
                 // Le régime alimentaire n'a pas de mode lecture seule intégré
                 // (_AlimentationTab n'a jamais été pensé pour un viewer externe) —
                 // AbsorbPointer (posé DANS son ScrollView, cf. sa méthode
@@ -5752,6 +5754,31 @@ class _ReproListState extends State<_ReproList> {
 }
 
 // ─── Onglet Carnet Santé ──────────────────────────────────────────────────────
+
+/// Carnet d'un animal dont la fiche a été créée par un autre professionnel :
+/// privé tant que le propriétaire ne l'a pas partagé (secret professionnel).
+class _CarnetPriveTab extends StatelessWidget {
+  const _CarnetPriveTab();
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.lock_outline, size: 44, color: Colors.grey.shade400),
+            const SizedBox(height: 12),
+            const Text('Carnet de santé privé', textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+            const SizedBox(height: 6),
+            Text('La fiche de cet animal a été créée par un autre professionnel. Vous voyez son identité et vos '
+                'propres documents ; son carnet et les documents de l’autre professionnel restent privés tant que '
+                'le propriétaire ne les a pas partagés.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Colors.grey.shade600, height: 1.4)),
+          ]),
+        ),
+      );
+}
 
 class _CarnetSanteTab extends StatelessWidget {
   final String? animalId;

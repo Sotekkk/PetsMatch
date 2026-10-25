@@ -55,8 +55,9 @@ function age(dateNaissance: string | null): string {
 }
 
 interface ChipResult {
-  id: number; nom: string; espece: string; race: string; photo_url: string | null;
-  uid_eleveur: string | null; uid_proprietaire: string | null;
+  id: string; nom: string; espece: string; race: string; photo_url: string | null;
+  /** particulier / eleveur / pro (fiche créée par un autre pro). */
+  detenteur: string; owner_uid: string | null; owner_profile_id: string | null;
 }
 
 export default function MesPatientsPage() {
@@ -88,16 +89,18 @@ export default function MesPatientsPage() {
     setChipResult(null);
     setChipRequestStatus(null);
     try {
-      const { data } = await supabase.from('animaux')
-        .select('id, nom, espece, race, photo_url, identification, uid_eleveur, uid_proprietaire')
-        .eq('identification', normalized)
-        .limit(1)
-        .maybeSingle();
-      if (data) {
-        setChipResult(data as unknown as ChipResult);
+      // Une puce = une fiche : recherche côté serveur, sur toutes les fiches.
+      const { data: hits } = await supabase.rpc('pm_puce_existante', { p_identification: normalized, p_profile: activeProfileId ?? null });
+      const hit = ((hits ?? []) as { animal_id: string; nom: string | null; espece: string | null; detenteur: string; owner_uid: string | null; owner_profile_id: string | null }[])[0];
+      if (hit) {
+        const { data: row } = await supabase.from('animaux').select('race, photo_url').eq('id', hit.animal_id).maybeSingle();
+        setChipResult({
+          id: hit.animal_id, nom: hit.nom ?? 'Animal', espece: hit.espece ?? '', race: row?.race ?? '', photo_url: row?.photo_url ?? null,
+          detenteur: hit.detenteur, owner_uid: hit.owner_uid, owner_profile_id: hit.owner_profile_id,
+        });
         if (activeProfileId) {
           const { data: existing } = await supabase.from('animal_access')
-            .select('statut').eq('pro_profile_id', activeProfileId).eq('animal_id', data.id)
+            .select('statut').eq('pro_profile_id', activeProfileId).eq('animal_id', hit.animal_id)
             .neq('statut', 'revoked').limit(1).maybeSingle();
           setChipRequestStatus((existing?.statut as string | undefined) ?? null);
         }
@@ -109,12 +112,26 @@ export default function MesPatientsPage() {
 
   async function requestAccessByChip() {
     if (!chipResult || !activeProfileId || !user) return;
-    const ownerUid = chipResult.uid_eleveur ?? chipResult.uid_proprietaire;
+    // Fiche créée par un autre pro : rattachement « identité seule » (son
+    // carnet et ses documents restent privés).
+    if (chipResult.detenteur === 'pro') {
+      setChipRequesting(true);
+      const { error } = await supabase.rpc('pm_rattacher_fiche_pro', { p_profile: activeProfileId, p_animal: chipResult.id, p_client_id: null, p_client: null });
+      setChipRequesting(false);
+      if (error) { alert(error.message); return; }
+      setChipRequestStatus('identite');
+      return;
+    }
+    const ownerUid = chipResult.owner_uid;
     if (!ownerUid) return;
     setChipRequesting(true);
     try {
-      const { data: ownerProfile } = await supabase.from('user_profiles_complet')
-        .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+      let ownerProfile: { id: string } | null = chipResult.owner_profile_id ? { id: chipResult.owner_profile_id } : null;
+      if (!ownerProfile) {
+        const { data } = await supabase.from('user_profiles_complet')
+          .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+        ownerProfile = data as { id: string } | null;
+      }
       if (!ownerProfile) throw new Error('Profil propriétaire introuvable');
       await supabase.from('animal_access').upsert({
         pro_profile_id: activeProfileId,
@@ -239,12 +256,25 @@ export default function MesPatientsPage() {
       const animalErr = res.error;
 
       if (animalErr) console.error('[mes-patients] animaux error:', animalErr);
-      // Patients créés par la clinique : nom du client.
-      const clientIds = [...new Set((animalRows ?? []).map(a => a.client_clinique_id).filter(Boolean) as string[])];
+      // Client de CE pro pour l'animal : fiche rattachée (créée par un autre
+      // pro, animaux_clients_pro), sinon client de la fiche qu'il a créée.
+      const clientParAnimal = new Map<string, string>();
+      if (activeProfileId) {
+        const { data: liens } = await supabase.from('animaux_clients_pro').select('animal_id, client_id')
+          .eq('pro_profile_id', activeProfileId).in('animal_id', animalIds);
+        for (const l of (liens ?? []) as { animal_id: string; client_id: string | null }[]) if (l.client_id) clientParAnimal.set(l.animal_id, l.client_id);
+      }
+      for (const a of (animalRows ?? []) as Animal[]) {
+        if (!clientParAnimal.has(String(a.id)) && a.client_clinique_id) clientParAnimal.set(String(a.id), a.client_clinique_id);
+      }
+      const clientIds = [...new Set(clientParAnimal.values())];
       if (clientIds.length) {
         const { data: cs } = await supabase.from('clients_clinique').select('id, nom, prenom').in('id', clientIds);
         const noms = new Map(((cs ?? []) as { id: string; nom: string; prenom: string | null }[]).map(c => [c.id, `${c.prenom ?? ''} ${c.nom}`.trim()]));
-        for (const a of (animalRows ?? []) as Animal[]) if (a.client_clinique_id) a.clientNom = noms.get(a.client_clinique_id) ?? '';
+        for (const a of (animalRows ?? []) as Animal[]) {
+          const cid = clientParAnimal.get(String(a.id));
+          if (cid) { a.client_clinique_id = a.client_clinique_id ?? cid; a.clientNom = noms.get(cid) ?? ''; }
+        }
       }
 
       const animalMap = new Map((animalRows ?? []).map(a => [a.id, a]));
@@ -361,9 +391,15 @@ export default function MesPatientsPage() {
                       {a.client_clinique_id && (
                         <p className="text-[11px] font-semibold text-[#0C5C6C]">🏥 Fiche clinique{a.clientNom ? ` · ${a.clientNom}` : ''}</p>
                       )}
-                      <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-                        Accès accordé
-                      </span>
+                      {g.statut === 'identite' ? (
+                        <span className="text-[10px] font-bold text-[#0C5C6C] bg-[#E8F0F2] px-1.5 py-0.5 rounded-full">
+                          Identité seule · carnet privé
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+                          Accès accordé
+                        </span>
+                      )}
                     </div>
                     {(catPro === 'education' || catPro === 'garde') && <span className="w-7" />}
                     {!g.id.startsWith('rdv-') && <span className="w-7" />}
@@ -455,18 +491,23 @@ export default function MesPatientsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm text-[#1F2A2E]">{chipResult.nom}</p>
                     <p className="text-xs text-gray-500">{chipResult.race || chipResult.espece}</p>
+                    {chipResult.detenteur === 'pro' && (
+                      <p className="text-[11px] text-gray-500">Fiche créée par un autre professionnel : vous verrez son identité et ajouterez vos documents ; son carnet reste privé tant que le propriétaire ne l’a pas partagé.</p>
+                    )}
                   </div>
                   {chipRequestStatus === 'pending' ? (
                     <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1.5 rounded-full">Demande envoyée</span>
                   ) : chipRequestStatus === 'active' || chipRequestStatus === 'active_write' ? (
                     <span className="text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1.5 rounded-full">Accès accordé</span>
+                  ) : chipRequestStatus === 'identite' ? (
+                    <span className="text-xs font-bold text-[#0C5C6C] bg-[#E8F0F2] px-2.5 py-1.5 rounded-full">Rattaché · identité seule</span>
                   ) : (
                     <button
                       onClick={requestAccessByChip}
                       disabled={chipRequesting}
                       className="text-xs font-bold text-white bg-[#6E9E57] px-3 py-1.5 rounded-full disabled:opacity-50"
                     >
-                      {chipRequesting ? '…' : 'Demander l\'accès'}
+                      {chipRequesting ? '…' : chipResult.detenteur === 'pro' ? 'Rattacher à mes patients' : 'Demander l\'accès'}
                     </button>
                   )}
                 </div>

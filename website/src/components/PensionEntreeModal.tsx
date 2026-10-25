@@ -144,7 +144,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     setTopSearching(true);
     setTopNotFound(false);
     try {
-      const found = await lookupAnimalByChip(topChip.trim());
+      const found = await lookupAnimalByChip(topChip.trim(), proProfileId);
       if (!found.animal_id) { setTopNotFound(true); return; }
       setAnimalId(found.animal_id);
       setForm(f => ({
@@ -204,7 +204,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     }
     setLinkingFiche(true);
     try {
-      const found = await lookupAnimalByChip(puce);
+      const found = await lookupAnimalByChip(puce, proProfileId);
       if (!found.animal_id) {
         setError('Aucun animal trouvé avec cette puce.');
         return;
@@ -242,7 +242,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     if (!chip || !chip.trim()) return;
     setLinkingFiche(true);
     try {
-      const found = await lookupAnimalByChip(chip.trim());
+      const found = await lookupAnimalByChip(chip.trim(), proProfileId);
       if (!found.animal_id) {
         setError('Aucun animal trouvé avec cette puce.');
         return;

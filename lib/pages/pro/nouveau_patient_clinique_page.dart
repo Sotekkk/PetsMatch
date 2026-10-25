@@ -1,8 +1,10 @@
 // Clinique — nouveau patient dont le propriétaire n'a pas (forcément)
 // PetsMatch : client du fichier de la clinique (clients_clinique) + fiche
 // animal, via pm_creer_patient_clinique (migration_patients_clinique.sql).
-// Anti-doublon : n° de puce (pm_patient_existant → demande d'accès au carnet)
-// et compte PetsMatch (e-mail / téléphone). Miroir site :
+// Anti-doublon : n° de puce (pm_puce_existante : une puce = une fiche ;
+// propriétaire → demande d'accès au carnet ; fiche créée par un autre pro →
+// rattachement « identité seule », pm_rattacher_fiche_pro) et compte
+// PetsMatch (e-mail / téléphone). Miroir site :
 // website/src/components/pro/NouveauPatientModal.tsx.
 
 import 'package:flutter/material.dart';
@@ -68,18 +70,33 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
     // 1. Animal déjà sur PetsMatch (puce / tatouage)
     if (_ident.text.trim().length >= 6) {
       try {
-        final rows = await _supa.rpc('pm_patient_existant',
-            params: {'p_clinique': widget.cliniqueProfileId, 'p_identification': _ident.text.trim()});
+        final rows = await _supa.rpc('pm_puce_existante',
+            params: {'p_identification': _ident.text.trim(), 'p_profile': widget.cliniqueProfileId});
         final liste = List<Map<String, dynamic>>.from(rows as List);
         if (liste.isNotEmpty && mounted) {
           final a = liste.first;
-          if (a['deja_patient'] == true) {
-            _snack('${a['nom'] ?? 'Cet animal'} est déjà dans vos patients.', c: Colors.orange);
+          final mot = widget.estClinique ? 'patients' : 'clients';
+          if (a['deja_lie'] == true) {
+            _snack('${a['nom'] ?? 'Cet animal'} est déjà dans vos $mot.', c: Colors.orange);
+            return false;
+          }
+          if (a['detenteur'] == 'pro') {
+            final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+              title: const Text('Fiche déjà créée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              content: Text('${a['nom'] ?? 'Cet animal'} a déjà une fiche, créée par un autre professionnel pour son client. Rattachez-la à vos $mot : vous verrez son identité et ajouterez vos propres documents. Son carnet de santé et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Rattacher à mes $mot')),
+              ],
+            ));
+            if (ok == true && mounted) await _rattacher(a['animal_id'].toString());
             return false;
           }
           final demander = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
             title: const Text('Animal déjà sur PetsMatch', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            content: Text('Le n° ${_ident.text.trim()} correspond à ${a['nom'] ?? 'un animal'} déjà enregistré par son propriétaire. '
+            content: Text('Le n° ${_ident.text.trim()} correspond à ${a['nom'] ?? 'un animal'} déjà enregistré par son '
+                '${a['detenteur'] == 'eleveur' ? 'éleveur' : 'propriétaire'}. '
                 'Demandez plutôt l\'accès à son carnet de santé (le propriétaire valide).'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
@@ -121,6 +138,24 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
     return true;
   }
 
+  /// Fiche créée par un autre pro : rattachement « identité seule ».
+  Future<void> _rattacher(String animalId) async {
+    try {
+      final id = await _supa.rpc('pm_rattacher_fiche_pro', params: {
+        'p_profile': widget.cliniqueProfileId,
+        'p_animal': animalId,
+        'p_client_id': _clientExistant?['id'],
+        'p_client': _clientExistant != null ? null : {
+          'nom': _nom.text, 'prenom': _prenom.text, 'telephone': _tel.text, 'email': _email.text,
+          'adresse': _adresse.text, 'code_postal': _cp.text, 'ville': _ville.text,
+        },
+      });
+      if (mounted) Navigator.pop(context, id?.toString());
+    } on PostgrestException catch (e) {
+      _snack(e.code == 'P0001' ? e.message : 'Rattachement impossible : ${e.message}', c: Colors.red);
+    }
+  }
+
   Future<void> _enregistrer() async {
     if (_animalNom.text.trim().isEmpty || (_clientExistant == null && _nom.text.trim().isEmpty)) {
       _snack('Nom du propriétaire et nom de l\'animal obligatoires.', c: Colors.orange);
@@ -144,7 +179,7 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
       });
       if (mounted) Navigator.pop(context, id?.toString());
     } on PostgrestException catch (e) {
-      _snack(e.code == 'P0001' ? e.message : 'Création impossible : ${e.message}', c: Colors.red);
+      _snack(e.code == 'P0001' || e.code == '23505' ? e.message : 'Création impossible : ${e.message}', c: Colors.red);
     } catch (e) {
       _snack('Création impossible : $e', c: Colors.red);
     } finally {

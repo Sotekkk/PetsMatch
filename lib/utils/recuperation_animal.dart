@@ -18,7 +18,7 @@ Future<Map<String, dynamic>> appelRecuperation(Map<String, dynamic> body) async 
   return j;
 }
 
-/// État d'une puce pour l'utilisateur : aucun | deja_a_vous | detenu | recuperable.
+/// État d'une puce pour l'utilisateur : aucun | deja_a_vous | detenu | recuperable | fiche_pro.
 Future<Map<String, dynamic>> verifierPuce(String puce) => appelRecuperation({'action': 'verifier', 'puce': puce});
 
 /// Fenêtre « animal déjà enregistré ». Renvoie l'id de l'animal rattaché
@@ -83,6 +83,10 @@ class _RecuperationSheetState extends State<_RecuperationSheet> {
           _t('$_nom est déjà dans vos animaux', taille: 16, w: FontWeight.w700),
           const SizedBox(height: 6),
           _t('Cette puce correspond à une fiche qui vous appartient déjà.', c: Colors.grey.shade700),
+        ] else if (etat == 'fiche_pro') ...[
+          _t('Fiche créée par un professionnel', taille: 16, w: FontWeight.w700),
+          const SizedBox(height: 6),
+          _t('Cette puce correspond à la fiche créée par ${widget.verif['pro'] ?? 'un professionnel'} pour son client. Si c’est votre animal, elle vous est proposée à la connexion quand votre adresse e-mail est celle donnée à ce professionnel ; sinon, demandez-lui de vous la transmettre.', c: Colors.grey.shade700),
         ] else if (etat == 'detenu') ...[
           _t('Puce déjà enregistrée', taille: 16, w: FontWeight.w700),
           const SizedBox(height: 6),

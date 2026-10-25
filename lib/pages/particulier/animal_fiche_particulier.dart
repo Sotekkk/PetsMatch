@@ -126,6 +126,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   // Pension access (read-only accesses granted to pros)
   List<Map<String, dynamic>> _pensionAcces = [];
+  /// Pros rattachés à la fiche créée par l'un d'eux (« identité seule ») :
+  /// le propriétaire choisit de leur partager le carnet.
+  List<Map<String, dynamic>> _accesIdentite = [];
   bool _hasPensionUpdates = false;
   bool _hasEducationRapports = false;
   bool _hasDevis = false;
@@ -475,6 +478,21 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           .contains('permissions', ['write_notes']);
       acces = List<Map<String, dynamic>>.from(rows);
     } catch (_) {}
+    var identite = _accesIdentite;
+    try {
+      final rows = List<Map<String, dynamic>>.from(await _supa.from('animal_access')
+          .select('id, pro_profile_id').eq('animal_id', _animalId!).eq('statut', 'identite'));
+      final ids = rows.map((r) => r['pro_profile_id']?.toString()).whereType<String>().toList();
+      final noms = <String, String>{};
+      if (ids.isNotEmpty) {
+        final pros = await _supa.from('user_profiles_complet').select('id, nom, firstname, lastname').inFilter('id', ids);
+        for (final pr in pros as List) {
+          final n = (pr['nom']?.toString() ?? '').trim();
+          noms[pr['id'].toString()] = n.isNotEmpty ? n : '${pr['firstname'] ?? ''} ${pr['lastname'] ?? ''}'.trim();
+        }
+      }
+      identite = [for (final r in rows) {...r, 'pro_nom': noms[r['pro_profile_id']?.toString()] ?? 'Professionnel'}];
+    } catch (_) {}
     try {
       final updates = await _supa.from('pension_updates').select('id').eq('animal_id', _animalId!).limit(1);
       hasUpd = (updates as List).isNotEmpty;
@@ -509,6 +527,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     if (!mounted) return;
     setState(() {
       _pensionAcces = acces;
+      _accesIdentite = identite;
       _hasPensionUpdates = hasUpd;
       _hasEducationRapports = hasRap;
       _hasDevis = hasDev;
@@ -534,6 +553,32 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _tabs.dispose();
     _tabs = TabController(
         length: n, vsync: this, initialIndex: prev < n ? prev : n - 1);
+  }
+
+  /// Pro rattaché (identité seule) : le propriétaire lui partage le carnet.
+  Future<void> _partagerCarnet(String accesId, String proNom) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Partager le carnet ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('$proNom pourra consulter le carnet de santé de ${_nomCtrl.text}.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Partager', style: TextStyle(fontFamily: 'Galey'))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _supa.from('animal_access').update({'statut': 'active', 'granted_at': DateTime.now().toUtc().toIso8601String()}).eq('id', accesId);
+      _loadPensionAcces();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Partage impossible, réessayez.')));
+      }
+    }
   }
 
   Future<void> _revokePensionAcces(String accesId, String proNom) async {
@@ -1287,6 +1332,47 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           _tabShortcut('Pension & Garde',
               'Photos, vidéos et nouvelles de votre animal', Icons.photo_camera_back_outlined,
               const Color(0xFF6E9E57), () => _goToTab('Pension & Garde')),
+        // Pros rattachés à une fiche créée par l'un d'eux : carnet non partagé.
+        if (_accesIdentite.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Professionnels rattachés',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade500, letterSpacing: 0.4)),
+              const SizedBox(height: 8),
+              for (final a in _accesIdentite)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0C5C6C).withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF0C5C6C).withValues(alpha: 0.18)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.badge_outlined, size: 18, color: Color(0xFF0C5C6C)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(a['pro_nom']?.toString() ?? 'Professionnel',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                      const Text('Voit l’identité, pas le carnet de santé',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6B7280))),
+                    ])),
+                    TextButton(
+                      onPressed: () => _partagerCarnet(a['id'] as String, a['pro_nom']?.toString() ?? 'Ce professionnel'),
+                      child: const Text('Partager le carnet', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                    TextButton(
+                      onPressed: () => _revokePensionAcces(a['id'] as String, a['pro_nom']?.toString() ?? 'Ce professionnel'),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red.shade600, padding: const EdgeInsets.symmetric(horizontal: 6)),
+                      child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                ),
+            ]),
+          ),
+        ],
         // Accès lecture pension actifs
         if (_pensionAcces.isNotEmpty) ...[
           Padding(

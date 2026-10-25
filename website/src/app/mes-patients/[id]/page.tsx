@@ -780,10 +780,13 @@ function PatientDetailPageInner() {
     : grant?.statut === 'active_write';
   const writeRequested = grant?.statut === 'write_requested';
   const isPending = grant?.statut === 'pending';
+  // Fiche créée par un autre pro : identité + ses propres documents ; le
+  // carnet reste privé tant que le propriétaire ne l'a pas partagé.
+  const identiteSeule = grant?.statut === 'identite';
   // Les rapports de séance sont le contenu propre de l'éducateur (ses notes de
   // séance), pas une modification de la fiche du propriétaire — n'importe quel
   // accès accordé (lecture ou écriture) suffit pour les gérer, comme côté app.
-  const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write';
+  const hasReportAccess = grant?.statut === 'active' || grant?.statut === 'active_write' || identiteSeule;
 
   // Toiletteur : Synthèse · Prestations · Consignes · Historique (Identité /
   // Santé ouvrables depuis la Synthèse).
@@ -1780,6 +1783,9 @@ function PatientDetailPageInner() {
           {isPending && (
             <span className="text-[10px] font-bold bg-amber-400/30 text-amber-100 px-2 py-0.5 rounded-full">⏳ En attente</span>
           )}
+          {identiteSeule && (
+            <span className="text-[10px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full">Identité seule</span>
+          )}
         </div>
 
         {/* Animal summary */}
@@ -1880,7 +1886,7 @@ function PatientDetailPageInner() {
             )}
 
             {/* Accès en écriture pour non-vets */}
-            {!isVet && grant && (
+            {!isVet && grant && !identiteSeule && (
               <Card title="Accès au dossier">
                 {hasWriteAccess ? (
                   <div className="flex items-center gap-2 text-green-600 text-sm">
@@ -1918,7 +1924,13 @@ function PatientDetailPageInner() {
         )}
 
         {/* ── Santé ── */}
-        {tab === 'Santé' && (
+        {tab === 'Santé' && identiteSeule && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
+            <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Carnet de santé privé</p>
+            <p className="text-sm text-gray-600 mt-1">La fiche de cet animal a été créée par un autre professionnel. Vous voyez son identité et vos propres documents ; son carnet et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.</p>
+          </div>
+        )}
+        {tab === 'Santé' && !identiteSeule && (
           <>
             {isPensionType && (
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 flex gap-2 items-center text-blue-700 text-xs font-medium">
@@ -3009,14 +3021,18 @@ function PatientDetailPageInner() {
              carnet de santé reste dans l'onglet Santé ── */}
         {tab === 'Consultations' && isVet && catPro !== 'sante' && (
           <>
-            {!hasWriteAccess && !writeRequested && (
+            {identiteSeule ? (
+              <p className="text-xs text-gray-600 bg-[#F4F7F8] border border-gray-200 rounded-lg px-3 py-2">
+                Fiche créée par un autre professionnel : vos comptes rendus et ordonnances restent privés ; le carnet de santé n&apos;est pas partagé.
+              </p>
+            ) : !hasWriteAccess && !writeRequested && (
               <p className="text-xs text-[#8A5A00] bg-[#FFF8EA] border border-[#F3E2BD] rounded-lg px-3 py-2">
                 Lecture seule — demandez l&apos;accès en écriture depuis l&apos;onglet Identité.
               </p>
             )}
             <ConsultationsVet
               crs={comptesRendus as CrVet[]} ordos={ordonnances as OrdoVet[]}
-              peutCr={hasWriteAccess} peutCarnet={hasWriteAccess} peutValider={hasWriteAccess}
+              peutCr={hasWriteAccess || identiteSeule} peutCarnet={hasWriteAccess} peutValider={hasWriteAccess || identiteSeule}
               menuCarnet={[
                 { label: 'Vaccin', onClick: () => setAddingType('vaccin') },
                 { label: 'Traitement', onClick: () => setAddingType('traitement') },
