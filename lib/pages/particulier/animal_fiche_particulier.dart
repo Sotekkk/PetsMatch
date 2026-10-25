@@ -3106,7 +3106,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       try {
         await ecrire();
       } on PostgrestException catch (e) {
-        if (e.code != '42703' || !ligne.containsKey('lien_resultat')) rethrow;
+        // 42703 en lecture, PGRST204 en écriture (« Could not find the 'lien_resultat' column »).
+        if (!const {'42703', 'PGRST204'}.contains(e.code) || !ligne.containsKey('lien_resultat')) rethrow;
         ligne.remove('lien_resultat');
         await ecrire();
       }

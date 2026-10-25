@@ -109,7 +109,8 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance, exi
       let { error } = await ecrire();
       // Colonne lien_resultat absente (migration_tests_genetiques_lien.sql pas
       // passée) : le test est gardé, sans le lien.
-      if (error?.code === '42703' && 'lien_resultat' in ligne) {
+      // 42703 en lecture, PGRST204 en écriture (« Could not find the 'lien_resultat' column »).
+      if ((error?.code === '42703' || error?.code === 'PGRST204') && 'lien_resultat' in ligne) {
         delete ligne.lien_resultat;
         ({ error } = await ecrire());
       }
