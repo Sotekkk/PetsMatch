@@ -3072,6 +3072,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final nom = nomCtrl.text.trim();
       if (nom.isEmpty) return;
       controlerDateTestGenetique(date, _dateNaissance);
+      if (lienCtrl.text.trim().isNotEmpty && lienWeb(lienCtrl.text).isEmpty) {
+        throw const SaisieInvalide('Lien du résultat : adresse web invalide (ex. https://embarkvet.com/…).');
+      }
       final hit = presetsFor(categorie).where((t) => t.code == selectedCode).toList();
       final ligne = <String, dynamic>{
         'id': '${DateTime.now().millisecondsSinceEpoch}',
@@ -3086,16 +3089,26 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'laboratoire': laboCtrl.text.trim().isEmpty ? null : laboCtrl.text.trim(),
         'date_test': date?.toIso8601String().substring(0, 10),
         'url': url,
-        if (lienCtrl.text.trim().isNotEmpty) 'lien_resultat': lienCtrl.text.trim(),
+        if (lienWeb(lienCtrl.text).isNotEmpty) 'lien_resultat': lienWeb(lienCtrl.text)
+        else if (existant?['lien_resultat'] != null) 'lien_resultat': null,
         'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
         'created_at': DateTime.now().toUtc().toIso8601String(),
       };
       if (existant != null) {
         ligne.remove('id');
         ligne.remove('created_at');
-        await _supa.from('tests_genetiques').update(ligne).eq('id', existant['id']);
-      } else {
-        await _supa.from('tests_genetiques').insert(ligne);
+      }
+      // Colonne lien_resultat absente en base (migration_tests_genetiques_lien.sql
+      // pas passée) : le test est enregistré sans le lien plutôt que refusé.
+      Future<void> ecrire() => existant != null
+          ? _supa.from('tests_genetiques').update(ligne).eq('id', existant['id'])
+          : _supa.from('tests_genetiques').insert(ligne);
+      try {
+        await ecrire();
+      } on PostgrestException catch (e) {
+        if (e.code != '42703' || !ligne.containsKey('lien_resultat')) rethrow;
+        ligne.remove('lien_resultat');
+        await ecrire();
       }
       if (categorie == 'adn' && resultat == 'etabli') {
         try {
@@ -3232,12 +3245,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                       ),
                       Expanded(
                         // Lien (ex. résultat de test génétique en ligne) : cliquable.
-                        child: e.$2.startsWith('http')
+                        child: e.$2.startsWith('http') || e.$1 == 'Document joint' || e.$1 == 'Résultat en ligne'
                             ? GestureDetector(
                                 onTap: () => e.$1 == 'Document joint'
-                                    ? DocumentViewerPage.open(context, e.$2, title: sectionTitle)
-                                    : launchUrl(Uri.parse(e.$2), mode: LaunchMode.externalApplication),
-                                child: Text(e.$2,
+                                    ? DocumentViewerPage.open(context, record['url']?.toString() ?? '', title: sectionTitle)
+                                    : launchUrl(Uri.parse(lienWeb(e.$2)), mode: LaunchMode.externalApplication),
+                                child: Text(e.$1 == 'Document joint' ? nomFichier(e.$2) : e.$2,
                                     style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600,
                                         color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
                               )

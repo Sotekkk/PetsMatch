@@ -8406,12 +8406,12 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
                       style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, fontWeight: FontWeight.w600, color: resultatColor(res)),
                     ),
                   ),
-                if ((t['lien_resultat'] as String?)?.isNotEmpty == true)
+                if (lienWeb(t['lien_resultat']?.toString()).isNotEmpty)
                   IconButton(
                     tooltip: 'Résultat en ligne',
                     icon: const Icon(Icons.link, size: 16, color: Color(0xFF0C5C6C)),
                     padding: const EdgeInsets.only(left: 4), constraints: const BoxConstraints(),
-                    onPressed: () => launchUrl(Uri.parse(t['lien_resultat'] as String), mode: LaunchMode.externalApplication),
+                    onPressed: () => launchUrl(Uri.parse(lienWeb(t['lien_resultat']?.toString())), mode: LaunchMode.externalApplication),
                   ),
                 if ((t['url'] as String?)?.isNotEmpty == true)
                   IconButton(
@@ -8591,6 +8591,9 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
       final nom = _nomCtrl.text.trim();
       if (nom.isEmpty) throw const SaisieInvalide('Indiquez le nom du test.');
       controlerDateTestGenetique(_date, widget.dateNaissance);
+      if (_lienCtrl.text.trim().isNotEmpty && lienWeb(_lienCtrl.text).isEmpty) {
+        throw const SaisieInvalide('Lien du résultat : adresse web invalide (ex. https://embarkvet.com/…).');
+      }
       final presetHit = _presets.where((t) => t.code == _selectedCode).toList();
       final ligne = <String, dynamic>{
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
@@ -8606,14 +8609,22 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
         'laboratoire': _laboCtrl.text.trim().isEmpty ? null : _laboCtrl.text.trim(),
         'date_test': _date?.toIso8601String().substring(0, 10),
         'url': _url,
-        if (_lienCtrl.text.trim().isNotEmpty) 'lien_resultat': _lienCtrl.text.trim(),
+        if (lienWeb(_lienCtrl.text).isNotEmpty) 'lien_resultat': lienWeb(_lienCtrl.text)
+        else if (widget.existing?['lien_resultat'] != null) 'lien_resultat': null,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
       };
-      if (widget.existing != null) {
-        ligne.remove('id');
-        await Supabase.instance.client.from('tests_genetiques').update(ligne).eq('id', widget.existing!['id']);
-      } else {
-        await Supabase.instance.client.from('tests_genetiques').insert(ligne);
+      if (widget.existing != null) ligne.remove('id');
+      // Colonne lien_resultat absente en base (migration_tests_genetiques_lien.sql
+      // pas passée) : le test est enregistré sans le lien plutôt que refusé.
+      Future<void> ecrire() => widget.existing != null
+          ? Supabase.instance.client.from('tests_genetiques').update(ligne).eq('id', widget.existing!['id'])
+          : Supabase.instance.client.from('tests_genetiques').insert(ligne);
+      try {
+        await ecrire();
+      } on PostgrestException catch (e) {
+        if (e.code != '42703' || !ligne.containsKey('lien_resultat')) rethrow;
+        ligne.remove('lien_resultat');
+        await ecrire();
       }
       return true;
     },

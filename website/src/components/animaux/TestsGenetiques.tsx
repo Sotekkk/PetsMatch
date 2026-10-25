@@ -21,6 +21,21 @@ const LIBELLE_CATEGORIE: Record<string, string> = {
 };
 const AUTRE = '__autre__';
 
+/** Lien saisi → adresse complète (« embark.com/… » → « https://embark.com/… »),
+ *  ou '' s'il ne ressemble pas à une adresse web. Sans https://, le lien
+ *  pointait vers une page du site (ex. Animaux perdus). */
+export function lienWeb(v?: string | null): string {
+  const t = (v ?? '').trim();
+  if (!t) return '';
+  const u = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  try { const x = new URL(u); return x.hostname.includes('.') ? x.toString() : ''; } catch { return ''; }
+}
+/** Document joint utilisable (URL de stockage), sinon ''. */
+const docOk = (v?: string | null) => (/^https?:\/\//i.test((v ?? '').trim()) ? (v ?? '').trim() : '');
+/** Nom lisible du fichier joint (sans le chemin ni l'horodatage). */
+export const nomFichier = (url: string) =>
+  decodeURIComponent(url.split('?')[0].split('/').pop() ?? '').replace(/^\d{10,}_([0-9a-f-]{36}\.)?/i, '') || 'Document';
+
 interface Test {
   id: string; categorie?: string | null; code?: string | null; nom?: string | null;
   resultat?: string | null; genotype?: string | null; laboratoire?: string | null;
@@ -68,6 +83,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance, exi
     if (date && !dateValide(date)) { setErreur('Date du test : date invalide (JJ/MM/AAAA).'); return; }
     if (date && date > new Date().toLocaleDateString('sv-SE')) { setErreur('Date du test : ne peut pas être dans le futur.'); return; }
     if (date && naissance && date < naissance) { setErreur("Date du test : ne peut pas être antérieure à la naissance de l'animal."); return; }
+    if (lien.trim() && !lienWeb(lien)) { setErreur('Lien du résultat : adresse web invalide (ex. https://embarkvet.com/…).'); return; }
     setSaving(true); setErreur('');
     try {
       let url: string | null = existant?.url ?? null;
@@ -81,7 +97,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance, exi
         resultat: categorie === 'robe' ? null : resultat,
         genotype: genotype.trim() || null, laboratoire: labo.trim() || null,
         date_test: date || null, url, notes: notes.trim() || null,
-        ...(lien.trim() ? { lien_resultat: lien.trim() } : {}),
+        ...(lienWeb(lien) ? { lien_resultat: lienWeb(lien) } : existant?.lien_resultat ? { lien_resultat: null } : {}),
         created_at: new Date().toISOString(),
       };
       const ecrire = () => {
@@ -157,7 +173,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance, exi
       <div>
         <label className={etiquette}>Résultat joint (PDF / photo)</label>
         <label className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 text-sm">
-          <span className="flex-1 text-gray-600 truncate">{fichier ? fichier.name : 'Joindre le résultat…'}</span>
+          <span className="flex-1 text-gray-600 truncate">{fichier ? fichier.name : docOk(existant?.url) ? `${nomFichier(docOk(existant?.url))} (remplacer…)` : 'Joindre le résultat…'}</span>
           <input type="file" accept=".pdf,image/*" className="hidden" onChange={e => setFichier(e.target.files?.[0] ?? null)} />
         </label>
       </div>
@@ -194,17 +210,22 @@ function LigneTest({ t, canWrite, onDelete, onEdit }: { t: Test; canWrite: boole
           </span>
         )}
       </button>
+      {/* Modifier : visible sans déplier la ligne. */}
+      {canWrite && (
+        <div className="flex justify-end gap-3 mt-1">
+          <button type="button" onClick={onEdit} className="text-xs font-semibold text-[#0C5C6C] hover:underline">Modifier</button>
+          <button type="button" onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Supprimer</button>
+        </div>
+      )}
       {open && (
         <div className="mt-2 space-y-1 text-sm text-gray-600">
           {t.categorie && <p><span className="text-gray-400">Catégorie : </span>{LIBELLE_CATEGORIE[t.categorie] ?? t.categorie}</p>}
           {t.genotype && <p><span className="text-gray-400">Génotype : </span>{t.genotype}</p>}
           {t.notes && <p>{t.notes}</p>}
           <div className="flex flex-wrap gap-3 pt-1">
-            {t.lien_resultat && <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Résultat en ligne</a>}
+            {lienWeb(t.lien_resultat) && <a href={lienWeb(t.lien_resultat)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Résultat en ligne</a>}
             {/* Stockage privé : lien temporaire (avant : « Bucket not found »). */}
-            {t.url && <LienDocument href={t.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Voir le document</LienDocument>}
-            {canWrite && <button type="button" onClick={onEdit} className="text-xs font-semibold text-[#0C5C6C] hover:underline ml-auto">Modifier</button>}
-            {canWrite && <button type="button" onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Supprimer</button>}
+            {docOk(t.url) && <LienDocument href={docOk(t.url)} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">{nomFichier(docOk(t.url))}</LienDocument>}
           </div>
         </div>
       )}

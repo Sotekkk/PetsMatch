@@ -106,3 +106,20 @@ Color resultatBg(String? r) => switch (r) {
       'atteint' || 'homozygote' => const Color(0xFFFDECEC),
       _ => const Color(0xFFF1F1F1),
     };
+
+/// Lien saisi → adresse complète (« embark.com/… » → « https://embark.com/… »),
+/// ou '' s'il ne ressemble pas à une adresse web. Miroir site : lienWeb.
+String lienWeb(String? v) {
+  final t = (v ?? '').trim();
+  if (t.isEmpty) return '';
+  final u = RegExp(r'^https?://', caseSensitive: false).hasMatch(t) ? t : 'https://$t';
+  final x = Uri.tryParse(u);
+  return x != null && x.host.contains('.') ? u : '';
+}
+
+/// Nom lisible d'un fichier joint (sans le chemin ni l'horodatage).
+String nomFichier(String url) {
+  final n = Uri.decodeComponent(url.split('?').first.split('/').last)
+      .replaceFirst(RegExp(r'^\d{10,}_([0-9a-f-]{36}\.)?', caseSensitive: false), '');
+  return n.isEmpty ? 'Document' : n;
+}
