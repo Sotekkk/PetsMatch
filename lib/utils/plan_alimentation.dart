@@ -217,13 +217,16 @@ class PlanAlimentation {
   double? poidsAdulte;
   /// Nombre de petits allaités (lactation), repris de la portée, modifiable.
   int? nbPetits;
+  /// Mise bas (« yyyy-MM-dd ») à laquelle se rapporte [nbPetits] : une
+  /// nouvelle portée remplace la saisie précédente.
+  String? nbPetitsMiseBas;
   List<AlimentPlan> aliments;
   List<RepasPlan> repas;
   /// Plan reconstitué depuis l'ancien format (pas encore réenregistré).
   bool repris;
 
   PlanAlimentation({
-    this.mode = 'unique', List<String>? categories, this.activite = 'normal', this.poidsAdulte, this.nbPetits,
+    this.mode = 'unique', List<String>? categories, this.activite = 'normal', this.poidsAdulte, this.nbPetits, this.nbPetitsMiseBas,
     List<AlimentPlan>? aliments, List<RepasPlan>? repas, this.repris = false,
   })  : categories = categories ?? [],
         aliments = aliments ?? [],
@@ -289,6 +292,7 @@ class PlanAlimentation {
         'activite': activite,
         'poids_adulte': poidsAdulte,
         'nb_petits': nbPetits,
+        'nb_petits_mise_bas': nbPetitsMiseBas,
         'enregistre_le': DateTime.now().toUtc().toIso8601String(),
         'aliments': aliments.map((a) => a.toJson()).toList(),
         'repas': [
@@ -328,6 +332,7 @@ class PlanAlimentation {
       activite: kActivites.contains(j['activite']) ? j['activite'] as String : 'normal',
       poidsAdulte: (j['poids_adulte'] as num?)?.toDouble(),
       nbPetits: (j['nb_petits'] as num?)?.toInt(),
+      nbPetitsMiseBas: j['nb_petits_mise_bas']?.toString(),
       aliments: aliments,
       repas: repas.isEmpty ? [RepasPlan()] : repas,
     );
@@ -889,6 +894,81 @@ EvaluationEnergie evaluerEnergie({
   }
   if (methode == 'C') out.ok = true;
   return out;
+}
+
+// ── Gestation / lactation détectées ───────────────────────────────────────
+
+class EtatRepro {
+  /// 'normal' | 'gestation_debut' | 'gestation_fin' | 'lactation'
+  final String etat;
+  final int? semaine;
+  final int? nbPetits;
+  /// Date de mise bas retenue (« yyyy-MM-dd »).
+  final String? miseBas;
+  /// D'où vient le nombre de petits, à afficher.
+  final String? source;
+  const EtatRepro(this.etat, {this.semaine, this.nbPetits, this.miseBas, this.source});
+}
+
+const _dureesGestation = {'chien': 63, 'chat': 65, 'cheval': 340, 'ane': 365, 'ovin': 150, 'caprin': 150, 'porcin': 114, 'lapin': 31};
+/// Petits qui ne tètent plus : décédés ou déjà partis.
+const _statutsHorsPortee = {'decede', 'sorti', 'adopte'};
+
+String _jourIso(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+String _jourFr(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+/// État reproducteur d'une femelle à partir de sa dernière gestation (onglet
+/// Repro : `date` = saillie, `date_naissance` = mise bas, `nb_nes`) et des
+/// portées dont elle est la mère (fiches des petits : `portee_id`,
+/// `date_naissance`, `statut`). La portée la plus récente fait foi pour la
+/// mise bas et le nombre de petits encore présents, même si la gestation
+/// n'a pas été mise à jour. Lactation jusqu'à 8 semaines.
+EtatRepro detecterReproduction({required String espece, Map? gestation, List portees = const [], DateTime? maintenant}) {
+  final now = maintenant ?? DateTime.now();
+  DateTime? jour(Object? v) {
+    final d = DateTime.tryParse(v?.toString() ?? '');
+    return d == null ? null : DateTime(d.year, d.month, d.day);
+  }
+  final saillie = jour(gestation?['date']);
+  final miseBasG = jour(gestation?['date_naissance']);
+  final nbNes = (gestation?['nb_nes'] as num?)?.toInt();
+
+  // Portée la plus récente (regroupée par portee_id).
+  final parPortee = <String, ({DateTime date, int presents, int total})>{};
+  for (final r in portees.whereType<Map>()) {
+    final d = jour(r['date_naissance']);
+    final id = r['portee_id']?.toString();
+    if (d == null || id == null || id.isEmpty) continue;
+    final prev = parPortee[id];
+    final present = !_statutsHorsPortee.contains(r['statut']?.toString());
+    parPortee[id] = (date: prev?.date ?? d, presents: (prev?.presents ?? 0) + (present ? 1 : 0), total: (prev?.total ?? 0) + 1);
+  }
+  final derniere = parPortee.values.fold<({DateTime date, int presents, int total})?>(
+      null, (m, p) => m == null || p.date.isAfter(m.date) ? p : m);
+
+  DateTime? miseBas = miseBasG;
+  int? nb = nbNes;
+  String? source = nbNes != null ? 'Repris de la gestation ($nbNes nés)' : null;
+  if (derniere != null && (miseBas == null || !derniere.date.isBefore(miseBas))) {
+    miseBas = derniere.date;
+    nb = derniere.presents;
+    source = 'Repris de la portée née le ${_jourFr(derniere.date)} (${derniere.presents} petit${derniere.presents > 1 ? 's' : ''}'
+        '${derniere.total > derniere.presents ? ' sur ${derniere.total} nés' : ''})';
+  }
+
+  if (saillie != null && (miseBas == null || miseBas.isBefore(saillie))) {
+    final jours = now.difference(saillie).inDays;
+    final total = _dureesGestation[espece] ?? 63;
+    if (jours >= 0 && jours <= total + 7) return EtatRepro(jours >= total - 21 ? 'gestation_fin' : 'gestation_debut');
+    return const EtatRepro('normal');
+  }
+  if (miseBas != null) {
+    final jours = now.difference(miseBas).inDays;
+    if (jours >= 0 && jours < 56) {
+      return EtatRepro('lactation', semaine: jours ~/ 7 + 1, nbPetits: nb, miseBas: _jourIso(miseBas), source: source);
+    }
+  }
+  return const EtatRepro('normal');
 }
 
 // ── Lecture d'une ligne `alimentations` ───────────────────────────────────

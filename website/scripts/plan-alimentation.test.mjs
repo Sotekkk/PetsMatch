@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calculerRation, evaluerEnergie, erreurEtape, lireNombre, revenirRecommandation, estPersonnalise,
-  ecartImportant, planDepuisLigne, planVersJson, calculEnregistre, nomAliment,
+  ecartImportant, planDepuisLigne, planVersJson, calculEnregistre, nomAliment, detecterReproduction,
 } from '../src/lib/plan-alimentation.ts';
 
 const proche = (v, attendu, tol, msg) => assert.ok(v != null && Math.abs(v - attendu) <= tol, `${msg ?? ''} ${v} ≠ ${attendu}`);
@@ -194,6 +194,28 @@ test('gestation et lactation (NRC 2006) selon le nombre de petits', () => {
   p.nbPetits = 4;
   proche(calculerRation(p, f('chat', 4, 'lactation', 4)).besoin.kcal, 541.2, 1);
   proche(calculerRation(p, f('chat', 4, 'gestation_debut')).besoin.kcal, 354.4, 1);
+});
+
+test('lactation déduite de la portée (petits présents, mise bas récente)', () => {
+  const now = new Date(2026, 9, 25);
+  const portees = [
+    ...Array.from({ length: 6 }, (_, i) => ({ portee_id: 'p2', date_naissance: '2026-10-05', statut: i === 0 ? 'decede' : 'present' })),
+    ...Array.from({ length: 4 }, () => ({ portee_id: 'p1', date_naissance: '2025-12-01', statut: 'sorti' })),
+  ];
+  let e = detecterReproduction({ espece: 'chien', gestation: { date: '2026-08-03' }, portees, maintenant: now });
+  assert.equal(e.etat, 'lactation');
+  assert.equal(e.semaine, 3);
+  assert.equal(e.nbPetits, 5);
+  assert.equal(e.miseBas, '2026-10-05');
+  assert.equal(e.source, 'Repris de la portée née le 05/10/2026 (5 petits sur 6 nés)');
+  e = detecterReproduction({ espece: 'chien', portees, maintenant: new Date(2026, 11, 15) });
+  assert.equal(e.etat, 'normal');
+  e = detecterReproduction({ espece: 'chien', gestation: { date: '2026-09-01' }, portees: portees.slice(6), maintenant: now });
+  assert.equal(e.etat, 'gestation_fin');
+  e = detecterReproduction({ espece: 'chat', gestation: { date: '2026-08-01', date_naissance: '2026-10-20', nb_nes: 4 }, maintenant: now });
+  assert.equal(e.etat, 'lactation');
+  assert.equal(e.nbPetits, 4);
+  assert.equal(e.semaine, 1);
 });
 
 test('anciennes données : mixte croquettes + ménagère séparées', () => {

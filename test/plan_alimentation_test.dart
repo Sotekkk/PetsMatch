@@ -206,6 +206,32 @@ void main() {
     expect(c.besoin.kcal, closeTo(354.4, 1));
   });
 
+  test('lactation déduite de la portée (petits présents, mise bas récente)', () {
+    final now = DateTime(2026, 10, 25);
+    final portees = [
+      for (var i = 0; i < 6; i++) {'portee_id': 'p2', 'date_naissance': '2026-10-05', 'statut': i == 0 ? 'decede' : 'present'},
+      for (var i = 0; i < 4; i++) {'portee_id': 'p1', 'date_naissance': '2025-12-01', 'statut': 'sorti'},
+    ];
+    // Gestation non mise à jour (pas de date de mise bas) : la portée fait foi.
+    var e = detecterReproduction(espece: 'chien', gestation: {'date': '2026-08-03'}, portees: portees, maintenant: now);
+    expect(e.etat, 'lactation');
+    expect(e.semaine, 3);
+    expect(e.nbPetits, 5);
+    expect(e.miseBas, '2026-10-05');
+    expect(e.source, 'Repris de la portée née le 05/10/2026 (5 petits sur 6 nés)');
+    // Petits grands (plus de 8 semaines) : plus de lactation.
+    e = detecterReproduction(espece: 'chien', portees: portees, maintenant: DateTime(2026, 12, 15));
+    expect(e.etat, 'normal');
+    // Gestation en cours après la dernière portée.
+    e = detecterReproduction(espece: 'chien', gestation: {'date': '2026-09-01'}, portees: portees.sublist(6), maintenant: now);
+    expect(e.etat, 'gestation_fin');
+    // Sans portée : nombre de nés de la gestation.
+    e = detecterReproduction(espece: 'chat', gestation: {'date': '2026-08-01', 'date_naissance': '2026-10-20', 'nb_nes': 4}, maintenant: now);
+    expect(e.etat, 'lactation');
+    expect(e.nbPetits, 4);
+    expect(e.semaine, 1);
+  });
+
   test('anciennes données : mixte croquettes + ménagère séparées', () {
     final p = planDepuisLigne({
       'type_ration': 'mixte', 'marque': 'Purina', 'gamme': 'Pro Plan Medium', 'densite_calorique': 380,

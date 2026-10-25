@@ -189,6 +189,9 @@ export interface PlanAlimentation {
   poidsAdulte?: number | null;
   /** Nombre de petits allaités (lactation), repris de la portée, modifiable. */
   nbPetits?: number | null;
+  /** Mise bas (« yyyy-MM-dd ») à laquelle se rapporte nbPetits : une
+   *  nouvelle portée remplace la saisie précédente. */
+  nbPetitsMiseBas?: string | null;
   aliments: AlimentPlan[];
   repas: RepasPlan[];
   /** Plan reconstitué depuis l'ancien format (pas encore réenregistré). */
@@ -269,6 +272,7 @@ export function planVersJson(plan: PlanAlimentation, c: CalculRation) {
     activite: plan.activite,
     poids_adulte: plan.poidsAdulte ?? null,
     nb_petits: plan.nbPetits ?? null,
+    nb_petits_mise_bas: plan.nbPetitsMiseBas ?? null,
     enregistre_le: new Date().toISOString(),
     aliments: plan.aliments.map(a => ({
       id: a.id ?? null, marque: a.marque, gamme: a.gamme, type: a.type, kcal: a.kcal ?? null, source: a.source ?? null,
@@ -318,6 +322,7 @@ export function planDepuisJson(j: Json): PlanAlimentation {
     activite: (ACTIVITES as readonly string[]).includes(String(j.activite)) ? String(j.activite) : 'normal',
     poidsAdulte: nombreOuNull(j.poids_adulte),
     nbPetits: nombreOuNull(j.nb_petits),
+    nbPetitsMiseBas: j.nb_petits_mise_bas != null ? String(j.nb_petits_mise_bas) : null,
     aliments,
     repas: repas.length ? repas : [{ items: [] }],
   };
@@ -801,6 +806,79 @@ export function evaluerEnergie(o: { methode: string; type: string; kcalTexte?: s
   }
   if (o.methode === 'C') out.ok = true;
   return out;
+}
+
+// ── Gestation / lactation détectées ───────────────────────────────────────
+
+export interface EtatRepro {
+  /** 'normal' | 'gestation_debut' | 'gestation_fin' | 'lactation' */
+  etat: string;
+  semaine?: number;
+  nbPetits?: number | null;
+  /** Date de mise bas retenue (« yyyy-MM-dd »). */
+  miseBas?: string;
+  /** D'où vient le nombre de petits, à afficher. */
+  source?: string;
+}
+
+const DUREES_GESTATION: Record<string, number> = { chien: 63, chat: 65, cheval: 340, ane: 365, ovin: 150, caprin: 150, porcin: 114, lapin: 31 };
+/** Petits qui ne tètent plus : décédés ou déjà partis. */
+const STATUTS_HORS_PORTEE = new Set(['decede', 'sorti', 'adopte']);
+
+const jourLocal = (v: unknown): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ''));
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+};
+const jourIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const jourFr = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+const joursEntre = (a: Date, b: Date) => Math.floor((b.getTime() - a.getTime()) / 86400000);
+
+/** État reproducteur d'une femelle à partir de sa dernière gestation (onglet
+ *  Repro : `date` = saillie, `date_naissance` = mise bas, `nb_nes`) et des
+ *  portées dont elle est la mère (fiches des petits : `portee_id`,
+ *  `date_naissance`, `statut`). La portée la plus récente fait foi pour la
+ *  mise bas et le nombre de petits encore présents, même si la gestation
+ *  n'a pas été mise à jour. Lactation jusqu'à 8 semaines. */
+export function detecterReproduction(o: { espece: string; gestation?: Ligne | null; portees?: Ligne[]; maintenant?: Date }): EtatRepro {
+  const now = o.maintenant ?? new Date();
+  const g = o.gestation ?? null;
+  const saillie = jourLocal(g?.date);
+  const miseBasG = jourLocal(g?.date_naissance);
+  const nbNes = typeof g?.nb_nes === 'number' ? g.nb_nes : null;
+
+  const parPortee = new Map<string, { date: Date; presents: number; total: number }>();
+  for (const r of o.portees ?? []) {
+    const d = jourLocal(r.date_naissance);
+    const id = r.portee_id != null ? String(r.portee_id) : '';
+    if (!d || !id) continue;
+    const prev = parPortee.get(id);
+    const present = !STATUTS_HORS_PORTEE.has(String(r.statut ?? ''));
+    parPortee.set(id, { date: prev?.date ?? d, presents: (prev?.presents ?? 0) + (present ? 1 : 0), total: (prev?.total ?? 0) + 1 });
+  }
+  let derniere: { date: Date; presents: number; total: number } | null = null;
+  parPortee.forEach(p => { if (!derniere || p.date > derniere.date) derniere = p; });
+
+  let miseBas = miseBasG;
+  let nb: number | null = nbNes;
+  let source: string | undefined = nbNes != null ? `Repris de la gestation (${nbNes} nés)` : undefined;
+  const d = derniere as { date: Date; presents: number; total: number } | null;
+  if (d && (!miseBas || d.date >= miseBas)) {
+    miseBas = d.date;
+    nb = d.presents;
+    source = `Repris de la portée née le ${jourFr(d.date)} (${d.presents} petit${d.presents > 1 ? 's' : ''}${d.total > d.presents ? ` sur ${d.total} nés` : ''})`;
+  }
+
+  if (saillie && (!miseBas || miseBas < saillie)) {
+    const jours = joursEntre(saillie, now);
+    const total = DUREES_GESTATION[o.espece] ?? 63;
+    if (jours >= 0 && jours <= total + 7) return { etat: jours >= total - 21 ? 'gestation_fin' : 'gestation_debut' };
+    return { etat: 'normal' };
+  }
+  if (miseBas) {
+    const jours = joursEntre(miseBas, now);
+    if (jours >= 0 && jours < 56) return { etat: 'lactation', semaine: Math.floor(jours / 7) + 1, nbPetits: nb, miseBas: jourIso(miseBas), source };
+  }
+  return { etat: 'normal' };
 }
 
 // ── Lecture d'une ligne `alimentations` ───────────────────────────────────

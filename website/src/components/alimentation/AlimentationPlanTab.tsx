@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { auth } from '@/lib/firebase';
 import {
   type AlimentPlan, type CalculRation, type PlanAlimentation, ACTIVITES, LIBELLES_ACTIVITE, LIBELLES_TYPE_ALIMENT,
-  ajouterAliment, ageMois, basculer, calculerRation, changerNbRepas, colonnesHistoriques, ecartImportant, erreurEtape,
+  type EtatRepro, ajouterAliment, ageMois, basculer, detecterReproduction, calculerRation, changerNbRepas, colonnesHistoriques, ecartImportant, erreurEtape,
   estPersonnalise, formatQuantite, libellesRepas, lireNombre, nomAliment, planDepuisLigne, planNeuf, planVersJson,
   profilEspece, retirerAliment, revenirRecommandation, typeDepuisCatalogue,
 } from '@/lib/plan-alimentation';
@@ -58,7 +58,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
   const [recherche, setRecherche] = useState('');
   const [catalogue, setCatalogue] = useState<Ligne[] | null>(null);
   const [poids, setPoids] = useState<number | null>(null);
-  const [repro, setRepro] = useState<{ etat: string; semaine?: number; nbNes?: number | null }>({ etat: 'normal' });
+  const [repro, setRepro] = useState<EtatRepro>({ etat: 'normal' });
   const [ajout, setAjout] = useState(false);
   const [confirmReco, setConfirmReco] = useState<null | 'synthese' | 'parcours'>(null);
   const [apercuPro, setApercuPro] = useState(false);
@@ -99,29 +99,34 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
       const { data: pz } = await supabase.from('poids').select('valeur').eq('animal_id', animalId).order('date', { ascending: false }).limit(1);
       const dernier = pz && pz.length ? parseFloat(String(pz[0].valeur).replace(',', '.')) : NaN;
       const fiche = poidsFiche != null ? parseFloat(String(poidsFiche).replace(',', '.')) : NaN;
-      // Gestation / lactation (onglet Repro : date = saillie, date_naissance =
-      // mise bas réelle, nb_nes = nombre de nés).
-      let rep: { etat: string; semaine?: number; nbNes?: number | null } = { etat: 'normal' };
+      // Gestation / lactation : dernière gestation de l'onglet Repro + portées
+      // dont la femelle est la mère (fiches des petits reliées par la puce,
+      // sinon le nom de la mère).
+      let rep: EtatRepro = { etat: 'normal' };
       if (sexe === 'femelle' && !sterilise) {
         const { data: g } = await supabase.from('gestations').select('date, date_naissance, nb_nes')
           .eq('animal_id', animalId).order('date', { ascending: false }).limit(1).maybeSingle();
-        if (g) {
-          const miseBas = g.date_naissance ? Date.parse(String(g.date_naissance)) : NaN;
-          if (!isNaN(miseBas)) {
-            const jours = Math.floor((Date.now() - miseBas) / 86400000);
-            if (jours >= 0 && jours < 56) rep = { etat: 'lactation', semaine: Math.floor(jours / 7) + 1, nbNes: typeof g.nb_nes === 'number' ? g.nb_nes : null };
-          } else if (g.date) {
-            const durees: Record<string, number> = { chien: 63, chat: 65, cheval: 340, ovin: 150, caprin: 150, porcin: 114, lapin: 31 };
-            const jours = Math.floor((Date.now() - Date.parse(String(g.date))) / 86400000);
-            const total = durees[espece] ?? 63;
-            if (jours >= 0 && jours <= total + 7) rep = { etat: jours >= total - 21 ? 'gestation_fin' : 'gestation_debut' };
-          }
+        const { data: mere } = await supabase.from('animaux').select('identification, nom, nom_pedigree, uid_eleveur').eq('id', animalId).maybeSingle();
+        const cols = 'portee_id, date_naissance, statut';
+        let portees: Ligne[] = [];
+        const puce = String(mere?.identification ?? '').replace(/\s/g, '');
+        if (puce) portees = ((await supabase.from('animaux').select(cols).eq('puce_mere', puce).not('portee_id', 'is', null)).data ?? []) as Ligne[];
+        for (const n of [mere?.nom_pedigree, mere?.nom]) {
+          const nomMere = String(n ?? '').trim();
+          if (portees.length || !nomMere || !mere?.uid_eleveur) continue;
+          portees = ((await supabase.from('animaux').select(cols).ilike('nom_mere', nomMere)
+            .eq('uid_eleveur', String(mere.uid_eleveur)).not('portee_id', 'is', null)).data ?? []) as Ligne[];
         }
+        rep = detecterReproduction({ espece, gestation: g as Ligne | null, portees });
       }
       if (annule) return;
       setRow((r as Ligne) ?? null);
       if (p) {
-        if (rep.etat === 'lactation' && p.nbPetits == null && rep.nbNes) p = { ...p, nbPetits: rep.nbNes };
+        // Saisie de l'éleveur conservée pour la même portée ; une nouvelle
+        // portée reprend le nombre détecté.
+        if (rep.etat === 'lactation' && (p.nbPetits == null || p.nbPetitsMiseBas !== rep.miseBas)) {
+          p = { ...p, nbPetits: rep.nbPetits ?? null, nbPetitsMiseBas: rep.miseBas ?? null };
+        }
         setPlan(p);
         setQte(textesQuantites(p));
         setConsignes(String((r as Ligne | null)?.consignes ?? ''));
@@ -131,7 +136,10 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
         setNbPetitsTxt(p.nbPetits != null ? String(p.nbPetits) : '');
       } else {
         setParcours(!lectureSeule);
-        if (rep.nbNes) { setPlan(pl => ({ ...pl, nbPetits: rep.nbNes })); setNbPetitsTxt(String(rep.nbNes)); }
+        if (rep.etat === 'lactation' && rep.nbPetits) {
+          setPlan(pl => ({ ...pl, nbPetits: rep.nbPetits, nbPetitsMiseBas: rep.miseBas ?? null }));
+          setNbPetitsTxt(String(rep.nbPetits));
+        }
       }
       setPoids(!isNaN(dernier) && dernier > 0 ? dernier : !isNaN(fiche) && fiche > 0 ? fiche : null);
       setRepro(rep);
@@ -449,11 +457,11 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
                         onChange={e => {
                           setNbPetitsTxt(e.target.value);
                           const l = lireNombre(e.target.value);
-                          majPlan({ ...plan, nbPetits: l.v != null && Number.isInteger(l.v) ? l.v : null });
+                          majPlan({ ...plan, nbPetits: l.v != null && Number.isInteger(l.v) ? l.v : null, nbPetitsMiseBas: repro.miseBas ?? null });
                         }}
                         className="w-full h-12 px-3 rounded-[10px] border border-gray-300 outline-none text-[15px]" />
                       <p className="text-[13px] text-gray-600 mt-1">
-                        {repro.nbNes ? `Repris de la portée (${repro.nbNes} nés) : corrigez si certains petits ne tètent plus.` : 'Les besoins de lactation dépendent du nombre de petits.'}
+                        {repro.source ? `${repro.source} : corrigez si certains petits ne tètent plus.` : 'Les besoins de lactation dépendent du nombre de petits.'}
                       </p>
                       {(lireNombre(nbPetitsTxt).err || (nbPetitsTxt.trim() && plan.nbPetits == null)) && (
                         <p className="text-[13.5px] text-red-700">{lireNombre(nbPetitsTxt).err ?? 'Nombre entier attendu (ex. 6).'}</p>

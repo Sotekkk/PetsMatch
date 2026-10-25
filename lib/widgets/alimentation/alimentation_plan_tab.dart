@@ -68,8 +68,10 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   double? _poids;
   String _etatRepro = 'normal';
   int? _semaineLactation;
-  /// Nombre de nés de la dernière portée (gestations.nb_nes).
+  /// Nombre de petits détecté (portée ou gestation), sa source, et la mise bas.
   int? _nbNesPortee;
+  String? _sourceNbPetits;
+  String? _miseBas;
   final _nbPetits = TextEditingController();
 
   PlanAlimentation _planNeuf() => PlanAlimentation(
@@ -124,7 +126,12 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
     _poids ??= widget.poidsFiche;
     if (widget.sexe == 'femelle' && !widget.sterilise) await _detecterRepro(id);
     if (_etatRepro == 'lactation') {
-      _plan.nbPetits ??= _nbNesPortee;
+      // Saisie de l'éleveur conservée pour la même portée ; une nouvelle
+      // portée reprend le nombre détecté.
+      if (_plan.nbPetits == null || _plan.nbPetitsMiseBas != _miseBas) {
+        _plan.nbPetits = _nbNesPortee;
+        _plan.nbPetitsMiseBas = _miseBas;
+      }
       _nbPetits.text = _plan.nbPetits?.toString() ?? '';
     }
     _syncQuantites();
@@ -132,30 +139,37 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   }
 
   /// Gestation en cours / mise bas récente (< 8 semaines) : besoins augmentés.
-  /// Onglet Repro de l'éleveur : `date` = saillie / conception,
-  /// `date_naissance` = mise bas réelle, `nb_nes` = nombre de nés.
+  /// Dernière gestation de l'onglet Repro + portées dont la femelle est la
+  /// mère (fiches des petits reliées par la puce, sinon le nom de la mère).
   Future<void> _detecterRepro(String id) async {
+    Map? gestation;
     try {
-      final g = await _supa.from('gestations').select('date, date_naissance, nb_nes')
+      gestation = await _supa.from('gestations').select('date, date_naissance, nb_nes')
           .eq('animal_id', id).order('date', ascending: false).limit(1).maybeSingle();
-      if (g == null) return;
-      final miseBas = DateTime.tryParse(g['date_naissance']?.toString() ?? '');
-      if (miseBas != null) {
-        final jours = DateTime.now().difference(miseBas).inDays;
-        if (jours >= 0 && jours < 56) {
-          _etatRepro = 'lactation';
-          _semaineLactation = jours ~/ 7 + 1;
-          _nbNesPortee = (g['nb_nes'] as num?)?.toInt();
-        }
-        return;
-      }
-      final saillie = DateTime.tryParse(g['date']?.toString() ?? '');
-      if (saillie == null) return;
-      const durees = {'chien': 63, 'chat': 65, 'cheval': 340, 'ovin': 150, 'caprin': 150, 'porcin': 114, 'lapin': 31};
-      final jours = DateTime.now().difference(saillie).inDays;
-      final total = durees[widget.espece] ?? 63;
-      if (jours <= total + 7) _etatRepro = jours >= total - 21 ? 'gestation_fin' : 'gestation_debut';
     } catch (_) {}
+    var portees = <dynamic>[];
+    try {
+      final mere = await _supa.from('animaux').select('identification, nom, nom_pedigree, uid_eleveur')
+          .eq('id', id).maybeSingle();
+      final puce = (mere?['identification'] ?? '').toString().replaceAll(' ', '');
+      const cols = 'portee_id, date_naissance, statut';
+      if (puce.isNotEmpty) {
+        portees = await _supa.from('animaux').select(cols).eq('puce_mere', puce).not('portee_id', 'is', null);
+      }
+      final uidEleveur = mere?['uid_eleveur']?.toString();
+      for (final nom in [mere?['nom_pedigree'], mere?['nom']]) {
+        final n = (nom ?? '').toString().trim();
+        if (portees.isNotEmpty || n.isEmpty || uidEleveur == null) continue;
+        portees = await _supa.from('animaux').select(cols)
+            .ilike('nom_mere', n).eq('uid_eleveur', uidEleveur).not('portee_id', 'is', null);
+      }
+    } catch (_) {}
+    final e = detecterReproduction(espece: widget.espece, gestation: gestation, portees: portees);
+    _etatRepro = e.etat;
+    _semaineLactation = e.semaine;
+    _nbNesPortee = e.nbPetits;
+    _sourceNbPetits = e.source;
+    _miseBas = e.miseBas;
   }
 
   /// Tableaux fabricant (doses, croissance) des aliments du catalogue.
@@ -757,13 +771,14 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
           onChanged: (t) => setState(() {
             final l = lireNombre(t);
             _plan.nbPetits = l.v != null && l.v == l.v!.roundToDouble() ? l.v!.round() : null;
+            _plan.nbPetitsMiseBas = _miseBas;
             _erreurEtape = null;
           }),
           style: _st(15),
           decoration: InputDecoration(
             hintText: 'Ex. 6', filled: true, fillColor: Colors.white,
-            helperText: _nbNesPortee != null
-                ? 'Repris de la portée ($_nbNesPortee nés) : corrigez si certains petits ne tètent plus.'
+            helperText: _sourceNbPetits != null
+                ? '$_sourceNbPetits : corrigez si certains petits ne tètent plus.'
                 : 'Les besoins de lactation dépendent du nombre de petits.',
             helperMaxLines: 2,
             errorText: lireNombre(_nbPetits.text).err ??
