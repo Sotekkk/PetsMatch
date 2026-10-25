@@ -528,6 +528,7 @@ const MENU_TOILETTAGE = [
       { href: '/agenda',              label: 'Mon agenda',       icon: '📅' },
       { href: '/mes-rdv',             label: 'Gérer mes RDV',    icon: '🗓️' },
       { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
+      { href: '/mes-patients',        label: 'Mes clients',      icon: '🐾' },
       { href: '/toilettage/prestations', label: 'Mes prestations', icon: '✂️' },
       { href: '/toilettage/employes', label: 'Mes employés',     icon: '👥' },
       { href: '/toilettage/dashboard',   label: 'Tableau de bord', icon: '📊' },

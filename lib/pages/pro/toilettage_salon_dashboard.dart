@@ -562,7 +562,7 @@ class _ToilettageSalonDashboardState extends State<ToilettageSalonDashboard> {
           crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: cols == 4 ? 3.0 : 2.9,
           children: [
             tuile(Icons.add_circle_outline, 'Nouveau rendez-vous', () => _go(const ProAgendaPage(initialTabIndex: 1, nouveauRdv: true))),
-            tuile(Icons.pets_outlined, 'Fiches animaux', () => _go(const ProClientsPage())),
+            tuile(Icons.pets_outlined, 'Mes clients', () => _go(const ProClientsPage())),
             tuile(Icons.calendar_view_day_outlined, 'Planning équipe', () => _go(const ToilettagePlanningEmployesPage())),
             tuile(Icons.receipt_long_outlined, 'Facturation', () => _go(const FacturationPage())),
           ],

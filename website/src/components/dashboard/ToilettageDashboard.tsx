@@ -270,7 +270,7 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
               action={<Link href="/toilettage/dashboard" className="text-sm font-semibold text-[#0C5C6C] hover:underline">Statistiques →</Link>}>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Tuile href="/mes-rdv?onglet=a_venir" icone="plus" label="Nouveau rendez-vous" />
-                <Tuile href="/mes-patients" icone="patte" label="Fiches animaux" teinte={VERT} />
+                <Tuile href="/mes-patients" icone="patte" label="Mes clients" teinte={VERT} />
                 <Tuile href="/mes-rdv?onglet=planning" icone="calendrier" label="Planning équipe" />
                 <Tuile href="/elevage/facturation" icone="facture" label="Facturation" />
               </div>

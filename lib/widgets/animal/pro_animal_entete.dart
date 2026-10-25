@@ -84,9 +84,20 @@ class _ProAnimalEnteteState extends State<ProAnimalEntete> {
       final urgence = _contacts(animal['contacts_urgence']);
       final autorises = _contacts(animal['personnes_autorisees']);
 
-      // 1. Client du fichier clinique (patient créé par la clinique).
-      if (animal['client_clinique_id'] != null) {
-        final c = await _supa.from('clients_clinique').select().eq('id', animal['client_clinique_id']).maybeSingle();
+      // 1. Client du fichier du pro : celui de MON profil pour une fiche
+      // rattachée (créée par un autre pro), sinon celui de la fiche.
+      String? clientId;
+      final pidActif = User_Info.activeProfileId;
+      if (pidActif.isNotEmpty) {
+        try {
+          final l = await _supa.from('animaux_clients_pro').select('client_id')
+              .eq('animal_id', widget.animalId).eq('pro_profile_id', pidActif).maybeSingle();
+          clientId = l?['client_id']?.toString();
+        } catch (_) {}
+      }
+      clientId ??= animal['client_clinique_id']?.toString();
+      if (clientId != null) {
+        final c = await _supa.from('clients_clinique').select().eq('id', clientId).maybeSingle();
         if (c != null) {
           if (!mounted) return;
           setState(() {
@@ -96,7 +107,7 @@ class _ProAnimalEnteteState extends State<ProAnimalEntete> {
             _ownerEmail = (c['email'] ?? '').toString();
             _ownerAdresse = _join([c['adresse'], '${c['code_postal'] ?? ''} ${c['ville'] ?? ''}']);
             _ownerUid = c['uid_lie']?.toString();
-            _ownerSousTitre = c['uid_lie'] != null ? 'Client de la clinique' : 'Client de la clinique — hors PetsMatch';
+            _ownerSousTitre = c['uid_lie'] != null ? 'Client' : 'Client — hors PetsMatch';
           });
           return;
         }

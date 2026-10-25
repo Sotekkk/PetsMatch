@@ -1,5 +1,6 @@
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/pro/garde_fiche_animal_page.dart';
+import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -61,15 +62,41 @@ class _ProClientsPageState extends State<ProClientsPage>
       case 'education':   return 'Mes animaux suivis';
       case 'garde':       return 'Mes animaux en garde';
       case 'photographe': return 'Mes clients';
+      case 'toilettage':  return 'Mes clients';
+      case 'marechal_ferrant': return 'Mes équidés suivis';
       default:            return 'Mes patients';
     }
+  }
+
+  /// Bouton d'ajout manuel (animal + propriétaire), selon le métier.
+  String get _libelleAjout {
+    switch (User_Info.catPro) {
+      case 'education':   return 'Nouvel animal suivi';
+      case 'garde':       return 'Nouvel animal';
+      case 'toilettage':
+      case 'photographe': return 'Nouveau client';
+      case 'marechal_ferrant': return 'Nouvel équidé';
+      default:            return 'Nouveau patient';
+    }
+  }
+
+  Future<void> _nouveauPatient() async {
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty) return;
+    final id = await Navigator.push<String?>(context, MaterialPageRoute(builder: (_) => NouveauPatientCliniquePage(
+      cliniqueProfileId: pid,
+      estClinique: User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante',
+      titre: _libelleAjout,
+    )));
+    if (id != null && mounted) _loadAnimals();
   }
 
   String get _emptyLabel {
     switch (User_Info.catPro) {
       case 'education':   return 'Aucun animal suivi pour l\'instant';
       case 'garde':       return 'Aucun animal en garde pour l\'instant';
-      case 'photographe': return 'Aucun client pour l\'instant';
+      case 'photographe':
+      case 'toilettage':  return 'Aucun client pour l\'instant';
       default:            return 'Aucun patient pour l\'instant';
     }
   }
@@ -361,6 +388,14 @@ class _ProClientsPageState extends State<ProClientsPage>
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: const [Tab(text: 'Animaux'), Tab(text: 'Agenda')],
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'nouveau_patient_fab',
+        backgroundColor: c,
+        foregroundColor: Colors.white,
+        onPressed: _nouveauPatient,
+        icon: const Icon(Icons.add),
+        label: Text(_libelleAjout, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: c))

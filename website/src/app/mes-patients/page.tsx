@@ -16,7 +16,17 @@ function clientsPageTitle(catPro: string): string {
   if (catPro === 'marechal_ferrant') return 'Mes équidés suivis';
   if (catPro === 'education') return 'Mes élèves';
   if (catPro === 'garde') return 'Mes animaux en garde';
+  if (catPro === 'toilettage' || catPro === 'photographe') return 'Mes clients';
   return 'Animaux suivis';
+}
+
+/** Bouton d'ajout manuel (animal + propriétaire), selon le métier. */
+function libelleAjout(catPro: string): string {
+  if (catPro === 'education') return 'Nouvel animal suivi';
+  if (catPro === 'garde') return 'Nouvel animal';
+  if (catPro === 'toilettage' || catPro === 'photographe') return 'Nouveau client';
+  if (catPro === 'marechal_ferrant') return 'Nouvel équidé';
+  return 'Nouveau patient';
 }
 
 interface Animal {
@@ -326,11 +336,11 @@ export default function MesPatientsPage() {
             <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>{clientsPageTitle(catPro)}</h1>
             <p className="text-white/60 text-xs">{grants.length} {grants.length !== 1 ? 'animaux' : 'animal'} avec accès accordé</p>
           </div>
-          {catPro === 'veterinaire' && activeProfileId && (
+          {activeProfileId && catPro !== 'pension' && (
             <button onClick={() => setNouveauPatient(true)}
               className="ml-auto px-3 py-2 rounded-xl bg-white text-sm font-semibold hover:bg-white/90"
               style={{ color: '#0C5C6C', fontFamily: 'Galey, sans-serif' }}>
-              ＋ Nouveau patient
+              ＋ {libelleAjout(catPro)}
             </button>
           )}
         </div>
@@ -525,6 +535,7 @@ export default function MesPatientsPage() {
       )}
       {nouveauPatient && activeProfileId && (
         <NouveauPatientModal cliniqueProfileId={activeProfileId} onClose={() => setNouveauPatient(false)}
+          estClinique={catPro === 'veterinaire' || catPro === 'sante'} titre={libelleAjout(catPro)}
           onCree={() => { setNouveauPatient(false); setRechargement(n => n + 1); }} />
       )}
     </div>

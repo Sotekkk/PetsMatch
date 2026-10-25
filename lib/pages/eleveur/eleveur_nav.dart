@@ -610,6 +610,14 @@ class _EleveurNavState extends State<EleveurNav> {
                           },
                         ),
                         _DrawerSubItem(
+                          label: 'Mes clients',
+                          icon: Icons.people_outline,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage()));
+                          },
+                        ),
+                        _DrawerSubItem(
                           label: 'Mes prestations',
                           icon: Icons.content_cut,
                           onTap: () {

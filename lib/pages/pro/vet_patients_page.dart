@@ -522,7 +522,7 @@ class _VetPatientsPageState extends State<VetPatientsPage>
               : (User_Info.availableProfiles.firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '');
           if (pid.isEmpty) return;
           final cree = await Navigator.push<String?>(context,
-              MaterialPageRoute(builder: (_) => NouveauPatientCliniquePage(cliniqueProfileId: pid)));
+              MaterialPageRoute(builder: (_) => NouveauPatientCliniquePage(cliniqueProfileId: pid, titre: 'Nouveau patient')));
           if (cree != null && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                 content: Text('Patient créé.', style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));

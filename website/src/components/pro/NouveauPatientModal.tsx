@@ -18,8 +18,10 @@ const ESPECES = [['chien', 'Chien'], ['chat', 'Chat'], ['cheval', 'Cheval / équ
 
 interface Client { id: string; nom: string; prenom: string | null; telephone: string | null; email: string | null }
 
-export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree, estClinique = true }: {
+export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree, estClinique = true, titre: titreModal }: {
   cliniqueProfileId: string; onClose: () => void; onCree: (animalId: string) => void;
+  /** Titre selon le métier (« Nouvel animal suivi », « Nouvel équidé »…). */
+  titre?: string;
   /** Vocabulaire : « patient » (vétérinaire) ou « client » (toiletteur, maréchal-ferrant, ostéopathe, éducateur). */
   estClinique?: boolean;
 }) {
@@ -30,6 +32,10 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
   const [a, setA] = useState({ nom: '', espece: 'chien', race: '', sexe: '', date_naissance: '', identification: '', poids: '', couleur: '' });
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  // Étape 1 franchie : puce vérifiée (aucune fiche) ou animal sans puce.
+  const [puceOk, setPuceOk] = useState(false);
+  /** Fiche d'un autre pro à rattacher : on ne saisit que le client. */
+  const [rattacherA, setRattacherA] = useState<string | null>(null);
   const [doublon, setDoublon] = useState<{ type: 'animal' | 'compte' | 'pro'; texte: string; animalId?: string } | null>(null);
   const mot = estClinique ? 'patients' : 'clients';
 
@@ -42,26 +48,50 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
   const q = rechercheClient.trim().toLowerCase();
   const suggestions = q ? clients.filter(x => `${x.prenom ?? ''} ${x.nom} ${x.telephone ?? ''} ${x.email ?? ''}`.toLowerCase().includes(q)).slice(0, 8) : [];
 
+  /** Une puce = une fiche : false si l'animal est déjà sur PetsMatch (le pro
+   *  est alors orienté : déjà suivi, rattachement ou demande d'accès). */
+  async function controlerPuce(): Promise<boolean> {
+    if (a.identification.trim().length >= 6) {
+      const { data } = await supabase.rpc('pm_puce_existante', { p_identification: a.identification.trim(), p_profile: cliniqueProfileId });
+      const ex = ((data ?? []) as { animal_id: string; nom: string | null; detenteur: string; deja_lie: boolean }[])[0];
+      if (ex) {
+        const nom = ex.nom ?? 'Cet animal';
+        setDoublon(ex.deja_lie
+          ? { type: 'animal', texte: `${nom} est déjà dans vos ${mot}.` }
+          : ex.detenteur === 'pro'
+            ? { type: 'pro', animalId: ex.animal_id, texte: `${nom} a déjà une fiche, créée par un autre professionnel pour son client. Rattachez-la à vos ${mot} : vous verrez son identité et ajouterez vos propres documents. Son carnet de santé et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.` }
+            : { type: 'animal', texte: `Le n° ${a.identification.trim()} correspond à ${nom}, déjà enregistré par son ${ex.detenteur === 'eleveur' ? 'éleveur' : 'propriétaire'} sur PetsMatch. Demandez plutôt l'accès à son carnet (recherche par puce dans Mes ${mot}).` });
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Étape 1 : la puce d'abord. */
+  async function verifierPuceDabord() {
+    setErreur(null); setDoublon(null);
+    if (a.identification.replace(/[^0-9A-Za-z]/g, '').length < 6) {
+      setErreur('Saisissez le n° de puce ou de tatouage (6 caractères au moins), ou indiquez que l’animal n’en a pas.');
+      return;
+    }
+    setSaving(true);
+    const libre = await controlerPuce();
+    setSaving(false);
+    if (libre) setPuceOk(true);
+  }
+
   async function creer(forcer = false) {
     setErreur(null);
+    if (rattacherA) {
+      if (!clientExistant && !c.nom.trim()) { setErreur('Nom du propriétaire obligatoire.'); return; }
+      await rattacher(rattacherA);
+      return;
+    }
     if (!a.nom.trim() || (!clientExistant && !c.nom.trim())) { setErreur("Nom du propriétaire et nom de l'animal obligatoires."); return; }
     setSaving(true);
     try {
       if (!forcer) {
-        // 1. Animal déjà sur PetsMatch (puce / tatouage)
-        if (a.identification.trim().length >= 6) {
-          const { data } = await supabase.rpc('pm_puce_existante', { p_identification: a.identification.trim(), p_profile: cliniqueProfileId });
-          const ex = ((data ?? []) as { animal_id: string; nom: string | null; detenteur: string; deja_lie: boolean }[])[0];
-          if (ex) {
-            const nom = ex.nom ?? 'Cet animal';
-            setDoublon(ex.deja_lie
-              ? { type: 'animal', texte: `${nom} est déjà dans vos ${mot}.` }
-              : ex.detenteur === 'pro'
-                ? { type: 'pro', animalId: ex.animal_id, texte: `${nom} a déjà une fiche, créée par un autre professionnel pour son client. Rattachez-la à vos ${mot} : vous verrez son identité et ajouterez vos propres documents. Son carnet de santé et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.` }
-                : { type: 'animal', texte: `Le n° ${a.identification.trim()} correspond à ${nom}, déjà enregistré par son ${ex.detenteur === 'eleveur' ? 'éleveur' : 'propriétaire'} sur PetsMatch. Demandez plutôt l'accès à son carnet (recherche par puce dans Mes ${mot}).` });
-            setSaving(false); return;
-          }
-        }
+        if (!(await controlerPuce())) { setSaving(false); return; }
         // 2. Propriétaire ayant un compte PetsMatch
         if (!clientExistant && c.email.trim()) {
           const u: UtilisateurTrouve | null = await trouverUtilisateurParEmail(c.email.trim());
@@ -100,12 +130,24 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
       <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-3 max-h-[92vh] overflow-y-auto"
         onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
         <div>
-          <h2 className="font-bold text-lg text-[#1E2025]">{estClinique ? 'Nouveau patient' : 'Nouveau client'}</h2>
+          <h2 className="font-bold text-lg text-[#1E2025]">{titreModal ?? (estClinique ? 'Nouveau patient' : 'Nouveau client')}</h2>
           <p className="text-xs text-gray-400 mt-0.5">{estClinique
             ? 'Pour un animal dont le propriétaire n\'a pas PetsMatch. Il pourra rattacher la fiche à son compte plus tard.'
             : 'Pour un client qui n\'a pas PetsMatch : contrat, facture et demandes lui sont envoyés par e-mail, avec une invitation à créer son compte.'}</p>
         </div>
 
+        {!puceOk && (
+          <div className="space-y-2">
+            <p className={titre}>1. Puce ou tatouage</p>
+            <p className="text-xs text-gray-500">On vérifie d’abord que l’animal n’a pas déjà une fiche sur PetsMatch (une puce = un animal).</p>
+            <input value={a.identification} autoFocus onChange={e => { setA({ ...a, identification: e.target.value }); setDoublon(null); }}
+              onKeyDown={e => { if (e.key === 'Enter') verifierPuceDabord(); }}
+              placeholder="N° de puce / tatouage" className={champ} />
+            <button type="button" onClick={() => { setA({ ...a, identification: '' }); setDoublon(null); setPuceOk(true); }}
+              className="text-xs font-semibold" style={{ color: TEAL }}>L’animal n’a pas de puce</button>
+          </div>
+        )}
+        {puceOk && (<>
         <p className={titre}>Propriétaire</p>
         {clientExistant ? (
           <div className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: `${TEAL}0F`, border: `1px solid ${TEAL}40` }}>
@@ -147,6 +189,11 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
           </>
         )}
 
+        {rattacherA ? (
+          <p className="text-xs rounded-xl p-3" style={{ background: `${TEAL}0F` }}>
+            Fiche existante : l’animal sera rattaché à votre fichier avec ce client. Son carnet de santé et les documents de l’autre professionnel restent privés.
+          </p>
+        ) : (<>
         <p className={titre}>Animal</p>
         <input value={a.nom} onChange={e => setA({ ...a, nom: e.target.value })} placeholder="Nom *" className={champ} />
         <div className="grid grid-cols-2 gap-2">
@@ -166,9 +213,14 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
             <input value={a.poids} inputMode="decimal" onChange={e => setA({ ...a, poids: e.target.value })} className={`${champ} mt-1`} />
           </label>
         </div>
-        <input value={a.identification} onChange={e => setA({ ...a, identification: e.target.value })} placeholder="N° de puce / tatouage (vérifié sur PetsMatch)" className={champ} />
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span>{a.identification.trim() ? `Puce / tatouage : ${a.identification.trim()} (vérifié)` : 'Sans puce ni tatouage'}</span>
+          <button type="button" onClick={() => { setPuceOk(false); setRattacherA(null); }} className="text-xs font-semibold" style={{ color: TEAL }}>Modifier</button>
+        </div>
         <input value={a.couleur} onChange={e => setA({ ...a, couleur: e.target.value })} placeholder="Robe / couleur" className={champ} />
+        </>)}
 
+        </>)}
         {doublon && (
           <div className="rounded-xl p-3 text-xs space-y-2" style={{ background: '#FFF4DC', color: '#8A5A00' }}>
             <p>{doublon.texte}</p>
@@ -176,7 +228,7 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
               <button onClick={() => { setDoublon(null); creer(true); }} className="font-bold underline">Créer quand même</button>
             )}
             {doublon.type === 'pro' && doublon.animalId && (
-              <button onClick={() => rattacher(doublon.animalId!)} disabled={saving}
+              <button onClick={() => { setRattacherA(doublon.animalId!); setDoublon(null); setPuceOk(true); }} disabled={saving}
                 className="px-3 py-2 rounded-lg text-white font-bold disabled:opacity-50" style={{ background: TEAL }}>
                 Rattacher à mes {mot}
               </button>
@@ -187,9 +239,15 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
 
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">Annuler</button>
-          <button onClick={() => creer()} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
-            {saving ? '…' : estClinique ? 'Créer le patient' : 'Créer le client'}
-          </button>
+          {puceOk ? (
+            <button onClick={() => creer()} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
+              {saving ? '…' : rattacherA ? `Rattacher à mes ${mot}` : estClinique ? 'Créer le patient' : 'Créer le client'}
+            </button>
+          ) : (
+            <button onClick={verifierPuceDabord} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50" style={{ background: TEAL }}>
+              {saving ? '…' : 'Vérifier la puce'}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -52,15 +52,23 @@ export default function ProAnimalEntete({ animalId, catPro, myUid, myProfileId }
       if (!a || annule) return;
       setUrgence(contacts((a as Row).contacts_urgence));
       setAutorises(contacts((a as Row).personnes_autorisees));
-      if ((a as Row).client_clinique_id) {
-        const { data: c } = await supabase.from('clients_clinique').select('*').eq('id', (a as Row).client_clinique_id as string).maybeSingle();
+      // Client du fichier du pro : celui de MON profil pour une fiche rattachée
+      // (créée par un autre pro), sinon celui de la fiche.
+      let clientId = (a as Row).client_clinique_id as string | null;
+      if (myProfileId) {
+        const { data: l } = await supabase.from('animaux_clients_pro').select('client_id')
+          .eq('animal_id', animalId).eq('pro_profile_id', myProfileId).maybeSingle();
+        if (l?.client_id) clientId = l.client_id as string;
+      }
+      if (clientId) {
+        const { data: c } = await supabase.from('clients_clinique').select('*').eq('id', clientId).maybeSingle();
         if (c && !annule) {
           const r = c as Row;
           setO({
             nom: `${r.prenom ?? ''} ${r.nom ?? ''}`.trim(), tel: champ(r, ['telephone']), email: champ(r, ['email']),
             adresse: joindre([champ(r, ['adresse']), `${champ(r, ['code_postal'])} ${champ(r, ['ville'])}`]),
             uid: (r.uid_lie as string | null) ?? null,
-            sous: r.uid_lie ? 'Client de la clinique' : 'Client de la clinique — hors PetsMatch',
+            sous: r.uid_lie ? 'Client' : 'Client — hors PetsMatch',
           });
           return;
         }

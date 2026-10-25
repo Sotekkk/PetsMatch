@@ -26,7 +26,9 @@ class NouveauPatientCliniquePage extends StatefulWidget {
   /// Vocabulaire : « patient » (vétérinaire) ou « client » (toiletteur,
   /// maréchal-ferrant, ostéopathe, éducateur — même fichier clients).
   final bool estClinique;
-  const NouveauPatientCliniquePage({super.key, required this.cliniqueProfileId, this.estClinique = true});
+  /// Titre selon le métier (« Nouvel animal suivi », « Nouvel équidé »…).
+  final String? titre;
+  const NouveauPatientCliniquePage({super.key, required this.cliniqueProfileId, this.estClinique = true, this.titre});
 
   @override
   State<NouveauPatientCliniquePage> createState() => _NouveauPatientCliniquePageState();
@@ -47,6 +49,11 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
   String? _sexe;
   DateTime? _naissance;
   bool _saving = false;
+  /// Étape 1 franchie : puce vérifiée (aucune fiche) ou animal sans puce.
+  bool _puceVerifiee = false;
+  bool _verification = false;
+  /// Fiche d'un autre pro à rattacher : on ne saisit que le client.
+  String? _rattacherA;
 
   @override
   void initState() {
@@ -65,9 +72,9 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
   void _snack(String t, {Color? c}) => ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(t, style: const TextStyle(fontFamily: 'Galey')), backgroundColor: c, behavior: SnackBarBehavior.floating));
 
-  /// Anti-doublon. Renvoie false si l'utilisateur part sur une demande d'accès.
-  Future<bool> _verifierDoublons() async {
-    // 1. Animal déjà sur PetsMatch (puce / tatouage)
+  /// Une puce = une fiche : false si l'animal est déjà sur PetsMatch (le
+  /// pro est alors orienté : déjà suivi, rattachement ou demande d'accès).
+  Future<bool> _controlerPuce() async {
     if (_ident.text.trim().length >= 6) {
       try {
         final rows = await _supa.rpc('pm_puce_existante',
@@ -90,7 +97,7 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
                 ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Rattacher à mes $mot')),
               ],
             ));
-            if (ok == true && mounted) await _rattacher(a['animal_id'].toString());
+            if (ok == true && mounted) setState(() => _rattacherA = a['animal_id'].toString());
             return false;
           }
           final demander = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -112,6 +119,12 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
         }
       } catch (_) {}
     }
+    return true;
+  }
+
+  /// Anti-doublon. Renvoie false si l'utilisateur part sur une demande d'accès.
+  Future<bool> _verifierDoublons() async {
+    if (!await _controlerPuce()) return false;
     // 2. Propriétaire ayant un compte PetsMatch (nouveau client seulement)
     if (_clientExistant == null) {
       Map<String, dynamic>? u;
@@ -157,6 +170,16 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
   }
 
   Future<void> _enregistrer() async {
+    if (_rattacherA != null) {
+      if (_clientExistant == null && _nom.text.trim().isEmpty) {
+        _snack('Nom du propriétaire obligatoire.', c: Colors.orange);
+        return;
+      }
+      setState(() => _saving = true);
+      await _rattacher(_rattacherA!);
+      if (mounted) setState(() => _saving = false);
+      return;
+    }
     if (_animalNom.text.trim().isEmpty || (_clientExistant == null && _nom.text.trim().isEmpty)) {
       _snack('Nom du propriétaire et nom de l\'animal obligatoires.', c: Colors.orange);
       return;
@@ -198,15 +221,53 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
     child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
   );
 
+  /// Étape 1 : la puce d'abord — on vérifie que la fiche n'existe pas déjà.
+  Future<void> _verifierPuceDabord() async {
+    if (_ident.text.replaceAll(RegExp(r'[^0-9A-Za-z]'), '').length < 6) {
+      _snack('Saisissez le n° de puce ou de tatouage (6 caractères au moins), ou indiquez que l’animal n’en a pas.', c: Colors.orange);
+      return;
+    }
+    setState(() => _verification = true);
+    final libre = await _controlerPuce();
+    if (!mounted) return;
+    setState(() { _verification = false; _puceVerifiee = libre || _rattacherA != null; });
+    if (libre) _snack('Aucune fiche avec cette puce sur PetsMatch : complétez la fiche.');
+  }
+
+  Widget _etapePuce() => ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 32), children: [
+        const Text('1. Puce ou tatouage', style: TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 6),
+        const Text('On vérifie d’abord que l’animal n’a pas déjà une fiche sur PetsMatch (une puce = un animal).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+        const SizedBox(height: 14),
+        TextField(controller: _ident, autofocus: true, decoration: _deco('N° de puce / tatouage'),
+            onSubmitted: (_) => _verifierPuceDabord()),
+        const SizedBox(height: 14),
+        SizedBox(width: double.infinity, height: 50, child: ElevatedButton(
+          onPressed: _verification ? null : _verifierPuceDabord,
+          style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+          child: _verification
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Text('Vérifier la puce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        )),
+        const SizedBox(height: 6),
+        TextButton(
+          onPressed: () => setState(() { _ident.clear(); _puceVerifiee = true; }),
+          child: const Text('L’animal n’a pas de puce', style: TextStyle(fontFamily: 'Galey', color: _teal)),
+        ),
+      ]);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
         backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
-        title: Text(widget.estClinique ? 'Nouveau patient' : 'Nouveau client', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(widget.titre ?? (widget.estClinique ? 'Nouveau patient' : 'Nouveau client'),
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
-      body: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
+      body: !_puceVerifiee ? _etapePuce() : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
         Text(widget.estClinique
             ? 'Pour un animal dont le propriétaire n\'a pas PetsMatch. Il pourra rattacher la fiche à son compte plus tard.'
             : 'Pour un client qui n\'a pas PetsMatch : contrat, facture et demandes lui sont envoyés par e-mail, avec une invitation '
@@ -261,6 +322,16 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
             Expanded(child: TextField(controller: _ville, decoration: _deco('Ville'))),
           ]),
         ],
+        if (_rattacherA != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: _teal.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12)),
+            child: const Text('Fiche existante : l\u2019animal sera rattaché à votre fichier avec ce client. Son carnet de santé '
+                'et les documents de l\u2019autre professionnel restent privés.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          ),
+        ] else ...[
         _titre('Animal'),
         TextField(controller: _animalNom, textCapitalization: TextCapitalization.words, decoration: _deco('Nom *')),
         const SizedBox(height: 8),
@@ -301,9 +372,14 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
               decoration: _deco('Poids (kg)'))),
         ]),
         const SizedBox(height: 8),
-        TextField(controller: _ident, decoration: _deco('N° de puce / tatouage (vérifié sur PetsMatch)')),
+        Row(children: [
+          Expanded(child: Text(_ident.text.trim().isEmpty ? 'Sans puce ni tatouage' : 'Puce / tatouage : ${_ident.text.trim()} (vérifié)',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF1F2A2E)))),
+          TextButton(onPressed: () => setState(() { _puceVerifiee = false; _rattacherA = null; }), child: const Text('Modifier')),
+        ]),
         const SizedBox(height: 8),
         TextField(controller: _couleur, decoration: _deco('Robe / couleur')),
+        ],
         const SizedBox(height: 22),
         SizedBox(width: double.infinity, height: 50, child: ElevatedButton(
           onPressed: _saving ? null : _enregistrer,
@@ -311,7 +387,10 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
           child: _saving
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-              : Text(widget.estClinique ? 'Créer le patient' : 'Créer le client', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              : Text(_rattacherA != null
+                  ? (widget.estClinique ? 'Rattacher à mes patients' : 'Rattacher à mes clients')
+                  : (widget.estClinique ? 'Créer le patient' : 'Créer le client'),
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
         )),
       ]),
     );
