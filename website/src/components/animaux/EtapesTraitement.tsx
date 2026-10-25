@@ -154,11 +154,11 @@ export default function FormTraitementEtapes({ initial, onSave, onCancel, saving
 
   return (
     <div className="space-y-3">
-      <label className="block"><span className={etiquette}>Nom *</span><input value={nom} onChange={e => setNom(e.target.value)} className={`${cls} w-full`} /></label>
+      <label className="block"><span className={etiquette}>Nom *</span><input value={nom} onChange={e => { setNom(e.target.value); setErreur(''); }} className={`${cls} w-full`} /></label>
       <label className="block"><span className={etiquette}>Type</span><input value={type} onChange={e => setType(e.target.value)} className={`${cls} w-full`} /></label>
       <label className="block"><span className={etiquette}>Description de la maladie</span><input value={maladie} onChange={e => setMaladie(e.target.value)} className={`${cls} w-full`} /></label>
       <label className="block"><span className={etiquette}>Posologie (résumé, facultatif)</span><input value={posologie} onChange={e => setPosologie(e.target.value)} className={`${cls} w-full`} /></label>
-      <label className="block"><span className={etiquette}>Date de début *</span><input type="date" value={debut} onChange={e => setDebut(e.target.value)} className={`${cls} w-full`} /></label>
+      <label className="block"><span className={etiquette}>Date de début *</span><input type="date" value={debut} onChange={e => { setDebut(e.target.value); setErreur(''); }} className={`${cls} w-full`} /></label>
       <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
         <input type="checkbox" checked={rappels} onChange={e => setRappels(e.target.checked)} className="accent-[#0C5C6C]" /> Rappel à chaque prise
       </label>

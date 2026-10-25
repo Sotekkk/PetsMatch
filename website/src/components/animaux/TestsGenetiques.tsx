@@ -12,6 +12,7 @@ import { GENETIC_TESTS, GENETIC_TEST_CATEGORIES, RESULTAT_LABEL, resultatChipCla
 import { dateValide } from '@/lib/controle-dates';
 import ChampDate from '@/components/ChampDate';
 import HealthSection from '@/components/animaux/HealthSection';
+import { messageSuppressionSante } from '@/lib/sante-libelles';
 
 const LIBELLE_CATEGORIE: Record<string, string> = {
   maladie: 'Maladie héréditaire', adn: 'Profil ADN', robe: 'Génétique de la robe',
@@ -218,7 +219,7 @@ export default function TestsGenetiques({ animalId, espece, uid, canWrite, dateN
         onSaved={async t => { const liste = [t, ...tests]; setTests(liste); setAjout(false); await syncAdn(liste); }} />}>
       {tests.map(t => (
         <LigneTest key={t.id} t={t} canWrite={canWrite} onDelete={async () => {
-          if (!confirm('Supprimer ce test ?')) return;
+          if (!confirm(messageSuppressionSante('tests_genetiques', t.nom))) return;
           const { error } = await supabase.from('tests_genetiques').delete().eq('id', t.id);
           if (error) { alert(`Suppression impossible : ${error.message}`); return; }
           const liste = tests.filter(x => x.id !== t.id);

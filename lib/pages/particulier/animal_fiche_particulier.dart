@@ -9,6 +9,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/sante_suppression.dart';
 import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
@@ -2293,6 +2294,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   Future<void> _deleteRecord(
       String table, String id, List<Map<String, dynamic>> list) async {
+    final r = list.firstWhere((x) => x['id']?.toString() == id.toString(), orElse: () => <String, dynamic>{});
+    final nom = (r['vaccin'] ?? r['produit'] ?? r['nom'] ?? r['intitule'] ?? r['description'] ?? r['motif']
+        ?? (r['valeur'] != null ? '${r['valeur']} kg' : null))?.toString();
+    if (!await confirmerSuppressionSante(context, table, nom: nom)) return;
     try {
       await _supa.from(table).delete().eq('id', id);
       setState(() => list.removeWhere((r) => r['id'] == id));
@@ -2691,12 +2696,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
     final isFirstVisit = _visites.isEmpty;
     _openSheet(existant != null ? 'Modifier la visite' : 'Ajouter une visite', (ss) => [
-      _SFld(ctrl: motif, label: 'Motif', hint: 'Ex: Contrôle annuel, Blessure...'),
+      _SFld(ctrl: motif, label: 'Motif *', hint: 'Ex: Contrôle annuel, Blessure...'),
       _SFld(ctrl: veto, label: 'Vétérinaire', hint: 'Nom du vétérinaire'),
       _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d)),
       _SFld(ctrl: diag, label: 'Diagnostic', hint: 'Diagnostic posé'),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
+      if (motif.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le motif de la visite.');
       controlerDatesSante(date: date);
       await _enregistrerSante('visites', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
@@ -2749,7 +2755,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     }
 
     _openSheet(existant != null ? 'Modifier le vermifuge' : 'Ajouter un vermifuge', (ss) => [
-      _SFld(ctrl: produit, label: 'Produit', hint: 'Ex: Milbemax, Drontal...'),
+      _SFld(ctrl: produit, label: 'Produit *', hint: 'Ex: Milbemax, Drontal...'),
       _SFld(ctrl: dosage, label: 'Dosage', hint: 'Ex: 1 comprimé'),
       _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeRappel(ss); }),
       _SFreq(valeurCtrl: frequenceValeur, unite: frequenceUnite,
@@ -2765,6 +2771,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
+      if (produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
       if (options.erreur != null) throw Exception(options.erreur);
       controlerDatesSante(date: date, rappel: dateRappel);
       final n = int.tryParse(frequenceValeur.text.trim());
@@ -2826,7 +2833,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     }
 
     _openSheet(existant != null ? 'Modifier l\'antiparasitaire' : 'Ajouter un antiparasitaire', (ss) => [
-      _SFld(ctrl: produit, label: 'Produit', hint: 'Ex: Frontline, Advantix...'),
+      _SFld(ctrl: produit, label: 'Produit *', hint: 'Ex: Frontline, Advantix...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Pipette, Collier, Spray...'),
       _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeRappel(ss); }),
       _SFreq(valeurCtrl: frequenceValeur, unite: frequenceUnite,
@@ -2836,6 +2843,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
+      if (produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
       controlerDatesSante(date: date, rappel: dateRappel);
       final n = int.tryParse(frequenceValeur.text.trim());
       final freqLabel = (n != null && n > 0)
@@ -2870,13 +2878,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         notes = TextEditingController(text: prefill?['notes'] ?? '');
     DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
     _openSheet(existant != null ? 'Modifier l\'allergie' : 'Ajouter une allergie', (ss) => [
-      _SFld(ctrl: desc, label: 'Description', hint: 'Ex: Allergie au pollen...'),
+      _SFld(ctrl: desc, label: 'Description *', hint: 'Ex: Allergie au pollen...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Alimentaire, Cutanée...'),
       _SFld(ctrl: severite, label: 'Sévérité', hint: 'Ex: Légère, Modérée, Sévère'),
       // Constatée : jamais dans le futur (même libellé que le site).
       _SDate(label: 'Date constatée', date: date, lastDate: DateTime.now(), onPicked: (d) => ss(() => date = d)),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
+      if (desc.text.trim().isEmpty) throw const SaisieInvalide('Indiquez la description de l\'allergie.');
       if (date != null && date!.isAfter(DateTime.now())) {
         throw const SaisieInvalide('La date constatée ne peut pas être dans le futur.');
       }

@@ -16,6 +16,7 @@ import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:PetsMatch/utils/sante_suppression.dart';
 import 'package:PetsMatch/utils/controle_dates.dart';
 import 'package:PetsMatch/widgets/carnet/prises_traitement.dart';
 import 'package:PetsMatch/utils/resume_traitement.dart';
@@ -5978,6 +5979,8 @@ class _SanteListState extends State<_SanteList> {
   }
 
   Future<void> _delete(String id) async {
+    final d = _data.firstWhere((x) => x['id']?.toString() == id, orElse: () => <String, dynamic>{});
+    if (!await confirmerSuppressionSante(context, widget.collection, nom: d.isEmpty ? null : _title(d))) return;
     try {
       await Supabase.instance.client.from(widget.collection).delete().eq('id', id);
       // Sans ça, la ligne du registre sanitaire liee a cet acte restait
@@ -6767,6 +6770,9 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     super.initState();
     final fields = _config[widget.collection] ?? [];
     _ctrls = { for (final f in fields) f.$1: TextEditingController(text: (widget.data[f.$1] ?? '').toString()) };
+    for (final c in _ctrls.values) {
+      c.addListener(() { if (_error != null && mounted) setState(() => _error = null); });
+    }
     final raw = widget.data['date'] as String?;
     _date = raw != null ? (DateTime.tryParse(raw) ?? DateTime.now()) : DateTime.now();
     _dateRappel = DateTime.tryParse((widget.data['date_rappel'] ?? '').toString());
@@ -7224,9 +7230,12 @@ class _PoidsTabState extends State<_PoidsTab> {
                       const SizedBox(width: 4),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
-                        onPressed: () => Supabase.instance.client
-                            .from('poids').delete().eq('id', d['id'])
-                            .then((_) => _refresh()),
+                        onPressed: () async {
+                          if (!await confirmerSuppressionSante(context, 'poids',
+                              nom: d['valeur'] != null ? '${d['valeur']} kg' : null)) return;
+                          await Supabase.instance.client.from('poids').delete().eq('id', d['id']);
+                          _refresh();
+                        },
                         padding: EdgeInsets.zero, constraints: const BoxConstraints(),
                       ),
                     ]),
@@ -8317,6 +8326,8 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
   }
 
   Future<void> _delete(String id) async {
+    final t = _tests.firstWhere((x) => x['id']?.toString() == id, orElse: () => <String, dynamic>{});
+    if (!await confirmerSuppressionSante(context, 'tests_genetiques', nom: t['nom']?.toString())) return;
     try {
       await _supa.from('tests_genetiques').delete().eq('id', id);
       await _load();
@@ -8545,7 +8556,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
     ],
     onSave: () async {
       final nom = _nomCtrl.text.trim();
-      if (nom.isEmpty) return false;
+      if (nom.isEmpty) throw const SaisieInvalide('Indiquez le nom du test.');
       controlerDateTestGenetique(_date, widget.dateNaissance);
       final presetHit = _presets.where((t) => t.code == _selectedCode).toList();
       await Supabase.instance.client.from('tests_genetiques').insert({
@@ -8755,7 +8766,7 @@ class _AddAllergieDialogState extends State<_AddAllergieDialog> {
     _DDrop('Sévérité', _severite, ['légère', 'modérée', 'sévère'], (v) => setState(() => _severite = v!)),
     _DF('Notes / antécédents', _notes, maxLines: 3),
   ], onSave: () async {
-    if (_description.text.isEmpty) return false;
+    if (_description.text.trim().isEmpty) throw const SaisieInvalide('Indiquez la description de l\'allergie.');
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     await Supabase.instance.client.from('allergies').insert({
       'id': id, 'animal_id': widget.animalId,

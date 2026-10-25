@@ -10,6 +10,7 @@ import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
 import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import { erreurPoids, poidsKg } from '@/lib/poids';
 import { erreursDatesSante } from '@/lib/controle-dates';
+import { messageSuppressionSante, nomEntreeSante } from '@/lib/sante-libelles';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
@@ -105,7 +106,16 @@ function AddForm({ fields, onSave, onCancel, saving, extra }:
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
     extra?: React.ReactNode }) {
   const [form, setForm] = useState<Record<string, string>>({});
+  // Champs obligatoires manquants au dernier « Enregistrer » ; un message
+  // disparaît dès que son champ est rempli.
+  const [manquants, setManquants] = useState<string[]>([]);
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
+  const enregistrer = () => {
+    const m = fields.filter(f => f.required && !(form[f.key] ?? '').trim()).map(f => f.key);
+    setManquants(m);
+    if (!m.length) void onSave(form);
+  };
+  const visibles = fields.filter(f => manquants.includes(f.key) && !(form[f.key] ?? '').trim());
   return (
     <div className="space-y-3 p-4">
       {fields.map(f => (
@@ -123,9 +133,14 @@ function AddForm({ fields, onSave, onCancel, saving, extra }:
         </div>
       ))}
       {extra}
+      {visibles.length > 0 && (
+        <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
+          {visibles.map(f => <li key={f.key}>{f.label} : obligatoire.</li>)}
+        </ul>
+      )}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
-        <button onClick={() => onSave(form)} disabled={saving}
+        <button onClick={enregistrer} disabled={saving}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -142,6 +157,7 @@ function VaccinAddForm({ espece, existingCategories, onSave, onCancel, saving }:
   { espece?: string; existingCategories: string[];
     onSave: (d: Record<string, string>) => Promise<void>; onCancel: () => void; saving: boolean }) {
   const [form, setForm] = useState<Record<string, string>>({});
+  const [vaccinManquant, setVaccinManquant] = useState(false);
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
 
   function applySuggestion(next: Record<string, string>) {
@@ -182,9 +198,12 @@ function VaccinAddForm({ espece, existingCategories, onSave, onCancel, saving }:
             className={cls} />
         </div>
       ))}
+      {vaccinManquant && !(form.vaccin ?? '').trim() && (
+        <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">Vaccin : obligatoire.</p>
+      )}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
-        <button onClick={() => onSave(form)} disabled={saving}
+        <button onClick={() => { if (!(form.vaccin ?? '').trim()) { setVaccinManquant(true); return; } setVaccinManquant(false); void onSave(form); }} disabled={saving}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -268,7 +287,10 @@ function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espec
     setSaving(false);
   };
   const handleDelete = async (table: string, id: string) => {
-    await supabase.from(table).delete().eq('id', id);
+    const entree = (health[table] ?? []).find(r => String(r.id) === String(id));
+    if (!confirm(messageSuppressionSante(table, nomEntreeSante(entree as Record<string, unknown> | undefined)))) return;
+    const { data: supprime, error } = await supabase.from(table).delete().eq('id', id).select('id');
+    if (error || !supprime?.length) { alert('Suppression impossible.'); return; }
     setHealth(prev => ({ ...prev, [table]: (prev[table] ?? []).filter(r => r.id !== id) }));
   };
 

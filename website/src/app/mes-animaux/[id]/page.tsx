@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
 import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe, dateValide } from '@/lib/controle-dates';
 import ChampDate from '@/components/ChampDate';
+import { messageSuppressionSante, nomEntreeSante } from '@/lib/sante-libelles';
 import TestsGenetiques from '@/components/animaux/TestsGenetiques';
 import { especeHasGenetics } from '@/lib/genetics';
 import PartageAnimalModal from '@/components/animaux/PartageAnimalModal';
@@ -477,15 +478,27 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
     extra?: React.ReactNode }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
-  const [erreurs, setErreurs] = useState<string[]>([]);
+  // Erreurs du dernier « Enregistrer », rattachées à leur champ : un message
+  // disparaît dès que ce champ est modifié (et revient au prochain essai).
+  const [erreurs, setErreurs] = useState<{ cle: string; msg: string }[]>([]);
+  const [saisieEnvoyee, setSaisieEnvoyee] = useState<Record<string, string>>({});
+  const erreursVisibles = erreurs.filter(e => !e.cle || (form[e.cle] ?? '') === (saisieEnvoyee[e.cle] ?? '')).map(e => e.msg);
   function enregistrer() {
     const avecStatut = fields.some(f => f.key === 'statut') ? { ...form, statut: form.statut || 'prevu' } : form;
     const e = erreursDatesSante(avecStatut, fields.filter(f => f.type === 'date'));
     const aujourdhui = new Date().toLocaleDateString('sv-SE'); // AAAA-MM-JJ local
     fields.filter(f => f.passee && dateValide(form[f.key] ?? '') && form[f.key] > aujourdhui)
       .forEach(f => e.push(`${f.label} : ne peut pas être dans le futur.`));
-    setErreurs(e);
-    if (!e.length) void onSave(form);
+    // Champs obligatoires (produit, vaccin, motif…) : avant, on pouvait enregistrer vide.
+    const requis = fields.filter(f => f.required && f.type !== 'date' && !(form[f.key] ?? '').trim())
+      .map(f => ({ cle: f.key, msg: `${f.label} : obligatoire.` }));
+    const cleDe = (msg: string) => fields.find(f => msg.startsWith(`${f.label} :`))?.key
+      ?? (msg.startsWith('Date de rappel') ? 'date_rappel' : msg.startsWith('Date de validité') ? 'date_validite_debut'
+        : msg.startsWith('Date de fin') ? 'date_fin' : msg.startsWith('Date') ? 'date' : msg.includes('heure') ? 'rappel_heures' : '');
+    const toutes = [...requis, ...e.map(msg => ({ cle: cleDe(msg), msg }))];
+    setErreurs(toutes);
+    setSaisieEnvoyee(form);
+    if (!toutes.length) void onSave(form);
   }
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   // Date en cours de saisie (vidée, incomplète) : pas de calcul — new Date('')
@@ -589,9 +602,9 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
           })} />
       ))}
       {extra}
-      {erreurs.length > 0 && (
+      {erreursVisibles.length > 0 && (
         <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
-          {erreurs.map(e => <li key={e}>{e}</li>)}
+          {erreursVisibles.map(e => <li key={e}>{e}</li>)}
         </ul>
       )}
       <div className="flex gap-2 pt-1">
@@ -3839,7 +3852,9 @@ function AnimalFichePageInner() {
   }
 
   async function deleteHealthRecord(table: string, recordId: string) {
-    if (!confirm('Supprimer cette entrée du carnet ?')) return;
+    // Précis : « Supprimer ce vaccin « Nobivac » ? » (plus « cette entrée »).
+    const entree = (health[table as keyof typeof health] as HealthRecord[] | undefined)?.find(r => String(r.id) === String(recordId));
+    if (!confirm(messageSuppressionSante(table, nomEntreeSante(entree)))) return;
     // .select() : une suppression refusée par la base ne renvoie aucune ligne
     // (avant : rien ne se passait, sans message).
     const { data: supprime, error } = await supabase.from(table).delete().eq('id', recordId).select('id');
@@ -3869,7 +3884,7 @@ function AnimalFichePageInner() {
   }
 
   async function deleteRadio(recordId: string) {
-    if (!confirm('Supprimer cette radio ? Cette action est irréversible.')) return;
+    if (!confirm(messageSuppressionSante('radios', nomEntreeSante(radios.find(r => String(r.id) === recordId))))) return;
     const { data, error } = await supabase.from('radios').delete().eq('id', recordId).select('id');
     if (error || !data?.length) alert('Suppression impossible.');
     await loadDocs();
