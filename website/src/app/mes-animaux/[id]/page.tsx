@@ -5617,7 +5617,8 @@ function AnimalFichePageInner() {
 
           {/* Génétique & tests : particulier ici, éleveur dans le suivi repro. */}
           {!(isEleveur || isEmployeOfOwner) && especeHasGenetics(animal.espece) && id && (
-            <TestsGenetiques animalId={id} espece={animal.espece ?? ''} uid={user?.uid ?? ''} canWrite={canWriteSante} />
+            <TestsGenetiques animalId={id} espece={animal.espece ?? ''} uid={user?.uid ?? ''} canWrite={canWriteSante}
+              dateNaissance={animal.date_naissance} />
           )}
 
           </HealthPanel>
@@ -5657,7 +5658,7 @@ function AnimalFichePageInner() {
         <div className="mt-4">
           <HealthPanel>
             <TestsGenetiques animalId={id} espece={animal.espece ?? ''} uid={user?.uid ?? ''}
-              canWrite={!(isEmployeOfOwner && !employePerms.includes('write_repro'))} />
+              canWrite={!(isEmployeOfOwner && !employePerms.includes('write_repro'))} dateNaissance={animal.date_naissance} />
           </HealthPanel>
         </div>
       )}

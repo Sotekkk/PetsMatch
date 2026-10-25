@@ -28,9 +28,11 @@ interface Test {
 const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
 const etiquette = 'text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block';
 
-function FormTest({ espece, onCancel, onSaved, animalId, uid }: {
+function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance }: {
   espece: string; animalId: string; uid: string; onCancel: () => void; onSaved: (t: Test) => void;
+  dateNaissance?: string | null;
 }) {
+  const naissance = dateNaissance ? dateNaissance.slice(0, 10) : '';
   const presetsPour = (c: string) => (GENETIC_TESTS[espece] ?? []).filter(t => t.categorie === c);
   const [categorie, setCategorie] = useState('maladie');
   const [code, setCode] = useState(presetsPour('maladie')[0]?.code ?? AUTRE);
@@ -58,6 +60,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid }: {
     if (!nom.trim()) { setErreur('Indiquez le nom du test.'); return; }
     if (date && !dateValide(date)) { setErreur('Date du test : date invalide (JJ/MM/AAAA).'); return; }
     if (date && date > new Date().toLocaleDateString('sv-SE')) { setErreur('Date du test : ne peut pas être dans le futur.'); return; }
+    if (date && naissance && date < naissance) { setErreur("Date du test : ne peut pas être antérieure à la naissance de l'animal."); return; }
     setSaving(true); setErreur('');
     try {
       let url: string | null = null;
@@ -125,7 +128,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid }: {
         <label className={etiquette}>Laboratoire</label>
         <input value={labo} onChange={e => setLabo(e.target.value)} placeholder="Labéo, Antagene, UC Davis…" className={cls} />
       </div>
-      <ChampDate label="Date du test" value={date} onChange={setDate} max={new Date().toLocaleDateString('sv-SE')} />
+      <ChampDate label="Date du test" value={date} onChange={setDate} min={naissance || undefined} max={new Date().toLocaleDateString('sv-SE')} />
       <div>
         <label className={etiquette}>Lien du résultat en ligne</label>
         <input value={lien} onChange={e => setLien(e.target.value)} placeholder="https://… (Embark, Wisdom Panel…)" className={cls} />
@@ -187,8 +190,10 @@ function LigneTest({ t, canWrite, onDelete }: { t: Test; canWrite: boolean; onDe
 }
 
 /** Rubrique « Génétique & tests » (dans un HealthPanel). */
-export default function TestsGenetiques({ animalId, espece, uid, canWrite }: {
+export default function TestsGenetiques({ animalId, espece, uid, canWrite, dateNaissance }: {
   animalId: string; espece: string; uid: string; canWrite: boolean;
+  /** Date de naissance : un test ne peut pas lui être antérieur. */
+  dateNaissance?: string | null;
 }) {
   const [tests, setTests] = useState<Test[]>([]);
   const [ajout, setAjout] = useState(false);
@@ -209,7 +214,7 @@ export default function TestsGenetiques({ animalId, espece, uid, canWrite }: {
   return (
     <HealthSection title="Génétique & tests" color="#7C3AED" count={tests.length}
       onAdd={canWrite ? () => setAjout(a => !a) : undefined} addFormOpen={ajout}
-      addForm={<FormTest espece={espece} animalId={animalId} uid={uid} onCancel={() => setAjout(false)}
+      addForm={<FormTest espece={espece} animalId={animalId} uid={uid} dateNaissance={dateNaissance} onCancel={() => setAjout(false)}
         onSaved={async t => { const liste = [t, ...tests]; setTests(liste); setAjout(false); await syncAdn(liste); }} />}>
       {tests.map(t => (
         <LigneTest key={t.id} t={t} canWrite={canWrite} onDelete={async () => {

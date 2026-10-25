@@ -64,3 +64,16 @@ void controlerDatesSante({
   apres(validite, 'La date de validité');
   apres(fin, 'La date de fin');
 }
+
+/// Date d'un test génétique : ni dans le futur, ni avant la naissance de l'animal.
+void controlerDateTestGenetique(DateTime? date, DateTime? naissance) {
+  if (date == null) return;
+  final jour = DateTime(date.year, date.month, date.day);
+  final now = DateTime.now();
+  if (jour.isAfter(DateTime(now.year, now.month, now.day))) {
+    throw const SaisieInvalide('La date du test ne peut pas être dans le futur.');
+  }
+  if (naissance != null && jour.isBefore(DateTime(naissance.year, naissance.month, naissance.day))) {
+    throw const SaisieInvalide('La date du test ne peut pas être antérieure à la naissance de l\'animal.');
+  }
+}

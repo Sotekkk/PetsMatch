@@ -3032,7 +3032,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               onChanged: (v) => ss(() => resultat = v ?? 'clair')),
         _SFld(ctrl: genoCtrl, label: 'Génotype / notation labo', hint: 'N/N, N/WFFS, HD-A/A…'),
         _SFld(ctrl: laboCtrl, label: 'Laboratoire', hint: 'Labéo, Antagene, UC Davis…'),
-        _SDate(label: 'Date du test', date: date, onPicked: (d) => ss(() => date = d)),
+        _SDate(label: 'Date du test', date: date, firstDate: _dateNaissance, lastDate: DateTime.now(),
+            onPicked: (d) => ss(() => date = d)),
         _SFld(ctrl: lienCtrl, label: 'Lien du résultat en ligne', hint: 'https://… (Embark, Wisdom Panel…)'),
         Padding(
           padding: const EdgeInsets.only(bottom: 14),
@@ -3050,6 +3051,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     }, () async {
       final nom = nomCtrl.text.trim();
       if (nom.isEmpty) return;
+      controlerDateTestGenetique(date, _dateNaissance);
       final hit = presetsFor(categorie).where((t) => t.code == selectedCode).toList();
       await _supa.from('tests_genetiques').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',

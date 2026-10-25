@@ -5529,7 +5529,7 @@ class _SuiviReproTab extends StatelessWidget {
         ),
       if (hasGen)
         ListView(padding: const EdgeInsets.only(bottom: 24), children: [
-          _GenetiqueSection(animalId: animalId!, espece: espece, readOnly: readOnly),
+          _GenetiqueSection(animalId: animalId!, espece: espece, readOnly: readOnly, dateNaissance: dateNaissance),
           _BilanReproCard(animalId: animalId!, espece: espece, readOnly: readOnly),
         ]),
     ];
@@ -8263,7 +8263,8 @@ class _GenetiqueSection extends StatefulWidget {
   final String animalId;
   final String espece;
   final bool readOnly;
-  const _GenetiqueSection({required this.animalId, required this.espece, this.readOnly = false});
+  final DateTime? dateNaissance;
+  const _GenetiqueSection({required this.animalId, required this.espece, this.readOnly = false, this.dateNaissance});
   @override
   State<_GenetiqueSection> createState() => _GenetiqueSectionState();
 }
@@ -8307,7 +8308,7 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
   Future<void> _add() async {
     final added = await showDialog<bool>(
       context: context,
-      builder: (_) => _AddTestGenetiqueDialog(animalId: widget.animalId, espece: widget.espece),
+      builder: (_) => _AddTestGenetiqueDialog(animalId: widget.animalId, espece: widget.espece, dateNaissance: widget.dateNaissance),
     );
     if (added == true) {
       await _load();
@@ -8418,7 +8419,8 @@ String _fmtTgDate(dynamic v) {
 class _AddTestGenetiqueDialog extends StatefulWidget {
   final String animalId;
   final String espece;
-  const _AddTestGenetiqueDialog({required this.animalId, required this.espece});
+  final DateTime? dateNaissance;
+  const _AddTestGenetiqueDialog({required this.animalId, required this.espece, this.dateNaissance});
   @override
   State<_AddTestGenetiqueDialog> createState() => _AddTestGenetiqueDialogState();
 }
@@ -8544,6 +8546,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
     onSave: () async {
       final nom = _nomCtrl.text.trim();
       if (nom.isEmpty) return false;
+      controlerDateTestGenetique(_date, widget.dateNaissance);
       final presetHit = _presets.where((t) => t.code == _selectedCode).toList();
       await Supabase.instance.client.from('tests_genetiques').insert({
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
