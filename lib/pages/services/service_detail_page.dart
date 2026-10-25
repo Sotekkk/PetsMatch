@@ -686,9 +686,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   }
 
   String get _telephone =>
-      (_proData?['phone_number'] ?? _proData?['phone'] ?? '')
-          .toString()
-          .trim();
+      [_proData?['phone_number'], _proData?['phone'], telephoneOuVide(_proData?['numero_elevage']?.toString())]
+          .map((v) => (v ?? '').toString().trim()).firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
   /// Téléphone au format international sans « + » pour wa.me (France par défaut).
   String _waPhone(String raw) {

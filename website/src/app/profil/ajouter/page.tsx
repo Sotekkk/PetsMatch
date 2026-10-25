@@ -144,6 +144,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   const [profileLabel, setProfileLabel] = useState(() => defaultLabel(typeInfo.type, userFirstname, userLastname));
   const [nomCabinet, setNomCabinet] = useState('');
   const [phone, setPhone] = useState('');
+  // E-mail de contact du profil (fiche publique) ; par défaut celui du compte.
+  const { user: compte } = useAuth();
+  const [emailContact, setEmailContact] = useState(compte?.email ?? '');
   const [description, setDescription] = useState('');
   const [siret, setSiret] = useState('');
   const [numeroOrdre, setNumeroOrdre] = useState('');
@@ -243,6 +246,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
     const errs: string[] = [];
     if (!profileLabel.trim()) errs.push('Libellé du profil');
     if (!ville.trim()) errs.push('Ville');
+    if (emailContact.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailContact.trim())) errs.push('E-mail de contact valide');
     if (isEleveur) {
       if (!nomCabinet.trim()) errs.push("Nom de l'élevage");
       if (!phone.trim()) errs.push('Téléphone');
@@ -269,6 +273,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         profile_type:  typeInfo.type,
         profile_label: profileLabel.trim(),
         phone:         phone.trim(),
+        ...(typeInfo.type !== 'particulier' && emailContact.trim() ? { email_contact: emailContact.trim() } : {}),
         adresse:       addressSearch.trim(),
         rue:           rue.trim(),
         ville:         ville.trim(),
@@ -489,6 +494,12 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
             <input value={phone} onChange={e => setPhone(e.target.value)}
               className="w-full input-field" placeholder="06 12 34 56 78" />
           </Field>
+          {typeInfo.type !== 'particulier' && (
+            <Field label="E-mail de contact (visible sur votre fiche)">
+              <input type="email" value={emailContact} onChange={e => setEmailContact(e.target.value)}
+                className="w-full input-field" placeholder="contact@monentreprise.fr" />
+            </Field>
+          )}
 
           {/* Éleveur spécifique */}
           {isEleveur && (
@@ -696,6 +707,9 @@ function AssociationForm({ uid, onBack, onSaved }: {
   const [acaced, setAcaced]                 = useState('');
   const [acacedDate, setAcacedDate]         = useState('');
   const [phone, setPhone]                   = useState('');
+  // E-mail de contact de l'association (fiche publique) ; par défaut celui du compte.
+  const { user: compteAsso } = useAuth();
+  const [emailContact, setEmailContact]     = useState(compteAsso?.email ?? '');
   const [siteWeb, setSiteWeb]               = useState('');
   const [description, setDescription]       = useState('');
   const [rue, setRue]                       = useState('');
@@ -725,6 +739,7 @@ function AssociationForm({ uid, onBack, onSaved }: {
     if (!rue.trim())            errs.push('Rue');
     if (!ville.trim())          errs.push('Ville');
     if (!cp.trim())             errs.push('Code postal');
+    if (emailContact.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailContact.trim())) errs.push('E-mail de contact valide');
     if (errs.length > 0) { setError(`Champs obligatoires : ${errs.join(', ')}`); return; }
 
     setSaving(true);
@@ -741,6 +756,7 @@ function AssociationForm({ uid, onBack, onSaved }: {
         siret:             siret.trim(),
         certifications:    [{ nom: 'ACACED', numero: acaced.trim(), date_obtention: acacedDate }],
         phone:             phone.trim() || null,
+        email_contact:     emailContact.trim() || null,
         site_web:          siteWeb.trim() || null,
         desc_entreprise:   description.trim() || null,
         rue:               rue.trim(),
@@ -925,6 +941,10 @@ function AssociationForm({ uid, onBack, onSaved }: {
           <AssocField label="Téléphone">
             <input value={phone} onChange={e => setPhone(e.target.value)}
               className="w-full input-field" placeholder="06 12 34 56 78" />
+          </AssocField>
+          <AssocField label="E-mail de contact" hint="Visible sur votre fiche publique.">
+            <input type="email" value={emailContact} onChange={e => setEmailContact(e.target.value)}
+              className="w-full input-field" placeholder="contact@monassociation.fr" />
           </AssocField>
 
           <AssocField label="Site web (facultatif)">

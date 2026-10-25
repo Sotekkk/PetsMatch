@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import ContactModal from '@/components/ContactModal';
+import { telephoneOuVide } from '@/lib/contact-acquereur';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
@@ -92,7 +93,7 @@ function fromFirestore(uid: string, d: Record<string, unknown>): EleveurData {
     statutPro: (d['statutPro'] as string) || (d['statut_pro'] as string) || '',
     isPremium: !!(d['isPremium'] ?? d['is_premium']),
     isValidate: !!(d['isValidate'] ?? d['is_validate']),
-    telephone: (d['telephone'] as string) || (d['phone_number'] as string) || '',
+    telephone: (d['telephone'] as string) || (d['phone_number'] as string) || telephoneOuVide(d['numeroElevage'] as string) || '',
     siteWeb: (d['siteWeb'] as string) || (d['site_web'] as string) || '',
     facebook: (d['facebook'] as string) || '',
     instagram: (d['instagram'] as string) || '',
@@ -145,12 +146,13 @@ export default function EleveurProfilePage() {
     if (!euid) return;
     (async () => {
       const { data: prof } = await supabase.from('user_profiles_complet')
-        .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, email_contact')
+        .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, phone, numero_elevage, email_contact')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof) return;
       setEleveurProfileId((prof.id as string) ?? null);
       const desc = (prof.desc_entreprise || prof.description || '').trim();
-      const tel = (prof.phone_number || '').trim();
+      // numero_elevage : téléphone de l'élevage OU SIREN selon le formulaire (repli si c'est un téléphone).
+      const tel = ((prof.phone_number as string) || (prof.phone as string) || telephoneOuVide(prof.numero_elevage as string | null) || '').trim();
       setEleveur(prev => prev && ({
         ...prev,
         description: desc || prev.description,

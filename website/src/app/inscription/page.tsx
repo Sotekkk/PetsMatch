@@ -215,6 +215,8 @@ export default function InscriptionPage() {
   const [lastname, setLastname] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [phone, setPhone] = useState('');
+  // E-mail de contact du profil pro / élevage (fiche publique) ; vide = e-mail du compte.
+  const [emailContact, setEmailContact] = useState('');
   // Particulier : pays + position de l'adresse, animaux & projet d'adoption.
   const [pays, setPays] = useState('France');
   const [latLng, setLatLng] = useState<{ lat?: number; lng?: number }>({});
@@ -434,6 +436,16 @@ export default function InscriptionPage() {
 
     // ecrireLigne (pas d'upsert) : colonnes privées non lisibles (phase 2 données perso).
     await ecrireLigne('users', base, { uid });
+
+    // E-mail de contact sur le profil pro / élevage créé par le trigger
+    // (create_main_profile_on_signup ne le recopie pas) : fiche publique.
+    if (isEleveurOrPro) {
+      const contact = emailContact.trim() || emailAddr;
+      if (contact) {
+        await supabase.from('user_profiles').update({ email_contact: contact })
+          .eq('uid', uid).neq('profile_type', 'particulier');
+      }
+    }
 
     // Le numéro d'ordre vétérinaire n'est packé que dans `certifications`
     // (JSONB sur `users`) — le trigger d'auto-création du profil principal
@@ -687,6 +699,11 @@ export default function InscriptionPage() {
                       <label className={labelCls}>Nom de l&apos;élevage / entreprise</label>
                       <input type="text" value={nameElevage} onChange={(e) => setNameElevage(e.target.value)}
                         placeholder="Élevage des Roches" className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>E-mail de contact <span className="text-gray-400 font-normal">(visible sur votre fiche, sinon celui du compte)</span></label>
+                      <input type="email" value={emailContact} onChange={(e) => setEmailContact(e.target.value)}
+                        placeholder={email || 'contact@monentreprise.fr'} className={inputCls} />
                     </div>
                     <div>
                       <label className={labelCls}>Adresse de l&apos;élevage / structure</label>

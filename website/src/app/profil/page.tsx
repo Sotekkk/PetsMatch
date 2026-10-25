@@ -835,6 +835,9 @@ interface ProProfileData {
 
 function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }) {
   const router = useRouter();
+  const { user: compte } = useAuth();
+  // E-mail de contact affiché sur la fiche publique (email_contact) ; par défaut celui du compte.
+  const [emailContact, setEmailContact] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -935,6 +938,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setInstagram((r.instagram as string) ?? '');
         setFacebook((r.facebook as string) ?? '');
         setPhone((r.phone as string) ?? '');
+        setEmailContact(((r.email_contact as string) ?? '').trim() || compte?.email || '');
         setRayon(((r.rayon_intervention as number) ?? 20));
         setAcceptNewClients((r.accept_new_clients as boolean) ?? true);
         setUrgences24h((r.urgences_24h as boolean) ?? false);
@@ -1174,6 +1178,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       instagram: instagram.trim(),
       facebook: facebook.trim(),
       phone: phone.trim(),
+      email_contact: emailContact.trim() || null,
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
       ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h, retard_alerte_auto: retardAlerteAuto } : {}),
@@ -1397,6 +1402,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Field>
           <Field label="Téléphone professionnel">
             <input value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} placeholder="06 12 34 56 78" />
+          </Field>
+          <Field label="E-mail de contact (visible sur votre fiche)">
+            <input type="email" value={emailContact} onChange={e => setEmailContact(e.target.value)} className={inputCls} placeholder="contact@monentreprise.fr" />
           </Field>
           <Field label="Description / présentation">
             <textarea value={description} onChange={e => setDescription(e.target.value)}
@@ -2270,6 +2278,8 @@ export default function ProfilPage() {
   // Elevage
   const [nameElevage, setNameElevage] = useState('');
   const [phoneElevage, setPhoneElevage] = useState('');
+  // E-mail de contact de l'élevage (fiche publique) ; par défaut celui du compte.
+  const [emailElevage, setEmailElevage] = useState('');
   const [description, setDescription] = useState('');
   const [rue, setRue] = useState('');
   const [cp, setCp] = useState('');
@@ -2389,6 +2399,9 @@ export default function ProfilPage() {
     if (isEleveur) {
       setNameElevage(userData.nameElevage ?? '');
       setPhoneElevage(userData.numeroElevage ?? '');
+      setEmailElevage(user?.email ?? '');
+      supabase.from('user_profiles_complet').select('email_contact').eq('uid', user?.uid ?? '').eq('profile_type', 'eleveur').maybeSingle()
+        .then(({ data: ep }) => { const v = ((ep?.email_contact as string | null) ?? '').trim(); if (v) setEmailElevage(v); });
       setDescription(userData.descriptionElevage ?? '');
       setRue(userData.rueElevage ?? '');
       setCp(userData.codePostalElevage ?? '');
@@ -2631,6 +2644,7 @@ export default function ProfilPage() {
     if (isEleveur) {
       if (!nameElevage.trim()) errs.push("Nom de l'élevage requis");
       if (!phoneElevage.trim()) errs.push("Téléphone de l'élevage requis");
+      if (emailElevage.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailElevage.trim())) errs.push('E-mail de contact invalide');
       if (!rue.trim()) errs.push("Rue / voie de l'élevage requise");
       if (!cp.trim()) errs.push("Code postal de l'élevage requis");
       if (!villeElevage.trim()) errs.push("Ville de l'élevage requise");
@@ -2780,6 +2794,7 @@ export default function ProfilPage() {
         profileUpdate.nom            = nameElevage;
         profileUpdate.phone_number   = phoneElevage;
         profileUpdate.numero_elevage = phoneElevage;
+        profileUpdate.email_contact  = emailElevage.trim() || null;
         profileUpdate.desc_entreprise = description;
         profileUpdate.rue_pro        = rue;
         profileUpdate.code_postal_pro = cp;
@@ -3503,6 +3518,9 @@ export default function ProfilPage() {
             </Field>
             <Field label="Téléphone de l'élevage *">
               <input value={phoneElevage} onChange={e => setPhoneElevage(e.target.value)} placeholder="06 00 00 00 00" required className={inputCls} />
+            </Field>
+            <Field label="E-mail de contact (visible sur votre fiche)">
+              <input type="email" value={emailElevage} onChange={e => setEmailElevage(e.target.value)} placeholder="contact@monelevage.fr" className={inputCls} />
             </Field>
             <Field label="Description / présentation">
               <textarea value={description} onChange={e => setDescription(e.target.value)}

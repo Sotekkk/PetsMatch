@@ -36,6 +36,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   final _dobCtrl          = TextEditingController();
   final _nomElevageCtrl   = TextEditingController();
   final _telCtrl          = TextEditingController();
+  /// E-mail de contact de l'élevage, affiché sur la fiche publique (email_contact).
+  final _emailContactCtrl = TextEditingController();
   final _descCtrl         = TextEditingController();
   final _addressSearchCtrl = TextEditingController();
   final _rueCtrl          = TextEditingController();
@@ -93,7 +95,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
   @override
   void dispose() {
     for (final c in [_prenomCtrl, _nomCtrl, _dobCtrl, _nomElevageCtrl,
-      _telCtrl, _descCtrl, _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl, _paysCtrl,
+      _telCtrl, _emailContactCtrl, _descCtrl, _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl, _paysCtrl,
       _siretCtrl, _tvaCtrl, _acacedCtrl, _instagramCtrl, _facebookCtrl, _siteWebCtrl]) {
       c.dispose();
     }
@@ -130,7 +132,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       elevRow = await Supabase.instance.client
           .from('user_profiles_complet')
           .select('montre_reproducteurs, desc_entreprise, description, '
-              'instagram, facebook, site_web, numero_elevage, phone_number')
+              'instagram, facebook, site_web, numero_elevage, phone_number, email_contact')
           .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
       montreRepro = elevRow?['montre_reproducteurs'] == true;
     } catch (_) {}
@@ -146,6 +148,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _dobCtrl.text        = d['dateofbirth']      ?? User_Info.dateofbirth;
       _nomElevageCtrl.text = d['nameElevage']      ?? User_Info.nameElevage;
       _telCtrl.text        = elev('numero_elevage', elev('phone_number', d['numeroElevage'] ?? User_Info.numeroElevage));
+      // Par défaut l'e-mail du compte (comme l'association), modifiable.
+      _emailContactCtrl.text = elev('email_contact', FirebaseAuth.instance.currentUser?.email ?? User_Info.email);
       // Description publique = profil ÉLEVEUR (desc_entreprise), jamais User_Info.desc
       // qui est contaminé par le profil actif.
       _descCtrl.text       = elev('desc_entreprise', elev('description', (d['desc'] as String?) ?? ''));
@@ -409,6 +413,14 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (_acacedDocFile == null && (_acacedDocUrl == null || _acacedDocUrl!.isEmpty))
       missing.add('Certificat ACACED');
 
+    final emailContact = _emailContactCtrl.text.trim();
+    if (emailContact.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailContact)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('E-mail de contact invalide (ex. contact@monelevage.fr).'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
     if (missing.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Champs obligatoires : ${missing.join(', ')}'),
@@ -595,6 +607,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'site_web':       _siteWebCtrl.text.trim(),
           'numero_elevage': _telCtrl.text.trim(),
           'phone_number':   _telCtrl.text.trim(),
+          'email_contact':  _emailContactCtrl.text.trim().isEmpty ? null : _emailContactCtrl.text.trim(),
         }).eq('uid', uid).eq('profile_type', 'eleveur');
       } catch (_) {}
 
@@ -710,6 +723,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
                   _card('Élevage', [
                     _field('Nom de l\'élevage *', _nomElevageCtrl),
                     _field('Téléphone élevage', _telCtrl, inputType: TextInputType.phone),
+                    _field('E-mail de contact (visible sur votre fiche)', _emailContactCtrl,
+                        inputType: TextInputType.emailAddress, hint: 'contact@monelevage.fr'),
                     _field('Description / présentation', _descCtrl, maxLines: 3),
                   ]),
                   const SizedBox(height: 12),

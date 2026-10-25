@@ -9,6 +9,14 @@ import 'package:PetsMatch/utils/messaging_helper.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
+/// Numéro de téléphone (0… ou +…, 10 chiffres au moins), sinon '' —
+/// numero_elevage contient selon le formulaire le téléphone de l'élevage OU
+/// son SIREN/DDPP : on ne l'affiche comme téléphone que s'il en a la forme.
+String telephoneOuVide(String? v) {
+  final t = (v ?? '').trim();
+  return RegExp(r'^(\+|0)').hasMatch(t) && t.replaceAll(RegExp(r'[^0-9]'), '').length >= 10 ? t : '';
+}
+
 /// Numéro au format international pour WhatsApp (06… → 336…).
 String waNumero(String brut) {
   var d = brut.replaceAll(RegExp(r'[^0-9]'), '');

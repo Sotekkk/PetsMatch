@@ -57,7 +57,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       final prof = await Supabase.instance.client
           .from('user_profiles_complet')
           .select('id, montre_reproducteurs, desc_entreprise, description, '
-              'instagram, facebook, site_web, phone_number, email_contact, statut_pro')
+              'instagram, facebook, site_web, phone_number, phone, numero_elevage, email_contact, statut_pro')
           .eq('uid', widget.user.uid)
           .eq('profile_type', 'eleveur')
           .maybeSingle();
@@ -65,8 +65,9 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       var desc = v('desc_entreprise').isNotEmpty
           ? v('desc_entreprise')
           : v('description');
-      // phone_number : numero_elevage est le numéro d'élevage, pas un téléphone.
-      var tel = v('phone_number');
+      // numero_elevage : téléphone de l'élevage OU SIREN selon le formulaire (repli si c'est un téléphone).
+      var tel = [v('phone_number'), v('phone'), telephoneOuVide(v('numero_elevage'))]
+          .firstWhere((x) => x.isNotEmpty, orElse: () => '');
       var insta = v('instagram'), fb = v('facebook'), web = v('site_web');
 
       // Repli Firestore `users` : profils dont l'édition n'a pas encore propagé
@@ -81,7 +82,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           if (fb.isEmpty) fb = f('facebook');
           if (web.isEmpty) web = f('siteWeb');
           if (desc.isEmpty) desc = f('descEntreprise').isNotEmpty ? f('descEntreprise') : f('desc');
-          if (tel.isEmpty) tel = f('phone_number').isNotEmpty ? f('phone_number') : f('telephone');
+          if (tel.isEmpty) tel = telephoneOuVide(f('numeroElevage'));
         } catch (_) {}
       }
 

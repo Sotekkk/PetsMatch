@@ -7,6 +7,7 @@ import { TARIFS_VETO_GROUPES, libelleTarifVeto } from '@/lib/tarifs-veto';
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { telephoneOuVide } from '@/lib/contact-acquereur';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -384,7 +385,8 @@ function ProDetailContent() {
           portfolio: portfolioPublic(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
-          phone: (data.phone_number || data.phone || '') as string,
+          // numero_elevage : téléphone de l'élevage OU SIREN selon le formulaire (repli si c'est un téléphone).
+          phone: (data.phone_number || data.phone || telephoneOuVide(data.numero_elevage as string | null)) as string,
           email: (data.email_contact || '') as string,
           rayon: data.rayon_intervention || 0,
           cat_pro: data.profile_type || data.cat_pro || '',
@@ -432,7 +434,8 @@ function ProDetailContent() {
           portfolio: portfolioPublic(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
-          phone: (data.phone_number || data.phone || '') as string,
+          // numero_elevage : téléphone de l'élevage OU SIREN selon le formulaire (repli si c'est un téléphone).
+          phone: (data.phone_number || data.phone || telephoneOuVide(data.numero_elevage as string | null)) as string,
           email: (data.email_contact || '') as string,
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},

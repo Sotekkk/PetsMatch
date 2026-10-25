@@ -235,6 +235,8 @@ export default function EleveurProfilEditPage() {
   // Élevage
   const [nameElevage, setNameElevage] = useState('');
   const [phoneElevage, setPhoneElevage] = useState('');
+  // E-mail de contact de l'élevage (fiche publique) ; par défaut celui du compte.
+  const [emailElevage, setEmailElevage] = useState('');
   const [description, setDescription] = useState('');
 
   // Adresse élevage + autocomplete
@@ -358,7 +360,7 @@ export default function EleveurProfilEditPage() {
   useEffect(() => {
     if (!user) return;
     supabase.from('user_profiles_complet')
-      .select('montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, numero_elevage, phone_number')
+      .select('montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, numero_elevage, phone_number, email_contact')
       .eq('uid', user.uid).eq('profile_type', 'eleveur').maybeSingle()
       .then(({ data }) => {
         if (!data) return;
@@ -370,6 +372,7 @@ export default function EleveurProfilEditPage() {
         if (data.site_web) setSiteWeb(data.site_web);
         const tel = (data.numero_elevage || data.phone_number || '').trim();
         if (tel) setPhoneElevage(tel);
+        setEmailElevage(((data.email_contact as string | null) ?? '').trim() || user.email || '');
       });
   }, [user]);
 
@@ -486,6 +489,7 @@ export default function EleveurProfilEditPage() {
     else { const e = erreurNaissancePersonne(dob); if (e) errs.push(e); }
     if (!nameElevage.trim()) errs.push("Nom de l'élevage requis");
     if (!phoneElevage.trim()) errs.push("Téléphone de l'élevage requis");
+    if (emailElevage.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailElevage.trim())) errs.push('E-mail de contact invalide');
     if (!rue.trim()) errs.push("Rue / voie de l'élevage requise");
     if (!cp.trim()) errs.push("Code postal de l'élevage requis");
     if (!villeElevage.trim()) errs.push("Ville de l'élevage requise");
@@ -644,6 +648,7 @@ export default function EleveurProfilEditPage() {
           site_web: siteWeb.trim(),
           numero_elevage: phoneElevage,
           phone_number: phoneElevage,
+          email_contact: emailElevage.trim() || null,
         })
         .eq('uid', user!.uid)
         .eq('profile_type', 'eleveur');
@@ -811,6 +816,9 @@ export default function EleveurProfilEditPage() {
           </Field>
           <Field label="Téléphone de l'élevage *">
             <input value={phoneElevage} onChange={e => setPhoneElevage(e.target.value)} placeholder="06 00 00 00 00" required className={inputCls} />
+          </Field>
+          <Field label="E-mail de contact (visible sur votre fiche)">
+            <input type="email" value={emailElevage} onChange={e => setEmailElevage(e.target.value)} placeholder="contact@monelevage.fr" className={inputCls} />
           </Field>
           <Field label="Description / présentation">
             <textarea value={description} onChange={e => setDescription(e.target.value)}

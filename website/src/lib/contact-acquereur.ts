@@ -142,6 +142,14 @@ export async function saveContactAcquereurManuel(animalId: string, data: Contact
 }
 
 /** Téléphone au format international sans « + » pour wa.me (France par défaut). */
+/** Numéro de téléphone (0… ou +…, 10 chiffres au moins) — numero_elevage
+ *  contient selon le formulaire le téléphone de l'élevage OU son SIREN/DDPP :
+ *  on ne l'affiche comme téléphone que s'il en a la forme. */
+export function telephoneOuVide(v?: string | null): string {
+  const t = (v ?? '').trim();
+  return /^(\+|0)/.test(t) && t.replace(/[^0-9]/g, '').length >= 10 ? t : '';
+}
+
 export function waPhone(raw: string): string {
   let d = raw.replace(/[^0-9]/g, '');
   if (d.startsWith('00')) d = d.slice(2);

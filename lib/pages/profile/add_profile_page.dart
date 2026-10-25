@@ -185,6 +185,8 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   final _labelCtrl      = TextEditingController();
   final _nomCtrl        = TextEditingController();
   final _phoneCtrl      = TextEditingController();
+  /// E-mail de contact du profil pro (fiche publique) ; par défaut celui du compte.
+  final _emailContactCtrl = TextEditingController();
   final _descCtrl       = TextEditingController();
   final _siretCtrl      = TextEditingController();
   final _siteCtrl       = TextEditingController();
@@ -221,6 +223,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     super.initState();
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _phoneCtrl.text = User_Info.phone_number == '0000000000' ? '' : User_Info.phone_number;
+    _emailContactCtrl.text = FirebaseAuth.instance.currentUser?.email ?? '';
     if (widget.typeInfo.type == 'particulier') {
       _nomCtrl.text = '${User_Info.firstname} ${User_Info.lastname}'.trim();
     }
@@ -252,7 +255,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   void dispose() {
     _searchDebounce?.cancel();
     _places.dispose();
-    for (final c in [_labelCtrl, _nomCtrl, _phoneCtrl, _descCtrl, _siretCtrl, _siteCtrl,
+    for (final c in [_labelCtrl, _nomCtrl, _phoneCtrl, _emailContactCtrl, _descCtrl, _siretCtrl, _siteCtrl,
         _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
         _numElevageCtrl, _acacedCtrl, _numOrdreCtrl]) {
       c.dispose();
@@ -370,6 +373,14 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final emailContact = _emailContactCtrl.text.trim();
+    if (!_isParticulierType && emailContact.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailContact)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('E-mail de contact invalide (ex. contact@monentreprise.fr).', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     if (_acacedRequis && _acacedDoc == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Joignez le justificatif ACACED (photo ou scan) pour créer le profil.', style: TextStyle(fontFamily: 'Galey')),
@@ -394,6 +405,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       'pays':        _paysCtrl.text.trim().isNotEmpty ? _paysCtrl.text.trim() : 'France',
       'description': _descCtrl.text.trim(),
       'site_web':    _siteCtrl.text.trim(),
+      if (!_isParticulierType && _emailContactCtrl.text.trim().isNotEmpty) 'email_contact': _emailContactCtrl.text.trim(),
     };
     // Filet de sécurité : si l'utilisateur a tapé une adresse sans jamais
     // sélectionner une suggestion (ou géolocalisé), _lat/_lng restent nuls
@@ -545,6 +557,11 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
           _section(_isParticulierType ? 'Téléphone' : 'Téléphone professionnel'),
           _field(_phoneCtrl, 'Ex : 06 12 34 56 78',
               required: _isParticulierType),
+          if (!_isParticulierType) ...[
+            const SizedBox(height: 16),
+            _section('E-mail de contact (visible sur votre fiche)'),
+            _field(_emailContactCtrl, 'contact@monentreprise.fr'),
+          ],
 
           if (_isEleveurType) ...[
             const SizedBox(height: 16),

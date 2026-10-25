@@ -56,6 +56,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   final _descCtrl            = TextEditingController();
   final _tarifsCtrl          = TextEditingController();
   final _phoneCtrl           = TextEditingController();
+  /// E-mail de contact affiché sur la fiche publique (user_profiles.email_contact).
+  final _emailContactCtrl    = TextEditingController();
   final _siteWebCtrl         = TextEditingController();
   final _instagramCtrl       = TextEditingController();
   final _facebookCtrl        = TextEditingController();
@@ -250,7 +252,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     _places.dispose();
     for (final c in [
       _nomStructureCtrl, _professionCtrl, _descCtrl, _tarifsCtrl,
-      _phoneCtrl, _siteWebCtrl, _instagramCtrl, _facebookCtrl,
+      _phoneCtrl, _emailContactCtrl, _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
       _tvaCtrl, _formeJuridiqueCtrl, _capitalCtrl, _rcsCtrl, _rmCtrl, _ibanCtrl, _bicCtrl,
       _educationBilanDescCtrl,
@@ -324,6 +326,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             : (row['desc_entreprise'] ?? User_Info.descEntreprise);
         _tarifsCtrl.text       = row['tarifs']          ?? '';
         _phoneCtrl.text        = (row['phone_number'] ?? row['phone'] ?? row['numero_elevage'] ?? '').toString();
+        // Par défaut l'e-mail du compte (comme l'association), modifiable.
+        _emailContactCtrl.text = ((row['email_contact'] ?? '').toString().trim().isNotEmpty
+            ? row['email_contact'] : FirebaseAuth.instance.currentUser?.email ?? '').toString();
         _siteWebCtrl.text      = row['site_web']        ?? '';
         _instagramCtrl.text    = row['instagram']       ?? '';
         _facebookCtrl.text     = row['facebook']        ?? '';
@@ -751,6 +756,15 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
     }
 
+    final emailContact = _emailContactCtrl.text.trim();
+    if (emailContact.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailContact)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('E-mail de contact invalide (ex. contact@monentreprise.fr).', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
@@ -826,6 +840,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'desc_entreprise':    _descCtrl.text.trim(),
           'tarifs':             _tarifsCtrl.text.trim(),
           'phone_number':       _phoneCtrl.text.trim(),
+          'email_contact':      _emailContactCtrl.text.trim().isEmpty ? null : _emailContactCtrl.text.trim(),
           'site_web':           _siteWebCtrl.text.trim(),
           'instagram':          _instagramCtrl.text.trim(),
           'facebook':           _facebookCtrl.text.trim(),
@@ -943,6 +958,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'desc_entreprise':    _descCtrl.text.trim(),
           'tarifs':             _tarifsCtrl.text.trim(),
           'phone_number':       _phoneCtrl.text.trim(),
+          'email_contact':      _emailContactCtrl.text.trim().isEmpty ? null : _emailContactCtrl.text.trim(),
           'site_web':           _siteWebCtrl.text.trim(),
           'instagram':          _instagramCtrl.text.trim(),
           'facebook':           _facebookCtrl.text.trim(),
@@ -1122,6 +1138,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _field(_phoneCtrl, 'Téléphone (visible sur votre fiche : appel + WhatsApp)',
                       Icons.call_outlined, inputType: TextInputType.phone),
+                  const SizedBox(height: 12),
+                  _field(_emailContactCtrl, 'E-mail de contact (visible sur votre fiche)',
+                      Icons.mail_outline, inputType: TextInputType.emailAddress, hint: 'contact@monentreprise.fr'),
                   // L'éducateur, le vétérinaire, l'ostéo/kiné et le pet-sitter ont une grille
                   // de tarifs structurée (prestations fixes + libres) — le
                   // champ libre ferait doublon.
