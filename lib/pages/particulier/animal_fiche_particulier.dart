@@ -2987,7 +2987,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         selectedCode = '';
         nomCtrl.text = '';
       }
-      if (categorie == 'adn') resultat = 'etabli';
+      if (categorie == 'adn' || categorie == 'complet') resultat = 'etabli';
     }
 
     Future<void> pickFile(StateSetter ss) async {
@@ -3037,6 +3037,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         if (presets.isNotEmpty)
           _SDrop(label: 'Test', value: selectedCode == '' ? 'Autre (saisie libre)' : selectedCode,
               options: [...presets.map((t) => t.code), 'Autre (saisie libre)'],
+              libelles: {for (final t in presets) t.code: t.nom},
               onChanged: (v) => ss(() {
                 if (v == null || v == 'Autre (saisie libre)') {
                   selectedCode = ''; nomCtrl.text = '';
@@ -3720,7 +3721,9 @@ class _SDrop extends StatelessWidget {
   final String? value;
   final List<String> options;
   final ValueChanged<String?> onChanged;
-  const _SDrop({required this.label, required this.value, required this.options, required this.onChanged});
+  /// Libellés propres à cette liste (ex. code d'un test → son nom).
+  final Map<String, String>? libelles;
+  const _SDrop({required this.label, required this.value, required this.options, required this.onChanged, this.libelles});
 
   @override
   Widget build(BuildContext context) {
@@ -3733,7 +3736,7 @@ class _SDrop extends StatelessWidget {
         DropdownButtonFormField<String>(
           initialValue: options.contains(value) ? value : null,
           isExpanded: true,
-          items: options.map((o) => DropdownMenuItem(value: o, child: Text(kLibellesSante[o] ?? o, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
+          items: options.map((o) => DropdownMenuItem(value: o, child: Text(libelles?[o] ?? kLibellesSante[o] ?? o, overflow: TextOverflow.ellipsis, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
           onChanged: onChanged,
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.black87),
           decoration: InputDecoration(

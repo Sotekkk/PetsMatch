@@ -8563,7 +8563,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
       _selectedCode = '';
       _nomCtrl.text = '';
     }
-    if (_categorie == 'adn') _resultat = 'etabli';
+    if (_categorie == 'adn' || _categorie == 'complet') _resultat = 'etabli';
   }
 
   @override
@@ -8619,6 +8619,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
       if (_presets.isNotEmpty)
         _DDrop('Test', _selectedCode == '' ? '' : _selectedCode,
             ['', ..._presets.map((t) => t.code)],
+            libelles: {'': 'Autre (saisie libre)', for (final t in _presets) t.code: t.nom},
             (v) => setState(() {
               _selectedCode = v;
               if (v != null && v.isNotEmpty) {
@@ -10491,7 +10492,9 @@ class _DF { final String label; final TextEditingController ctrl; final int maxL
 class _DD { final String label; final DateTime? value; final ValueChanged<DateTime> onChanged;
   const _DD(this.label, this.value, this.onChanged); }
 class _DDrop { final String label; final String? value; final List<String> options; final ValueChanged<String?> onChanged;
-  const _DDrop(this.label, this.value, this.options, this.onChanged); }
+  /// Libellés propres à cette liste (ex. code d'un test → son nom).
+  final Map<String, String>? libelles;
+  const _DDrop(this.label, this.value, this.options, this.onChanged, {this.libelles}); }
 class _DCustom { final Widget child; const _DCustom(this.child); }
 /// Valeur calculée, affichée sans pouvoir être modifiée.
 class _DLecture { final String label; final String valeur; const _DLecture(this.label, this.valeur); }
@@ -10570,7 +10573,7 @@ class _BaseDialog extends StatelessWidget {
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true),
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
                     items: f.options.map((o) => DropdownMenuItem(value: o,
-                        child: Text(kLibellesSante[o] ?? o, overflow: TextOverflow.ellipsis, maxLines: 1))).toList(),
+                        child: Text(f.libelles?[o] ?? kLibellesSante[o] ?? o, overflow: TextOverflow.ellipsis, maxLines: 2))).toList(),
                     onChanged: f.onChanged));
 
                 if (f is _DCustom) return Padding(padding: const EdgeInsets.only(bottom: 10), child: f.child);

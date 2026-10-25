@@ -16,6 +16,7 @@ import LienDocument from '@/components/LienDocument';
 import { messageSuppressionSante } from '@/lib/sante-libelles';
 
 const LIBELLE_CATEGORIE: Record<string, string> = {
+  complet: 'Test complet (maladies + traits)',
   maladie: 'Maladie héréditaire', adn: 'Profil ADN', robe: 'Génétique de la robe',
   aptitude: 'Aptitude / performance', autre: 'Autre',
 };
@@ -75,7 +76,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance, exi
     const p = presetsPour(c);
     setCode(p[0]?.code ?? AUTRE);
     setNom(p[0]?.nom ?? '');
-    if (c === 'adn') setResultat('etabli');
+    if (c === 'adn' || c === 'complet') setResultat('etabli');
   };
 
   async function enregistrer() {

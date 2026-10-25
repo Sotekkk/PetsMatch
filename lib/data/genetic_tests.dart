@@ -7,14 +7,16 @@ import 'package:flutter/material.dart';
 class GeneticTest {
   final String code;
   final String nom;
-  final String categorie; // 'maladie' | 'adn' | 'robe' | 'aptitude'
+  final String categorie; // 'complet' | 'maladie' | 'adn' | 'robe' | 'aptitude'
   final String? races;
   const GeneticTest(this.code, this.nom, this.categorie, [this.races]);
 }
 
-const List<String> kGeneticTestCategories = ['maladie', 'adn', 'robe', 'aptitude', 'autre'];
+// 'complet' : panel complet maladies + traits (Embark, Wisdom Panel…).
+const List<String> kGeneticTestCategories = ['complet', 'maladie', 'adn', 'robe', 'aptitude', 'autre'];
 
 const Map<String, String> kGeneticTestCategorieLabels = {
+  'complet': 'Test complet (maladies + traits)',
   'maladie': 'Maladie héréditaire',
   'adn': 'Profil ADN',
   'robe': 'Génétique de la robe',
@@ -24,6 +26,8 @@ const Map<String, String> kGeneticTestCategorieLabels = {
 
 const Map<String, List<GeneticTest>> kGeneticTests = {
   'cheval': [
+    GeneticTest('ETALON', 'Etalon Diagnostics — panel complet', 'complet'),
+    GeneticTest('PANEL_LABO', 'Panel complet (autre laboratoire)', 'complet'),
     GeneticTest('WFFS', 'Warmblood Fragile Foal Syndrome', 'maladie', 'Chevaux de sport'),
     GeneticTest('PSSM1', 'Myopathie à surcharge en polysaccharides type 1', 'maladie', 'Traits, Quarter, sport'),
     GeneticTest('PSSM2', 'Myopathie type 2 (P2/P3/P4/Px/K)', 'maladie'),
@@ -49,6 +53,10 @@ const Map<String, List<GeneticTest>> kGeneticTests = {
     GeneticTest('LP', 'Léopard (LP)', 'robe'),
   ],
   'chien': [
+    GeneticTest('EMBARK', 'Embark — maladies + traits + origines', 'complet'),
+    GeneticTest('WISDOM', 'Wisdom Panel — maladies + traits', 'complet'),
+    GeneticTest('OPTIMAL', 'Optimal Selection (Wisdom) — éleveur', 'complet'),
+    GeneticTest('PANEL_LABO', 'Panel complet (autre laboratoire)', 'complet'),
     GeneticTest('HD', 'Dysplasie coxo-fémorale (hanches)', 'maladie'),
     GeneticTest('ED', 'Dysplasie du coude', 'maladie'),
     GeneticTest('PRA', 'Atrophie rétinienne progressive (APR)', 'maladie'),
@@ -63,6 +71,9 @@ const Map<String, List<GeneticTest>> kGeneticTests = {
     GeneticTest('ADN', 'Profil ADN (identification / filiation)', 'adn'),
   ],
   'chat': [
+    GeneticTest('BASEPAWS', 'Basepaws — maladies + traits', 'complet'),
+    GeneticTest('WISDOM', 'Wisdom Panel — maladies + traits', 'complet'),
+    GeneticTest('PANEL_LABO', 'Panel complet (autre laboratoire)', 'complet'),
     GeneticTest('PKD', 'Polykystose rénale (PKD1)', 'maladie', 'Persan, British…'),
     GeneticTest('HCM', 'Cardiomyopathie hypertrophique', 'maladie', 'Maine Coon, Ragdoll…'),
     GeneticTest('PK_DEF', 'Déficit en pyruvate kinase (PK-Def)', 'maladie'),

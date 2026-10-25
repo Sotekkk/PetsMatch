@@ -5,7 +5,7 @@
 export interface GeneticTest {
   code: string;
   nom: string;
-  categorie: 'maladie' | 'adn' | 'robe' | 'aptitude';
+  categorie: 'complet' | 'maladie' | 'adn' | 'robe' | 'aptitude';
   races?: string;
 }
 
@@ -19,10 +19,13 @@ export interface TestGenetique {
   lien_resultat?: string | null;
 }
 
-export const GENETIC_TEST_CATEGORIES = ['maladie', 'adn', 'robe', 'aptitude', 'autre'];
+// 'complet' : panel complet maladies + traits (Embark, Wisdom Panel…).
+export const GENETIC_TEST_CATEGORIES = ['complet', 'maladie', 'adn', 'robe', 'aptitude', 'autre'];
 
 export const GENETIC_TESTS: Record<string, GeneticTest[]> = {
   cheval: [
+    { code: 'ETALON', nom: 'Etalon Diagnostics — panel complet', categorie: 'complet' },
+    { code: 'PANEL_LABO', nom: 'Panel complet (autre laboratoire)', categorie: 'complet' },
     { code: 'WFFS', nom: 'Warmblood Fragile Foal Syndrome', categorie: 'maladie', races: 'Chevaux de sport' },
     { code: 'PSSM1', nom: 'Myopathie à surcharge en polysaccharides type 1', categorie: 'maladie' },
     { code: 'PSSM2', nom: 'Myopathie type 2', categorie: 'maladie' },
@@ -48,6 +51,10 @@ export const GENETIC_TESTS: Record<string, GeneticTest[]> = {
     { code: 'LP', nom: 'Léopard (LP)', categorie: 'robe' },
   ],
   chien: [
+    { code: 'EMBARK', nom: 'Embark — maladies + traits + origines', categorie: 'complet' },
+    { code: 'WISDOM', nom: 'Wisdom Panel — maladies + traits', categorie: 'complet' },
+    { code: 'OPTIMAL', nom: 'Optimal Selection (Wisdom) — éleveur', categorie: 'complet' },
+    { code: 'PANEL_LABO', nom: 'Panel complet (autre laboratoire)', categorie: 'complet' },
     { code: 'HD', nom: 'Dysplasie coxo-fémorale (hanches)', categorie: 'maladie' },
     { code: 'ED', nom: 'Dysplasie du coude', categorie: 'maladie' },
     { code: 'PRA', nom: 'Atrophie rétinienne progressive (APR)', categorie: 'maladie' },
@@ -62,6 +69,9 @@ export const GENETIC_TESTS: Record<string, GeneticTest[]> = {
     { code: 'ADN', nom: 'Profil ADN (identification / filiation)', categorie: 'adn' },
   ],
   chat: [
+    { code: 'BASEPAWS', nom: 'Basepaws — maladies + traits', categorie: 'complet' },
+    { code: 'WISDOM', nom: 'Wisdom Panel — maladies + traits', categorie: 'complet' },
+    { code: 'PANEL_LABO', nom: 'Panel complet (autre laboratoire)', categorie: 'complet' },
     { code: 'PKD', nom: 'Polykystose rénale (PKD1)', categorie: 'maladie', races: 'Persan, British…' },
     { code: 'HCM', nom: 'Cardiomyopathie hypertrophique', categorie: 'maladie', races: 'Maine Coon, Ragdoll…' },
     { code: 'PK_DEF', nom: 'Déficit en pyruvate kinase (PK-Def)', categorie: 'maladie' },

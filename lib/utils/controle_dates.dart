@@ -19,6 +19,11 @@ const kLibellesSante = {
   'prevu': 'Prévue', 'realise': 'Réalisée', 'annule': 'Annulée',
   'chirurgie': 'Chirurgie', 'hospitalisation': 'Hospitalisation',
   'antiparasitaire': 'Antiparasitaire', 'medicament': 'Médicament', 'autre': 'Autre',
+  // Tests génétiques : catégories et résultats (avant : codes bruts affichés).
+  'complet': 'Test complet (maladies + traits)', 'maladie': 'Maladie héréditaire', 'adn': 'Profil ADN',
+  'robe': 'Génétique de la robe', 'aptitude': 'Aptitude / performance',
+  'clair': 'Indemne (N/N)', 'porteur': 'Porteur (hétérozygote)', 'homozygote': 'Homozygote atteint',
+  'atteint': 'Atteint', 'etabli': 'Établi', 'indetermine': 'En attente / indéterminé',
 };
 
 /// Plus ancienne date acceptée pour un acte (pas de 12/03/0001).
