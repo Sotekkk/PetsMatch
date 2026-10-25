@@ -8326,15 +8326,77 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
   }
 
   Future<void> _add({Map<String, dynamic>? existing}) async {
-    final added = await showDialog<bool>(
+    // _BaseDialog se ferme sans valeur : on recharge toujours (avant : le test
+    // enregistré n'apparaissait qu'après être revenu sur la fiche → doublons).
+    await showDialog<void>(
       context: context,
       builder: (_) => _AddTestGenetiqueDialog(animalId: widget.animalId, espece: widget.espece,
           dateNaissance: widget.dateNaissance, existing: existing),
     );
-    if (added == true) {
-      await _load();
-      await _syncAdnFlag();
-    }
+    if (!mounted) return;
+    await _load();
+    await _syncAdnFlag();
+  }
+
+  /// Fiche complète d'un test (appui sur la ligne).
+  void _detail(Map<String, dynamic> t) {
+    final lien = lienWeb(t['lien_resultat']?.toString());
+    final url = (t['url'] ?? '').toString().trim();
+    final lignes = <(String, String)>[
+      ('Catégorie', kGeneticTestCategorieLabels[t['categorie']] ?? (t['categorie'] ?? '').toString()),
+      ('Résultat', kResultatsGenetiques[t['resultat']] ?? (t['resultat'] ?? '').toString()),
+      ('Génotype', (t['genotype'] ?? '').toString()),
+      ('Laboratoire', (t['laboratoire'] ?? '').toString()),
+      ('Date du test', _fmtTgDate(t['date_test'])),
+      ('Notes', (t['notes'] ?? '').toString()),
+    ].where((l) => l.$2.trim().isNotEmpty).toList();
+    const lab = TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B));
+    const val = TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600);
+    const lienSt = TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600,
+        color: Color(0xFF0C5C6C), decoration: TextDecoration.underline);
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text((t['nom'] ?? 'Test').toString(),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+          const SizedBox(height: 12),
+          for (final l in lignes)
+            Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 120, child: Text(l.$1, style: lab)),
+              Expanded(child: Text(l.$2, style: val)),
+            ])),
+          if (lien.isNotEmpty)
+            Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const SizedBox(width: 120, child: Text('Résultat en ligne', style: lab)),
+              Expanded(child: GestureDetector(
+                onTap: () => launchUrl(Uri.parse(lien), mode: LaunchMode.externalApplication),
+                child: Text(lien, style: lienSt))),
+            ])),
+          if (url.startsWith('http'))
+            Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const SizedBox(width: 120, child: Text('Document joint', style: lab)),
+              Expanded(child: GestureDetector(onTap: () => _openDoc(context, url), child: Text(nomFichier(url), style: lienSt))),
+            ])),
+          if (!widget.readOnly) ...[
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: OutlinedButton.icon(
+                icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey')),
+                onPressed: () { Navigator.pop(ctx); _add(existing: t); })),
+              const SizedBox(width: 10),
+              Expanded(child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                icon: const Icon(Icons.delete_outline, size: 16), label: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey')),
+                onPressed: () { Navigator.pop(ctx); _delete(t['id'].toString()); })),
+            ]),
+          ],
+        ]),
+      )),
+    );
   }
 
   Future<void> _delete(String id) async {
@@ -8390,12 +8452,12 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
             return Padding(
               padding: const EdgeInsets.only(top: 10),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: InkWell(onTap: () => _detail(t), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(t['nom'] ?? 'Test',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
                   if (sub.isNotEmpty)
                     Text(sub, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-                ])),
+                ]))),
                 if (res != null || geno.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(left: 8),
