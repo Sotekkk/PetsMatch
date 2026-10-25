@@ -2646,10 +2646,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             TextButton(onPressed: _save,
                 child: const Text('Enregistrer', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w600)))
           else
-            TextButton.icon(
-              onPressed: () => setState(() => _editing = true),
-              icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.white),
-              label: const Text('Modifier', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            // « Modifier » n'édite que l'identité : affiché seulement sur
+            // l'onglet Identité (le premier), pour ne pas faire croire qu'il
+            // modifie la santé ou l'alimentation.
+            AnimatedBuilder(
+              animation: _tabs,
+              builder: (_, __) => _tabs.index != 0 ? const SizedBox.shrink() : TextButton.icon(
+                onPressed: () => setState(() => _editing = true),
+                icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.white),
+                label: const Text('Modifier', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              ),
             ),
         ],
         bottom: PreferredSize(

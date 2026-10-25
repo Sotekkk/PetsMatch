@@ -4314,7 +4314,8 @@ function AnimalFichePageInner() {
                 🖤 Décéder
               </button>
             )}
-            {((canWrite && !isCede) || cedeSansCompte) && animal.statut !== 'cession_en_cours' && (
+            {/* « Modifier » n'édite que l'identité : seulement sur cet onglet. */}
+            {tab === 'identite' && ((canWrite && !isCede) || cedeSansCompte) && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setEditing(true)}
                 className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
                 Modifier

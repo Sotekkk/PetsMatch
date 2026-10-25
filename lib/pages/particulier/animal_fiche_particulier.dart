@@ -979,11 +979,17 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               ),
             ])
           else
-            TextButton.icon(
-              onPressed: () => setState(() => _editing = true),
-              icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.white),
-              label: const Text('Modifier',
-                  style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+            // « Modifier » n'édite que l'identité : affiché seulement sur
+            // l'onglet Identité (le premier), pour ne pas faire croire qu'il
+            // modifie la santé ou l'alimentation.
+            AnimatedBuilder(
+              animation: _tabs,
+              builder: (_, __) => _tabs.index != 0 ? const SizedBox.shrink() : TextButton.icon(
+                onPressed: () => setState(() => _editing = true),
+                icon: const Icon(Icons.edit_outlined, size: 16, color: Colors.white),
+                label: const Text('Modifier',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
             ),
         ],
         bottom: TabBar(
