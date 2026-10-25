@@ -1,6 +1,7 @@
 'use client';
 
 import { dateValide, erreursDatesSante } from '@/lib/controle-dates';
+import { PlanAlimentationDepuisLigne } from '@/components/alimentation/PlanAlimentationLecture';
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
@@ -430,7 +431,7 @@ export default function AnimalFichePensionWebPage() {
             onPoidsAdded={() => load()}
           />
         )}
-        {tab === 'consignes' && consignesVue === 'alimentation' && <AlimentationTab alimentation={alimentation} pensionEntry={pensionEntry} />}
+        {tab === 'consignes' && consignesVue === 'alimentation' && <AlimentationTab alimentation={alimentation} pensionEntry={pensionEntry} espece={espece} nomAnimal={animal?.nom ?? ''} />}
         {tab === 'suivi' && (
           <>
             <div style={{ background: 'white', borderRadius: 14, border: '1px solid #E6E8E6', padding: 16, marginBottom: 12, fontFamily: 'Galey, sans-serif' }}>
@@ -721,7 +722,7 @@ function AlimSejourCard({ s }: { s: AlimentationSejour }) {
   );
 }
 
-function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Alimentation | null; pensionEntry: PensionEntry | null }) {
+function AlimentationTab({ alimentation, pensionEntry, espece, nomAnimal }: { alimentation: Alimentation | null; pensionEntry: PensionEntry | null; espece: string; nomAnimal: string }) {
   const sejour = pensionEntry?.alimentation_sejour ?? null;
   const hasSejour = !!sejour && Object.keys(sejour).some(k => k !== 'fournis_par' && (sejour as Record<string, string>)[k]);
   if (!alimentation) return (
@@ -738,14 +739,8 @@ function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Aliment
     </div>
   );
   const a = alimentation;
-  // « notes » encode l'état du calculateur du propriétaire (« 50|30|…|nb_repas|… ») :
-  // jamais affiché tel quel ; nb de repas / dose manuelle en repli des colonnes dédiées.
-  const parts = a.notes?.includes('|') ? a.notes.split('|') : [];
-  const nbRepas = a.nb_repas || Number(parts[3]) || 0;
-  const ration = a.ration_grammes || Number((parts[5] ?? '').replace(',', '.')) || 0;
-  const ration2 = a.ration2_grammes || Number((parts[6] ?? '').replace(',', '.')) || 0;
+  // « notes » sans « | » : anciennes instructions en texte libre.
   const instructions = a.notes && !a.notes.includes('|') ? a.notes : '';
-  const parRepas = (g: number) => nbRepas > 1 ? ` (${Math.round(g / nbRepas)} g par repas)` : '';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {hasSejour && <AlimSejourCard s={sejour!} />}
@@ -754,31 +749,21 @@ function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Aliment
           Régime habituel — renseigné par le propriétaire
         </p>
       )}
-      <Section title="Régime alimentaire">
-        <Row label="Type de ration" value={RATION_LABEL[a.type_ration ?? ''] ?? a.type_ration} />
-        <Row label="Niveau d'activité" value={ACTIVITE_LABEL[a.niveau_activite ?? ''] ?? a.niveau_activite} />
-        <Row label="Marque / produit" value={a.marque} />
-        <Row label="Gamme" value={a.gamme} />
-        <Row label="Référence" value={a.reference_produit} />
-        <Row label="Nombre de repas" value={nbRepas ? `${nbRepas} repas/jour` : undefined} />
-        <Row label="Quantité par jour" value={ration ? `${Math.round(ration)} g/jour${parRepas(ration)}` : 'Non calculée par le propriétaire'} />
-        {ration2 > 0 && <Row label="2e composant (mixte)" value={`${Math.round(ration2)} g/jour${parRepas(ration2)}`} />}
-        <Row label="Apport énergétique" value={a.ration_kcal ? `${a.ration_kcal} kcal/jour` : undefined} last />
-      </Section>
-      {a.complements && (
+      {/* Plan par repas (marque, gamme, quantités, horaires, consignes) — lecture
+          seule, même affichage que l'appli et le pet-sitter. */}
+      <PlanAlimentationDepuisLigne row={a as unknown as Record<string, unknown>} espece={espece} nomAnimal={nomAnimal} large
+        vide="Régime habituel non renseigné par le propriétaire." />
+      {(a.reference_produit || a.complements) && (
         <Section title="Compléments alimentaires">
-          <div style={{ padding: '12px 16px', fontFamily: 'Galey, sans-serif', fontSize: 14, color: '#374151' }}>
-            {a.complements}
+          <div style={{ padding: '12px 16px', fontFamily: 'Galey, sans-serif', fontSize: 14, color: '#374151', whiteSpace: 'pre-line' }}>
+            {[a.reference_produit ? `Référence : ${a.reference_produit}` : '', a.complements ?? ''].filter(Boolean).join('\n')}
           </div>
         </Section>
       )}
       {instructions && (
         <Section title="Instructions spéciales">
-          <div style={{ margin: 16, padding: 14, background: '#fff7ed', borderRadius: 10,
-            border: '1px solid #fed7aa', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 18 }}>⚠️</span>
-            <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 14,
-              color: '#92400e', lineHeight: 1.5 }}>{instructions}</p>
+          <div style={{ margin: 16, padding: 14, background: '#fff7ed', borderRadius: 10, border: '1px solid #fed7aa' }}>
+            <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 14, color: '#92400e', lineHeight: 1.5 }}>{instructions}</p>
           </div>
         </Section>
       )}

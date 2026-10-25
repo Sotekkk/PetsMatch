@@ -1,6 +1,7 @@
 'use client';
 
 import { AideEtapes } from '@/components/animaux/EtapesTraitement';
+import { PlanAlimentationDepuisLigne } from '@/components/alimentation/PlanAlimentationLecture';
 import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, echeanceDans, DUREES_EXERCICE, DUREE_DEFAUT_JOURS } from '@/lib/exercices-progression';
 import { SyntheseVet, SyntheseOsteo, DocumentsSantePro } from '@/components/animaux/SanteProTabs';
@@ -854,7 +855,7 @@ function PatientDetailPageInner() {
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
         supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs, etapes_snapshot, nb_validations, validations').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
-        supabase.from('alimentations').select('id, type_ration, marque, gamme, niveau_activite, densite_calorique, notes').eq('animal_id', animalId).maybeSingle(),
+        supabase.from('alimentations').select('*').eq('animal_id', animalId).maybeSingle(),
         supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('antiparasitaires').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
@@ -2191,30 +2192,8 @@ function PatientDetailPageInner() {
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex gap-2 items-center text-blue-700 text-xs font-medium mb-4">
               <span>📖</span><span>Données renseignées par le propriétaire — lecture seule</span>
             </div>
-            {alimentation ? (
-              <div className="space-y-2">
-                {[
-                  ['Type de ration', alimentation.type_ration],
-                  ['Marque', [alimentation.marque, alimentation.gamme].filter(Boolean).join(' — ') || null],
-                  ['Niveau d\'activité', alimentation.niveau_activite],
-                  ['Densité calorique', alimentation.densite_calorique ? `${alimentation.densite_calorique} kcal/100g` : null],
-                  ['Repas par jour', (alimentation as { nb_repas?: number | null }).nb_repas?.toString() || alimentation.notes?.split('|')?.[3] || null],
-                  // Ration enregistrée par le propriétaire (migration_alimentation_ration_stockee.sql).
-                  ['Quantité par jour', (alimentation as { ration_grammes?: number | null }).ration_grammes ? `${(alimentation as { ration_grammes?: number | null }).ration_grammes} g/jour` : null],
-                  ['2e composant (mixte)', (alimentation as { ration2_grammes?: number | null }).ration2_grammes ? `${(alimentation as { ration2_grammes?: number | null }).ration2_grammes} g/jour` : null],
-                  ['Apport énergétique', (alimentation as { ration_kcal?: number | null }).ration_kcal ? `${(alimentation as { ration_kcal?: number | null }).ration_kcal} kcal/jour` : null],
-                ].filter(([, v]) => v).map(([label, v]) => (
-                  <div key={label} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0">
-                    <span className="text-xs text-gray-500 font-medium">{label}</span>
-                    <span className="text-sm font-semibold text-[#1F2A2E] capitalize" style={{ fontFamily: 'Galey, sans-serif' }}>
-                      {v?.toString().replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState text="Plan alimentaire non renseigné par le propriétaire" />
-            )}
+            <PlanAlimentationDepuisLigne row={alimentation as unknown as Record<string, unknown> | null} espece={animal?.espece ?? ''}
+              nomAnimal={animal?.nom ?? ''} vuePro={false} large vide="Plan alimentaire non renseigné par le propriétaire." />
           </Card>
         )}
 
@@ -2316,15 +2295,8 @@ function PatientDetailPageInner() {
           if (tab === 'Consignes') return (
             <>
               <Card title="Alimentation">
-                {!a ? discret("Plan d'alimentation non renseigné par le propriétaire.") : (
-                  <div className="text-sm space-y-0.5">
-                    {[a.marque, a.gamme].filter(Boolean).length > 0 && <p className="font-bold">{[a.marque, a.gamme].filter(Boolean).join(' — ')}</p>}
-                    {a.type_ration && <p>Type : {a.type_ration}</p>}
-                    {nbRepas > 0 && <p>{nbRepas} repas par jour</p>}
-                    {a.ration_grammes ? <p>Quantité : {a.ration_grammes} g/jour{nbRepas > 1 ? ` (${Math.round(a.ration_grammes / nbRepas)} g par repas)` : ''}</p> : <p className="text-gray-400">Quantité non calculée par le propriétaire.</p>}
-                    {a.ration2_grammes ? <p>2e composant : {a.ration2_grammes} g/jour</p> : null}
-                  </div>
-                )}
+                <PlanAlimentationDepuisLigne row={a as unknown as Record<string, unknown> | null} espece={animal?.espece ?? ''}
+                  nomAnimal={animal?.nom ?? ''} vuePro={false} vide="Plan d'alimentation non renseigné par le propriétaire." />
               </Card>
               <Card title="Traitements et précautions">
                 <div className="text-sm space-y-0.5">

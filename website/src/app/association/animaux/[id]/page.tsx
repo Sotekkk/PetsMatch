@@ -11,7 +11,7 @@ import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import { erreurPoids, poidsKg } from '@/lib/poids';
 import { erreursDatesSante, phraseChampsARemplir } from '@/lib/controle-dates';
 import { messageSuppressionSante, nomEntreeSante } from '@/lib/sante-libelles';
-import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
+import AlimentationPlanTab from '@/components/alimentation/AlimentationPlanTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
 import LienDocument from '@/components/LienDocument';
@@ -606,7 +606,7 @@ export default function AnimalAssoFichePage() {
 
       {/* ─── Alimentation ─────────────────────────────────────────────── */}
       {tab === 'alimentation' && (
-        <AlimentationTab animalId={id} espece={animal.espece ?? ''} sexe={animal.sexe ?? ''} sterilise={animal.sterilise ?? false} dateNaissance={animal.date_naissance} nom={animal.nom} userId={''} poidsFiche={animal.poids} />
+        <AlimentationPlanTab animalId={id} espece={animal.espece ?? ''} race={animal.race ?? ''} sexe={animal.sexe ?? ''} sterilise={animal.sterilise ?? false} dateNaissance={animal.date_naissance} nom={animal.nom} poidsFiche={animal.poids} />
       )}
 
       {/* ─── Consultations ────────────────────────────────────────────── */}

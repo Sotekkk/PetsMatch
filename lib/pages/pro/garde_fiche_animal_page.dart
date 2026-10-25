@@ -7,6 +7,7 @@
 // Miroir site : mes-patients/[id] (onglets pet-sitter).
 // Scopé au profil pet-sitter actif (pro_profile_id) — jamais l'uid seul.
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/alimentation/plan_alimentation_lecture.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -269,10 +270,6 @@ class _GardeFicheAnimalPageState extends State<GardeFicheAnimalPage> with Single
 
   Widget _consignes() {
     final a = _alim;
-    final nb = (a?['nb_repas'] as num?)?.toInt() ?? int.tryParse((a?['notes']?.toString() ?? '').split('|').elementAtOrNull(3) ?? '');
-    final g = (a?['ration_grammes'] as num?)?.round();
-    final g2 = (a?['ration2_grammes'] as num?)?.round();
-    final produit = [a?['marque'], a?['gamme']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' — ');
     final traitementsEnCours = _traitements.where((t) {
       final fin = DateTime.tryParse(t['date_fin']?.toString() ?? '');
       return fin == null || !fin.isBefore(DateTime.now());
@@ -282,16 +279,9 @@ class _GardeFicheAnimalPageState extends State<GardeFicheAnimalPage> with Single
     return RefreshIndicator(
       onRefresh: _charger, color: _teal,
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
-        _carte('Alimentation', Icons.restaurant_outlined, a == null
-            ? _discret('Plan d\'alimentation non renseigné par le propriétaire.')
-            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                if (produit.isNotEmpty) _txt(produit, w: FontWeight.w700),
-                if ((a['type_ration']?.toString() ?? '').isNotEmpty) _txt('Type : ${a['type_ration']}'),
-                if (nb != null && nb > 0) _txt('$nb repas par jour'),
-                if (g != null && g > 0) _txt('Quantité : $g g/jour${nb != null && nb > 1 ? ' (${(g / nb).round()} g par repas)' : ''}'),
-                if (g2 != null && g2 > 0) _txt('2e composant : $g2 g/jour'),
-                if (g == null) _discret('Quantité non calculée par le propriétaire.'),
-              ])),
+        _carte('Alimentation', Icons.restaurant_outlined,
+            PlanAlimentationLecture.depuisLigne(a, (_animal?['espece'] ?? '').toString(),
+                nomAnimal: (_animal?['nom'] ?? '').toString())),
         _carte('Traitements et précautions', Icons.medication_outlined, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (final t in traitementsEnCours)
             _txt('${t['nom'] ?? 'Traitement'}${(t['posologie']?.toString() ?? '').isNotEmpty ? ' — ${t['posologie']}' : ''}'),

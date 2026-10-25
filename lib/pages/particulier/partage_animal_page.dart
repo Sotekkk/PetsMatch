@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/alimentation/plan_alimentation_lecture.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -206,17 +207,8 @@ class _PartageAnimalPageState extends State<PartageAnimalPage> {
         ]),
       if (_sections.contains('alimentation'))
         _bloc('Alimentation', [
-          if (_alimentation == null) _vide()
-          else ...[
-            for (final l in [
-              if (_alimentation!['type_ration'] != null) 'Type de ration : ${_alimentation!['type_ration']}',
-              if (_alimentation!['marque'] != null) 'Aliment : ${[_alimentation!['marque'], _alimentation!['gamme']].where((e) => e != null).join(' ')}',
-              if (_alimentation!['ration_grammes'] != null) 'Ration : ${_alimentation!['ration_grammes']} g / jour',
-              if (_alimentation!['nb_repas'] != null) 'Repas : ${_alimentation!['nb_repas']} par jour',
-              if (_alimentation!['notes'] != null) _alimentation!['notes'].toString(),
-            ])
-              Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(l, style: const TextStyle(fontSize: 13))),
-          ],
+          PlanAlimentationLecture.depuisLigne(_alimentation, (_animal['espece'] ?? '').toString(),
+              nomAnimal: (_animal['nom'] ?? '').toString(), vide: 'Non renseignée.'),
         ]),
       if (_sections.contains('documents'))
         _bloc('Documents', [

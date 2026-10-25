@@ -1,0 +1,236 @@
+// Scénarios du cahier des charges Alimentation (§14) — mêmes valeurs
+// attendues que website/src/lib/plan-alimentation.test.ts.
+import 'package:flutter_test/flutter_test.dart';
+import 'package:PetsMatch/utils/plan_alimentation.dart';
+
+AlimentPlan croq() => AlimentPlan(marque: 'Josera', gamme: 'Adult Medium', type: 'croquettes', kcal: 370);
+AlimentPlan barf() => AlimentPlan(marque: 'Easy BARF', gamme: 'Bœuf', type: 'barf', kcal: 140);
+AlimentPlan patee(double k) => AlimentPlan(marque: "Hill's", gamme: 'Adult', type: 'patee', kcal: k);
+
+final nala = ProfilAnimal(espece: 'chien', nom: 'Nala', sterilise: true, poidsKg: 18.4,
+    dateNaissance: DateTime.now().subtract(const Duration(days: 365 * 3)));
+
+PlanAlimentation plan(List<AlimentPlan> aliments, List<List<int>> repas) => PlanAlimentation(
+      mode: aliments.length > 1 ? 'mixte' : 'unique',
+      categories: {for (final a in aliments) a.type}.toList(),
+      aliments: aliments,
+      repas: [for (final r in repas) RepasPlan(items: [for (final a in r) ItemRepas(a)])],
+    );
+
+void main() {
+  test('1. chien, croquettes seules', () {
+    final c = calculerRation(plan([croq()], [[0], [0]]), nala);
+    expect(c.besoin.kcal, closeTo(995.1, 0.5));
+    expect(c.lignes[0][0].reco, closeTo(134.5, 0.3));
+    expect(c.totalG, closeTo(268.9, 0.5));
+    expect(c.kcalServies, closeTo(995.1, 0.5));
+    expect(c.recoDisponible, isTrue);
+  });
+
+  test('2. chat, pâtée seule', () {
+    final chat = ProfilAnimal(espece: 'chat', sterilise: true, poidsKg: 4,
+        dateNaissance: DateTime.now().subtract(const Duration(days: 365 * 4)));
+    final c = calculerRation(plan([patee(85)], [[0], [0]]), chat);
+    expect(c.besoin.kcal, closeTo(237.6, 0.3));
+    expect(c.totalG, closeTo(279.5, 0.5));
+  });
+
+  test('3. BARF le matin, croquettes le soir', () {
+    final c = calculerRation(plan([barf(), croq()], [[0], [1]]), nala);
+    expect(c.lignes[0][0].reco, closeTo(355.4, 0.5));
+    expect(c.lignes[1][0].reco, closeTo(134.5, 0.3));
+    expect(c.kcalServies, closeTo(995.1, 0.5));
+  });
+
+  test('4. BARF + croquettes aux deux repas', () {
+    final c = calculerRation(plan([barf(), croq()], [[0, 1], [0, 1]]), nala);
+    expect(c.lignes[0][0].reco, closeTo(177.7, 0.3));
+    expect(c.lignes[0][1].reco, closeTo(67.2, 0.3));
+    expect(c.totalParAliment[0], closeTo(355.4, 0.5));
+  });
+
+  test('5. trois repas de compositions différentes', () {
+    final dogfy = AlimentPlan(marque: 'Dogfy Diet', gamme: 'Poulet', type: 'menagere', kcal: 125);
+    final c = calculerRation(plan([patee(88), croq(), dogfy], [[0, 1], [1], [2]]), nala);
+    expect(c.lignes[0][0].reco, closeTo(188.5, 0.5));
+    expect(c.lignes[0][1].reco, closeTo(44.8, 0.3));
+    expect(c.lignes[1][0].reco, closeTo(89.6, 0.3));
+    expect(c.lignes[2][0].reco, closeTo(265.4, 0.5));
+    expect(c.kcalServies, closeTo(995.1, 0.5));
+  });
+
+  test('6-7. aliment ajouté en kcal/100 g et en kcal/kg', () {
+    final a = evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '370');
+    expect(a.kcal, 370);
+    expect(a.warn, isNull);
+    final b = evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '3700', unite: 'kg');
+    expect(b.kcal, 370);
+    expect(b.info, contains('3700 kcal/kg = 370,0 kcal/100 g'));
+    final c = evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '3700');
+    expect(c.ok, isFalse);
+    expect(c.err, contains('1 kg'));
+  });
+
+  test('8. aliment ajouté depuis la composition analytique', () {
+    final e = evaluerEnergie(methode: 'B', type: 'croquettes', compo: {
+      'proteines': '26', 'matieres_grasses': '16', 'fibres': '2,5', 'cendres': '7', 'humidite': '8',
+    });
+    expect(e.kcal, 369);
+    expect(e.estime, isTrue);
+    expect(e.info, contains('glucides estimés par différence : 40,5 %'));
+    final partiel = evaluerEnergie(methode: 'B', type: 'croquettes', compo: {'proteines': '26', 'matieres_grasses': '16'});
+    expect(partiel.ok, isFalse);
+    expect(partiel.info, contains('fibres brutes'));
+  });
+
+  test('9. aliment sans valeur énergétique', () {
+    final maison = AlimentPlan(marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere');
+    final p = plan([croq(), maison], [[0], [1]]);
+    var c = calculerRation(p, nala);
+    expect(c.lignes[1][0].reco, isNull);
+    expect(c.kcalServies, isNull);
+    expect(c.recoDisponible, isFalse);
+    expect(c.sansKcal, ['Préparation maison — Riz poulet']);
+    expect(erreurEtape(5, p, c), contains('indiquez la quantité'));
+    p.repas[1].items[0].g = 300;
+    c = calculerRation(p, nala);
+    expect(erreurEtape(5, p, c), isNull);
+    expect(c.kcalServies, isNull, reason: 'total calorique partiel jamais présenté');
+  });
+
+  test('10. chiot : poids adulte requis, formule de croissance, tableau fabricant', () {
+    final chiot = ProfilAnimal(espece: 'chien', nom: 'Rox', poidsKg: 10,
+        dateNaissance: DateTime.now().subtract(const Duration(days: 122)));
+    final p = plan([croq()], [[0], [0], [0]]);
+    var c = calculerRation(p, chiot);
+    expect(c.besoin.manque, contains('poids adulte estimé'));
+    expect(c.recoDisponible, isFalse);
+    p.poidsAdulte = 25;
+    c = calculerRation(p, chiot);
+    expect(c.besoin.croissance, isTrue);
+    expect(c.besoin.kcal, closeTo(1417.9, 1));
+    p.aliments[0].tableauCroissance = [
+      {'age_mois': 3, 'poids_adulte_kg': 25, 'g_jour': 300},
+      {'age_mois': 6, 'poids_adulte_kg': 25, 'g_jour': 380},
+      {'age_mois': 3, 'poids_adulte_kg': 10, 'g_jour': 150},
+    ];
+    c = calculerRation(p, chiot);
+    expect(c.fabricant[0], 300);
+  });
+
+  test('11. valeurs nutritionnelles incohérentes', () {
+    final somme = evaluerEnergie(methode: 'B', type: 'croquettes', compo: {
+      'proteines': '60', 'matieres_grasses': '30', 'fibres': '5', 'cendres': '7', 'humidite': '8',
+    });
+    expect(somme.err, contains('dépasse 100 %'));
+    expect(evaluerEnergie(methode: 'B', type: 'croquettes', compo: {'proteines': '120'}).erreursChamps['proteines'],
+        contains('entre 0 et 100'));
+    expect(evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '0').err, contains('supérieure à 0'));
+    expect(evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '-5').err, contains('positif'));
+    expect(evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '37 kcal').err, contains('sans unité'));
+    expect(evaluerEnergie(methode: 'A', type: 'patee', kcalTexte: '370').warn, contains('inhabituelle pour une pâtée'));
+    expect(lireNombre('12,5').v, 12.5);
+  });
+
+  test('12-14. quantité aberrante, ration modifiée, retour à la recommandation', () {
+    final p = plan([croq()], [[0], [0]]);
+    p.repas[0].items[0].g = 1000;
+    var c = calculerRation(p, nala);
+    expect(c.ecartImportant, isTrue);
+    expect(erreurEtape(5, p, c), contains('très différente'));
+    expect(erreurEtape(5, p, c, ecartConfirme: true), isNull);
+    expect(p.estPersonnalise, isTrue);
+    p.revenirRecommandation();
+    c = calculerRation(p, nala);
+    expect(p.estPersonnalise, isFalse);
+    expect(c.ecartImportant, isFalse);
+    expect(p.repas.length, 2, reason: 'repas conservés');
+  });
+
+  test('4 bis. repas sans aliment', () {
+    final p = plan([croq()], [[0], []]);
+    expect(erreurEtape(4, p, calculerRation(p, nala)),
+        'Vous avez renseigné 2 repas, mais aucun aliment pour le repas « Soir ».');
+  });
+
+  test('autres espèces : cheval, lapin, oiseau', () {
+    final cheval = ProfilAnimal(espece: 'cheval', poidsKg: 500,
+        dateNaissance: DateTime.now().subtract(const Duration(days: 365 * 8)));
+    final foin = AlimentPlan(marque: 'Foin', type: 'foin');
+    final gran = AlimentPlan(marque: 'Cavalor', gamme: 'Sport', type: 'concentre');
+    var c = calculerRation(plan([foin, gran], [[0, 1], [0, 1]]), cheval);
+    expect(c.besoin.totalG, closeTo(10000, 1));
+    expect(c.totalParAliment[0], closeTo(7052.6, 1));
+    expect(c.lignes[0][1].reco, closeTo(1473.7, 1));
+    expect(c.avertissements, isEmpty);
+    c = calculerRation(plan([foin, gran], [[0, 1], [0]]), cheval);
+    expect(c.avertissements.single, contains('concentrés en un repas'));
+
+    final lapin = ProfilAnimal(espece: 'lapin', poidsKg: 2,
+        dateNaissance: DateTime.now().subtract(const Duration(days: 365 * 2)));
+    final pl = PlanAlimentation(mode: 'mixte', categories: ['foin', 'granules', 'legumes'],
+        aliments: [AlimentPlan(marque: 'Foin', type: 'foin'), AlimentPlan(marque: 'Versele', type: 'granules'),
+          AlimentPlan(marque: 'Légumes', type: 'legumes')],
+        repas: [RepasPlan(items: [ItemRepas(0, libre: true), ItemRepas(1), ItemRepas(2)])]);
+    c = calculerRation(pl, lapin);
+    expect(c.lignes[0][0].libre, isTrue);
+    expect(c.lignes[0][1].reco, closeTo(45, 0.01));
+    expect(c.lignes[0][2].reco, closeTo(100, 0.01));
+
+    final oiseau = ProfilAnimal(espece: 'oiseau', poidsKg: 0.4);
+    final po = plan([AlimentPlan(marque: 'Graines', type: 'graines')], [[0]]);
+    c = calculerRation(po, oiseau);
+    expect(c.recoDisponible, isFalse);
+    expect(erreurEtape(5, po, c), contains('indiquez la quantité'));
+  });
+
+  test('gestation et lactation (NRC 2006) selon le nombre de petits', () {
+    ProfilAnimal f(String espece, double kg, String etat, {int? sem}) => ProfilAnimal(espece: espece, nom: 'Lia', sexe: 'femelle',
+        poidsKg: kg, etatRepro: etat, semaineLactation: sem,
+        dateNaissance: DateTime.now().subtract(const Duration(days: 365 * 4)));
+    final p = plan([croq()], [[0], [0]]);
+    var c = calculerRation(p, f('chien', 20, 'lactation', sem: 3));
+    expect(c.besoin.manque, contains('nombre de petits'));
+    p.nbPetits = 6;
+    c = calculerRation(p, f('chien', 20, 'lactation', sem: 3));
+    expect(c.besoin.kcal, closeTo(4011.3, 1));
+    p.nbPetits = 2;
+    c = calculerRation(p, f('chien', 20, 'lactation', sem: 1));
+    expect(c.besoin.kcal, closeTo(2091.3, 1));
+    c = calculerRation(p, f('chien', 20, 'gestation_fin'));
+    expect(c.besoin.kcal, closeTo(1768.3, 1));
+    p.nbPetits = 4;
+    c = calculerRation(p, f('chat', 4, 'lactation', sem: 4));
+    expect(c.besoin.kcal, closeTo(541.2, 1));
+    c = calculerRation(p, f('chat', 4, 'gestation_debut'));
+    expect(c.besoin.kcal, closeTo(354.4, 1));
+  });
+
+  test('anciennes données : mixte croquettes + ménagère séparées', () {
+    final p = planDepuisLigne({
+      'type_ration': 'mixte', 'marque': 'Purina', 'gamme': 'Pro Plan Medium', 'densite_calorique': 380,
+      'mixte_ratio_croq': 70, 'notes': '67|28|5|2|1|||menagere||', 'niveau_activite': 'modere',
+    }, 'chien')!;
+    expect(p.repris, isTrue);
+    expect(p.aliments.map((a) => a.type), ['croquettes', 'menagere']);
+    expect(p.repas[0].items.single.a, 0);
+    expect(p.repas[1].items.single.a, 1);
+    expect(p.activite, 'normal');
+    final vieux = planDepuisLigne({'type_ration': 'mixte', 'notes': '67|28|5|2|0|||patee||', 'ration_grammes': 400}, 'cheval')!;
+    expect(vieux.aliments.map((a) => a.type), ['foin', 'concentre', 'complement']);
+    expect(vieux.repas[0].items[0].g, closeTo(400 * 0.67 / 2, 0.01));
+    expect(planDepuisLigne(null, 'chien'), isNull);
+  });
+
+  test('plan enregistré relu tel quel (vue professionnel)', () {
+    final p = plan([barf(), croq()], [[0], [1]]);
+    p.repas[0].heure = '07:30';
+    final json = p.toJson(calculerRation(p, nala));
+    final relu = planDepuisLigne({'plan': json, 'updated_at': DateTime.now().toUtc().toIso8601String()}, 'chien')!;
+    expect(relu.repris, isFalse);
+    final c = calculEnregistre(relu);
+    expect(c.lignes[0][0].eff, 355);
+    expect(relu.repas[0].heure, '07:30');
+    expect(relu.aliments[0].nom, 'Easy BARF — Bœuf');
+  });
+}

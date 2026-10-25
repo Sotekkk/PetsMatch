@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PlanAlimentationDepuisLigne } from '@/components/alimentation/PlanAlimentationLecture';
 import { useParams } from 'next/navigation';
 import { supabaseLien } from '@/lib/supabase';
 import { SECTIONS_PARTAGE } from '@/components/animaux/PartageAnimalModal';
@@ -171,15 +172,8 @@ export default function PartageAnimalPage() {
 
         {sections.includes('alimentation') && (
           <Bloc titre="Alimentation">
-            {!alimentation ? <Vide /> : (
-              <div className="text-sm text-gray-700 space-y-1">
-                {alimentation.type_ration ? <p>Type de ration : <strong>{String(alimentation.type_ration)}</strong></p> : null}
-                {alimentation.marque ? <p>Aliment : <strong>{[alimentation.marque, alimentation.gamme].filter(Boolean).join(' ')}</strong></p> : null}
-                {alimentation.ration_grammes ? <p>Ration : <strong>{String(alimentation.ration_grammes)} g / jour</strong></p> : null}
-                {alimentation.nb_repas ? <p>Repas : <strong>{String(alimentation.nb_repas)} par jour</strong></p> : null}
-                {alimentation.notes ? <p className="text-gray-500">{String(alimentation.notes)}</p> : null}
-              </div>
-            )}
+            <PlanAlimentationDepuisLigne row={alimentation as Record<string, unknown> | null} espece={animal.espece ?? ''}
+              nomAnimal={animal.nom ?? ''} vide="Non renseignée." />
           </Bloc>
         )}
 

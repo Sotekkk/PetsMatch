@@ -33,7 +33,7 @@ import ReservationModal from '@/components/animaux/ReservationModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import ImageCropModal from '@/components/ImageCropModal';
-import AlimentationTab from './AlimentationTab';
+import AlimentationPlanTab from '@/components/alimentation/AlimentationPlanTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
 import { labelTypeSuivi, titreCompteRendu, categorieConsultation, CATEGORIES_CONSULTATION } from '@/lib/morpho';
 import { labelTravail } from '@/lib/toilettage';
@@ -5784,15 +5784,15 @@ function AnimalFichePageInner() {
       })()}
 
       {tab === 'alimentation' && !isNew && (
-        <AlimentationTab
+        <AlimentationPlanTab
           animalId={id ?? ''}
           espece={animal.espece ?? 'chien'}
-          sexe={animal.sexe ?? 'male'}
+          race={animal.race ?? ''}
+          sexe={animal.sexe ?? ''}
           sterilise={animal.sterilise ?? false}
           dateNaissance={animal.date_naissance}
           nom={animal.nom}
-          userId={animal.uid_eleveur ?? ownerUid ?? user?.uid ?? ''}
-          poidsFiche={animal.poids != null ? String(animal.poids) : undefined}
+          poidsFiche={animal.poids ?? null}
         />
       )}
 

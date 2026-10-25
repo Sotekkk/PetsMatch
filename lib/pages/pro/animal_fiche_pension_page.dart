@@ -1,5 +1,6 @@
 import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/alimentation/plan_alimentation_lecture.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -530,7 +531,8 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                         onAddVermifuge: _peutModifierSante ? ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe) : null,
                         onAddAntiparasitaire: _peutModifierSante ? ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe) : null,
                       )
-          : _AlimentationTab(alimentation: _alimentation, alimentationSejour: _sejourActuel?['alimentation_sejour'])),
+          : _AlimentationTab(alimentation: _alimentation, alimentationSejour: _sejourActuel?['alimentation_sejour'],
+                espece: (_animal?['espece'] ?? '').toString(), nomAnimal: (_animal?['nom'] ?? '').toString())),
     ]);
   }
 
@@ -1005,9 +1007,12 @@ class _AlimentationTab extends StatelessWidget {
   final Map<String, dynamic>? alimentation;
   final Map<String, dynamic>? alimentationSejour;
 
-  const _AlimentationTab({required this.alimentation, this.alimentationSejour});
+  final String espece;
+  final String nomAnimal;
 
-  static const _teal = Color(0xFF0C5C6C);
+  const _AlimentationTab({required this.alimentation, this.alimentationSejour, required this.espece, this.nomAnimal = ''});
+
+
 
   Map<String, dynamic> get _sejour => alimSejourFromRaw(alimentationSejour);
 
@@ -1048,142 +1053,13 @@ class _AlimentationTab extends StatelessWidget {
     );
   }
 
-  static Widget _statChip(String label, String value) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-          color: const Color(0xFF0C5C6C).withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(10)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xFF6F767B))),
-        const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-            fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
-      ]),
-    ),
-  );
-
-  static String _rationLabel(String? t) {
-    switch (t) {
-      case 'croquettes': return 'Croquettes';
-      case 'barf':       return 'BARF (viande crue)';
-      case 'mixte':      return 'Mixte';
-      case 'menagere':   return 'Ration ménagère';
-      case 'paturage':   return 'Pâturage';
-      case 'foin':       return 'Foin';
-      case 'complement': return 'Complément';
-      case 'granules':   return 'Granulés';
-      default:           return t ?? '';
-    }
-  }
-
-  static String _activiteLabel(String? a) {
-    switch (a) {
-      case 'repos':       return 'Repos / faible';
-      case 'leger':       return 'Léger';
-      case 'modere':      return 'Modéré';
-      case 'actif':       return 'Actif';
-      case 'tres_actif':  return 'Très actif';
-      default:            return a ?? '';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final hasSejour = _sejour.isNotEmpty;
-    if (alimentation == null) {
-      if (hasSejour) {
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
-          children: [
-            _sejourCard(),
-            Text('Régime habituel non renseigné par le propriétaire.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
-          ],
-        );
-      }
-      return const Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.restaurant_menu_outlined, size: 48, color: Color(0xFFCCCCCC)),
-          SizedBox(height: 12),
-          Text('Aucune information sur l\'alimentation',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey)),
-        ]),
-      );
-    }
-
-    final a = alimentation!;
-    final ration      = a['type_ration']?.toString();
-    final activite    = a['niveau_activite']?.toString();
-    final marque      = a['marque']?.toString() ?? '';
-    final gamme       = a['gamme']?.toString() ?? '';
-    final reference   = a['reference_produit']?.toString() ?? '';
-    final complements = a['complements']?.toString() ?? '';
-
-    // Le champ "notes" encode l'état du calculateur :
-    // [0]=pctFoin [1]=pctGran [2]=pctComp [3]=nb_repas [4]=separe
-    // [5]=dose_manuelle_g [6]=dose2 [7]=typeMixte2 ...
-    final notesRaw = a['notes']?.toString() ?? '';
-    final notesParts = notesRaw.contains('|') ? notesRaw.split('|') : <String>[];
-
-    // nb_repas : colonne dédiée OU position [3] dans notes
-    final nbRepasRaw = a['nb_repas'];
-    int nbRepas = nbRepasRaw is num ? nbRepasRaw.round()
-        : int.tryParse(nbRepasRaw?.toString() ?? '') ?? 0;
-    if (nbRepas == 0 && notesParts.length > 3) {
-      nbRepas = int.tryParse(notesParts[3]) ?? 0;
-    }
-
-    // ration_grammes : colonne dédiée OU dose manuelle dans notes[5]
-    final rationGRaw    = a['ration_grammes'];
-    final rationKcalRaw = a['ration_kcal'];
-    int totalG = rationGRaw != null
-        ? (double.tryParse(rationGRaw.toString()) ?? 0).round() : 0;
-    if (totalG == 0 && notesParts.length > 5) {
-      totalG = (double.tryParse(notesParts[5]) ?? 0).round();
-    }
-    final totalKcal = rationKcalRaw != null
-        ? (double.tryParse(rationKcalRaw.toString()) ?? 0).round() : 0;
-
-    // Composant 2 pour ration mixte (chien/chat)
-    // notes[0]=pctCroq, [4]=separe, [6]=dose2_g, [7]=typeMixte2
-    final isMixte   = ration == 'mixte';
-    final pctCroq   = notesParts.isNotEmpty ? (double.tryParse(notesParts[0]) ?? 0) : 0.0;
-    final separe    = notesParts.length > 4 && notesParts[4] == '1';
-    // 2e composant : ration enregistrée par le propriétaire, sinon dose manuelle (notes[6]).
-    final dose2Stockee = (double.tryParse(a['ration2_grammes']?.toString() ?? '') ?? 0).round();
-    final dose2     = dose2Stockee > 0 ? dose2Stockee
-        : notesParts.length > 6 ? (double.tryParse(notesParts[6]) ?? 0).round() : 0;
-    final typeMixte2 = (notesParts.length > 7 && notesParts[7].isNotEmpty) ? notesParts[7] : 'patee';
-    final secondLabel = typeMixte2 == 'barf' ? 'BARF'
-        : typeMixte2 == 'menagere' ? 'Ration ménagère' : 'Pâtée';
-    final secondEmoji = typeMixte2 == 'barf' ? '🥩'
-        : typeMixte2 == 'menagere' ? '🍲' : '🥫';
-
-    // Labels repas identiques à la fiche éleveur
-    const repasLabels = [
-      ['Repas unique 🍽️'],
-      ['Matin 🌅', 'Soir 🌇'],
-      ['Matin 🌅', 'Midi ☀️', 'Soir 🌇'],
-      ['Matin 🌅', 'Midi ☀️', 'Après-midi 🌤️', 'Soir 🌇'],
-    ];
-    const mealColors = [
-      Color(0xFF0C5C6C), Color(0xFF6E9E57),
-      Color(0xFFB8860B), Color(0xFF8D6E63),
-    ];
-
-    final produitLabel = [
-      if (marque.isNotEmpty) marque,
-      if (gamme.isNotEmpty) gamme,
-    ].join(' — ');
-    final rationEmoji = const {
-      'croquettes': '🥜', 'barf': '🥩', 'mixte': '🥜',
-      'menagere': '🍲', 'foin': '🌾', 'paturage': '🌿',
-      'granules': '🌾', 'complement': '💊',
-    }[ration ?? ''] ?? '🍽️';
-
+    final a = alimentation;
+    final reference = a?['reference_produit']?.toString() ?? '';
+    final complements = a?['complements']?.toString() ?? '';
     return ListView(padding: const EdgeInsets.fromLTRB(16, 20, 16, 40), children: [
-
       if (hasSejour) _sejourCard(),
       if (hasSejour)
         Padding(
@@ -1191,183 +1067,16 @@ class _AlimentationTab extends StatelessWidget {
           child: Text('Régime habituel — renseigné par le propriétaire',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
         ),
-
-      // ── Carte produit ─────────────────────────────────────────────────────
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade100),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Text(rationEmoji, style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 8),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                produitLabel.isNotEmpty ? produitLabel : _rationLabel(ration),
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-                    fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E)),
-              ),
-              if (produitLabel.isNotEmpty && ration != null && ration.isNotEmpty)
-                Text(_rationLabel(ration),
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
-            ])),
-            if (activite != null && activite.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: _teal.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Text(_activiteLabel(activite),
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        fontWeight: FontWeight.w600, color: _teal)),
-              ),
-          ]),
-          if (reference.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text('Réf. $reference',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-          ],
-          const Divider(height: 18),
-          // Totaux journaliers
-          Row(children: [
-            _statChip(
-              isMixte ? '🥜 Croquettes/jour' : '📦 Quantité/jour',
-              totalG > 0 ? '$totalG g' : 'Non renseigné',
-            ),
-            const SizedBox(width: 10),
-            if (isMixte && dose2 > 0)
-              _statChip('$secondEmoji $secondLabel/jour', '$dose2 g')
-            else if (totalKcal > 0)
-              _statChip('🔥 Énergie/jour', '$totalKcal kcal'),
-          ]),
-        ]),
-      ),
-
-      // ── Cartes repas (Matin / Midi / Soir) ───────────────────────────────
-      const SizedBox(height: 16),
-      Row(children: [
-        const Text('Rations journalières',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                fontSize: 13, color: Color(0xFF1F2A2E))),
-        const Spacer(),
-        if (nbRepas > 0)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-                color: _teal.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
-            child: Text('$nbRepas repas/jour',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                    fontWeight: FontWeight.w600, color: _teal)),
-          ),
-      ]),
-      const SizedBox(height: 10),
-
-      if (nbRepas > 0 && (totalG > 0 || (isMixte && dose2 > 0))) ...[
-        ...List.generate(nbRepas.clamp(1, 4), (i) {
-          final labels_ = repasLabels[(nbRepas.clamp(1, 4)) - 1];
-          final label   = labels_[i];
-          final color   = mealColors[i % 4];
-
-          // Build items list for this meal
-          final List<Map<String, String>> items;
-          if (isMixte) {
-            if (separe && nbRepas >= 2) {
-              final nCroq = ((nbRepas * pctCroq / 100).round()).clamp(1, nbRepas - 1);
-              if (i < nCroq) {
-                final rcPar = totalG > 0 ? (totalG / nCroq).round() : 0;
-                items = rcPar > 0
-                    ? [{'emoji': rationEmoji, 'label': produitLabel.isNotEmpty ? produitLabel : 'Croquettes', 'qte': '$rcPar g'}]
-                    : [];
-              } else {
-                final nSec = nbRepas - nCroq;
-                final rsPar = dose2 > 0 ? (dose2 / nSec).round() : 0;
-                items = rsPar > 0
-                    ? [{'emoji': secondEmoji, 'label': secondLabel, 'qte': '$rsPar g'}]
-                    : [];
-              }
-            } else {
-              final rcPar = totalG > 0 ? (totalG / nbRepas).round() : 0;
-              final rsPar = dose2 > 0 ? (dose2 / nbRepas).round() : 0;
-              items = [
-                if (rcPar > 0) {'emoji': rationEmoji, 'label': produitLabel.isNotEmpty ? produitLabel : 'Croquettes', 'qte': '$rcPar g'},
-                if (rsPar > 0) {'emoji': secondEmoji, 'label': secondLabel, 'qte': '$rsPar g'},
-              ];
-            }
-          } else {
-            final qteG = (totalG / nbRepas).round();
-            items = [{'emoji': rationEmoji, 'label': produitLabel.isNotEmpty ? produitLabel : _rationLabel(ration), 'qte': '$qteG g'}];
-          }
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade100),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.08),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: Text(label, style: TextStyle(fontFamily: 'Galey',
-                    fontSize: 13, fontWeight: FontWeight.w700, color: color)),
-              ),
-              ...items.map((item) => Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                child: Row(children: [
-                  Text(item['emoji']!, style: const TextStyle(fontSize: 18)),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(item['label']!,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)))),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                        color: _teal.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(10)),
-                    child: Text(item['qte']!,
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
-                            fontWeight: FontWeight.w700, color: _teal)),
-                  ),
-                ]),
-              )),
-              const SizedBox(height: 2),
-            ]),
-          );
-        }),
-      ] else ...[
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-              color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200)),
-          child: Row(children: [
-            Icon(Icons.info_outline, size: 16, color: Colors.grey.shade400),
-            const SizedBox(width: 8),
-            Expanded(child: Text(
-              nbRepas == 0
-                  ? 'Nombre de repas non renseigné par le propriétaire'
-                  : 'Quantité journalière non renseignée par le propriétaire',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-            )),
-          ]),
-        ),
-      ],
-
-      // ── Compléments ──────────────────────────────────────────────────────
-      if (complements.isNotEmpty) ...[
+      // Plan par repas (marque, gamme, quantités, horaires, consignes) —
+      // lecture seule, même affichage que le site et le pet-sitter.
+      PlanAlimentationLecture.depuisLigne(a, espece, nomAnimal: nomAnimal,
+          vide: 'Régime habituel non renseigné par le propriétaire.'),
+      if (reference.isNotEmpty || complements.isNotEmpty) ...[
         const SizedBox(height: 16),
         _Section(title: 'Compléments alimentaires', children: [
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: Text(complements,
+            child: Text([if (reference.isNotEmpty) 'Référence : $reference', if (complements.isNotEmpty) complements].join('\n'),
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
           ),
         ]),
