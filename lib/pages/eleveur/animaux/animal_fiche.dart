@@ -8325,10 +8325,11 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
     } catch (_) {}
   }
 
-  Future<void> _add() async {
+  Future<void> _add({Map<String, dynamic>? existing}) async {
     final added = await showDialog<bool>(
       context: context,
-      builder: (_) => _AddTestGenetiqueDialog(animalId: widget.animalId, espece: widget.espece, dateNaissance: widget.dateNaissance),
+      builder: (_) => _AddTestGenetiqueDialog(animalId: widget.animalId, espece: widget.espece,
+          dateNaissance: widget.dateNaissance, existing: existing),
     );
     if (added == true) {
       await _load();
@@ -8420,6 +8421,13 @@ class _GenetiqueSectionState extends State<_GenetiqueSection> {
                   ),
                 if (!widget.readOnly)
                   IconButton(
+                    tooltip: 'Modifier',
+                    icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                    padding: const EdgeInsets.only(left: 4), constraints: const BoxConstraints(),
+                    onPressed: () => _add(existing: t),
+                  ),
+                if (!widget.readOnly)
+                  IconButton(
                     icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
                     padding: const EdgeInsets.only(left: 4), constraints: const BoxConstraints(),
                     onPressed: () => _delete(t['id'] as String),
@@ -8442,7 +8450,9 @@ class _AddTestGenetiqueDialog extends StatefulWidget {
   final String animalId;
   final String espece;
   final DateTime? dateNaissance;
-  const _AddTestGenetiqueDialog({required this.animalId, required this.espece, this.dateNaissance});
+  /// Test à modifier (mêmes champs qu'à la création).
+  final Map<String, dynamic>? existing;
+  const _AddTestGenetiqueDialog({required this.animalId, required this.espece, this.dateNaissance, this.existing});
   @override
   State<_AddTestGenetiqueDialog> createState() => _AddTestGenetiqueDialogState();
 }
@@ -8467,7 +8477,19 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
   @override
   void initState() {
     super.initState();
-    _syncPreset();
+    final e = widget.existing;
+    if (e == null) { _syncPreset(); return; }
+    _categorie = (e['categorie'] ?? 'maladie').toString();
+    final code = e['code']?.toString() ?? '';
+    _selectedCode = _presets.any((t) => t.code == code) ? code : '';
+    _nomCtrl.text = e['nom']?.toString() ?? '';
+    _resultat = (e['resultat'] ?? 'clair').toString();
+    _genoCtrl.text = e['genotype']?.toString() ?? '';
+    _laboCtrl.text = e['laboratoire']?.toString() ?? '';
+    _notesCtrl.text = e['notes']?.toString() ?? '';
+    _lienCtrl.text = e['lien_resultat']?.toString() ?? '';
+    _date = DateTime.tryParse(e['date_test']?.toString() ?? '');
+    _url = e['url']?.toString();
   }
 
   void _syncPreset() {
@@ -8528,7 +8550,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
 
   @override
   Widget build(BuildContext context) => _BaseDialog(
-    title: 'Test génétique',
+    title: widget.existing != null ? 'Modifier le test génétique' : 'Test génétique',
     fields: [
       _DDrop('Catégorie', _categorie, kGeneticTestCategories,
           (v) => setState(() { _categorie = v ?? 'maladie'; _syncPreset(); })),
@@ -8570,7 +8592,7 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
       if (nom.isEmpty) throw const SaisieInvalide('Indiquez le nom du test.');
       controlerDateTestGenetique(_date, widget.dateNaissance);
       final presetHit = _presets.where((t) => t.code == _selectedCode).toList();
-      await Supabase.instance.client.from('tests_genetiques').insert({
+      final ligne = <String, dynamic>{
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
         'animal_id': widget.animalId,
         'uid': FirebaseAuth.instance.currentUser?.uid,
@@ -8586,7 +8608,13 @@ class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
         'url': _url,
         if (_lienCtrl.text.trim().isNotEmpty) 'lien_resultat': _lienCtrl.text.trim(),
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      });
+      };
+      if (widget.existing != null) {
+        ligne.remove('id');
+        await Supabase.instance.client.from('tests_genetiques').update(ligne).eq('id', widget.existing!['id']);
+      } else {
+        await Supabase.instance.client.from('tests_genetiques').insert(ligne);
+      }
       return true;
     },
   );

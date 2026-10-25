@@ -12,6 +12,7 @@ import { GENETIC_TESTS, GENETIC_TEST_CATEGORIES, RESULTAT_LABEL, resultatChipCla
 import { dateValide } from '@/lib/controle-dates';
 import ChampDate from '@/components/ChampDate';
 import HealthSection from '@/components/animaux/HealthSection';
+import LienDocument from '@/components/LienDocument';
 import { messageSuppressionSante } from '@/lib/sante-libelles';
 
 const LIBELLE_CATEGORIE: Record<string, string> = {
@@ -29,21 +30,26 @@ interface Test {
 const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
 const etiquette = 'text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block';
 
-function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance }: {
+function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance, existant }: {
   espece: string; animalId: string; uid: string; onCancel: () => void; onSaved: (t: Test) => void;
   dateNaissance?: string | null;
+  /** Test à modifier : mêmes champs qu'à la création. */
+  existant?: Test;
 }) {
   const naissance = dateNaissance ? dateNaissance.slice(0, 10) : '';
   const presetsPour = (c: string) => (GENETIC_TESTS[espece] ?? []).filter(t => t.categorie === c);
-  const [categorie, setCategorie] = useState('maladie');
-  const [code, setCode] = useState(presetsPour('maladie')[0]?.code ?? AUTRE);
-  const [nom, setNom] = useState(presetsPour('maladie')[0]?.nom ?? '');
-  const [resultat, setResultat] = useState('clair');
-  const [genotype, setGenotype] = useState('');
-  const [labo, setLabo] = useState('');
-  const [date, setDate] = useState('');
-  const [lien, setLien] = useState('');
-  const [notes, setNotes] = useState('');
+  const cat0 = existant?.categorie ?? 'maladie';
+  const [categorie, setCategorie] = useState(cat0);
+  const [code, setCode] = useState(existant
+    ? (presetsPour(cat0).some(t => t.code === existant.code) ? String(existant.code) : AUTRE)
+    : presetsPour('maladie')[0]?.code ?? AUTRE);
+  const [nom, setNom] = useState(existant?.nom ?? presetsPour('maladie')[0]?.nom ?? '');
+  const [resultat, setResultat] = useState(existant?.resultat ?? 'clair');
+  const [genotype, setGenotype] = useState(existant?.genotype ?? '');
+  const [labo, setLabo] = useState(existant?.laboratoire ?? '');
+  const [date, setDate] = useState((existant?.date_test ?? '').slice(0, 10));
+  const [lien, setLien] = useState(existant?.lien_resultat ?? '');
+  const [notes, setNotes] = useState(existant?.notes ?? '');
   const [fichier, setFichier] = useState<File | null>(null);
   const [erreur, setErreur] = useState('');
   const [saving, setSaving] = useState(false);
@@ -64,13 +70,13 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance }: {
     if (date && naissance && date < naissance) { setErreur("Date du test : ne peut pas être antérieure à la naissance de l'animal."); return; }
     setSaving(true); setErreur('');
     try {
-      let url: string | null = null;
+      let url: string | null = existant?.url ?? null;
       if (fichier) {
         const ext = fichier.name.split('.').pop() ?? 'pdf';
         url = await uploadDocument(fichier, `documents/${uid}/${Date.now()}_${crypto.randomUUID()}.${ext}`);
       }
       const ligne: Test & Record<string, unknown> = {
-        id: `${Date.now()}`, animal_id: animalId, uid, espece, categorie,
+        id: existant?.id ?? `${Date.now()}`, animal_id: animalId, uid, espece, categorie,
         code: code !== AUTRE ? code : null, nom: nom.trim(),
         resultat: categorie === 'robe' ? null : resultat,
         genotype: genotype.trim() || null, laboratoire: labo.trim() || null,
@@ -78,12 +84,18 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance }: {
         ...(lien.trim() ? { lien_resultat: lien.trim() } : {}),
         created_at: new Date().toISOString(),
       };
-      let { error } = await supabase.from('tests_genetiques').insert(ligne);
+      const ecrire = () => {
+        if (!existant) return supabase.from('tests_genetiques').insert(ligne);
+        const maj: Record<string, unknown> = { ...ligne };
+        delete maj.id; delete maj.created_at; delete maj.uid;
+        return supabase.from('tests_genetiques').update(maj).eq('id', existant.id);
+      };
+      let { error } = await ecrire();
       // Colonne lien_resultat absente (migration_tests_genetiques_lien.sql pas
       // passée) : le test est gardé, sans le lien.
       if (error?.code === '42703' && 'lien_resultat' in ligne) {
         delete ligne.lien_resultat;
-        ({ error } = await supabase.from('tests_genetiques').insert(ligne));
+        ({ error } = await ecrire());
       }
       if (error) throw error;
       onSaved(ligne);
@@ -165,7 +177,7 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance }: {
   );
 }
 
-function LigneTest({ t, canWrite, onDelete }: { t: Test; canWrite: boolean; onDelete: () => void }) {
+function LigneTest({ t, canWrite, onDelete, onEdit }: { t: Test; canWrite: boolean; onDelete: () => void; onEdit: () => void }) {
   const [open, setOpen] = useState(false);
   const sous = [t.laboratoire, t.date_test ? new Date(`${t.date_test.slice(0, 10)}T12:00:00`).toLocaleDateString('fr-FR') : '']
     .filter(Boolean).join(' · ');
@@ -189,8 +201,10 @@ function LigneTest({ t, canWrite, onDelete }: { t: Test; canWrite: boolean; onDe
           {t.notes && <p>{t.notes}</p>}
           <div className="flex flex-wrap gap-3 pt-1">
             {t.lien_resultat && <a href={t.lien_resultat} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Résultat en ligne</a>}
-            {t.url && <a href={t.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Voir le document</a>}
-            {canWrite && <button type="button" onClick={onDelete} className="text-xs text-red-500 hover:text-red-700 ml-auto">Supprimer</button>}
+            {/* Stockage privé : lien temporaire (avant : « Bucket not found »). */}
+            {t.url && <LienDocument href={t.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#0C5C6C] hover:underline">Voir le document</LienDocument>}
+            {canWrite && <button type="button" onClick={onEdit} className="text-xs font-semibold text-[#0C5C6C] hover:underline ml-auto">Modifier</button>}
+            {canWrite && <button type="button" onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">Supprimer</button>}
           </div>
         </div>
       )}
@@ -206,6 +220,7 @@ export default function TestsGenetiques({ animalId, espece, uid, canWrite, dateN
 }) {
   const [tests, setTests] = useState<Test[]>([]);
   const [ajout, setAjout] = useState(false);
+  const [edition, setEdition] = useState<string | null>(null);
 
   useEffect(() => {
     let annule = false;
@@ -225,8 +240,14 @@ export default function TestsGenetiques({ animalId, espece, uid, canWrite, dateN
       onAdd={canWrite ? () => setAjout(a => !a) : undefined} addFormOpen={ajout}
       addForm={<FormTest espece={espece} animalId={animalId} uid={uid} dateNaissance={dateNaissance} onCancel={() => setAjout(false)}
         onSaved={async t => { const liste = [t, ...tests]; setTests(liste); setAjout(false); await syncAdn(liste); }} />}>
-      {tests.map(t => (
-        <LigneTest key={t.id} t={t} canWrite={canWrite} onDelete={async () => {
+      {tests.map(t => edition === t.id ? (
+        <div key={t.id} className="px-4 py-3">
+          <FormTest espece={espece} animalId={animalId} uid={uid} dateNaissance={dateNaissance} existant={t}
+            onCancel={() => setEdition(null)}
+            onSaved={async m => { const liste = tests.map(x => (x.id === t.id ? { ...x, ...m } : x)); setTests(liste); setEdition(null); await syncAdn(liste); }} />
+        </div>
+      ) : (
+        <LigneTest key={t.id} t={t} canWrite={canWrite} onEdit={() => setEdition(t.id)} onDelete={async () => {
           if (!confirm(messageSuppressionSante('tests_genetiques', t.nom))) return;
           const { error } = await supabase.from('tests_genetiques').delete().eq('id', t.id);
           if (error) { alert(`Suppression impossible : ${error.message}`); return; }

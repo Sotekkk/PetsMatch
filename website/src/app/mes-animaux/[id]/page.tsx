@@ -806,10 +806,10 @@ function VetDocCard({ record, vetNames }:
             <p className="text-sm text-gray-600 leading-relaxed">{contenu ?? notes}</p>
           )}
           {docUrl && (
-            <a href={docUrl} target="_blank" rel="noopener noreferrer"
+            <LienDocument href={docUrl} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-xs text-[#0C5C6C] font-semibold hover:underline">
-              <span>📎</span> Voir le document
-            </a>
+              Voir le document
+            </LienDocument>
           )}
         </div>
       )}
@@ -888,7 +888,7 @@ function RadioCard({ record, onDelete }: { record:HealthRecord; onDelete?:()=>vo
         <div className="mt-2 space-y-1.5">
           {notes && <p className="text-sm text-gray-600">{notes}</p>}
           <div className="flex items-center gap-3">
-            {url && <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0C5C6C] font-semibold hover:underline">Voir l&apos;image / le fichier</a>}
+            {url && <LienDocument href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#0C5C6C] font-semibold hover:underline">Voir l&apos;image / le fichier</LienDocument>}
             {onDelete && <button onClick={onDelete} className="ml-auto text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>}
           </div>
         </div>

@@ -2274,10 +2274,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                       .where((e) => e != null && '$e'.isNotEmpty).join(' · '),
                   trailing: kResultatsGenetiques[r['resultat']] ?? (r['genotype'] as String?),
                   onDelete: () => _deleteRecord('tests_genetiques', r['id'], _testsGenetiques),
+                  onEdit: () => _showTestGenetiqueSheet(existant: r),
                   onTap: () => _showRecordDetail('Test génétique', r, const [
                     ('Test', 'nom'), ('Catégorie', 'categorie'), ('Résultat', 'resultat'),
                     ('Génotype', 'genotype'), ('Laboratoire', 'laboratoire'),
-                    ('Date', 'date_test'), ('Résultat en ligne', 'lien_resultat'), ('Notes', 'notes'),
+                    ('Date', 'date_test'), ('Résultat en ligne', 'lien_resultat'),
+                    ('Document joint', 'url'), ('Notes', 'notes'),
                   ]),
                 ),
               ),
@@ -2960,15 +2962,17 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showTestGenetiqueSheet() {
-    final nomCtrl = TextEditingController(), genoCtrl = TextEditingController(),
-        laboCtrl = TextEditingController(), notesCtrl = TextEditingController(),
-        lienCtrl = TextEditingController();
-    DateTime? date;
-    String categorie = 'maladie';
-    String? selectedCode;
-    String resultat = 'clair';
-    String? url;
+  void _showTestGenetiqueSheet({Map<String, dynamic>? existant}) {
+    final nomCtrl = TextEditingController(text: existant?['nom']?.toString() ?? ''),
+        genoCtrl = TextEditingController(text: existant?['genotype']?.toString() ?? ''),
+        laboCtrl = TextEditingController(text: existant?['laboratoire']?.toString() ?? ''),
+        notesCtrl = TextEditingController(text: existant?['notes']?.toString() ?? ''),
+        lienCtrl = TextEditingController(text: existant?['lien_resultat']?.toString() ?? '');
+    DateTime? date = DateTime.tryParse(existant?['date_test']?.toString() ?? '');
+    String categorie = (existant?['categorie'] ?? 'maladie').toString();
+    String? selectedCode = existant == null ? null : (existant['code']?.toString() ?? '');
+    String resultat = (existant?['resultat'] ?? 'clair').toString();
+    String? url = existant?['url']?.toString();
     bool uploading = false;
 
     List<GeneticTest> presetsFor(String cat) =>
@@ -3025,7 +3029,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ss(() => uploading = false);
     }
 
-    _openSheet('Test génétique', (ss) {
+    _openSheet(existant != null ? 'Modifier le test génétique' : 'Test génétique', (ss) {
       final presets = presetsFor(categorie);
       return [
         _SDrop(label: 'Catégorie', value: categorie, options: kGeneticTestCategories,
@@ -3069,7 +3073,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       if (nom.isEmpty) return;
       controlerDateTestGenetique(date, _dateNaissance);
       final hit = presetsFor(categorie).where((t) => t.code == selectedCode).toList();
-      await _supa.from('tests_genetiques').insert({
+      final ligne = <String, dynamic>{
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'uid': FirebaseAuth.instance.currentUser?.uid,
@@ -3085,7 +3089,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         if (lienCtrl.text.trim().isNotEmpty) 'lien_resultat': lienCtrl.text.trim(),
         'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
         'created_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      };
+      if (existant != null) {
+        ligne.remove('id');
+        ligne.remove('created_at');
+        await _supa.from('tests_genetiques').update(ligne).eq('id', existant['id']);
+      } else {
+        await _supa.from('tests_genetiques').insert(ligne);
+      }
       if (categorie == 'adn' && resultat == 'etabli') {
         try {
           await _supa.from('animaux').update({'profil_adn_etabli': true}).eq('id', _animalId!);
@@ -3223,7 +3234,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                         // Lien (ex. résultat de test génétique en ligne) : cliquable.
                         child: e.$2.startsWith('http')
                             ? GestureDetector(
-                                onTap: () => launchUrl(Uri.parse(e.$2), mode: LaunchMode.externalApplication),
+                                onTap: () => e.$1 == 'Document joint'
+                                    ? DocumentViewerPage.open(context, e.$2, title: sectionTitle)
+                                    : launchUrl(Uri.parse(e.$2), mode: LaunchMode.externalApplication),
                                 child: Text(e.$2,
                                     style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600,
                                         color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
