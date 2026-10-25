@@ -28,7 +28,7 @@ import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob } from '@/lib/ordonnance-pdf';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
-import { erreursDatesSante } from '@/lib/controle-dates';
+import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -668,6 +668,9 @@ function PatientDetailPageInner() {
   const [savingForm, setSavingForm] = useState(false);
   // Contrôle des dates de l'acte (miroir carnet de santé du propriétaire).
   const [formErreurs, setFormErreurs] = useState<string[]>([]);
+  // Champs obligatoires vides au dernier essai : une phrase (« Date et motif
+  // sont à remplir. ») qui se réduit quand on les remplit.
+  const [formManquants, setFormManquants] = useState<string[]>([]);
   // Patient créé par la clinique : client du fichier (propriétaire hors appli).
   const [clientClinique, setClientClinique] = useState<{ nom: string; prenom: string | null; telephone: string | null;
     email: string | null; adresse: string | null; code_postal: string | null; ville: string | null; notes: string | null; uid_lie: string | null } | null>(null);
@@ -1129,8 +1132,16 @@ function PatientDetailPageInner() {
       if (addingType === 'allergie' && formDate && formDate > new Date().toLocaleDateString('sv-SE')) {
         erreurs.push('Date constatée : ne peut pas être dans le futur.');
       }
-      setFormErreurs(erreurs);
-      if (erreurs.length) return;
+      const libelleNom = addingType === 'vaccin' ? 'Vaccin' : addingType === 'traitement' ? 'Traitement' : 'Produit';
+      const vides = [
+        ...(!formDate ? ['date'] : []),
+        ...(addingType === 'visite' && !formMotif.trim() ? ['motif'] : []),
+        ...(['vaccin', 'traitement', 'vermifuge', 'antiparasitaire'].includes(addingType ?? '') && !formNom.trim() ? [`nom:${libelleNom}`] : []),
+      ];
+      const autres = erreurs.filter(e => !e.endsWith(': obligatoire.'));
+      setFormManquants(vides);
+      setFormErreurs(autres);
+      if (autres.length || vides.length) return;
     }
     setSavingForm(true);
     const vetName = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || '';
@@ -3131,7 +3142,7 @@ function PatientDetailPageInner() {
             {/* Visite */}
             {addingType === 'visite' && (<>
               <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Motif</label>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Motif <span className="text-red-400">*</span></label>
                 <select value={formMotif} onChange={e => setFormMotif(e.target.value)}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
                   <option value="">— Sélectionner —</option>
@@ -3407,13 +3418,18 @@ function PatientDetailPageInner() {
               {animal.poids != null && <p className="text-xs text-gray-400">Poids actuel : {animal.poids} kg{animal.taille ? ` · ${animal.taille} cm` : ''}</p>}
             </>)}
 
-            {formErreurs.length > 0 && (
-              <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
-                {formErreurs.map(e => <li key={e}>{e}</li>)}
-              </ul>
-            )}
+            {(() => {
+              const restants = formManquants.filter(k => k === 'date' ? !formDate : k === 'motif' ? !formMotif.trim() : !formNom.trim())
+                .map(k => k === 'date' ? 'Date' : k === 'motif' ? 'Motif' : k.slice(4));
+              const lignes = [...(restants.length ? [phraseChampsARemplir(restants)] : []), ...formErreurs];
+              return lignes.length > 0 && (
+                <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
+                  {lignes.map(e => <li key={e}>{e}</li>)}
+                </ul>
+              );
+            })()}
             <div className="flex gap-3 pt-1">
-              <button onClick={() => { setAddingType(null); setFormErreurs([]); }}
+              <button onClick={() => { setAddingType(null); setFormErreurs([]); setFormManquants([]); }}
                 className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
                 Annuler
               </button>

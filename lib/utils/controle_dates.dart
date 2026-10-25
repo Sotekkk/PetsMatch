@@ -77,3 +77,19 @@ void controlerDateTestGenetique(DateTime? date, DateTime? naissance) {
     throw const SaisieInvalide('La date du test ne peut pas être antérieure à la naissance de l\'animal.');
   }
 }
+
+/// Enregistrement abandonné par l'utilisateur (ex. alerte « poids inhabituel »
+/// non confirmée) : la fenêtre reste ouverte, sans message d'erreur.
+class SaisieAnnulee implements Exception {
+  const SaisieAnnulee();
+}
+
+/// Champs obligatoires vides → une seule phrase : « Date et motif sont à
+/// remplir. », « Produit : à remplir. ». Miroir site : phraseChampsARemplir.
+String phraseChampsARemplir(List<String> labels) {
+  final l = labels.map((x) => x.replaceAll(RegExp(r'\s*\*$'), '').trim()).where((x) => x.isNotEmpty).toList();
+  if (l.isEmpty) return '';
+  if (l.length == 1) return '${l.first} : à remplir.';
+  final bas = [for (var i = 0; i < l.length; i++) i == 0 ? l[i] : l[i][0].toLowerCase() + l[i].substring(1)];
+  return '${bas.sublist(0, bas.length - 1).join(', ')} et ${bas.last} sont à remplir.';
+}

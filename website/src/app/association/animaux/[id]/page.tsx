@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import HealthSection, { HealthPanel } from '@/components/animaux/HealthSection';
 import { SANTE_COULEURS } from '@/lib/sante-couleurs';
 import { erreurPoids, poidsKg } from '@/lib/poids';
-import { erreursDatesSante } from '@/lib/controle-dates';
+import { erreursDatesSante, phraseChampsARemplir } from '@/lib/controle-dates';
 import { messageSuppressionSante, nomEntreeSante } from '@/lib/sante-libelles';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
 import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
@@ -100,18 +100,20 @@ const HEALTH_SECTIONS = [
     fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
 ];
 
-function AddForm({ fields, onSave, onCancel, saving, extra }:
+function AddForm({ fields, onSave, onCancel, saving, extra, dateObligatoire = true }:
   { fields: { key: string; label: string; type?: string; required?: boolean; min?: string; max?: string }[];
     onSave: (d: Record<string, string>) => Promise<void>; onCancel: () => void; saving: boolean;
     /** Contenu ajouté avant les boutons (ex. options du vermifuge). */
-    extra?: React.ReactNode }) {
+    extra?: React.ReactNode;
+    /** Date de l'acte obligatoire (pas pour une pesée / une allergie). */
+    dateObligatoire?: boolean }) {
   const [form, setForm] = useState<Record<string, string>>({});
   // Champs obligatoires manquants au dernier « Enregistrer » ; un message
   // disparaît dès que son champ est rempli.
   const [manquants, setManquants] = useState<string[]>([]);
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
   const enregistrer = () => {
-    const m = fields.filter(f => f.required && !(form[f.key] ?? '').trim()).map(f => f.key);
+    const m = fields.filter(f => (f.required || (dateObligatoire && f.key === 'date')) && !(form[f.key] ?? '').trim()).map(f => f.key);
     setManquants(m);
     if (!m.length) void onSave(form);
   };
@@ -134,9 +136,7 @@ function AddForm({ fields, onSave, onCancel, saving, extra }:
       ))}
       {extra}
       {visibles.length > 0 && (
-        <ul className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 space-y-0.5">
-          {visibles.map(f => <li key={f.key}>{f.label} : obligatoire.</li>)}
-        </ul>
+        <p className="text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2">{phraseChampsARemplir(visibles.map(f => f.label))}</p>
       )}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
@@ -310,7 +310,7 @@ function SanteTab({ animalId, espece, dateNaissance }: { animalId: string; espec
                   onCancel={() => setAddOpen(null)}
                   onSave={d => handleAdd(s.table, d)} />
               ) : (
-                <AddForm saving={saving}
+                <AddForm saving={saving} dateObligatoire={!['poids', 'allergies'].includes(s.table)}
                   // Pesée : calendrier borné entre la naissance et aujourd'hui.
                   fields={s.table === 'poids'
                     ? s.fields.map(f => f.key === 'date'

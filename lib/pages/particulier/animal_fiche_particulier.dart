@@ -2239,6 +2239,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               records: _poids,
               dateNaissance: _dateNaissance,
               onAdd: _showPoidsSheet,
+              onEdit: (r) => _showPoidsSheet(existant: r),
               onDelete: (r) => _deleteRecord('poids', r['id'], _poids),
               fmtDate: _fmtDate,
             ),
@@ -2704,7 +2705,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SFld(ctrl: diag, label: 'Diagnostic', hint: 'Diagnostic posé'),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes supplémentaires'),
     ], () async {
-      if (motif.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le motif de la visite.');
+      // Une seule phrase pour les champs manquants (« Date et motif sont à remplir. »).
+      final vides = [if (date == null) 'Date', if (motif.text.trim().isEmpty) 'Motif'];
+      if (vides.isNotEmpty) throw SaisieInvalide(phraseChampsARemplir(vides));
       controlerDatesSante(date: date);
       await _enregistrerSante('visites', existant, {
         'id': '${DateTime.now().millisecondsSinceEpoch}',
@@ -2773,7 +2776,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
-      if (produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
+      final vides = [if (produit.text.trim().isEmpty) 'Produit', if (date == null) 'Date'];
+      if (vides.isNotEmpty) throw SaisieInvalide(phraseChampsARemplir(vides));
       if (options.erreur != null) throw Exception(options.erreur);
       controlerDatesSante(date: date, rappel: dateRappel);
       final n = int.tryParse(frequenceValeur.text.trim());
@@ -2845,7 +2849,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _SDate(label: 'Date de rappel (calculée)', date: dateRappel, onPicked: null),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
-      if (produit.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le produit.');
+      final vides = [if (produit.text.trim().isEmpty) 'Produit', if (date == null) 'Date'];
+      if (vides.isNotEmpty) throw SaisieInvalide(phraseChampsARemplir(vides));
       controlerDatesSante(date: date, rappel: dateRappel);
       final n = int.tryParse(frequenceValeur.text.trim());
       final freqLabel = (n != null && n > 0)
@@ -3090,36 +3095,67 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showPoidsSheet() {
-    final valeur = TextEditingController(), notes = TextEditingController();
-    DateTime? date;
-    _openSheet('Ajouter un poids', (ss) => [
-      _SFld(ctrl: valeur, label: 'Poids (kg)', hint: 'Ex: 4.5', numeric: true),
+  void _showPoidsSheet({Map<String, dynamic>? existant}) {
+    final valeur = TextEditingController(text: existant?['valeur']?.toString() ?? ''),
+        notes = TextEditingController(text: existant?['notes']?.toString() ?? '');
+    DateTime? date = DateTime.tryParse(existant?['date']?.toString() ?? '');
+    _openSheet(existant != null ? 'Modifier le poids' : 'Ajouter un poids', (ss) => [
+      _SFld(ctrl: valeur, label: 'Poids (kg) *', hint: 'Ex: 4.5', numeric: true),
       // Pesée : ni avant la naissance, ni après aujourd'hui.
-      _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d),
+      _SDate(label: 'Date *', date: date, onPicked: (d) => ss(() => date = d),
           firstDate: _dateNaissance, lastDate: DateTime.now()),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
-      // « 8,5 » ou « 8.5 », plausible pour l'espèce, date passée (avant :
-      // une saisie invalide enregistrait un point vide sur la courbe).
+      // « 8,5 » ou « 8.5 », date obligatoire et passée (avant : une date vide
+      // devenait « aujourd'hui » sans le dire).
       if (valeur.text.trim().isEmpty) throw const SaisieInvalide('Indiquez le poids.');
-      final err = erreurPoids(valeur.text, espece: _espece);
-      if (err != null) throw SaisieInvalide(err);
-      final jour = date ?? DateTime.now();
+      final v = poidsKg(valeur.text);
+      if (v == null) throw const SaisieInvalide('Poids invalide : chiffres uniquement, avec . ou , pour les décimales (ex. 8,5).');
+      if (v <= 0) throw const SaisieInvalide('Le poids doit être supérieur à 0.');
+      if (date == null) throw const SaisieInvalide('Indiquez la date de la pesée.');
+      final jour = DateTime(date!.year, date!.month, date!.day);
       if (jour.isAfter(DateTime.now())) throw const SaisieInvalide('La date de la pesée ne peut pas être dans le futur.');
       if (_dateNaissance != null && jour.isBefore(DateTime(_dateNaissance!.year, _dateNaissance!.month, _dateNaissance!.day))) {
         throw const SaisieInvalide('La date de la pesée est antérieure à la naissance de l\'animal.');
       }
-      date = jour;
-      final v = poidsKg(valeur.text);
-      await _supa.from('poids').insert({
-        'id': '${DateTime.now().millisecondsSinceEpoch}',
-        'animal_id': _animalId!,
+      // Poids inhabituel pour l'espèce ou variation énorme (1 kg → 100 kg) :
+      // à confirmer, pas bloquant (« Oui, c'est correct »).
+      (double, DateTime)? proche;
+      for (final r in _poids) {
+        if (existant != null && r['id']?.toString() == existant['id']?.toString()) continue;
+        final kg = poidsKg(r['valeur']);
+        final d = DateTime.tryParse(r['date']?.toString() ?? '');
+        if (kg == null || d == null) continue;
+        if (proche == null || (d.difference(jour).inDays.abs() < proche.$2.difference(jour).inDays.abs())) proche = (kg, d);
+      }
+      final alerte = alertePoids(v, espece: _espece, precedent: proche);
+      if (alerte != null) {
+        final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+          title: const Text('Ce poids est-il correct ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          content: Text(alerte, style: const TextStyle(fontFamily: 'Galey')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Corriger', style: TextStyle(fontFamily: 'Galey'))),
+            TextButton(onPressed: () => Navigator.pop(c, true),
+                child: const Text('Oui, c\'est correct', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+          ],
+        ));
+        if (ok != true) throw const SaisieAnnulee();
+      }
+      final ligne = {
         'valeur': v,
-        'date': date?.toIso8601String().substring(0, 10),
+        'date': jour.toIso8601String().substring(0, 10),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      };
+      if (existant != null) {
+        await _supa.from('poids').update(ligne).eq('id', existant['id']);
+      } else {
+        await _supa.from('poids').insert({
+          'id': '${DateTime.now().millisecondsSinceEpoch}',
+          'animal_id': _animalId!,
+          ...ligne,
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      }
       await _loadHealthRecords();
       // La fiche reprend le dernier point de la courbe (trigger en base).
       try {
@@ -3265,6 +3301,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                                 if (ctx.mounted) Navigator.pop(ctx);
                               } catch (e) {
                                 ss(() => saving = false);
+                                // Alerte non confirmée : la fenêtre reste ouverte, sans message.
+                                if (e is SaisieAnnulee) return;
                                 if (ctx.mounted) {
                                   ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
                                       content: Text(e is SaisieInvalide ? e.message : 'Erreur: $e'),
@@ -6594,11 +6632,12 @@ class _PoidsSectionP extends StatelessWidget {
   final DateTime? dateNaissance;
   final VoidCallback onAdd;
   final void Function(Map<String, dynamic>) onDelete;
+  final void Function(Map<String, dynamic>) onEdit;
   final String Function(dynamic) fmtDate;
 
   const _PoidsSectionP({
     required this.records, required this.dateNaissance,
-    required this.onAdd, required this.onDelete, required this.fmtDate,
+    required this.onAdd, required this.onDelete, required this.onEdit, required this.fmtDate,
   });
 
   bool get _isJuvenile {
@@ -6662,6 +6701,13 @@ class _PoidsSectionP extends StatelessWidget {
                   ),
                 ),
               ])),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                tooltip: 'Modifier',
+                onPressed: () => onEdit(d),
+                padding: const EdgeInsets.only(left: 8),
+                constraints: const BoxConstraints(),
+              ),
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
                 onPressed: () => onDelete(d),

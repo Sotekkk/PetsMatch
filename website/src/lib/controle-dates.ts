@@ -65,3 +65,13 @@ export function erreursDatesSante(form: Record<string, string>, champsDate: { ke
   }
   return erreurs;
 }
+
+/** Champs obligatoires vides → une seule phrase : « Date et motif sont à
+ *  remplir. », « Produit : à remplir. ». Miroir appli : phraseChampsARemplir. */
+export function phraseChampsARemplir(labels: string[]): string {
+  const l = labels.map(x => x.replace(/\s*\*$/, '').trim()).filter(Boolean);
+  if (!l.length) return '';
+  if (l.length === 1) return `${l[0]} : à remplir.`;
+  const bas = l.map((x, i) => (i === 0 ? x : x.charAt(0).toLowerCase() + x.slice(1)));
+  return `${bas.slice(0, -1).join(', ')} et ${bas[bas.length - 1]} sont à remplir.`;
+}

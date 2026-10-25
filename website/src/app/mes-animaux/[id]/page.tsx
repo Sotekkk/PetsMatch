@@ -16,7 +16,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
-import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe, dateValide } from '@/lib/controle-dates';
+import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe, dateValide, phraseChampsARemplir } from '@/lib/controle-dates';
 import ChampDate from '@/components/ChampDate';
 import { messageSuppressionSante, nomEntreeSante } from '@/lib/sante-libelles';
 import TestsGenetiques from '@/components/animaux/TestsGenetiques';
@@ -482,7 +482,14 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
   // disparaît dès que ce champ est modifié (et revient au prochain essai).
   const [erreurs, setErreurs] = useState<{ cle: string; msg: string }[]>([]);
   const [saisieEnvoyee, setSaisieEnvoyee] = useState<Record<string, string>>({});
-  const erreursVisibles = erreurs.filter(e => !e.cle || (form[e.cle] ?? '') === (saisieEnvoyee[e.cle] ?? '')).map(e => e.msg);
+  // Champs obligatoires vides au dernier essai : une seule phrase (« Date et
+  // motif sont à remplir. »), qui se réduit au fur et à mesure qu'on les remplit.
+  const [manquants, setManquants] = useState<string[]>([]);
+  const encoreVides = fields.filter(f => manquants.includes(f.key) && !(form[f.key] ?? '').trim()).map(f => f.label);
+  const erreursVisibles = [
+    ...(encoreVides.length ? [phraseChampsARemplir(encoreVides)] : []),
+    ...erreurs.filter(e => !e.cle || (form[e.cle] ?? '') === (saisieEnvoyee[e.cle] ?? '')).map(e => e.msg),
+  ];
   function enregistrer() {
     const avecStatut = fields.some(f => f.key === 'statut') ? { ...form, statut: form.statut || 'prevu' } : form;
     const e = erreursDatesSante(avecStatut, fields.filter(f => f.type === 'date'));
@@ -490,8 +497,8 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     fields.filter(f => f.passee && dateValide(form[f.key] ?? '') && form[f.key] > aujourdhui)
       .forEach(f => e.push(`${f.label} : ne peut pas être dans le futur.`));
     // Champs obligatoires (produit, vaccin, motif…) : avant, on pouvait enregistrer vide.
-    const requis = fields.filter(f => f.required && f.type !== 'date' && !(form[f.key] ?? '').trim())
-      .map(f => ({ cle: f.key, msg: `${f.label} : obligatoire.` }));
+    const vides = fields.filter(f => (f.required || (f.type === 'date' && f.key === 'date')) && !(form[f.key] ?? '').trim()).map(f => f.key);
+    const requis: { cle: string; msg: string }[] = [];
     const cleDe = (msg: string) => fields.find(f => msg.startsWith(`${f.label} :`))?.key
       ?? (msg.startsWith('Date de rappel') ? 'date_rappel' : msg.startsWith('Date de validité') ? 'date_validite_debut'
         : msg.startsWith('Date de fin') ? 'date_fin' : msg.startsWith('Date') ? 'date' : msg.includes('heure') ? 'rappel_heures' : '');
@@ -500,10 +507,11 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
     if (form.rappel_actif === 'true' && freq > 0 && duree > 0 && freq > duree) {
       requis.push({ cle: 'rappel_frequence_jours', msg: `Une prise tous les ${freq} jours ne tient pas dans ${duree} jours de traitement — le rythme doit être inférieur ou égal à la durée.` });
     }
-    const toutes = [...requis, ...e.map(msg => ({ cle: cleDe(msg), msg }))];
+    const toutes = [...requis, ...e.filter(msg => !msg.endsWith(': obligatoire.')).map(msg => ({ cle: cleDe(msg), msg }))];
     setErreurs(toutes);
+    setManquants(vides);
     setSaisieEnvoyee(form);
-    if (!toutes.length) void onSave(form);
+    if (!toutes.length && !vides.length) void onSave(form);
   }
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   // Date en cours de saisie (vidée, incomplète) : pas de calcul — new Date('')
