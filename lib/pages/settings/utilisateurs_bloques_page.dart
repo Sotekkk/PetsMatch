@@ -1,6 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/services/blocages_service.dart';
 import 'package:flutter/material.dart';
 
 const _teal = Color(0xFF0C5C6C);
@@ -23,14 +23,17 @@ class _UtilisatesBloquesPageState extends State<UtilisatesBloquesPage> {
   }
 
   Future<void> _load() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final snap = await FirebaseFirestore.instance.collection('bloquer').doc(uid).get();
-    final ids = snap.exists ? (snap.data() ?? {}).keys.toList() : <String>[];
+    // Blocages de la messagerie (Supabase) + ancienne liste du fil (Firestore).
+    final ids = (await Blocages.mesBloques()).toList();
 
     final users = <_BlockedUser>[];
     for (final id in ids) {
       final userSnap = await FirebaseFirestore.instance.collection('users').doc(id).get();
-      if (!userSnap.exists) continue;
+      if (!userSnap.exists) {
+        // Compte introuvable : affiché quand même, pour pouvoir le débloquer.
+        users.add(_BlockedUser(id: id, name: 'Utilisateur', photo: null));
+        continue;
+      }
       final d = userSnap.data()!;
       final isElevage = d['isElevage'] == true;
       final name = isElevage
@@ -45,10 +48,14 @@ class _UtilisatesBloquesPageState extends State<UtilisatesBloquesPage> {
   }
 
   Future<void> _unblock(String otherId) async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    await FirebaseFirestore.instance.collection('bloquer').doc(uid)
-        .update({otherId: FieldValue.delete()});
-    if (mounted) setState(() => _users.removeWhere((u) => u.id == otherId));
+    try {
+      await Blocages.debloquer(otherId);
+      if (mounted) setState(() => _users.removeWhere((u) => u.id == otherId));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Déblocage impossible, réessayez.')));
+      }
+    }
   }
 
   @override
@@ -72,7 +79,7 @@ class _UtilisatesBloquesPageState extends State<UtilisatesBloquesPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('🚫', style: TextStyle(fontSize: 48)),
+                      const Icon(Icons.block, size: 48, color: Color(0xFFC4C9CC)),
                       const SizedBox(height: 12),
                       const Text('Aucun utilisateur bloqué',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 16, color: Color(0xFF9CA3AF))),

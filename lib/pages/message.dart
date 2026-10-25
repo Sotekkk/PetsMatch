@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:PetsMatch/services/blocages_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
@@ -104,11 +105,8 @@ class _MessagePageState extends State<MessagePage> {
   // ── Données ─────────────────────────────────────────────────────────────────
 
   Future<void> _loadBlockedUsers() async {
-    try {
-      final rows = await _supa.from('bloquages')
-          .select('blocked_uid').eq('uid', _uid);
-      if (mounted) setState(() => _blockedUsers = (rows as List).map((r) => r['blocked_uid'].toString()).toList());
-    } catch (_) {}
+    final ids = await Blocages.mesBloques();
+    if (mounted) setState(() => _blockedUsers = ids.toList());
   }
 
   // Rechercher un utilisateur PetsMatch pour démarrer une nouvelle
@@ -210,9 +208,15 @@ class _MessagePageState extends State<MessagePage> {
 
   Future<void> _blockUser(String otherId) async {
     try {
-      await _supa.from('bloquages').insert({'uid': _uid, 'blocked_uid': otherId});
-      if (mounted) setState(() => _blockedUsers.add(otherId));
-    } catch (_) {}
+      await Blocages.bloquer(otherId);
+      if (!mounted) return;
+      setState(() { if (!_blockedUsers.contains(otherId)) _blockedUsers.add(otherId); });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Utilisateur bloqué.')));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Blocage impossible, réessayez.')));
+      }
+    }
   }
 
   Future<void> _delete(String id) async {

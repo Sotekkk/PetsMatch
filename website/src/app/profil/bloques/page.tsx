@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { debloquer, mesBloques } from '@/lib/blocages';
 import { useAuth } from '@/lib/auth-context';
 
 interface BlockedUser {
@@ -27,12 +28,13 @@ export default function BloquesPage() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const snap = await getDoc(doc(db, 'bloquer', user.uid));
-      const ids = snap.exists() ? Object.keys(snap.data() ?? {}) : [];
+      // Blocages de la messagerie (Supabase) + ancienne liste du fil (Firestore).
+      const ids = await mesBloques(user.uid);
       const list: BlockedUser[] = [];
       for (const id of ids) {
         const usnap = await getDoc(doc(db, 'users', id));
-        if (!usnap.exists()) continue;
+        // Compte introuvable : affiché quand même, pour pouvoir le débloquer.
+        if (!usnap.exists()) { list.push({ id, name: 'Utilisateur' }); continue; }
         const d = usnap.data();
         const isElevage = d.isElevage === true;
         const name = isElevage
@@ -48,11 +50,12 @@ export default function BloquesPage() {
 
   async function unblock(otherId: string) {
     if (!user) return;
-    const ref = doc(db, 'bloquer', user.uid);
-    const snap = await getDoc(ref);
-    const existing = snap.exists() ? { ...(snap.data() ?? {}) } : {};
-    delete existing[otherId];
-    await setDoc(ref, existing);
+    try {
+      await debloquer(user.uid, otherId);
+    } catch {
+      alert('Déblocage impossible, réessayez.');
+      return;
+    }
     setUsers(prev => prev.filter(u => u.id !== otherId));
     setConfirming(null);
   }

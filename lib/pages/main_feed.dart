@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'package:PetsMatch/services/blocages_service.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/filterpage.dart';
@@ -226,18 +227,7 @@ class _FeedPageState extends State<FeedPage> {
     fetchPosts();
   }
 
-  Future<Set<String>> getBlockedUsers() async {
-    String currentUserUid = FirebaseAuth.instance.currentUser!.uid;
-    DocumentSnapshot doc = await FirebaseFirestore.instance
-        .collection('bloquer')
-        .doc(currentUserUid)
-        .get();
-
-    if (!doc.exists) return {};
-
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    return data.keys.toSet();
-  }
+  Future<Set<String>> getBlockedUsers() => Blocages.mesBloques();
 
   Future<void> loadTags() async {
     String data = await rootBundle.loadString('assets/tags.json');
@@ -1306,19 +1296,19 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
                         },
                       );
                     } else if (value == 'bloquer') {
-                      String currentUserUid =
-                          FirebaseAuth.instance.currentUser!.uid;
                       String blockedUserUid = widget.post['uidEleveur'];
-
-                      await FirebaseFirestore.instance
-                          .collection('bloquer')
-                          .doc(currentUserUid)
-                          .set({blockedUserUid: true}, SetOptions(merge: true));
-
+                      try {
+                        await Blocages.bloquer(blockedUserUid);
+                      } catch (_) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Blocage impossible, réessayez.')));
+                        }
+                        return;
+                      }
+                      if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('🚫 Utilisateur bloqué avec succès.'),
-                        ),
+                        const SnackBar(content: Text('Utilisateur bloqué.')),
                       );
 
 // Appelle le callback pour rafraîchir la liste

@@ -1,5 +1,6 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/widgets/contact_canaux.dart';
+import 'package:PetsMatch/services/blocages_service.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/reproducteurs_publics_page.dart';
@@ -9,7 +10,6 @@ import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -338,14 +338,14 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                   onSelected: (v) {
                     if (v == 'signaler') _showSignalementDialog();
                     if (v == 'bloquer') {
-                      FirebaseFirestore.instance
-                          .collection('bloquer')
-                          .doc(User_Info.uid)
-                          .set({user.uid: true}, SetOptions(merge: true));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Utilisateur bloqué.')),
-                      );
-                      Navigator.pop(context);
+                      final messenger = ScaffoldMessenger.of(context);
+                      final nav = Navigator.of(context);
+                      Blocages.bloquer(user.uid).then((_) {
+                        messenger.showSnackBar(const SnackBar(content: Text('Utilisateur bloqué.')));
+                        nav.pop();
+                      }).catchError((_) {
+                        messenger.showSnackBar(const SnackBar(content: Text('Blocage impossible, réessayez.')));
+                      });
                     }
                   },
                   itemBuilder: (_) => [

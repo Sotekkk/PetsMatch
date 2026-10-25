@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/services/blocages_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -110,7 +111,7 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
     );
     if (ok != true || !mounted) return;
     try {
-      await _supa.from('bloquages').insert({'uid': myUid, 'blocked_uid': widget.uid});
+      await Blocages.bloquer(widget.uid);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Utilisateur bloqué.')),
@@ -120,7 +121,7 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Erreur lors du blocage.')),
+          const SnackBar(content: Text('Blocage impossible, réessayez.')),
         );
       }
     }

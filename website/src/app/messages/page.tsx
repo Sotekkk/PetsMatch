@@ -1,6 +1,7 @@
 'use client';
 
 import { conversationVisible, profilPrincipal, type ProfilCompte } from '@/lib/conversations-profil';
+import { bloquer, mesBloques } from '@/lib/blocages';
 import { ouvrirConversationDirecte } from '@/lib/conversation-directe';
 
 const TYPE_PROFIL: Record<string, string> = {
@@ -196,8 +197,7 @@ function MessagesPageInner() {
   // Bloquer les utilisateurs depuis Supabase
   useEffect(() => {
     if (!user) return;
-    supabase.from('bloquages').select('blocked_uid').eq('uid', user.uid)
-      .then(({ data }) => { if (data) setBlockedUsers(data.map((r: { blocked_uid: string }) => r.blocked_uid)); });
+    mesBloques(user.uid).then(setBlockedUsers);
   }, [user]);
 
   // Profile IDs secondaires
@@ -459,8 +459,14 @@ function MessagesPageInner() {
 
   async function blockUser(otherId: string) {
     if (!user) return;
-    await supabase.from('bloquages').upsert({ uid: user.uid, blocked_uid: otherId });
-    setBlockedUsers(prev => [...prev, otherId]);
+    // Déjà bloqué : aucune erreur (avant : conflit sur la contrainte unique).
+    try {
+      await bloquer(user.uid, otherId);
+    } catch {
+      alert('Blocage impossible, réessayez.');
+      return;
+    }
+    setBlockedUsers(prev => (prev.includes(otherId) ? prev : [...prev, otherId]));
   }
 
   async function deleteConv(id: string) {
