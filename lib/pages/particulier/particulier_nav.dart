@@ -91,7 +91,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
         4 => const ParticulierHomePage(),
         // Accueil = Pets Social (choix produit) ; le tableau de bord du
         // particulier est accessible depuis le menu (« Tableau de bord »).
-        _ => const SocialFeedPage(),
+        _ => SocialFeedPage(onTableauDeBord: () => setState(() => _selectedIndex = 4)),
       };
 
   @override

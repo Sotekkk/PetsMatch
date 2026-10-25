@@ -953,8 +953,52 @@ Widget _avatarWidget(String? photoUrl, double radius, {String? ringStyle}) {
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
+/// Tuile de raccourci (verre dépoli) en haut de Pets Social.
+class _RaccourciVerre extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _RaccourciVerre({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Container(
+              width: 82,
+              height: 68,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: Colors.white, size: 26),
+                  const SizedBox(height: 5),
+                  Text(label,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontSize: 10, height: 1.1,
+                          color: Colors.white, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
 class SocialFeedPage extends StatefulWidget {
-  const SocialFeedPage({super.key});
+  /// Raccourci « Tableau de bord » à côté de « Communauté » : bascule sur
+  /// l'onglet du tableau de bord de la navigation (absent si la page est
+  /// ouverte hors navigation, ex. depuis une notification).
+  final VoidCallback? onTableauDeBord;
+  const SocialFeedPage({super.key, this.onTableauDeBord});
   @override
   State<SocialFeedPage> createState() => _SocialFeedPageState();
 }
@@ -1125,41 +1169,17 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
             _buildHeader(),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Expanded(child: StoryRing(myUid: uid, myProfileId: _myProfileId)),
+              if (widget.onTableauDeBord != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8, top: 8),
+                  child: _RaccourciVerre(icon: Icons.dashboard_rounded, label: 'Tableau\nde bord',
+                      onTap: widget.onTableauDeBord!),
+                ),
               Padding(
                 padding: const EdgeInsets.only(right: 16, top: 8),
-                child: GestureDetector(
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const CommunauteHubPage())),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      child: Container(
-                        width: 82,
-                        height: 68,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
-                        ),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.groups_rounded, color: Colors.white, size: 26),
-                            SizedBox(height: 5),
-                            Text('Communauté',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontSize: 10,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                child: _RaccourciVerre(icon: Icons.groups_rounded, label: 'Communauté',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const CommunauteHubPage()))),
               ),
             ]),
             _buildPillTabs(),
