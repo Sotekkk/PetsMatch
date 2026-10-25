@@ -3892,7 +3892,7 @@ function AnimalFichePageInner() {
       if (error) throw error;
       await loadDocs();
       setAddDocOpen(null);
-    } catch (e) { alert(`Enregistrement impossible : ${e instanceof Error ? e.message : String(e)}`); }
+    } catch (e) { alert(`Enregistrement impossible : ${e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e)}`); }
     setSavingDoc(false);
   }
 

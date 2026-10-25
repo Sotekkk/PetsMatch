@@ -78,11 +78,19 @@ function FormTest({ espece, onCancel, onSaved, animalId, uid, dateNaissance }: {
         ...(lien.trim() ? { lien_resultat: lien.trim() } : {}),
         created_at: new Date().toISOString(),
       };
-      const { error } = await supabase.from('tests_genetiques').insert(ligne);
+      let { error } = await supabase.from('tests_genetiques').insert(ligne);
+      // Colonne lien_resultat absente (migration_tests_genetiques_lien.sql pas
+      // passée) : le test est gardé, sans le lien.
+      if (error?.code === '42703' && 'lien_resultat' in ligne) {
+        delete ligne.lien_resultat;
+        ({ error } = await supabase.from('tests_genetiques').insert(ligne));
+      }
       if (error) throw error;
       onSaved(ligne);
     } catch (e) {
-      setErreur(`Enregistrement impossible : ${e instanceof Error ? e.message : String(e)}`);
+      // Erreur Supabase = objet { message, code } (pas une Error) : avant, « [object Object] ».
+      const m = e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e);
+      setErreur(`Enregistrement impossible : ${m}`);
     }
     setSaving(false);
   }
