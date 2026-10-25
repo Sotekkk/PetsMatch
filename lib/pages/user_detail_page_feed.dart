@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/reproducteurs_publics_page.dart';
@@ -35,6 +36,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   String _facebook = '';
   String _siteWeb = '';
   String _telephone = '';
+  String _email = '';
   String _statutPro = '';
   String? _eleveurProfileId;
 
@@ -55,7 +57,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       final prof = await Supabase.instance.client
           .from('user_profiles_complet')
           .select('id, montre_reproducteurs, desc_entreprise, description, '
-              'instagram, facebook, site_web, numero_elevage, phone_number, statut_pro')
+              'instagram, facebook, site_web, phone_number, email_contact, statut_pro')
           .eq('uid', widget.user.uid)
           .eq('profile_type', 'eleveur')
           .maybeSingle();
@@ -63,7 +65,8 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       var desc = v('desc_entreprise').isNotEmpty
           ? v('desc_entreprise')
           : v('description');
-      var tel = v('numero_elevage').isNotEmpty ? v('numero_elevage') : v('phone_number');
+      // phone_number : numero_elevage est le numéro d'élevage, pas un téléphone.
+      var tel = v('phone_number');
       var insta = v('instagram'), fb = v('facebook'), web = v('site_web');
 
       // Repli Firestore `users` : profils dont l'édition n'a pas encore propagé
@@ -78,7 +81,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           if (fb.isEmpty) fb = f('facebook');
           if (web.isEmpty) web = f('siteWeb');
           if (desc.isEmpty) desc = f('descEntreprise').isNotEmpty ? f('descEntreprise') : f('desc');
-          if (tel.isEmpty) tel = f('numeroElevage');
+          if (tel.isEmpty) tel = f('phone_number').isNotEmpty ? f('phone_number') : f('telephone');
         } catch (_) {}
       }
 
@@ -89,6 +92,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           _facebook = fb;
           _siteWeb = web;
           _telephone = tel;
+          _email = v('email_contact');
           _statutPro = (prof?['statut_pro'] ?? '').toString();
           _eleveurProfileId = prof?['id'] as String?;
         });
@@ -154,9 +158,12 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
     setState(() => _loadingChat = true);
     try {
       final eleveurId = widget.user.uid;
+      // MON profil actif ↔ le profil ÉLEVEUR affiché (pas le profil principal du compte).
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: eleveurId,
         categorie: 'communaute',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        otherProfileId: _eleveurProfileId,
       );
       if (mounted) {
         Navigator.push(
@@ -505,7 +512,9 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: _loadingChat ? null : _openChat,
+                          onPressed: _loadingChat ? null : () => showContactSheet(context,
+                              nom: user.nameElevage.isNotEmpty ? user.nameElevage : 'cet élevage',
+                              tel: _telephone, email: _email, onMessage: _openChat),
                           icon: _loadingChat
                               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                               : const Icon(Icons.chat_bubble_outline, size: 18),

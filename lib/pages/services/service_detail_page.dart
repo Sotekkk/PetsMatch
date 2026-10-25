@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
+import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
@@ -666,7 +667,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: widget.proUid,
         categorie: 'service-professionnel',
-        myProfileId: widget.profileTableId,
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        otherProfileId: widget.profileTableId ?? _proData?['id']?.toString(),
       );
       if (mounted) {
         Navigator.push(context, MaterialPageRoute(
@@ -684,7 +686,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   }
 
   String get _telephone =>
-      (_proData?['phone_number'] ?? _proData?['numero_elevage'] ?? _proData?['phone'] ?? '')
+      (_proData?['phone_number'] ?? _proData?['phone'] ?? '')
           .toString()
           .trim();
 
@@ -1405,7 +1407,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       child: Row(children: [
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: _loadingChat ? null : _openChat,
+            onPressed: _loadingChat ? null : () => showContactSheet(context,
+                nom: _nomStructure, tel: _telephone, email: _proData?['email_contact']?.toString(), onMessage: _openChat),
             icon: _loadingChat
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.message_outlined, size: 18),

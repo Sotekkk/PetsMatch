@@ -87,3 +87,42 @@ class ContactCanaux extends StatelessWidget {
     ]);
   }
 }
+
+/// « Contacter » d'une fiche publique (professionnel, élevage, association) :
+/// coordonnées en clair + choix du moyen (messagerie PetsMatch, appel, SMS,
+/// WhatsApp, e-mail). Toujours le PROFIL affiché : [onMessage] ouvre la
+/// conversation avec ce profil, [tel] / [email] sont ceux de ce profil.
+/// Miroir site : website/src/components/ContactModal.tsx.
+Future<void> showContactSheet(BuildContext context, {
+  required String nom,
+  String? tel,
+  String? email,
+  required Future<void> Function() onMessage,
+}) {
+  final t = (tel ?? '').trim(), m = (email ?? '').trim();
+  return showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Contacter $nom', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025))),
+          if (t.isNotEmpty || m.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            if (t.isNotEmpty) SelectableText('Téléphone : $t', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF444444))),
+            if (m.isNotEmpty) SelectableText('E-mail : $m', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF444444))),
+          ],
+          const SizedBox(height: 14),
+          ContactCanaux(
+            tel: t, email: m, sujet: 'Contact via PetsMatch',
+            onMessage: () async { Navigator.of(ctx).pop(); await onMessage(); },
+            texteVide: 'Aucune coordonnée indiquée.',
+          ),
+        ]),
+      ),
+    ),
+  );
+}

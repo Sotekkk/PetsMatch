@@ -16,6 +16,7 @@ import { gardeMotifLabel, ACCES_LOGEMENT, accesLogementLabel } from '@/lib/garde
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 import ReservationSejourModal from '@/components/pension/ReservationSejourModal';
 import AvisPro from '@/components/AvisPro';
+import ContactModal from '@/components/ContactModal';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
 import { AnimalPickerField, AnimalMultiPickerField } from '@/components/AnimalPickerField';
@@ -59,6 +60,8 @@ interface ProData {
   /** Photographe : portfolio publiable (masquées / sans autorisation exclues). */
   portfolio?: ItemPortfolio[];
   tarifs: string; site_web: string; instagram: string; facebook: string; phone: string;
+  /** E-mail de contact du profil (user_profiles.email_contact). */
+  email?: string;
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
   tarifs_education?: Record<string, number>;
@@ -201,6 +204,8 @@ function ProDetailContent() {
 
   // RDV
   const [showRdv, setShowRdv] = useState(false);
+  // « Contacter » : téléphone, SMS, e-mail ou messagerie PetsMatch (au choix).
+  const [showContact, setShowContact] = useState(false);
   const [showEducationReservation, setShowEducationReservation] = useState(false);
   // Pension : réservation d'un séjour (dates) au lieu d'un rendez-vous.
   const [showSejour, setShowSejour] = useState(false);
@@ -379,7 +384,8 @@ function ProDetailContent() {
           portfolio: portfolioPublic(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
-          phone: (data.phone_number || data.numero_elevage || data.phone || '') as string,
+          phone: (data.phone_number || data.phone || '') as string,
+          email: (data.email_contact || '') as string,
           rayon: data.rayon_intervention || 0,
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
@@ -426,7 +432,8 @@ function ProDetailContent() {
           portfolio: portfolioPublic(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
-          phone: (data.phone_number || data.numero_elevage || data.phone || '') as string,
+          phone: (data.phone_number || data.phone || '') as string,
+          email: (data.email_contact || '') as string,
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
@@ -1469,11 +1476,11 @@ function ProDetailContent() {
 
         {/* Boutons CTA — dans le profil, pas en bas */}
         <div className="flex gap-3 mt-4">
-          <Link href={`/messages?uid=${pro.uid}`}
+          <button type="button" onClick={() => setShowContact(true)}
             className="flex-1 flex items-center justify-center gap-2 border border-gray-200 rounded-2xl py-3 text-sm font-semibold text-[#1E2025] hover:bg-gray-50 transition-colors"
             style={{ fontFamily: 'Galey, sans-serif' }}>
-            💬 Contacter
-          </Link>
+            Contacter
+          </button>
           <button
             onClick={() => { if (pro.cat_pro === 'education' || (pro.cat_pro === 'pension' && pro.profileTableId)) { if (!user) { router.push('/connexion'); return; } if (pro.cat_pro === 'pension') setShowSejour(true); else setShowEducationReservation(true); } else { openRdv(); } }}
             disabled={!pro.accept_new_clients}
@@ -1482,6 +1489,10 @@ function ProDetailContent() {
             📅 {!pro.accept_new_clients ? 'Complet' : pro.cat_pro === 'education' ? 'Réserver un cours' : (pro.cat_pro === 'pension' || pro.cat_pro === 'garde') ? 'Réserver' : 'Prendre RDV'}
           </button>
         </div>
+        {showContact && (
+          <ContactModal nom={pro.name} uid={pro.uid} profileId={pro.profileTableId ?? profileTableId ?? null}
+            tel={pro.phone} email={pro.email} onClose={() => setShowContact(false)} />
+        )}
       </div>
 
       {/* ── Onglets ── */}
@@ -1515,7 +1526,7 @@ function ProDetailContent() {
                 <PortfolioPub photos={pro.portfolio ?? []} />
                 <div className="flex flex-wrap gap-3 mt-3 text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
                   {prestations.length > 0 && <a href="#prestations" className="text-[#0C5C6C]">Voir les prestations</a>}
-                  <Link href={`/messages?uid=${pro.uid}`} className="text-[#0C5C6C]">Demander un devis</Link>
+                  <button type="button" onClick={() => setShowContact(true)} className="text-[#0C5C6C]">Demander un devis</button>
                 </div>
               </div>
             )}

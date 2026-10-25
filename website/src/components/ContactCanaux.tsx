@@ -6,14 +6,16 @@ import { waPhone } from '@/lib/contact-acquereur';
 
 const TEAL = '#0C5C6C';
 
-export default function ContactCanaux({ uid, tel, email, sujet, className = '' }: {
+export default function ContactCanaux({ uid, profileId, tel, email, sujet, className = '', texteVide = 'Aucune coordonnée pour ce client.' }: {
   uid?: string | null; tel?: string | null; email?: string | null;
+  /** Profil contacté (conversation avec CE profil, pas le profil principal). */
+  profileId?: string | null;
   /** Objet pré-rempli de l'e-mail. */
-  sujet?: string; className?: string;
+  sujet?: string; className?: string; texteVide?: string;
 }) {
   const t = (tel ?? '').trim(), m = (email ?? '').trim();
   const liens: { label: string; href: string; externe?: boolean }[] = [
-    ...(uid ? [{ label: 'Message', href: `/messages?uid=${encodeURIComponent(uid)}` }] : []),
+    ...(uid ? [{ label: 'Message PetsMatch', href: `/messages?uid=${encodeURIComponent(uid)}${profileId ? `&pid=${encodeURIComponent(profileId)}` : ''}` }] : []),
     ...(t ? [
       { label: 'Appeler', href: `tel:${t.replace(/[^0-9+]/g, '')}` },
       { label: 'SMS', href: `sms:${t.replace(/[^0-9+]/g, '')}` },
@@ -21,7 +23,7 @@ export default function ContactCanaux({ uid, tel, email, sujet, className = '' }
     ] : []),
     ...(m ? [{ label: 'E-mail', href: `mailto:${m}${sujet ? `?subject=${encodeURIComponent(sujet)}` : ''}` }] : []),
   ];
-  if (!liens.length) return <p className={`text-xs text-gray-400 ${className}`}>Aucune coordonnée pour ce client.</p>;
+  if (!liens.length) return <p className={`text-xs text-gray-400 ${className}`}>{texteVide}</p>;
   return (
     <div className={`flex flex-wrap gap-2 ${className}`}>
       {liens.map(l => (

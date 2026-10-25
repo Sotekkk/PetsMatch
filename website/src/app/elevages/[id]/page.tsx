@@ -7,6 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import ContactModal from '@/components/ContactModal';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
@@ -28,6 +29,8 @@ interface EleveurData {
   isPremium: boolean;
   isValidate: boolean;
   telephone: string;
+  /** E-mail de contact du profil élevage (email_contact). */
+  email?: string;
   siteWeb: string;
   facebook: string;
   instagram: string;
@@ -89,7 +92,7 @@ function fromFirestore(uid: string, d: Record<string, unknown>): EleveurData {
     statutPro: (d['statutPro'] as string) || (d['statut_pro'] as string) || '',
     isPremium: !!(d['isPremium'] ?? d['is_premium']),
     isValidate: !!(d['isValidate'] ?? d['is_validate']),
-    telephone: (d['numeroElevage'] as string) || (d['telephone'] as string) || '',
+    telephone: (d['telephone'] as string) || (d['phone_number'] as string) || '',
     siteWeb: (d['siteWeb'] as string) || (d['site_web'] as string) || '',
     facebook: (d['facebook'] as string) || '',
     instagram: (d['instagram'] as string) || '',
@@ -129,7 +132,8 @@ export default function EleveurProfilePage() {
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [contacting, setContacting] = useState(false);
+  // « Contacter » : fenêtre de choix (PetsMatch, appel, SMS, e-mail).
+  const [showContact, setShowContact] = useState(false);
   const [reproCount, setReproCount] = useState(0);
   const [eleveurProfileId, setEleveurProfileId] = useState<string | null>(null);
 
@@ -141,12 +145,12 @@ export default function EleveurProfilePage() {
     if (!euid) return;
     (async () => {
       const { data: prof } = await supabase.from('user_profiles_complet')
-        .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, numero_elevage')
+        .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, email_contact')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof) return;
       setEleveurProfileId((prof.id as string) ?? null);
       const desc = (prof.desc_entreprise || prof.description || '').trim();
-      const tel = (prof.numero_elevage || prof.phone_number || '').trim();
+      const tel = (prof.phone_number || '').trim();
       setEleveur(prev => prev && ({
         ...prev,
         description: desc || prev.description,
@@ -154,6 +158,7 @@ export default function EleveurProfilePage() {
         facebook: (prof.facebook as string) || prev.facebook,
         siteWeb: (prof.site_web as string) || prev.siteWeb,
         telephone: tel || prev.telephone,
+        email: ((prof.email_contact as string | null) ?? '').trim() || prev.email,
       }));
       if (!prof.id || prof.montre_reproducteurs !== true) { setReproCount(0); return; }
       const { data: rows } = await supabase.from('animaux')
@@ -242,32 +247,6 @@ export default function EleveurProfilePage() {
     });
   }, [id]);
 
-  const handleContact = async () => {
-    if (!user) { router.push('/connexion'); return; }
-    if (!id) return;
-    setContacting(true);
-    try {
-      const participantIds = [user.uid, id].sort().join('_');
-      const snap = await getDocs(query(
-        collection(db, 'conversations'),
-        where('participantIds', '==', participantIds)
-      ));
-      let convId: string;
-      if (!snap.empty) {
-        convId = snap.docs[0].id;
-      } else {
-        const ref = await addDoc(collection(db, 'conversations'), {
-          participants: [user.uid, id].sort(),
-          participantIds,
-          lastMessage: '',
-          timestamp: serverTimestamp(),
-          categorie: 'communaute',
-        });
-        convId = ref.id;
-      }
-      router.push(`/messages?conv=${convId}`);
-    } catch { setContacting(false); }
-  };
 
   if (loading) return (
     <div className="flex justify-center items-center min-h-screen">
@@ -378,18 +357,14 @@ export default function EleveurProfilePage() {
                   </a>
                 )}
                 <button
-                  onClick={handleContact}
-                  disabled={contacting}
+                  onClick={() => setShowContact(true)}
                   className="flex items-center gap-1.5 bg-[#0C5C6C] hover:bg-[#094F5D] text-white px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60">
-                  {contacting ? (
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  )}
                   Contacter
                 </button>
+                {showContact && (
+                  <ContactModal nom={eleveur.name} uid={eleveur.uid} profileId={eleveurProfileId ?? (/^[0-9a-f-]{36}$/i.test(String(id ?? "")) ? String(id) : null)}
+                    tel={eleveur.telephone} email={eleveur.email} onClose={() => setShowContact(false)} />
+                )}
               </div>
             )}
           </div>

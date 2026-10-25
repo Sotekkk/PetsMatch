@@ -1,6 +1,7 @@
 'use client';
 
 import { conversationVisible, profilPrincipal, type ProfilCompte } from '@/lib/conversations-profil';
+import { ouvrirConversationDirecte } from '@/lib/conversation-directe';
 
 const TYPE_PROFIL: Record<string, string> = {
   particulier: 'Particulier', eleveur: 'Élevage', association: 'Association', pension: 'Pension', garde: 'Pet-sitter',
@@ -159,8 +160,25 @@ function MessagesPageInner() {
   const msgChannelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) router.push('/connexion');
+    // Retour ici après connexion (ex. « Contacter » un pro sans être connecté).
+    if (!loading && !user) router.push(`/connexion?suite=${encodeURIComponent(window.location.pathname + window.location.search)}`);
   }, [loading, user, router]);
+
+  // ?uid=… (&pid=…) : ouvre la conversation avec ce compte / ce profil, en la
+  // créant si besoin (« Contacter » de l'annuaire, « Demander un devis »…).
+  // Avant : le paramètre n'était pas lu, la messagerie s'ouvrait sans conversation.
+  const ouvertureUid = useRef(false);
+  useEffect(() => {
+    const autre = searchParams.get('uid');
+    if (!user || !autre || ouvertureUid.current) return;
+    if (autre === user.uid) { router.replace('/messages'); return; }
+    ouvertureUid.current = true;
+    ouvrirConversationDirecte({
+      myUid: user.uid, myProfileId: activeProfileId, otherUid: autre,
+      otherProfileId: searchParams.get('pid'), categorie: searchParams.get('cat') ?? 'services',
+    }).then(convId => router.replace(`/messages?conv=${convId}`))
+      .catch(() => { ouvertureUid.current = false; alert('Impossible d\'ouvrir la conversation.'); });
+  }, [user, activeProfileId, searchParams, router]);
 
   // Suivre le type de profil actif pour filtrer les conversations non-taguées
   useEffect(() => {

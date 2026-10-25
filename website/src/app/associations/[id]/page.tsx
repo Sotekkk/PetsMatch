@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import ContactModal from '@/components/ContactModal';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
@@ -17,6 +18,9 @@ interface AssoProfile {
   ville: string;
   description: string;
   telephone?: string;
+  /** Profil association affiché + son e-mail de contact. */
+  profileId?: string;
+  email?: string;
   site_web?: string;
   instagram?: string;
   facebook?: string;
@@ -49,7 +53,8 @@ export default function AssociationProfilePage() {
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [contacting, setContacting] = useState(false);
+  // « Contacter » : fenêtre de choix (PetsMatch, appel, SMS, e-mail).
+  const [showContact, setShowContact] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -58,16 +63,16 @@ export default function AssociationProfilePage() {
     // ou un Firebase UID (alphanumérique sans tirets)
     const isProfileUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    type SecProfile = { id?: string; uid?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string; statut_pro?: string };
+    type SecProfile = { id?: string; uid?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; phone_number?: string; email_contact?: string; site_web?: string; instagram?: string; facebook?: string; statut_pro?: string };
 
     const profileQ = isProfileUUID
       // UUID de profil : query directe par id (bypass RLS, le profil est connu)
       ? supabase.from('user_profiles_complet')
-          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook, statut_pro')
+          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, phone_number, email_contact, site_web, instagram, facebook, statut_pro')
           .eq('id', id).maybeSingle().then(r => ({ data: r.data ? [r.data] : [], uid: (r.data as SecProfile | null)?.uid ?? id }))
       // Firebase UID : query par uid sans filtre profile_type (filtre côté client)
       : supabase.from('user_profiles_complet')
-          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook, statut_pro')
+          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, phone_number, email_contact, site_web, instagram, facebook, statut_pro')
           .eq('uid', id).then(r => ({ data: r.data ?? [], uid: id }));
 
     profileQ.then(({ data: allProfiles, uid: ownerUid }) => {
@@ -90,10 +95,11 @@ export default function AssociationProfilePage() {
         const ville = sp?.ville ?? (userRow as { ville_elevage?: string } | null)?.ville_elevage ?? '';
         const description = (sp?.desc_entreprise || sp?.description)
           ?? (userRow as { description_elevage?: string } | null)?.description_elevage ?? '';
-        const telephone = sp?.phone || sp?.telephone || (userRow as { phone_number?: string } | null)?.phone_number || '';
+        const telephone = sp?.phone_number || sp?.phone || sp?.telephone || (userRow as { phone_number?: string } | null)?.phone_number || '';
 
         setProfile({ uid: firebaseUid, nom, avatar, banner, ville, description,
           telephone: telephone || undefined,
+          profileId: sp?.id, email: sp?.email_contact?.trim() || undefined,
           site_web: sp?.site_web, instagram: sp?.instagram, facebook: sp?.facebook,
           statutPro: sp?.statut_pro,
         });
@@ -104,39 +110,6 @@ export default function AssociationProfilePage() {
     });
   }, [id]);
 
-  const handleContact = async () => {
-    if (!user) { router.push('/connexion'); return; }
-    if (!id) return;
-    setContacting(true);
-    try {
-      const participantIds = [user.uid, id].sort().join('_');
-      const snap = await getDocs(query(
-        collection(db, 'conversations'),
-        where('participantIds', '==', participantIds)
-      ));
-      let convId: string;
-      if (!snap.empty) {
-        convId = snap.docs[0].id;
-      } else {
-        // Récupère le profil Supabase de l'association
-        const { data: proProfile } = await supabase
-          .from('user_profiles_complet').select('id').eq('uid', id)
-          .order('is_main', { ascending: false }).limit(1).maybeSingle();
-
-        const ref = await addDoc(collection(db, 'conversations'), {
-          participants: [user.uid, id].sort(),
-          participantIds,
-          lastMessage: '',
-          timestamp: serverTimestamp(),
-          categorie: 'communaute',
-          ...(proProfile?.id ? { pro_profile_id: proProfile.id } : {}),
-          ...(activeProfileId ? { consumer_profile_id: activeProfileId } : {}),
-        });
-        convId = ref.id;
-      }
-      router.push(`/messages?conv=${convId}`);
-    } catch { setContacting(false); }
-  };
 
   if (loading) {
     return (
@@ -233,18 +206,14 @@ export default function AssociationProfilePage() {
                   </a>
                 )}
                 <button
-                  onClick={handleContact}
-                  disabled={contacting}
+                  onClick={() => setShowContact(true)}
                   className="flex items-center gap-1.5 bg-[#0C5C6C] hover:bg-[#094F5D] text-white px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60">
-                  {contacting ? (
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  )}
                   Contacter
                 </button>
+                {showContact && (
+                  <ContactModal nom={profile.nom} uid={profile.uid} profileId={profile.profileId ?? null}
+                    tel={profile.telephone} email={profile.email} onClose={() => setShowContact(false)} />
+                )}
               </div>
             )}
           </div>

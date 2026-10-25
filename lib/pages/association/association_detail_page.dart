@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
@@ -41,6 +42,9 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
   String _loadedBanner = '';
   String _loadedVille  = '';
   String _phone        = '';
+  String _email        = '';
+  /// Profil association affiché (conversation avec CE profil).
+  String? _assoProfileId;
   String _siteWeb      = '';
   List<Map<String, dynamic>> _animaux   = [];
   List<Map<String, dynamic>> _annonces  = [];
@@ -60,12 +64,12 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       Map<String, dynamic>? p;
       if (widget.profileId != null) {
         p = await _supa.from('user_profiles_complet')
-            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, statut_pro')
+            .select('id, nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, phone_number, email_contact, site_web, statut_pro')
             .eq('id', widget.profileId!)
             .maybeSingle();
       } else {
         final rows = (await _supa.from('user_profiles_complet')
-            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type, statut_pro')
+            .select('id, nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, phone_number, email_contact, site_web, profile_type, statut_pro')
             .eq('uid', widget.uid)) as List;
         p = rows.firstWhere(
           (r) => r['profile_type'] == 'association',
@@ -105,7 +109,9 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
           _loadedBanner = (p?['banner_url'] as String?)?.trim() ?? '';
           _loadedVille  = (p?['ville'] as String?)?.trim() ?? widget.ville;
           _description  = ((p?['desc_entreprise'] ?? p?['description']) as String?)?.trim() ?? '';
-          _phone        = (p?['phone'] ?? p?['telephone'])?.toString().trim() ?? '';
+          _phone        = (p?['phone_number'] ?? p?['phone'] ?? p?['telephone'])?.toString().trim() ?? '';
+          _email        = (p?['email_contact'] ?? '').toString().trim();
+          _assoProfileId = widget.profileId ?? p?['id']?.toString();
           _siteWeb      = (p?['site_web'] as String?)?.trim() ?? '';
           _statutPro    = (p?['statut_pro'] ?? '').toString();
           _animaux      = List<Map<String, dynamic>>.from(animaux);
@@ -128,6 +134,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
         otherUid: widget.uid,
         categorie: 'communaute',
         myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        otherProfileId: _assoProfileId,
       );
       if (!mounted) return;
       Navigator.push(context, MaterialPageRoute(
@@ -318,7 +325,9 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                         Row(children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: _loadingChat ? null : _openChat,
+                              onPressed: _loadingChat ? null : () => showContactSheet(context,
+                                  nom: _loadedName.isNotEmpty ? _loadedName : widget.name,
+                                  tel: _phone, email: _email, onMessage: _openChat),
                               icon: _loadingChat
                                   ? const SizedBox(width: 16, height: 16,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
