@@ -124,8 +124,9 @@ async function resolveProfileId(uid, preferType) {
  * @param {string} title - titre (avant préfixe éventuel).
  * @param {string} body - corps du message.
  * @param {object} [data] - données additionnelles (type, ids…).
- * @param {{profileId?: string}} [opts] - profil concerné, pour le préfixe +
- *   la bascule au tap.
+ * @param {{profileId?: string, tag?: string}} [opts] - profil concerné, pour le
+ *   préfixe + la bascule au tap ; `tag` : étiquette propre à ce rappel (deux
+ *   rappels distincts pour le même animal ne doivent pas se remplacer).
  * @return {Promise<boolean>} true si au moins un token a reçu l'envoi.
  */
 async function sendPush(uid, title, body, data = {}, opts = {}) {
@@ -156,8 +157,8 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
         // Étiquette commune notification système / notification de l'appli :
         // Android remplace au lieu d'empiler → jamais deux fois le même rappel
         // sur le téléphone, quel que soit le chemin d'affichage.
-        const notifTag = [data.type || "generic", data.animalId || data.alerteId ||
-            data.cours_id || data.conversationId || ""].join("_").slice(0, 60);
+        const notifTag = (opts.tag || [data.type || "generic", data.animalId || data.alerteId ||
+            data.cours_id || data.conversationId || ""].join("_")).slice(0, 60);
 
         let sent = false;
         for (const token of tokens) {

@@ -727,7 +727,12 @@ exports.sendTraitementReminders = functions
                 `${quantite} de ${nomSoin} à ${heureDue} pour ${listeNoms}` :
                 `${nomSoin} à ${heureDue} pour ${listeNoms}` + (posologie ? ` — ${posologie}` : "");
 
-            const pushed = await sendPush(uid, title, body, {type: "sante", animalId: premier, table}, {profileId});
+            // Étiquette par soin et par heure : « 1 cp de Test » et « Vermifuge
+            // Drontal » à 8:00 pour le même animal s'affichaient sous la même
+            // étiquette — le second remplaçait le premier sur le téléphone.
+            const tag = `soin_${heureDue}_${nomSoin}_${premier}`;
+            const pushed = await sendPush(uid, title, body,
+                {type: "sante", animalId: premier, table}, {profileId, tag});
             if (pushed) sent++;
 
             try {
