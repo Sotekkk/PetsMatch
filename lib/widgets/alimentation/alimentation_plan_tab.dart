@@ -974,8 +974,8 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   String _sousTitreAliment(AlimentPlan a) {
     final t = kLibellesTypeAliment[a.type] ?? a.type;
     if (_profil.methode != 'energie') return t;
-    final est = kcalEstimeeComposition(a.repartition);
-    if (a.kcal == null && est != null) return '$t · ≈ ${est.round()} kcal/100 g (estimation selon la composition)';
+    final est = kcalDe(a);
+    if (a.kcal == null && est != null) return '$t · ≈ ${est.round()} kcal/100 g (${libelleEstimation(a)})';
     if (a.kcal == null) return '$t · valeur énergétique non renseignée';
     return '$t · ${a.kcal!.round()} kcal/100 g${a.source == 'composition' ? ' (estimation)' : ''}';
   }

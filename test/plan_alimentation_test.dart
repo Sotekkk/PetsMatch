@@ -98,7 +98,7 @@ void main() {
   });
 
   test('9. aliment sans valeur énergétique', () {
-    final maison = AlimentPlan(marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere');
+    final maison = AlimentPlan(marque: 'Préparation maison', gamme: 'Riz poulet', type: 'autre');
     final p = plan([croq(), maison], [[0], [1]]);
     var c = calculerRation(p, nala);
     expect(c.lignes[1][0].reco, isNull);
@@ -182,7 +182,12 @@ void main() {
   test('ménagère maison estimée par la composition, parts de l\'énergie', () {
     final maison = AlimentPlan(marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere',
         repartition: Map.of(kRepartitionMenagere));
-    expect(kcalDe(maison), 163);
+    expect(kcalDe(maison), 120, reason: 'repère par défaut : valeur de l\'ancien onglet');
+    expect(kcalDe(AlimentPlan(marque: 'Ration ménagère', type: 'menagere')), 120);
+    expect(kcalDe(AlimentPlan(marque: 'BARF', type: 'barf')), 125);
+    expect(kcalDe(AlimentPlan(marque: 'Maison', type: 'menagere',
+        repartition: {'proteines': 50, 'legumes': 20, 'feculents': 20, 'matieres_grasses': 5, 'complements': 5})), 165);
+    expect(kcalDe(AlimentPlan(marque: 'Pâtée', type: 'patee')), isNull);
     final p = plan([croq(), maison], [[0, 1], [0, 1]]);
     var c = calculerRation(p, nala);
     expect(c.sansKcal, isEmpty);
@@ -193,7 +198,7 @@ void main() {
     p.parts = [70, 30];
     c = calculerRation(p, nala);
     expect(c.totalParAliment[0], closeTo(995.1 * 0.7 * 100 / 370, 0.5));
-    expect(c.totalParAliment[1], closeTo(995.1 * 0.3 * 100 / 163, 0.5));
+    expect(c.totalParAliment[1], closeTo(995.1 * 0.3 * 100 / 120, 0.5));
     expect(c.lignes[0][0].reco, closeTo(995.1 * 0.7 * 100 / 370 / 2, 0.3));
     expect(c.partEnergie[0], closeTo(70, 0.1));
     p.parts = [70, 20];

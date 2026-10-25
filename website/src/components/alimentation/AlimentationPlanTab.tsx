@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { auth } from '@/lib/firebase';
 import {
   type AlimentPlan, type CalculRation, type PlanAlimentation, ACTIVITES, LIBELLES_ACTIVITE, LIBELLES_TYPE_ALIMENT,
-  type EtatRepro, ajouterAliment, ageMois, basculer, detecterReproduction, erreursHoraires, kcalDe, kcalEstimeeComposition, calculerRation, changerNbRepas, colonnesHistoriques, ecartImportant, erreurEtape,
+  type EtatRepro, ajouterAliment, ageMois, basculer, detecterReproduction, erreursHoraires, kcalDe, libelleEstimation, calculerRation, changerNbRepas, colonnesHistoriques, ecartImportant, erreurEtape,
   estPersonnalise, formatQuantite, libellesRepas, lireNombre, nomAliment, planDepuisLigne, planNeuf, planVersJson,
   profilEspece, retirerAliment, revenirRecommandation, typeDepuisCatalogue,
 } from '@/lib/plan-alimentation';
@@ -358,8 +358,8 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
   const sousTitreAliment = (a: AlimentPlan) => {
     const t = LIBELLES_TYPE_ALIMENT[a.type] ?? a.type;
     if (profil.methode !== 'energie') return t;
-    const est = kcalEstimeeComposition(a.repartition);
-    if (a.kcal == null && est != null) return `${t} · ≈ ${est} kcal/100 g (estimation selon la composition)`;
+    const est = kcalDe(a);
+    if (a.kcal == null && est != null) return `${t} · ≈ ${Math.round(est)} kcal/100 g (${libelleEstimation(a)})`;
     return a.kcal == null ? `${t} · valeur énergétique non renseignée` : `${t} · ${Math.round(a.kcal)} kcal/100 g${a.source === 'composition' ? ' (estimation)' : ''}`;
   };
   const fabricant = plan.aliments.map((a, i) => (calc.fabricant[i] != null ? `${nomAliment(a)} : ${formatQuantite(calc.fabricant[i]!, kg)}/jour` : null)).filter(Boolean);

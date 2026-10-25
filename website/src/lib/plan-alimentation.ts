@@ -143,12 +143,37 @@ export function kcalEstimeeComposition(r?: Record<string, number> | null): numbe
   return k > 0 ? Math.round(k) : null;
 }
 
-/** Densité utilisée pour le calcul : celle de l'aliment, sinon l'estimation
- *  d'après sa composition (préparation maison). */
-export const kcalDe = (a: AlimentPlan): number | null => ((a.kcal ?? 0) > 0 ? a.kcal! : kcalEstimeeComposition(a.repartition));
+/** Densité par défaut (kcal/100 g) de l'ancien onglet, pour une
+ *  préparation sans valeur énergétique ni composition personnalisée. */
+export const KCAL_DEFAUT_TYPE: Record<string, number> = { menagere: 120, barf: 125 };
 
-/** Densité estimée d'après la composition (pas de valeur saisie). */
+/** Composition saisie par l'utilisateur (différente du repère proposé). */
+export function repartitionPersonnalisee(a: AlimentPlan): boolean {
+  const r = a.repartition;
+  if (!r || !Object.keys(r).length) return false;
+  const repere = a.type === 'barf' ? REPARTITION_BARF : a.type === 'menagere' ? REPARTITION_MENAGERE : null;
+  if (!repere || Object.keys(repere).length !== Object.keys(r).length) return true;
+  return Object.entries(repere).some(([k, v]) => (r[k] ?? -1) !== v);
+}
+
+/** Densité utilisée pour le calcul : celle de l'aliment, sinon l'estimation
+ *  d'après une composition personnalisée, sinon la valeur par défaut du type
+ *  (ration ménagère 120, BARF 125 kcal/100 g, comme l'ancien onglet). */
+export function kcalDe(a: AlimentPlan): number | null {
+  if ((a.kcal ?? 0) > 0) return a.kcal!;
+  if (repartitionPersonnalisee(a)) {
+    const k = kcalEstimeeComposition(a.repartition);
+    if (k != null) return k;
+  }
+  return KCAL_DEFAUT_TYPE[a.type] ?? null;
+}
+
+/** Densité estimée (composition ou valeur par défaut) : pas de valeur saisie. */
 export const kcalParComposition = (a: AlimentPlan) => (a.kcal ?? 0) <= 0 && kcalDe(a) != null;
+
+/** Origine d'une densité estimée, à afficher. */
+export const libelleEstimation = (a: AlimentPlan) =>
+  repartitionPersonnalisee(a) && kcalEstimeeComposition(a.repartition) != null ? 'estimation selon la composition' : 'valeur par défaut';
 
 export const LIBELLES_REPARTITION: Record<string, string> = {
   muscles: 'Muscles', abats: 'Abats', os: 'Os charnus', legumes: 'Légumes',

@@ -371,12 +371,37 @@ double? kcalEstimeeComposition(Map<String, double>? r) {
   return k > 0 ? k.roundToDouble() : null;
 }
 
-/// Densité utilisée pour le calcul : celle de l'aliment, sinon l'estimation
-/// d'après sa composition (préparation maison).
-double? kcalDe(AlimentPlan a) => (a.kcal ?? 0) > 0 ? a.kcal : kcalEstimeeComposition(a.repartition);
+/// Densité par défaut (kcal/100 g) de l'ancien onglet, pour une
+/// préparation sans valeur énergétique ni composition personnalisée.
+const kKcalDefautType = <String, double>{'menagere': 120, 'barf': 125};
 
-/// Densité estimée d'après la composition (pas de valeur saisie).
+/// Composition saisie par l'utilisateur (différente du repère proposé).
+bool repartitionPersonnalisee(AlimentPlan a) {
+  final r = a.repartition;
+  if (r == null || r.isEmpty) return false;
+  final repere = a.type == 'barf' ? kRepartitionBarf : a.type == 'menagere' ? kRepartitionMenagere : null;
+  if (repere == null || repere.length != r.length) return true;
+  return repere.entries.any((e) => (r[e.key] ?? -1) != e.value);
+}
+
+/// Densité utilisée pour le calcul : celle de l'aliment, sinon l'estimation
+/// d'après une composition personnalisée, sinon la valeur par défaut du type
+/// (ration ménagère 120, BARF 125 kcal/100 g, comme l'ancien onglet).
+double? kcalDe(AlimentPlan a) {
+  if ((a.kcal ?? 0) > 0) return a.kcal;
+  if (repartitionPersonnalisee(a)) {
+    final k = kcalEstimeeComposition(a.repartition);
+    if (k != null) return k;
+  }
+  return kKcalDefautType[a.type];
+}
+
+/// Densité estimée (composition ou valeur par défaut) : pas de valeur saisie.
 bool kcalParComposition(AlimentPlan a) => (a.kcal ?? 0) <= 0 && kcalDe(a) != null;
+
+/// Origine d'une densité estimée, à afficher.
+String libelleEstimation(AlimentPlan a) =>
+    repartitionPersonnalisee(a) && kcalEstimeeComposition(a.repartition) != null ? 'estimation selon la composition' : 'valeur par défaut';
 
 const kLibellesRepartition = <String, String>{
   'muscles': 'Muscles', 'abats': 'Abats', 'os': 'Os charnus', 'legumes': 'Légumes',

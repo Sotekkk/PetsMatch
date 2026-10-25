@@ -99,7 +99,7 @@ test('8 bis. composition sur matière sèche (Dogfy Diet)', () => {
 });
 
 test('9. aliment sans valeur énergétique', () => {
-  const maison = { marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere' };
+  const maison = { marque: 'Préparation maison', gamme: 'Riz poulet', type: 'autre' };
   const p = plan([croq(), maison], [[0], [1]]);
   let c = calculerRation(p, nala);
   assert.equal(c.lignes[1][0].reco, null);
@@ -180,7 +180,12 @@ test('horaires : cohérents avec le repas et croissants (facultatifs)', () => {
 
 test("ménagère maison estimée par la composition, parts de l'énergie", () => {
   const maison = { marque: 'Préparation maison', gamme: 'Riz poulet', type: 'menagere', repartition: { ...REPARTITION_MENAGERE } };
-  assert.equal(kcalDe(maison), 163);
+  assert.equal(kcalDe(maison), 120, "repère par défaut : valeur de l'ancien onglet");
+  assert.equal(kcalDe({ marque: 'Ration ménagère', gamme: '', type: 'menagere' }), 120);
+  assert.equal(kcalDe({ marque: 'BARF', gamme: '', type: 'barf' }), 125);
+  assert.equal(kcalDe({ marque: 'Maison', gamme: '', type: 'menagere',
+    repartition: { proteines: 50, legumes: 20, feculents: 20, matieres_grasses: 5, complements: 5 } }), 165);
+  assert.equal(kcalDe({ marque: 'Pâtée', gamme: '', type: 'patee' }), null);
   const p = plan([croq(), maison], [[0, 1], [0, 1]]);
   let c = calculerRation(p, nala);
   assert.deepEqual(c.sansKcal, []);
@@ -190,7 +195,7 @@ test("ménagère maison estimée par la composition, parts de l'énergie", () =>
   p.parts = [70, 30];
   c = calculerRation(p, nala);
   proche(c.totalParAliment[0], 995.1 * 0.7 * 100 / 370, 0.5);
-  proche(c.totalParAliment[1], 995.1 * 0.3 * 100 / 163, 0.5);
+  proche(c.totalParAliment[1], 995.1 * 0.3 * 100 / 120, 0.5);
   proche(c.lignes[0][0].reco, 995.1 * 0.7 * 100 / 370 / 2, 0.3);
   proche(c.partEnergie[0], 70, 0.1);
   p.parts = [70, 20];
