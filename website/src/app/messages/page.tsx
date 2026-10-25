@@ -176,8 +176,13 @@ function MessagesPageInner() {
     ouvrirConversationDirecte({
       myUid: user.uid, myProfileId: activeProfileId, otherUid: autre,
       otherProfileId: searchParams.get('pid'), categorie: searchParams.get('cat') ?? 'services',
-    }).then(convId => router.replace(`/messages?conv=${convId}`))
-      .catch(() => { ouvertureUid.current = false; alert('Impossible d\'ouvrir la conversation.'); });
+    }).then(async convId => {
+      // La liste a pu être chargée avant la création : sans la conversation,
+      // l'en-tête restait sur « … » / « ? » au lieu du nom et de la photo du pro.
+      const { data: conv } = await supabase.from('conversations').select('*').eq('id', convId).maybeSingle();
+      if (conv) setConversations(prev => prev.some(c => c.id === convId) ? prev : [conv as Conversation, ...prev]);
+      router.replace(`/messages?conv=${convId}`);
+    }).catch(() => { ouvertureUid.current = false; alert('Impossible d\'ouvrir la conversation.'); });
   }, [user, activeProfileId, searchParams, router]);
 
   // Suivre le type de profil actif pour filtrer les conversations non-taguées
