@@ -71,6 +71,9 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
   String get _libSansMarque => _energie ? 'Préparation maison' : 'Sans marque';
   bool get _prive => _marque.text.trim() == _libSansMarque;
   bool get _modification => widget.ligne != null || widget.aliment != null;
+  /// BARF / ration ménagère faits maison : énergie estimée d'après la
+  /// composition (os, viande…), pas de données analytiques du fabricant.
+  bool get _maison => _prive && _repereType != null;
 
   @override
   void initState() {
@@ -191,7 +194,7 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
     final marque = _marque.text.trim(), nom = _nom.text.trim();
     if (marque.isEmpty || nom.isEmpty) return setState(() => _erreur = 'Indiquez la marque et le nom de l’aliment.');
     final ev = _eval;
-    if (_energie) {
+    if (_energie && !_maison) {
       if (_methode.isEmpty) return setState(() => _erreur = 'Choisissez comment renseigner la valeur énergétique.');
       if (ev.err != null) return setState(() => _erreur = ev.err);
       if (ev.erreursChamps.isNotEmpty) return setState(() => _erreur = 'Corrigez les valeurs signalées en rouge.');
@@ -218,8 +221,8 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
     }
     final aliment = AlimentPlan(
       marque: marque, gamme: nom, type: _type,
-      kcal: _energie && _methode != 'C' ? ev.kcal : null,
-      source: !_energie || _methode == 'C' ? null : (ev.estime ? 'composition' : 'fabricant'),
+      kcal: _energie && _methode != 'C' && !_maison ? ev.kcal : null,
+      source: !_energie || _methode == 'C' || _maison ? null : (ev.estime ? 'composition' : 'fabricant'),
       repartition: repartition,
     )..tableauCroissance = tableau;
     if (_prive) {
@@ -408,7 +411,9 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
                 for (final k in _repereType!.keys)
                   _champ(kLibellesRepartition[k]!, _repartition[k]!, suffixe: '%', nombre: true),
               ],
-              if (_energie && identiteOk) ...[
+              if (_energie && identiteOk && _maison)
+                _encadre('Préparation maison : la valeur énergétique est estimée d’après la composition (environ ${(kcalEstimeeComposition(_lireRepartition().$1) ?? kKcalDefautType[_type] ?? 0).round()} kcal/100 g). Les données analytiques (kcal, composition analytique) ne concernent que les recettes préparées par un fabricant.'),
+              if (_energie && identiteOk && !_maison) ...[
                 Text('Valeur énergétique', style: _st(15, w: FontWeight.w800)),
                 const SizedBox(height: 8),
                 _methodeCarte('A', 'Je connais les kcal', 'Indiquées sur l’emballage, pour 100 g ou pour 1 kg'),

@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { auth } from '@/lib/firebase';
 import {
   type AlimentPlan, CHAMPS_COMPOSITION, LIBELLES_REPARTITION, LIBELLES_TYPE_ALIMENT, REPARTITION_BARF, REPARTITION_MENAGERE,
-  evaluerEnergie, lireNombre, profilEspece, typeDepuisCatalogue, typeVersCatalogue,
+  KCAL_DEFAUT_TYPE, evaluerEnergie, kcalEstimeeComposition, lireNombre, profilEspece, typeDepuisCatalogue, typeVersCatalogue,
 } from '@/lib/plan-alimentation';
 
 /** Nombre affiché à la française (« 3,5 »), vide si absent. */
@@ -94,6 +94,9 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
 
   const prive = marque.trim() === libSansMarque;
   const repere = type === 'barf' ? REPARTITION_BARF : type === 'menagere' ? REPARTITION_MENAGERE : null;
+  // BARF / ration ménagère faits maison : énergie estimée d'après la
+  // composition (os, viande…), pas de données analytiques du fabricant.
+  const maison = prive && !!repere;
   const ev = useMemo(() => evaluerEnergie({ methode, type, kcalTexte: kcal, unite, compo, surMatiereSeche: matiereSeche }),
     [methode, type, kcal, unite, compo, matiereSeche]);
   const identiteOk = !!(marque.trim() && nom.trim());
@@ -126,7 +129,7 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
   async function enregistrer() {
     const m = marque.trim(), n = nom.trim();
     if (!m || !n) return setErreur('Indiquez la marque et le nom de l’aliment.');
-    if (energie) {
+    if (energie && !maison) {
       if (!methode) return setErreur('Choisissez comment renseigner la valeur énergétique.');
       if (ev.err) return setErreur(ev.err);
       if (Object.keys(ev.erreursChamps).length) return setErreur('Corrigez les valeurs signalées en rouge.');
@@ -148,8 +151,8 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
     }
     const aliment: AlimentPlan = {
       marque: m, gamme: n, type,
-      kcal: energie && methode !== 'C' ? ev.kcal ?? null : null,
-      source: !energie || methode === 'C' ? null : (ev.estime ? 'composition' : 'fabricant'),
+      kcal: energie && methode !== 'C' && !maison ? ev.kcal ?? null : null,
+      source: !energie || methode === 'C' || maison ? null : (ev.estime ? 'composition' : 'fabricant'),
       repartition: rep, tableauCroissance: tableau,
     };
     if (prive) { onCreated(aliment); return; }
@@ -267,7 +270,12 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
               </div>
             </div>
           )}
-          {energie && identiteOk && (
+          {energie && identiteOk && maison && (
+            <p className="text-[13.5px] bg-[#E8F0F2] rounded-[10px] p-3">
+              {`Préparation maison : la valeur énergétique est estimée d’après la composition (environ ${Math.round(kcalEstimeeComposition(lireRepartition()[0]) ?? KCAL_DEFAUT_TYPE[type] ?? 0)} kcal/100 g). Les données analytiques (kcal, composition analytique) ne concernent que les recettes préparées par un fabricant.`}
+            </p>
+          )}
+          {energie && identiteOk && !maison && (
             <div className="space-y-3">
               <p className="text-[16px] font-extrabold">Valeur énergétique</p>
               <div className="grid gap-2 sm:grid-cols-3">
