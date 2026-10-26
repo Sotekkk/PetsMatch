@@ -100,7 +100,34 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _chargerDroits();
     _loadExisting();
     _chargerPharmacie();
-    _prefillDepuisRdv();
+    _prefillDepuisRdv().whenComplete(_chargerRappelsVaccins);
+  }
+
+  /// Rappels de vaccins de l'animal à faire : en retard ou dans les 30 jours
+  /// (dernière injection de chaque vaccin seulement — un rappel déjà fait
+  /// n'apparaît plus).
+  List<Map<String, dynamic>> _rappelsVaccins = [];
+
+  Future<void> _chargerRappelsVaccins() async {
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    if (animalId == null || animalId.isEmpty || widget.isPension) return;
+    try {
+      final rows = await _supa.from('vaccinations').select('id, vaccin, categorie, date, date_rappel')
+          .eq('animal_id', animalId).order('date', ascending: false, nullsFirst: false).limit(200);
+      final limite = DateTime.now().add(const Duration(days: 30));
+      final vus = <String>{};
+      final res = <Map<String, dynamic>>[];
+      for (final r in rows as List) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final cle = ((m['categorie'] ?? '').toString().isNotEmpty ? m['categorie'] : m['vaccin'] ?? '').toString().toLowerCase();
+        if (cle.isEmpty || !vus.add(cle)) continue;
+        final dr = DateTime.tryParse((m['date_rappel'] ?? '').toString());
+        if (dr == null || dr.isAfter(limite)) continue;
+        res.add(m);
+      }
+      res.sort((a, b) => a['date_rappel'].toString().compareTo(b['date_rappel'].toString()));
+      if (mounted) setState(() => _rappelsVaccins = res);
+    } catch (_) {}
   }
 
   /// Message laissé par le client dans sa demande de RDV (symptômes…).
@@ -562,12 +589,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   /// Ajout (ou modification si [existant]) d'un vaccin réalisé.
-  Future<void> _ajouterVaccin([_VaccinCr? existant]) async {
-    final nomCtrl = TextEditingController(text: existant?.nom ?? '');
+  /// [depuisRappel] : rappel à faire (vaccin précédent) — même vaccin, même
+  /// intervalle jusqu'au prochain rappel.
+  Future<void> _ajouterVaccin([_VaccinCr? existant, Map<String, dynamic>? depuisRappel]) async {
+    final nomCtrl = TextEditingController(text: existant?.nom ?? depuisRappel?['vaccin']?.toString() ?? '');
     final lotCtrl = TextEditingController(text: existant?.lot ?? '');
     final nomFocus = FocusNode();
     final date = existant?.date ?? DateTime.now();
     DateTime? rappel = existant == null ? DateTime(date.year + 1, date.month, date.day) : existant.rappel;
+    if (depuisRappel != null) {
+      final d0 = DateTime.tryParse((depuisRappel['date'] ?? '').toString());
+      final r0 = DateTime.tryParse((depuisRappel['date_rappel'] ?? '').toString());
+      if (d0 != null && r0 != null && r0.isAfter(d0)) rappel = date.add(r0.difference(d0));
+    }
     final res = await showModalBottomSheet<_VaccinCr>(
       context: context, isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -1045,7 +1079,44 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         ),
       ),
     );
+    final aujourdhui = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+    final rappelsAFaire = _rappelsVaccins.where((r) =>
+        !_vaccinsCr.any((v) => v.nom.toLowerCase() == (r['vaccin'] ?? '').toString().toLowerCase())).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (rappelsAFaire.isNotEmpty) ...[
+        _inputLabel('Rappels de vaccins à faire'),
+        const SizedBox(height: 6),
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(color: const Color(0xFFFFF7EC), borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF0D9B5))),
+          child: Column(children: [
+            for (final r in rappelsAFaire)
+              () {
+                final dr = DateTime.parse(r['date_rappel'].toString());
+                final j = DateTime(dr.year, dr.month, dr.day).difference(aujourdhui).inDays;
+                final enRetard = j < 0;
+                return ListTile(
+                  dense: true,
+                  leading: Icon(Icons.vaccines_outlined, color: enRetard ? Colors.red.shade700 : const Color(0xFFA85A12)),
+                  title: Text((r['vaccin'] ?? r['categorie'] ?? 'Vaccin').toString(),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700)),
+                  subtitle: Text(
+                      enRetard
+                          ? 'En retard depuis le ${date(dr)}'
+                          : j == 0 ? 'Rappel aujourd\u2019hui' : 'Rappel le ${date(dr)} (dans $j j)',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5,
+                          color: enRetard ? Colors.red.shade700 : Colors.grey.shade700)),
+                  trailing: IconButton(
+                    tooltip: 'Faire le rappel',
+                    icon: Icon(Icons.add_circle_outline, color: widget.categoryColor),
+                    onPressed: () => _ajouterVaccin(null, r),
+                  ),
+                );
+              }(),
+          ]),
+        ),
+      ],
       _inputLabel('Vaccins réalisés'),
       const SizedBox(height: 6),
       for (final v in List.of(_vaccinsCr)) ligne(Icons.vaccines_outlined, v.nom,

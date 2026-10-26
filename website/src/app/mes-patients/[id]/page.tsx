@@ -396,12 +396,42 @@ function ChampPharmacie({ value, onChange, onChoix, articles, placeholder, coura
 // ── Compte rendu vétérinaire : vaccins réalisés / traitements prescrits ──────
 // → carnet de santé (rappels au propriétaire par les Cloud Functions sante.js)
 // + ordonnance PDF. Miroir app : compte_rendu_page.dart (_blocActes).
-function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId }: {
+function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, animalId }: {
   vaccins: VaccinCr[]; setVaccins: (v: VaccinCr[]) => void;
   traitements: TraitementCr[]; setTraitements: (t: TraitementCr[]) => void;
   profileId: string | null;
+  animalId?: string | null;
 }) {
   const auj = new Date().toISOString().slice(0, 10);
+  // Rappels de vaccins à faire : en retard ou dans les 30 jours (dernière
+  // injection de chaque vaccin seulement — un rappel déjà fait n'apparaît plus).
+  const [rappels, setRappels] = useState<{ vaccin: string; date: string | null; date_rappel: string }[]>([]);
+  useEffect(() => {
+    if (!animalId) return;
+    supabase.from('vaccinations').select('vaccin, categorie, date, date_rappel').eq('animal_id', animalId)
+      .order('date', { ascending: false, nullsFirst: false }).limit(200)
+      .then(({ data }) => {
+        const limite = plus(auj, 30);
+        const vus = new Set<string>();
+        const res: { vaccin: string; date: string | null; date_rappel: string }[] = [];
+        for (const r of (data ?? []) as { vaccin?: string; categorie?: string; date?: string | null; date_rappel?: string | null }[]) {
+          const cle = String(r.categorie || r.vaccin || '').toLowerCase();
+          if (!cle || vus.has(cle)) continue;
+          vus.add(cle);
+          const dr = r.date_rappel ? String(r.date_rappel).slice(0, 10) : '';
+          if (!dr || dr > limite) continue;
+          res.push({ vaccin: r.vaccin || r.categorie || 'Vaccin', date: r.date ? String(r.date).slice(0, 10) : null, date_rappel: dr });
+        }
+        setRappels(res.sort((a, b) => a.date_rappel.localeCompare(b.date_rappel)));
+      });
+  }, [animalId, auj]);
+  const rappelsAFaire = rappels.filter(r => !vaccins.some(v => v.nom.toLowerCase() === r.vaccin.toLowerCase()));
+  /** Même intervalle qu'entre la dernière injection et son rappel (1 an à défaut). */
+  const rappelSuivant = (r: { date: string | null; date_rappel: string }) => {
+    if (!r.date || r.date_rappel <= r.date) return plus(auj, 0, 0, 1);
+    const jours = Math.round((new Date(r.date_rappel + 'T12:00:00').getTime() - new Date(r.date + 'T12:00:00').getTime()) / 86400000);
+    return plus(auj, jours);
+  };
   const [vac, setVac] = useState<(VaccinCr & { index: number }) | null>(null);
   const [trt, setTrt] = useState<(TraitementCr & { index: number }) | null>(null);
   const [pharmacie, setPharmacie] = useState<ArticlePharmacie[]>([]);
@@ -431,6 +461,30 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId }
 
   return (
     <div className="space-y-3 rounded-2xl bg-[#0C5C6C]/5 p-3">
+      {rappelsAFaire.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-gray-600">Rappels de vaccins à faire</p>
+          <div className="rounded-xl border border-[#F0D9B5] bg-[#FFF7EC] divide-y divide-[#F0D9B5]">
+            {rappelsAFaire.map(r => {
+              const j = Math.round((new Date(r.date_rappel + 'T12:00:00').getTime() - new Date(auj + 'T12:00:00').getTime()) / 86400000);
+              const dateFr = new Date(r.date_rappel + 'T12:00:00').toLocaleDateString('fr-FR');
+              return (
+                <div key={r.vaccin} className="flex items-center gap-2 px-3 py-2">
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[#1E2025] truncate">{r.vaccin}</span>
+                    <span className={`block text-xs ${j < 0 ? 'text-red-700' : 'text-gray-600'}`}>
+                      {j < 0 ? `En retard depuis le ${dateFr}` : j === 0 ? 'Rappel aujourd’hui' : `Rappel le ${dateFr} (dans ${j} j)`}
+                    </span>
+                  </span>
+                  <button type="button" title="Faire le rappel" aria-label={`Faire le rappel : ${r.vaccin}`}
+                    onClick={() => setVac({ nom: r.vaccin, lot: '', date: auj, rappel: rappelSuivant(r), index: -1 })}
+                    className="w-8 h-8 rounded-full border border-[#0C5C6C] text-[#0C5C6C] font-bold text-lg leading-none flex items-center justify-center hover:bg-[#0C5C6C]/10">+</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-gray-600">💉 Vaccins réalisés</p>
         {vaccins.map((v, i) => ligne('💉', v.nom, [v.lot && `Lot ${v.lot}`, v.rappel && `Rappel le ${new Date(v.rappel + 'T12:00:00').toLocaleDateString('fr-FR')}`].filter(Boolean).join(' · '),
@@ -3349,7 +3403,7 @@ function PatientDetailPageInner() {
             {addingType === 'cr' && (<>
               {catPro === 'veterinaire' && (
                 <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}
-                  profileId={activeProfileId || null} />
+                  profileId={activeProfileId || null} animalId={animalId} />
               )}
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Motif de consultation</label>
