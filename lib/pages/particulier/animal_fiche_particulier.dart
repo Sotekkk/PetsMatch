@@ -64,7 +64,11 @@ class AnimalFicheParticulierPage extends StatefulWidget {
   /// une notification d'exercice), prioritaire sur [initialTab].
   final String? initialTabLabel;
 
-  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0, this.initialTabLabel});
+  /// Rappel à faire, ouvert directement (table du carnet, id de l'entrée
+  /// précédente) : formulaire de rappel pré-rempli (ex. depuis « Mon quotidien »).
+  final (String, String)? rappelSante;
+
+  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0, this.initialTabLabel, this.rappelSante});
 
   @override
   State<AnimalFicheParticulierPage> createState() => _AnimalFicheParticulierPageState();
@@ -711,9 +715,35 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _testsGenetiques = List<Map<String, dynamic>>.from(results[8]);
         _loadingHealth = false;
       });
+      _ouvrirRappelDemande();
     } catch (_) {
       if (mounted) setState(() => _loadingHealth = false);
     }
+  }
+
+  bool _rappelOuvert = false;
+
+  /// Ouvre le formulaire de rappel demandé par [AnimalFicheParticulierPage.rappelSante].
+  void _ouvrirRappelDemande() {
+    final d = widget.rappelSante;
+    if (d == null || _rappelOuvert) return;
+    final liste = switch (d.$1) {
+      'vaccinations' => _vaccinations,
+      'vermifuges' => _vermifuges,
+      'antiparasitaires' => _antiparasitaires,
+      _ => const <Map<String, dynamic>>[],
+    };
+    final r = liste.where((x) => x['id']?.toString() == d.$2);
+    if (r.isEmpty) return;
+    _rappelOuvert = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      switch (d.$1) {
+        case 'vaccinations': _showVaccinationSheet(rappelDe: r.first); break;
+        case 'vermifuges': _showVermifugeSheet(prefill: r.first); break;
+        case 'antiparasitaires': _showAntiparasitaireSheet(prefill: r.first); break;
+      }
+    });
   }
 
   Future<void> _pickPhoto() async {
@@ -2207,6 +2237,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
                 onDelete: () => _deleteRecord('vaccinations', r['id'], _vaccinations),
                   onEdit: r['source'] == 'veterinaire' ? null : () => _showVaccinationSheet(existant: r),
+                onRappel: () => _showVaccinationSheet(rappelDe: r),
                 onTap: () => _showRecordDetail('Vaccination', r, [
                   ('Vaccin', 'vaccin'), ('Date', 'date'), ('Rappel', 'date_rappel'),
                   ('N° de lot', 'lot'), ('Vétérinaire', 'veterinaire'),
@@ -2577,8 +2608,18 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     await _supa.from(table).update(maj).eq('id', existant['id']);
   }
 
-  void _showVaccinationSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? existant}) {
+  /// [rappelDe] : rappel d'une vaccination déjà faite — même vaccin, injection
+  /// du jour, prochain rappel recalculé selon le type.
+  void _showVaccinationSheet({Map<String, dynamic>? prefill, Map<String, dynamic>? existant, Map<String, dynamic>? rappelDe}) {
     prefill ??= existant;
+    if (rappelDe != null) {
+      prefill = {
+        'vaccin': rappelDe['vaccin'],
+        'veterinaire': rappelDe['veterinaire'],
+        'categorie': rappelDe['categorie'],
+        'date': DateTime.now().toIso8601String().substring(0, 10),
+      };
+    }
     final vaccin = TextEditingController(text: prefill?['vaccin'] ?? ''),
         lot = TextEditingController(text: prefill?['lot'] ?? ''),
         veto = TextEditingController(text: prefill?['veterinaire'] ?? '');
@@ -2593,6 +2634,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         if (t.$1 == categorie) return (t.$2, t.$3);
       }
       return null;
+    }
+    if (rappelDe != null && date != null) {
+      // Rappel : valide dès le jour même, prochain rappel selon le type.
+      dateValidite = date;
+      final d = defautsPourCategorie();
+      if (d != null) dateRappel = DateTime(date!.year + d.$1, date!.month, date!.day);
     }
 
     // Le délai légal (ex: rage = 21 jours) ne s'applique qu'à la toute
@@ -2621,7 +2668,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       }
     }
 
-    _openSheet(existant != null ? 'Modifier la vaccination' : 'Ajouter une vaccination', (ss) => [
+    _openSheet(existant != null ? 'Modifier la vaccination' : rappelDe != null ? 'Rappel de vaccin' : 'Ajouter une vaccination', (ss) => [
       _SDrop(
         label: 'Type de vaccin',
         value: categorie,

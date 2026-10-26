@@ -170,16 +170,26 @@ export default function ParticulierDashboard() {
         evQ.gte('date_debut', debut.toISOString()).lte('date_debut', fin.toISOString()).order('date_debut').limit(8),
         soinQ.order('date').order('heure').limit(6),
         ...SANTE.map(t => animalIds.length
-          ? supabase.from(t.table).select(`id, animal_id, date_rappel, ${t.champ}`).in('animal_id', animalIds)
-              .gte('date_rappel', cleJour(debut)).lte('date_rappel', cleJour(fin30)).order('date_rappel').limit(5)
+          ? supabase.from(t.table).select(`id, animal_id, date, date_rappel, ${t.champ}${t.table === 'vaccinations' ? ', categorie' : ''}`)
+              .in('animal_id', animalIds).order('date', { ascending: false, nullsFirst: false }).limit(300)
           : Promise.resolve({ data: [] })),
       ]);
+      // Seule la dernière injection de chaque vaccin / produit compte : un
+      // rappel déjà fait disparaît, un rappel en retard reste jusqu'à ce qu'il
+      // soit fait (un an au plus).
+      const depuis = new Date(debut); depuis.setFullYear(depuis.getFullYear() - 1);
       const listeRappels: Rappel[] = [];
       santeRes.forEach((r, i) => {
+        const vus = new Set<string>();
         for (const row of (r.data ?? []) as unknown as Record<string, string | null>[]) {
           const quoi = row[SANTE[i].champ];
+          const cle = `${row.animal_id}|${String(row.categorie || quoi || '').toLowerCase()}`;
+          if (vus.has(cle)) continue;
+          vus.add(cle);
+          const dr = row.date_rappel ? String(row.date_rappel).slice(0, 10) : '';
+          if (!dr || dr < cleJour(depuis) || dr > cleJour(fin30)) continue;
           listeRappels.push({
-            id: `${SANTE[i].table}-${row.id}`, animal_id: String(row.animal_id), date_rappel: String(row.date_rappel),
+            id: String(row.id), animal_id: String(row.animal_id), date_rappel: dr,
             libelle: quoi ? `${SANTE[i].libelle} ${quoi}` : SANTE[i].libelle, cat: SANTE[i].table,
           });
         }
@@ -255,8 +265,10 @@ export default function ParticulierDashboard() {
     const rien = !rdv.length && !aFaire.length && !tachesSoin.length && !rappels.length;
     const nomAnimal = (id?: string | null) => animaux.find(a => a.id === id)?.nom ?? '';
     // Fiche de l'animal sur son carnet de santé : l'endroit où l'on valide.
-    const ficheSante = (id?: string | null, cat?: string) =>
-      id && animaux.some(a => a.id === id) ? `/mes-animaux/${id}?tab=sante${cat ? `&cat=${cat}` : ''}` : '/agenda';
+    const ficheSante = (id?: string | null, cat?: string, rappel?: string) =>
+      id && animaux.some(a => a.id === id)
+        ? `/mes-animaux/${id}?tab=sante${cat ? `&cat=${cat}` : ''}${rappel ? `&rappel=${encodeURIComponent(rappel)}` : ''}`
+        : '/agenda';
     const joindre = (...l: (string | null | undefined)[]) => l.filter(Boolean).join(' · ');
     const sousTitre = (t: string) => <p className="px-5 pt-4 pb-1 text-[11px] font-bold tracking-wider uppercase text-gray-500">{t}</p>;
     const ligne = (cle: string, href: string, d: string, couleur: string, fond: string, titre: string, detail: string) => (
@@ -312,8 +324,9 @@ export default function ParticulierDashboard() {
                 {aFaire.map(e => ligne(`af-${e.id}`, '/agenda', P.coche, '#4E7A3B', 'bg-[#EEF5EA]', e.titre || 'Tâche',
                   joindre(quand(e.date_debut, true), nomAnimal(e.animal_id))))}</>}
               {rappels.length > 0 && <>{sousTitre('Rappels et échéances')}
-                {rappels.map(r => ligne(`rap-${r.id}`, ficheSante(r.animal_id, r.cat), P.horloge, '#A85A12', 'bg-[#FDF1E4]',
-                  joindre(r.libelle, nomAnimal(r.animal_id)), quand(r.date_rappel)))}</>}
+                {rappels.map(r => ligne(`rap-${r.cat}-${r.id}`, ficheSante(r.animal_id, r.cat, r.id), P.horloge, '#A85A12', 'bg-[#FDF1E4]',
+                  joindre(r.libelle, nomAnimal(r.animal_id)),
+                  r.date_rappel < aujourdhui ? `En retard · ${quand(r.date_rappel)}` : quand(r.date_rappel)))}</>}
             </>
           )}
         </div>

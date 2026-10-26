@@ -2749,6 +2749,9 @@ function AnimalFichePageInner() {
   // à retrouver la catégorie lui-même.
   const tabParam = searchParams.get('tab');
   const catParam = searchParams.get('cat');
+  // ?rappel=<id> : ouvre directement le formulaire de rappel de cette entrée.
+  const rappelParam = searchParams.get('rappel');
+  const rappelOuvertRef = useRef(false);
 
   // ── État identité
   const [loading, setLoading] = useState(!isNew);
@@ -3317,6 +3320,21 @@ function AnimalFichePageInner() {
     const el = document.getElementById(`health-${catParam}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [tab, catParam, loading]);
+  // Lien « Rappel » (Mon quotidien) : formulaire de rappel pré-rempli, comme
+  // le bouton Renouvellement de l'entrée.
+  useEffect(() => {
+    if (rappelOuvertRef.current || tab !== 'sante' || !catParam || !rappelParam) return;
+    const champs: Record<string, string[]> = {
+      vaccinations: ['vaccin', 'veterinaire', 'categorie'],
+      vermifuges: ['produit', 'dosage', 'frequence'],
+      antiparasitaires: ['produit', 'type', 'frequence'],
+    };
+    const r = (health[catParam] ?? []).find(x => String(x.id) === rappelParam) as Record<string, unknown> | undefined;
+    if (!r || !champs[catParam]) return;
+    rappelOuvertRef.current = true;
+    setRappelPrefill(Object.fromEntries(champs[catParam].map(k => [k, String(r[k] ?? '')])));
+    setAddOpen(catParam);
+  }, [tab, catParam, rappelParam, health]);
   useEffect(() => { loadCessionEnCours(); }, [loadCessionEnCours]);
   useEffect(() => { loadReservation(); }, [loadReservation]);
   useEffect(() => {

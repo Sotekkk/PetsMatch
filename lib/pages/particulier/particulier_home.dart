@@ -156,15 +156,24 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       } catch (_) {}
       var rappels = <Map<String, dynamic>>[];
       if (myIds.isNotEmpty) {
-        final de = DateFormat('yyyy-MM-dd').format(debutJour);
+        // Seule la dernière injection de chaque vaccin / produit compte : un
+        // rappel déjà fait disparaît, un rappel en retard reste jusqu'à ce
+        // qu'il soit fait (un an au plus).
+        final de = DateFormat('yyyy-MM-dd').format(debutJour.subtract(const Duration(days: 365)));
         final a = DateFormat('yyyy-MM-dd').format(debutJour.add(const Duration(days: 30)));
         for (final t in const [('vaccinations', 'vaccin', 'Rappel vaccin'), ('vermifuges', 'produit', 'Vermifuge'), ('antiparasitaires', 'produit', 'Antiparasitaire')]) {
           try {
             final rows = await _supa.from(t.$1).select().inFilter('animal_id', myIds)
-                .gte('date_rappel', de).lte('date_rappel', a).order('date_rappel').limit(5);
+                .order('date', ascending: false, nullsFirst: false).limit(300);
+            final vus = <String>{};
             for (final r in rows as List) {
               final m = Map<String, dynamic>.from(r as Map);
+              final nom = (m['categorie'] ?? '').toString().isNotEmpty ? m['categorie'] : m[t.$2];
+              if (!vus.add('${m['animal_id']}|${(nom ?? '').toString().toLowerCase()}')) continue;
+              final dr = (m['date_rappel'] ?? '').toString();
+              if (dr.isEmpty || dr.compareTo(de) < 0 || dr.compareTo(a) > 0) continue;
               m['_libelle'] = '${t.$3}${(m[t.$2] ?? '').toString().isNotEmpty ? ' ${m[t.$2]}' : ''}';
+              m['_table'] = t.$1;
               rappels.add(m);
             }
           } catch (_) {}
@@ -493,6 +502,14 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       final jour = j == 0 ? 'Aujourd\'hui' : j == 1 ? 'Demain' : DateFormat('EEE d MMM', 'fr_FR').format(d);
       return heure && (d.hour != 0 || d.minute != 0) ? '$jour · ${DateFormat('HH:mm').format(d)}' : jour;
     }
+    String enRetardRappel(String? iso) {
+      final d = DateTime.tryParse(iso ?? '');
+      final auj = DateTime.now();
+      if (d != null && DateTime(d.year, d.month, d.day).isBefore(DateTime(auj.year, auj.month, auj.day))) {
+        return 'En retard · ${DateFormat('d MMM', 'fr_FR').format(d)}';
+      }
+      return quand(iso);
+    }
     String nomAnimal(dynamic id) {
       final a = _animaux.where((x) => x['id']?.toString() == id?.toString());
       return a.isEmpty ? '' : (a.first['nom'] ?? '').toString();
@@ -526,11 +543,13 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     void agenda() => _ouvrir(const AgendaPage(isParticulier: true));
     /// Ouvre la fiche de l'animal sur son carnet de santé (bon endroit pour
     /// valider un vaccin, un vermifuge, un traitement).
-    void carnet(dynamic animalId) {
+    /// [rappel] : ouvre directement le formulaire de rappel de cette entrée.
+    void carnet(dynamic animalId, {Map<String, dynamic>? rappel}) {
       final a = _animaux.where((x) => x['id']?.toString() == animalId?.toString());
       if (a.isEmpty) { agenda(); return; }
       _ouvrir(AnimalFicheParticulierPage(animalId: a.first['id'] as String?, initialData: a.first,
-          initialTabLabel: 'Carnet de santé'));
+          initialTabLabel: 'Carnet de santé',
+          rappelSante: rappel == null ? null : (rappel['_table'].toString(), rappel['id'].toString())));
     }
     Future<void> valider(Map<String, dynamic> t) async {
       try {
@@ -625,8 +644,8 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                     final animal = _animaux.where((x) => x['id']?.toString() == r['animal_id']?.toString());
                     return ligne(Icons.schedule, Colors.orange.shade800,
                         [r['_libelle'], nomAnimal(r['animal_id'])].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
-                        quand(r['date_rappel']?.toString()),
-                        () => animal.isEmpty ? null : carnet(animal.first['id']));
+                        enRetardRappel(r['date_rappel']?.toString()),
+                        () => animal.isEmpty ? null : carnet(animal.first['id'], rappel: r));
                   }),
                 ],
                 const SizedBox(height: 6),
