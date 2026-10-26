@@ -722,7 +722,7 @@ exports.sendTraitementReminders = functions
             const listeNoms = noms.length > 4 ?
                 `${noms.slice(0, 4).join(", ")} +${noms.length - 4}` : noms.join(", ");
             const premier = String(items[0].row.animal_id);
-            const title = `💊 Dans ${PREAVIS_MIN} min — ${plusieurs ? `${items.length} animaux` : noms[0]}`;
+            const title = `Dans ${PREAVIS_MIN} min — ${plusieurs ? `${items.length} animaux` : noms[0]}`;
             const body = quantite ?
                 `${quantite} de ${nomSoin} à ${heureDue} pour ${listeNoms}` :
                 `${nomSoin} à ${heureDue} pour ${listeNoms}` + (posologie ? ` — ${posologie}` : "");
@@ -750,7 +750,7 @@ exports.sendTraitementReminders = functions
 
             // Tâche agenda cochable (une pour le groupe).
             try {
-                const titre = `💊 ${quantite ? `${quantite} de ` : ""}${nomSoin} — ${plusieurs ? listeNoms : noms[0]}`;
+                const titre = `${quantite ? `${quantite} de ` : ""}${nomSoin} — ${plusieurs ? listeNoms : noms[0]}`;
                 const notes = [posologie || null, plusieurs ? `Animaux : ${noms.join(", ")}` : null]
                     .filter(Boolean).join(" — ") || null;
                 const inserted = await supabaseInsertReturning("taches_elevage", [{

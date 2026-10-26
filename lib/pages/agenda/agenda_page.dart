@@ -587,7 +587,17 @@ class _AgendaPageState extends State<AgendaPage> {
       final pid = User_Info.activeProfileId;
       dynamic d1 = <dynamic>[];
       if (isParticulierView) {
-        // pas de tâches "possédées" pour un particulier — d1 reste vide.
+        // Particulier : ses tâches de soin (chaque prise d'un traitement, d'un
+        // vermifuge sur plusieurs jours), créées par les rappels — à cocher,
+        // elles restent affichées tant qu'elles ne sont pas faites.
+        if (widget.isParticulier || User_Info.activeType == 'particulier') {
+          var q = _supa.from('taches_elevage')
+              .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,eleveur_profile_id')
+              .eq('uid_eleveur', _uid).eq('profil_source', 'particulier')
+              .gte('date', from).lte('date', to);
+          if (pid.isNotEmpty) q = q.or('profile_id.eq.$pid,profile_id.is.null');
+          d1 = await q;
+        }
       } else if (pid.isNotEmpty) {
         // Filtre uniquement par profile_id (jamais uid_eleveur en plus) — un
         // cogérant qui emprunte ce profil (elevage_cogerants) a un uid
@@ -830,7 +840,7 @@ class _AgendaPageState extends State<AgendaPage> {
     // association/pension) — un particulier employé n'en crée pas mais doit
     // quand même voir celles qui lui sont assignées (déjà scopées côté
     // _loadTasks, _tasks reste vide pour lui sinon).
-    if (!_canShowTasks() && !widget.isParticulier) return [];
+    if (!_canShowTasks() && !widget.isParticulier && User_Info.activeType != 'particulier') return [];
     final key = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
     final onDay = _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
     final today = DateTime.now();

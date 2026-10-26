@@ -21,6 +21,10 @@ interface Pro { id: string; uid: string; nom?: string; avatar_url?: string; bann
 interface Balade { id: string; titre: string; ville?: string; cover_url?: string }
 interface Sujet { id: string; titre: string; categorie_slug: string; animal_types?: string[] | null; animal_type?: string | null; race?: string | null }
 
+interface Evenement { id: string; titre?: string; type?: string; date_debut: string; animal_id?: string | null }
+interface TacheSoin { id: string; titre?: string; date: string; heure?: string | null; animal_id?: string | null; notes?: string | null }
+interface Rappel { id: string; animal_id: string; date_rappel: string; libelle: string; cat: string }
+
 type Onglet = 'annonces' | 'adoptions' | 'pros' | 'activites';
 
 const ESPECES: Record<string, string> = {
@@ -46,6 +50,9 @@ const P = {
   boite: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8',
   plus: 'M12 5v14M5 12h14',
   chevron: 'M9 6l6 6-6 6',
+  agenda: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  coche: 'M5 12l4 4 10-10',
+  horloge: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2',
 };
 
 const ACCES = [
@@ -61,6 +68,23 @@ function prixAnnonce(a: Annonce) {
   const p = a.prix ?? a.prix_min_portee;
   if (p == null) return null;
   return a.type_vente === 'adoption' ? `Frais d'adoption : ${p} €` : `${a.prix == null ? 'À partir de ' : ''}${p} €`;
+}
+
+const cleJour = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** « Aujourd’hui », « Demain » ou « lun. 3 nov. » (+ heure si précisée). */
+function quand(iso?: string | null, avecHeure = false) {
+  if (!iso) return '';
+  const d = iso.length <= 10 ? new Date(`${iso}T00:00:00`) : new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const auj = new Date(); auj.setHours(0, 0, 0, 0);
+  const j0 = new Date(d); j0.setHours(0, 0, 0, 0);
+  const j = Math.round((j0.getTime() - auj.getTime()) / 86400000);
+  const jour = j === 0 ? 'Aujourd’hui' : j === 1 ? 'Demain'
+    : d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return avecHeure && iso.length > 10 && (d.getHours() || d.getMinutes())
+    ? `${jour} · ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : jour;
 }
 
 function libelleSujet(s: Sujet) {
@@ -83,6 +107,11 @@ export default function ParticulierDashboard() {
   const [recherche, setRecherche] = useState('');
   const [rechercheDans, setRechercheDans] = useState<'pros' | 'annonces'>('pros');
   const [loading, setLoading] = useState(true);
+  // Mon quotidien — scopé au profil actif (miroir de l'appli).
+  const [evenements, setEvenements] = useState<Evenement[]>([]);
+  const [tachesSoin, setTachesSoin] = useState<TacheSoin[]>([]);
+  const [rappels, setRappels] = useState<Rappel[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
 
   const firstname = userData?.firstname ?? '';
 
@@ -119,6 +148,47 @@ export default function ParticulierDashboard() {
         supabase.from('forum_sujets').select('id, titre, categorie_slug, animal_types, animal_type, race')
           .order('created_at', { ascending: false }).limit(3),
       ]);
+      // Mon quotidien : rendez-vous et tâches (15 jours), soins à donner
+      // (prises de traitement du jour et en retard, à cocher), rappels santé.
+      const debut = new Date(); debut.setHours(0, 0, 0, 0);
+      const fin = new Date(debut); fin.setDate(fin.getDate() + 15);
+      const fin30 = new Date(debut); fin30.setDate(fin30.getDate() + 30);
+      const colsEv = 'id, titre, type, date_debut, animal_id';
+      const evQ = activeProfileId
+        ? supabase.from('agenda_events').select(colsEv).eq('pro_profile_id', activeProfileId)
+        : supabase.from('agenda_events').select(colsEv).eq('uid', uid).or('pro_profile_id.is.null,pro_profile_id.eq.');
+      let soinQ = supabase.from('taches_elevage').select('id, titre, date, heure, animal_id, notes')
+        .eq('uid_eleveur', uid).eq('profil_source', 'particulier').neq('statut', 'fait')
+        .lte('date', cleJour(debut));
+      if (activeProfileId) soinQ = soinQ.or(`profile_id.eq.${activeProfileId},profile_id.is.null`);
+      const SANTE = [
+        { table: 'vaccinations', champ: 'vaccin', libelle: 'Rappel vaccin' },
+        { table: 'vermifuges', champ: 'produit', libelle: 'Vermifuge' },
+        { table: 'antiparasitaires', champ: 'produit', libelle: 'Antiparasitaire' },
+      ];
+      const [evRes, soinRes, ...santeRes] = await Promise.all([
+        evQ.gte('date_debut', debut.toISOString()).lte('date_debut', fin.toISOString()).order('date_debut').limit(8),
+        soinQ.order('date').order('heure').limit(6),
+        ...SANTE.map(t => animalIds.length
+          ? supabase.from(t.table).select(`id, animal_id, date_rappel, ${t.champ}`).in('animal_id', animalIds)
+              .gte('date_rappel', cleJour(debut)).lte('date_rappel', cleJour(fin30)).order('date_rappel').limit(5)
+          : Promise.resolve({ data: [] })),
+      ]);
+      const listeRappels: Rappel[] = [];
+      santeRes.forEach((r, i) => {
+        for (const row of (r.data ?? []) as unknown as Record<string, string | null>[]) {
+          const quoi = row[SANTE[i].champ];
+          listeRappels.push({
+            id: `${SANTE[i].table}-${row.id}`, animal_id: String(row.animal_id), date_rappel: String(row.date_rappel),
+            libelle: quoi ? `${SANTE[i].libelle} ${quoi}` : SANTE[i].libelle, cat: SANTE[i].table,
+          });
+        }
+      });
+      listeRappels.sort((a, b) => a.date_rappel.localeCompare(b.date_rappel));
+      setEvenements((evRes.data ?? []) as Evenement[]);
+      setTachesSoin((soinRes.data ?? []) as TacheSoin[]);
+      setRappels(listeRappels.slice(0, 4));
+
       setAnimaux((animauxRes.data ?? []) as Animal[]);
       setNbAlertes(alertesRes.count ?? 0);
       setAnnonces((annoncesRes.data ?? []) as Annonce[]);
@@ -131,6 +201,14 @@ export default function ParticulierDashboard() {
 
     load().catch(() => setLoading(false));
   }, [user, authLoading, activeProfileId]);
+
+  async function validerSoin(t: TacheSoin) {
+    const { error } = await supabase.from('taches_elevage').update({ statut: 'fait' }).eq('id', t.id);
+    if (error) { setMessage('Validation impossible, réessayez.'); return; }
+    setTachesSoin(prev => prev.filter(x => x.id !== t.id));
+    setMessage('Soin validé.');
+    setTimeout(() => setMessage(null), 2500);
+  }
 
   function rechercher(e: React.FormEvent) {
     e.preventDefault();
@@ -168,6 +246,78 @@ export default function ParticulierDashboard() {
           {prixAnnonce(a) && <p className={`mt-2 text-[15px] font-extrabold ${adoption ? 'text-[#4E7A3B]' : 'text-[#0C5C6C]'}`}>{prixAnnonce(a)}</p>}
         </div>
       </Link>
+    );
+  }
+
+  function monQuotidien() {
+    const rdv = evenements.filter(e => e.type === 'rdv' || e.type === 'visite').slice(0, 3);
+    const aFaire = evenements.filter(e => e.type !== 'rdv' && e.type !== 'visite').slice(0, 3);
+    const rien = !rdv.length && !aFaire.length && !tachesSoin.length && !rappels.length;
+    const nomAnimal = (id?: string | null) => animaux.find(a => a.id === id)?.nom ?? '';
+    // Fiche de l'animal sur son carnet de santé : l'endroit où l'on valide.
+    const ficheSante = (id?: string | null, cat?: string) =>
+      id && animaux.some(a => a.id === id) ? `/mes-animaux/${id}?tab=sante${cat ? `&cat=${cat}` : ''}` : '/agenda';
+    const joindre = (...l: (string | null | undefined)[]) => l.filter(Boolean).join(' · ');
+    const sousTitre = (t: string) => <p className="px-5 pt-4 pb-1 text-[11px] font-bold tracking-wider uppercase text-gray-500">{t}</p>;
+    const ligne = (cle: string, href: string, d: string, couleur: string, fond: string, titre: string, detail: string) => (
+      <Link key={cle} href={href} className="flex items-center gap-3 px-5 py-2.5 hover:bg-[#F7FAF9]">
+        <span className={`w-9 h-9 rounded-[10px] flex items-center justify-center flex-shrink-0 ${fond}`}><Picto d={d} couleur={couleur} /></span>
+        <span className="flex-1 min-w-0">
+          <span className="block font-bold text-sm text-[#1F2A2E] truncate">{titre}</span>
+          {detail && <span className="block text-xs text-gray-500 truncate">{detail}</span>}
+        </span>
+        <Picto d={P.chevron} couleur="#9AA7AB" />
+      </Link>
+    );
+    const aujourdhui = cleJour(new Date());
+    return (
+      <section className="max-w-6xl mx-auto px-4 mt-12">
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className={titreSection}>Mon quotidien</h2>
+          <Link href="/agenda" className={voirTout}>Ouvrir mon agenda</Link>
+        </div>
+        <div className="bg-white rounded-[18px] shadow-[0_1px_4px_rgba(15,40,45,0.08)] pb-3">
+          {message && <p role="status" className="mx-5 mt-4 text-sm font-semibold text-[#4E7A3B]">{message}</p>}
+          {rien ? (
+            <div className="px-5 pt-5 pb-2">
+              <p className="font-bold text-sm text-[#1F2A2E]">Rien de prévu pour le moment.</p>
+              <p className="text-[13px] text-gray-500 mt-1">Profitez de vos compagnons. Vos rendez-vous, tâches et rappels santé apparaîtront ici.</p>
+            </div>
+          ) : (
+            <>
+              {rdv.length > 0 && <>{sousTitre('Prochains rendez-vous')}
+                {rdv.map(e => ligne(`rdv-${e.id}`, '/agenda', P.agenda, '#0C5C6C', 'bg-[#E7F1EF]', e.titre || 'Rendez-vous',
+                  joindre(quand(e.date_debut, true), nomAnimal(e.animal_id))))}</>}
+              {tachesSoin.length > 0 && <>{sousTitre('Soins à donner')}
+                {tachesSoin.map(t => {
+                  const enRetard = t.date < aujourdhui;
+                  const detail = joindre(enRetard ? `En retard · ${quand(t.date)}` : 'Aujourd’hui', t.heure?.slice(0, 5), t.notes);
+                  return (
+                    <div key={`soin-${t.id}`} className="flex items-center gap-1 pl-3 pr-5 py-1 hover:bg-[#F7FAF9]">
+                      <button type="button" onClick={() => validerSoin(t)} aria-label={`Valider : ${t.titre ?? 'soin'}`} title="Valider"
+                        className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                        <span className="w-[18px] h-[18px] rounded border-2 border-[#4E7A3B]" />
+                      </button>
+                      <Link href={ficheSante(t.animal_id, 'traitements')} className="flex-1 min-w-0 flex items-center gap-2">
+                        <span className="flex-1 min-w-0">
+                          <span className="block font-bold text-sm text-[#1F2A2E] line-clamp-2">{(t.titre || 'Soin').replace(/^\S*\u{1F48A}\S*\s*/u, '')}</span>
+                          <span className={`block text-xs truncate ${enRetard ? 'text-red-700' : 'text-gray-500'}`}>{detail}</span>
+                        </span>
+                        <Picto d={P.chevron} couleur="#9AA7AB" />
+                      </Link>
+                    </div>
+                  );
+                })}</>}
+              {aFaire.length > 0 && <>{sousTitre('À faire')}
+                {aFaire.map(e => ligne(`af-${e.id}`, '/agenda', P.coche, '#4E7A3B', 'bg-[#EEF5EA]', e.titre || 'Tâche',
+                  joindre(quand(e.date_debut, true), nomAnimal(e.animal_id))))}</>}
+              {rappels.length > 0 && <>{sousTitre('Rappels et échéances')}
+                {rappels.map(r => ligne(`rap-${r.id}`, ficheSante(r.animal_id, r.cat), P.horloge, '#A85A12', 'bg-[#FDF1E4]',
+                  joindre(r.libelle, nomAnimal(r.animal_id)), quand(r.date_rappel)))}</>}
+            </>
+          )}
+        </div>
+      </section>
     );
   }
 
@@ -216,6 +366,9 @@ export default function ParticulierDashboard() {
         <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>
       ) : (
         <>
+          {/* Mon quotidien — rendez-vous, soins à donner, à faire, rappels santé */}
+          {monQuotidien()}
+
           {/* Zone 3 — mes compagnons */}
           <section className="max-w-6xl mx-auto px-4 mt-12">
             <div className="flex items-baseline justify-between mb-4">

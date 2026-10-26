@@ -621,7 +621,16 @@ export default function AgendaPage() {
     const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source,eleveur_profile_id';
 
     let d1Res: { data: unknown[] | null } = { data: [] };
-    if (!isParticulierView) {
+    if (isParticulierView && userData?.profileType === 'particulier') {
+      // Particulier : ses tâches de soin (chaque prise d'un traitement, d'un
+      // vermifuge sur plusieurs jours), créées par les rappels — à cocher,
+      // elles restent affichées tant qu'elles ne sont pas faites.
+      let q = supabase.from('taches_elevage').select(manuelCols)
+        .eq('uid_eleveur', uid).eq('profil_source', 'particulier')
+        .gte('date', taskFrom).lte('date', taskTo);
+      if (activeProfileId) q = q.or(`profile_id.eq.${activeProfileId},profile_id.is.null`);
+      d1Res = await q;
+    } else if (!isParticulierView) {
       d1Res = activeProfileId
         ? await supabase.from('taches_elevage').select(manuelCols)
             .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
@@ -805,7 +814,9 @@ export default function AgendaPage() {
 
   function navigateToAnimal(animalId: string | number | null | undefined) {
     if (!animalId) return;
-    router.push(`/mes-patients/${animalId}`);
+    router.push(userData?.profileType === 'particulier'
+      ? `/mes-animaux/${animalId}?tab=sante`
+      : `/mes-patients/${animalId}`);
   }
 
   function navigateDay(dir: 'prev' | 'next') {

@@ -46,6 +46,9 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   List<Map<String, dynamic>> _alertesPubliques = [];
   bool _loadingAlertes = false;
   List<Map<String, dynamic>> _annonces = [];
+  /// Soins à donner (prises de traitement, vermifuges sur plusieurs jours) :
+  /// tâches créées par les rappels, du jour et en retard, à cocher.
+  List<Map<String, dynamic>> _tachesSoin = [];
   // Mon quotidien : prochains événements de l'agenda (rendez-vous, tâches) du
   // profil actif + rappels santé à venir des animaux de ce profil.
   List<Map<String, dynamic>> _evenements = [];
@@ -142,6 +145,15 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             .order('date_debut')
             .limit(8) as List);
       } catch (_) {}
+      var tachesSoin = <Map<String, dynamic>>[];
+      try {
+        var qT = _supa.from('taches_elevage')
+            .select('id, titre, date, heure, statut, animal_id, animal_nom, notes')
+            .eq('uid_eleveur', uid).eq('profil_source', 'particulier').neq('statut', 'fait')
+            .lte('date', DateFormat('yyyy-MM-dd').format(debutJour));
+        if (activeProfileId.isNotEmpty) qT = qT.or('profile_id.eq.$activeProfileId,profile_id.is.null');
+        tachesSoin = List<Map<String, dynamic>>.from(await qT.order('date').order('heure').limit(6) as List);
+      } catch (_) {}
       var rappels = <Map<String, dynamic>>[];
       if (myIds.isNotEmpty) {
         final de = DateFormat('yyyy-MM-dd').format(debutJour);
@@ -163,6 +175,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       if (!mounted) return;
       setState(() {
         _evenements = evenements;
+        _tachesSoin = tachesSoin;
         _rappels = rappels.take(4).toList();
         final firestorePic = doc.data()?['profilePictureUrl'];
         _photoUrl = (profileAvatar != null && profileAvatar.isNotEmpty)
@@ -471,7 +484,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   Widget _buildMonQuotidien() {
     final rdv = _evenements.where((e) => const {'rdv', 'visite'}.contains(e['type'])).take(3).toList();
     final aFaire = _evenements.where((e) => !const {'rdv', 'visite'}.contains(e['type'])).take(3).toList();
-    final rien = rdv.isEmpty && aFaire.isEmpty && _rappels.isEmpty;
+    final rien = rdv.isEmpty && aFaire.isEmpty && _rappels.isEmpty && _tachesSoin.isEmpty;
     String quand(String? iso, {bool heure = false}) {
       final d = DateTime.tryParse(iso ?? '')?.toLocal();
       if (d == null) return '';
@@ -511,6 +524,58 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
           ),
         );
     void agenda() => _ouvrir(const AgendaPage(isParticulier: true));
+    /// Ouvre la fiche de l'animal sur son carnet de santé (bon endroit pour
+    /// valider un vaccin, un vermifuge, un traitement).
+    void carnet(dynamic animalId) {
+      final a = _animaux.where((x) => x['id']?.toString() == animalId?.toString());
+      if (a.isEmpty) { agenda(); return; }
+      _ouvrir(AnimalFicheParticulierPage(animalId: a.first['id'] as String?, initialData: a.first,
+          initialTabLabel: 'Carnet de santé'));
+    }
+    Future<void> valider(Map<String, dynamic> t) async {
+      try {
+        await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', t['id']);
+        if (!mounted) return;
+        setState(() => _tachesSoin.removeWhere((x) => x['id'] == t['id']));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Soin validé.'), behavior: SnackBarBehavior.floating));
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Validation impossible, réessayez.')));
+        }
+      }
+    }
+    Widget soin(Map<String, dynamic> t) {
+      final d = DateTime.tryParse(t['date']?.toString() ?? '');
+      final auj = DateTime.now();
+      final enRetard = d != null && DateTime(d.year, d.month, d.day).isBefore(DateTime(auj.year, auj.month, auj.day));
+      final heure = (t['heure'] ?? '').toString();
+      final detail = [
+        enRetard ? 'En retard · ${DateFormat('d MMM', 'fr_FR').format(d)}' : 'Aujourd\'hui',
+        if (heure.isNotEmpty) heure.length >= 5 ? heure.substring(0, 5) : heure,
+        (t['notes'] ?? '').toString(),
+      ].where((x) => x.isNotEmpty).join(' · ');
+      return InkWell(
+        onTap: () => carnet(t['animal_id']),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 2, 16, 2),
+          child: Row(children: [
+            IconButton(
+              tooltip: 'Valider',
+              icon: const Icon(Icons.check_box_outline_blank, color: Color(0xFF4E7A3B)),
+              onPressed: () => valider(t),
+            ),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text((t['titre'] ?? 'Soin').toString().replaceFirst(RegExp(r'^\S*💊\S*\s*'), ''),
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+              Text(detail, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: enRetard ? Colors.red.shade700 : Colors.grey.shade600)),
+            ])),
+            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+          ]),
+        ),
+      );
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _titreSection('Mon quotidien'),
       const SizedBox(height: 10),
@@ -545,6 +610,10 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                   ...rdv.map((e) => ligne(Icons.event_outlined, _teal, (e['titre'] ?? 'Rendez-vous').toString(),
                       [quand(e['date_debut']?.toString(), heure: true), nomAnimal(e['animal_id'])].where((x) => x.isNotEmpty).join(' · '), agenda)),
                 ],
+                if (_tachesSoin.isNotEmpty) ...[
+                  sousTitre('Soins à donner'),
+                  ..._tachesSoin.map(soin),
+                ],
                 if (aFaire.isNotEmpty) ...[
                   sousTitre('À faire'),
                   ...aFaire.map((e) => ligne(Icons.check_circle_outline, const Color(0xFF4E7A3B), (e['titre'] ?? 'Tâche').toString(),
@@ -557,8 +626,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                     return ligne(Icons.schedule, Colors.orange.shade800,
                         [r['_libelle'], nomAnimal(r['animal_id'])].where((x) => (x ?? '').toString().isNotEmpty).join(' · '),
                         quand(r['date_rappel']?.toString()),
-                        () => animal.isEmpty ? null : _ouvrir(AnimalFicheParticulierPage(
-                            animalId: animal.first['id'] as String?, initialData: animal.first)));
+                        () => animal.isEmpty ? null : carnet(animal.first['id']));
                   }),
                 ],
                 const SizedBox(height: 6),
