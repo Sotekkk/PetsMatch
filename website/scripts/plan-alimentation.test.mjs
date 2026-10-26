@@ -143,6 +143,12 @@ test('11. valeurs nutritionnelles incohérentes', () => {
   assert.match(evaluerEnergie({ methode: 'A', type: 'croquettes', kcalTexte: '37 kcal' }).err, /sans unité/);
   assert.match(evaluerEnergie({ methode: 'A', type: 'patee', kcalTexte: '370' }).warn, /inhabituelle pour une pâtée/);
   assert.equal(lireNombre('12,5').v, 12.5);
+  assert.equal(lireNombre('12.5').v, 12.5);
+  assert.equal(lireNombre('1 200').v, 1200);
+  assert.equal(lireNombre('8,5 %').v, 8.5);
+  assert.equal(lireNombre(',5').v, 0.5);
+  assert.equal(lireNombre('3,').v, 3);
+  assert.match(lireNombre('1,2,3').err, /nombre/);
 });
 
 test('12-14. quantité aberrante, ration modifiée, retour à la recommandation', () => {

@@ -144,6 +144,12 @@ void main() {
     expect(evaluerEnergie(methode: 'A', type: 'croquettes', kcalTexte: '37 kcal').err, contains('sans unité'));
     expect(evaluerEnergie(methode: 'A', type: 'patee', kcalTexte: '370').warn, contains('inhabituelle pour une pâtée'));
     expect(lireNombre('12,5').v, 12.5);
+    expect(lireNombre('12.5').v, 12.5);
+    expect(lireNombre('1 200').v, 1200);
+    expect(lireNombre('8,5 %').v, 8.5);
+    expect(lireNombre(',5').v, 0.5);
+    expect(lireNombre('3,').v, 3);
+    expect(lireNombre('1,2,3').err, contains('nombre'));
   });
 
   test('12-14. quantité aberrante, ration modifiée, retour à la recommandation', () {

@@ -185,13 +185,14 @@ export const LIBELLES_REPARTITION: Record<string, string> = {
 
 export interface LectureNombre { v?: number; err?: string }
 
-const RE_NOMBRE = /^\d+(?:[.,]\d+)?$/;
+const RE_NOMBRE = /^(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
 
-/** Nombre positif, virgule française acceptée, sans unité ni signe. */
+/** Nombre positif sans unité ni signe. Virgule ou point indifféremment,
+ *  espaces (« 1 200 ») et « % » final tolérés, « ,5 » et « 3, » acceptés. */
 export function lireNombre(s: string | null | undefined, zeroAutorise = false): LectureNombre {
-  const t = (s ?? '').trim();
+  const t = (s ?? '').replace(/[\s\u00A0\u202F]/g, '').replace(/%$/, '');
   if (!t) return {};
-  if (!RE_NOMBRE.test(t)) return { err: 'Saisissez un nombre positif, sans unité (ex. 135).' };
+  if (!RE_NOMBRE.test(t)) return { err: 'Saisissez un nombre positif, sans unité (ex. 135 ou 3,5).' };
   const v = parseFloat(t.replace(',', '.'));
   if (v === 0 && !zeroAutorise) return { err: 'La valeur doit être supérieure à 0.' };
   return { v };

@@ -133,14 +133,16 @@ class LectureNombre {
   bool get vide => v == null && err == null;
 }
 
-final _reNombre = RegExp(r'^\d+(?:[.,]\d+)?$');
+final _reNombre = RegExp(r'^(?:\d+(?:[.,]\d*)?|[.,]\d+)$');
 
-/// Nombre positif, virgule française acceptée, sans unité ni signe.
+/// Nombre positif sans unité ni signe. Virgule ou point indifféremment,
+/// espaces (« 1 200 ») et « % » final tolérés, « ,5 » et « 3, » acceptés.
 LectureNombre lireNombre(String? s, {bool zeroAutorise = false}) {
-  final t = (s ?? '').trim();
+  var t = (s ?? '').replaceAll(RegExp(r'[\s\u00A0\u202F]'), '');
+  if (t.endsWith('%')) t = t.substring(0, t.length - 1);
   if (t.isEmpty) return const LectureNombre();
   if (!_reNombre.hasMatch(t)) {
-    return const LectureNombre(err: 'Saisissez un nombre positif, sans unité (ex. 135).');
+    return const LectureNombre(err: 'Saisissez un nombre positif, sans unité (ex. 135 ou 3,5).');
   }
   final v = double.parse(t.replaceAll(',', '.'));
   if (v == 0 && !zeroAutorise) return const LectureNombre(err: 'La valeur doit être supérieure à 0.');
