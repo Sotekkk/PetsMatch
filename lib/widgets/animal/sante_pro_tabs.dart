@@ -72,7 +72,10 @@ class SyntheseVetTab extends StatefulWidget {
   /// Rappel de vaccin fait aujourd'hui (formulaire du carnet pré-rempli) —
   /// null en lecture seule.
   final Future<void> Function(Map<String, dynamic> vaccin)? onFaireRappel;
-  const SyntheseVetTab({super.key, required this.animalId, required this.onIdentite, this.onFaireRappel});
+  /// Écriture au carnet autorisée (pesée depuis la Synthèse).
+  final bool peutEcrire;
+  const SyntheseVetTab({super.key, required this.animalId, required this.onIdentite, this.onFaireRappel,
+      this.peutEcrire = false});
   @override
   State<SyntheseVetTab> createState() => _SyntheseVetTabState();
 }
@@ -139,6 +142,46 @@ class _SyntheseVetTabState extends State<SyntheseVetTab> {
       if (mounted) _charger();
     } else if (choix == 'rdv') {
       _planifier('Rappel vaccin — $nom');
+    }
+  }
+
+  /// Pesée du jour (souvent le premier geste de la consultation) : courbe de
+  /// poids + poids de la fiche ; reprise ensuite dans le compte rendu.
+  Future<void> _nouvellePesee() async {
+    final ctrl = TextEditingController();
+    final kg = await showDialog<double>(context: context, builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Nouvelle pesée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: TextField(
+        controller: ctrl, autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: const InputDecoration(labelText: 'Poids (kg)', border: OutlineInputBorder()),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+        TextButton(
+          onPressed: () {
+            final v = double.tryParse(ctrl.text.trim().replaceAll(',', '.').replaceAll(' ', ''));
+            if (v != null && v > 0) Navigator.pop(ctx, v);
+          },
+          child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        ),
+      ],
+    ));
+    if (kg == null) return;
+    try {
+      await _supa.from('poids').insert({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'animal_id': widget.animalId, 'valeur': kg,
+        'date': DateTime.now().toIso8601String(), 'notes': 'Consultation',
+      });
+      await _supa.from('animaux').update({'poids': kg}).eq('id', widget.animalId);
+      if (mounted) _charger();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -212,7 +255,15 @@ class _SyntheseVetTabState extends State<SyntheseVetTab> {
               ]),
             ])),
         _carte('Dernier poids connu', Icons.monitor_weight_outlined,
-            poids == null ? _discret('Non renseigné.') : _txt('$poids kg · ${_date(_poids!['date'])}')),
+            poids == null ? _discret('Non renseigné.') : _txt('$poids kg · ${_date(_poids!['date'])}'),
+            action: widget.peutEcrire
+                ? TextButton.icon(
+                    onPressed: _nouvellePesee,
+                    icon: const Icon(Icons.add, size: 17),
+                    label: const Text('Nouvelle pesée', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                    style: TextButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact),
+                  )
+                : null),
         _carte('Allergies', Icons.no_food_outlined, _allergies.isEmpty
             ? _discret('Non renseigné.')
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

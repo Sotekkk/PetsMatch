@@ -100,7 +100,59 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _chargerDroits();
     _loadExisting();
     _chargerPharmacie();
-    _prefillDepuisRdv().whenComplete(_chargerRappelsVaccins);
+    _prefillDepuisRdv().whenComplete(() { _chargerRappelsVaccins(); _chargerCarnetDuJour(); });
+  }
+
+  /// Actes inscrits au carnet AUJOURD'HUI par moi (Synthèse, onglet Santé) et
+  /// pesée du jour : repris dans le compte rendu sans être réécrits au
+  /// carnet. Ceux déjà couverts par un compte rendu de ce jour sont exclus.
+  List<({String type, String libelle, Map<String, dynamic> ligne})> _carnetJour = [];
+  double? _poidsCarnet;
+  static const _libCarnet = {'vaccin': 'Vaccin', 'traitement': 'Traitement', 'vermifuge': 'Vermifuge', 'antiparasitaire': 'Antiparasitaire'};
+
+  Future<void> _chargerCarnetDuJour() async {
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    final vetId = AgendaContexte.moi ?? AgendaContexte.uid;
+    if (animalId == null || animalId.isEmpty || widget.isPension || vetId == null) return;
+    final now = DateTime.now();
+    final jour = DateTime(now.year, now.month, now.day);
+    final ymd = '${jour.year}-${jour.month.toString().padLeft(2, '0')}-${jour.day.toString().padLeft(2, '0')}';
+    try {
+      var crQ = _supa.from('comptes_rendus').select('created_at').eq('animal_id', animalId)
+          .gte('created_at', jour.toUtc().toIso8601String());
+      crQ = _profilPro != null ? crQ.eq('pro_profile_id', _profilPro!) : crQ.eq('pro_uid', AgendaContexte.uid ?? '');
+      final crs = await crQ.order('created_at', ascending: false).limit(1);
+      final depuis = (crs as List).isEmpty ? null : DateTime.tryParse(crs.first['created_at'].toString());
+      bool apres(Map m) {
+        final c = DateTime.tryParse(m['created_at']?.toString() ?? '');
+        return depuis == null || c == null || c.isAfter(depuis);
+      }
+      final res = <({String type, String libelle, Map<String, dynamic> ligne})>[];
+      for (final (table, type) in const [('vaccinations', 'vaccin'), ('traitements', 'traitement'),
+          ('vermifuges', 'vermifuge'), ('antiparasitaires', 'antiparasitaire')]) {
+        final rows = await _supa.from(table).select().eq('animal_id', animalId).eq('vet_id', vetId).eq('date', ymd).order('created_at');
+        for (final r in rows as List) {
+          final m = Map<String, dynamic>.from(r as Map);
+          if (!apres(m)) continue;
+          String s(String k) => (m[k] ?? '').toString().trim();
+          final libelle = switch (type) {
+            'vaccin' => '${s('vaccin').isEmpty ? 'Vaccin' : s('vaccin')}${s('lot').isNotEmpty ? ' (lot ${s('lot')})' : ''}',
+            'traitement' => '${s('nom').isEmpty ? 'Traitement' : s('nom')}${s('posologie').isNotEmpty ? ' — ${s('posologie')}' : ''}',
+            _ => s('produit').isEmpty ? _libCarnet[type]! : s('produit'),
+          };
+          res.add((type: type, libelle: libelle, ligne: m));
+        }
+      }
+      final p = await _supa.from('poids').select('valeur, created_at').eq('animal_id', animalId).eq('date', ymd)
+          .order('created_at', ascending: false).limit(1).maybeSingle();
+      if (!mounted) return;
+      setState(() {
+        _carnetJour = res;
+        _poidsCarnet = p != null && apres(p) ? (p['valeur'] as num?)?.toDouble() : null;
+        if (_poidsCarnet != null && _poidsCtrl.text.trim().isEmpty) _poidsCtrl.text = _fmtPoids(_poidsCarnet!);
+        if (res.any((a) => a.type == 'vaccin')) _actesRealises.add('Vaccination');
+      });
+    } catch (_) {}
   }
 
   /// Rappels de vaccins de l'animal à faire : en retard ou dans les 30 jours
@@ -271,22 +323,41 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final moi     = AgendaContexte.moi;
     final actes = _saisieActes && (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty);
     // Instantané pour la facture proposée après l'enregistrement.
-    final factVaccins = List<_VaccinCr>.of(_vaccinsCr);
+    final factVaccins = [
+      ..._vaccinsCr,
+      if (_saisieActes)
+        for (final a in _carnetJour)
+          if (a.type == 'vaccin')
+            _VaccinCr((a.ligne['vaccin'] ?? 'Vaccin').toString(), (a.ligne['lot'] ?? '').toString(),
+                DateTime.tryParse(a.ligne['date']?.toString() ?? '') ?? DateTime.now(),
+                DateTime.tryParse(a.ligne['date_rappel']?.toString() ?? '')),
+    ];
     final factTraitements = List<_TraitementCr>.of(_traitementsCr);
     final factActes = _actesRealises.toList();
     final motif = _saisieActes ? _motifCtrl.text.trim() : '';
     final poids = _saisieActes ? _poidsSaisi : null;
     final actesRealises = _saisieActes ? _actesRealises.toList() : const <String>[];
-    final prescription = _saisieActes ? _traitementsCr.map((t) => '${t.nom} — ${t.posologieComplete}').join(' ; ') : '';
+    // Actes du CR + actes déjà inscrits au carnet aujourd'hui (Synthèse, Santé).
+    final carnet = _saisieActes ? _carnetJour : const <({String type, String libelle, Map<String, dynamic> ligne})>[];
+    List<String> duCarnet(String t) => [for (final a in carnet) if (a.type == t) a.libelle];
+    final vaccinsTxt = [
+      if (actes) for (final v in _vaccinsCr) v.nom + (v.lot.isNotEmpty ? ' (lot ${v.lot})' : ''),
+      ...duCarnet('vaccin'),
+    ];
+    final traitementsTxt = [
+      if (actes) for (final t in _traitementsCr) '${t.nom} — ${t.posologieComplete}',
+      ...duCarnet('traitement'),
+    ];
+    final prescription = traitementsTxt.join(' ; ');
     final contenu = [
       if (motif.isNotEmpty) 'Motif : $motif',
       if (poids != null) 'Poids : ${_fmtPoids(poids)} kg',
       if (actesRealises.isNotEmpty) 'Actes réalisés : ${actesRealises.join(', ')}.',
       _crContenuCtrl.text.trim(),
-      if (actes && _vaccinsCr.isNotEmpty)
-        'Vaccins : ${_vaccinsCr.map((v) => v.nom + (v.lot.isNotEmpty ? ' (lot ${v.lot})' : '')).join(', ')}.',
-      if (actes && _traitementsCr.isNotEmpty)
-        'Traitement : ${_traitementsCr.map((t) => '${t.nom} — ${t.posologieComplete}').join(' ; ')}.',
+      if (vaccinsTxt.isNotEmpty) 'Vaccins : ${vaccinsTxt.join(', ')}.',
+      if (duCarnet('vermifuge').isNotEmpty) 'Vermifuge : ${duCarnet('vermifuge').join(', ')}.',
+      if (duCarnet('antiparasitaire').isNotEmpty) 'Antiparasitaire : ${duCarnet('antiparasitaire').join(', ')}.',
+      if (traitementsTxt.isNotEmpty) 'Traitement : ${traitementsTxt.join(' ; ')}.',
     ].where((l) => l.isNotEmpty).join('\n\n');
     if (proUid == null || contenu.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -330,8 +401,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         if (actesRealises.isNotEmpty) 'actes': actesRealises,
         if (prescription.isNotEmpty) 'prescription': prescription,
       });
-      // Pesée du jour → courbe de poids + poids de la fiche.
-      if (poids != null && animalId != null) {
+      // Pesée du jour → courbe de poids + poids de la fiche (sauf si c'est
+      // la pesée déjà inscrite aujourd'hui depuis la Synthèse).
+      if (poids != null && animalId != null && poids != _poidsCarnet) {
         try {
           await _supa.from('poids').insert({
             'id': DateTime.now().microsecondsSinceEpoch.toString(),
@@ -351,7 +423,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final motifFacture = _motifCtrl.text.trim();
       _crContenuCtrl.clear();
       _poidsCtrl.clear();
-      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); });
+      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); _carnetJour = []; _poidsCarnet = null; });
       await _loadExisting();
       // Le vétérinaire choisit de préparer (ou non) la facture de la consultation.
       if (mounted && _saisieActes && statut == 'valide' && animalId != null) {
@@ -1079,10 +1151,39 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         ),
       ),
     );
+    final carnetJour = _carnetJour.isEmpty ? <Widget>[] : [
+      _inputLabel('Déjà inscrit au carnet aujourd’hui'),
+      const SizedBox(height: 6),
+      Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(color: widget.categoryColor.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: widget.categoryColor.withValues(alpha: 0.25))),
+        child: Column(children: [
+          for (final a in List.of(_carnetJour))
+            ListTile(
+              dense: true,
+              leading: Icon(switch (a.type) {
+                'vaccin' => Icons.vaccines_outlined,
+                'traitement' => Icons.medication_outlined,
+                _ => Icons.pest_control_outlined,
+              }, color: widget.categoryColor),
+              title: Text('${_libCarnet[a.type]} : ${a.libelle}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
+              subtitle: Text('Repris dans ce compte rendu', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade700)),
+              trailing: IconButton(
+                tooltip: 'Ne pas reprendre',
+                icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                onPressed: () => setState(() => _carnetJour.remove(a)),
+              ),
+            ),
+        ]),
+      ),
+    ];
     final aujourdhui = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final rappelsAFaire = _rappelsVaccins.where((r) =>
         !_vaccinsCr.any((v) => v.nom.toLowerCase() == (r['vaccin'] ?? '').toString().toLowerCase())).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ...carnetJour,
       if (rappelsAFaire.isNotEmpty) ...[
         _inputLabel('Rappels de vaccins à faire'),
         const SizedBox(height: 6),

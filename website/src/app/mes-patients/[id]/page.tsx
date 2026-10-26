@@ -734,6 +734,48 @@ function PatientDetailPageInner() {
   // Compte rendu vétérinaire : actes saisis (carnet + ordonnance PDF).
   const [vaccinsCr, setVaccinsCr] = useState<VaccinCr[]>([]);
   const [actesRealises, setActesRealises] = useState<string[]>([]);
+  // Actes inscrits au carnet AUJOURD'HUI par moi (Synthèse, onglet Santé) et
+  // pesée du jour : repris dans le compte rendu sans être réécrits au carnet
+  // (ceux déjà couverts par un compte rendu de ce jour sont exclus) — miroir
+  // de _chargerCarnetDuJour (compte_rendu_page.dart).
+  type ActeCarnet = { cle: string; type: 'vaccin' | 'traitement' | 'vermifuge' | 'antiparasitaire'; libelle: string; vaccin?: VaccinCr };
+  const [carnetJour, setCarnetJour] = useState<ActeCarnet[]>([]);
+  const [poidsCarnet, setPoidsCarnet] = useState<number | null>(null);
+  useEffect(() => {
+    if (addingType !== 'cr' || catPro !== 'veterinaire' || !user?.uid || !animalId) return;
+    let annule = false;
+    (async () => {
+      const auj = new Date().toLocaleDateString('sv-SE');
+      let q = supabase.from('comptes_rendus').select('created_at').eq('animal_id', animalId).gte('created_at', new Date(auj + 'T00:00:00').toISOString());
+      q = activeProfileId ? q.eq('pro_profile_id', activeProfileId) : q.eq('pro_uid', user.uid);
+      const { data: crs } = await q.order('created_at', { ascending: false }).limit(1);
+      const depuis = crs?.[0]?.created_at ? new Date(String(crs[0].created_at)).getTime() : 0;
+      const apres = (r: Record<string, unknown>) => !depuis || !r.created_at || new Date(String(r.created_at)).getTime() > depuis;
+      const tables = [['vaccinations', 'vaccin'], ['traitements', 'traitement'], ['vermifuges', 'vermifuge'], ['antiparasitaires', 'antiparasitaire']] as const;
+      const res: ActeCarnet[] = [];
+      for (const [table, type] of tables) {
+        const { data } = await supabase.from(table).select('*').eq('animal_id', animalId).eq('vet_id', user.uid).eq('date', auj).order('created_at');
+        for (const r of (data ?? []) as Record<string, unknown>[]) {
+          if (!apres(r)) continue;
+          const s = (k: string) => String(r[k] ?? '').trim();
+          const libelle = type === 'vaccin' ? `${s('vaccin') || 'Vaccin'}${s('lot') ? ` (lot ${s('lot')})` : ''}`
+            : type === 'traitement' ? `${s('nom') || 'Traitement'}${s('posologie') ? ` — ${s('posologie')}` : ''}`
+            : s('produit') || (type === 'vermifuge' ? 'Vermifuge' : 'Antiparasitaire');
+          res.push({ cle: `${table}:${s('id')}`, type, libelle,
+            ...(type === 'vaccin' ? { vaccin: { nom: s('vaccin') || 'Vaccin', lot: s('lot'), date: auj, rappel: s('date_rappel').slice(0, 10) || null } } : {}) });
+        }
+      }
+      const { data: p } = await supabase.from('poids').select('valeur, created_at').eq('animal_id', animalId).eq('date', auj)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (annule) return;
+      setCarnetJour(res);
+      const kg = p && apres(p as Record<string, unknown>) && p.valeur != null ? Number(p.valeur) : null;
+      setPoidsCarnet(kg);
+      if (kg != null) setFormPoids(f => f.trim() ? f : String(kg).replace('.', ','));
+      if (res.some(a => a.type === 'vaccin')) setActesRealises(a => a.includes('Vaccination') ? a : [...a, 'Vaccination']);
+    })();
+    return () => { annule = true; };
+  }, [addingType, catPro, user?.uid, animalId, activeProfileId]);
   // Dernière demande de RDV de cet animal : motif + message du client.
   const [dernierRdv, setDernierRdv] = useState<{ id: string; motif: string | null; notes_client: string | null; client_nom_manuel: string | null; client_email_manuel: string | null; client_telephone_manuel: string | null; client_uid: string | null; client_profile_id: string | null } | null>(null);
   const [autreActe, setAutreActe] = useState('');
@@ -1268,15 +1310,21 @@ function PatientDetailPageInner() {
       } else if (addingType === 'cr') {
         const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
         const poidsCr = formPoids.trim() ? parseFloat(formPoids.replace(',', '.')) : null;
-        const prescription = traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`).join(' ; ');
+        // Actes du CR + actes déjà inscrits au carnet aujourd'hui (Synthèse, Santé).
+        const duCarnet = (t: ActeCarnet['type']) => carnetJour.filter(a => a.type === t).map(a => a.libelle);
+        const vaccinsTxt = [...vaccinsCr.map(v => v.nom + (v.lot ? ` (lot ${v.lot})` : '')), ...duCarnet('vaccin')];
+        const traitementsTxt = [...traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`), ...duCarnet('traitement')];
+        const prescription = traitementsTxt.join(' ; ');
         const contenu = [
           formMotif.trim() && `Motif : ${formMotif.trim()}`,
           poidsCr != null && !isNaN(poidsCr) && `Poids : ${poidsCr} kg`,
           actesRealises.length > 0 && `Actes réalisés : ${actesRealises.join(', ')}.`,
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
           formNotes.trim() && formNotes.trim(),
-          vaccinsCr.length > 0 && `Vaccins : ${vaccinsCr.map(v => v.nom + (v.lot ? ` (lot ${v.lot})` : '')).join(', ')}.`,
-          traitementsCr.length > 0 && `Traitement : ${traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`).join(' ; ')}.`,
+          vaccinsTxt.length > 0 && `Vaccins : ${vaccinsTxt.join(', ')}.`,
+          duCarnet('vermifuge').length > 0 && `Vermifuge : ${duCarnet('vermifuge').join(', ')}.`,
+          duCarnet('antiparasitaire').length > 0 && `Antiparasitaire : ${duCarnet('antiparasitaire').join(', ')}.`,
+          traitementsTxt.length > 0 && `Traitement : ${traitementsTxt.join(' ; ')}.`,
         ].filter(Boolean).join('\n\n');
         // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
@@ -1289,8 +1337,9 @@ function PatientDetailPageInner() {
           ...(actesRealises.length ? { actes: actesRealises } : {}),
           ...(prescription ? { prescription } : {}),
         });
-        // Pesée du jour → courbe de poids + poids de la fiche.
-        if (poidsCr != null && !isNaN(poidsCr)) {
+        // Pesée du jour → courbe de poids + poids de la fiche (sauf si c'est
+        // la pesée déjà inscrite aujourd'hui depuis la Synthèse).
+        if (poidsCr != null && !isNaN(poidsCr) && poidsCr !== poidsCarnet) {
           await supabase.from('poids').insert({ id: `${Date.now()}`, animal_id: animalId, valeur: poidsCr, date: new Date().toISOString(), notes: 'Consultation' });
           await supabase.from('animaux').update({ poids: poidsCr }).eq('id', animalId);
           setAnimal(a => a ? { ...a, poids: poidsCr } : a);
@@ -1301,7 +1350,8 @@ function PatientDetailPageInner() {
           await ecrireActesCr(vetName, ownerUid);
         }
         if (catPro === 'veterinaire') {
-          await proposerFacture(formMotif.trim(), actesRealises, vaccinsCr, traitementsCr,
+          await proposerFacture(formMotif.trim(), actesRealises,
+            [...vaccinsCr, ...carnetJour.flatMap(a => a.vaccin ? [a.vaccin] : [])], traitementsCr,
             poidsCr != null && !isNaN(poidsCr) ? poidsCr : null);
         }
       } else if (addingType === 'mesure') {
@@ -1316,6 +1366,7 @@ function PatientDetailPageInner() {
       }
     } finally {
       setVaccinsCr([]); setTraitementsCr([]); setActesRealises([]); setAutreActe('');
+      setCarnetJour([]); setPoidsCarnet(null);
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
       setFormPoids(''); setFormTaille('');
@@ -1893,6 +1944,7 @@ function PatientDetailPageInner() {
         {/* ── Véto / ostéo : Synthèse, Documents, sous-onglets Santé ── */}
         {tab === 'Synthèse' && catPro === 'veterinaire' && (
           <SyntheseVet key={syntheseMaj} animalId={animalId} pid={activeProfileId || null} onIdentite={() => setTab('Identité')}
+            peutEcrire={hasWriteAccess}
             onFaireRappel={hasWriteAccess ? (vaccin, rappel) => {
               setFormNom(vaccin); setFormDate(new Date().toLocaleDateString('sv-SE')); setFormRappel(rappel); setAddingType('vaccin');
             } : undefined} />
@@ -3407,6 +3459,24 @@ function PatientDetailPageInner() {
 
             {/* Compte rendu */}
             {addingType === 'cr' && (<>
+              {catPro === 'veterinaire' && carnetJour.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-gray-600">Déjà inscrit au carnet aujourd’hui</p>
+                  <div className="rounded-xl border border-[#0C5C6C]/20 bg-[#0C5C6C]/5 divide-y divide-[#0C5C6C]/10">
+                    {carnetJour.map(a => (
+                      <div key={a.cle} className="flex items-center gap-2 px-3 py-2">
+                        <span className="flex-1 min-w-0 text-sm text-[#1E2025] truncate">
+                          {{ vaccin: 'Vaccin', traitement: 'Traitement', vermifuge: 'Vermifuge', antiparasitaire: 'Antiparasitaire' }[a.type]} : {a.libelle}
+                        </span>
+                        <button type="button" title="Ne pas reprendre" aria-label={`Ne pas reprendre : ${a.libelle}`}
+                          onClick={() => setCarnetJour(c => c.filter(x => x.cle !== a.cle))}
+                          className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-500">Repris dans ce compte rendu, sans nouvelle saisie au carnet.</p>
+                </div>
+              )}
               {catPro === 'veterinaire' && (
                 <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}
                   profileId={activeProfileId || null} animalId={animalId} />

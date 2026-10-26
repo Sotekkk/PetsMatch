@@ -52,12 +52,26 @@ function LigneRappel({ onClick, children, rouge, gras }: { onClick: () => void; 
 const lienNouveauRdv = (animalId: string, motif?: string) =>
   `/mes-rdv?nouveau=1&animal=${encodeURIComponent(animalId)}${motif ? `&motif=${encodeURIComponent(motif)}` : ''}`;
 
-export function SyntheseVet({ animalId, pid, onIdentite, onFaireRappel }: {
+export function SyntheseVet({ animalId, pid, onIdentite, onFaireRappel, peutEcrire }: {
   animalId: string; pid: string | null; onIdentite: () => void;
   /** Rappel fait aujourd'hui : formulaire vaccin pré-rempli (nom, prochain rappel) — absent en lecture seule. */
   onFaireRappel?: (vaccin: string, rappel: string) => void;
+  /** Écriture au carnet autorisée (pesée depuis la Synthèse). */
+  peutEcrire?: boolean;
 }) {
   const [rappelOuvert, setRappelOuvert] = useState<Row | null>(null);
+  // Pesée du jour (souvent le premier geste) → courbe de poids + fiche ;
+  // reprise ensuite dans le compte rendu.
+  const [pesee, setPesee] = useState<string | null>(null);
+  const [maj, setMaj] = useState(0);
+  async function enregistrerPesee() {
+    const kg = parseFloat((pesee ?? '').replace(',', '.').replace(/\s/g, ''));
+    if (!(kg > 0)) return;
+    const { error } = await supabase.from('poids').insert({ id: `${Date.now()}`, animal_id: animalId, valeur: kg, date: new Date().toISOString(), notes: 'Consultation' });
+    if (error) { alert(`Erreur : ${error.message}`); return; }
+    await supabase.from('animaux').update({ poids: kg }).eq('id', animalId);
+    setPesee(null); setMaj(n => n + 1);
+  }
   const [d, setD] = useState<{ cr: Row | null; poids: Row | null; allergies: Row[]; trt: Row[]; vac: Row[]; chir: Row[]; rdv: Awaited<ReturnType<typeof prochainRdv>> } | null>(null);
   useEffect(() => {
     let annule = false;
@@ -74,7 +88,7 @@ export function SyntheseVet({ animalId, pid, onIdentite, onFaireRappel }: {
       if (!annule) setD({ cr: cr.data as Row | null, poids: poids.data as Row | null, allergies: (al.data ?? []) as Row[], trt: (trt.data ?? []) as Row[], vac: (vac.data ?? []) as Row[], chir: (chir.data ?? []) as Row[], rdv });
     })();
     return () => { annule = true; };
-  }, [animalId, pid]);
+  }, [animalId, pid, maj]);
   if (!d) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
   const now = new Date();
   const actifs = d.trt.filter(t => !t.date_fin || new Date(String(t.date_fin)) >= now);
@@ -143,7 +157,20 @@ export function SyntheseVet({ animalId, pid, onIdentite, onFaireRappel }: {
             </Link>
           </div>
         </Carte>
-        <Carte titre="Dernier poids connu">{poids != null ? <p>{String(poids)} kg · {dateFr(d.poids?.date)}</p> : <Discret t="Non renseigné." />}</Carte>
+        <Carte titre="Dernier poids connu" action={peutEcrire && pesee == null ? (
+          <button type="button" onClick={() => setPesee('')} className="text-xs font-semibold" style={{ color: TEAL }}>+ Nouvelle pesée</button>
+        ) : undefined}>
+          {poids != null ? <p>{String(poids)} kg · {dateFr(d.poids?.date)}</p> : <Discret t="Non renseigné." />}
+          {pesee != null && (
+            <div className="flex items-center gap-2 pt-1">
+              <input autoFocus inputMode="decimal" value={pesee} onChange={e => setPesee(e.target.value)} placeholder="Poids (kg)"
+                onKeyDown={e => { if (e.key === 'Enter') enregistrerPesee(); }}
+                className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <button type="button" onClick={enregistrerPesee} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: TEAL }}>Enregistrer</button>
+              <button type="button" onClick={() => setPesee(null)} className="text-xs text-gray-500">Annuler</button>
+            </div>
+          )}
+        </Carte>
         <Carte titre="Allergies">{d.allergies.length ? d.allergies.map((a, i) => <p key={i}>{String(a.description ?? a.nom ?? '')}{a.severite ? ` (${String(a.severite)})` : ''}</p>) : <Discret t="Non renseigné." />}</Carte>
         <Carte titre="Traitements actifs">{actifs.length ? actifs.map((t, i) => <p key={i}>{String(t.nom ?? '')}{t.posologie ? ` — ${String(t.posologie)}` : ''}</p>) : <Discret t="Aucun traitement en cours." />}</Carte>
         <Carte titre="Vaccinations">

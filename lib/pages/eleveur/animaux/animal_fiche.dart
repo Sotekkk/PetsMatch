@@ -2618,7 +2618,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         );
     return [
       SyntheseVetTab(animalId: widget.animalId!, onIdentite: _ouvrirIdentite,
-          onFaireRappel: _canWriteHealth && !_carnetPrive ? _faireRappelVet : null),
+          onFaireRappel: _canWriteHealth && !_carnetPrive ? _faireRappelVet : null,
+          peutEcrire: _canWriteHealth && !_carnetPrive),
       _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId, espece: _espece),
       Column(children: [
         SizedBox(
