@@ -16,8 +16,11 @@ const input = 'w-full h-11 px-3 rounded-[10px] border border-gray-300 bg-white t
  *  du commerce rejoint le catalogue (visible des autres membres) ; une
  *  préparation maison ou un aliment sans marque reste propre à l'animal.
  *  Miroir de ajout_aliment_plan_page.dart (appli). */
-export default function AjoutAlimentModal({ espece, typeInitial, marqueInitiale = '', onCreated, onClose }: {
+export default function AjoutAlimentModal({ espece, typeInitial, types: typesPlan = [], marqueInitiale = '', onCreated, onClose }: {
   espece: string; typeInitial?: string; marqueInitiale?: string;
+  /** Types proposés : ceux choisis à l'étape 1 (pas de croquettes pour un
+   *  plan BARF ou ration ménagère). Tous les types de l'espèce si vide. */
+  types?: string[];
   onCreated: (a: AlimentPlan) => void; onClose: () => void;
 }) {
   const profil = profilEspece(espece);
@@ -25,7 +28,9 @@ export default function AjoutAlimentModal({ espece, typeInitial, marqueInitiale 
   const libSansMarque = energie ? 'Préparation maison' : 'Sans marque';
   const [marque, setMarque] = useState(marqueInitiale);
   const [nom, setNom] = useState('');
-  const [type, setType] = useState(typeInitial && profil.types.includes(typeInitial) ? typeInitial : profil.types[0]);
+  const typesFiltres = profil.types.filter(t => !typesPlan.length || typesPlan.includes(t));
+  const types = typesFiltres.length ? typesFiltres : profil.types;
+  const [type, setType] = useState(typeInitial && types.includes(typeInitial) ? typeInitial : types[0]);
   const [especeAliment, setEspeceAliment] = useState(espece);
   const [stade, setStade] = useState('adulte');
   const [methode, setMethode] = useState('');
@@ -152,7 +157,7 @@ export default function AjoutAlimentModal({ espece, typeInitial, marqueInitiale 
           <div>
             <p className="text-sm font-bold mb-2">Type</p>
             <div className="flex flex-wrap gap-2">
-              {profil.types.map(t => (
+              {types.map(t => (
                 <button key={t} type="button" className={chip(type === t)}
                   onClick={() => { setType(t); preremplir(t, prive); toucher(); }}>{LIBELLES_TYPE_ALIMENT[t]}</button>
               ))}

@@ -351,7 +351,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
   const q = recherche.trim().toLowerCase();
   const resultats = (catalogue ?? []).filter(r => {
     const t = typeDepuisCatalogue(r.type_aliment as string, espece);
-    if (plan.categories.length && !plan.categories.includes(t) && !q) return false;
+    if (plan.categories.length && !plan.categories.includes(t)) return false;
     return !q || `${r.marque} ${r.gamme} ${LIBELLES_TYPE_ALIMENT[t]}`.toLowerCase().includes(q);
   }).slice(0, 60);
   const sansMarque = (plan.categories.length ? plan.categories : profil.types).filter(t => ['foin', 'paturage', 'legumes'].includes(t));
@@ -407,10 +407,16 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
               </p>
               <div className="flex flex-wrap gap-2">
                 {profil.types.map(t => (
-                  <button key={t} type="button" className={chip(plan.categories.includes(t))} onClick={() => majPlan({
-                    ...plan,
-                    categories: plan.mode === 'unique' ? [t] : plan.categories.includes(t) ? plan.categories.filter(x => x !== t) : [...plan.categories, t],
-                  })}>{LIBELLES_TYPE_ALIMENT[t]}</button>
+                  <button key={t} type="button" className={chip(plan.categories.includes(t))} onClick={() => {
+                    const categories = plan.mode === 'unique' ? [t] : plan.categories.includes(t) ? plan.categories.filter(x => x !== t) : [...plan.categories, t];
+                    let p: PlanAlimentation = { ...plan, categories };
+                    // Aliments d'un type non retenu (ex. croquettes alors que
+                    // seul le BARF est choisi) : retirés du plan.
+                    for (let i = p.aliments.length - 1; i >= 0; i--) {
+                      if (categories.length && !categories.includes(p.aliments[i].type)) p = retirerAliment(p, i);
+                    }
+                    majPlan(p);
+                  }}>{LIBELLES_TYPE_ALIMENT[t]}</button>
                 ))}
               </div>
               {profil.methode === 'energie' && (
@@ -723,6 +729,7 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
       {ajout && (
         <AjoutAlimentModal espece={espece} marqueInitiale={recherche.trim()}
           typeInitial={(plan.categories.length ? plan.categories : profil.types)[0]}
+          types={plan.categories}
           onClose={() => setAjout(false)}
           onCreated={a => {
             const p = ajouterAliment(plan, a, profil);

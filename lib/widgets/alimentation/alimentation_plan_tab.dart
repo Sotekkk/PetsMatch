@@ -471,7 +471,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
   Future<void> _ajouterAliment() async {
     final types = _plan.categories.isNotEmpty ? _plan.categories : _profil.types;
     final a = await AjoutAlimentPlanPage.ouvrir(context,
-        espece: widget.espece, typeInitial: types.first, marqueInitiale: _recherche.text.trim());
+        espece: widget.espece, typeInitial: types.first, types: types, marqueInitiale: _recherche.text.trim());
     if (a == null || !mounted) return;
     setState(() {
       _plan.ajouterAliment(a, _profil);
@@ -762,6 +762,12 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
                 } else {
                   _plan.categories.add(t);
                 }
+                // Aliments d'un type non retenu (ex. croquettes alors que
+                // seul le BARF est choisi) : retirés du plan.
+                for (var i = _plan.aliments.length - 1; i >= 0; i--) {
+                  if (_plan.categories.isNotEmpty && !_plan.categories.contains(_plan.aliments[i].type)) _plan.retirerAliment(i);
+                }
+                _syncQuantites();
                 _erreurEtape = null;
               })),
       ]),
@@ -915,7 +921,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
     final q = _recherche.text.trim().toLowerCase();
     final filtres = _catalogue.where((r) {
       final t = typeDepuisCatalogue(r['type_aliment']?.toString(), widget.espece);
-      if (_plan.categories.isNotEmpty && !_plan.categories.contains(t) && q.isEmpty) return false;
+      if (_plan.categories.isNotEmpty && !_plan.categories.contains(t)) return false;
       if (q.isEmpty) return true;
       return '${r['marque']} ${r['gamme']} ${kLibellesTypeAliment[t]}'.toLowerCase().contains(q);
     }).take(60).toList();

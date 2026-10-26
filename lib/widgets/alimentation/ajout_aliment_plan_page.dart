@@ -20,12 +20,16 @@ TextStyle _st(double t, {FontWeight w = FontWeight.w400, Color c = _texte}) =>
 class AjoutAlimentPlanPage extends StatefulWidget {
   final String espece;
   final String? typeInitial;
+  /// Types proposés : ceux choisis à l'étape 1 (pas de croquettes pour un
+  /// plan BARF ou ration ménagère). Tous les types de l'espèce si vide.
+  final List<String> types;
   final String marqueInitiale;
-  const AjoutAlimentPlanPage({super.key, required this.espece, this.typeInitial, this.marqueInitiale = ''});
+  const AjoutAlimentPlanPage({super.key, required this.espece, this.typeInitial, this.types = const [], this.marqueInitiale = ''});
 
-  static Future<AlimentPlan?> ouvrir(BuildContext context, {required String espece, String? typeInitial, String marqueInitiale = ''}) =>
+  static Future<AlimentPlan?> ouvrir(BuildContext context,
+          {required String espece, String? typeInitial, List<String> types = const [], String marqueInitiale = ''}) =>
       Navigator.of(context).push<AlimentPlan>(MaterialPageRoute(
-          builder: (_) => AjoutAlimentPlanPage(espece: espece, typeInitial: typeInitial, marqueInitiale: marqueInitiale)));
+          builder: (_) => AjoutAlimentPlanPage(espece: espece, typeInitial: typeInitial, types: types, marqueInitiale: marqueInitiale)));
 
   @override
   State<AjoutAlimentPlanPage> createState() => _AjoutAlimentPlanPageState();
@@ -41,8 +45,12 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
     for (final k in {...kRepartitionBarf.keys, ...kRepartitionMenagere.keys}) k: TextEditingController(),
   };
   final List<List<TextEditingController>> _table = [];
-  late String _type = widget.typeInitial != null && _profil.types.contains(widget.typeInitial)
-      ? widget.typeInitial! : _profil.types.first;
+  late final List<String> _types = () {
+    final l = [for (final t in _profil.types) if (widget.types.isEmpty || widget.types.contains(t)) t];
+    return l.isEmpty ? _profil.types : l;
+  }();
+  late String _type = widget.typeInitial != null && _types.contains(widget.typeInitial)
+      ? widget.typeInitial! : _types.first;
   late String _espece = widget.espece;
   String _stade = 'adulte';
   String _methode = '';
@@ -278,7 +286,7 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
                   hint: _energie ? 'Ex. Bœuf menu complet' : 'Ex. Foin de prairie, Sport Mix…'),
               Text('Type', style: _st(14.5, w: FontWeight.w700)),
               const SizedBox(height: 8),
-              _pastilles([for (final t in _profil.types) (t, kLibellesTypeAliment[t]!)], _type, (v) {
+              _pastilles([for (final t in _types) (t, kLibellesTypeAliment[t]!)], _type, (v) {
                 _type = v;
                 if (_prive) _preremplirRepartition();
               }),
