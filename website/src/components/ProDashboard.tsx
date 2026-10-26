@@ -246,7 +246,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       title: 'RDV confirmé',
       body: `Votre rendez-vous du ${fmtDate(rdv.date_heure)} a été confirmé.`,
       ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-      data: { rdv_id: rdv.id },
+      data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
       read: false,
     });
     setPendingRdvs(p => p.filter(r => r.id !== rdv.id));
@@ -263,7 +263,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       title: 'RDV refusé',
       body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_heure)} a été refusée.`,
       ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-      data: { rdv_id: rdv.id },
+      data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
       read: false,
     });
     setPendingRdvs(p => p.filter(r => r.id !== rdv.id));

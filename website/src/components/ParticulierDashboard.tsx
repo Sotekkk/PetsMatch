@@ -195,8 +195,45 @@ export default function ParticulierDashboard() {
         }
       });
       listeRappels.sort((a, b) => a.date_rappel.localeCompare(b.date_rappel));
-      setEvenements((evRes.data ?? []) as Evenement[]);
-      setTachesSoin((soinRes.data ?? []) as TacheSoin[]);
+      // Co-propriété : RDV, rappels et tâches de soin des animaux partagés,
+      // créés chez l'autre co-propriétaire (« pris par » / « ajouté par »).
+      let evs = (evRes.data ?? []) as (Evenement & { uid?: string })[];
+      let soins = (soinRes.data ?? []) as TacheSoin[];
+      if (animalIds.length) {
+        const { data: co } = await supabase.from('animaux_proprietes').select('profile_id_proprio')
+          .in('animal_id', animalIds).eq('statut', 'actif').is('date_fin', null).neq('uid_proprio', uid);
+        const profils = [...new Set((co ?? []).map(r => r.profile_id_proprio as string).filter(Boolean))];
+        const noms = new Map<string, string>();
+        if (profils.length) {
+          const { data: ups } = await supabase.from('user_profiles_complet')
+            .select('uid, nom, firstname, lastname').in('id', profils).eq('profile_type', 'particulier');
+          for (const u of (ups ?? []) as { uid: string; nom?: string; firstname?: string; lastname?: string }[]) {
+            noms.set(u.uid, `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || u.nom || 'Co-propriétaire');
+          }
+        }
+        if (noms.size) {
+          const [{ data: evCo }, { data: soinCo }] = await Promise.all([
+            supabase.from('agenda_events').select('id, titre, type, date_debut, animal_id, uid')
+              .in('animal_id', animalIds).in('uid', [...noms.keys()])
+              .gte('date_debut', debut.toISOString()).lte('date_debut', fin.toISOString()).order('date_debut').limit(8),
+            supabase.from('taches_elevage').select('id, titre, date, heure, animal_id, notes')
+              .eq('profil_source', 'particulier').neq('statut', 'fait').in('animal_id', animalIds).neq('uid_eleveur', uid)
+              .lte('date', cleJour(debut)).order('date').limit(6),
+          ]);
+          const vusEv = new Set(evs.map(e => e.id));
+          for (const e of (evCo ?? []) as (Evenement & { uid?: string })[]) {
+            if (vusEv.has(e.id)) continue;
+            vusEv.add(e.id);
+            evs.push({ ...e, titre: `${e.titre ?? ''} — ${e.type === 'rdv' ? 'pris par' : 'ajouté par'} ${noms.get(e.uid ?? '')}` });
+          }
+          evs = evs.sort((a, b) => a.date_debut.localeCompare(b.date_debut));
+          const vusSoin = new Set(soins.map(t => t.id));
+          soins = [...soins, ...((soinCo ?? []) as TacheSoin[]).filter(t => !vusSoin.has(t.id))]
+            .sort((a, b) => `${a.date} ${a.heure ?? ''}`.localeCompare(`${b.date} ${b.heure ?? ''}`)).slice(0, 6);
+        }
+      }
+      setEvenements(evs);
+      setTachesSoin(soins);
       setRappels(listeRappels.slice(0, 4));
 
       setAnimaux((animauxRes.data ?? []) as Animal[]);

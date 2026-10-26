@@ -304,7 +304,48 @@ class _AgendaPageState extends State<AgendaPage> {
     } catch (_) {}
   }
 
+  /// Particulier : animaux de ce profil (co-propriété comprise).
+  Future<List<String>> _mesAnimauxParticulier() async {
+    final pid = User_Info.activeProfileId;
+    var q = _supa.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', _uid).eq('statut', 'actif').isFilter('date_fin', null);
+    if (pid.isNotEmpty) q = q.eq('profile_id_proprio', pid);
+    final rows = await q;
+    return (rows as List).map((r) => r['animal_id'].toString()).where((s) => s.isNotEmpty).toSet().toList();
+  }
+
+  /// Co-propriétaires (particuliers) de mes animaux : uid → nom affiché.
+  Future<Map<String, String>> _coProprietaires(List<String> animalIds) async {
+    if (animalIds.isEmpty) return {};
+    final co = await _supa.from('animaux_proprietes').select('uid_proprio, profile_id_proprio')
+        .inFilter('animal_id', animalIds).eq('statut', 'actif').isFilter('date_fin', null).neq('uid_proprio', _uid);
+    final profils = (co as List).map((r) => r['profile_id_proprio']?.toString()).whereType<String>().toSet().toList();
+    if (profils.isEmpty) return {};
+    final ups = await _supa.from('user_profiles_complet')
+        .select('uid, nom, firstname, lastname').inFilter('id', profils).eq('profile_type', 'particulier');
+    final noms = <String, String>{};
+    for (final u in ups as List) {
+      final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+      noms[u['uid'].toString()] = nom.isNotEmpty ? nom : (u['nom'] ?? 'Co-propriétaire').toString();
+    }
+    return noms;
+  }
+
   Future<void> _loadEmployes() async {
+    if (widget.isParticulier || User_Info.activeType == 'particulier') {
+      // Particulier : pas d'employés — on peut attribuer une tâche à un
+      // co-propriétaire de ses animaux (aucun choix s'il n'y en a pas).
+      try {
+        final co = await _coProprietaires(await _mesAnimauxParticulier());
+        if (mounted) {
+          setState(() => _employes = co.isEmpty ? [] : [
+                {'uid': _uid, 'nom': 'Moi'},
+                for (final e in co.entries) {'uid': e.key, 'nom': e.value},
+              ]);
+        }
+      } catch (_) {}
+      return;
+    }
     try {
       // Profil actif (pid) prioritaire sur "mon profil principal" par uid :
       // pour un cogérant, pid EST déjà le profil élevage emprunté — repasser
@@ -499,9 +540,19 @@ class _AgendaPageState extends State<AgendaPage> {
                 .inFilter('uid', ownerUids)
                 .gte('date_debut', from.toIso8601String())
                 .lte('date_debut', to.toIso8601String());
+            Map<String, String> noms = {};
+            try { noms = await _coProprietaires(animalIds); } catch (_) {}
             final seen = filtered.map((e) => e['id']).toSet();
             for (final e in (shared as List)) {
-              if (seen.add(e['id'])) filtered.add(e);
+              if (!seen.add(e['id'])) continue;
+              // Qui l'a pris / ajouté : le co-propriétaire le sait d'un coup d'œil.
+              final nom = noms[e['uid']?.toString()];
+              final m = Map<String, dynamic>.from(e as Map);
+              if (nom != null) {
+                m['titre'] = '${m['titre'] ?? ''} — ${m['type'] == 'rdv' ? 'pris par' : 'ajouté par'} $nom';
+              }
+              m['_partage_copro'] = true;
+              filtered.add(m);
             }
           }
         }
@@ -597,6 +648,18 @@ class _AgendaPageState extends State<AgendaPage> {
               .gte('date', from).lte('date', to);
           if (pid.isNotEmpty) q = q.or('profile_id.eq.$pid,profile_id.is.null');
           d1 = await q;
+          // Co-propriété : les tâches de soin des animaux partagés, créées
+          // chez l'autre co-propriétaire (une seule tâche, cochée pour tous).
+          try {
+            final ids = await _mesAnimauxParticulier();
+            if (ids.isNotEmpty) {
+              final partagees = await _supa.from('taches_elevage')
+                  .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom,animal_id,eleveur_profile_id')
+                  .eq('profil_source', 'particulier').inFilter('animal_id', ids).neq('uid_eleveur', _uid)
+                  .gte('date', from).lte('date', to);
+              d1 = [...(d1 as List), ...(partagees as List)];
+            }
+          } catch (_) {}
         }
       } else if (pid.isNotEmpty) {
         // Filtre uniquement par profile_id (jamais uid_eleveur en plus) — un
@@ -830,6 +893,7 @@ class _AgendaPageState extends State<AgendaPage> {
 
   // Détermine le profil source pour les tâches/protocoles créés depuis l'agenda.
   String get _taskProfilSource {
+    if (widget.isParticulier || User_Info.activeType == 'particulier') return 'particulier';
     if (User_Info.activeType == 'association') return 'association';
     if (User_Info.activeType == 'pension') return 'pension';
     return 'eleveur';
@@ -4201,8 +4265,10 @@ class AddTacheSheetState extends State<AddTacheSheet> {
                 ),
               ),
               const SizedBox(height: 8),
+              if (widget.profilSource != 'particulier' || widget.employes.isNotEmpty) ...[
               Row(children: [
                 Expanded(child: _libelle('Attribuer à')),
+                if (widget.profilSource != 'particulier')
                 GestureDetector(
                   onTap: () async {
                     final created = await showModalBottomSheet<bool>(
@@ -4242,6 +4308,7 @@ class AddTacheSheetState extends State<AddTacheSheet> {
               else
                 Text('Aucun employé pour le moment', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade400)),
               const SizedBox(height: 14),
+              ],
               _buildRattachement(),
               const SizedBox(height: 14),
               _libelle('Note (optionnel)'),

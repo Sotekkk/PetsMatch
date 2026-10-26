@@ -49,6 +49,8 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
   /// Soins à donner (prises de traitement, vermifuges sur plusieurs jours) :
   /// tâches créées par les rappels, du jour et en retard, à cocher.
   List<Map<String, dynamic>> _tachesSoin = [];
+  /// Co-propriétaires de mes animaux : uid → nom affiché.
+  final Map<String, String> _nomsCopro = {};
   // Mon quotidien : prochains événements de l'agenda (rendez-vous, tâches) du
   // profil actif + rappels santé à venir des animaux de ce profil.
   List<Map<String, dynamic>> _evenements = [];
@@ -145,6 +147,38 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             .order('date_debut')
             .limit(8) as List);
       } catch (_) {}
+      // Co-propriété : RDV, rappels et tâches de soin des animaux partagés,
+      // créés chez l'autre co-propriétaire (« pris par » / « ajouté par »).
+      if (myIds.isNotEmpty) {
+        try {
+          final co = await _supa.from('animaux_proprietes').select('uid_proprio, profile_id_proprio')
+              .inFilter('animal_id', myIds).eq('statut', 'actif').isFilter('date_fin', null).neq('uid_proprio', uid);
+          final profils = (co as List).map((r) => r['profile_id_proprio']?.toString()).whereType<String>().toSet().toList();
+          if (profils.isNotEmpty) {
+            final ups = await _supa.from('user_profiles_complet')
+                .select('uid, nom, firstname, lastname').inFilter('id', profils).eq('profile_type', 'particulier');
+            for (final u in ups as List) {
+              final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+              _nomsCopro[u['uid'].toString()] = nom.isNotEmpty ? nom : (u['nom'] ?? 'Co-propriétaire').toString();
+            }
+          }
+          if (_nomsCopro.isNotEmpty) {
+            final partages = await _supa.from('agenda_events').select()
+                .inFilter('animal_id', myIds).inFilter('uid', _nomsCopro.keys.toList())
+                .gte('date_debut', debutJour.toIso8601String())
+                .lte('date_debut', debutJour.add(const Duration(days: 15)).toIso8601String())
+                .order('date_debut').limit(8);
+            final vus = evenements.map((e) => e['id']).toSet();
+            for (final e in partages as List) {
+              if (!vus.add(e['id'])) continue;
+              final m = Map<String, dynamic>.from(e as Map);
+              m['titre'] = '${m['titre'] ?? ''} — ${m['type'] == 'rdv' ? 'pris par' : 'ajouté par'} ${_nomsCopro[m['uid']?.toString()]}';
+              evenements.add(m);
+            }
+            evenements.sort((a, b) => (a['date_debut'] ?? '').toString().compareTo((b['date_debut'] ?? '').toString()));
+          }
+        } catch (_) {}
+      }
       var tachesSoin = <Map<String, dynamic>>[];
       try {
         var qT = _supa.from('taches_elevage')
@@ -153,6 +187,18 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             .lte('date', DateFormat('yyyy-MM-dd').format(debutJour));
         if (activeProfileId.isNotEmpty) qT = qT.or('profile_id.eq.$activeProfileId,profile_id.is.null');
         tachesSoin = List<Map<String, dynamic>>.from(await qT.order('date').order('heure').limit(6) as List);
+        if (myIds.isNotEmpty && _nomsCopro.isNotEmpty) {
+          final partagees = await _supa.from('taches_elevage')
+              .select('id, titre, date, heure, statut, animal_id, animal_nom, notes')
+              .eq('profil_source', 'particulier').neq('statut', 'fait').inFilter('animal_id', myIds).neq('uid_eleveur', uid)
+              .lte('date', DateFormat('yyyy-MM-dd').format(debutJour)).order('date').limit(6);
+          final vus = tachesSoin.map((t) => t['id']).toSet();
+          for (final t in partagees as List) {
+            if (vus.add(t['id'])) tachesSoin.add(Map<String, dynamic>.from(t as Map));
+          }
+          tachesSoin.sort((a, b) => '${a['date']} ${a['heure'] ?? ''}'.compareTo('${b['date']} ${b['heure'] ?? ''}'));
+          if (tachesSoin.length > 6) tachesSoin = tachesSoin.sublist(0, 6);
+        }
       } catch (_) {}
       var rappels = <Map<String, dynamic>>[];
       if (myIds.isNotEmpty) {

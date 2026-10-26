@@ -214,7 +214,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           title: `RDV confirmé par ${proName}`,
           body: `Votre rendez-vous est confirmé pour le ${fmtDate(newDt.toISOString())} à ${fmtHeure(newDt.toISOString())}`,
           ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-          data: { rdv_id: rdv.id }, read: false,
+          data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) }, read: false,
         });
       } else {
         await supabase.from('notifications').insert({
@@ -222,7 +222,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           title: 'Contre-proposition de créneau',
           body: `${proName} propose un autre créneau : ${fmtDate(newDt.toISOString())} à ${fmtHeure(newDt.toISOString())}`,
           ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-          data: { rdv_id: rdv.id }, read: false,
+          data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) }, read: false,
         });
       }
       onDone(mode === 'confirme');
@@ -436,7 +436,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
         title: `RDV modifié par ${proName}`,
         body: `Votre rendez-vous a été mis à jour : ${fmtDate(newDt.toISOString())} à ${fmtHeure(newDt.toISOString())}${lieu.trim() ? ` — ${lieu.trim()}` : ''}`,
         ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-        data: { rdv_id: rdv.id }, read: false,
+        data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) }, read: false,
       });
       onDone();
     } catch { /* ignore */ } finally { setSaving(false); }
@@ -881,7 +881,7 @@ function SerieModal({ serie, mode, proName, onClose, onDone }: {
           title: `Série confirmée par ${proName}`,
           body: `${first.motif ?? 'Prestation'} : ${resumeSerie(serie)}.`,
           ...(first.client_profile_id ? { profile_id: first.client_profile_id } : {}),
-          data: { rdv_id: first.id, serie_id: first.serie_id }, read: false,
+          data: { rdv_id: first.id, serie_id: first.serie_id, ...((first as { animal_id?: unknown }).animal_id ? { animal_id: String((first as { animal_id?: unknown }).animal_id) } : {}) }, read: false,
         });
       } else {
         await supabase.from('rdv').update({ statut: 'annule', notes_annulation: motif || null }).in('id', serie.map(r => r.id));
@@ -889,7 +889,7 @@ function SerieModal({ serie, mode, proName, onClose, onDone }: {
           uid: first.client_uid, type: 'rdv_refuse', title: 'Demande refusée',
           body: `${proName} a refusé votre demande (${resumeSerie(serie)})${motif ? ` — Motif : ${motif}` : ''}`,
           ...(first.client_profile_id ? { profile_id: first.client_profile_id } : {}),
-          data: { rdv_id: first.id, serie_id: first.serie_id }, read: false,
+          data: { rdv_id: first.id, serie_id: first.serie_id, ...((first as { animal_id?: unknown }).animal_id ? { animal_id: String((first as { animal_id?: unknown }).animal_id) } : {}) }, read: false,
         });
       }
       onDone(mode === 'accepter');
@@ -949,7 +949,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
         title: type === 'refuse' ? 'Demande de RDV refusée' : 'RDV annulé',
         body: `${type === 'refuse' ? 'Votre demande a été refusée' : 'Votre RDV a été annulé'}${motif ? ` — Motif : ${motif}` : ''}`,
         ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-        data: { rdv_id: rdv.id }, read: false,
+        data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) }, read: false,
       });
       onDone();
     } catch { /* ignore */ } finally { setSaving(false); }

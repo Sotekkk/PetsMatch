@@ -101,7 +101,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           title: `RDV confirmé par ${proName}`,
           body: `Votre rendez-vous est confirmé pour le ${fmtDate(newDt.toISOString())} à ${fmtHeure(newDt.toISOString())}`,
           ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-          data: { rdv_id: rdv.id },
+          data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
           read: false,
         });
       } else {
@@ -111,7 +111,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           title: 'Contre-proposition de créneau',
           body: `${proName} propose un autre créneau : ${fmtDate(newDt.toISOString())} à ${fmtHeure(newDt.toISOString())}`,
           ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-          data: { rdv_id: rdv.id },
+          data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
           read: false,
         });
       }
@@ -219,7 +219,7 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
         title: type === 'refuse' ? 'Demande de RDV refusée' : 'RDV annulé',
         body: `${type === 'refuse' ? 'Votre demande de RDV a été refusée' : 'Votre RDV a été annulé'}${motif ? ` — Motif : ${motif}` : ''}`,
         ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-        data: { rdv_id: rdv.id },
+        data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
         read: false,
       });
       onDone();

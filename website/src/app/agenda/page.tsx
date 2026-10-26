@@ -63,6 +63,8 @@ interface Task {
   type_acte?: string;
   animal_nom?: string;
   etape_id?: string | null;
+  animal_id?: string | null;
+  profil_source?: string | null;
 }
 
 interface TaskGroupe {
@@ -566,8 +568,13 @@ export default function AgendaPage() {
           .in('animal_id', animalIds).in('uid', ownerUids)
           .gte('date_debut', from).lte('date_debut', to) : { data: [] };
         const seen = new Set(list.map(e => e.id));
+        const noms = (shared ?? []).length ? await coProprietaires(animalIds, uid) : new Map();
         for (const e of (shared ?? []) as AgendaEvent[]) {
-          if (!seen.has(e.id)) { seen.add(e.id); list.push(e); }
+          if (seen.has(e.id)) continue;
+          seen.add(e.id);
+          // Qui l'a pris / ajouté : le co-propriétaire le sait d'un coup d'œil.
+          const nom = noms.get((e as { uid?: string }).uid ?? '')?.nom;
+          list.push(nom ? { ...e, titre: `${e.titre} — ${e.type === 'rdv' ? 'pris par' : 'ajouté par'} ${nom}` } : e);
         }
       }
     } catch { /* noop */ }
@@ -630,6 +637,19 @@ export default function AgendaPage() {
         .gte('date', taskFrom).lte('date', taskTo);
       if (activeProfileId) q = q.or(`profile_id.eq.${activeProfileId},profile_id.is.null`);
       d1Res = await q;
+      // Co-propriété : les tâches de soin des animaux partagés, créées chez
+      // l'autre co-propriétaire (une seule tâche, cochée pour tous).
+      let qMes = supabase.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', uid).eq('statut', 'actif').is('date_fin', null);
+      if (activeProfileId) qMes = qMes.eq('profile_id_proprio', activeProfileId);
+      const { data: mesAnimaux } = await qMes;
+      const ids = [...new Set((mesAnimaux ?? []).map(r => String(r.animal_id)).filter(Boolean))];
+      if (ids.length) {
+        const { data: partagees } = await supabase.from('taches_elevage').select(manuelCols)
+          .eq('profil_source', 'particulier').in('animal_id', ids).neq('uid_eleveur', uid)
+          .gte('date', taskFrom).lte('date', taskTo);
+        d1Res = { data: [...(d1Res.data ?? []), ...(partagees ?? [])] };
+      }
     } else if (!isParticulierView) {
       d1Res = activeProfileId
         ? await supabase.from('taches_elevage').select(manuelCols)
@@ -1099,7 +1119,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
       title: 'RDV confirmé',
       body: `Votre rendez-vous du ${fmtDate(rdv.date_debut)} à ${fmtTime(rdv.date_debut)} a été confirmé.`,
       ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-      data: { rdv_id: rdv.id },
+      data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
       read: false,
     });
     setSaving(false);
@@ -1115,7 +1135,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
       title: 'RDV refusé',
       body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_debut)} a été refusée.`,
       ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
-      data: { rdv_id: rdv.id },
+      data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
       read: false,
     });
     setSaving(false);
@@ -1255,14 +1275,42 @@ function ReporterModal({ task, onClose, onReport }: { task: Task; onClose: () =>
   );
 }
 
+// ── Co-propriété (animaux_proprietes, particuliers) ───────────────────────────
+
+/** Co-propriétaires particuliers de ces animaux (hors moi) : uid → nom affiché. */
+async function coProprietaires(animalIds: string[], moi: string): Promise<Map<string, { nom: string; profileId: string }>> {
+  const res = new Map<string, { nom: string; profileId: string }>();
+  if (!animalIds.length) return res;
+  const { data: co } = await supabase.from('animaux_proprietes').select('uid_proprio, profile_id_proprio')
+    .in('animal_id', animalIds).eq('statut', 'actif').is('date_fin', null).neq('uid_proprio', moi);
+  const profils = [...new Set((co ?? []).map(r => r.profile_id_proprio as string).filter(Boolean))];
+  if (!profils.length) return res;
+  const { data: ups } = await supabase.from('user_profiles_complet')
+    .select('id, uid, nom, firstname, lastname').in('id', profils).eq('profile_type', 'particulier');
+  for (const u of (ups ?? []) as { id: string; uid: string; nom?: string; firstname?: string; lastname?: string }[]) {
+    const nom = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || u.nom || 'Co-propriétaire';
+    res.set(u.uid, { nom, profileId: u.id });
+  }
+  return res;
+}
+
 // ── AssignerModal ───────────────────────────────────────────────────────────────
 
-function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: string; onClose: () => void; onAssign: (uid: string | null) => Promise<void> }) {
-  const [members, setMembers] = useState<{ uid: string; nom: string }[]>([]);
+function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: string; onClose: () => void; onAssign: (uid: string | null, profileId?: string | null) => Promise<void> }) {
+  const [members, setMembers] = useState<{ uid: string; nom: string; profileId?: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  // Tâche d'un particulier : on l'attribue à un co-propriétaire de l'animal
+  // (jamais à un employé — c'est de la co-propriété, pas un élevage).
+  const copro = task.profil_source === 'particulier';
 
   useEffect(() => {
     async function load() {
+      if (copro) {
+        const moi = uid;
+        const co = await coProprietaires(task.animal_id ? [String(task.animal_id)] : [], moi);
+        setMembers([{ uid: moi, nom: 'Moi' }, ...[...co].map(([u, v]) => ({ uid: u, nom: v.nom, profileId: v.profileId }))]);
+        return;
+      }
       const { data: emps } = await supabase.from('employes').select('uid_employe').eq('uid_eleveur', uid).eq('actif', true);
       if (!emps?.length) return;
       const uids = (emps as { uid_employe: string }[]).map(e => e.uid_employe);
@@ -1273,7 +1321,7 @@ function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: stri
       })));
     }
     load();
-  }, [uid]);
+  }, [uid, copro, task.animal_id]);
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -1283,8 +1331,8 @@ function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: stri
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
         </div>
         <p className="text-xs text-gray-500 truncate">{task.titre}</p>
-        {members.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-4">Aucun employé dans votre équipe</p>
+        {members.length === 0 || (copro && members.length < 2) ? (
+          <p className="text-xs text-gray-400 text-center py-4">{copro ? 'Aucun co-propriétaire pour cet animal' : 'Aucun employé dans votre équipe'}</p>
         ) : (
           <div className="space-y-1 max-h-48 overflow-y-auto">
             <button disabled={saving} onClick={async () => { setSaving(true); await onAssign(null); }}
@@ -1292,7 +1340,7 @@ function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: stri
               — Retirer l&apos;assignation
             </button>
             {members.map(m => (
-              <button key={m.uid} disabled={saving} onClick={async () => { setSaving(true); await onAssign(m.uid); }}
+              <button key={m.uid} disabled={saving} onClick={async () => { setSaving(true); await onAssign(m.uid, m.profileId ?? null); }}
                 className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold text-[#1E2025] hover:bg-[#EDF6F7] border border-gray-100 disabled:opacity-50"
                 style={{ fontFamily: 'Galey, sans-serif' }}>
                 👤 {m.nom}
@@ -1370,7 +1418,9 @@ function ManuelRow({ t, onToggle, onReport, onAssign }: {
       {!done && (
         <div className="flex gap-0.5 flex-shrink-0">
           <button onClick={() => onReport(t)} title="Reporter" className="text-[11px] text-gray-400 hover:text-[#0C5C6C] px-1.5 py-1 rounded hover:bg-[#0C5C6C]/10 transition-colors">↷</button>
-          <button onClick={() => onAssign(t)} title="Assigner" className="text-[11px] text-gray-400 hover:text-[#0C5C6C] px-1.5 py-1 rounded hover:bg-[#0C5C6C]/10 transition-colors">👤</button>
+          {(t.profil_source !== 'particulier' || t.animal_id) && (
+            <button onClick={() => onAssign(t)} title="Assigner" className="text-[11px] text-gray-400 hover:text-[#0C5C6C] px-1.5 py-1 rounded hover:bg-[#0C5C6C]/10 transition-colors">👤</button>
+          )}
         </div>
       )}
     </div>
@@ -1404,9 +1454,14 @@ function DayTasksSection({ tasks, uid, onToggle, onUpdated }: { tasks: Task[]; u
     onUpdated();
   }
 
-  async function doAssign(task: Task, assigneeUid: string | null) {
+  async function doAssign(task: Task, assigneeUid: string | null, assigneeProfileId?: string | null) {
     if (task._source === 'protocole') {
       await supabase.from('plan_taches').update({ assigned_to: assigneeUid }).eq('id', task.id);
+    } else if (task.profil_source === 'particulier') {
+      // Co-propriétaire : son profil particulier, pour qu'il la retrouve dans son agenda.
+      await supabase.from('taches_elevage').update({
+        assigne_a: assigneeUid, assignes_a: assigneeUid ? [assigneeUid] : null, assigne_profile_id: assigneeProfileId ?? null,
+      }).eq('id', task.id);
     } else {
       await supabase.from('taches_elevage').update({ assigne_a: assigneeUid }).eq('id', task.id);
     }
@@ -1438,7 +1493,7 @@ function DayTasksSection({ tasks, uid, onToggle, onUpdated }: { tasks: Task[]; u
 
       {protoDetail && <ProtoDetailModal groupe={protoDetail} onClose={() => setProtoDetail(null)} onUpdated={() => { onUpdated(); setProtoDetail(null); }} />}
       {reportingTask && <ReporterModal task={reportingTask} onClose={() => setReportingTask(null)} onReport={async (d) => { await doReport(reportingTask, d); setReportingTask(null); }} />}
-      {assigningTask && <AssignerModal task={assigningTask} uid={uid} onClose={() => setAssigningTask(null)} onAssign={async (u) => { await doAssign(assigningTask, u); setAssigningTask(null); }} />}
+      {assigningTask && <AssignerModal task={assigningTask} uid={uid} onClose={() => setAssigningTask(null)} onAssign={async (u, p) => { await doAssign(assigningTask, u, p); setAssigningTask(null); }} />}
     </>
   );
 }
