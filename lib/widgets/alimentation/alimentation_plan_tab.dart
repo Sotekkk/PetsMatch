@@ -195,14 +195,15 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
     }
   }
 
-  Future<void> _chargerCatalogue() async {
-    if (_catalogueEtat == 'chargement' || _catalogueEtat == 'pret') return;
+  /// [force] : relit le catalogue (après l'ajout ou la modification d'un aliment).
+  Future<void> _chargerCatalogue({bool force = false}) async {
+    if (_catalogueEtat == 'chargement' || (_catalogueEtat == 'pret' && !force)) return;
     setState(() => _catalogueEtat = 'chargement');
     const cols = 'id, marque, gamme, type_aliment, age_categorie, densite_kcal_100g, kcal_estime, ajoute_par_uid, doses';
     try {
       List rows;
       try {
-        rows = await _supa.from('marques_aliments').select('$cols, tableau_croissance')
+        rows = await _supa.from('marques_aliments').select('$cols, tableau_croissance, repris_admin_le')
             .eq('espece', widget.espece).order('marque').limit(1000);
       } on PostgrestException {
         rows = await _supa.from('marques_aliments').select(cols).eq('espece', widget.espece).order('marque').limit(1000);
@@ -479,6 +480,64 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
       _recherche.clear();
       _erreurEtape = null;
     });
+    // Le nouvel aliment rejoint la liste (même si on le désélectionne).
+    if (a.id != null) _chargerCatalogue(force: true);
+  }
+
+  /// Aliment du catalogue ajouté par ce membre et pas encore repris par l'équipe.
+  bool _modifiable(Map<String, dynamic>? r) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return r != null && uid != null && r['ajoute_par_uid']?.toString() == uid && r['repris_admin_le'] == null;
+  }
+
+  Map<String, dynamic>? _ligneCatalogue(String? id) {
+    if (id == null) return null;
+    for (final r in _catalogue) {
+      if (r['id']?.toString() == id) return r;
+    }
+    return null;
+  }
+
+  /// Modifier un aliment saisi par le membre : du catalogue ([id]) ou une
+  /// préparation maison du plan ([index]).
+  Future<void> _modifierAliment({String? id, int? index}) async {
+    Map<String, dynamic>? ligne;
+    if (id != null) {
+      try {
+        ligne = await _supa.from('marques_aliments').select().eq('id', id).maybeSingle();
+      } catch (_) {}
+      if (!mounted) return;
+      if (ligne == null || !_modifiable(ligne)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Cet aliment a été repris par l’équipe PetsMatch : il n’est plus modifiable.')));
+        return;
+      }
+    }
+    final avant = index != null ? _plan.aliments[index] : null;
+    final types = {...(_plan.categories.isNotEmpty ? _plan.categories : _profil.types), if (avant != null) avant.type}.toList();
+    final a = await AjoutAlimentPlanPage.ouvrir(context,
+        espece: widget.espece, types: types, ligne: ligne, aliment: id == null ? avant : null);
+    if (a == null || !mounted) return;
+    setState(() {
+      for (var i = 0; i < _plan.aliments.length; i++) {
+        final x = _plan.aliments[i];
+        if (i == index || (id != null && x.id == id)) {
+          x
+            ..id = a.id
+            ..marque = a.marque
+            ..gamme = a.gamme
+            ..type = a.type
+            ..kcal = a.kcal
+            ..source = a.source
+            ..repartition = a.repartition
+            ..tableauCroissance = a.tableauCroissance;
+        }
+      }
+      if (!_plan.categories.contains(a.type)) _plan.categories.add(a.type);
+      _syncQuantites();
+      _erreurEtape = null;
+    });
+    if (id != null || a.id != null) _chargerCatalogue(force: true);
   }
 
   int _indexDe(AlimentPlan cand) => _plan.aliments.indexWhere((a) => cand.id != null
@@ -529,7 +588,7 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
         onSelected: (_) => onTap(),
       );
 
-  Widget _caseACocher(String label, bool on, VoidCallback onTap, {String? sous}) => Padding(
+  Widget _caseACocher(String label, bool on, VoidCallback onTap, {String? sous, VoidCallback? onModifier}) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
@@ -549,6 +608,12 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
                 Text(label, style: _st(14.5, w: FontWeight.w700)),
                 if (sous != null) Text(sous, style: _st(12.5, c: _gris)),
               ])),
+              if (onModifier != null)
+                IconButton(
+                  tooltip: 'Modifier',
+                  icon: const Icon(Icons.edit_outlined, color: _teal, size: 20),
+                  onPressed: onModifier,
+                ),
             ]),
           ),
         ),
@@ -940,7 +1005,12 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
         const SizedBox(height: 6),
         for (var i = 0; i < _plan.aliments.length; i++)
           _caseACocher(_plan.aliments[i].nom, true, () => setState(() { _plan.retirerAliment(i); _syncQuantites(); }),
-              sous: _sousTitreAliment(_plan.aliments[i])),
+              sous: _sousTitreAliment(_plan.aliments[i]),
+              onModifier: _plan.aliments[i].id == null
+                  ? (['foin', 'paturage', 'legumes'].contains(_plan.aliments[i].type) && _plan.aliments[i].marque == 'Sans marque'
+                      ? null : () => _modifierAliment(index: i))
+                  : _modifiable(_ligneCatalogue(_plan.aliments[i].id))
+                      ? () => _modifierAliment(id: _plan.aliments[i].id, index: i) : null),
         const SizedBox(height: 8),
       ],
       TextField(
@@ -968,8 +1038,10 @@ class _AlimentationPlanTabState extends State<AlimentationPlanTab> {
         () {
           final a = _depuisCatalogue(r);
           if (_indexDe(a) >= 0) return const SizedBox.shrink();
+          final mien = _modifiable(r);
           return _caseACocher(a.nom, false, () => _basculerAliment(a),
-              sous: '${_sousTitreAliment(a)}${r['ajoute_par_uid'] != null ? ' · ajouté par un membre' : ''}');
+              sous: '${_sousTitreAliment(a)}${mien ? ' · ajouté par vous' : r['ajoute_par_uid'] != null ? ' · ajouté par un membre' : ''}',
+              onModifier: mien ? () => _modifierAliment(id: a.id) : null);
         }(),
       if (_catalogueEtat == 'pret' && filtres.isEmpty)
         Padding(padding: const EdgeInsets.symmetric(vertical: 8),

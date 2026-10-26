@@ -17,6 +17,8 @@ TextStyle _st(double t, {FontWeight w = FontWeight.w400, Color c = _texte}) =>
 /// du commerce rejoint le catalogue (visible des autres membres) ; une
 /// préparation maison ou un aliment sans marque reste propre à l'animal.
 /// Renvoie l'[AlimentPlan] créé, ou null si annulé.
+/// Modification : [ligne] (aliment du catalogue ajouté par le membre, tant que
+/// l'équipe ne l'a pas repris) ou [aliment] (préparation maison du plan).
 class AjoutAlimentPlanPage extends StatefulWidget {
   final String espece;
   final String? typeInitial;
@@ -24,12 +26,17 @@ class AjoutAlimentPlanPage extends StatefulWidget {
   /// plan BARF ou ration ménagère). Tous les types de l'espèce si vide.
   final List<String> types;
   final String marqueInitiale;
-  const AjoutAlimentPlanPage({super.key, required this.espece, this.typeInitial, this.types = const [], this.marqueInitiale = ''});
+  final Map<String, dynamic>? ligne;
+  final AlimentPlan? aliment;
+  const AjoutAlimentPlanPage({super.key, required this.espece, this.typeInitial, this.types = const [], this.marqueInitiale = '',
+      this.ligne, this.aliment});
 
   static Future<AlimentPlan?> ouvrir(BuildContext context,
-          {required String espece, String? typeInitial, List<String> types = const [], String marqueInitiale = ''}) =>
+          {required String espece, String? typeInitial, List<String> types = const [], String marqueInitiale = '',
+          Map<String, dynamic>? ligne, AlimentPlan? aliment}) =>
       Navigator.of(context).push<AlimentPlan>(MaterialPageRoute(
-          builder: (_) => AjoutAlimentPlanPage(espece: espece, typeInitial: typeInitial, types: types, marqueInitiale: marqueInitiale)));
+          builder: (_) => AjoutAlimentPlanPage(espece: espece, typeInitial: typeInitial, types: types, marqueInitiale: marqueInitiale,
+              ligne: ligne, aliment: aliment)));
 
   @override
   State<AjoutAlimentPlanPage> createState() => _AjoutAlimentPlanPageState();
@@ -63,11 +70,77 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
   bool get _energie => _profil.methode == 'energie';
   String get _libSansMarque => _energie ? 'Préparation maison' : 'Sans marque';
   bool get _prive => _marque.text.trim() == _libSansMarque;
+  bool get _modification => widget.ligne != null || widget.aliment != null;
 
   @override
   void initState() {
     super.initState();
     _ajouterLigne();
+    _preremplirModification();
+  }
+
+  /// Nombre affiché à la française (« 3,5 »), vide si absent.
+  static String _txt(dynamic v) {
+    final n = v is num ? v : num.tryParse('${v ?? ''}');
+    if (n == null) return '';
+    return n == n.roundToDouble() ? n.round().toString() : n.toString().replaceAll('.', ',');
+  }
+
+  void _preremplirModification() {
+    final l = widget.ligne, a = widget.aliment;
+    if (l != null) {
+      _marque.text = (l['marque'] ?? '').toString();
+      _nom.text = (l['gamme'] ?? '').toString();
+      final t = typeDepuisCatalogue(l['type_aliment']?.toString(), widget.espece);
+      if (_types.contains(t)) _type = t;
+      final e = l['espece']?.toString();
+      if (e == 'chien' || e == 'chat') _espece = e!;
+      final age = l['age_categorie']?.toString();
+      _stade = age == 'junior' ? 'croissance' : const ['adulte', 'senior', 'tous'].contains(age) ? age! : 'adulte';
+      final k = (l['densite_kcal_100g'] as num?)?.toDouble();
+      final compo = l['composition'];
+      if (compo is Map && compo.isNotEmpty && l['kcal_estime'] == true) {
+        _methode = 'B';
+        for (final c in compo.entries) {
+          _compo[c.key.toString()]?.text = _txt(c.value);
+        }
+      } else if (k != null && k > 0) {
+        _methode = 'A';
+        _kcal.text = _txt(k);
+      } else if (_energie) {
+        _methode = 'C';
+      }
+      final tab = l['tableau_croissance'];
+      if (tab is List && tab.isNotEmpty) {
+        for (final c in _table.expand((r) => r)) {
+          c.dispose();
+        }
+        _table.clear();
+        for (final r in tab.whereType<Map>()) {
+          _table.add([
+            TextEditingController(text: _txt(r['age_mois'])),
+            TextEditingController(text: _txt(r['poids_adulte_kg'])),
+            TextEditingController(text: _txt(r['g_jour'])),
+          ]);
+        }
+        if (_table.isEmpty) _ajouterLigne();
+      }
+      _warnOk = true;
+    } else if (a != null) {
+      _marque.text = a.marque;
+      _nom.text = a.gamme;
+      if (_types.contains(a.type)) _type = a.type;
+      if (a.kcal != null) {
+        _methode = 'A';
+        _kcal.text = _txt(a.kcal);
+      } else if (_energie) {
+        _methode = 'C';
+      }
+      for (final r in (a.repartition ?? const <String, double>{}).entries) {
+        _repartition[r.key]?.text = _txt(r.value);
+      }
+      _warnOk = true;
+    }
   }
 
   @override
@@ -155,12 +228,37 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
     }
     setState(() { _saving = true; _erreur = null; });
     final supa = Supabase.instance.client;
+    final idModif = widget.ligne?['id']?.toString();
     try {
-      final existant = await supa.from('marques_aliments').select('id')
+      var qDoublon = supa.from('marques_aliments').select('id')
           .eq('espece', _espece).ilike('marque', marque).ilike('gamme', nom)
-          .eq('type_aliment', typeVersCatalogue(_type)).limit(1);
+          .eq('type_aliment', typeVersCatalogue(_type));
+      if (idModif != null) qDoublon = qDoublon.neq('id', idModif);
+      final existant = await qDoublon.limit(1);
       if ((existant as List).isNotEmpty) {
         setState(() { _saving = false; _erreur = 'Cet aliment existe déjà dans le catalogue : sélectionnez-le dans la liste.'; });
+        return;
+      }
+      if (idModif != null) {
+        final maj = await supa.from('marques_aliments').update({
+          'marque': marque, 'gamme': nom, 'espece': _espece,
+          'type_aliment': typeVersCatalogue(_type),
+          'age_categorie': _stade == 'croissance' ? 'junior' : _stade,
+          'densite_kcal_100g': aliment.kcal,
+          'kcal_estime': aliment.source == 'composition',
+          'kcal_source': aliment.source,
+          'composition': _methode == 'B' ? _eval.composition : null,
+          'tableau_croissance': tableau.isNotEmpty ? tableau : null,
+        }).eq('id', idModif).select('id');
+        if ((maj as List).isEmpty) {
+          setState(() {
+            _saving = false;
+            _erreur = 'Cet aliment a été repris par l’équipe PetsMatch : il n’est plus modifiable.';
+          });
+          return;
+        }
+        aliment.id = idModif;
+        if (mounted) Navigator.of(context).pop(aliment);
         return;
       }
       final row = await supa.from('marques_aliments').insert({
@@ -265,7 +363,7 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
       backgroundColor: const Color(0xFFF4F7F8),
       appBar: AppBar(
         backgroundColor: _teal, foregroundColor: Colors.white,
-        title: Text('Ajouter mon aliment', style: _st(17, w: FontWeight.w800, c: Colors.white)),
+        title: Text(_modification ? 'Modifier mon aliment' : 'Ajouter mon aliment', style: _st(17, w: FontWeight.w800, c: Colors.white)),
       ),
       body: SafeArea(
         child: Column(children: [
@@ -381,9 +479,12 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
                   ),
                 ],
               ],
-              if (!_prive && identiteOk)
+              if (!_prive && identiteOk && widget.ligne == null)
                 Text('L’aliment rejoindra le catalogue PetsMatch, visible des autres membres (« ajouté par un membre »).',
                     style: _st(12.5, c: _gris)),
+              if (widget.ligne != null)
+                Text('Modifiable tant que l’équipe PetsMatch ne l’a pas repris. La modification vaut pour tous les membres '
+                    'qui l’utilisent.', style: _st(12.5, c: _gris)),
               if (_erreur != null) ...[
                 const SizedBox(height: 10),
                 Text(_erreur!, style: _st(14, w: FontWeight.w700, c: _rouge)),
@@ -404,7 +505,8 @@ class _AjoutAlimentPlanPageState extends State<AjoutAlimentPlanPage> {
                 style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
                     minimumSize: const Size.fromHeight(50)),
                 onPressed: _saving ? null : _enregistrer,
-                child: Text(_saving ? 'Enregistrement…' : 'Ajouter et sélectionner', style: _st(15, w: FontWeight.w800, c: Colors.white)),
+                child: Text(_saving ? 'Enregistrement…' : _modification ? 'Enregistrer' : 'Ajouter et sélectionner',
+                    style: _st(15, w: FontWeight.w800, c: Colors.white)),
               )),
             ]),
           ),

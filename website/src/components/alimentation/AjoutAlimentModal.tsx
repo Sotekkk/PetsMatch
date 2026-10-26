@@ -4,20 +4,65 @@ import { supabase } from '@/lib/supabase';
 import { auth } from '@/lib/firebase';
 import {
   type AlimentPlan, CHAMPS_COMPOSITION, LIBELLES_REPARTITION, LIBELLES_TYPE_ALIMENT, REPARTITION_BARF, REPARTITION_MENAGERE,
-  evaluerEnergie, lireNombre, profilEspece, typeVersCatalogue,
+  evaluerEnergie, lireNombre, profilEspece, typeDepuisCatalogue, typeVersCatalogue,
 } from '@/lib/plan-alimentation';
+
+/** Nombre affiché à la française (« 3,5 »), vide si absent. */
+const txt = (v: unknown) => {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+  return isFinite(n) ? String(n).replace('.', ',') : '';
+};
+
+type Ligne = Record<string, unknown>;
+
+/** Valeurs de départ : vides (ajout) ou celles de l'aliment modifié. */
+function valeursInitiales(ligne: Ligne | null | undefined, aliment: AlimentPlan | null | undefined, espece: string, energie: boolean) {
+  const vide = { age: '', poids: '', g: '' };
+  if (ligne) {
+    const age = String(ligne.age_categorie ?? '');
+    const k = Number(ligne.densite_kcal_100g);
+    const compo = ligne.composition && typeof ligne.composition === 'object' ? ligne.composition as Record<string, unknown> : null;
+    const methodeB = !!(compo && Object.keys(compo).length && ligne.kcal_estime);
+    const tab = Array.isArray(ligne.tableau_croissance) ? ligne.tableau_croissance as Ligne[] : [];
+    return {
+      marque: String(ligne.marque ?? ''), nom: String(ligne.gamme ?? ''),
+      type: typeDepuisCatalogue(ligne.type_aliment as string, espece) as string | null,
+      espece: ligne.espece === 'chien' || ligne.espece === 'chat' ? String(ligne.espece) : espece,
+      stade: age === 'junior' ? 'croissance' : ['adulte', 'senior', 'tous'].includes(age) ? age : 'adulte',
+      methode: methodeB ? 'B' : k > 0 ? 'A' : energie ? 'C' : '',
+      kcal: !methodeB && k > 0 ? txt(k) : '',
+      compo: methodeB ? Object.fromEntries(Object.entries(compo!).map(([c, v]) => [c, txt(v)])) : {},
+      repartition: {} as Record<string, string>,
+      table: tab.length ? tab.map(r => ({ age: txt(r.age_mois), poids: txt(r.poids_adulte_kg), g: txt(r.g_jour) })) : [vide],
+    };
+  }
+  if (aliment) {
+    return {
+      marque: aliment.marque, nom: aliment.gamme, type: aliment.type as string | null, espece, stade: 'adulte',
+      methode: aliment.kcal != null ? 'A' : energie ? 'C' : '',
+      kcal: aliment.kcal != null ? txt(aliment.kcal) : '', compo: {} as Record<string, string>,
+      repartition: Object.fromEntries(Object.entries(aliment.repartition ?? {}).map(([c, v]) => [c, txt(v)])),
+      table: [vide],
+    };
+  }
+  return null;
+}
 
 const chip = (on: boolean) =>
   `h-10 px-3.5 rounded-full border text-sm font-bold transition-colors ${on ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'bg-white border-gray-300 text-[#1F2A2E] hover:border-[#0C5C6C]'}`;
 const input = 'w-full h-11 px-3 rounded-[10px] border border-gray-300 bg-white text-[15px] outline-none focus:border-[#0C5C6C] focus:ring-1 focus:ring-[#0C5C6C]';
 
-/** « Mon aliment n'est pas dans la liste » : saisie progressive (marque et
+/** Modification : `ligne` (aliment du catalogue ajouté par le membre, tant
+ *  que l'équipe ne l'a pas repris) ou `aliment` (préparation maison du plan).
+ *
+ *  « Mon aliment n'est pas dans la liste » : saisie progressive (marque et
  *  nom, puis type / stade, puis énergie pour le chien et le chat). Un aliment
  *  du commerce rejoint le catalogue (visible des autres membres) ; une
  *  préparation maison ou un aliment sans marque reste propre à l'animal.
  *  Miroir de ajout_aliment_plan_page.dart (appli). */
-export default function AjoutAlimentModal({ espece, typeInitial, types: typesPlan = [], marqueInitiale = '', onCreated, onClose }: {
+export default function AjoutAlimentModal({ espece, typeInitial, types: typesPlan = [], marqueInitiale = '', ligne, aliment: alimentModifie, onCreated, onClose }: {
   espece: string; typeInitial?: string; marqueInitiale?: string;
+  ligne?: Ligne | null; aliment?: AlimentPlan | null;
   /** Types proposés : ceux choisis à l'étape 1 (pas de croquettes pour un
    *  plan BARF ou ration ménagère). Tous les types de l'espèce si vide. */
   types?: string[];
@@ -26,20 +71,23 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
   const profil = profilEspece(espece);
   const energie = profil.methode === 'energie';
   const libSansMarque = energie ? 'Préparation maison' : 'Sans marque';
-  const [marque, setMarque] = useState(marqueInitiale);
-  const [nom, setNom] = useState('');
+  const modification = !!(ligne || alimentModifie);
+  const [ini] = useState(() => valeursInitiales(ligne, alimentModifie, espece, energie));
+  const [marque, setMarque] = useState(ini?.marque ?? marqueInitiale);
+  const [nom, setNom] = useState(ini?.nom ?? '');
   const typesFiltres = profil.types.filter(t => !typesPlan.length || typesPlan.includes(t));
   const types = typesFiltres.length ? typesFiltres : profil.types;
-  const [type, setType] = useState(typeInitial && types.includes(typeInitial) ? typeInitial : types[0]);
-  const [especeAliment, setEspeceAliment] = useState(espece);
-  const [stade, setStade] = useState('adulte');
-  const [methode, setMethode] = useState('');
-  const [kcal, setKcal] = useState('');
+  const typeDepart = ini?.type ?? typeInitial;
+  const [type, setType] = useState(typeDepart && types.includes(typeDepart) ? typeDepart : types[0]);
+  const [especeAliment, setEspeceAliment] = useState(ini?.espece ?? espece);
+  const [stade, setStade] = useState(ini?.stade ?? 'adulte');
+  const [methode, setMethode] = useState(ini?.methode ?? '');
+  const [kcal, setKcal] = useState(ini?.kcal ?? '');
   const [unite, setUnite] = useState<'100g' | 'kg'>('100g');
-  const [compo, setCompo] = useState<Record<string, string>>({});
-  const [repartition, setRepartition] = useState<Record<string, string>>({});
-  const [table, setTable] = useState<{ age: string; poids: string; g: string }[]>([{ age: '', poids: '', g: '' }]);
-  const [warnOk, setWarnOk] = useState(false);
+  const [compo, setCompo] = useState<Record<string, string>>(ini?.compo ?? {});
+  const [repartition, setRepartition] = useState<Record<string, string>>(ini?.repartition ?? {});
+  const [table, setTable] = useState<{ age: string; poids: string; g: string }[]>(ini?.table ?? [{ age: '', poids: '', g: '' }]);
+  const [warnOk, setWarnOk] = useState(modification);
   const [matiereSeche, setMatiereSeche] = useState(false);
   const [saving, setSaving] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -106,10 +154,28 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
     };
     if (prive) { onCreated(aliment); return; }
     setSaving(true); setErreur(null);
+    const idModif = ligne?.id != null ? String(ligne.id) : null;
     try {
-      const { data: existant } = await supabase.from('marques_aliments').select('id')
-        .eq('espece', especeAliment).ilike('marque', m).ilike('gamme', n).eq('type_aliment', typeVersCatalogue(type)).limit(1);
+      let qDoublon = supabase.from('marques_aliments').select('id')
+        .eq('espece', especeAliment).ilike('marque', m).ilike('gamme', n).eq('type_aliment', typeVersCatalogue(type));
+      if (idModif) qDoublon = qDoublon.neq('id', idModif);
+      const { data: existant } = await qDoublon.limit(1);
       if (existant && existant.length) { setErreur('Cet aliment existe déjà dans le catalogue : sélectionnez-le dans la liste.'); return; }
+      if (idModif) {
+        const { data: maj, error: errMaj } = await supabase.from('marques_aliments').update({
+          marque: m, gamme: n, espece: especeAliment, type_aliment: typeVersCatalogue(type),
+          age_categorie: stade === 'croissance' ? 'junior' : stade,
+          densite_kcal_100g: aliment.kcal ?? null,
+          kcal_estime: aliment.source === 'composition',
+          kcal_source: aliment.source ?? null,
+          composition: methode === 'B' ? ev.composition : null,
+          tableau_croissance: tableau.length ? tableau : null,
+        }).eq('id', idModif).select('id');
+        if (errMaj) { setErreur('Enregistrement impossible, réessayez.'); return; }
+        if (!maj?.length) { setErreur('Cet aliment a été repris par l’équipe PetsMatch : il n’est plus modifiable.'); return; }
+        onCreated({ ...aliment, id: idModif });
+        return;
+      }
       const { data, error } = await supabase.from('marques_aliments').insert({
         marque: m, gamme: n, espece: especeAliment, type_aliment: typeVersCatalogue(type),
         age_categorie: stade === 'croissance' ? 'junior' : stade,
@@ -135,7 +201,7 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white w-full max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 pt-5 pb-3 border-b border-gray-100">
-          <h2 className="text-[19px] font-extrabold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter mon aliment</h2>
+          <h2 className="text-[19px] font-extrabold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{modification ? 'Modifier mon aliment' : 'Ajouter mon aliment'}</h2>
         </div>
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4 text-[15px] text-[#1F2A2E]">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -287,8 +353,11 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
               )}
             </div>
           )}
-          {!prive && identiteOk && (
+          {!prive && identiteOk && !ligne && (
             <p className="text-[13px] text-gray-600">L&apos;aliment rejoindra le catalogue PetsMatch, visible des autres membres (« ajouté par un membre »).</p>
+          )}
+          {ligne && (
+            <p className="text-[13px] text-gray-600">Modifiable tant que l&apos;équipe PetsMatch ne l&apos;a pas repris. La modification vaut pour tous les membres qui l&apos;utilisent.</p>
           )}
           {erreur && <p className="text-[14px] font-bold text-red-700">{erreur}</p>}
         </div>
@@ -296,7 +365,7 @@ export default function AjoutAlimentModal({ espece, typeInitial, types: typesPla
           <button type="button" onClick={onClose} className="flex-1 h-12 rounded-[10px] border border-gray-300 font-bold">Annuler</button>
           <button type="button" onClick={enregistrer} disabled={saving}
             className="flex-[2] h-12 rounded-[10px] bg-[#0C5C6C] text-white font-extrabold disabled:opacity-50">
-            {saving ? 'Enregistrement…' : 'Ajouter et sélectionner'}
+            {saving ? 'Enregistrement…' : modification ? 'Enregistrer' : 'Ajouter et sélectionner'}
           </button>
         </div>
       </div>

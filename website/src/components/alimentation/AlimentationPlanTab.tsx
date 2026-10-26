@@ -61,6 +61,8 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
   const [poids, setPoids] = useState<number | null>(null);
   const [repro, setRepro] = useState<EtatRepro>({ etat: 'normal' });
   const [ajout, setAjout] = useState(false);
+  /** Aliment saisi par le membre en cours de modification. */
+  const [modif, setModif] = useState<{ ligne?: Ligne; index?: number } | null>(null);
   const [confirmReco, setConfirmReco] = useState<null | 'synthese' | 'parcours'>(null);
   const [apercuPro, setApercuPro] = useState(false);
 
@@ -149,9 +151,10 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
     return () => { annule = true; };
   }, [animalId, espece, sexe, sterilise, poidsFiche, lectureSeule, textesQuantites]);
 
-  async function chargerCatalogue() {
-    if (catalogue) return;
-    let r = await supabase.from('marques_aliments').select(`${COLS}, tableau_croissance`).eq('espece', espece).order('marque').limit(1000);
+  /** force : relit le catalogue (après l'ajout ou la modification d'un aliment). */
+  async function chargerCatalogue(force = false) {
+    if (catalogue && !force) return;
+    let r = await supabase.from('marques_aliments').select(`${COLS}, tableau_croissance, repris_admin_le`).eq('espece', espece).order('marque').limit(1000);
     if (r.error) r = await supabase.from('marques_aliments').select(COLS).eq('espece', espece).order('marque').limit(1000) as typeof r;
     setCatalogue((r.data ?? []) as Ligne[]);
   }
@@ -166,6 +169,22 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
       doses: (r.doses as unknown[]) ?? [], tableauCroissance: (r.tableau_croissance as unknown[]) ?? [],
     };
   };
+
+  /** Aliment du catalogue ajouté par ce membre et pas encore repris par l'équipe. */
+  const modifiable = (r?: Ligne | null) =>
+    !!r && !!auth.currentUser && r.ajoute_par_uid === auth.currentUser.uid && !r.repris_admin_le;
+  const ligneCatalogue = (id?: string | null) => (id ? (catalogue ?? []).find(r => String(r.id) === id) : undefined);
+
+  /** Modifier un aliment saisi : du catalogue (id) ou préparation maison du plan (index). */
+  async function modifierAliment(id: string | null, index?: number) {
+    if (!id) { setModif({ index }); return; }
+    const { data } = await supabase.from('marques_aliments').select('*').eq('id', id).maybeSingle();
+    if (!data || !modifiable(data as Ligne)) {
+      setErreur('Cet aliment a été repris par l’équipe PetsMatch : il n’est plus modifiable.');
+      return;
+    }
+    setModif({ ligne: data as Ligne, index });
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────
 
@@ -524,11 +543,22 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
               {plan.aliments.length > 0 && (
                 <div className="mb-3 space-y-2">
                   <p className="text-sm font-bold">Sélectionnés</p>
-                  {plan.aliments.map((a, i) => (
-                    <button key={i} type="button" className={carteCase(true)} onClick={() => { const p = retirerAliment(plan, i); majPlan(p); setQte(textesQuantites(p)); }}>
-                      <Case on /><span><b className="block text-[15px]">{nomAliment(a)}</b><span className="text-[13px] text-gray-600">{sousTitreAliment(a)}</span></span>
-                    </button>
-                  ))}
+                  {plan.aliments.map((a, i) => {
+                    const peutModifier = a.id
+                      ? modifiable(ligneCatalogue(a.id))
+                      : !(['foin', 'paturage', 'legumes'].includes(a.type) && a.marque === 'Sans marque');
+                    return (
+                      <div key={i} className="flex items-stretch gap-2">
+                        <button type="button" className={`${carteCase(true)} flex-1`} onClick={() => { const p = retirerAliment(plan, i); majPlan(p); setQte(textesQuantites(p)); }}>
+                          <Case on /><span><b className="block text-[15px]">{nomAliment(a)}</b><span className="text-[13px] text-gray-600">{sousTitreAliment(a)}</span></span>
+                        </button>
+                        {peutModifier && (
+                          <button type="button" onClick={() => modifierAliment(a.id ?? null, i)}
+                            className="px-3 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Modifier</button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <div className="flex flex-wrap gap-2 items-center">
@@ -542,12 +572,19 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
                 {resultats.map(r => {
                   const a = depuisCatalogue(r);
                   if (indexDe(a) >= 0) return null;
+                  const mien = modifiable(r);
                   return (
-                    <button key={String(r.id)} type="button" className={carteCase(false)} onClick={() => basculerAliment(a)}>
-                      <Case on={false} />
-                      <span><b className="block text-[15px]">{nomAliment(a)}</b>
-                        <span className="text-[13px] text-gray-600">{sousTitreAliment(a)}{r.ajoute_par_uid ? ' · ajouté par un membre' : ''}</span></span>
-                    </button>
+                    <div key={String(r.id)} className="flex items-stretch gap-2">
+                      <button type="button" className={`${carteCase(false)} flex-1`} onClick={() => basculerAliment(a)}>
+                        <Case on={false} />
+                        <span><b className="block text-[15px]">{nomAliment(a)}</b>
+                          <span className="text-[13px] text-gray-600">{sousTitreAliment(a)}{mien ? ' · ajouté par vous' : r.ajoute_par_uid ? ' · ajouté par un membre' : ''}</span></span>
+                      </button>
+                      {mien && (
+                        <button type="button" onClick={() => modifierAliment(String(r.id))}
+                          className="px-3 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] text-sm font-bold">Modifier</button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -736,6 +773,28 @@ export default function AlimentationPlanTab({ animalId, espece, race = '', sexe 
             majPlan({ ...p, categories: p.categories.includes(a.type) ? p.categories : [...p.categories, a.type] });
             setQte(textesQuantites(p));
             setRecherche(''); setAjout(false);
+            // Le nouvel aliment rejoint la liste (même si on le désélectionne).
+            if (a.id) chargerCatalogue(true);
+          }} />
+      )}
+      {modif && (
+        <AjoutAlimentModal espece={espece}
+          types={[...new Set([...(plan.categories.length ? plan.categories : profil.types),
+            ...(modif.index != null && plan.aliments[modif.index] ? [plan.aliments[modif.index].type] : [])])]}
+          ligne={modif.ligne ?? null}
+          aliment={!modif.ligne && modif.index != null ? plan.aliments[modif.index] : null}
+          onClose={() => setModif(null)}
+          onCreated={a => {
+            const idModif = modif.ligne ? String(modif.ligne.id) : null;
+            const aliments = plan.aliments.map((x, i) => (i === modif.index || (idModif && x.id === idModif)
+              ? { ...x, id: a.id ?? null, marque: a.marque, gamme: a.gamme, type: a.type, kcal: a.kcal ?? null,
+                  source: a.source ?? null, repartition: a.repartition ?? null, tableauCroissance: a.tableauCroissance ?? [] }
+              : x));
+            const p = { ...plan, aliments, categories: plan.categories.includes(a.type) ? plan.categories : [...plan.categories, a.type] };
+            majPlan(p);
+            setQte(textesQuantites(p));
+            setModif(null);
+            if (idModif || a.id) chargerCatalogue(true);
           }} />
       )}
     </div>

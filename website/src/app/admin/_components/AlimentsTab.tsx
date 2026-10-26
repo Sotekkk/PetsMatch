@@ -14,7 +14,7 @@ interface Aliment {
   taille_race: string | null; age_categorie: string | null; type_aliment: string | null;
   densite_kcal_100g: number | null; doses: Dose[] | null; notes: string | null;
   ajoute_par_uid: string | null; kcal_estime: boolean; formule_sterilise: boolean;
-  created_at: string | null; nb_fiches: number;
+  created_at: string | null; nb_fiches: number; repris_admin_le?: string | null;
 }
 
 const ESPECES_ALIM = ['chien', 'chat', 'cheval', 'lapin', 'oiseau'];
@@ -173,7 +173,7 @@ export default function AlimentsTab() {
                   <td className="px-3 py-2 text-gray-500">{r.doses?.length ? `${r.doses.length} lignes` : '—'}</td>
                   <td className="px-3 py-2">
                     {r.ajoute_par_uid
-                      ? <span title={`Ajouté le ${fmtDate(r.created_at)} par ${r.ajoute_par_uid}`}><Badge label="Membre" color="#0C5C6C" /></span>
+                      ? <span title={`Ajouté le ${fmtDate(r.created_at)} par ${r.ajoute_par_uid}`}><Badge label={r.repris_admin_le ? 'Membre · repris' : 'Membre'} color="#0C5C6C" /></span>
                       : <Badge label="Officiel" color="#6E9E57" />}
                   </td>
                   <td className="px-3 py-2 text-gray-500">{r.nb_fiches || '—'}</td>

@@ -4,12 +4,14 @@ import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 // /api/admin/aliments — catalogue marques_aliments (admin, jeton Firebase requis).
 //   GET    ?q=&espece=&type=&age=&source=officiel|membres&estime=1  → liste + nb de fiches qui l'utilisent
 //   POST   { ...champs }            → nouvel aliment officiel (ajoute_par_uid NULL)
-//   PATCH  { id, ...champs }        → modification
+//   PATCH  { id, ...champs }        → modification ; un aliment ajouté par un
+//          membre est alors « repris » (repris_admin_le) : son auteur ne peut
+//          plus le modifier (RLS marques_aliments_update_auteur).
 //   DELETE ?id=                     → suppression ; les fiches alimentations qui
 //          l'utilisaient gardent leur copie (marque, gamme, densité) — seul le
 //          lien marque_id est détaché (pas de clé étrangère sur ce lien).
 
-const COLS = 'id, marque, gamme, espece, taille_race, age_categorie, type_aliment, densite_kcal_100g, doses, notes, ajoute_par_uid, kcal_estime, formule_sterilise, created_at';
+const COLS = 'id, marque, gamme, espece, taille_race, age_categorie, type_aliment, densite_kcal_100g, doses, notes, ajoute_par_uid, kcal_estime, formule_sterilise, created_at, repris_admin_le';
 
 // Seuls ces champs sont modifiables depuis l'admin (jamais id / created_at /
 // ajoute_par_uid, qui restent la trace de l'auteur).
@@ -88,7 +90,7 @@ export async function PATCH(req: NextRequest) {
   const fields = pickEditable(body);
   if (typeof fields === 'string') return NextResponse.json({ error: fields }, { status: 400 });
   const { data, error } = await supabaseAdmin.from('marques_aliments')
-    .update(fields).eq('id', id).select(COLS).single();
+    .update({ ...fields, repris_admin_le: new Date().toISOString() }).eq('id', id).select(COLS).single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ aliment: data });
 }
