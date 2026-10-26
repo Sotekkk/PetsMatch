@@ -67,7 +67,14 @@ class ProAgendaPage extends StatefulWidget {
   final String? focusRdvId;
   /// Ouvre directement le formulaire « Nouveau RDV » (accès rapide accueil).
   final bool nouveauRdv;
-  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur, this.focusRdvId, this.nouveauRdv = false});
+  /// « Nouveau RDV » depuis la fiche d'un patient : animal et propriétaire
+  /// pré-remplis, retour à la fiche une fois le formulaire fermé.
+  final String? nouveauRdvAnimalId;
+  final String? nouveauRdvMotif;
+  /// Avec [focusRdvId] : ouvre directement « Modifier » puis revient en arrière.
+  final bool modifierFocus;
+  const ProAgendaPage({super.key, this.initialTabIndex, this.employeur, this.focusRdvId, this.nouveauRdv = false,
+      this.nouveauRdvAnimalId, this.nouveauRdvMotif, this.modifierFocus = false});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -428,7 +435,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadFormuleVeto();
     _loadCabinet();
     if (widget.nouveauRdv) {
-      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _showNouveauRdvDialog(); });
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await _showNouveauRdvDialog(animalInit: widget.nouveauRdvAnimalId, motifInit: widget.nouveauRdvMotif);
+        if (mounted && widget.nouveauRdvAnimalId != null) Navigator.pop(context);
+      });
     }
     User_Info.profileNotifier.addListener(_onProfileChange);
   }
@@ -1023,7 +1034,64 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _focusFait = true;
     final rdv = _rdvs.where((r) => r['id']?.toString() == id).firstOrNull;
     if (rdv == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _actionsRdv(rdv); });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      if (!widget.modifierFocus) { _actionsRdv(rdv); return; }
+      await _showModifierDialog(rdv);
+      if (mounted) Navigator.pop(context);
+    });
+  }
+
+  /// Propriétaire d'un animal, pour un RDV pris depuis sa fiche : client du
+  /// dernier RDV chez moi, sinon propriétaire principal, sinon fiche client
+  /// de la clinique (propriétaire sans appli).
+  Future<Map<String, String?>> _clientDeLAnimal(String animalId) async {
+    final supa = Supabase.instance.client;
+    final res = <String, String?>{};
+    try {
+      final a = await supa.from('animaux').select('nom, client_clinique_id').eq('id', animalId).maybeSingle();
+      res['animal_nom'] = a?['nom']?.toString();
+      final pid = _resolveProProfileId();
+      if (pid.isNotEmpty) {
+        final r = await supa.from('rdv')
+            .select('client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel')
+            .eq('pro_profile_id', pid).eq('animal_id', animalId)
+            .order('date_heure', ascending: false).limit(1).maybeSingle();
+        if ((r?['client_uid']?.toString() ?? '').isNotEmpty) {
+          res['uid'] = r!['client_uid'].toString();
+          res['profile_id'] = r['client_profile_id']?.toString();
+        } else if ((r?['client_nom_manuel']?.toString() ?? '').isNotEmpty) {
+          res['nom'] = r!['client_nom_manuel'].toString();
+          res['tel'] = r['client_telephone_manuel']?.toString();
+          res['email'] = r['client_email_manuel']?.toString();
+          return res;
+        }
+      }
+      if (res['uid'] == null) {
+        final p = await supa.from('animaux_proprietes').select('uid_proprio, profile_id_proprio')
+            .eq('animal_id', animalId).eq('role_proprio', 'principal').eq('statut', 'actif')
+            .isFilter('date_fin', null).limit(1).maybeSingle();
+        if ((p?['uid_proprio']?.toString() ?? '').isNotEmpty) {
+          res['uid'] = p!['uid_proprio'].toString();
+          res['profile_id'] = p['profile_id_proprio']?.toString();
+        }
+      }
+      if (res['uid'] != null) {
+        final prof = (res['profile_id'] ?? '').isEmpty ? null : await supa.from('user_profiles_complet')
+            .select('firstname, lastname, nom').eq('id', res['profile_id']!).maybeSingle();
+        final n = '${prof?['firstname'] ?? ''} ${prof?['lastname'] ?? ''}'.trim();
+        res['nom'] = n.isNotEmpty ? n : ((prof?['nom']?.toString() ?? '').isNotEmpty ? prof!['nom'].toString() : 'Propriétaire');
+      } else if (a?['client_clinique_id'] != null) {
+        final c = await supa.from('clients_clinique').select('nom, prenom, telephone, email')
+            .eq('id', a!['client_clinique_id']).maybeSingle();
+        if (c != null) {
+          res['nom'] = '${c['prenom'] ?? ''} ${c['nom'] ?? ''}'.trim();
+          res['tel'] = c['telephone']?.toString();
+          res['email'] = c['email']?.toString();
+        }
+      }
+    } catch (_) {}
+    return res;
   }
 
   Future<void> _actionsRdv(Map<String, dynamic> rdv) async {
@@ -1530,7 +1598,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final titrePro = _rdvEventTitle(proSide: true, motif: motifTxt, other: clientName, animal: names.animalName);
       // Agenda client
       if (clientUid != null) {
-        await supa.from('agenda_events').upsert({
+        // Aussi écrit côté serveur (trigger rdv_agenda_sync) : jamais bloquant.
+        try { await supa.from('agenda_events').upsert({
           'uid':           clientUid,
           'titre':         titreClient,
           'type':          _typeFromMotif(rdv['motif']?.toString()),
@@ -1540,7 +1609,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'rdv_id':        rdv['id'],
           'duree_minutes': dureeMinutes,
           'pro_profile_id': rdv['client_profile_id'],
-        }, onConflict: 'rdv_id');
+        }, onConflict: 'rdv_id'); } catch (_) {}
         // Notify client
         if (notifier) await supa.from('notifications').insert({
           'uid':   clientUid,
@@ -1885,12 +1954,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final titrePro = _rdvEventTitle(proSide: true, motif: motifTitre, other: clientName, animal: names.animalName);
 
       if (clientUid != null) {
-        await supa.from('agenda_events').upsert({
+        // Aussi écrit côté serveur (trigger rdv_agenda_sync) : jamais bloquant.
+        try { await supa.from('agenda_events').upsert({
           'uid': clientUid, 'titre': titreClient, 'type': _typeFromMotif(motifTitre),
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'rdv_id': rdvId, 'duree_minutes': duree,
           'pro_profile_id': rdv['client_profile_id'],
-        }, onConflict: 'rdv_id');
+        }, onConflict: 'rdv_id'); } catch (_) {}
         await supa.from('notifications').insert({
           'uid': clientUid, 'type': 'rdv_modifie',
           'title': 'RDV modifié par $proName',
@@ -2251,8 +2321,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final titreClient = _rdvEventTitle(proSide: false, motif: motifTxt, other: proName);
         final titrePro = _rdvEventTitle(proSide: true, motif: motifTxt, other: clientName2, animal: names.animalName);
         final dhUtc = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toUtc();
-        // Agenda client
-        await supa.from('agenda_events').upsert({
+        // Agenda client — écrit côté serveur (trigger rdv_agenda_sync) : la
+        // RLS refuse l'écriture pour le compte du client, jamais bloquant.
+        try { await supa.from('agenda_events').upsert({
           'uid':           clientUid,
           'titre':         titreClient,
           'type':          _typeFromMotif(motifTxt),
@@ -2262,7 +2333,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'rdv_id':        rdv['id'],
           'pro_profile_id': rdv['client_profile_id'],
           if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
-        }, onConflict: 'rdv_id');
+        }, onConflict: 'rdv_id'); } catch (_) {}
         // Agenda pension — couleur trick (no unique constraint needed)
         if (proUid2 != null) {
           try {
@@ -2690,7 +2761,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   /// [praticienInit] '' = titulaire ; [dateInit] / [salleInit] : depuis le
   /// planning de la clinique (créneau touché).
-  Future<void> _showNouveauRdvDialog({DateTime? dateInit, String? praticienInit, String? salleInit}) async {
+  Future<void> _showNouveauRdvDialog({DateTime? dateInit, String? praticienInit, String? salleInit,
+      String? animalInit, String? motifInit}) async {
     final clientNomCtrl = TextEditingController();
     final clientTelCtrl = TextEditingController();
     final clientEmailCtrl = TextEditingController();
@@ -2710,6 +2782,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     // Clinique : patient de la clinique (propriétaire hors appli) — remplit
     // client + animal et rattache le RDV à sa fiche (animal_id).
     String? patientAnimalId;
+    // Depuis la fiche d'un patient : animal + propriétaire pré-remplis (le RDV
+    // arrive dans l'agenda du propriétaire et de ses co-propriétaires).
+    if (motifInit != null) motifCtrl.text = motifInit;
+    if (animalInit != null) {
+      final c = await _clientDeLAnimal(animalInit);
+      if (!mounted) return;
+      patientAnimalId = animalInit;
+      animalNomCtrl.text = c['animal_nom'] ?? '';
+      if (c['uid'] != null) {
+        linkedUid = c['uid'];
+        linkedProfileId = c['profile_id'];
+        linkedNom = c['nom'];
+      } else {
+        clientNomCtrl.text = c['nom'] ?? '';
+        clientTelCtrl.text = c['tel'] ?? '';
+        clientEmailCtrl.text = c['email'] ?? '';
+      }
+    }
 
     Future<void> rechercherClient(void Function(void Function()) setModal) async {
       final email = clientEmailCtrl.text.trim();
@@ -3251,6 +3341,22 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         // Effets de bord d'une confirmation : agenda client + pro, notif
         // « RDV confirmé », accès carnet santé — réutilise _updateStatut.
         await _updateStatut(inserted['id'].toString(), 'confirme', dureeMinutes: dureeMinutes);
+        // Notification « RDV confirmé » (avec l'animal : copie aux co-propriétaires).
+        try {
+          final proNom = User_Info.nameElevage.isNotEmpty
+              ? User_Info.nameElevage
+              : (User_Info.professionPro.isNotEmpty ? User_Info.professionPro : 'votre professionnel');
+          final local = dh.toLocal();
+          String d2(int n) => n.toString().padLeft(2, '0');
+          await Supabase.instance.client.from('notifications').insert({
+            'uid': linkedUid, 'type': 'rdv_confirme',
+            'title': 'RDV confirmé par $proNom',
+            'body': 'Votre rendez-vous est confirmé pour le ${d2(local.day)}/${d2(local.month)} à ${d2(local.hour)}h${d2(local.minute)}',
+            if ((linkedProfileId ?? '').isNotEmpty) 'profile_id': linkedProfileId,
+            'data': {'rdv_id': inserted['id'].toString(), if (patientAnimalId != null) 'animal_id': patientAnimalId},
+            'read': false,
+          });
+        } catch (_) {}
       } else {
         // Client sans compte : au minimum, la visite doit apparaître dans
         // « Mon Agenda » du pro (aucun agenda_event côté client, il n'a pas

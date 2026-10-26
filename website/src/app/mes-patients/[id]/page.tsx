@@ -696,6 +696,8 @@ function PatientDetailPageInner() {
   type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure'
     | 'vermifuge' | 'antiparasitaire' | 'chirurgie' | 'allergie';
   const [addingType, setAddingType] = useState<AddType>(null);
+  // Synthèse rechargée après une saisie (rappel fait depuis la Synthèse).
+  const [syntheseMaj, setSyntheseMaj] = useState(0);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [formMotif, setFormMotif] = useState('');
@@ -1322,6 +1324,7 @@ function PatientDetailPageInner() {
       setFormSeverite(''); setFormDescription('');
       setFormDate(new Date().toISOString().slice(0, 10));
       setAddingType(null); setSavingForm(false);
+      setSyntheseMaj(n => n + 1);
     }
   }
 
@@ -1889,7 +1892,10 @@ function PatientDetailPageInner() {
         {/* ── Identité ── */}
         {/* ── Véto / ostéo : Synthèse, Documents, sous-onglets Santé ── */}
         {tab === 'Synthèse' && catPro === 'veterinaire' && (
-          <SyntheseVet animalId={animalId} pid={activeProfileId || null} onIdentite={() => setTab('Identité')} />
+          <SyntheseVet key={syntheseMaj} animalId={animalId} pid={activeProfileId || null} onIdentite={() => setTab('Identité')}
+            onFaireRappel={hasWriteAccess ? (vaccin, rappel) => {
+              setFormNom(vaccin); setFormDate(new Date().toLocaleDateString('sv-SE')); setFormRappel(rappel); setAddingType('vaccin');
+            } : undefined} />
         )}
         {tab === 'Synthèse' && catPro === 'sante' && (
           <SyntheseOsteo animalId={animalId} pid={activeProfileId || null} onIdentite={() => setTab('Identité')} onSeances={() => setTab('Séances')} />

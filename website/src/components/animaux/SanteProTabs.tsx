@@ -4,6 +4,7 @@
 // comptes_rendus, ordonnances, suivis_morpho, carnet (poids, allergies,
 // traitements, vaccinations, chirurgies), rdv (profil actif).
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { titreCompteRendu } from '@/lib/morpho';
 
@@ -29,14 +30,34 @@ const Discret = ({ t }: { t: string }) => <p className="text-sm text-gray-400">{
 
 async function prochainRdv(animalId: string, pid: string | null) {
   if (!pid) return null;
-  const { data } = await supabase.from('rdv').select('date_heure, motif, lieu').eq('pro_profile_id', pid).eq('animal_id', animalId)
+  const { data } = await supabase.from('rdv').select('id, date_heure, motif, lieu').eq('pro_profile_id', pid).eq('animal_id', animalId)
     .eq('statut', 'confirme').gte('date_heure', new Date().toISOString()).order('date_heure').limit(1).maybeSingle();
-  return data as { date_heure: string; motif: string | null; lieu: string | null } | null;
+  return data as { id: string; date_heure: string; motif: string | null; lieu: string | null } | null;
 }
 const rdvTexte = (r: { date_heure: string; motif: string | null; lieu: string | null }) =>
   `${new Date(r.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}${r.motif ? ` · ${r.motif}` : ''}${r.lieu ? ` · ${r.lieu}` : ''}`;
 
-export function SyntheseVet({ animalId, pid, onIdentite }: { animalId: string; pid: string | null; onIdentite: () => void }) {
+/** Ligne de rappel cliquable : rappel fait aujourd'hui / RDV de rappel. */
+function LigneRappel({ onClick, children, rouge, gras }: { onClick: () => void; children: React.ReactNode; rouge?: boolean; gras?: boolean }) {
+  return (
+    <button type="button" onClick={onClick}
+      className={`w-full flex items-center justify-between gap-2 text-left hover:underline ${gras ? 'font-semibold' : ''}`}
+      style={rouge ? { color: ROUGE } : undefined}>
+      <span>{children}</span><span aria-hidden className="text-gray-400">›</span>
+    </button>
+  );
+}
+
+/** Nouveau RDV pour cet animal (propriétaire pré-rempli) — mes-rdv. */
+const lienNouveauRdv = (animalId: string, motif?: string) =>
+  `/mes-rdv?nouveau=1&animal=${encodeURIComponent(animalId)}${motif ? `&motif=${encodeURIComponent(motif)}` : ''}`;
+
+export function SyntheseVet({ animalId, pid, onIdentite, onFaireRappel }: {
+  animalId: string; pid: string | null; onIdentite: () => void;
+  /** Rappel fait aujourd'hui : formulaire vaccin pré-rempli (nom, prochain rappel) — absent en lecture seule. */
+  onFaireRappel?: (vaccin: string, rappel: string) => void;
+}) {
+  const [rappelOuvert, setRappelOuvert] = useState<Row | null>(null);
   const [d, setD] = useState<{ cr: Row | null; poids: Row | null; allergies: Row[]; trt: Row[]; vac: Row[]; chir: Row[]; rdv: Awaited<ReturnType<typeof prochainRdv>> } | null>(null);
   useEffect(() => {
     let annule = false;
@@ -70,28 +91,71 @@ export function SyntheseVet({ animalId, pid, onIdentite }: { animalId: string; p
   const prochains = derniers.filter(v => v.date_rappel && new Date(String(v.date_rappel)) >= now)
     .sort((a, b) => new Date(String(a.date_rappel)).getTime() - new Date(String(b.date_rappel)).getTime());
   const poids = d.poids?.valeur ?? d.poids?.poids;
+  const auj = new Date().toLocaleDateString('sv-SE');
+  /** Prochain rappel au même intervalle que l'injection précédente (1 an à défaut). */
+  const rappelSuivant = (v: Row) => {
+    const d0 = v.date ? new Date(String(v.date)) : null, dr = v.date_rappel ? new Date(String(v.date_rappel)) : null;
+    const base = new Date(auj + 'T12:00:00');
+    if (d0 && dr && dr > d0) base.setDate(base.getDate() + Math.round((dr.getTime() - d0.getTime()) / 86400000));
+    else base.setFullYear(base.getFullYear() + 1);
+    return base.toLocaleDateString('sv-SE');
+  };
+  const nomVaccin = (v: Row) => String(v.vaccin ?? v.categorie ?? 'vaccin');
   return (
     <div className="space-y-4">
       {(d.allergies.length > 0 || depasses.length > 0) && (
         <Carte titre="Alertes cliniques">
           {d.allergies.map((a, i) => <p key={i} style={{ color: ROUGE }}>Allergie : {String(a.description ?? a.nom ?? '')}</p>)}
-          {depasses.slice(0, 3).map((v, i) => <p key={`v${i}`} style={{ color: ROUGE }}>Rappel dépassé : {String(v.vaccin ?? 'vaccin')} ({dateFr(v.date_rappel)})</p>)}
+          {depasses.slice(0, 3).map((v, i) => <LigneRappel key={`v${i}`} onClick={() => setRappelOuvert(v)} rouge>Rappel dépassé : {String(v.vaccin ?? 'vaccin')} ({dateFr(v.date_rappel)})</LigneRappel>)}
         </Carte>
+      )}
+      {rappelOuvert && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4" onClick={() => setRappelOuvert(null)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-2" onClick={e => e.stopPropagation()} style={{ fontFamily: 'Galey, sans-serif' }}>
+            <p className="font-bold text-[#1F2A2E]">Rappel : {nomVaccin(rappelOuvert)}</p>
+            {onFaireRappel && (
+              <button type="button" onClick={() => { onFaireRappel(nomVaccin(rappelOuvert), rappelSuivant(rappelOuvert)); setRappelOuvert(null); }}
+                className="w-full text-left rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+                <span className="block text-sm font-semibold text-[#0C5C6C]">Enregistrer le rappel</span>
+                <span className="block text-xs text-gray-500">Fait aujourd’hui, prochain rappel au même intervalle</span>
+              </button>
+            )}
+            <Link href={lienNouveauRdv(animalId, `Rappel vaccin — ${nomVaccin(rappelOuvert)}`)}
+              className="block rounded-xl border border-gray-200 px-4 py-3 hover:bg-gray-50">
+              <span className="block text-sm font-semibold text-[#0C5C6C]">Planifier un RDV de rappel</span>
+              <span className="block text-xs text-gray-500">Dans l’agenda du propriétaire et des co-propriétaires</span>
+            </Link>
+            <button type="button" onClick={() => setRappelOuvert(null)} className="w-full text-sm text-gray-500 py-2">Fermer</button>
+          </div>
+        </div>
       )}
       <div className="grid sm:grid-cols-2 gap-4">
         <Carte titre="Dernière consultation">{d.cr ? <><p className="text-xs font-semibold text-gray-600">{dateFr(d.cr.created_at)}</p><p className="line-clamp-3">{texte(d.cr.contenu)}</p></> : <Discret t="Aucun compte rendu." />}</Carte>
-        <Carte titre="Prochain rendez-vous">{d.rdv ? <p>{rdvTexte(d.rdv)}</p> : <Discret t="Aucun rendez-vous planifié." />}</Carte>
+        <Carte titre="Prochain rendez-vous">
+          {d.rdv ? <p>{rdvTexte(d.rdv)}</p> : <Discret t="Aucun rendez-vous planifié." />}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {d.rdv && (
+              <Link href={`/mes-rdv?onglet=a_venir&rdv=${d.rdv.id}&modifier=1&animal=${encodeURIComponent(animalId)}`}
+                className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: TEAL, color: TEAL }}>Modifier</Link>
+            )}
+            <Link href={lienNouveauRdv(animalId)} className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: TEAL, color: TEAL }}>
+              {d.rdv ? 'Autre RDV' : 'Planifier un RDV'}
+            </Link>
+          </div>
+        </Carte>
         <Carte titre="Dernier poids connu">{poids != null ? <p>{String(poids)} kg · {dateFr(d.poids?.date)}</p> : <Discret t="Non renseigné." />}</Carte>
         <Carte titre="Allergies">{d.allergies.length ? d.allergies.map((a, i) => <p key={i}>{String(a.description ?? a.nom ?? '')}{a.severite ? ` (${String(a.severite)})` : ''}</p>) : <Discret t="Non renseigné." />}</Carte>
         <Carte titre="Traitements actifs">{actifs.length ? actifs.map((t, i) => <p key={i}>{String(t.nom ?? '')}{t.posologie ? ` — ${String(t.posologie)}` : ''}</p>) : <Discret t="Aucun traitement en cours." />}</Carte>
         <Carte titre="Vaccinations">
           {d.vac.length ? <>
-            {derniers.map((v, i) => (
-              <p key={i} style={v.date_rappel && new Date(String(v.date_rappel)) < now ? { color: ROUGE } : undefined}>
-                {String(v.vaccin ?? '')} — {dateFr(v.date)}{v.date_rappel ? ` · rappel ${dateFr(v.date_rappel)}` : ''}
-              </p>
+            {derniers.map((v, i) => v.date_rappel ? (
+              <LigneRappel key={i} onClick={() => setRappelOuvert(v)} rouge={new Date(String(v.date_rappel)) < now}>
+                {String(v.vaccin ?? '')} — {dateFr(v.date)} · rappel {dateFr(v.date_rappel)}
+              </LigneRappel>
+            ) : (
+              <p key={i}>{String(v.vaccin ?? '')} — {dateFr(v.date)}</p>
             ))}
-            {prochains[0] && <p className="font-semibold">Prochain rappel : {String(prochains[0].vaccin ?? '')} le {dateFr(prochains[0].date_rappel)}</p>}
+            {prochains[0] && <LigneRappel onClick={() => setRappelOuvert(prochains[0])} gras>Prochain rappel : {String(prochains[0].vaccin ?? '')} le {dateFr(prochains[0].date_rappel)}</LigneRappel>}
           </> : <Discret t="Aucune vaccination enregistrée." />}
         </Carte>
         <Carte titre="Antécédents">{d.chir.length ? d.chir.slice(0, 5).map((c, i) => <p key={i}>{dateFr(c.date)} — {String(c.intitule ?? c.nom ?? c.type ?? 'Chirurgie')}</p>) : <Discret t="Aucun antécédent chirurgical enregistré." />}</Carte>

@@ -551,8 +551,9 @@ const DUREES_MANUEL = [15, 30, 45, 60, 90];
 
 function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose, onDone }: {
   proUid: string; profileId: string; proName: string; catPro: string;
-  /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle. */
-  initial?: { date?: Date; praticien?: string | null; salle?: string | null };
+  /** Depuis le planning : date-heure, praticien ('' = titulaire) et salle ;
+   *  depuis la fiche d'un patient : animal (propriétaire pré-rempli) et motif. */
+  initial?: { date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string };
   onClose: () => void; onDone: () => void;
 }) {
   const d0 = initial?.date ?? new Date();
@@ -560,7 +561,7 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [clientTel, setClientTel] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [animalNom, setAnimalNom] = useState('');
-  const [motif, setMotif] = useState('');
+  const [motif, setMotif] = useState(initial?.motif ?? '');
   const [notes, setNotes] = useState('');
   const [date, setDate] = useState(toDateStr(d0));
   const [heure, setHeure] = useState(`${String(d0.getHours()).padStart(2, '0')}:${String(Math.floor(d0.getMinutes() / 15) * 15).padStart(2, '0')}`);
@@ -600,6 +601,44 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
       }).sort((a, b) => a.animalNom.localeCompare(b.animalNom)));
     })();
   }, [fichierClients, profileId, rechargerFichier]);
+
+  // Depuis la fiche d'un patient : animal + propriétaire (client du dernier
+  // RDV chez moi, sinon propriétaire principal, sinon fiche client de la
+  // clinique) — miroir de _clientDeLAnimal (pro_agenda.dart).
+  useEffect(() => {
+    const aid = initial?.animalId;
+    if (!aid) return;
+    let annule = false;
+    (async () => {
+      const { data: a } = await supabase.from('animaux').select('nom, client_clinique_id').eq('id', aid).maybeSingle();
+      if (annule) return;
+      setPatientId(aid);
+      setAnimalNom(String(a?.nom ?? ''));
+      let uid: string | null = null, prof: string | null = null;
+      const { data: r } = await supabase.from('rdv')
+        .select('client_uid, client_profile_id, client_nom_manuel, client_telephone_manuel, client_email_manuel')
+        .eq('pro_profile_id', profileId).eq('animal_id', aid).order('date_heure', { ascending: false }).limit(1).maybeSingle();
+      if (r?.client_uid) { uid = r.client_uid as string; prof = (r.client_profile_id as string | null) ?? null; }
+      else if (r?.client_nom_manuel) {
+        if (!annule) { setClientNom(String(r.client_nom_manuel)); setClientTel(String(r.client_telephone_manuel ?? '')); setClientEmail(String(r.client_email_manuel ?? '')); }
+        return;
+      }
+      if (!uid) {
+        const { data: p } = await supabase.from('animaux_proprietes').select('uid_proprio, profile_id_proprio')
+          .eq('animal_id', aid).eq('role_proprio', 'principal').eq('statut', 'actif').is('date_fin', null).limit(1).maybeSingle();
+        if (p?.uid_proprio) { uid = p.uid_proprio as string; prof = (p.profile_id_proprio as string | null) ?? null; }
+      }
+      if (uid) {
+        const { data: up } = prof ? await supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', prof).maybeSingle() : { data: null };
+        const nom = `${up?.firstname ?? ''} ${up?.lastname ?? ''}`.trim() || String(up?.nom ?? '') || 'Propriétaire';
+        if (!annule) setLinked({ uid, nom, profileId: prof ?? '' });
+      } else if (a?.client_clinique_id) {
+        const { data: c } = await supabase.from('clients_clinique').select('nom, prenom, telephone, email').eq('id', a.client_clinique_id).maybeSingle();
+        if (c && !annule) { setClientNom(`${c.prenom ?? ''} ${c.nom ?? ''}`.trim()); setClientTel(String(c.telephone ?? '')); setClientEmail(String(c.email ?? '')); }
+      }
+    })();
+    return () => { annule = true; };
+  }, [initial?.animalId, profileId]);
 
   // Fiche créée depuis « Nouveau client » : sélectionnée d'office.
   useEffect(() => {
@@ -686,7 +725,8 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
         await supabase.from('notifications').insert({
           uid: linked.uid, type: 'rdv_confirme', title: `RDV confirmé par ${proName}`,
           body: `Votre rendez-vous est confirmé pour le ${dh.toLocaleDateString('fr-FR')} à ${heure.replace(':', 'h')}`,
-          profile_id: linked.profileId, data: { rdv_id: rdvId }, read: false,
+          // Avec l'animal : copie aux co-propriétaires (fan-out).
+          profile_id: linked.profileId, data: { rdv_id: rdvId, ...(patientId ? { animal_id: patientId } : {}) }, read: false,
         });
       } else if (clientEmail.trim()) {
         // E-mail de confirmation + invitation à rejoindre PetsMatch.
@@ -1564,7 +1604,10 @@ export default function MesRdvPage() {
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
   const [dossierRdv, setDossierRdv] = useState<Rdv | null>(null);
   const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
-  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null } | null>(null);
+  const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string } | null>(null);
+  // Ouvert depuis la fiche d'un patient : retour à la fiche une fois fini.
+  const [retourFiche, setRetourFiche] = useState<string | null>(null);
+  const [modifierFocus, setModifierFocus] = useState(false);
 
   const [aujourdhui, setAujourdhui] = useState<{ id: string; titre: string; date_debut: string; type: string }[]>([]);
 
@@ -1615,9 +1658,21 @@ export default function MesRdvPage() {
     if (onglet && ['demandes', 'a_venir', 'historique', 'creneaux', 'planning'].includes(onglet)) setActiveTab(onglet);
     else if (catPro === 'veterinaire') setActiveTab('a_venir');
     setRdvFocus(q.get('rdv'));
-    // Accès rapide « Nouveau RDV » de l'accueil.
-    if (q.get('nouveau') === '1') setModalNouveau({});
+    setModifierFocus(q.get('modifier') === '1');
+    setRetourFiche(q.get('animal'));
+    // Accès rapide « Nouveau RDV » de l'accueil, ou depuis la fiche d'un patient.
+    if (q.get('nouveau') === '1') setModalNouveau({ animalId: q.get('animal') ?? undefined, motif: q.get('motif') ?? undefined });
   }, [catPro]);
+
+  // Depuis la Synthèse d'un patient : « Modifier » ouvre directement le RDV.
+  useEffect(() => {
+    if (!modifierFocus || !rdvFocus || fetching) return;
+    const r = rdvs.find(x => x.id === rdvFocus);
+    if (!r) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setModifierFocus(false);
+    if (r.statut === 'confirme') setModalModifier(r);
+  }, [modifierFocus, rdvFocus, fetching, rdvs]);
 
   // RDV visé : défile jusqu'à sa carte et la met en avant.
   useEffect(() => {
@@ -1999,8 +2054,9 @@ export default function MesRdvPage() {
       )}
       {modalNouveau && user && activeProfileId && (
         <NouveauRdvModal proUid={user.uid} profileId={activeProfileId} proName={proName} catPro={catPro}
-          initial={modalNouveau} onClose={() => setModalNouveau(null)}
-          onDone={() => { setModalNouveau(null); fetchRdvs(); }} />
+          initial={modalNouveau}
+          onClose={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
+          onDone={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(); }} />
       )}
       {apresAcceptation && (
         <ApresAcceptationGardeModal rdvs={apresAcceptation} proProfileId={activeProfileId || null}
@@ -2023,8 +2079,8 @@ export default function MesRdvPage() {
       )}
       {modalModifier && (
         <ModifierModal rdv={modalModifier} proName={proName} activeProfileId={activeProfileId ?? ''}
-          onClose={() => setModalModifier(null)}
-          onDone={() => { setModalModifier(null); fetchRdvs(); }} />
+          onClose={() => { setModalModifier(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
+          onDone={() => { setModalModifier(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(); }} />
       )}
       {modalRefuser && (
         <RefuserModal rdv={modalRefuser} label="Refuser" type="refuse"

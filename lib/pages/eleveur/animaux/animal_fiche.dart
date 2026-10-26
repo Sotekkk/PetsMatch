@@ -2558,6 +2558,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ? _requestHealthWriteAccess : null,
       );
 
+  /// Synthèse vétérinaire : rappel fait aujourd'hui — même vaccin, même
+  /// intervalle, vétérinaire = moi.
+  Future<void> _faireRappelVet(Map<String, dynamic> v) => showDialog(context: context, builder: (_) => _AddVaccinDialog(
+        animalId: widget.animalId!, espece: _espece, source: 'veterinaire',
+        vetId: FirebaseAuth.instance.currentUser?.uid, vetName: _nomVeterinaire(),
+        prefillVaccin: v['vaccin']?.toString(), prefillCategorie: v['categorie']?.toString(), rappelDe: v));
+
   /// Identité complète + carnet de santé (lecture), ouverts depuis la Synthèse.
   void _ouvrirIdentite() {
     Navigator.push(context, MaterialPageRoute(builder: (_) => DefaultTabController(
@@ -2610,7 +2617,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           ),
         );
     return [
-      SyntheseVetTab(animalId: widget.animalId!, onIdentite: _ouvrirIdentite),
+      SyntheseVetTab(animalId: widget.animalId!, onIdentite: _ouvrirIdentite,
+          onFaireRappel: _canWriteHealth && !_carnetPrive ? _faireRappelVet : null),
       _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId, espece: _espece),
       Column(children: [
         SizedBox(
@@ -5942,7 +5950,7 @@ class SanteDetailPage extends StatelessWidget {
   Widget _dialogFor(BuildContext ctx) {
     final src   = vetMode ? 'veterinaire' : 'owner';
     final vid   = vetMode ? FirebaseAuth.instance.currentUser?.uid : null;
-    final vname = vetMode ? '${User_Info.firstname} ${User_Info.lastname}'.trim() : null;
+    final vname = vetMode ? _nomVeterinaire() : null;
     switch (collection) {
       case 'vaccinations':     return _AddVaccinDialog(animalId: animalId, espece: espece, source: src, vetId: vid, vetName: vname);
       case 'vermifuges':       return AddVermifugeDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
@@ -6090,6 +6098,9 @@ class _SanteListState extends State<_SanteList> {
         .firstMatch((data['frequence'] as String?) ?? '');
     final freqValeur = freqMatch?.group(1);
     final freqUnite = freqMatch?.group(2)?.toLowerCase();
+    final src = widget.vetMode ? 'veterinaire' : 'owner';
+    final vid = widget.vetMode ? FirebaseAuth.instance.currentUser?.uid : null;
+    final vname = widget.vetMode ? _nomVeterinaire() : null;
 
     await showDialog(
       context: context,
@@ -6097,7 +6108,7 @@ class _SanteListState extends State<_SanteList> {
         switch (widget.collection) {
           case 'vermifuges':
             return AddVermifugeDialog(
-              animalId: widget.animalId,
+              animalId: widget.animalId, source: src, vetId: vid, vetName: vname,
               prefillProduit: data['produit'] as String?,
               prefillDosage: data['dosage'] as String?,
               prefillFrequenceValeur: freqValeur,
@@ -6105,7 +6116,7 @@ class _SanteListState extends State<_SanteList> {
             );
           case 'antiparasitaires':
             return AddAntiparasitaireDialog(
-              animalId: widget.animalId,
+              animalId: widget.animalId, source: src, vetId: vid, vetName: vname,
               prefillProduit: data['produit'] as String?,
               prefillType: data['type'] as String?,
               prefillFrequenceValeur: freqValeur,
@@ -6115,9 +6126,11 @@ class _SanteListState extends State<_SanteList> {
             return _AddVaccinDialog(
               animalId: widget.animalId,
               espece: widget.espece,
+              source: src, vetId: vid, vetName: vname,
               prefillVaccin: data['vaccin'] as String?,
-              prefillVeto: data['veterinaire'] as String?,
+              prefillVeto: widget.vetMode ? null : data['veterinaire'] as String?,
               prefillCategorie: data['categorie'] as String?,
+              rappelDe: widget.vetMode ? data : null,
             );
         }
       },
@@ -6187,8 +6200,10 @@ class _SanteListState extends State<_SanteList> {
                           title: _title(d), data: d, icon: widget.icon,
                           onDelete: () => _delete(d['id']?.toString() ?? ''),
                           onEdit: canEdit ? () => _edit(d) : null,
-                          onRappel: (!widget.vetMode && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
+                          onRappel: ((!widget.vetMode || widget.canWrite) && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
                               ? () => _addRappel(d) : null,
+                          // Couper les relances : réservé au propriétaire.
+                          canMute: !widget.vetMode,
                           onEtape: (canEdit && widget.canWrite && widget.collection == 'traitements')
                               ? () => _addEtape(d) : null,
                           collection: widget.collection,
@@ -6461,8 +6476,10 @@ class _SanteCard extends StatelessWidget {
   final VoidCallback? onEtape;
   final String? collection;
   final bool canDelete;
+  final bool canMute;
   const _SanteCard({required this.title, required this.data, required this.icon,
-      required this.onDelete, this.onTap, this.onEdit, this.onRappel, this.onEtape, this.collection, this.canDelete = true});
+      required this.onDelete, this.onTap, this.onEdit, this.onRappel, this.onEtape, this.collection, this.canDelete = true,
+      this.canMute = true});
 
   static const _overdueTables = {'vaccinations', 'vermifuges', 'antiparasitaires'};
 
@@ -6478,10 +6495,16 @@ class _SanteCard extends StatelessWidget {
 
   Future<void> _muteReminder(BuildContext context) async {
     try {
-      await Supabase.instance.client.from('notifs_sent').upsert({
-        'key': 'sante_${collection}_muted_${data['id']}',
-        'sent_at': DateTime.now().toUtc().toIso8601String(),
-      }, onConflict: 'key');
+      // Insert simple : notifs_sent n'a pas de lecture (RLS), un upsert était
+      // refusé. Déjà coupé (clé existante) = même résultat.
+      try {
+        await Supabase.instance.client.from('notifs_sent').insert({
+          'key': 'sante_${collection}_muted_${data['id']}',
+          'sent_at': DateTime.now().toUtc().toIso8601String(),
+        });
+      } on PostgrestException catch (e) {
+        if (e.code != '23505') rethrow;
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Rappel arrêté — vous ne serez plus relancé pour ce soin')));
@@ -6750,7 +6773,7 @@ class _SanteCard extends StatelessWidget {
             IconButton(icon: const Icon(Icons.add_alarm_outlined, size: 18, color: Color(0xFF0C5C6C)),
                 tooltip: 'Ajouter un rappel (même vaccin)',
                 onPressed: onRappel, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-          if (_isOverdue)
+          if (_isOverdue && canMute)
             IconButton(icon: const Icon(Icons.notifications_off_outlined, size: 18, color: Color(0xFF9CA3AF)),
                 tooltip: 'Arrêter les rappels pour ce soin',
                 onPressed: () => _muteReminder(context), padding: EdgeInsets.zero, constraints: const BoxConstraints()),
@@ -7536,8 +7559,11 @@ class _AddVaccinDialog extends StatefulWidget {
   final String? prefillCategorie;
   /// Modification : entrée existante (même formulaire qu'à la création).
   final Map<String, dynamic>? existant;
+  /// Rappel fait aujourd'hui (vétérinaire) : date du jour, prochain rappel au
+  /// même intervalle que l'injection précédente.
+  final Map<String, dynamic>? rappelDe;
   const _AddVaccinDialog({required this.animalId, this.espece, this.source = 'owner', this.vetId, this.vetName,
-      this.prefillVaccin, this.prefillVeto, this.prefillCategorie, this.existant});
+      this.prefillVaccin, this.prefillVeto, this.prefillCategorie, this.existant, this.rappelDe});
   @override State<_AddVaccinDialog> createState() => _AddVaccinDialogState();
 }
 class _AddVaccinDialogState extends State<_AddVaccinDialog> {
@@ -7612,6 +7638,20 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       final c = e['categorie']?.toString();
       _categorie = _typesDisponibles.any((t) => t.$1 == c) ? c : null;
     }
+    final r0 = widget.rappelDe;
+    if (r0 != null && e == null) {
+      final now = DateTime.now();
+      _date = DateTime(now.year, now.month, now.day);
+      _validite = _date; // rappel : valide le jour même
+      if (!_typesDisponibles.any((t) => t.$1 == _categorie)) _categorie = null;
+      final d0 = DateTime.tryParse(r0['date']?.toString() ?? '');
+      final dr = DateTime.tryParse(r0['date_rappel']?.toString() ?? '');
+      if (d0 != null && dr != null && dr.isAfter(d0)) {
+        _rappel = _date!.add(dr.difference(d0));
+      } else {
+        _recomputeSuggestions();
+      }
+    }
   }
 
   @override
@@ -7647,7 +7687,10 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       return true;
     }
     await Supabase.instance.client.from('vaccinations').insert(ligne);
-    if (_rappel != null) {
+    // Saisi par le vétérinaire : pas d'événement dans SON agenda — le
+    // propriétaire et ses co-propriétaires sont relancés par le serveur
+    // (sendSanteReminders sur date_rappel) et le voient dans « Mon quotidien ».
+    if (_rappel != null && widget.source != 'veterinaire') {
       await _scheduleRappelAgenda(
         animalId: widget.animalId,
         dateRappel: _rappel!,
@@ -9683,6 +9726,9 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
 }
 
 // ─── Helper rappels agenda ────────────────────────────────────────────────────
+
+/// Nom du vétérinaire connecté, inscrit sur ses saisies du carnet.
+String _nomVeterinaire() => '${User_Info.firstname} ${User_Info.lastname}'.trim();
 
 Future<void> _scheduleRappelAgenda({
   required String animalId,

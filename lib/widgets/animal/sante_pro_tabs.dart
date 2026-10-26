@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart' show titreCompteRendu;
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart' show ProAgendaPage;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -68,7 +69,10 @@ String _rdvTexte(Map<String, dynamic> r) {
 class SyntheseVetTab extends StatefulWidget {
   final String animalId;
   final VoidCallback onIdentite;
-  const SyntheseVetTab({super.key, required this.animalId, required this.onIdentite});
+  /// Rappel de vaccin fait aujourd'hui (formulaire du carnet pré-rempli) —
+  /// null en lecture seule.
+  final Future<void> Function(Map<String, dynamic> vaccin)? onFaireRappel;
+  const SyntheseVetTab({super.key, required this.animalId, required this.onIdentite, this.onFaireRappel});
   @override
   State<SyntheseVetTab> createState() => _SyntheseVetTabState();
 }
@@ -94,6 +98,60 @@ class _SyntheseVetTabState extends State<SyntheseVetTab> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _ouvrirAgenda(ProAgendaPage page) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    if (mounted) _charger();
+  }
+
+  /// Nouveau RDV pour cet animal : propriétaire pré-rempli, le RDV arrive dans
+  /// son agenda et celui de ses co-propriétaires (rappels 48 h / veille).
+  void _planifier([String? motif]) => _ouvrirAgenda(
+      ProAgendaPage(nouveauRdv: true, nouveauRdvAnimalId: widget.animalId, nouveauRdvMotif: motif));
+
+  Future<void> _actionsRappel(Map<String, dynamic> v) async {
+    final nom = (v['vaccin'] ?? v['categorie'] ?? 'vaccin').toString();
+    Widget tuile(String val, IconData ic, String t, String st) => ListTile(
+          leading: Icon(ic, color: _teal),
+          title: Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          subtitle: Text(st, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          onTap: () => Navigator.pop(context, val),
+        );
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Text('Rappel : $nom', style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700)),
+          ),
+          if (widget.onFaireRappel != null)
+            tuile('faire', Icons.vaccines_outlined, 'Enregistrer le rappel',
+                'Fait aujourd’hui, prochain rappel au même intervalle'),
+          tuile('rdv', Icons.event_available_outlined, 'Planifier un RDV de rappel',
+              'Dans l’agenda du propriétaire et des co-propriétaires'),
+        ]),
+      )),
+    );
+    if (choix == 'faire') {
+      await widget.onFaireRappel!(v);
+      if (mounted) _charger();
+    } else if (choix == 'rdv') {
+      _planifier('Rappel vaccin — $nom');
+    }
+  }
+
+  /// Ligne cliquable (rappel) : texte + chevron.
+  Widget _ligneRappel(Map<String, dynamic> v, String t, {Color? c, FontWeight? w}) => InkWell(
+        onTap: () => _actionsRappel(v),
+        borderRadius: BorderRadius.circular(6),
+        child: Row(children: [
+          Expanded(child: _txt(t, c: c, w: w)),
+          Icon(Icons.chevron_right, size: 18, color: c ?? Colors.grey.shade500),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
@@ -115,9 +173,10 @@ class _SyntheseVetTabState extends State<SyntheseVetTab> {
     final rappelsDepasses = derniers.values.where((v) => _d(v['date_rappel']) != null && _d(v['date_rappel'])!.isBefore(now)).toList();
     final prochainsRappels = derniers.values.where((v) => _d(v['date_rappel']) != null && !_d(v['date_rappel'])!.isBefore(now)).toList()
       ..sort((a, b) => _d(a['date_rappel'])!.compareTo(_d(b['date_rappel'])!));
-    final alertes = <String>[
-      for (final a in _allergies) 'Allergie : ${a['description'] ?? a['nom'] ?? ''}',
-      for (final v in rappelsDepasses.take(3)) 'Rappel dépassé : ${v['vaccin'] ?? 'vaccin'} (${_date(v['date_rappel'])})',
+    final alertes = <Widget>[
+      for (final a in _allergies) _txt('Allergie : ${a['description'] ?? a['nom'] ?? ''}', c: _rouge),
+      for (final v in rappelsDepasses.take(3))
+        _ligneRappel(v, 'Rappel dépassé : ${v['vaccin'] ?? 'vaccin'} (${_date(v['date_rappel'])})', c: _rouge),
     ];
     final poids = _poids?['valeur'] ?? _poids?['poids'];
     return RefreshIndicator(
@@ -125,14 +184,33 @@ class _SyntheseVetTabState extends State<SyntheseVetTab> {
       child: ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 40), children: [
         if (alertes.isNotEmpty)
           _carte('Alertes cliniques', Icons.warning_amber_rounded,
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [for (final a in alertes) _txt(a, c: _rouge)])),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: alertes)),
         _carte('Dernière consultation', Icons.medical_services_outlined, _derniereCr == null
             ? _discret('Aucun compte rendu.')
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 _txt(_date(_derniereCr!['created_at']), w: FontWeight.w700, taille: 12.5),
                 _txt((_derniereCr!['contenu']?.toString() ?? '').replaceAll(RegExp(r'<[^>]*>'), ' ').trim(), taille: 13),
               ])),
-        _carte('Prochain rendez-vous', Icons.event_outlined, _rdv == null ? _discret('Aucun rendez-vous planifié.') : _txt(_rdvTexte(_rdv!))),
+        _carte('Prochain rendez-vous', Icons.event_outlined,
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _rdv == null ? _discret('Aucun rendez-vous planifié.') : _txt(_rdvTexte(_rdv!)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                if (_rdv != null)
+                  OutlinedButton.icon(
+                    onPressed: () => _ouvrirAgenda(ProAgendaPage(focusRdvId: _rdv!['id']?.toString(), modifierFocus: true)),
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 17),
+                    label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey')),
+                    style: OutlinedButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () => _planifier(),
+                  icon: const Icon(Icons.event_available_outlined, size: 17),
+                  label: Text(_rdv == null ? 'Planifier un RDV' : 'Autre RDV', style: const TextStyle(fontFamily: 'Galey')),
+                  style: OutlinedButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact),
+                ),
+              ]),
+            ])),
         _carte('Dernier poids connu', Icons.monitor_weight_outlined,
             poids == null ? _discret('Non renseigné.') : _txt('$poids kg · ${_date(_poids!['date'])}')),
         _carte('Allergies', Icons.no_food_outlined, _allergies.isEmpty
@@ -149,12 +227,16 @@ class _SyntheseVetTabState extends State<SyntheseVetTab> {
             ? _discret('Aucune vaccination enregistrée.')
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 // Une ligne par catégorie : dernière injection + prochain rappel.
+                // Une ligne cliquable par vaccin à rappeler (rappel fait / RDV).
                 for (final v in (derniers.values.toList()..sort((a, b) => (_d(b['date']) ?? DateTime(1900)).compareTo(_d(a['date']) ?? DateTime(1900)))))
-                  _txt('${v['vaccin'] ?? ''} — ${_date(v['date'])}'
-                      '${_d(v['date_rappel']) != null ? ' · rappel ${_date(v['date_rappel'])}' : ''}',
-                      c: _d(v['date_rappel']) != null && _d(v['date_rappel'])!.isBefore(now) ? _rouge : null),
+                  if (_d(v['date_rappel']) != null)
+                    _ligneRappel(v, '${v['vaccin'] ?? ''} — ${_date(v['date'])} · rappel ${_date(v['date_rappel'])}',
+                        c: _d(v['date_rappel'])!.isBefore(now) ? _rouge : null)
+                  else
+                    _txt('${v['vaccin'] ?? ''} — ${_date(v['date'])}'),
                 if (prochainsRappels.isNotEmpty)
-                  _txt('Prochain rappel : ${prochainsRappels.first['vaccin'] ?? ''} le ${_date(prochainsRappels.first['date_rappel'])}', w: FontWeight.w700),
+                  _ligneRappel(prochainsRappels.first,
+                      'Prochain rappel : ${prochainsRappels.first['vaccin'] ?? ''} le ${_date(prochainsRappels.first['date_rappel'])}', w: FontWeight.w700),
               ])),
         _carte('Antécédents', Icons.history_edu_outlined, _chirurgies.isEmpty
             ? _discret('Aucun antécédent chirurgical enregistré.')
