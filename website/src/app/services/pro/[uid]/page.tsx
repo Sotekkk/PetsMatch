@@ -236,6 +236,8 @@ function ProDetailContent() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
+  /** Le RDV est demandé mais le carnet n'a pas pu être partagé avec le cabinet. */
+  const [partageEchoue, setPartageEchoue] = useState(false);
   const [rdvCount, setRdvCount] = useState(1);
   // Garde-journée : plage de dates + gardes-journée déjà réservées par jour.
   const [gardeDebut, setGardeDebut] = useState('');
@@ -1046,13 +1048,15 @@ function ProDetailContent() {
       }
 
       // Partage du carnet de santé avec le cabinet (consentement du propriétaire).
+      setPartageEchoue(false);
       if (['veterinaire', 'sante'].includes(pro.cat_pro) && partagerCarnet && selectedAnimalId && pro.profileTableId) {
-        await supabase.from('animal_access').upsert({
+        const { error: errPartage } = await supabase.from('animal_access').upsert({
           animal_id: selectedAnimalId, pro_profile_id: pro.profileTableId,
           ...(activeProfileId ? { granted_by_profile_id: activeProfileId } : {}),
           permissions: pro.cat_pro === 'veterinaire' ? ['read_basic', 'read_health', 'write_health'] : ['read_basic', 'write_notes'],
           statut: 'active', granted_at: new Date().toISOString(),
         }, { onConflict: 'animal_id,pro_profile_id' });
+        if (errPartage) { console.warn('Partage du carnet refusé', errPartage); setPartageEchoue(true); }
       }
 
       const isSerie = targetSlots.length > 1;
@@ -1834,6 +1838,11 @@ function ProDetailContent() {
                   <p className="text-sm text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
                     {pro.name} recevra {rdvCount > 1 ? 'vos demandes' : 'votre demande'} et vous confirmera {rdvCount > 1 ? 'les rendez-vous' : 'le rendez-vous'}.
                   </p>
+                  {partageEchoue && (
+                    <p className="text-sm text-amber-800 bg-amber-50 rounded-xl px-3 py-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Le carnet de santé n’a pas pu être partagé avec le cabinet. Vous pourrez le partager depuis la fiche de l’animal.
+                    </p>
+                  )}
                   <button onClick={() => setShowRdv(false)}
                     className="mt-2 px-6 py-2.5 rounded-2xl text-white font-semibold text-sm"
                     style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>

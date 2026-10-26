@@ -1321,7 +1321,16 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             'statut': 'active',
             'granted_at': DateTime.now().toUtc().toIso8601String(),
           }, onConflict: 'animal_id,pro_profile_id');
-        } catch (_) {}
+        } catch (e) {
+          // Le RDV est bien demandé ; on prévient au lieu d'échouer en silence.
+          debugPrint('Partage du carnet refusé : $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Rendez-vous demandé, mais le carnet de santé n’a pas pu être partagé avec le cabinet. Vous pourrez le partager depuis la fiche de l’animal.'),
+              duration: Duration(seconds: 6),
+            ));
+          }
+        }
       }
 
       // Notification in-app (cloche) pour le pro
