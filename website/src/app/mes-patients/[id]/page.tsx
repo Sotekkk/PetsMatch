@@ -329,6 +329,16 @@ function ActesSelect({ value, onChange }: { value: string[]; onChange: (v: strin
   );
 }
 
+type UniteDelai = 'jours' | 'semaines' | 'mois' | 'ans';
+const JOURS_PAR_UNITE = { jours: 1, semaines: 7, mois: 30 } as const;
+/** Rappel « dans N jours / semaines / mois / ans » à partir de la date du vaccin. */
+function delaiRappel(dateIso: string, n: string, unite: UniteDelai): string | null {
+  const v = parseInt(n, 10);
+  if (!(v > 0)) return null;
+  return unite === 'jours' ? plus(dateIso, v) : unite === 'semaines' ? plus(dateIso, 7 * v)
+    : unite === 'mois' ? plus(dateIso, 0, v) : plus(dateIso, 0, 0, v);
+}
+
 function plus(dateIso: string, jours = 0, mois = 0, ans = 0): string {
   const d = new Date(dateIso + 'T12:00:00');
   d.setFullYear(d.getFullYear() + ans, d.getMonth() + mois, d.getDate() + jours);
@@ -434,6 +444,10 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
   };
   const [vac, setVac] = useState<(VaccinCr & { index: number }) | null>(null);
   const [trt, setTrt] = useState<(TraitementCr & { index: number }) | null>(null);
+  // Délai libre du rappel ; unité de durée affichée par phase de traitement.
+  const [dans, setDans] = useState('');
+  const [dansUnite, setDansUnite] = useState<UniteDelai>('mois');
+  const [unitesDuree, setUnitesDuree] = useState<Record<number, keyof typeof JOURS_PAR_UNITE>>({});
   const [pharmacie, setPharmacie] = useState<ArticlePharmacie[]>([]);
   useEffect(() => {
     if (!profileId) return;
@@ -499,9 +513,22 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
             <div className="flex flex-wrap gap-1.5">
               {([['3 semaines', plus(vac.date, 21)], ['1 mois', plus(vac.date, 0, 1)], ['6 mois', plus(vac.date, 0, 6)],
                  ['1 an', plus(vac.date, 0, 0, 1)], ['3 ans', plus(vac.date, 0, 0, 3)], ['Aucun', null]] as const).map(([l, d]) => (
-                <button key={l} type="button" onClick={() => setVac({ ...vac, rappel: d })} className={chip(vac.rappel === d)}>{l}</button>
+                <button key={l} type="button" onClick={() => { setVac({ ...vac, rappel: d }); setDans(''); }} className={chip(vac.rappel === d)}>{l}</button>
               ))}
             </div>
+            {/* Délai libre jusqu'au prochain rappel. */}
+            <div className="flex items-center gap-2 text-sm text-[#1E2025]">
+              Ou dans
+              <input type="number" min={1} inputMode="numeric" value={dans} aria-label="Délai avant le rappel"
+                onChange={e => { setDans(e.target.value); const r = delaiRappel(vac.date, e.target.value, dansUnite); if (r) setVac({ ...vac, rappel: r }); }}
+                className="w-16 text-center border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <select value={dansUnite} aria-label="Unité"
+                onChange={e => { const u = e.target.value as UniteDelai; setDansUnite(u); const r = delaiRappel(vac.date, dans, u); if (r) setVac({ ...vac, rappel: r }); }}
+                className="border border-gray-200 rounded-xl px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+                {(['jours', 'semaines', 'mois', 'ans'] as const).map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            {vac.rappel && <p className="text-xs font-semibold text-[#0C5C6C]">Rappel le {new Date(vac.rappel + 'T12:00:00').toLocaleDateString('fr-FR')}</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setVac(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
               <button type="button" disabled={!vac.nom.trim()} onClick={() => {
@@ -557,12 +584,26 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
                     className="w-16 text-center border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
                   {p.frequenceJours > 1 ? 'jours' : 'jour (tous les jours)'}
                 </div>
+                {/* Durée libre (jours / semaines / mois) ou durées courantes. */}
+                <div className="flex items-center gap-2 text-sm text-[#1E2025]">
+                  Pendant
+                  <input type="number" min={1} inputMode="numeric" aria-label="Durée"
+                    value={p.dureeJours == null ? '' : (unitesDuree[i] ?? 'jours') === 'jours' ? p.dureeJours : Math.round(p.dureeJours / JOURS_PAR_UNITE[unitesDuree[i] ?? 'jours'])}
+                    onChange={e => { const n = parseInt(e.target.value, 10); majPhase(i, { dureeJours: n > 0 ? n * JOURS_PAR_UNITE[unitesDuree[i] ?? 'jours'] : null }); }}
+                    className="w-16 text-center border border-gray-200 rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  <select value={unitesDuree[i] ?? 'jours'} aria-label="Unité de durée"
+                    onChange={e => {
+                      const u = e.target.value as keyof typeof JOURS_PAR_UNITE;
+                      const n = p.dureeJours == null ? null : Math.round(p.dureeJours / JOURS_PAR_UNITE[unitesDuree[i] ?? 'jours']);
+                      setUnitesDuree({ ...unitesDuree, [i]: u });
+                      if (n) majPhase(i, { dureeJours: n * JOURS_PAR_UNITE[u] });
+                    }}
+                    className="border border-gray-200 rounded-xl px-2 py-1.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+                    {(['jours', 'semaines', 'mois'] as const).map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <input type="number" min={1} inputMode="numeric" value={p.dureeJours ?? ''} placeholder="jours"
-                    onChange={e => majPhase(i, { dureeJours: e.target.value ? parseInt(e.target.value, 10) : null })}
-                    className="w-24 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-                  <span className="text-xs text-gray-500 mr-1">jours</span>
-                  {[3, 5, 7, 10, 14].map(n => <button key={n} type="button" onClick={() => majPhase(i, { dureeJours: n })} className={chip(p.dureeJours === n)}>{n} j</button>)}
+                  {[3, 5, 7, 10, 14].map(n => <button key={n} type="button" onClick={() => { majPhase(i, { dureeJours: n }); setUnitesDuree({ ...unitesDuree, [i]: 'jours' }); }} className={chip(p.dureeJours === n)}>{n} j</button>)}
                   {i === trt.phases.length - 1 && (
                     <button type="button" onClick={() => majPhase(i, { dureeJours: null })} className={chip(p.dureeJours === null)}>Au long cours</button>
                   )}

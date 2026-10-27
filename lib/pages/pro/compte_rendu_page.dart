@@ -674,6 +674,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final r0 = DateTime.tryParse((depuisRappel['date_rappel'] ?? '').toString());
       if (d0 != null && r0 != null && r0.isAfter(d0)) rappel = date.add(r0.difference(d0));
     }
+    // Délai libre jusqu'au prochain rappel (en plus des durées proposées).
+    final dansCtrl = TextEditingController();
+    var dansUnite = 'mois';
     final res = await showModalBottomSheet<_VaccinCr>(
       context: context, isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -681,7 +684,12 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         Widget chipRappel(String l, DateTime? d) => ChoiceChip(
           label: Text(l, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
           selected: d == null ? rappel == null : (rappel != null && rappel!.difference(d).inDays.abs() < 1),
-          selectedColor: widget.categoryColor.withValues(alpha: 0.18), onSelected: (_) => setM(() => rappel = d));
+          selectedColor: widget.categoryColor.withValues(alpha: 0.18),
+          onSelected: (_) => setM(() { rappel = d; dansCtrl.clear(); }));
+        void appliquerDelai() {
+          final n = int.tryParse(dansCtrl.text.trim());
+          if (n != null && n > 0) rappel = _ajouterDelai(date, n, dansUnite);
+        }
         return Padding(
           padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
           child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -708,6 +716,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               chipRappel('3 ans', DateTime(date.year + 3, date.month, date.day)),
               chipRappel('Aucun', null),
             ]),
+            const SizedBox(height: 10),
+            _saisieDelai(
+              libelle: 'Ou dans', ctrl: dansCtrl, unite: dansUnite, unites: const ['jours', 'semaines', 'mois', 'ans'],
+              onChange: () => setM(appliquerDelai),
+              onUnite: (u) => setM(() { dansUnite = u; appliquerDelai(); }),
+            ),
+            if (rappel != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Rappel le ${_jjmmaaaa(rappel!)}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600, color: widget.categoryColor)),
+              ),
             const SizedBox(height: 18),
             SizedBox(width: double.infinity, child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
@@ -784,22 +804,21 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
               ]),
               const SizedBox(height: 8),
-              Row(children: [
-                SizedBox(width: 120, child: TextField(
-                  controller: p.duree, keyboardType: TextInputType.number,
-                  decoration: _inputDeco('jours').copyWith(labelText: 'Durée (jours)'),
-                  onChanged: (_) => setM(() {}),
-                )),
-                const SizedBox(width: 8),
-                Expanded(child: Wrap(spacing: 6, runSpacing: 6, children: [
-                  for (final d in [3, 5, 7, 10, 14]) chip('$d j', p.duree.text == '$d', () => setM(() => p.duree.text = '$d')),
-                ])),
+              // Durée libre (jours / semaines / mois) ou durées courantes.
+              _saisieDelai(
+                libelle: 'Pendant', ctrl: p.dureeNb, unite: p.unite, unites: const ['jours', 'semaines', 'mois'],
+                onChange: () => setM(p.majDuree),
+                onUnite: (u) => setM(() { p.unite = u; p.majDuree(); }),
+              ),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final d in [3, 5, 7, 10, 14]) chip('$d j', p.duree.text == '$d', () => setM(() => p.jours(d))),
               ]),
               if (i == phases.length - 1)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: TextButton(
-                    onPressed: () => setM(() => p.duree.text = ''),
+                    onPressed: () => setM(() => p.jours(null)),
                     child: Text(p.duree.text.isEmpty ? '✓ Au long cours' : 'Au long cours (sans fin)',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor)),
                   ),
@@ -848,7 +867,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                 final der = phases.last;
                 phases.add(_PhaseEdit.de(_PhaseCr(dose: '', prises: {...der.prises}, frequenceJours: der.frequence,
                     dureeJours: int.tryParse(der.duree.text))));
-                if (der.duree.text.isEmpty) der.duree.text = '3';
+                if (der.duree.text.isEmpty) der.jours(3);
               }),
               icon: const Icon(Icons.trending_down, size: 18),
               label: const Text('Ajouter une phase (dose dégressive)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
@@ -894,6 +913,37 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   static const _medicamentsCourants = ['Metacam (méloxicam)', 'Previcox', 'Onsior', 'Rimadyl', 'Synulox', 'Clavaseptin',
       'Kesium', 'Marbocyl', 'Convenia', 'Prednisolone', 'Cortavance', 'Apoquel', 'Cytopoint', 'Vetmedin', 'Fortekor',
       'Cerenia', 'Gabapentine', 'Tramadol', 'Forthyron', 'Cardalis'];
+
+  /// « Dans / Pendant [N] [unité] » — saisie libre d'un délai.
+  Widget _saisieDelai({required String libelle, required TextEditingController ctrl, required String unite,
+      required List<String> unites, required VoidCallback onChange, required ValueChanged<String> onUnite}) {
+    return Row(children: [
+      Text(libelle, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+      const SizedBox(width: 8),
+      SizedBox(width: 70, child: TextField(
+        controller: ctrl, keyboardType: TextInputType.number, textAlign: TextAlign.center,
+        decoration: _inputDeco('').copyWith(contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8)),
+        onChanged: (_) => onChange(),
+      )),
+      const SizedBox(width: 8),
+      DropdownButton<String>(
+        value: unite, underline: const SizedBox.shrink(),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025)),
+        items: [for (final u in unites) DropdownMenuItem(value: u, child: Text(u))],
+        onChanged: (u) { if (u != null) onUnite(u); },
+      ),
+    ]);
+  }
+
+  static DateTime _ajouterDelai(DateTime d, int n, String unite) => switch (unite) {
+        'jours' => d.add(Duration(days: n)),
+        'semaines' => d.add(Duration(days: 7 * n)),
+        'ans' => DateTime(d.year + n, d.month, d.day),
+        _ => DateTime(d.year, d.month + n, d.day),
+      };
+
+  static String _jjmmaaaa(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   String _fmtPoids(double p) => p == p.roundToDouble() ? p.toStringAsFixed(0) : p.toStringAsFixed(1).replaceAll('.', ',');
 
@@ -1818,10 +1868,25 @@ class _PhaseCr {
 }
 
 class _PhaseEdit {
+  /// [duree] : durée en jours (stockée) ; [dureeNb] + [unite] : saisie.
   final TextEditingController dose, duree, frequenceCtrl;
   final Set<String> prises;
+  late final TextEditingController dureeNb = TextEditingController(text: duree.text);
+  String unite = 'jours';
   _PhaseEdit(this.dose, this.duree, this.frequenceCtrl, this.prises);
   int get frequence => (int.tryParse(frequenceCtrl.text.trim()) ?? 1).clamp(1, 365);
+  static const _joursParUnite = {'jours': 1, 'semaines': 7, 'mois': 30};
+  /// Saisie (nombre + unité) → durée en jours.
+  void majDuree() {
+    final n = int.tryParse(dureeNb.text.trim());
+    duree.text = n == null || n <= 0 ? '' : '${n * _joursParUnite[unite]!}';
+  }
+  /// Durée courante en jours (null = au long cours).
+  void jours(int? j) {
+    duree.text = j?.toString() ?? '';
+    dureeNb.text = duree.text;
+    unite = 'jours';
+  }
   factory _PhaseEdit.de(_PhaseCr p) => _PhaseEdit(TextEditingController(text: p.dose),
       TextEditingController(text: p.dureeJours?.toString() ?? ''),
       TextEditingController(text: '${p.frequenceJours}'), {...p.prises});
