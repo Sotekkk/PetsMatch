@@ -63,11 +63,16 @@ BEGIN
   END IF;
   IF v_uid IS NULL THEN RETURN NULL; END IF;
 
+  -- (FOUND plutôt que « p IS NULL » : un RECORD jamais affecté lève une erreur.)
   IF v_profil IS NOT NULL THEN
     SELECT * INTO p FROM user_profiles WHERE id = v_profil;
   END IF;
-  IF p IS NULL THEN
+  IF v_profil IS NULL OR NOT FOUND THEN
     SELECT * INTO p FROM user_profiles WHERE uid = v_uid AND is_main = true LIMIT 1;
+    IF NOT FOUND THEN
+      SELECT * INTO p FROM user_profiles WHERE uid = v_uid ORDER BY created_at LIMIT 1;
+      IF NOT FOUND THEN RETURN NULL; END IF;
+    END IF;
   END IF;
   SELECT firstname, lastname, email, phone_number, rue, code_postal, ville,
          name_elevage, rue_elevage, code_postal_elevage, ville_elevage, siret
