@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
@@ -115,7 +115,11 @@ export default function FacturationPage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const activeProfileId = useActiveProfile();
+  // Profil actif connu (localStorage lu) avant de charger : sinon un premier
+  // chargement « tout le compte » (photographe, éleveur… mélangés) pouvait
+  // arriver après le bon et l'écraser.
+  const { loaded: profilCharge, id: activeProfileId } = useActiveProfileState();
+  const requeteFactures = useRef(0);
   const { config: planConfig, loading: planLoading } = usePlan();
   const { isPension: isPensionSource } = usePensionAccess();
   const { isGarde: isGardeSource } = useGardeAccess();
@@ -180,13 +184,23 @@ export default function FacturationPage() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profilCharge) return;
+    const n = ++requeteFactures.current;
     setFetching(true);
+
+    // Toujours scopé au profil (miroir appli _load) : profil actif, sinon le
+    // profil principal du compte — jamais toutes les factures du compte.
+    let pid = activeProfileId;
+    if (!pid) {
+      const { data: principal } = await supabase.from('user_profiles_complet').select('id')
+        .eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      pid = (principal?.id as string | undefined) ?? '';
+    }
 
     let q = supabase.from('factures').select('*').order('created_at', { ascending: false });
 
-    if (activeProfileId) {
-      q = q.eq('profile_id', activeProfileId) as typeof q;
+    if (pid) {
+      q = q.eq('profile_id', pid) as typeof q;
     } else {
       q = q.eq('uid_eleveur', user.uid) as typeof q;
     }
@@ -201,9 +215,10 @@ export default function FacturationPage() {
     }
 
     const { data } = await q;
+    if (n !== requeteFactures.current) return; // réponse périmée (profil changé entre-temps)
     setFactures((data ?? []) as Facture[]);
     setFetching(false);
-  }, [user, activeProfileId, profilSource]);
+  }, [user, profilCharge, activeProfileId, profilSource]);
 
   useEffect(() => { load(); }, [load]);
 
