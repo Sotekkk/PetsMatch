@@ -269,7 +269,10 @@ function ForfaitSousForm({ proUid, onSave, onCancel }: {
 
 interface VaccinCr { nom: string; lot: string; date: string; rappel: string | null }
 /** Phase d'un traitement (dégressif : plusieurs phases enchaînées). */
-interface PhaseCr { dose: string; prises: string[]; frequenceJours: number; dureeJours: number | null }
+/** doses : dose propre à chaque prise (clé de PRISES) — absente : dose partout. */
+interface PhaseCr { dose: string; prises: string[]; frequenceJours: number; dureeJours: number | null; doses?: Record<string, string> }
+const doseDe = (p: PhaseCr, k: string) => p.doses?.[k]?.trim() || p.dose.trim();
+const dosesParPrise = (p: PhaseCr) => !!p.doses && p.prises.length > 1;
 interface TraitementCr { nom: string; type: string; phases: PhaseCr[]; rappels: boolean; notes: string }
 interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: string | null; quantite: number | null; unite: string | null }
 
@@ -349,8 +352,11 @@ function plus(dateIso: string, jours = 0, mois = 0, ans = 0): string {
 function libellePhase(p: PhaseCr): string {
   const noms = Object.keys(PRISES).filter(k => p.prises.includes(k)).map(k => PRISES[k][0].toLowerCase());
   const quand = noms.length > 1 ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms.join('');
+  const cles = Object.keys(PRISES).filter(k => p.prises.includes(k));
   return [
-    [p.dose.trim(), quand].filter(Boolean).join(' '),
+    dosesParPrise(p)
+      ? cles.map(k => [doseDe(p, k), `le ${PRISES[k][0].toLowerCase()}`].filter(Boolean).join(' ')).join(', ')
+      : [p.dose.trim(), quand].filter(Boolean).join(' '),
     p.frequenceJours > 1 ? `tous les ${p.frequenceJours} jours` : '',
     p.dureeJours ? `pendant ${p.dureeJours} jour${p.dureeJours > 1 ? 's' : ''}` : 'au long cours',
   ].filter(Boolean).join(', ');
@@ -569,13 +575,30 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
                     <button type="button" onClick={() => setTrt({ ...trt, phases: trt.phases.filter((_, j) => j !== i) })} className="text-gray-400 px-1">✕</button>
                   )}
                 </div>
-                <input value={p.dose} onChange={e => majPhase(i, { dose: e.target.value })} placeholder="Dose par prise — ex. 1 cp, ½ cp, 2 mL, 1 pipette" className={champ} />
+                {!dosesParPrise(p) && (
+                  <input value={p.dose} onChange={e => majPhase(i, { dose: e.target.value })} placeholder="Dose par prise — ex. 1 cp, ½ cp, 2 mL, 1 pipette" className={champ} />
+                )}
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(PRISES).map(([k, [l]]) => (
                     <button key={k} type="button" className={chip(p.prises.includes(k))}
                       onClick={() => majPhase(i, { prises: p.prises.includes(k) ? p.prises.filter(x => x !== k) : [...p.prises, k] })}>{l}</button>
                   ))}
                 </div>
+                {/* Dose propre à chaque prise (1 cp le matin, ½ cp le soir…). */}
+                {p.prises.length > 1 && (
+                  <label className="flex items-center gap-2 text-sm text-[#1E2025]">
+                    <input type="checkbox" checked={!!p.doses} className="accent-[#0C5C6C]"
+                      onChange={e => majPhase(i, e.target.checked
+                        ? { doses: Object.fromEntries(p.prises.map(k => [k, p.dose])) }
+                        : { doses: undefined, dose: p.dose.trim() || Object.values(p.doses ?? {}).find(d => d.trim()) || '' })} />
+                    Dose différente selon la prise
+                  </label>
+                )}
+                {dosesParPrise(p) && Object.keys(PRISES).filter(k => p.prises.includes(k)).map(k => (
+                  <input key={k} value={p.doses?.[k] ?? ''} aria-label={`Dose ${PRISES[k][0].toLowerCase()}`}
+                    onChange={e => majPhase(i, { doses: { ...p.doses, [k]: e.target.value } })}
+                    placeholder={`Dose ${PRISES[k][0].toLowerCase()} — ex. 1 cp, ½ cp`} className={champ} />
+                ))}
                 {/* Intervalle libre : une prise tous les N jours. */}
                 <div className="flex items-center gap-2 text-sm text-[#1E2025]">
                   Tous les
@@ -1078,7 +1101,8 @@ function PatientDetailPageInner() {
       for (let i = 0; i < t.phases.length; i++) {
         const ph = t.phases[i];
         const fin = ph.dureeJours ? new Date(debut.getTime() + ph.dureeJours * 86400000) : null;
-        const heures = Object.keys(PRISES).filter(k => ph.prises.includes(k)).map(k => PRISES[k][1]);
+        const cles = Object.keys(PRISES).filter(k => ph.prises.includes(k));
+        const heures = cles.map(k => PRISES[k][1]);
         const rappel = t.rappels && heures.length > 0;
         const notesPhase = [t.phases.length > 1 ? `Phase ${i + 1}/${t.phases.length}` : '', t.notes].filter(Boolean).join(' — ');
         const { error } = await supabase.from('traitements').insert({
@@ -1089,6 +1113,8 @@ function PatientDetailPageInner() {
           ...(rappel ? {
             rappel_frequence_jours: ph.frequenceJours, rappel_duree_jours: ph.dureeJours ?? 30,
             rappel_fin: (fin ?? new Date(debut.getTime() + 30 * 86400000)).toISOString(), rappel_heures: heures,
+            // Dose de CHAQUE prise : la notification dit la bonne quantité.
+            ...(dosesParPrise(ph) ? { rappel_quantites: cles.map(k => doseDe(ph, k)) } : {}),
           } : {}),
         });
         if (error) erreurs.push(`traitement ${t.nom}`);

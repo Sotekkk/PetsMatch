@@ -482,7 +482,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       for (var i = 0; i < t.phases.length; i++) {
         final ph = t.phases[i];
         final fin = ph.dureeJours != null ? debut.add(Duration(days: ph.dureeJours!)) : null;
-        final heures = [for (final k in ph.prises) _kPrises[k]!.$2]..sort();
+        final cles = ph.prises.toList()..sort((a, b) => _kPrises[a]!.$2.compareTo(_kPrises[b]!.$2));
+        final heures = [for (final k in cles) _kPrises[k]!.$2];
         final rappel = t.rappels && heures.isNotEmpty;
         try {
           await _supa.from('traitements').insert({
@@ -501,6 +502,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               'rappel_duree_jours': ph.dureeJours ?? 30,
               'rappel_fin': (fin ?? debut.add(const Duration(days: 30))).toIso8601String(),
               'rappel_heures': heures,
+              // Dose de CHAQUE prise (1 cp le matin, ½ cp le soir) : la
+              // notification au propriétaire dit la bonne quantité.
+              if (ph.doses.isNotEmpty) 'rappel_quantites': [for (final k in cles) ph.doseDe(k)],
             },
           });
         } catch (e) { erreurs.add('traitement ${t.nom}'); }
@@ -781,7 +785,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                   visualDensity: VisualDensity.compact, icon: const Icon(Icons.close, size: 18),
                   onPressed: () => setM(() => phases.removeAt(i))),
               ]),
-              TextField(controller: p.dose, decoration: _inputDeco('ex. 1 cp, ½ cp, 2 mL, 1 pipette').copyWith(labelText: 'Dose par prise')),
+              if (!p.dosesParPrise)
+                TextField(controller: p.dose, decoration: _inputDeco('ex. 1 cp, ½ cp, 2 mL, 1 pipette').copyWith(labelText: 'Dose par prise')),
               const SizedBox(height: 8),
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (final pr in _kPrises.entries) FilterChip(
@@ -789,6 +794,22 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                   selected: p.prises.contains(pr.key), selectedColor: widget.categoryColor.withValues(alpha: 0.18),
                   onSelected: (v) => setM(() => v ? p.prises.add(pr.key) : p.prises.remove(pr.key))),
               ]),
+              // Dose propre à chaque prise (1 cp le matin, ½ cp le soir…).
+              if (p.prises.length > 1)
+                CheckboxListTile(
+                  dense: true, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
+                  value: p.dosesParPrise, activeColor: widget.categoryColor,
+                  title: const Text('Dose différente selon la prise', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  onChanged: (v) => setM(() => p.basculerDoses(v == true)),
+                ),
+              if (p.dosesParPrise && p.prises.length > 1)
+                for (final k in _kPrises.keys)
+                  if (p.prises.contains(k))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: TextField(controller: p.doseCtrl(k),
+                          decoration: _inputDeco('ex. 1 cp, ½ cp').copyWith(labelText: 'Dose ${_kPrises[k]!.$1.toLowerCase()}')),
+                    ),
               const SizedBox(height: 8),
               // Intervalle libre : une prise tous les N jours.
               Row(children: [
@@ -1853,14 +1874,23 @@ class _PhaseCr {
   final Set<String> prises;
   final int frequenceJours;
   final int? dureeJours;
-  const _PhaseCr({required this.dose, required this.prises, this.frequenceJours = 1, this.dureeJours});
+  /// Dose propre à chaque prise (clé de [_kPrises]) — vide : [dose] partout.
+  final Map<String, String> doses;
+  const _PhaseCr({required this.dose, required this.prises, this.frequenceJours = 1, this.dureeJours, this.doses = const {}});
 
-  /// « 1 cp matin et soir, tous les 2 jours, pendant 3 jours ».
+  String doseDe(String prise) => (doses[prise] ?? '').trim().isNotEmpty ? doses[prise]!.trim() : dose.trim();
+
+  /// « 1 cp matin et soir, tous les 2 jours, pendant 3 jours » — ou
+  /// « 1 cp le matin, ½ cp le soir, … » avec une dose par prise.
   String get libelle {
-    final noms = [for (final k in _kPrises.keys) if (prises.contains(k)) _kPrises[k]!.$1.toLowerCase()];
+    final cles = [for (final k in _kPrises.keys) if (prises.contains(k)) k];
+    final noms = [for (final k in cles) _kPrises[k]!.$1.toLowerCase()];
     final quand = noms.length > 1 ? '${noms.sublist(0, noms.length - 1).join(', ')} et ${noms.last}' : noms.join();
     return [
-      [if (dose.trim().isNotEmpty) dose.trim(), quand].where((x) => x.isNotEmpty).join(' '),
+      if (doses.isNotEmpty)
+        [for (final k in cles) [doseDe(k), 'le ${_kPrises[k]!.$1.toLowerCase()}'].where((x) => x.isNotEmpty).join(' ')].join(', ')
+      else
+        [if (dose.trim().isNotEmpty) dose.trim(), quand].where((x) => x.isNotEmpty).join(' '),
       if (frequenceJours > 1) 'tous les $frequenceJours jours',
       dureeJours != null ? 'pendant $dureeJours jour${dureeJours! > 1 ? 's' : ''}' : 'au long cours',
     ].join(', ');
@@ -1887,11 +1917,34 @@ class _PhaseEdit {
     dureeNb.text = duree.text;
     unite = 'jours';
   }
-  factory _PhaseEdit.de(_PhaseCr p) => _PhaseEdit(TextEditingController(text: p.dose),
-      TextEditingController(text: p.dureeJours?.toString() ?? ''),
-      TextEditingController(text: '${p.frequenceJours}'), {...p.prises});
-  _PhaseCr vers() => _PhaseCr(dose: dose.text.trim(), prises: {...prises}, frequenceJours: frequence,
-      dureeJours: int.tryParse(duree.text.trim()));
+  /// Dose propre à chaque prise.
+  bool dosesParPrise = false;
+  final Map<String, TextEditingController> _doses = {};
+  TextEditingController doseCtrl(String prise) => _doses.putIfAbsent(prise, () => TextEditingController(text: dose.text));
+  void basculerDoses(bool v) {
+    dosesParPrise = v;
+    // Repli : la dose commune reprend la première dose saisie.
+    if (!v && dose.text.trim().isEmpty) {
+      dose.text = _doses.values.map((c) => c.text.trim()).firstWhere((t) => t.isNotEmpty, orElse: () => '');
+    }
+  }
+  factory _PhaseEdit.de(_PhaseCr p) {
+    final e = _PhaseEdit(TextEditingController(text: p.dose),
+        TextEditingController(text: p.dureeJours?.toString() ?? ''),
+        TextEditingController(text: '${p.frequenceJours}'), {...p.prises});
+    if (p.doses.isNotEmpty) {
+      e.dosesParPrise = true;
+      p.doses.forEach((k, v) => e._doses[k] = TextEditingController(text: v));
+    }
+    return e;
+  }
+  _PhaseCr vers() {
+    final doses = dosesParPrise && prises.length > 1
+        ? {for (final k in prises) if (doseCtrl(k).text.trim().isNotEmpty) k: doseCtrl(k).text.trim()}
+        : const <String, String>{};
+    return _PhaseCr(dose: doses.isEmpty ? dose.text.trim() : '', prises: {...prises}, frequenceJours: frequence,
+        dureeJours: int.tryParse(duree.text.trim()), doses: doses);
+  }
 }
 
 class _TraitementCr {
