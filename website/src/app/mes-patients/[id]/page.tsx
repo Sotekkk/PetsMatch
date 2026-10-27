@@ -3274,6 +3274,12 @@ function PatientDetailPageInner() {
                 setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []);
                 setAddingType('cr');
               }}
+              onSupprimer={async (cr) => {
+                // Droits contrôlés en base : un CR validé n'est supprimable que par qui peut valider.
+                const { data, error } = await supabase.from('comptes_rendus').delete().eq('id', cr.id).select('id');
+                if (error || !data?.length) { alert(`Suppression impossible : ${error?.message ?? 'seul un vétérinaire qui peut valider supprime un compte rendu validé'}`); return; }
+                setComptesRendus(prev => prev.filter(x => x.id !== cr.id));
+              }}
               onValider={async (cr) => {
                 const { error } = await supabase.from('comptes_rendus').update({
                   statut: 'valide', ...(activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),

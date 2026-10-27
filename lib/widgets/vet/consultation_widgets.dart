@@ -206,6 +206,7 @@ Future<void> showConsultationDetail(BuildContext context, {
   required ConsultationVet c,
   required Map<String, String> noms,
   VoidCallback? onGererCr,
+  Future<void> Function(Map<String, dynamic> cr)? onSupprimerCr,
 }) => showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -213,7 +214,7 @@ Future<void> showConsultationDetail(BuildContext context, {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
       builder: (_) => DraggableScrollableSheet(
         expand: false, initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.4,
-        builder: (ctx, sc) => _ConsultationDetail(c: c, noms: noms, controller: sc, onGererCr: onGererCr),
+        builder: (ctx, sc) => _ConsultationDetail(c: c, noms: noms, controller: sc, onGererCr: onGererCr, onSupprimerCr: onSupprimerCr),
       ),
     );
 
@@ -222,7 +223,9 @@ class _ConsultationDetail extends StatefulWidget {
   final Map<String, String> noms;
   final ScrollController controller;
   final VoidCallback? onGererCr;
-  const _ConsultationDetail({required this.c, required this.noms, required this.controller, this.onGererCr});
+  /// Supprimer le compte rendu (erreur de saisie) — après confirmation.
+  final Future<void> Function(Map<String, dynamic> cr)? onSupprimerCr;
+  const _ConsultationDetail({required this.c, required this.noms, required this.controller, this.onGererCr, this.onSupprimerCr});
 
   @override
   State<_ConsultationDetail> createState() => _ConsultationDetailState();
@@ -395,6 +398,29 @@ class _ConsultationDetailState extends State<_ConsultationDetail> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
+        ),
+      ],
+      if (cr != null && widget.onSupprimerCr != null) ...[
+        const SizedBox(height: 10),
+        TextButton.icon(
+          onPressed: () async {
+            final ok = await showDialog<bool>(context: context, builder: (d) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Supprimer ce compte rendu ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              content: const Text('Il disparaît aussi pour le propriétaire. Les vaccins et traitements déjà inscrits au carnet restent : supprimez-les depuis l’onglet Santé si besoin.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+                TextButton(onPressed: () => Navigator.pop(d, true),
+                    child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w700))),
+              ],
+            ));
+            if (ok != true || !context.mounted) return;
+            Navigator.pop(context);
+            await widget.onSupprimerCr!(cr);
+          },
+          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+          label: const Text('Supprimer le compte rendu', style: TextStyle(fontFamily: 'Galey', color: Colors.red, fontWeight: FontWeight.w600)),
         ),
       ],
     ]);

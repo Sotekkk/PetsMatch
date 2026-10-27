@@ -10857,6 +10857,25 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     _chargerDroits();
   }
 
+  /// Compte rendu saisi par erreur (droits contrôlés en base : un CR validé
+  /// n'est supprimable que par qui peut valider).
+  Future<void> _supprimerCr(Map<String, dynamic> cr) async {
+    try {
+      final r = await Supabase.instance.client.from('comptes_rendus').delete().eq('id', cr['id']).select('id');
+      if ((r as List).isEmpty) throw 'seul un vétérinaire qui peut valider supprime un compte rendu validé';
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Compte rendu supprimé.', style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Suppression impossible : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   Future<void> _chargerDroits() async {
     final cr = await AgendaContexte.peut('vet_cr_rediger') || await AgendaContexte.peut('vet_cr_valider');
     final carnet = await AgendaContexte.peut('vet_patients') || cr;
@@ -11099,7 +11118,8 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
               ConsultationCard(
                 c: c, noms: _noms,
                 onOuvrir: () => showConsultationDetail(context, c: c, noms: _noms,
-                    onGererCr: _peutCr || _peutOrdonnance ? _openCrPage : null),
+                    onGererCr: _peutCr || _peutOrdonnance ? _openCrPage : null,
+                    onSupprimerCr: _peutCr ? _supprimerCr : null),
               ),
               const SizedBox(height: 8),
             ],
