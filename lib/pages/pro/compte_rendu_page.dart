@@ -1314,7 +1314,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     String? prenom, nom, email, tel, rue, cp, ville;
     String? vide(dynamic v) => (v?.toString().trim() ?? '').isEmpty ? null : v.toString().trim();
     try {
-      final j = await _supa.rpc('pm_client_facturation', params: {'p_animal_id': animalId});
+      // Client du RDV (co-propriétaire qui a amené l'animal) si connu.
+      final j = await _supa.rpc('pm_client_facturation', params: {
+        'p_animal_id': animalId,
+        if ((owner.profileId ?? '').isNotEmpty) 'p_client_profile_id': owner.profileId,
+      });
       if (j is Map && (vide(j['nom']) != null || vide(j['prenom']) != null)) {
         prenom = vide(j['prenom']); nom = vide(j['nom']);
         email = vide(j['email']); tel = vide(j['telephone']);

@@ -1309,7 +1309,10 @@ function PatientDetailPageInner() {
     // particulier / élevage / association — pm_client_facturation), sinon
     // fichier de la clinique, sinon RDV. Miroir appli.
     const c = { prenom: '', nom: '', email: '', tel: '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };
-    const { data: cf } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId });
+    // Client du RDV (co-propriétaire qui a amené l'animal) si connu.
+    const { data: cf } = await supabase.rpc('pm_client_facturation', {
+      p_animal_id: animalId, ...(dernierRdv?.client_profile_id ? { p_client_profile_id: dernierRdv.client_profile_id } : {}),
+    });
     const j = (cf ?? null) as Record<string, string> | null;
     if (j && (j.nom || j.prenom)) {
       Object.assign(c, { prenom: j.prenom ?? '', nom: j.nom ?? '', email: j.email ?? '', tel: j.telephone ?? '', rue: j.rue ?? '',
