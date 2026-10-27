@@ -29,7 +29,10 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 class ProProfileEditPage extends StatefulWidget {
   /// UUID from user_profiles.id — set when editing a secondary profile, null for primary
   final String? secondaryProfileId;
-  const ProProfileEditPage({super.key, this.secondaryProfileId});
+  /// Ouvre directement la grille de tarifs (vétérinaire : menu « Mes tarifs »,
+  /// facture proposée sans tarifs).
+  final bool allerAuxTarifs;
+  const ProProfileEditPage({super.key, this.secondaryProfileId, this.allerAuxTarifs = false});
 
   @override
   State<ProProfileEditPage> createState() => _ProProfileEditPageState();
@@ -37,6 +40,7 @@ class ProProfileEditPage extends StatefulWidget {
 
 class _ProProfileEditPageState extends State<ProProfileEditPage> {
   final _supa   = Supabase.instance.client;
+  final _tarifsKey = GlobalKey();
   late final GoogleMapsPlaces _places;
   bool _saving  = false;
   bool _loading = true;
@@ -505,6 +509,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+    if (widget.allerAuxTarifs) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = _tarifsKey.currentContext;
+        if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 400), alignment: 0.05);
+      });
+    }
     if (_catPro == 'education' || _catPro == 'garde') await _loadForfaits();
   }
 
@@ -1644,7 +1654,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // ── Tarifs vétérinaire ────────────────────────────────────
                   if (_catPro == 'veterinaire') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Mes tarifs (€)'),
+                    KeyedSubtree(key: _tarifsKey, child: _sectionTitle('Mes tarifs (€)')),
                     const SizedBox(height: 4),
                     Text(
                       'Laissez à 0 ce que vous ne proposez pas. Ajoutez vos autres actes en bas.',

@@ -10,6 +10,7 @@ import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
+import 'package:PetsMatch/pages/pro/pro_profile_edit.dart' show ProProfileEditPage;
 import 'package:http/http.dart' as http;
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
@@ -350,6 +351,35 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       content: Text('Brouillon repris : modifiez-le, puis enregistrez.', style: TextStyle(fontFamily: 'Galey')),
       behavior: SnackBarBehavior.floating,
     ));
+  }
+
+  /// Facturer après coup un compte rendu validé : motif, poids, actes du CR,
+  /// vaccins et traitements inscrits au carnet par moi le jour du CR.
+  Future<void> _facturerCr(Map<String, dynamic> cr) async {
+    final animalId = (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    if (animalId == null || animalId.isEmpty) return;
+    final d = DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal() ?? DateTime.now();
+    final ymd = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final vetId = AgendaContexte.moi ?? AgendaContexte.uid;
+    var vac = <dynamic>[], trt = <dynamic>[];
+    if (vetId != null) {
+      try {
+        vac = await _supa.from('vaccinations').select('vaccin, lot, date, date_rappel')
+            .eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
+        trt = await _supa.from('traitements').select('nom').eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
+      } catch (_) {}
+    }
+    final owner = await _resolveOwner();
+    if (!mounted) return;
+    await _proposerFacture(
+      animalId: animalId, rdvId: cr['rdv_id']?.toString(), owner: owner,
+      motif: (cr['motif'] ?? '').toString(), poids: (cr['poids'] as num?)?.toDouble(),
+      actesRealises: [for (final a in (cr['actes'] as List? ?? const [])) a.toString()],
+      vaccins: [for (final v in vac) _VaccinCr((v['vaccin'] ?? 'Vaccin').toString(), (v['lot'] ?? '').toString(),
+          DateTime.tryParse(v['date']?.toString() ?? '') ?? d, DateTime.tryParse(v['date_rappel']?.toString() ?? ''))],
+      traitements: [for (final n in {for (final t in trt) (t['nom'] ?? '').toString()}) if (n.isNotEmpty)
+          _TraitementCr(nom: n, type: 'medicament', phases: const [], rappels: false)],
+    );
   }
 
   void _abandonnerBrouillon() => setState(() {
@@ -1242,6 +1272,26 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           const SizedBox(height: 4),
           Text('Tarifs : votre grille (profil) et les prix de vente de la pharmacie. Tout reste modifiable avant l\'émission.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+          // Aucune grille saisie : les prix sont à 0 → lien direct vers « Mes tarifs ».
+          if (tarifs.values.every((v) => (double.tryParse('${v ?? ''}'.replaceAll(',', '.')) ?? 0) == 0)) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+              decoration: BoxDecoration(color: const Color(0xFFFFF4E0), borderRadius: BorderRadius.circular(10)),
+              child: Row(children: [
+                const Expanded(child: Text('Vos tarifs ne sont pas encore renseignés : les prix sont à compléter.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF8A5A00)))),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx, false);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ProProfileEditPage(
+                        secondaryProfileId: _profilPro, allerAuxTarifs: true)));
+                  },
+                  child: Text('Saisir mes tarifs', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: widget.categoryColor)),
+                ),
+              ]),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(children: [
             Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, false),
@@ -1776,7 +1826,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                 // formulaire ; brouillon d'ASV : validé tel quel.
                 onValider: (cr['statut'] == 'brouillon' && _peutValider && cr['brouillon'] == null) ? () => _validerCr(cr) : null,
                 onReprendre: (cr['statut'] == 'brouillon' && cr['brouillon'] != null && cr['id']?.toString() != _brouillonId)
-                    ? () => _reprendreBrouillon(cr) : null)),
+                    ? () => _reprendreBrouillon(cr) : null,
+                onFacturer: (_saisieActes && cr['statut'] != 'brouillon') ? () => _facturerCr(cr) : null)),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
@@ -2126,9 +2177,11 @@ class _CrCard extends StatelessWidget {
   final VoidCallback? onValider;
   /// Brouillon du vétérinaire : reprendre la saisie.
   final VoidCallback? onReprendre;
+  /// CR validé : préparer la facture (si elle n'a pas été faite à l'enregistrement).
+  final VoidCallback? onFacturer;
   /// Imprimer / partager / envoyer au propriétaire (CR validé).
   final VoidCallback? onTransmettre;
-  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onReprendre, this.onTransmettre});
+  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onReprendre, this.onFacturer, this.onTransmettre});
 
   @override
   Widget build(BuildContext context) {
@@ -2194,6 +2247,18 @@ class _CrCard extends StatelessWidget {
               icon: const Icon(Icons.task_alt, size: 16),
               label: const Text('Valider et envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+            ),
+          ),
+        ],
+        if (onFacturer != null) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: onFacturer,
+              icon: const Icon(Icons.receipt_long_outlined, size: 16),
+              label: const Text('Facturer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(foregroundColor: color, side: BorderSide(color: color)),
             ),
           ),
         ],

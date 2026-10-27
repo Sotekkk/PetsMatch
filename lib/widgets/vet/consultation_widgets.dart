@@ -391,7 +391,7 @@ class _ConsultationDetailState extends State<_ConsultationDetail> {
         OutlinedButton.icon(
           onPressed: () { Navigator.pop(context); widget.onGererCr!(); },
           icon: const Icon(Icons.edit_note, size: 18, color: _teal),
-          label: Text(cr != null && c.brouillon ? 'Valider, modifier, exporter' : 'Exporter, transmettre',
+          label: Text(cr != null && c.brouillon ? 'Valider, modifier, exporter' : 'Facturer, exporter, transmettre',
               style: const TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700)),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: _teal),

@@ -1270,6 +1270,12 @@ function PatientDetailPageInner() {
       supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
     ]);
     const tarifs = (t?.tarifs_veto ?? {}) as Record<string, unknown>;
+    // Aucune grille saisie : les prix seraient à 0 → proposer de la remplir.
+    if (Object.values(tarifs).every(v => !(parseFloat(String(v ?? '').replace(',', '.')) > 0))
+      && confirm('Vos tarifs ne sont pas encore renseignés : la facture serait à 0 €.\n\nOuvrir « Mes tarifs » pour les saisir ?\n(Annuler : préparer la facture quand même)')) {
+      router.push('/profil#tarifs');
+      return;
+    }
     const tarif = (k: string) => { const v = parseFloat(String(tarifs[k] ?? '').replace(',', '.')); return isNaN(v) ? null : v; };
     const prixPharma = (nom: string) => {
       const o = ((ph ?? []) as { nom: string; prix_vente: number | null }[]).find(x => x.nom.toLowerCase() === nom.toLowerCase());
@@ -3273,6 +3279,21 @@ function PatientDetailPageInner() {
                 setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
                 setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []);
                 setAddingType('cr');
+              }}
+              onFacturer={async (cr) => {
+                // Après coup : motif, poids, actes du CR + vaccins / traitements
+                // inscrits au carnet par moi le jour du CR.
+                const c = cr as CompteRendu;
+                const jour = new Date(c.created_at).toLocaleDateString('sv-SE');
+                const [{ data: vac }, { data: trt }] = await Promise.all([
+                  supabase.from('vaccinations').select('vaccin, lot, date, date_rappel').eq('animal_id', animalId).eq('date', jour).eq('vet_id', user?.uid ?? ''),
+                  supabase.from('traitements').select('nom').eq('animal_id', animalId).eq('date', jour).eq('vet_id', user?.uid ?? ''),
+                ]);
+                const vaccins: VaccinCr[] = ((vac ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null }[])
+                  .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null }));
+                const noms = [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))];
+                await proposerFacture(c.motif ?? '', c.actes ?? [], vaccins,
+                  noms.map(nom => ({ nom, type: 'medicament', phases: [], rappels: false, notes: '' })), c.poids ?? null);
               }}
               onSupprimer={async (cr) => {
                 // Droits contrôlés en base : un CR validé n'est supprimable que par qui peut valider.

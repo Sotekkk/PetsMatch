@@ -892,6 +892,17 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage()));
                         },
                       ),
+                      // Grille de tarifs : base des factures de consultation.
+                      _DrawerSubItem(
+                        label: 'Mes tarifs',
+                        icon: Icons.euro_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => ProProfileEditPage(
+                              secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+                              allerAuxTarifs: true)));
+                        },
+                      ),
                       _DrawerSubItem(
                         label: 'Scanner une puce',
                         icon: Icons.qr_code_scanner,

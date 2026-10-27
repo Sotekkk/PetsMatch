@@ -1287,6 +1287,8 @@ export default function Header() {
     ? withSanteContrats.map((sec, i) => i === 0
         ? { ...sec, items: [...sec.items,
             // formule : formule véto minimale (grisé + étiquette sinon).
+            // Grille de tarifs : base des factures de consultation.
+            { href: '/profil#tarifs', label: 'Mes tarifs', icon: '€' },
             { href: '/veterinaire/comptes-rendus', label: 'Comptes rendus à valider', icon: '📝', formule: 'avance' },
             { href: '/veterinaire/inventaire', label: 'Inventaire & pharmacie', icon: '💊', formule: 'avance' },
             { href: '/veterinaire/salles', label: 'Salles & motifs', icon: '🚪', formule: 'clinique' },

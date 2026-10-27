@@ -1805,8 +1805,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Tarifs vétérinaire (miroir appli) */}
+        {/* Tarifs vétérinaire (miroir appli) — ancre #tarifs (menu « Mes tarifs »). */}
         {catPro === 'veterinaire' && (
+          <div id="tarifs" className="scroll-mt-24" ref={el => {
+            if (el && window.location.hash === '#tarifs' && !el.dataset.vu) {
+              el.dataset.vu = '1';
+              setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 250);
+            }
+          }}>
           <Card title="Mes tarifs (€)">
             <p className="text-xs text-gray-400 mb-3">Laissez à 0 ce que vous ne proposez pas. Ajoutez vos autres actes en bas.</p>
             <div className="flex items-center justify-between gap-4 mb-4">
@@ -1858,6 +1864,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter un acte</button>
             </div>
           </Card>
+          </div>
         )}
 
         {/* Bilan préalable obligatoire (éducateur) */}

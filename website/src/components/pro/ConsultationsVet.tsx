@@ -79,7 +79,7 @@ function intervenant(c: Consultation, noms: Record<string, string>) {
 }
 const motifDe = (c: Consultation) => c.cr?.motif?.trim() || (c.cr ? 'Consultation' : 'Ordonnance');
 
-export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onTransmettreCr, onTransmettreOrdo }: {
+export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onTransmettreCr, onTransmettreOrdo }: {
   crs: CrVet[]; ordos: OrdoVet[];
   peutCr: boolean; peutCarnet: boolean; peutValider: boolean;
   /** Entrées du menu « Ajouter au carnet » (modales existantes de la page). */
@@ -90,6 +90,8 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
   onReprendre?: (cr: CrVet) => void;
   /** Compte rendu saisi par erreur. */
   onSupprimer?: (cr: CrVet) => Promise<void>;
+  /** CR validé : préparer la facture après coup. */
+  onFacturer?: (cr: CrVet) => Promise<void>;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
 }) {
@@ -176,17 +178,19 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
           peutValider={peutValider} onValider={onValider}
           onReprendre={onReprendre ? cr => { setOuverte(null); onReprendre(cr); } : undefined}
           onSupprimer={onSupprimer && peutCr ? async cr => { setOuverte(null); await onSupprimer(cr); } : undefined}
+          onFacturer={onFacturer && peutCr ? async cr => { setOuverte(null); await onFacturer(cr); } : undefined}
           onTransmettreCr={onTransmettreCr} onTransmettreOrdo={onTransmettreOrdo} />
       )}
     </div>
   );
 }
 
-function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onTransmettreCr, onTransmettreOrdo }: {
+function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onTransmettreCr, onTransmettreOrdo }: {
   c: Consultation; noms: Record<string, string>; onClose: () => void; peutValider: boolean;
   onValider: (cr: CrVet) => Promise<void>;
   onReprendre?: (cr: CrVet) => void;
   onSupprimer?: (cr: CrVet) => Promise<void>;
+  onFacturer?: (cr: CrVet) => Promise<void>;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
 }) {
@@ -259,6 +263,12 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
               </LienDocument>
             )}
             <div className="flex flex-wrap gap-2 mt-3">
+              {!brouillon && onFacturer && (
+                <button onClick={() => onFacturer(cr)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>
+                  Facturer
+                </button>
+              )}
               {onSupprimer && (
                 <button onClick={() => { if (confirm('Supprimer ce compte rendu ? Il disparaît aussi pour le propriétaire. Les vaccins et traitements déjà inscrits au carnet restent : supprimez-les depuis l’onglet Santé si besoin.')) onSupprimer(cr); }}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">
