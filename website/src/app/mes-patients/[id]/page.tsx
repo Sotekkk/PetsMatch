@@ -288,7 +288,18 @@ const ACTES_COURANTS = ['Examen clinique', 'Vaccination', 'Prise de sang', 'Anal
 const VACCINS_COURANTS = ['CHPPiL', 'Rage', 'Leptospirose', 'Toux du chenil', 'Leishmaniose', 'Typhus / coryza (RC P)',
   'Leucose (FeLV)', 'Myxomatose', 'VHD (lapin)', 'Grippe équine', 'Rhinopneumonie', 'Tétanos'];
 /** Prises de la journée → libellé + heure du rappel au propriétaire. */
-const PRISES: Record<string, [string, string]> = { matin: ['Matin', '08:00'], midi: ['Midi', '12:00'], soir: ['Soir', '19:00'] };
+/** Moments proposés → libellé + heure du rappel ; une prise libre (plus de 3
+ *  par jour, horaire précis) est son heure « HH:MM ». Miroir de _kPrises. */
+const PRISES: Record<string, [string, string]> = {
+  matin: ['Matin', '08:00'], midi: ['Midi', '12:00'], apres_midi: ['Après-midi', '16:00'],
+  soir: ['Soir', '19:00'], coucher: ['Coucher', '22:00'],
+};
+/** « 08:00 » → « 8 h », « 22:30 » → « 22 h 30 ». */
+const heureCourte = (h: string) => { const m = /^(\d{1,2}):(\d{2})$/.exec(h); return m ? `${parseInt(m[1], 10)} h${m[2] === '00' ? '' : ` ${m[2]}`}` : h; };
+const heurePrise = (k: string) => PRISES[k]?.[1] ?? k;
+const nomPrise = (k: string) => PRISES[k]?.[0] ?? `À ${heureCourte(k)}`;
+const quandPrise = (k: string) => PRISES[k] ? `le ${PRISES[k][0].toLowerCase()}` : `à ${heureCourte(k)}`;
+const prisesTriees = (p: string[]) => [...p].sort((a, b) => heurePrise(a).localeCompare(heurePrise(b)));
 
 /** Actes réalisés : liste déroulante à cocher, recherche + autre acte. */
 function ActesSelect({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
@@ -351,12 +362,12 @@ function plus(dateIso: string, jours = 0, mois = 0, ans = 0): string {
 
 /** « 1 cp matin et soir, tous les 2 jours, pendant 3 jours ». */
 function libellePhase(p: PhaseCr): string {
-  const noms = Object.keys(PRISES).filter(k => p.prises.includes(k)).map(k => PRISES[k][0].toLowerCase());
+  const cles = prisesTriees(p.prises);
+  const noms = cles.map(k => PRISES[k] ? PRISES[k][0].toLowerCase() : `à ${heureCourte(k)}`);
   const quand = noms.length > 1 ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms.join('');
-  const cles = Object.keys(PRISES).filter(k => p.prises.includes(k));
   return [
     dosesParPrise(p)
-      ? cles.map(k => [doseDe(p, k), `le ${PRISES[k][0].toLowerCase()}`].filter(Boolean).join(' ')).join(', ')
+      ? cles.map(k => [doseDe(p, k), quandPrise(k)].filter(Boolean).join(' ')).join(', ')
       : [p.dose.trim(), quand].filter(Boolean).join(' '),
     p.frequenceJours > 1 ? `tous les ${p.frequenceJours} jours` : '',
     p.dureeJours ? `pendant ${p.dureeJours} jour${p.dureeJours > 1 ? 's' : ''}` : 'au long cours',
@@ -580,10 +591,20 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
                   <input value={p.dose} onChange={e => majPhase(i, { dose: e.target.value })} placeholder="Dose par prise — ex. 1 cp, ½ cp, 2 mL, 1 pipette" className={champ} />
                 )}
                 <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(PRISES).map(([k, [l]]) => (
+                  {Object.entries(PRISES).map(([k, [l, h]]) => (
                     <button key={k} type="button" className={chip(p.prises.includes(k))}
-                      onClick={() => majPhase(i, { prises: p.prises.includes(k) ? p.prises.filter(x => x !== k) : [...p.prises, k] })}>{l}</button>
+                      onClick={() => majPhase(i, { prises: p.prises.includes(k) ? p.prises.filter(x => x !== k) : [...p.prises, k] })}>{l} · {heureCourte(h)}</button>
                   ))}
+                  {/* Heures libres (plus de 3 prises par jour, horaire précis). */}
+                  {prisesTriees(p.prises).filter(k => !PRISES[k]).map(k => (
+                    <button key={k} type="button" className={chip(true)} title="Retirer cette prise"
+                      onClick={() => majPhase(i, { prises: p.prises.filter(x => x !== k) })}>{nomPrise(k)} ×</button>
+                  ))}
+                  <label className="inline-flex items-center gap-1 text-xs font-semibold text-[#0C5C6C]">
+                    + Autre heure
+                    <input type="time" aria-label="Ajouter une prise à une autre heure" className="border border-gray-200 rounded-lg px-1.5 py-1 text-xs"
+                      onChange={e => { const h = e.target.value; if (/^\d{2}:\d{2}$/.test(h) && !p.prises.includes(h)) majPhase(i, { prises: [...p.prises, h] }); e.target.value = ''; }} />
+                  </label>
                 </div>
                 {/* Dose propre à chaque prise (1 cp le matin, ½ cp le soir…). */}
                 {p.prises.length > 1 && (
@@ -595,10 +616,14 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
                     Dose différente selon la prise
                   </label>
                 )}
-                {dosesParPrise(p) && Object.keys(PRISES).filter(k => p.prises.includes(k)).map(k => (
-                  <input key={k} value={p.doses?.[k] ?? ''} aria-label={`Dose ${PRISES[k][0].toLowerCase()}`}
-                    onChange={e => majPhase(i, { doses: { ...p.doses, [k]: e.target.value } })}
-                    placeholder={`Dose ${PRISES[k][0].toLowerCase()} — ex. 1 cp, ½ cp`} className={champ} />
+                {/* Une ligne par prise : moment + heure à gauche, dose à droite. */}
+                {dosesParPrise(p) && prisesTriees(p.prises).map(k => (
+                  <div key={k} className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-sm font-semibold text-[#1E2025]">{nomPrise(k)} · {heureCourte(heurePrise(k))}</span>
+                    <input value={p.doses?.[k] ?? ''} aria-label={`Dose ${nomPrise(k).toLowerCase()}`}
+                      onChange={e => majPhase(i, { doses: { ...p.doses, [k]: e.target.value } })}
+                      placeholder="Dose — ex. 1 cp, ½ cp" className={champ} />
+                  </div>
                 ))}
                 {/* Intervalle libre : une prise tous les N jours. */}
                 <div className="flex items-center gap-2 text-sm text-[#1E2025]">
@@ -1104,8 +1129,8 @@ function PatientDetailPageInner() {
       for (let i = 0; i < t.phases.length; i++) {
         const ph = t.phases[i];
         const fin = ph.dureeJours ? new Date(debut.getTime() + ph.dureeJours * 86400000) : null;
-        const cles = Object.keys(PRISES).filter(k => ph.prises.includes(k));
-        const heures = cles.map(k => PRISES[k][1]);
+        const cles = prisesTriees(ph.prises);
+        const heures = cles.map(heurePrise);
         const rappel = t.rappels && heures.length > 0;
         const notesPhase = [t.phases.length > 1 ? `Phase ${i + 1}/${t.phases.length}` : '', t.notes].filter(Boolean).join(' — ');
         const { error } = await supabase.from('traitements').insert({

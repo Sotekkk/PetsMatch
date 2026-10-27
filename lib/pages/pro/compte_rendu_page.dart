@@ -549,8 +549,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       for (var i = 0; i < t.phases.length; i++) {
         final ph = t.phases[i];
         final fin = ph.dureeJours != null ? debut.add(Duration(days: ph.dureeJours!)) : null;
-        final cles = ph.prises.toList()..sort((a, b) => _kPrises[a]!.$2.compareTo(_kPrises[b]!.$2));
-        final heures = [for (final k in cles) _kPrises[k]!.$2];
+        final cles = _prisesTriees(ph.prises);
+        final heures = [for (final k in cles) _heurePrise(k)];
         final rappel = t.rappels && heures.isNotEmpty;
         try {
           await _supa.from('traitements').insert({
@@ -855,11 +855,26 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               if (!p.dosesParPrise)
                 TextField(controller: p.dose, decoration: _inputDeco('ex. 1 cp, ½ cp, 2 mL, 1 pipette').copyWith(labelText: 'Dose par prise')),
               const SizedBox(height: 8),
+              // Moments proposés (avec l'heure du rappel) + heures libres.
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (final pr in _kPrises.entries) FilterChip(
-                  label: Text(pr.value.$1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  label: Text('${pr.value.$1} · ${_heureCourte(pr.value.$2)}', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                   selected: p.prises.contains(pr.key), selectedColor: widget.categoryColor.withValues(alpha: 0.18),
                   onSelected: (v) => setM(() => v ? p.prises.add(pr.key) : p.prises.remove(pr.key))),
+                for (final k in _prisesTriees(p.prises)) if (!_kPrises.containsKey(k)) InputChip(
+                  label: Text(_nomPrise(k), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  selected: true, selectedColor: widget.categoryColor.withValues(alpha: 0.18), showCheckmark: false,
+                  onDeleted: () => setM(() => p.prises.remove(k))),
+                ActionChip(
+                  avatar: Icon(Icons.add, size: 16, color: widget.categoryColor),
+                  label: Text('Autre heure', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: widget.categoryColor)),
+                  onPressed: () async {
+                    final t = await showTimePicker(context: ctx, initialTime: const TimeOfDay(hour: 21, minute: 0),
+                        helpText: 'Heure de la prise');
+                    if (t == null) return;
+                    setM(() => p.prises.add('${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'));
+                  },
+                ),
               ]),
               // Dose propre à chaque prise (1 cp le matin, ½ cp le soir…).
               if (p.prises.length > 1)
@@ -869,14 +884,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                   title: const Text('Dose différente selon la prise', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
                   onChanged: (v) => setM(() => p.basculerDoses(v == true)),
                 ),
+              // Une ligne par prise : moment + heure à gauche, dose à droite.
               if (p.dosesParPrise && p.prises.length > 1)
-                for (final k in _kPrises.keys)
-                  if (p.prises.contains(k))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: TextField(controller: p.doseCtrl(k),
-                          decoration: _inputDeco('ex. 1 cp, ½ cp').copyWith(labelText: 'Dose ${_kPrises[k]!.$1.toLowerCase()}')),
-                    ),
+                for (final k in _prisesTriees(p.prises))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(children: [
+                      SizedBox(width: 118, child: Text('${_nomPrise(k)} · ${_heureCourte(_heurePrise(k))}',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600))),
+                      Expanded(child: TextField(controller: p.doseCtrl(k),
+                          decoration: _inputDeco('ex. 1 cp, ½ cp').copyWith(labelText: 'Dose'))),
+                    ]),
+                  ),
               const SizedBox(height: 8),
               // Intervalle libre : une prise tous les N jours.
               Row(children: [
@@ -966,7 +985,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               contentPadding: EdgeInsets.zero, value: rappels, activeThumbColor: widget.categoryColor,
               onChanged: (v) => setM(() => rappels = v),
               title: const Text('Rappeler chaque prise au propriétaire', style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: const Text('Matin 8 h · midi 12 h · soir 19 h, jusqu\'à la fin du traitement.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
+              subtitle: const Text('À l\'heure de chaque prise choisie, jusqu\'à la fin du traitement.', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5)),
             ),
             TextField(controller: notesCtrl, decoration: _inputDeco('Précautions, à jeun, pendant le repas…').copyWith(labelText: 'Remarque (facultatif)')),
             const SizedBox(height: 18),
@@ -1967,11 +1986,25 @@ class _VaccinCr {
 }
 
 /// Prises de la journée → libellé + heure du rappel au propriétaire.
+/// Une prise libre (plus de 3 par jour, horaire précis) est son heure « HH:MM ».
 const _kPrises = <String, (String, String)>{
   'matin': ('Matin', '08:00'),
   'midi': ('Midi', '12:00'),
+  'apres_midi': ('Après-midi', '16:00'),
   'soir': ('Soir', '19:00'),
+  'coucher': ('Coucher', '22:00'),
 };
+String _heurePrise(String k) => _kPrises[k]?.$2 ?? k;
+String _nomPrise(String k) => _kPrises[k]?.$1 ?? 'À ${_heureCourte(k)}';
+/// « le matin » / « à 22 h 30 ».
+String _quandPrise(String k) => _kPrises.containsKey(k) ? 'le ${_kPrises[k]!.$1.toLowerCase()}' : 'à ${_heureCourte(k)}';
+List<String> _prisesTriees(Iterable<String> p) => p.toList()..sort((a, b) => _heurePrise(a).compareTo(_heurePrise(b)));
+/// « 08:00 » → « 8 h », « 22:30 » → « 22 h 30 ».
+String _heureCourte(String hhmm) {
+  final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(hhmm);
+  if (m == null) return hhmm;
+  return '${int.parse(m.group(1)!)} h${m.group(2) == '00' ? '' : ' ${m.group(2)}'}';
+}
 
 /// Phase d'un traitement (dégressif : plusieurs phases enchaînées).
 class _PhaseCr {
@@ -1988,12 +2021,12 @@ class _PhaseCr {
   /// « 1 cp matin et soir, tous les 2 jours, pendant 3 jours » — ou
   /// « 1 cp le matin, ½ cp le soir, … » avec une dose par prise.
   String get libelle {
-    final cles = [for (final k in _kPrises.keys) if (prises.contains(k)) k];
-    final noms = [for (final k in cles) _kPrises[k]!.$1.toLowerCase()];
+    final cles = _prisesTriees(prises);
+    final noms = [for (final k in cles) _kPrises.containsKey(k) ? _kPrises[k]!.$1.toLowerCase() : 'à ${_heureCourte(k)}'];
     final quand = noms.length > 1 ? '${noms.sublist(0, noms.length - 1).join(', ')} et ${noms.last}' : noms.join();
     return [
       if (doses.isNotEmpty)
-        [for (final k in cles) [doseDe(k), 'le ${_kPrises[k]!.$1.toLowerCase()}'].where((x) => x.isNotEmpty).join(' ')].join(', ')
+        [for (final k in cles) [doseDe(k), _quandPrise(k)].where((x) => x.isNotEmpty).join(' ')].join(', ')
       else
         [if (dose.trim().isNotEmpty) dose.trim(), quand].where((x) => x.isNotEmpty).join(' '),
       if (frequenceJours > 1) 'tous les $frequenceJours jours',
