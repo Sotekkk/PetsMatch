@@ -69,6 +69,9 @@ interface FacturePrefill {
   rueClient?: string;
   cpClient?: string;
   villeClient?: string;
+  paysClient?: string;
+  siretClient?: string;
+  tvaClient?: string;
   note?: string;
   lignes?: Ligne[];
   sourcePensionEntreeId?: string;
@@ -577,9 +580,9 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   const [rueClient, setRueClient] = useState(avoirDe?.rue_client ?? prefill?.rueClient ?? '');
   const [cpClient, setCpClient] = useState(avoirDe?.cp_client ?? prefill?.cpClient ?? '');
   const [villeClient, setVilleClient] = useState(avoirDe?.ville_client ?? prefill?.villeClient ?? '');
-  const [paysClient, setPaysClient] = useState(avoirDe?.pays_client ?? 'France');
-  const [siretClient, setSiretClient] = useState('');
-  const [tvaClient, setTvaClient] = useState('');
+  const [paysClient, setPaysClient] = useState(avoirDe?.pays_client ?? (prefill?.paysClient || 'France'));
+  const [siretClient, setSiretClient] = useState(prefill?.siretClient ?? '');
+  const [tvaClient, setTvaClient] = useState(prefill?.tvaClient ?? '');
   const [dateFacture, setDateFacture] = useState(today());
   const [datePrestation, setDatePrestation] = useState(today());
   const [dateEcheance, setDateEcheance] = useState(addDays(30));

@@ -1305,17 +1305,28 @@ function PatientDetailPageInner() {
     const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
     if (!confirm(`Facturer cette consultation ?\n\n${recap}\n\nTotal estimé : ${total.toFixed(2)} € TTC${aCompleter ? ` (${aCompleter} prix à compléter)` : ''}\nTout reste modifiable avant l'émission.`)) return;
 
-    let nom = '', email = '', tel = '';
-    if (clientClinique) {
-      nom = `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim(); email = clientClinique.email ?? ''; tel = clientClinique.telephone ?? '';
+    // Client : propriétaire PetsMatch (coordonnées de facturation selon
+    // particulier / élevage / association — pm_client_facturation), sinon
+    // fichier de la clinique, sinon RDV. Miroir appli.
+    const c = { prenom: '', nom: '', email: '', tel: '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };
+    const { data: cf } = await supabase.rpc('pm_client_facturation', { p_animal_id: animalId });
+    const j = (cf ?? null) as Record<string, string> | null;
+    if (j && (j.nom || j.prenom)) {
+      Object.assign(c, { prenom: j.prenom ?? '', nom: j.nom ?? '', email: j.email ?? '', tel: j.telephone ?? '', rue: j.rue ?? '',
+        cp: j.code_postal ?? '', ville: j.ville ?? '', pays: j.pays ?? '', siret: j.siret ?? '', tva: j.numero_tva ?? '' });
+    } else if (clientClinique) {
+      const cc = clientClinique as typeof clientClinique & { adresse?: string | null; code_postal?: string | null; ville?: string | null };
+      Object.assign(c, { prenom: cc.prenom ?? '', nom: cc.nom ?? '', email: cc.email ?? '', tel: cc.telephone ?? '',
+        rue: cc.adresse ?? '', cp: cc.code_postal ?? '', ville: cc.ville ?? '' });
     } else if (owner) {
-      nom = `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim();
+      Object.assign(c, { prenom: owner.firstname ?? '', nom: owner.lastname ?? '' });
     } else if (dernierRdv) {
-      nom = dernierRdv.client_nom_manuel ?? ''; email = dernierRdv.client_email_manuel ?? ''; tel = dernierRdv.client_telephone_manuel ?? '';
+      Object.assign(c, { nom: dernierRdv.client_nom_manuel ?? '', email: dernierRdv.client_email_manuel ?? '', tel: dernierRdv.client_telephone_manuel ?? '' });
     }
     try {
       sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
-        nomClient: nom, emailClient: email, telClient: tel, lignes,
+        prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
+        rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
         notes: `Consultation de ${animal.nom}`,
         sourceRdvId: dernierRdv?.id, sourceAnimalId: animalId,
         clientUid: dernierRdv?.client_uid ?? animal.uid_proprietaire ?? undefined,

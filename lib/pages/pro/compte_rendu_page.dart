@@ -1308,14 +1308,26 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     );
     if (ok != true || !mounted) return;
 
-    // Client : fichier de la clinique, sinon RDV.
-    String? nom, email, tel;
-    if (an?['client_clinique_id'] != null) {
+    // Client : propriétaire PetsMatch (coordonnées de facturation selon
+    // particulier / élevage / association — pm_client_facturation), sinon
+    // fichier de la clinique, sinon RDV.
+    String? prenom, nom, email, tel, rue, cp, ville;
+    String? vide(dynamic v) => (v?.toString().trim() ?? '').isEmpty ? null : v.toString().trim();
+    try {
+      final j = await _supa.rpc('pm_client_facturation', params: {'p_animal_id': animalId});
+      if (j is Map && (vide(j['nom']) != null || vide(j['prenom']) != null)) {
+        prenom = vide(j['prenom']); nom = vide(j['nom']);
+        email = vide(j['email']); tel = vide(j['telephone']);
+        rue = vide(j['rue']); cp = vide(j['code_postal']); ville = vide(j['ville']);
+      }
+    } catch (_) {}
+    if (nom == null && an?['client_clinique_id'] != null) {
       try {
-        final c = await _supa.from('clients_clinique').select('nom, prenom, email, telephone').eq('id', an!['client_clinique_id']).maybeSingle();
-        nom = '${c?['prenom'] ?? ''} ${c?['nom'] ?? ''}'.trim();
-        email = c?['email'] as String?;
-        tel = c?['telephone'] as String?;
+        final c = await _supa.from('clients_clinique').select('nom, prenom, email, telephone, adresse, code_postal, ville')
+            .eq('id', an!['client_clinique_id']).maybeSingle();
+        prenom = vide(c?['prenom']); nom = vide(c?['nom']);
+        email = vide(c?['email']); tel = vide(c?['telephone']);
+        rue = vide(c?['adresse']); cp = vide(c?['code_postal']); ville = vide(c?['ville']);
       } catch (_) {}
     }
     final r = widget.rdv ?? _rdvSource;
@@ -1324,7 +1336,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     tel ??= r?['client_telephone_manuel']?.toString();
     if (!mounted) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
-      clientNom: nom, clientEmail: email, clientTel: tel,
+      clientPrenom: prenom, clientNom: nom, clientEmail: email, clientTel: tel,
+      clientRue: rue, clientCp: cp, clientVille: ville,
       lignesPrefill: lignes,
       noteInitiale: 'Consultation de ${an?['nom'] ?? 'votre animal'}',
       sourceRdvId: rdvId ?? r?['id']?.toString(),
