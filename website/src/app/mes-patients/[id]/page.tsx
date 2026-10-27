@@ -86,6 +86,7 @@ interface TraitementEntry {
 interface CompteRendu {
   id: string; created_at: string; contenu: string | null; pro_uid: string | null;
   statut?: 'brouillon' | 'valide' | null;
+  brouillon?: unknown;
   // CR structuré (migration_cr_structure.sql) — historique du patient.
   motif?: string | null; poids?: number | null; actes?: string[] | null; prescription?: string | null;
 }
@@ -760,6 +761,8 @@ function PatientDetailPageInner() {
   type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure'
     | 'vermifuge' | 'antiparasitaire' | 'chirurgie' | 'allergie';
   const [addingType, setAddingType] = useState<AddType>(null);
+  // Brouillon de compte rendu repris (ligne modifiée au lieu d'en créer une).
+  const [brouillonId, setBrouillonId] = useState<string | null>(null);
   // Synthèse rechargée après une saisie (rappel fait depuis la Synthèse).
   const [syntheseMaj, setSyntheseMaj] = useState(0);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -1291,7 +1294,9 @@ function PatientDetailPageInner() {
     router.push('/elevage/facturation');
   }
 
-  async function saveForm() {
+  /** [enBrouillon] : CR enregistré sans être validé — invisible du propriétaire,
+   *  sans carnet / pesée / facture ; repris plus tard (brouillonId). */
+  async function saveForm(enBrouillon = false) {
     if (!user?.uid || !animalId) return;
     if (addingType !== 'mesure') {
       const erreurs = erreursDatesSante(
@@ -1395,15 +1400,30 @@ function PatientDetailPageInner() {
         ].filter(Boolean).join('\n\n');
         // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
-        await supabase.from('comptes_rendus').insert({
+        const ligneCr = {
           animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null,
-          ...(activeProfileId ? { pro_profile_id: activeProfileId, redige_par_profile_id: activeProfileId, valide_par_profile_id: activeProfileId } : {}),
-          statut: 'valide', redige_par_uid: user.uid,
+          ...(activeProfileId ? { pro_profile_id: activeProfileId, redige_par_profile_id: activeProfileId,
+            valide_par_profile_id: enBrouillon ? null : activeProfileId } : {}),
+          statut: enBrouillon ? 'brouillon' : 'valide', redige_par_uid: user.uid,
           ...(formMotif.trim() ? { motif: formMotif.trim() } : {}),
           ...(poidsCr != null && !isNaN(poidsCr) ? { poids: poidsCr } : {}),
           ...(actesRealises.length ? { actes: actesRealises } : {}),
           ...(prescription ? { prescription } : {}),
-        });
+          // Saisie complète gardée avec le brouillon (format commun appli / site).
+          ...(enBrouillon || brouillonId ? { brouillon: enBrouillon ? {
+            motif: formMotif.trim(), poids: formPoids.trim(), texte: formNotes.trim(), diag: formDiag.trim(),
+            actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr,
+          } : null } : {}),
+        };
+        const { error: eCr } = brouillonId
+          ? await supabase.from('comptes_rendus').update(ligneCr).eq('id', brouillonId)
+          : await supabase.from('comptes_rendus').insert(ligneCr);
+        if (eCr) { alert(`Erreur : ${eCr.message}`); return; }
+        if (enBrouillon) {
+          const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
+          setComptesRendus((data ?? []) as CompteRendu[]);
+          return;
+        }
         // Pesée du jour → courbe de poids + poids de la fiche (sauf si c'est
         // la pesée déjà inscrite aujourd'hui depuis la Synthèse).
         if (poidsCr != null && !isNaN(poidsCr) && poidsCr !== poidsCarnet) {
@@ -1433,7 +1453,7 @@ function PatientDetailPageInner() {
       }
     } finally {
       setVaccinsCr([]); setTraitementsCr([]); setActesRealises([]); setAutreActe('');
-      setCarnetJour([]); setPoidsCarnet(null);
+      setCarnetJour([]); setPoidsCarnet(null); setBrouillonId(null);
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
       setFormPoids(''); setFormTaille('');
@@ -3220,8 +3240,15 @@ function PatientDetailPageInner() {
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
-              onNouveauCr={() => setAddingType('cr')}
+              onNouveauCr={() => { setBrouillonId(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
+              onReprendre={(cr) => {
+                const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[] };
+                setBrouillonId(cr.id);
+                setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
+                setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []);
+                setAddingType('cr');
+              }}
               onValider={async (cr) => {
                 const { error } = await supabase.from('comptes_rendus').update({
                   statut: 'valide', ...(activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
@@ -3614,16 +3641,26 @@ function PatientDetailPageInner() {
               );
             })()}
             <div className="flex gap-3 pt-1">
-              <button onClick={() => { setAddingType(null); setFormErreurs([]); setFormManquants([]); }}
+              <button onClick={() => { setAddingType(null); setBrouillonId(null); setFormErreurs([]); setFormManquants([]); }}
                 className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
                 Annuler
               </button>
-              <button onClick={saveForm} disabled={savingForm}
+              {addingType === 'cr' && catPro === 'veterinaire' && (
+                <button onClick={() => saveForm(true)} disabled={savingForm} title="Non visible du propriétaire ; à reprendre plus tard"
+                  className="flex-1 border text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                  style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                  Brouillon
+                </button>
+              )}
+              <button onClick={() => saveForm()} disabled={savingForm}
                 className="flex-1 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-50"
                 style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
                 {savingForm ? 'Enregistrement…' : 'Enregistrer'}
               </button>
             </div>
+            {addingType === 'cr' && catPro === 'veterinaire' && (
+              <p className="text-[11px] text-gray-500 text-center">Brouillon : non visible du propriétaire, à reprendre et modifier plus tard.</p>
+            )}
           </div>
         </div>
       )}

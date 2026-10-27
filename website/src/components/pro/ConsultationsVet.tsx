@@ -15,6 +15,8 @@ const TEAL = '#0C5C6C';
 
 export interface CrVet {
   id: string; created_at: string; contenu: string | null; statut?: 'brouillon' | 'valide' | null;
+  /** Saisie gardée d'un brouillon du vétérinaire (migration_cr_brouillon.sql). */
+  brouillon?: unknown;
   motif?: string | null; poids?: number | null; actes?: string[] | null; prescription?: string | null;
   doc_url?: string | null; rdv_id?: string | null;
   redige_par_uid?: string | null; redige_par_profile_id?: string | null;
@@ -77,13 +79,15 @@ function intervenant(c: Consultation, noms: Record<string, string>) {
 }
 const motifDe = (c: Consultation) => c.cr?.motif?.trim() || (c.cr ? 'Consultation' : 'Ordonnance');
 
-export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onTransmettreCr, onTransmettreOrdo }: {
+export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onTransmettreCr, onTransmettreOrdo }: {
   crs: CrVet[]; ordos: OrdoVet[];
   peutCr: boolean; peutCarnet: boolean; peutValider: boolean;
   /** Entrées du menu « Ajouter au carnet » (modales existantes de la page). */
   menuCarnet: { label: string; onClick: () => void }[];
   onNouveauCr: () => void; onHistorique: () => void;
   onValider: (cr: CrVet) => Promise<void>;
+  /** Brouillon du vétérinaire : rouvrir la saisie. */
+  onReprendre?: (cr: CrVet) => void;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
 }) {
@@ -168,15 +172,17 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
       {detail && (
         <PanneauConsultation c={detail} noms={noms} onClose={() => setOuverte(null)}
           peutValider={peutValider} onValider={onValider}
+          onReprendre={onReprendre ? cr => { setOuverte(null); onReprendre(cr); } : undefined}
           onTransmettreCr={onTransmettreCr} onTransmettreOrdo={onTransmettreOrdo} />
       )}
     </div>
   );
 }
 
-function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onTransmettreCr, onTransmettreOrdo }: {
+function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onTransmettreCr, onTransmettreOrdo }: {
   c: Consultation; noms: Record<string, string>; onClose: () => void; peutValider: boolean;
   onValider: (cr: CrVet) => Promise<void>;
+  onReprendre?: (cr: CrVet) => void;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
 }) {
@@ -228,7 +234,7 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
           {intervenant(c, noms) && ligne('Intervenant', intervenant(c, noms)!)}
           {cr?.poids != null && ligne('Poids', fmtPoids(cr.poids))}
           {!!cr?.actes?.length && ligne('Actes réalisés', cr.actes.join(', '))}
-          {cr && ligne('Compte rendu', brouillon ? 'Brouillon — à valider' : 'Validé')}
+          {cr && ligne('Compte rendu', brouillon ? (cr.brouillon != null ? 'Brouillon — non visible du propriétaire' : 'Brouillon — à valider') : 'Validé')}
         </div>
 
         {cr && (
@@ -249,7 +255,13 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
               </LienDocument>
             )}
             <div className="flex flex-wrap gap-2 mt-3">
-              {brouillon && peutValider && (
+              {brouillon && cr.brouillon != null && onReprendre && (
+                <button onClick={() => onReprendre(cr)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>
+                  Reprendre le brouillon
+                </button>
+              )}
+              {brouillon && peutValider && cr.brouillon == null && (
                 <button disabled={validation} onClick={async () => { setValidation(true); await onValider(cr); setValidation(false); }}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: TEAL }}>
                   {validation ? '…' : 'Valider et envoyer au propriétaire'}

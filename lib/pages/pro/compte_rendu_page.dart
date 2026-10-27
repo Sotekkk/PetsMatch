@@ -318,7 +318,52 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     }
   }
 
-  Future<void> _saveCompteRendu() async {
+  /// Brouillon repris (ligne comptes_rendus modifiée au lieu d'en créer une).
+  String? _brouillonId;
+
+  /// Saisie complète, gardée avec le brouillon (format commun appli / site).
+  Map<String, dynamic> _etatBrouillon() => {
+        'motif': _motifCtrl.text.trim(),
+        'poids': _poidsCtrl.text.trim(),
+        'texte': _crContenuCtrl.text.trim(),
+        'diag': '',
+        'actes': [..._actesRealises],
+        'vaccins': [for (final v in _vaccinsCr) v.toJson()],
+        'traitements': [for (final t in _traitementsCr) t.toJson()],
+      };
+
+  void _reprendreBrouillon(Map<String, dynamic> cr) {
+    final e = cr['brouillon'];
+    if (e is! Map) return;
+    final diag = (e['diag'] ?? '').toString().trim();
+    final texte = (e['texte'] ?? '').toString().trim();
+    setState(() {
+      _brouillonId = cr['id'].toString();
+      _motifCtrl.text = (e['motif'] ?? '').toString();
+      _poidsCtrl.text = (e['poids'] ?? '').toString();
+      _crContenuCtrl.text = [if (diag.isNotEmpty) 'Diagnostic : $diag', if (texte.isNotEmpty) texte].join('\n\n');
+      _actesRealises..clear()..addAll([for (final a in (e['actes'] as List? ?? const [])) a.toString()]);
+      _vaccinsCr..clear()..addAll([for (final v in (e['vaccins'] as List? ?? const [])) _VaccinCr.fromJson(Map<String, dynamic>.from(v as Map))]);
+      _traitementsCr..clear()..addAll([for (final t in (e['traitements'] as List? ?? const [])) _TraitementCr.fromJson(Map<String, dynamic>.from(t as Map))]);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Brouillon repris : modifiez-le, puis enregistrez.', style: TextStyle(fontFamily: 'Galey')),
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
+  void _abandonnerBrouillon() => setState(() {
+        _brouillonId = null;
+        _crContenuCtrl.clear();
+        _poidsCtrl.clear();
+        _vaccinsCr.clear();
+        _traitementsCr.clear();
+        _actesRealises.clear();
+      });
+
+  /// [enBrouillon] : enregistré sans être validé — invisible du propriétaire,
+  /// sans notification, carnet ni facture ; repris plus tard.
+  Future<void> _saveCompteRendu({bool enBrouillon = false}) async {
     final proUid  = AgendaContexte.uid;
     final moi     = AgendaContexte.moi;
     final actes = _saisieActes && (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty);
@@ -374,7 +419,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final owner = await _resolveOwner();
       final proProfileId = _profilPro;
       final monProfil = await AgendaContexte.monProfil();
-      final statut = _peutValider ? 'valide' : 'brouillon';
+      final statut = !enBrouillon && _peutValider ? 'valide' : 'brouillon';
       String? docUrl;
       if (_crFile != null) {
         final name = '${DateTime.now().millisecondsSinceEpoch}.${_crFile!.path.split('.').last}';
@@ -382,14 +427,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         // la référence du CR (lien-document), pas par le dossier.
         docUrl = await uploadDocument(_crFile!, 'comptes_rendus/${moi ?? proUid}/$name');
       }
-      await _insertRecord('comptes_rendus', {
+      final ligneCr = <String, dynamic>{
         'pro_uid'   : proUid,
         'animal_id' : animalId,
         if (owner.uid != null) 'owner_uid': owner.uid,
         if (rdvId != null) 'rdv_id': rdvId,
         'contenu'   : contenu,
         if (docUrl != null) 'doc_url': docUrl,
-      }, {
+      };
+      final champsCr = <String, dynamic>{
         if (proProfileId != null && proProfileId.isNotEmpty) 'pro_profile_id': proProfileId,
         if (owner.profileId != null) 'owner_profile_id': owner.profileId,
         'statut': statut,
@@ -400,7 +446,28 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         if (poids != null) 'poids': poids,
         if (actesRealises.isNotEmpty) 'actes': actesRealises,
         if (prescription.isNotEmpty) 'prescription': prescription,
-      });
+      };
+      final etat = enBrouillon ? _etatBrouillon() : null;
+      if (_brouillonId != null) {
+        await _supa.from('comptes_rendus').update({...ligneCr, ...champsCr, 'brouillon': etat}).eq('id', _brouillonId!);
+      } else {
+        await _insertRecord('comptes_rendus', ligneCr, {...champsCr, if (etat != null) 'brouillon': etat});
+      }
+      if (enBrouillon) {
+        _crContenuCtrl.clear();
+        _poidsCtrl.clear();
+        setState(() { _crFile = null; _brouillonId = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); });
+        await _loadExisting();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Brouillon enregistré — non visible du propriétaire. Reprenez-le depuis la liste.',
+                style: TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return;
+      }
+      _brouillonId = null;
       // Pesée du jour → courbe de poids + poids de la fiche (sauf si c'est
       // la pesée déjà inscrite aujourd'hui depuis la Synthèse).
       if (poids != null && animalId != null && poids != _poidsCarnet) {
@@ -1686,13 +1753,25 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                 onTransmettre: widget.isPension ? null : () => _transmettreCr(cr),
                 onDelete: (cr['statut'] != 'brouillon' && !_peutValider)
                     ? null : () => _deleteDoc('comptes_rendus', cr['id'].toString()),
-                onValider: (cr['statut'] == 'brouillon' && _peutValider) ? () => _validerCr(cr) : null)),
+                // Brouillon du vétérinaire (saisie gardée) : repris dans le
+                // formulaire ; brouillon d'ASV : validé tel quel.
+                onValider: (cr['statut'] == 'brouillon' && _peutValider && cr['brouillon'] == null) ? () => _validerCr(cr) : null,
+                onReprendre: (cr['statut'] == 'brouillon' && cr['brouillon'] != null && cr['id']?.toString() != _brouillonId)
+                    ? () => _reprendreBrouillon(cr) : null)),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 8),
           ],
 
-          _sectionTitle('Nouveau compte rendu'),
+          _sectionTitle(_brouillonId != null ? 'Brouillon en cours de modification' : 'Nouveau compte rendu'),
+          if (_brouillonId != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: _abandonnerBrouillon,
+                child: Text('Fermer sans enregistrer', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+              ),
+            ),
           const SizedBox(height: 12),
 
           if (_saisieActes) _blocConsultation(),
@@ -1747,6 +1826,27 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               ),
             ),
           ),
+          if (_saisieActes) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _crSaving ? null : () => _saveCompteRendu(enBrouillon: true),
+                icon: const Icon(Icons.edit_note_outlined),
+                label: const Text('Enregistrer en brouillon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: widget.categoryColor,
+                  side: BorderSide(color: widget.categoryColor),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('Non visible du propriétaire ; vous pourrez le reprendre et le modifier.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+          ],
           const SizedBox(height: 40),
         ],
       ),
@@ -1859,6 +1959,11 @@ class _VaccinCr {
   final DateTime date;
   final DateTime? rappel;
   _VaccinCr(this.nom, this.lot, this.date, this.rappel);
+
+  static String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  Map<String, dynamic> toJson() => {'nom': nom, 'lot': lot, 'date': _ymd(date), 'rappel': rappel == null ? null : _ymd(rappel!)};
+  factory _VaccinCr.fromJson(Map<String, dynamic> j) => _VaccinCr((j['nom'] ?? '').toString(), (j['lot'] ?? '').toString(),
+      DateTime.tryParse(j['date']?.toString() ?? '') ?? DateTime.now(), DateTime.tryParse(j['rappel']?.toString() ?? ''));
 }
 
 /// Prises de la journée → libellé + heure du rappel au propriétaire.
@@ -1953,6 +2058,28 @@ class _TraitementCr {
   final bool rappels;
   _TraitementCr({required this.nom, required this.type, required this.phases, required this.rappels, this.notes = ''});
 
+  Map<String, dynamic> toJson() => {
+        'nom': nom, 'type': type, 'rappels': rappels, 'notes': notes,
+        'phases': [for (final p in phases) {
+          'dose': p.dose, 'prises': p.prises.toList(), 'frequenceJours': p.frequenceJours, 'dureeJours': p.dureeJours,
+          if (p.doses.isNotEmpty) 'doses': p.doses,
+        }],
+      };
+  factory _TraitementCr.fromJson(Map<String, dynamic> j) => _TraitementCr(
+        nom: (j['nom'] ?? '').toString(), type: (j['type'] ?? 'medicament').toString(),
+        rappels: j['rappels'] != false, notes: (j['notes'] ?? '').toString(),
+        phases: [
+          for (final p in (j['phases'] as List? ?? const []))
+            _PhaseCr(
+              dose: ((p as Map)['dose'] ?? '').toString(),
+              prises: {for (final k in (p['prises'] as List? ?? const [])) k.toString()},
+              frequenceJours: (p['frequenceJours'] as num?)?.toInt() ?? 1,
+              dureeJours: (p['dureeJours'] as num?)?.toInt(),
+              doses: {for (final e in ((p['doses'] as Map?) ?? const {}).entries) e.key.toString(): e.value.toString()},
+            ),
+        ],
+      );
+
   /// Posologie de toutes les phases : « …, puis … ».
   String get posologieComplete => phases.map((p) => p.libelle).join(', puis ');
 }
@@ -1964,9 +2091,11 @@ class _CrCard extends StatelessWidget {
   final Color color;
   final VoidCallback? onDelete;
   final VoidCallback? onValider;
+  /// Brouillon du vétérinaire : reprendre la saisie.
+  final VoidCallback? onReprendre;
   /// Imprimer / partager / envoyer au propriétaire (CR validé).
   final VoidCallback? onTransmettre;
-  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onTransmettre});
+  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onReprendre, this.onTransmettre});
 
   @override
   Widget build(BuildContext context) {
@@ -1992,7 +2121,7 @@ class _CrCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(color: const Color(0xFFFFF4E0), borderRadius: BorderRadius.circular(8)),
-              child: const Text('Brouillon — à valider',
+              child: Text(cr['brouillon'] != null ? 'Brouillon — non visible du propriétaire' : 'Brouillon — à valider',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFB26A00))),
             ),
           ],
@@ -2032,6 +2161,18 @@ class _CrCard extends StatelessWidget {
               icon: const Icon(Icons.task_alt, size: 16),
               label: const Text('Valider et envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
               style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+            ),
+          ),
+        ],
+        if (onReprendre != null) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: onReprendre,
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              label: const Text('Reprendre le brouillon', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(foregroundColor: color, side: BorderSide(color: color)),
             ),
           ),
         ],
