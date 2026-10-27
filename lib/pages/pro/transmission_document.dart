@@ -22,6 +22,9 @@ Future<void> transmettreDocument(
   String expediteur = '',
   String? emailParDefaut,
   String? destinataireNom,
+  /// Sans adresse connue : propriétaire PetsMatch de cet animal, envoyé à
+  /// l'adresse de son compte, résolue par le serveur (jamais affichée).
+  String? animalId,
 }) async {
   final choix = await showModalBottomSheet<String>(
     context: context,
@@ -50,6 +53,45 @@ Future<void> transmettreDocument(
       final bytes = await pdf();
       await Printing.sharePdf(bytes: bytes, filename: nomFichier);
     } else {
+      if ((emailParDefaut ?? '').isEmpty && (animalId ?? '').isNotEmpty) {
+        final quoi = type == 'ordonnance' ? "l'ordonnance" : type == 'facture' ? 'la facture' : 'le compte rendu';
+        final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Envoyer au propriétaire', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: Text('Envoyer $quoi à ${(destinataireNom ?? '').isNotEmpty ? destinataireNom : 'le propriétaire'}, '
+              "à l'adresse e-mail de son compte PetsMatch ?", style: const TextStyle(fontFamily: 'Galey')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Envoyer')),
+          ],
+        ));
+        if (ok != true) return;
+        final bytes = await pdf();
+        final res = await http.post(
+          Uri.parse('$kSiteBaseUrl/api/documents/envoyer-email'),
+          headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'animal_id': animalId, 'destinataire_nom': destinataireNom, 'expediteur_nom': expediteur,
+            'document_type': type, 'animal_nom': animalNom, 'fichier_nom': nomFichier,
+            'pdf_base64': base64Encode(bytes),
+          }),
+        );
+        if (res.statusCode == 200) {
+          messenger.showSnackBar(const SnackBar(
+            content: Text('Envoyé au propriétaire (adresse de son compte PetsMatch).', style: TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating,
+          ));
+          return;
+        }
+        if (res.statusCode != 404) {
+          messenger.showSnackBar(SnackBar(
+            content: Text("L'envoi a échoué (${res.statusCode}).", style: const TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating,
+          ));
+          return;
+        }
+        if (!context.mounted) return;
+        // Pas de compte / d'adresse connue : saisie de l'adresse comme avant.
+      }
       final ctrl = TextEditingController(text: emailParDefaut ?? '');
       final email = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
         title: const Text('Envoyer par e-mail', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),

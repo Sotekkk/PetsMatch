@@ -26,11 +26,27 @@ async function enBase64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
-/** Envoie le PDF par e-mail (demande l'adresse, pré-remplie). */
+/** Envoie le PDF par e-mail (demande l'adresse, pré-remplie). Avec
+ *  [animalId] et sans adresse connue : propriétaire PetsMatch, envoyé à
+ *  l'adresse de son compte, résolue par le serveur (jamais affichée). */
 export async function envoyerPdfParEmail(blob: Blob, opts: {
   type: 'ordonnance' | 'compte_rendu' | 'facture'; emailParDefaut?: string | null; destinataireNom?: string;
-  expediteur?: string; animalNom?: string; nomFichier: string;
+  expediteur?: string; animalNom?: string; nomFichier: string; animalId?: string | null;
 }): Promise<boolean> {
+  if (!opts.emailParDefaut && opts.animalId) {
+    const quoi = opts.type === 'ordonnance' ? "l'ordonnance" : opts.type === 'facture' ? 'la facture' : 'le compte rendu';
+    if (!window.confirm(`Envoyer ${quoi} à ${opts.destinataireNom || 'le propriétaire'}, à l’adresse e-mail de son compte PetsMatch ?`)) return false;
+    const res = await apiFetch('/api/documents/envoyer-email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        animal_id: opts.animalId, destinataire_nom: opts.destinataireNom, expediteur_nom: opts.expediteur,
+        document_type: opts.type, animal_nom: opts.animalNom, fichier_nom: opts.nomFichier, pdf_base64: await enBase64(blob),
+      }),
+    });
+    if (res.ok) { alert(`Envoyé au propriétaire (adresse de son compte PetsMatch).`); return true; }
+    if (res.status !== 404) { alert("L'envoi a échoué."); return false; }
+    // Pas de compte / d'adresse connue : saisie de l'adresse comme avant.
+  }
   const email = window.prompt('E-mail du propriétaire', opts.emailParDefaut ?? '');
   if (!email?.trim()) return false;
   const res = await apiFetch('/api/documents/envoyer-email', {

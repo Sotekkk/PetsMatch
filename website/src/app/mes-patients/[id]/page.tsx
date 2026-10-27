@@ -1234,7 +1234,7 @@ function PatientDetailPageInner() {
       });
       if (action === 'imprimer') imprimerPdf(blob);
       else await envoyerPdfParEmail(blob, { type: 'compte_rendu', emailParDefaut: i.email, destinataireNom: i.proprio,
-        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Compte-rendu-${animal?.nom ?? 'animal'}.pdf` });
+        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Compte-rendu-${animal?.nom ?? 'animal'}.pdf`, animalId });
     } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
   }
 
@@ -1245,7 +1245,7 @@ function PatientDetailPageInner() {
       if (action === 'imprimer') { imprimerPdf(blob); return; }
       const i = await infosDocument();
       await envoyerPdfParEmail(blob, { type: 'ordonnance', emailParDefaut: i.email, destinataireNom: i.proprio,
-        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Ordonnance-${animal?.nom ?? 'animal'}.pdf` });
+        expediteur: i.clinique, animalNom: animal?.nom, nomFichier: `Ordonnance-${animal?.nom ?? 'animal'}.pdf`, animalId });
     } catch (e) { alert(`Impossible : ${(e as Error).message}`); }
   }
 

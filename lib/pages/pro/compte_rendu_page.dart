@@ -1509,6 +1509,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       nomFichier: 'Compte-rendu-${i.animal}.pdf',
       animalNom: i.animal, expediteur: i.clinique,
       emailParDefaut: i.email, destinataireNom: i.proprio,
+      animalId: (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString(),
       pdf: () => compteRenduPdfBytes(
         cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel,
         praticien: praticien.isEmpty ? 'Vétérinaire' : praticien,
@@ -1529,6 +1530,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       nomFichier: 'Ordonnance-${i.animal}.pdf',
       animalNom: i.animal, expediteur: i.clinique,
       emailParDefaut: i.email, destinataireNom: i.proprio,
+      animalId: (o['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString(),
       pdf: () async {
         final lien = await lienDocument(url);
         final res = await http.get(Uri.parse(lien));
