@@ -247,7 +247,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           .gte('created_at', jour.toUtc().toIso8601String());
       crQ = _profilPro != null ? crQ.eq('pro_profile_id', _profilPro!) : crQ.eq('pro_uid', AgendaContexte.uid ?? '');
       final crs = await crQ.order('created_at', ascending: false).limit(1);
-      final depuis = (crs as List).isEmpty ? null : DateTime.tryParse(crs.first['created_at'].toString());
+      // Les actes et la pesée d'un compte rendu sont inscrits au carnet juste
+      // APRÈS lui (à l'enregistrement) : ils lui restent rattachés (3 min) et
+      // ne sont pas repris par le compte rendu suivant du même jour.
+      final depuis = (crs as List).isEmpty ? null
+          : DateTime.tryParse(crs.first['created_at'].toString())?.add(const Duration(minutes: 3));
       bool apres(Map m) {
         final c = DateTime.tryParse(m['created_at']?.toString() ?? '');
         return depuis == null || c == null || c.isAfter(depuis);

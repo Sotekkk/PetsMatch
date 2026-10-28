@@ -1100,7 +1100,10 @@ function PatientDetailPageInner() {
       let q = supabase.from('comptes_rendus').select('created_at').eq('animal_id', animalId).gte('created_at', new Date(auj + 'T00:00:00').toISOString());
       q = activeProfileId ? q.eq('pro_profile_id', activeProfileId) : q.eq('pro_uid', user.uid);
       const { data: crs } = await q.order('created_at', { ascending: false }).limit(1);
-      const depuis = crs?.[0]?.created_at ? new Date(String(crs[0].created_at)).getTime() : 0;
+      // Les actes et la pesée d'un compte rendu sont inscrits au carnet juste
+      // APRÈS lui (à l'enregistrement) : ils lui restent rattachés (3 min) et ne
+      // sont pas repris par le compte rendu suivant du même jour.
+      const depuis = crs?.[0]?.created_at ? new Date(String(crs[0].created_at)).getTime() + 3 * 60000 : 0;
       const apres = (r: Record<string, unknown>) => !depuis || !r.created_at || new Date(String(r.created_at)).getTime() > depuis;
       const tables = [['vaccinations', 'vaccin'], ['traitements', 'traitement'], ['vermifuges', 'vermifuge'], ['antiparasitaires', 'antiparasitaire'],
         ['allergies', 'allergie'], ['chirurgies', 'chirurgie'], ['radios', 'radio']] as const;

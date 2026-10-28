@@ -1128,6 +1128,10 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             : animauxDetailRdv(rdv).map(a => (
               <p key={a.id} className="text-xs text-gray-500 mt-0.5">🐾 {ligneAnimalRdv(a)}</p>
             ))
+          ) : crParAnimal && rdv.animal_id ? (
+            // Un seul animal : compte rendu / séance rattaché(e) au RDV aussi.
+            <ComptesRendusAnimauxRdv rdvId={rdv.id} metier={crParAnimal}
+              animaux={[{ id: String(rdv.animal_id), nom: rdv.animalNom ?? 'Animal', motif: rdv.motif ?? null }]} />
           ) : rdv.animalNom && (
             <p className="text-xs text-gray-500 mt-0.5">🐾 {rdv.animalNom}</p>
           )}

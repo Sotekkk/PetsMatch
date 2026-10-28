@@ -14,13 +14,15 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
   const [etats, setEtats] = useState<Record<string, 'fait' | 'brouillon'>>({});
   const [especes, setEspeces] = useState<Record<string, string>>({});
 
+  // Clé stable : la liste est recréée à chaque affichage de la carte.
+  const ids = animaux.map(a => a.id).join(',');
   useEffect(() => {
     let annule = false;
     (async () => {
       const table = metier === 'veterinaire' ? 'comptes_rendus' : 'suivis_morpho';
       const [{ data: rows }, { data: an }] = await Promise.all([
         supabase.from(table).select(metier === 'veterinaire' ? 'animal_id, statut' : 'animal_id').eq('rdv_id', rdvId),
-        supabase.from('animaux').select('id, espece').in('id', animaux.map(a => a.id)),
+        supabase.from('animaux').select('id, espece').in('id', ids.split(',')),
       ]);
       if (annule) return;
       const e: Record<string, 'fait' | 'brouillon'> = {};
@@ -32,7 +34,7 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
       setEspeces(Object.fromEntries(((an ?? []) as { id: string; espece: string | null }[]).map(a => [String(a.id), a.espece ?? ''])));
     })();
     return () => { annule = true; };
-  }, [rdvId, animaux, metier]);
+  }, [rdvId, ids, metier]);
 
   const lien = (a: AnimalRdv) => metier === 'veterinaire'
     ? `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}`
