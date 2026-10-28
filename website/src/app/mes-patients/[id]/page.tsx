@@ -88,6 +88,7 @@ interface TraitementEntry {
 }
 interface CompteRendu {
   id: string; created_at: string; contenu: string | null; pro_uid: string | null;
+  animal_id?: string | null; rdv_id?: string | null;
   statut?: 'brouillon' | 'valide' | null;
   brouillon?: unknown;
   // CR structuré (migration_cr_structure.sql) — historique du patient.
@@ -287,6 +288,44 @@ interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: st
 /** Produit vendu pendant la consultation (non administré : pas au carnet) —
  *  facturé et décompté du stock. Miroir de _ProduitCr (appli). */
 interface ProduitCr { nom: string; quantite: number; prix: number | null; item_id?: string | null }
+
+type LigneFacture = { description: string; quantite: number; prixUnitaire: number; tva: number };
+
+/** Lignes de facture d'une consultation (grille du vétérinaire + prix de la
+ *  pharmacie) — miroir appli _lignesFacture. [prefixe] : nom de l'animal
+ *  devant chaque ligne (visite à plusieurs animaux). */
+function lignesConsultation({ an, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma, prefixe = '' }: {
+  an: { espece?: string | null; sexe?: string | null; poids?: number | string | null };
+  motif: string; actes: string[]; vaccins: VaccinCr[]; traitements: TraitementCr[]; poids: number | null; produits: ProduitCr[];
+  tarif: (k: string) => number | null; prixPharma: (nom: string) => number | null; prefixe?: string;
+}): LigneFacture[] {
+  const pre = prefixe ? `${prefixe} — ` : '';
+  const espece = (an.espece ?? '').toLowerCase();
+  const femelle = (an.sexe ?? '').toLowerCase().startsWith('f');
+  const kg = poids ?? (an.poids != null && an.poids !== '' ? Number(an.poids) : null);
+  const tranche = kg == null ? '25' : kg < 10 ? '10' : kg < 25 ? '25' : kg < 45 ? '45' : '45p';
+  const lignes: LigneFacture[] = [];
+  const ligne = (d: string, ttc: number | null) => lignes.push({ description: pre + d, quantite: 1, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
+  const m = motif.toLowerCase();
+  ligne(motif || 'Consultation', tarif(m.includes('urgen') ? 'consultation_urgence' : m.includes('domicile') ? 'visite_domicile' : 'consultation'));
+  for (const a of actes) {
+    if (a === 'Examen clinique' || (a === 'Vaccination' && vaccins.length)) continue;
+    let prix: number | null = null;
+    if (a === 'Vaccination') prix = tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien');
+    if (a === 'Pose de puce') prix = tarif('identification');
+    if (a === 'Castration / stérilisation') prix = espece === 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
+      : tarif(`${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche}`);
+    ligne(a, prix);
+  }
+  for (const v of vaccins) ligne(`Vaccin ${v.nom}${v.lot ? ` (lot ${v.lot})` : ''}`, prixPharma(v.nom) ?? tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien'));
+  for (const tr of traitements) ligne(tr.nom, prixPharma(tr.nom));
+  // Produits vendus (non administrés) : quantité + prix saisi, sinon prix de vente du stock.
+  for (const p of produits) {
+    const ttc = p.prix ?? prixPharma(p.nom);
+    lignes.push({ description: pre + p.nom, quantite: p.quantite, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
+  }
+  return lignes;
+}
 /** Soin du compte rendu inscrit au carnet dans sa rubrique (miroir de _SoinCr, appli). */
 interface SoinCr { type: 'vermifuge' | 'antiparasitaire' | 'allergie' | 'chirurgie' | 'hospitalisation' | 'radio'; nom: string; detail: string; rappel_mois?: number | null }
 const SOINS_LIBELLES: Record<SoinCr['type'], string> = {
@@ -1529,30 +1568,7 @@ function PatientDetailPageInner() {
       const o = ((ph ?? []) as { nom: string; prix_vente: number | null }[]).find(x => x.nom.toLowerCase() === nom.toLowerCase());
       return o?.prix_vente ?? null;
     };
-    const espece = (animal.espece ?? '').toLowerCase();
-    const femelle = (animal.sexe ?? '').toLowerCase().startsWith('f');
-    const kg = poids ?? (animal.poids != null ? Number(animal.poids) : null);
-    const tranche = kg == null ? '25' : kg < 10 ? '10' : kg < 25 ? '25' : kg < 45 ? '45' : '45p';
-    const lignes: { description: string; quantite: number; prixUnitaire: number; tva: number }[] = [];
-    const ligne = (d: string, ttc: number | null) => lignes.push({ description: d, quantite: 1, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
-    const m = motif.toLowerCase();
-    ligne(motif || 'Consultation', tarif(m.includes('urgen') ? 'consultation_urgence' : m.includes('domicile') ? 'visite_domicile' : 'consultation'));
-    for (const a of actes) {
-      if (a === 'Examen clinique' || (a === 'Vaccination' && vaccins.length)) continue;
-      let prix: number | null = null;
-      if (a === 'Vaccination') prix = tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien');
-      if (a === 'Pose de puce') prix = tarif('identification');
-      if (a === 'Castration / stérilisation') prix = espece === 'chat' ? tarif(femelle ? 'sterilisation_chatte' : 'castration_chat')
-        : tarif(`${femelle ? 'sterilisation_chienne' : 'castration_chien'}_${tranche}`);
-      ligne(a, prix);
-    }
-    for (const v of vaccins) ligne(`Vaccin ${v.nom}${v.lot ? ` (lot ${v.lot})` : ''}`, prixPharma(v.nom) ?? tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien'));
-    for (const tr of traitements) ligne(tr.nom, prixPharma(tr.nom));
-    // Produits vendus (non administrés) : quantité + prix saisi, sinon prix de vente du stock.
-    for (const p of produits) {
-      const ttc = p.prix ?? prixPharma(p.nom);
-      lignes.push({ description: p.nom, quantite: p.quantite, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
-    }
+    const lignes = lignesConsultation({ an: animal, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma });
     const total = lignes.reduce((s, l) => s + l.prixUnitaire * 1.2, 0);
     const aCompleter = lignes.filter(l => l.prixUnitaire === 0).length;
     const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
@@ -1590,6 +1606,94 @@ function PatientDetailPageInner() {
       }));
     } catch { /* ignore */ }
     router.push('/elevage/facturation');
+  }
+
+  /** RDV à plusieurs animaux : une seule facture pour la visite, avec les
+   *  lignes de chaque animal (son compte rendu validé et ses actes du jour). */
+  async function facturerVisite(rdvId: string) {
+    if (!activeProfileId || !user) return;
+    const { data: r } = await supabase.from('rdv').select('id, animaux_detail, client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
+      .eq('id', rdvId).maybeSingle();
+    const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
+    if (!r || detail.length === 0) return;
+    const [{ data: crsData }, { data: ans }, { data: t }, { data: ph }, { data: deja }] = await Promise.all([
+      supabase.from('comptes_rendus').select('*').eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'),
+      supabase.from('animaux').select('id, nom, espece, sexe, poids').in('id', detail.map(a => a.id)),
+      supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
+      supabase.from('factures').select('id').eq('source_rdv_id', rdvId).limit(1),
+    ]);
+    const tarifs = (t?.tarifs_veto ?? {}) as Record<string, unknown>;
+    const tarif = (k: string) => { const v = parseFloat(String(tarifs[k] ?? '').replace(',', '.')); return isNaN(v) ? null : v; };
+    const prixPharma = (nom: string) => ((ph ?? []) as { nom: string; prix_vente: number | null }[]).find(x => x.nom.toLowerCase() === nom.toLowerCase())?.prix_vente ?? null;
+    const crs = (crsData ?? []) as (CompteRendu & { produits?: ProduitCr[] | null })[];
+    const lignes: LigneFacture[] = [];
+    const noms: string[] = [];
+    for (const a of detail) {
+      const cr = crs.filter(c => String(c.animal_id) === a.id).pop();
+      if (!cr) continue;
+      const an = ((ans ?? []) as { id: string; nom: string; espece: string | null; sexe: string | null; poids: number | null }[]).find(x => String(x.id) === a.id);
+      const jour = new Date(cr.created_at).toLocaleDateString('sv-SE');
+      const [{ data: vac }, { data: trt }] = await Promise.all([
+        supabase.from('vaccinations').select('vaccin, lot, date, date_rappel').eq('animal_id', a.id).eq('date', jour).eq('vet_id', user.uid),
+        supabase.from('traitements').select('nom').eq('animal_id', a.id).eq('date', jour).eq('vet_id', user.uid),
+      ]);
+      const nom = an?.nom ?? a.nom;
+      lignes.push(...lignesConsultation({
+        an: an ?? {}, prefixe: nom, motif: cr.motif ?? a.motif ?? '', actes: cr.actes ?? [], poids: cr.poids ?? null, produits: cr.produits ?? [],
+        vaccins: ((vac ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null }[])
+          .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null })),
+        traitements: [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))]
+          .map(n => ({ nom: n, type: 'medicament', phases: [], rappels: false, notes: '' })),
+        tarif, prixPharma,
+      }));
+      noms.push(nom);
+    }
+    if (lignes.length === 0) return;
+    if ((deja ?? []).length > 0 && !confirm('Une facture existe déjà pour cette visite. En préparer une autre ?')) return;
+    const total = lignes.reduce((s, l) => s + l.prixUnitaire * l.quantite * 1.2, 0);
+    const aCompleter = lignes.filter(l => l.prixUnitaire === 0).length;
+    const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
+    if (!confirm(`Facturer la visite (${noms.length} animaux) ?\n\n${recap}\n\nTotal estimé : ${total.toFixed(2)} € TTC${aCompleter ? ` (${aCompleter} prix à compléter)` : ''}\nTout reste modifiable avant l'émission.`)) return;
+    const rr = r as { client_uid: string | null; client_profile_id: string | null; client_nom_manuel: string | null; client_email_manuel: string | null; client_telephone_manuel: string | null };
+    const c = { prenom: '', nom: '', email: '', tel: '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };
+    const { data: cf } = await supabase.rpc('pm_client_facturation', {
+      p_animal_id: detail[0].id, ...(rr.client_profile_id ? { p_client_profile_id: rr.client_profile_id } : {}),
+    });
+    const j = (cf ?? null) as Record<string, string> | null;
+    if (j && (j.nom || j.prenom)) {
+      Object.assign(c, { prenom: j.prenom ?? '', nom: j.nom ?? '', email: j.email ?? '', tel: j.telephone ?? '', rue: j.rue ?? '',
+        cp: j.code_postal ?? '', ville: j.ville ?? '', pays: j.pays ?? '', siret: j.siret ?? '', tva: j.numero_tva ?? '' });
+    } else {
+      Object.assign(c, { nom: rr.client_nom_manuel ?? '', email: rr.client_email_manuel ?? '', tel: rr.client_telephone_manuel ?? '' });
+    }
+    const listeNoms = noms.length > 1 ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms[0];
+    try {
+      sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
+        prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
+        rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
+        notes: `Consultation de ${listeNoms}`,
+        sourceRdvId: rdvId, sourceAnimalId: detail[0].id,
+        clientUid: rr.client_uid ?? undefined, clientProfileId: rr.client_profile_id ?? undefined,
+      }));
+    } catch { /* ignore */ }
+    router.push('/elevage/facturation');
+  }
+
+  /** Après un compte rendu d'une visite à plusieurs animaux : facture proposée
+   *  quand tous les comptes rendus sont faits. Renvoie false si ce n'est pas une telle visite. */
+  async function apresCrVisite(rdvId: string): Promise<boolean> {
+    const [{ data: r }, { data: crs }] = await Promise.all([
+      supabase.from('rdv').select('animaux_detail').eq('id', rdvId).maybeSingle(),
+      supabase.from('comptes_rendus').select('animal_id').eq('rdv_id', rdvId).eq('statut', 'valide'),
+    ]);
+    const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
+    if (detail.length === 0) return false;
+    const faits = new Set(((crs ?? []) as { animal_id: string }[]).map(c => String(c.animal_id)));
+    const restants = detail.filter(a => !faits.has(a.id)).map(a => a.nom);
+    if (restants.length === 0) await facturerVisite(rdvId);
+    else alert(`Compte rendu enregistré. La facture de la visite sera proposée une fois tous les comptes rendus faits (reste : ${restants.join(', ')}).`);
+    return true;
   }
 
   function reprendreBrouillon(cr: { id: string; brouillon?: unknown }) {
@@ -1782,7 +1886,8 @@ function PatientDetailPageInner() {
           await ecrireActesCr(vetName, ownerUid);
         }
         if (catPro === 'veterinaire' && produitsCr.length) await decompterStock(produitsCr);
-        if (catPro === 'veterinaire') {
+        // Visite à plusieurs animaux : une seule facture, une fois tous les CR faits.
+        if (catPro === 'veterinaire' && !(crRdvId && await apresCrVisite(crRdvId))) {
           await proposerFacture(formMotif.trim(), actesRealises,
             [...vaccinsCr, ...carnetJour.flatMap(a => a.vaccin ? [a.vaccin] : [])], traitementsCr,
             poidsCr != null && !isNaN(poidsCr) ? poidsCr : null, produitsCr);
@@ -3608,6 +3713,11 @@ function PatientDetailPageInner() {
                 // Après coup : motif, poids, actes du CR + vaccins / traitements
                 // inscrits au carnet par moi le jour du CR.
                 const c = cr as CompteRendu;
+                // Visite à plusieurs animaux : la facture de toute la visite.
+                if (c.rdv_id) {
+                  const { data: rv } = await supabase.from('rdv').select('animaux_detail').eq('id', c.rdv_id).maybeSingle();
+                  if (animauxDetailRdv((rv ?? {}) as { animaux_detail?: unknown }).length > 0) { await facturerVisite(c.rdv_id); return; }
+                }
                 const jour = new Date(c.created_at).toLocaleDateString('sv-SE');
                 const [{ data: vac }, { data: trt }] = await Promise.all([
                   supabase.from('vaccinations').select('vaccin, lot, date, date_rappel').eq('animal_id', animalId).eq('date', jour).eq('vet_id', user?.uid ?? ''),

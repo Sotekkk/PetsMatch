@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -372,9 +373,120 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     ));
   }
 
-  /// Facturer après coup un compte rendu validé : motif, poids, actes du CR,
+  /// Données de facture d'un compte rendu validé : motif, poids, actes du CR,
   /// vaccins et traitements inscrits au carnet par moi le jour du CR.
+  Future<({List<_VaccinCr> vaccins, List<_TraitementCr> traitements})> _carnetDuCr(String animalId, Map<String, dynamic> cr) async {
+    final d = DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal() ?? DateTime.now();
+    final ymd = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final vetId = AgendaContexte.moi ?? AgendaContexte.uid;
+    var vac = <dynamic>[], trt = <dynamic>[];
+    if (vetId != null) {
+      try {
+        vac = await _supa.from('vaccinations').select('vaccin, lot, date, date_rappel')
+            .eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
+        trt = await _supa.from('traitements').select('nom').eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
+      } catch (_) {}
+    }
+    return (
+      vaccins: [for (final v in vac) _VaccinCr((v['vaccin'] ?? 'Vaccin').toString(), (v['lot'] ?? '').toString(),
+          DateTime.tryParse(v['date']?.toString() ?? '') ?? d, DateTime.tryParse(v['date_rappel']?.toString() ?? ''))],
+      traitements: [for (final n in {for (final t in trt) (t['nom'] ?? '').toString()}) if (n.isNotEmpty)
+          _TraitementCr(nom: n, type: 'medicament', phases: const [], rappels: false)],
+    );
+  }
+
+  /// RDV à plusieurs animaux : comptes rendus validés de la visite, par animal.
+  Future<Map<String, Map<String, dynamic>>> _crsDeLaVisite(String rdvId) async {
+    final res = <String, Map<String, dynamic>>{};
+    try {
+      final rows = await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at');
+      for (final r in rows as List) {
+        res[r['animal_id'].toString()] = Map<String, dynamic>.from(r as Map);
+      }
+    } catch (_) {}
+    return res;
+  }
+
+  /// Une seule facture pour la visite : lignes de chaque animal (son compte
+  /// rendu et ses actes du jour), précédées de son nom.
+  Future<void> _facturerVisite() async {
+    final rdv = widget.rdv;
+    final rdvId = rdv?['id']?.toString();
+    final detail = rdv == null ? const <Map<String, dynamic>>[] : animauxDetailRdv(rdv);
+    if (rdvId == null || detail.isEmpty) return;
+    final crs = await _crsDeLaVisite(rdvId);
+    final lignes = <FacturePrefillLigne>[];
+    Map<String, dynamic> tarifs = {};
+    Map<String, dynamic>? an;
+    final noms = <String>[];
+    for (final a in detail) {
+      final id = a['id'].toString();
+      final cr = crs[id];
+      if (cr == null) continue;
+      final nom = a['nom']?.toString() ?? '';
+      final c = await _carnetDuCr(id, cr);
+      final r = await _lignesFacture(animalId: id, prefixe: nom,
+          motif: (cr['motif'] ?? a['motif'] ?? '').toString(), poids: (cr['poids'] as num?)?.toDouble(),
+          actesRealises: [for (final x in (cr['actes'] as List? ?? const [])) x.toString()],
+          vaccins: c.vaccins, traitements: c.traitements,
+          produits: [for (final p in (cr['produits'] as List? ?? const [])) _ProduitCr.fromJson(Map<String, dynamic>.from(p as Map))]);
+      lignes.addAll(r.lignes);
+      tarifs = r.tarifs;
+      an ??= r.an;
+      noms.add(nom);
+    }
+    if (lignes.isEmpty || !mounted) return;
+    // Facture déjà émise pour cette visite : prévenir (pas de doublon involontaire).
+    try {
+      final deja = await _supa.from('factures').select('id').eq('source_rdv_id', rdvId).limit(1);
+      if ((deja as List).isNotEmpty && mounted) {
+        final encore = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Facture déjà créée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: const Text('Une facture existe déjà pour cette visite. En préparer une autre ?', style: TextStyle(fontFamily: 'Galey')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Non', style: TextStyle(fontFamily: 'Galey'))),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Oui', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+          ],
+        ));
+        if (encore != true) return;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    final owner = await _resolveOwner();
+    final listeNoms = noms.length > 1 ? '${noms.sublist(0, noms.length - 1).join(', ')} et ${noms.last}' : noms.first;
+    await _feuilleFacture(lignes: lignes, tarifs: tarifs, an: an, animalId: detail.first['id'].toString(),
+        rdvId: rdvId, owner: owner, titre: 'Facturer la visite (${noms.length} animaux) ?',
+        note: 'Consultation de $listeNoms');
+  }
+
+  /// Après la validation d'un compte rendu d'une visite à plusieurs animaux :
+  /// facture proposée quand tous les comptes rendus sont faits.
+  Future<void> _apresCrVisite() async {
+    final rdvId = widget.rdv?['id']?.toString();
+    final detail = widget.rdv == null ? const <Map<String, dynamic>>[] : animauxDetailRdv(widget.rdv!);
+    if (rdvId == null) return;
+    final faits = await _crsDeLaVisite(rdvId);
+    final restants = [for (final a in detail) if (!faits.containsKey(a['id'].toString())) a['nom']?.toString() ?? ''];
+    if (!mounted) return;
+    if (restants.isEmpty) {
+      await _facturerVisite();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Facture de la visite proposée une fois tous les comptes rendus faits (reste : ${restants.join(', ')}).',
+            style: const TextStyle(fontFamily: 'Galey')),
+        behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 5),
+      ));
+    }
+  }
+
+  /// Facturer après coup un compte rendu validé (visite à plusieurs animaux :
+  /// la facture de toute la visite).
   Future<void> _facturerCr(Map<String, dynamic> cr) async {
+    if (widget.rdv != null && animauxDetailRdv(widget.rdv!).isNotEmpty
+        && cr['rdv_id']?.toString() == widget.rdv!['id']?.toString()) {
+      await _facturerVisite();
+      return;
+    }
     final animalId = (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString();
     if (animalId == null || animalId.isEmpty) return;
     final d = DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal() ?? DateTime.now();
@@ -551,7 +663,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _soinsCr.clear(); _actesRealises.clear(); _carnetJour = []; _poidsCarnet = null; });
       await _loadExisting();
       // Le vétérinaire choisit de préparer (ou non) la facture de la consultation.
-      if (mounted && _saisieActes && statut == 'valide' && animalId != null) {
+      // Visite à plusieurs animaux : une seule facture, une fois tous les CR faits.
+      if (mounted && _saisieActes && statut == 'valide' && widget.rdv != null && animauxDetailRdv(widget.rdv!).isNotEmpty) {
+        await _apresCrVisite();
+      } else if (mounted && _saisieActes && statut == 'valide' && animalId != null) {
         await _proposerFacture(animalId: animalId.toString(), rdvId: rdvId?.toString(), owner: owner,
             motif: motifFacture, poids: poidsFacture, actesRealises: factActes,
             vaccins: factVaccins, traitements: factTraitements, produits: factProduits);
@@ -1256,6 +1371,20 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     required List<_VaccinCr> vaccins, required List<_TraitementCr> traitements,
     List<_ProduitCr> produits = const [],
   }) async {
+    final (:lignes, :tarifs, :an) = await _lignesFacture(animalId: animalId, motif: motif, poids: poids,
+        actesRealises: actesRealises, vaccins: vaccins, traitements: traitements, produits: produits);
+    await _feuilleFacture(lignes: lignes, tarifs: tarifs, an: an, animalId: animalId, rdvId: rdvId, owner: owner,
+        titre: 'Facturer cette consultation ?');
+  }
+
+  /// Lignes de facture d'une consultation (grille du vétérinaire + prix de la
+  /// pharmacie). [prefixe] : nom de l'animal devant chaque ligne (visite à
+  /// plusieurs animaux).
+  Future<({List<FacturePrefillLigne> lignes, Map<String, dynamic> tarifs, Map<String, dynamic>? an})> _lignesFacture({
+    required String animalId, required String motif, double? poids, required List<String> actesRealises,
+    required List<_VaccinCr> vaccins, required List<_TraitementCr> traitements,
+    List<_ProduitCr> produits = const [], String prefixe = '',
+  }) async {
     // Tarifs du vétérinaire + infos animal pour choisir la bonne ligne.
     Map<String, dynamic> tarifs = {};
     Map<String, dynamic>? an;
@@ -1281,8 +1410,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     String tranche() => kg == null ? '25' : kg < 10 ? '10' : kg < 25 ? '25' : kg < 45 ? '45' : '45p';
 
     final lignes = <FacturePrefillLigne>[];
+    final pre = prefixe.isEmpty ? '' : '$prefixe — ';
     void ligne(String designation, double? ttc) =>
-        lignes.add(FacturePrefillLigne(designation: designation, prixHT: ttc == null ? 0 : _ht(ttc), quantite: 1, tauxTVA: 20));
+        lignes.add(FacturePrefillLigne(designation: '$pre$designation', prixHT: ttc == null ? 0 : _ht(ttc), quantite: 1, tauxTVA: 20));
 
     // 1. Le RDV (consultation / urgence / visite à domicile)
     final m = motif.toLowerCase();
@@ -1312,9 +1442,17 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     // 4. Produits vendus (non administrés) : quantité + prix saisi, sinon prix de vente du stock.
     for (final p in produits) {
       final ttc = p.prixTTC ?? prixPharmacie(p.nom);
-      lignes.add(FacturePrefillLigne(designation: p.nom, prixHT: ttc == null ? 0 : _ht(ttc), quantite: p.quantite, tauxTVA: 20));
+      lignes.add(FacturePrefillLigne(designation: '$pre${p.nom}', prixHT: ttc == null ? 0 : _ht(ttc), quantite: p.quantite, tauxTVA: 20));
     }
 
+    return (lignes: lignes, tarifs: tarifs, an: an);
+  }
+
+  Future<void> _feuilleFacture({
+    required List<FacturePrefillLigne> lignes, required Map<String, dynamic> tarifs, Map<String, dynamic>? an,
+    required String animalId, String? rdvId, required ({String? uid, String? profileId}) owner,
+    required String titre, String? note,
+  }) async {
     final total = lignes.fold<double>(0, (s, l) => s + l.prixHT * 1.2);
     final aCompleter = lignes.where((l) => l.prixHT == 0).length;
     if (!mounted) return;
@@ -1324,7 +1462,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       builder: (ctx) => SafeArea(child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Facturer cette consultation ?', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           for (final l in lignes) Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
@@ -1413,7 +1551,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       clientPrenom: prenom, clientNom: nom, clientEmail: email, clientTel: tel,
       clientRue: rue, clientCp: cp, clientVille: ville,
       lignesPrefill: lignes,
-      noteInitiale: 'Consultation de ${an?['nom'] ?? 'votre animal'}',
+      noteInitiale: note ?? 'Consultation de ${an?['nom'] ?? 'votre animal'}',
       sourceRdvId: rdvId ?? r?['id']?.toString(),
       sourceAnimalId: animalId,
       clientUid: owner.uid,
