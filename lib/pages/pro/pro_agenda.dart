@@ -4937,16 +4937,28 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // (y compris « Demandes »), pas seulement les RDV confirmés.
           // Photographe : le client est le propriétaire — pas d'accès santé.
           onCarnetSante: (hasAnimal && AgendaContexte.catPro != 'education' && AgendaContexte.catPro != 'photographe')
-              ? () => Navigator.push(context, MaterialPageRoute(
+              ? () async {
+                  // Plusieurs animaux : choix de la fiche à ouvrir.
+                  var animalFiche = animalId;
+                  var nomFiche = rdv['_animal_nom']?.toString() ?? 'Animal';
+                  if (animauxDetailRdv(rdv).isNotEmpty) {
+                    final a = await choisirAnimalRdv(context, rdv, color: _teal, titre: 'Fiche de quel animal ?');
+                    if (a == null) return;
+                    animalFiche = a['id'].toString();
+                    nomFiche = a['nom']?.toString() ?? 'Animal';
+                  }
+                  if (!context.mounted) return;
+                  await Navigator.push(context, MaterialPageRoute(
                   // Pet-sitter : fiche métier (prestations, consignes, historique).
                   builder: (_) => AgendaContexte.catPro == 'garde'
-                      ? GardeFicheAnimalPage(animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Animal')
+                      ? GardeFicheAnimalPage(animalId: animalFiche, animalNom: nomFiche)
                       : AnimalFichePage(
-                          animalId: animalId,
+                          animalId: animalFiche,
                           readOnly: true,
                           vetMode: true,
                           rdvId: rdv['id']?.toString(),
-                        )))
+                        )));
+                }
               : null,
           // CR / Ordonnance est un flux médical (vétérinaire, pension, santé…) —
           // sans objet pour l'éducateur (rapport de séance dédié) ni pour le

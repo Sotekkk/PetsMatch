@@ -30,17 +30,17 @@ String ligneAnimalRdv(Map<String, dynamic> a) {
 
 /// RDV à plusieurs animaux : choix de l'animal dont on rédige le compte rendu
 /// (ou la séance), avec l'état de chacun — fait / brouillon / à faire —
-/// d'après [table] (comptes_rendus, suivis_morpho) liée au RDV par rdv_id.
-/// Renvoie { id, nom, espece } ou null.
+/// d'après [table] (comptes_rendus, suivis_morpho) liée au RDV par rdv_id ;
+/// sans [table] (ouvrir une fiche), pas d'état. Renvoie { id, nom, espece } ou null.
 Future<Map<String, dynamic>?> choisirAnimalRdv(BuildContext context, Map<String, dynamic> rdv,
-    {required String table, required Color color, String titre = 'Compte rendu de quel animal ?'}) async {
+    {String? table, required Color color, String titre = 'Compte rendu de quel animal ?'}) async {
   final detail = animauxDetailRdv(rdv);
   if (detail.isEmpty) return null;
   final supa = Supabase.instance.client;
   final ids = detail.map((a) => a['id'].toString()).toList();
   final etats = <String, String>{};
   final especes = <String, String>{};
-  try {
+  if (table != null) try {
     final rows = await supa.from(table).select(table == 'comptes_rendus' ? 'animal_id, statut' : 'animal_id')
         .eq('rdv_id', rdv['id'].toString());
     for (final r in rows as List) {
@@ -70,11 +70,11 @@ Future<Map<String, dynamic>?> choisirAnimalRdv(BuildContext context, Map<String,
             _ => ('À faire', Colors.grey.shade600),
           };
           return ListTile(
-            leading: Icon(etat == 'fait' ? Icons.check_circle : Icons.pets, color: etat == 'fait' ? fg : color),
+            leading: Icon(etat == 'fait' && table != null ? Icons.check_circle : Icons.pets, color: etat == 'fait' ? fg : color),
             title: Text(a['nom']?.toString() ?? '—', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             subtitle: (a['motif']?.toString() ?? '').isEmpty ? null
                 : Text(a['motif'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-            trailing: Text(lib, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: fg)),
+            trailing: table == null ? null : Text(lib, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: fg)),
             onTap: () => Navigator.pop(ctx, {'id': id, 'nom': a['nom'], 'espece': especes[id] ?? ''}),
           );
         }(),

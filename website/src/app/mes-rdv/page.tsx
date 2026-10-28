@@ -1104,6 +1104,9 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
   onDossier?: () => void;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
+  // Plusieurs animaux : choix de la fiche à ouvrir.
+  const [choixFiche, setChoixFiche] = useState(false);
+  const animauxRdv = animauxDetailRdv(rdv);
   const st      = STATUT_STYLE[rdv.statut] ?? { bg: '#F5F5F5', color: '#757575', label: rdv.statut };
   const isFirst = rdv.visitCount === 0;
 
@@ -1205,11 +1208,24 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             </button>
           )}
           {rdv.animal_id && !onDossier && (
-            <button onClick={() => onOpenAnimal?.(String(rdv.animal_id))}
-              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
-              style={{ borderColor: '#6E9E57', color: '#6E9E57', fontFamily: 'Galey, sans-serif' }}>
-              🐾 Fiche de l&apos;animal
-            </button>
+            <span className="relative inline-block">
+              <button onClick={() => animauxRdv.length > 0 ? setChoixFiche(v => !v) : onOpenAnimal?.(String(rdv.animal_id))}
+                className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+                style={{ borderColor: '#6E9E57', color: '#6E9E57', fontFamily: 'Galey, sans-serif' }}>
+                🐾 {animauxRdv.length > 0 ? `Fiches des animaux (${animauxRdv.length})` : <>Fiche de l&apos;animal</>}
+              </button>
+              {choixFiche && (
+                <span className="absolute left-0 top-full mt-1 z-20 min-w-[180px] bg-white rounded-xl border border-gray-200 shadow-lg py-1 block"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {animauxRdv.map(a => (
+                    <button key={a.id} onClick={() => { setChoixFiche(false); onOpenAnimal?.(a.id); }}
+                      className="block w-full text-left px-3 py-1.5 text-sm text-[#1E2025] hover:bg-gray-50">
+                      {a.nom}{a.motif ? <span className="text-xs text-gray-400"> · {a.motif}</span> : null}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </span>
           )}
           {rdv.animal_id && onHistorique && (
             <button onClick={onHistorique}
