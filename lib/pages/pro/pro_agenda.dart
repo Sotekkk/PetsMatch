@@ -1,4 +1,5 @@
 import 'package:PetsMatch/utils/consignes_rdv.dart';
+import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart' show NouveauPatientCliniquePage;
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
@@ -1208,6 +1209,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     // depuis le site portait la longueur du créneau, ex. 15 min).
     int duree = dureeImposeeGarde(motifLabel) ?? rdvDuree ??
         (motifKey != null ? (_dureesMotifs[motifKey] ?? 30) : 30);
+    // Plusieurs animaux : durée réglable par animal, durée du RDV = la somme.
+    final detail = animauxDetailRdv(rdv);
+    if (detail.isNotEmpty) {
+      duree = detail.fold<int>(0, (s, a) => s + ((a['duree_minutes'] as num?)?.toInt() ?? 30));
+    }
 
     // Garde à domicile pour la journée : pas d'heure/durée précise à saisir —
     // le pro choisit « journée » ou « demi-journée » (matin / après-midi).
@@ -1490,8 +1496,46 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   const SizedBox(height: 20),
                 ],
 
+                // ── Durée par animal (RDV à plusieurs animaux) ─────────────
+                if (detail.isNotEmpty) ...[
+                  const Text('Durée par animal',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 6),
+                  Text('Sert à bloquer votre agenda — durée totale : ${dureeRdvLabel(duree)}.',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 10),
+                  for (final a in detail)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(a['nom']?.toString() ?? '—',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700)),
+                          if ((a['motif']?.toString() ?? '').isNotEmpty)
+                            Text(a['motif'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                        ])),
+                        DropdownButton<int>(
+                          value: (a['duree_minutes'] as num?)?.toInt() ?? 30,
+                          underline: const SizedBox.shrink(),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700, color: _teal),
+                          items: [
+                            for (final d in {5, 10, 15, 20, 30, 45, 60, 75, 90, 120, (a['duree_minutes'] as num?)?.toInt() ?? 30}.toList()..sort())
+                              DropdownMenuItem(value: d, child: Text(dureeRdvLabel(d))),
+                          ],
+                          onChanged: (v) {
+                            if (v == null) return;
+                            setModal(() {
+                              a['duree_minutes'] = v;
+                              duree = detail.fold<int>(0, (s, x) => s + ((x['duree_minutes'] as num?)?.toInt() ?? 30));
+                            });
+                          },
+                        ),
+                      ]),
+                    ),
+                  const SizedBox(height: 16),
+                ],
                 // ── Durée (commun) ──────────────────────────────────────────
-                if (!isGardeJournee) ...[
+                if (!isGardeJournee && detail.isEmpty) ...[
                   const Text('Durée du rendez-vous',
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
                   const SizedBox(height: 6),
@@ -1571,6 +1615,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         : DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     if (debutChoisi != null && !await _accepterMalgreConflit(rdv, debutChoisi, dureeMinutes)) return;
 
+    // Plusieurs animaux : durées retenues par animal.
+    if (detail.isNotEmpty) {
+      try {
+        await Supabase.instance.client.from('rdv').update({'animaux_detail': detail}).eq('id', rdv['id'].toString());
+      } catch (e) {
+        debugPrint('animaux_detail non enregistré : $e');
+      }
+    }
     if (requestedDh != null) {
       // Update date_heure with the precise time chosen by the pro
       final preciseDh = DateTime(
@@ -5186,7 +5238,20 @@ class _RdvCard extends StatelessWidget {
                   ]),
                 ),
               ]),
-              if (animalNom.isNotEmpty) ...[
+              if (animauxDetailRdv(rdv).isNotEmpty) ...[
+                // Plusieurs animaux : motif et durée de chacun.
+                const SizedBox(height: 6),
+                for (final a in animauxDetailRdv(rdv))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Row(children: [
+                      const Icon(Icons.pets, size: 14, color: Color(0xFF6E9E57)),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(ligneAnimalRdv(a), style: const TextStyle(fontFamily: 'Galey',
+                          fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6E9E57)))),
+                    ]),
+                  ),
+              ] else if (animalNom.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Row(children: [
                   const Icon(Icons.pets, size: 14, color: Color(0xFF6E9E57)),

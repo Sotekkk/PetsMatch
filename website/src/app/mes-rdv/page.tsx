@@ -1,5 +1,6 @@
 'use client';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
+import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
@@ -86,6 +87,8 @@ interface Rdv {
   /** Pet-sitting : série de passages d'une même demande (migration_garde_demande_serie.sql). */
   serie_id?: string | null;
   animaux_ids?: unknown[] | null;
+  /** Plusieurs animaux : motif et durée de chacun (migration_rdv_animaux_detail.sql). */
+  animaux_detail?: unknown;
   acces_logement?: string | null;
   /** Demandes : tous les passages de la série (affichée en une carte). */
   serie?: Rdv[];
@@ -156,7 +159,10 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
   const [date, setDate]     = useState(new Date(rdv.date_heure).toLocaleDateString('sv-SE'));
   // « Promenade 30 min » : la durée suit la prestation (une demande ancienne
   // pouvait porter la longueur du créneau, ex. 15 min).
-  const [duree, setDuree]   = useState(dureeImposeeGarde(rdv.motif) ?? rdv.duree_minutes ?? 60);
+  const [dureeSaisie, setDuree] = useState(dureeImposeeGarde(rdv.motif) ?? rdv.duree_minutes ?? 60);
+  // Plusieurs animaux : durée réglable par animal, durée du RDV = la somme.
+  const [detail, setDetail] = useState<AnimalRdv[]>(() => animauxDetailRdv(rdv));
+  const duree = detail.length > 0 ? detail.reduce((s, a) => s + (a.duree_minutes ?? 30), 0) : dureeSaisie;
   const [saving, setSaving] = useState(false);
   // Clinique : vétérinaire à qui attribuer la demande ('' = titulaire).
   const [praticiens, setPraticiens] = useState<{ id: string; nom: string }[]>([]);
@@ -195,6 +201,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
       const maj = {
         statut: newStatut, date_heure: newDt.toISOString(), duree_minutes: duree,
         ...(mode === 'confirme' && avecSalles ? champsLieu(lieuChoix, rdv.lieu) : {}),
+        ...(detail.length > 0 ? { animaux_detail: detail } : {}),
       };
       if (mode === 'confirme' && avecSalles) {
         // Salle choisie occupée → refus en base : on prévient sans valider.
@@ -325,6 +332,29 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
           </div>
         </div>
 
+        {detail.length > 0 ? (
+          <div style={{ fontFamily: 'Galey, sans-serif' }}>
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Durée par animal</label>
+            <p className="text-xs text-gray-400 mt-0.5">Durée totale : {dureeRdvLabel(duree)}</p>
+            <div className="mt-2 space-y-1.5">
+              {detail.map((a, i) => (
+                <div key={a.id} className="flex items-center gap-2">
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[#1E2025] truncate">{a.nom}</span>
+                    {a.motif && <span className="block text-xs text-gray-400 truncate">{a.motif}</span>}
+                  </span>
+                  <select value={a.duree_minutes ?? 30} aria-label={`Durée pour ${a.nom}`}
+                    onChange={e => setDetail(d => d.map((x, j) => j === i ? { ...x, duree_minutes: Number(e.target.value) } : x))}
+                    className="border border-gray-200 rounded-xl px-2.5 py-1.5 text-sm font-semibold bg-white focus:outline-none" style={{ color: TEAL }}>
+                    {[...new Set([5, 10, 15, 20, 30, 45, 60, 75, 90, 120, a.duree_minutes ?? 30])].sort((x, y) => x - y).map(d => (
+                      <option key={d} value={d}>{dureeRdvLabel(d)}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
         <div>
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Durée</label>
           <div className="flex flex-wrap gap-2 mt-2">
@@ -337,6 +367,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
             ))}
           </div>
         </div>
+        )}
 
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">
@@ -1086,7 +1117,11 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
               {isFirst ? '⭐ 1ère visite' : `🔄 ${rdv.visitCount} visite${(rdv.visitCount ?? 0) > 1 ? 's' : ''}`}
             </span>
           </div>
-          {rdv.animalNom && (
+          {animauxDetailRdv(rdv).length > 0 ? (
+            animauxDetailRdv(rdv).map(a => (
+              <p key={a.id} className="text-xs text-gray-500 mt-0.5">🐾 {ligneAnimalRdv(a)}</p>
+            ))
+          ) : rdv.animalNom && (
             <p className="text-xs text-gray-500 mt-0.5">🐾 {rdv.animalNom}</p>
           )}
           {rdv.statut === 'confirme' && (
