@@ -30,6 +30,8 @@ import { ouvrirDocument } from '@/lib/document-prive';
 import { ordonnancePdfBlob, compteRenduPdfBlob } from '@/lib/ordonnance-pdf';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
+import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
+import { uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Animal {
@@ -94,7 +96,7 @@ interface Ordonnance {
   id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
 }
 interface RadioEntry {
-  id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null;
+  id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null; image_url?: string | null;
 }
 // Miroir des 4 domaines carnet manquants côté web (déjà écrits par le véto
 // depuis l'appli — animal_fiche.dart, cf. VET06) : vermifuges, antiparasitaires,
@@ -933,6 +935,24 @@ function PatientDetailPageInner() {
   // vermifuge/antiparasitaire/chirurgie/allergie
   const [formDosage, setFormDosage] = useState('');
   const [formFrequence, setFormFrequence] = useState('');
+  // Vermifuge / antiparasitaire : fréquence en chiffre + unité (rappel calculé),
+  // durée de prise et rappels à chaque prise — mêmes options que le carnet du propriétaire.
+  const [freqN, setFreqN] = useState('');
+  const [freqU, setFreqU] = useState<'jour' | 'semaine' | 'mois' | 'an'>('mois');
+  const [optsVerm, setOptsVerm] = useState<OptionsVermifuge>(optionsVermifugeVides());
+  // Radio / examen : fichier joint (image ou PDF).
+  const [formFichier, setFormFichier] = useState<File | null>(null);
+  function appliquerFrequence(nTxt: string, u: 'jour' | 'semaine' | 'mois' | 'an') {
+    const n = parseInt(nTxt, 10);
+    if (!(n > 0)) { setFormFrequence(''); return; }
+    setFormFrequence(`${n} ${u === 'jour' ? (n > 1 ? 'jours' : 'jour') : u === 'semaine' ? (n > 1 ? 'semaines' : 'semaine') : u === 'mois' ? 'mois' : (n > 1 ? 'ans' : 'an')}`);
+    const d = new Date(`${formDate || new Date().toLocaleDateString('sv-SE')}T12:00:00`);
+    if (u === 'jour') d.setDate(d.getDate() + n);
+    else if (u === 'semaine') d.setDate(d.getDate() + 7 * n);
+    else if (u === 'mois') d.setMonth(d.getMonth() + n);
+    else d.setFullYear(d.getFullYear() + n);
+    setFormRappel(d.toLocaleDateString('sv-SE'));
+  }
   const [formSubType, setFormSubType] = useState('');
   const [formIntitule, setFormIntitule] = useState('');
   const [formClinique, setFormClinique] = useState('');
@@ -1583,6 +1603,10 @@ function PatientDetailPageInner() {
       setFormErreurs(autres);
       if (autres.length || vides.length) return;
     }
+    if (addingType === 'vermifuge' && optsVerm.rappel && optsVerm.heures.length === 0) {
+      alert('Ajoutez au moins une heure de rappel (ou décochez « Rappel à chaque prise »).');
+      return;
+    }
     setSavingForm(true);
     const vetName = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || '';
     const base = { animal_id: animalId, vet_id: user.uid, source: 'veterinaire', veterinaire: vetName || undefined };
@@ -1603,7 +1627,8 @@ function PatientDetailPageInner() {
         setTraitements((data ?? []) as TraitementEntry[]);
         await notifyOwner('traitement', vetName);
       } else if (addingType === 'vermifuge') {
-        await supabase.from('vermifuges').insert({ ...base, produit: formNom.trim(), dosage: formDosage.trim() || null, date: formDate, date_rappel: formRappel || null, frequence: formFrequence.trim() || null, notes: formNotes.trim() || null });
+        await supabase.from('vermifuges').insert({ ...base, produit: formNom.trim(), dosage: formDosage.trim() || null, date: formDate, date_rappel: formRappel || null, frequence: formFrequence.trim() || null, notes: formNotes.trim() || null,
+          ...colonnesPrises(optsVerm, formDate) });
         const { data } = await supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVermifuges((data ?? []) as VermifugeEntry[]);
         await notifyOwner('vermifuge', vetName);
@@ -1642,7 +1667,14 @@ function PatientDetailPageInner() {
         const { data } = await supabase.from('ordonnances').select('*').eq('animal_id', animalId).order('date_emit', { ascending: false });
         setOrdonnances((data ?? []) as Ordonnance[]);
       } else if (addingType === 'radio') {
-        await supabase.from('radios').insert({ ...base, titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null });
+        // Pièce jointe : image ou PDF de l'examen (même stockage que le carnet du propriétaire).
+        let imageUrl: string | null = null;
+        if (formFichier) {
+          const ext = formFichier.name.split('.').pop() ?? 'pdf';
+          imageUrl = await uploadDocToStorage(formFichier, `radios/${user.uid}/${crypto.randomUUID()}.${ext}`);
+        }
+        await supabase.from('radios').insert({ ...base, titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null,
+          ...(imageUrl ? { image_url: imageUrl } : {}) });
         const { data } = await supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setRadios((data ?? []) as RadioEntry[]);
       } else if (addingType === 'cr') {
@@ -1743,6 +1775,7 @@ function PatientDetailPageInner() {
       setFormSeverite(''); setFormDescription('');
       setFormDate(new Date().toISOString().slice(0, 10));
       setAddingType(null); setSavingForm(false);
+      setFreqN(''); setFreqU('mois'); setOptsVerm(optionsVermifugeVides()); setFormFichier(null);
       setSyntheseMaj(n => n + 1);
     }
   }
@@ -2588,6 +2621,10 @@ function PatientDetailPageInner() {
                         </div>
                         {r.notes && <p className="text-xs text-gray-400 mt-1">{r.notes}</p>}
                         {r.veterinaire && <p className="text-xs text-gray-400">Dr {r.veterinaire}</p>}
+                        {r.image_url && (
+                          <LienDocument href={r.image_url} target="_blank" rel="noopener noreferrer"
+                            className="inline-block mt-1 text-xs font-semibold underline text-[#0C5C6C]">Voir la pièce jointe</LienDocument>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -3709,10 +3746,20 @@ function PatientDetailPageInner() {
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Fréquence</label>
-                <input value={formFrequence} onChange={e => setFormFrequence(e.target.value)} placeholder="Ex : 3 mois…"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                <label className="text-xs font-medium text-gray-500 block mb-1">Fréquence (prochain rappel)</label>
+                <div className="flex gap-2">
+                  <input type="number" min={1} value={freqN} aria-label="Fréquence"
+                    onChange={e => { setFreqN(e.target.value); appliquerFrequence(e.target.value, freqU); }}
+                    className="w-20 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  <select value={freqU} aria-label="Unité"
+                    onChange={e => { const u = e.target.value as typeof freqU; setFreqU(u); appliquerFrequence(freqN, u); }}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+                    <option value="jour">Jour(s)</option><option value="semaine">Semaine(s)</option><option value="mois">Mois</option><option value="an">An(s)</option>
+                  </select>
+                </div>
               </div>
+              {/* Durée de prise (ex. 3 jours) et rappels à chaque prise. */}
+              <VermifugeOptions animalId={animalId} value={optsVerm} onChange={setOptsVerm} groupe={false} />
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Date de rappel</label>
                 <input type="date" value={formRappel} onChange={e => setFormRappel(e.target.value)}
@@ -3738,9 +3785,17 @@ function PatientDetailPageInner() {
                   className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500 block mb-1">Fréquence</label>
-                <input value={formFrequence} onChange={e => setFormFrequence(e.target.value)} placeholder="Ex : 1 mois…"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                <label className="text-xs font-medium text-gray-500 block mb-1">Fréquence (prochain rappel)</label>
+                <div className="flex gap-2">
+                  <input type="number" min={1} value={freqN} aria-label="Fréquence"
+                    onChange={e => { setFreqN(e.target.value); appliquerFrequence(e.target.value, freqU); }}
+                    className="w-20 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                  <select value={freqU} aria-label="Unité"
+                    onChange={e => { const u = e.target.value as typeof freqU; setFreqU(u); appliquerFrequence(freqN, u); }}
+                    className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+                    <option value="jour">Jour(s)</option><option value="semaine">Semaine(s)</option><option value="mois">Mois</option><option value="an">An(s)</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Date de rappel</label>
@@ -3860,7 +3915,12 @@ function PatientDetailPageInner() {
                   placeholder="Résultats, observations…"
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
               </div>
-              <p className="text-xs text-gray-400">L&apos;upload d&apos;images sera disponible prochainement.</p>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Pièce jointe (image ou PDF)</label>
+                <input type="file" accept="image/*,application/pdf" onChange={e => setFormFichier(e.target.files?.[0] ?? null)}
+                  className="w-full text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-[#0C5C6C]/10 file:text-[#0C5C6C] file:font-semibold" />
+                {formFichier && <p className="text-xs text-gray-500 mt-1">{formFichier.name}</p>}
+              </div>
             </>)}
 
             {/* Compte rendu */}

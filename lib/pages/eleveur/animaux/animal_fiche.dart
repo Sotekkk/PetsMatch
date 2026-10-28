@@ -12668,12 +12668,16 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
   }
 
   Future<void> _save() async {
-    if (_file == null || _date == null) return;
+    // Vétérinaire : pièce jointe facultative (résultats saisis) ; propriétaire : obligatoire.
+    if ((_file == null && widget.vetId == null) || _date == null) return;
     setState(() => _saving = true);
     try {
       final uid  = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
-      final name = '${DateTime.now().millisecondsSinceEpoch}.${_file!.path.split('.').last}';
-      final url  = await uploadDocument(_file!, 'radios/$uid/$name');
+      String? url;
+      if (_file != null) {
+        final name = '${DateTime.now().millisecondsSinceEpoch}.${_file!.path.split('.').last}';
+        url = await uploadDocument(_file!, 'radios/$uid/$name');
+      }
       await Supabase.instance.client.from('radios').insert({
         'animal_id': widget.animalId,
         'titre':     _titre.text.trim().isNotEmpty ? _titre.text.trim() : 'Radio / Examen',
@@ -12699,7 +12703,7 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
       _DF('Observations', _notes, maxLines: 2),
     ],
     onSave: () async {
-      if (_file == null) {
+      if (_file == null && widget.vetId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Sélectionnez d\'abord un fichier')));
         return false;
