@@ -59,7 +59,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   final List<_VaccinCr> _vaccinsCr = [];
   // Consultation structurée : motif, poids du jour, actes réalisés
   // (historique du patient : date · motif · poids · actes · prescription).
-  late final _motifCtrl = TextEditingController(text: widget.rdv?['motif']?.toString() ?? '');
+  late final _motifCtrl = TextEditingController(text: _motifInitial());
+  /// Visite à plusieurs animaux : le motif de CET animal, pas le motif combiné.
+  String _motifInitial() {
+    final r = widget.rdv;
+    if (r == null) return '';
+    final id = (widget.animalId ?? r['animal_id'])?.toString();
+    for (final a in animauxDetailRdv(r)) {
+      if (a['id']?.toString() == id) return a['motif']?.toString() ?? '';
+    }
+    return r['motif']?.toString() ?? '';
+  }
+  /// Visite à plusieurs animaux : état du compte rendu de chaque animal.
+  Map<String, String> _etatsVisite = {};
   final _poidsCtrl = TextEditingController();
   final Set<String> _actesRealises = {};
   final _autreActeCtrl = TextEditingController();
@@ -110,6 +122,76 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _loadExisting();
     _chargerPharmacie();
     _prefillDepuisRdv().whenComplete(() { _chargerRappelsVaccins(); _chargerCarnetDuJour(); });
+    _chargerVisite();
+  }
+
+  bool get _visiteMulti => widget.rdv != null && animauxDetailRdv(widget.rdv!).isNotEmpty;
+  String? get _animalCourant => (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+
+  Future<void> _chargerVisite() async {
+    if (!_visiteMulti) return;
+    final etats = <String, String>{};
+    try {
+      final rows = await _supa.from('comptes_rendus').select('animal_id, statut').eq('rdv_id', widget.rdv!['id'].toString());
+      for (final r in rows as List) {
+        final id = r['animal_id']?.toString() ?? '';
+        if (etats[id] != 'fait') etats[id] = r['statut'] == 'brouillon' ? 'brouillon' : 'fait';
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _etatsVisite = etats);
+  }
+
+  /// Passe au compte rendu d'un autre animal de la visite.
+  void _ouvrirAnimalVisite(String animalId) {
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => CompteRenduPage(
+      rdv: widget.rdv, animalId: animalId, ownerUid: widget.ownerUid,
+      clientName: widget.clientName, categoryColor: widget.categoryColor, isPension: widget.isPension,
+    )));
+  }
+
+  /// Barre de la visite : un animal par pastille (fait / brouillon / à faire),
+  /// un appui ouvre son compte rendu.
+  Widget _barreVisite() {
+    final c = widget.categoryColor;
+    final detail = animauxDetailRdv(widget.rdv!);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.withValues(alpha: 0.25))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Visite : ${detail.length} animaux', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: c)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final a in detail)
+            () {
+              final id = a['id'].toString();
+              final courant = id == _animalCourant;
+              final etat = _etatsVisite[id];
+              final lib = etat == 'fait' ? 'fait' : etat == 'brouillon' ? 'brouillon' : 'à faire';
+              return InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: courant ? null : () => _ouvrirAnimalVisite(id),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: courant ? c : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: etat == 'fait' && !courant ? const Color(0xFF2E7D32) : c),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (etat == 'fait') Padding(padding: const EdgeInsets.only(right: 4),
+                        child: Icon(Icons.check, size: 14, color: courant ? Colors.white : const Color(0xFF2E7D32))),
+                    Text('${a['nom'] ?? ''} · $lib', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                        color: courant ? Colors.white : (etat == 'fait' ? const Color(0xFF2E7D32) : c))),
+                  ]),
+                ),
+              );
+            }(),
+        ]),
+      ]),
+    );
   }
 
   /// Actes inscrits au carnet AUJOURD'HUI par moi (Synthèse, onglet Santé) et
@@ -469,14 +551,25 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final faits = await _crsDeLaVisite(rdvId);
     final restants = [for (final a in detail) if (!faits.containsKey(a['id'].toString())) a['nom']?.toString() ?? ''];
     if (!mounted) return;
+    await _chargerVisite();
+    if (!mounted) return;
     if (restants.isEmpty) {
       await _facturerVisite();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Facture de la visite proposée une fois tous les comptes rendus faits (reste : ${restants.join(', ')}).',
-            style: const TextStyle(fontFamily: 'Galey')),
-        behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 5),
+      // Animal suivant de la visite (premier sans compte rendu).
+      final suivant = detail.firstWhere((a) => !faits.containsKey(a['id'].toString()));
+      final passer = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Compte rendu enregistré', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('Reste : ${restants.join(', ')}. La facture de la visite sera proposée au dernier compte rendu.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Plus tard', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Passer à ${suivant['nom'] ?? 'l’animal suivant'}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        ],
       ));
+      if (passer == true && mounted) _ouvrirAnimalVisite(suivant['id'].toString());
     }
   }
 
@@ -1584,16 +1677,16 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         ),
       ),
     );
-    final carnetJour = _carnetJour.isEmpty ? <Widget>[] : [
-      _inputLabel('Déjà inscrit au carnet aujourd’hui'),
-      const SizedBox(height: 6),
-      Container(
-        margin: const EdgeInsets.only(bottom: 14),
-        decoration: BoxDecoration(color: widget.categoryColor.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: widget.categoryColor.withValues(alpha: 0.25))),
-        child: Column(children: [
-          for (final a in List.of(_carnetJour))
-            ListTile(
+    // Inscrits au carnet aujourd'hui (formulaire complet, Synthèse, Santé) :
+    // affichés dans leur rubrique, avec la mention « inscrit au carnet ».
+    List<Widget> carnetDe(bool Function(String type) garde) => [
+      for (final a in List.of(_carnetJour))
+        if (garde(a.type))
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(color: widget.categoryColor.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: widget.categoryColor.withValues(alpha: 0.25))),
+            child: ListTile(
               dense: true,
               leading: Icon(switch (a.type) {
                 'vaccin' => Icons.vaccines_outlined,
@@ -1605,21 +1698,20 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               }, color: widget.categoryColor),
               title: Text('${_libCarnet[a.type]} : ${a.libelle}',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w600)),
-              subtitle: Text('Repris dans ce compte rendu', style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade700)),
+              subtitle: Text('Inscrit au carnet — repris dans ce compte rendu',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade700)),
               trailing: IconButton(
-                tooltip: 'Ne pas reprendre',
+                tooltip: 'Ne pas reprendre dans le compte rendu',
                 icon: const Icon(Icons.close, size: 18, color: Colors.grey),
                 onPressed: () => setState(() => _carnetJour.remove(a)),
               ),
             ),
-        ]),
-      ),
+          ),
     ];
     final aujourdhui = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
     final rappelsAFaire = _rappelsVaccins.where((r) =>
         !_vaccinsCr.any((v) => v.nom.toLowerCase() == (r['vaccin'] ?? '').toString().toLowerCase())).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      ...carnetJour,
       if (rappelsAFaire.isNotEmpty) ...[
         _inputLabel('Rappels de vaccins à faire'),
         const SizedBox(height: 6),
@@ -1659,6 +1751,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       for (final v in List.of(_vaccinsCr)) ligne(Icons.vaccines_outlined, v.nom,
           [if (v.lot.isNotEmpty) 'Lot ${v.lot}', if (v.rappel != null) 'Rappel le ${date(v.rappel!)}'].join(' · '),
           () => _ajouterVaccin(v), () => setState(() => _vaccinsCr.remove(v))),
+      ...carnetDe((t) => t == 'vaccin'),
       OutlinedButton.icon(
         onPressed: () => _ajouterVaccin(), icon: const Icon(Icons.add, size: 18),
         label: const Text('Ajouter un vaccin', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
@@ -1671,6 +1764,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       for (final t in List.of(_traitementsCr)) ligne(Icons.medication_outlined, t.nom,
           [t.posologieComplete, if (t.rappels) 'rappels au propriétaire'].join(' · '),
           () => _ajouterTraitement(t), () => setState(() => _traitementsCr.remove(t))),
+      ...carnetDe((t) => t == 'traitement'),
       OutlinedButton.icon(
         onPressed: () => _ajouterTraitement(), icon: const Icon(Icons.add, size: 18),
         label: const Text('Ajouter un traitement', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
@@ -1694,6 +1788,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           '${_SoinCr.libelles[s.type]} : ${s.nom}',
           [if (s.detail.isNotEmpty) s.detail, if (s.rappelMois != null) 'rappel dans ${s.rappelMois} mois'].join(' · '),
           () => _ajouterSoin(s), () => setState(() => _soinsCr.remove(s))),
+      ...carnetDe((t) => t != 'vaccin' && t != 'traitement'),
       OutlinedButton.icon(
         onPressed: _saisirSoinAuCarnet, icon: const Icon(Icons.add, size: 18),
         label: const Text('Ajouter un soin (vermifuge, allergie, chirurgie, examen…)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
@@ -1716,6 +1811,29 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       Text('Ajoutés à la facture et décomptés du stock à l’enregistrement ; pas inscrits au carnet.',
           style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       const SizedBox(height: 16),
+      // Récapitulatif de la consultation.
+      if (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty || _soinsCr.isNotEmpty || _produitsCr.isNotEmpty || _carnetJour.isNotEmpty) ...[
+        _inputLabel('Fait pendant cette consultation'),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE4E7E2))),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (final l in [
+              for (final v in _vaccinsCr) 'Vaccin : ${v.nom}${v.lot.isNotEmpty ? ' (lot ${v.lot})' : ''}',
+              for (final t in _traitementsCr) 'Traitement : ${t.nom}',
+              for (final x in _soinsCr) '${_SoinCr.libelles[x.type]} : ${x.nom}',
+              for (final a in _carnetJour) '${_libCarnet[a.type]} : ${a.libelle}',
+              for (final p in _produitsCr) 'Produit vendu : ${p.libelle}',
+            ])
+              Padding(padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text('• $l', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025)))),
+          ]),
+        ),
+      ],
     ]);
   }
 
@@ -2299,6 +2417,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (_visiteMulti) _barreVisite(),
           // Existing CRs
           if (_crs.isNotEmpty) ...[
             _sectionTitle('Comptes rendus existants'),

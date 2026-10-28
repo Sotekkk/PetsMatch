@@ -16,7 +16,7 @@ import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { animauxDetailRdv } from '@/lib/rdv-animaux';
+import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -482,7 +482,15 @@ function ChampPharmacie({ value, onChange, onChoix, articles, placeholder, coura
 // ── Compte rendu vétérinaire : vaccins réalisés / traitements prescrits ──────
 // → carnet de santé (rappels au propriétaire par les Cloud Functions sante.js)
 // + ordonnance PDF. Miroir app : compte_rendu_page.dart (_blocActes).
-function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, setProduits, soins, setSoins, onSaisirCarnet, profileId, animalId }: {
+const LIBELLES_CARNET: Record<string, string> = {
+  vaccin: 'Vaccin', traitement: 'Traitement', vermifuge: 'Vermifuge', antiparasitaire: 'Antiparasitaire',
+  allergie: 'Allergie / pathologie', chirurgie: 'Chirurgie', hospitalisation: 'Hospitalisation', radio: 'Examen',
+};
+
+function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, setProduits, soins, setSoins, onSaisirCarnet, carnet = [], onRetirerCarnet, profileId, animalId }: {
+  /** Inscrits au carnet aujourd'hui : affichés dans leur rubrique (« inscrit au carnet »). */
+  carnet?: { cle: string; type: string; libelle: string }[];
+  onRetirerCarnet?: (cle: string) => void;
   vaccins: VaccinCr[]; setVaccins: (v: VaccinCr[]) => void;
   traitements: TraitementCr[]; setTraitements: (t: TraitementCr[]) => void;
   produits: ProduitCr[]; setProduits: (p: ProduitCr[]) => void;
@@ -493,6 +501,18 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
   animalId?: string | null;
 }) {
   const auj = new Date().toISOString().slice(0, 10);
+  const carnetDe = (garde: (t: string) => boolean) => carnet.filter(a => garde(a.type)).map(a => (
+    <div key={a.cle} className="flex items-center gap-2 rounded-xl border border-[#0C5C6C]/20 bg-[#0C5C6C]/5 px-3 py-2">
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold text-[#1E2025] truncate">{LIBELLES_CARNET[a.type] ?? a.type} : {a.libelle}</span>
+        <span className="block text-[11px] text-gray-500">Inscrit au carnet — repris dans ce compte rendu</span>
+      </span>
+      {onRetirerCarnet && (
+        <button type="button" title="Ne pas reprendre dans le compte rendu" aria-label={`Ne pas reprendre : ${a.libelle}`}
+          onClick={() => onRetirerCarnet(a.cle)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+      )}
+    </div>
+  ));
   // Rappels de vaccins à faire : en retard ou dans les 30 jours (dernière
   // injection de chaque vaccin seulement — un rappel déjà fait n'apparaît plus).
   const [rappels, setRappels] = useState<{ vaccin: string; date: string | null; date_rappel: string }[]>([]);
@@ -586,6 +606,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
         <p className="text-xs font-semibold text-gray-600">💉 Vaccins réalisés</p>
         {vaccins.map((v, i) => ligne('💉', v.nom, [v.lot && `Lot ${v.lot}`, v.rappel && `Rappel le ${new Date(v.rappel + 'T12:00:00').toLocaleDateString('fr-FR')}`].filter(Boolean).join(' · '),
           () => setVac({ ...v, index: i }), () => setVaccins(vaccins.filter((_, j) => j !== i)), `v${i}`))}
+        {carnetDe(t => t === 'vaccin')}
         {vac ? (
           <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
             <ChampPharmacie value={vac.nom} onChange={nom => setVac({ ...vac, nom })} placeholder="Vaccin (nom / marque) *"
@@ -632,6 +653,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
         <p className="text-xs font-semibold text-gray-600">💊 Traitements prescrits</p>
         {traitements.map((t, i) => ligne('💊', t.nom, [posologieComplete(t), t.rappels ? 'rappels au propriétaire' : ''].filter(Boolean).join(' · '),
           () => setTrt({ ...t, index: i }), () => setTraitements(traitements.filter((_, j) => j !== i)), `t${i}`))}
+        {carnetDe(t => t === 'traitement')}
         {trt ? (
           <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
             <ChampPharmacie value={trt.nom} onChange={nom => setTrt({ ...trt, nom })} placeholder="Médicament *"
@@ -766,6 +788,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
         {soins.map((s, i) => ligne('', `${SOINS_LIBELLES[s.type]} : ${s.nom}`,
           [s.detail, s.rappel_mois ? `rappel dans ${s.rappel_mois} mois` : ''].filter(Boolean).join(' · '),
           () => setSoin({ ...s, index: i }), () => setSoins(soins.filter((_, j) => j !== i)), `s${i}`))}
+        {carnetDe(t => t !== 'vaccin' && t !== 'traitement')}
         {soin ? (
           <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
             <div className="flex flex-wrap gap-1.5">
@@ -860,6 +883,21 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
         )}
         <p className="text-[11px] text-gray-500">Ajoutés à la facture et décomptés du stock à l’enregistrement ; pas inscrits au carnet.</p>
       </div>
+      {/* Récapitulatif de la consultation */}
+      {(vaccins.length + traitements.length + soins.length + produits.length + carnet.length) > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-gray-600">Fait pendant cette consultation</p>
+          <ul className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-[#1E2025] space-y-0.5">
+            {[
+              ...vaccins.map(v => `Vaccin : ${v.nom}${v.lot ? ` (lot ${v.lot})` : ''}`),
+              ...traitements.map(t => `Traitement : ${t.nom}`),
+              ...soins.map(x => `${SOINS_LIBELLES[x.type]} : ${x.nom}`),
+              ...carnet.map(a => `${LIBELLES_CARNET[a.type] ?? a.type} : ${a.libelle}`),
+              ...produits.map(p => `Produit vendu : ${libelleProduit(p)}`),
+            ].map((l, i) => <li key={i}>• {l}</li>)}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -955,6 +993,21 @@ function PatientDetailPageInner() {
   // RDV à plusieurs animaux (?crRdv=<id>, « Gérer mes RDV ») : le compte rendu
   // de cet animal est rattaché au RDV (rdv_id) pour la facture de la visite.
   const [crRdvId, setCrRdvId] = useState<string | null>(null);
+  const [visite, setVisite] = useState<{ rdvId: string; animaux: AnimalRdv[]; etats: Record<string, 'fait' | 'brouillon'> } | null>(null);
+  const chargerVisite = useCallback(async (rdvId: string) => {
+    const [{ data: r }, { data: crs }] = await Promise.all([
+      supabase.from('rdv').select('animaux_detail').eq('id', rdvId).maybeSingle(),
+      supabase.from('comptes_rendus').select('animal_id, statut').eq('rdv_id', rdvId),
+    ]);
+    const animaux = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
+    if (animaux.length === 0) { setVisite(null); return; }
+    const etats: Record<string, 'fait' | 'brouillon'> = {};
+    for (const c of (crs ?? []) as { animal_id: string | null; statut: string | null }[]) {
+      const id = String(c.animal_id ?? '');
+      if (etats[id] !== 'fait') etats[id] = c.statut === 'brouillon' ? 'brouillon' : 'fait';
+    }
+    setVisite({ rdvId, animaux, etats });
+  }, []);
   const crRdvOuvert = useRef(false);
   // Soin saisi depuis le compte rendu avec le formulaire complet du carnet :
   // la saisie du CR est mise de côté puis reprise (le soin apparaît alors
@@ -1161,6 +1214,7 @@ function PatientDetailPageInner() {
     const crRdv = searchParams.get('crRdv');
     if (!crRdv || catPro !== 'veterinaire' || !animalId || crRdvOuvert.current) return;
     crRdvOuvert.current = true;
+    chargerVisite(crRdv);
     (async () => {
       const { data: crs } = await supabase.from('comptes_rendus').select('*')
         .eq('rdv_id', crRdv).eq('animal_id', animalId).order('created_at', { ascending: false });
@@ -1700,8 +1754,15 @@ function PatientDetailPageInner() {
     if (detail.length === 0) return false;
     const faits = new Set(((crs ?? []) as { animal_id: string }[]).map(c => String(c.animal_id)));
     const restants = detail.filter(a => !faits.has(a.id)).map(a => a.nom);
+    await chargerVisite(rdvId);
     if (restants.length === 0) await facturerVisite(rdvId);
-    else alert(`Compte rendu enregistré. La facture de la visite sera proposée une fois tous les comptes rendus faits (reste : ${restants.join(', ')}).`);
+    else {
+      // Animal suivant de la visite (premier sans compte rendu).
+      const suivant = detail.find(a => !faits.has(a.id));
+      if (suivant && confirm(`Compte rendu enregistré. Reste : ${restants.join(', ')} — la facture de la visite sera proposée au dernier compte rendu.\n\nPasser au compte rendu de ${suivant.nom} ?`)) {
+        window.location.assign(`/mes-patients/${encodeURIComponent(suivant.id)}?crRdv=${encodeURIComponent(rdvId)}`);
+      }
+    }
     return true;
   }
 
@@ -4073,29 +4134,33 @@ function PatientDetailPageInner() {
 
             {/* Compte rendu */}
             {addingType === 'cr' && (<>
-              {catPro === 'veterinaire' && carnetJour.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-gray-600">Déjà inscrit au carnet aujourd’hui</p>
-                  <div className="rounded-xl border border-[#0C5C6C]/20 bg-[#0C5C6C]/5 divide-y divide-[#0C5C6C]/10">
-                    {carnetJour.map(a => (
-                      <div key={a.cle} className="flex items-center gap-2 px-3 py-2">
-                        <span className="flex-1 min-w-0 text-sm text-[#1E2025] truncate">
-                          {{ vaccin: 'Vaccin', traitement: 'Traitement', vermifuge: 'Vermifuge', antiparasitaire: 'Antiparasitaire',
-                             allergie: 'Allergie / pathologie', chirurgie: 'Chirurgie', hospitalisation: 'Hospitalisation', radio: 'Examen' }[a.type]} : {a.libelle}
-                        </span>
-                        <button type="button" title="Ne pas reprendre" aria-label={`Ne pas reprendre : ${a.libelle}`}
-                          onClick={() => setCarnetJour(c => c.filter(x => x.cle !== a.cle))}
-                          className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
-                      </div>
-                    ))}
+              {/* Visite à plusieurs animaux : passer d'un animal à l'autre. */}
+              {visite && (
+                <div className="rounded-xl border border-[#0C5C6C]/25 bg-[#0C5C6C]/5 px-3 py-2.5">
+                  <p className="text-[13px] font-bold text-[#0C5C6C]">Visite : {visite.animaux.length} animaux</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {visite.animaux.map(a => {
+                      const courant = a.id === String(animalId);
+                      const etat = visite.etats[a.id];
+                      return (
+                        <button key={a.id} type="button" disabled={courant}
+                          onClick={() => window.location.assign(`/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(visite.rdvId)}`)}
+                          className="px-3 py-1.5 rounded-full text-[12.5px] font-semibold border"
+                          style={courant ? { background: '#0C5C6C', color: 'white', borderColor: '#0C5C6C' }
+                            : etat === 'fait' ? { background: 'white', color: '#2E7D32', borderColor: '#2E7D32' }
+                            : { background: 'white', color: '#0C5C6C', borderColor: '#0C5C6C' }}>
+                          {etat === 'fait' ? '✓ ' : ''}{a.nom} · {etat === 'fait' ? 'fait' : etat === 'brouillon' ? 'brouillon' : 'à faire'}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <p className="text-[11px] text-gray-500">Repris dans ce compte rendu, sans nouvelle saisie au carnet.</p>
                 </div>
               )}
               {catPro === 'veterinaire' && (
                 <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}
                   produits={produitsCr} setProduits={setProduitsCr} soins={soinsCr} setSoins={setSoinsCr}
                   onSaisirCarnet={hasWriteAccess ? saisirSoinDepuisCr : undefined}
+                  carnet={carnetJour} onRetirerCarnet={cle => setCarnetJour(c => c.filter(x => x.cle !== cle))}
                   profileId={activeProfileId || null} animalId={animalId} />
               )}
               <div>
