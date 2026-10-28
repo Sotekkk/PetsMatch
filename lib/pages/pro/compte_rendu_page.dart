@@ -67,6 +67,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   final List<_TraitementCr> _traitementsCr = [];
   /// Produits vendus (non administrés) : facture + stock, pas le carnet.
   final List<_ProduitCr> _produitsCr = [];
+  /// Autres soins inscrits au carnet à l'enregistrement (vermifuge,
+  /// antiparasitaire, allergie, chirurgie / hospitalisation, radio / examen).
+  final List<_SoinCr> _soinsCr = [];
   bool get _saisieActes => !widget.isPension && _peutValider;
 
   // Ordonnance
@@ -334,6 +337,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'vaccins': [for (final v in _vaccinsCr) v.toJson()],
         'traitements': [for (final t in _traitementsCr) t.toJson()],
         'produits': [for (final p in _produitsCr) p.toJson()],
+        'soins': [for (final s in _soinsCr) s.toJson()],
       };
 
   void _reprendreBrouillon(Map<String, dynamic> cr) {
@@ -350,6 +354,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       _vaccinsCr..clear()..addAll([for (final v in (e['vaccins'] as List? ?? const [])) _VaccinCr.fromJson(Map<String, dynamic>.from(v as Map))]);
       _traitementsCr..clear()..addAll([for (final t in (e['traitements'] as List? ?? const [])) _TraitementCr.fromJson(Map<String, dynamic>.from(t as Map))]);
       _produitsCr..clear()..addAll([for (final p in (e['produits'] as List? ?? const [])) _ProduitCr.fromJson(Map<String, dynamic>.from(p as Map))]);
+      _soinsCr..clear()..addAll([for (final x in (e['soins'] as List? ?? const [])) _SoinCr.fromJson(Map<String, dynamic>.from(x as Map))]);
     });
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Brouillon repris : modifiez-le, puis enregistrez.', style: TextStyle(fontFamily: 'Galey')),
@@ -394,6 +399,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         _vaccinsCr.clear();
         _traitementsCr.clear();
         _produitsCr.clear();
+        _soinsCr.clear();
         _actesRealises.clear();
       });
 
@@ -402,7 +408,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   Future<void> _saveCompteRendu({bool enBrouillon = false}) async {
     final proUid  = AgendaContexte.uid;
     final moi     = AgendaContexte.moi;
-    final actes = _saisieActes && (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty);
+    final actes = _saisieActes && (_vaccinsCr.isNotEmpty || _traitementsCr.isNotEmpty || _soinsCr.isNotEmpty);
     // Instantané pour la facture proposée après l'enregistrement.
     final factVaccins = [
       ..._vaccinsCr,
@@ -422,6 +428,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     // Actes du CR + actes déjà inscrits au carnet aujourd'hui (Synthèse, Santé).
     final carnet = _saisieActes ? _carnetJour : const <({String type, String libelle, Map<String, dynamic> ligne})>[];
     List<String> duCarnet(String t) => [for (final a in carnet) if (a.type == t) a.libelle];
+    List<String> soins(String t) => actes ? [for (final s in _soinsCr) if (s.type == t) s.libelle] : const [];
     final vaccinsTxt = [
       if (actes) for (final v in _vaccinsCr) v.nom + (v.lot.isNotEmpty ? ' (lot ${v.lot})' : ''),
       ...duCarnet('vaccin'),
@@ -437,8 +444,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (actesRealises.isNotEmpty) 'Actes réalisés : ${actesRealises.join(', ')}.',
       _crContenuCtrl.text.trim(),
       if (vaccinsTxt.isNotEmpty) 'Vaccins : ${vaccinsTxt.join(', ')}.',
-      if (duCarnet('vermifuge').isNotEmpty) 'Vermifuge : ${duCarnet('vermifuge').join(', ')}.',
-      if (duCarnet('antiparasitaire').isNotEmpty) 'Antiparasitaire : ${duCarnet('antiparasitaire').join(', ')}.',
+      for (final (type, titre) in const [('vermifuge', 'Vermifuge'), ('antiparasitaire', 'Antiparasitaire'),
+          ('allergie', 'Allergie / pathologie'), ('chirurgie', 'Chirurgie'), ('hospitalisation', 'Hospitalisation'), ('radio', 'Examen')])
+        if ([...soins(type), ...duCarnet(type)].isNotEmpty) '$titre : ${[...soins(type), ...duCarnet(type)].join(', ')}.',
       if (traitementsTxt.isNotEmpty) 'Traitement : ${traitementsTxt.join(' ; ')}.',
       if (factProduits.isNotEmpty) 'Produits délivrés : ${factProduits.map((p) => p.libelle).join(', ')}.',
     ].where((l) => l.isNotEmpty).join('\n\n');
@@ -495,7 +503,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (enBrouillon) {
         _crContenuCtrl.clear();
         _poidsCtrl.clear();
-        setState(() { _crFile = null; _brouillonId = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _actesRealises.clear(); });
+        setState(() { _crFile = null; _brouillonId = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _soinsCr.clear(); _actesRealises.clear(); });
         await _loadExisting();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -530,7 +538,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final motifFacture = _motifCtrl.text.trim();
       _crContenuCtrl.clear();
       _poidsCtrl.clear();
-      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _actesRealises.clear(); _carnetJour = []; _poidsCarnet = null; });
+      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _soinsCr.clear(); _actesRealises.clear(); _carnetJour = []; _poidsCarnet = null; });
       await _loadExisting();
       // Le vétérinaire choisit de préparer (ou non) la facture de la consultation.
       if (mounted && _saisieActes && statut == 'valide' && animalId != null) {
@@ -583,6 +591,30 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           if (vetId != null) 'vet_id': vetId,
         });
       } catch (e) { erreurs.add('vaccin ${v.nom}'); }
+    }
+    for (final s in _soinsCr) {
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      final rappel = s.rappelMois == null ? null : ymd(DateTime(today.year, today.month + s.rappelMois!, today.day));
+      final base = {'id': id, 'animal_id': animalId, 'date': ymd(today), 'source': 'veterinaire', if (vetId != null) 'vet_id': vetId};
+      try {
+        switch (s.type) {
+          case 'vermifuge':
+            await _supa.from('vermifuges').insert({...base, 'produit': s.nom,
+                if (s.detail.isNotEmpty) 'dosage': s.detail, if (rappel != null) 'date_rappel': rappel});
+          case 'antiparasitaire':
+            await _supa.from('antiparasitaires').insert({...base, 'produit': s.nom,
+                if (s.detail.isNotEmpty) 'frequence': s.detail, if (rappel != null) 'date_rappel': rappel});
+          case 'allergie':
+            await _supa.from('allergies').insert({...base, 'description': s.nom, if (s.detail.isNotEmpty) 'severite': s.detail});
+          case 'chirurgie':
+          case 'hospitalisation':
+            await _supa.from('chirurgies').insert({...base, 'type': s.type, 'intitule': s.nom, 'statut': 'realise',
+                'veterinaire': praticien, if (s.detail.isNotEmpty) 'notes': s.detail});
+          case 'radio':
+            await _supa.from('radios').insert({...base, 'titre': s.nom, 'veterinaire': praticien,
+                if (s.detail.isNotEmpty) 'notes': s.detail});
+        }
+      } catch (e) { erreurs.add('${_SoinCr.libelles[s.type] ?? s.type} ${s.nom}'.toLowerCase()); }
     }
     for (final t in _traitementsCr) {
       // Antiparasitaire : section « Antiparasitaires » du carnet (pas les
@@ -1508,6 +1540,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       Text('Touchez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.',
           style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       const SizedBox(height: 14),
+      _inputLabel('Autres soins (inscrits au carnet)'),
+      const SizedBox(height: 6),
+      for (final s in List.of(_soinsCr)) ligne(_SoinCr.icones[s.type] ?? Icons.healing_outlined,
+          '${_SoinCr.libelles[s.type]} : ${s.nom}',
+          [if (s.detail.isNotEmpty) s.detail, if (s.rappelMois != null) 'rappel dans ${s.rappelMois} mois'].join(' · '),
+          () => _ajouterSoin(s), () => setState(() => _soinsCr.remove(s))),
+      OutlinedButton.icon(
+        onPressed: () => _ajouterSoin(), icon: const Icon(Icons.add, size: 18),
+        label: const Text('Ajouter un soin (vermifuge, allergie, chirurgie, examen…)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor, side: BorderSide(color: widget.categoryColor.withValues(alpha: 0.5)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      ),
+      const SizedBox(height: 14),
       _inputLabel('Produits vendus (non administrés)'),
       const SizedBox(height: 6),
       for (final p in List.of(_produitsCr)) ligne(Icons.shopping_bag_outlined, p.libelle,
@@ -1524,6 +1569,89 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       const SizedBox(height: 16),
     ]);
+  }
+
+  /// Ajout (ou modification si [existant]) d'un soin inscrit au carnet à
+  /// l'enregistrement, dans sa rubrique (vermifuge, antiparasitaire, allergie,
+  /// chirurgie / hospitalisation, radio / examen).
+  Future<void> _ajouterSoin([_SoinCr? existant]) async {
+    var type = existant?.type ?? 'vermifuge';
+    final nomCtrl = TextEditingController(text: existant?.nom ?? '');
+    final nomFocus = FocusNode();
+    final detailCtrl = TextEditingController(text: existant?.detail ?? '');
+    int? rappelMois = existant?.rappelMois;
+    const avecRappel = {'vermifuge', 'antiparasitaire'};
+    String labelNom() => switch (type) {
+          'allergie' => 'Allergie / pathologie *',
+          'chirurgie' || 'hospitalisation' => 'Intervention *',
+          'radio' => 'Examen (radio, échographie, prise de sang…) *',
+          _ => 'Produit *',
+        };
+    String labelDetail() => switch (type) {
+          'vermifuge' => 'Dosage (facultatif)',
+          'antiparasitaire' => 'Fréquence / posologie (facultatif)',
+          'allergie' => 'Sévérité (facultatif)',
+          'radio' => 'Résultats / observations (facultatif)',
+          _ => 'Notes (facultatif)',
+        };
+    final res = await showModalBottomSheet<_SoinCr>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        ChoiceChip chip(String l, bool sel, VoidCallback onTap) => ChoiceChip(
+          label: Text(l, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)), selected: sel,
+          selectedColor: widget.categoryColor.withValues(alpha: 0.18), onSelected: (_) => onTap());
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(existant == null ? 'Soin à inscrire au carnet' : 'Modifier le soin',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final e in _SoinCr.libelles.entries)
+                chip(e.value, type == e.key, () => setM(() { type = e.key; if (!avecRappel.contains(type)) rappelMois = null; })),
+            ]),
+            const SizedBox(height: 12),
+            if (type == 'vermifuge' || type == 'antiparasitaire')
+              _champPharmacie(
+                ctrl: nomCtrl, focus: nomFocus, label: labelNom(),
+                filtre: (o) => o['categorie'] != 'vaccin' && o['categorie'] != 'alimentation',
+                courants: type == 'antiparasitaire' ? _antiparasitairesCourants : const [],
+                onChoix: (o) => setM(() => nomCtrl.text = o['nom']?.toString() ?? ''),
+                onChange: () => setM(() {}),
+              )
+            else
+              TextField(controller: nomCtrl, textCapitalization: TextCapitalization.sentences,
+                  decoration: _inputDeco('').copyWith(labelText: labelNom()), onChanged: (_) => setM(() {})),
+            const SizedBox(height: 10),
+            TextField(controller: detailCtrl, textCapitalization: TextCapitalization.sentences, maxLines: type == 'radio' ? 3 : 1,
+                decoration: _inputDeco('').copyWith(labelText: labelDetail())),
+            if (avecRappel.contains(type)) ...[
+              const SizedBox(height: 12),
+              const Text('Prochain rappel (le propriétaire sera prévenu)', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final m in const [null, 1, 3, 6, 12])
+                  chip(m == null ? 'Aucun' : m == 12 ? '1 an' : '$m mois', rappelMois == m, () => setM(() => rappelMois = m)),
+              ]),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: nomCtrl.text.trim().isEmpty ? null
+                  : () => Navigator.pop(ctx, _SoinCr(type, nomCtrl.text.trim(), detailCtrl.text.trim(), rappelMois)),
+              child: Text(existant == null ? 'Ajouter' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ])),
+        );
+      }),
+    );
+    if (res == null) return;
+    setState(() {
+      final i = existant == null ? -1 : _soinsCr.indexOf(existant);
+      if (i >= 0) { _soinsCr[i] = res; } else { _soinsCr.add(res); }
+    });
   }
 
   /// Ajout (ou modification si [existant]) d'un produit vendu : depuis le
@@ -2193,6 +2321,31 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: widget.categoryColor)),
     contentPadding: const EdgeInsets.all(14),
   );
+}
+
+/// Soin du compte rendu inscrit au carnet dans sa rubrique.
+class _SoinCr {
+  /// vermifuge | antiparasitaire | allergie | chirurgie | hospitalisation | radio
+  final String type;
+  final String nom;
+  final String detail;
+  /// Vermifuge / antiparasitaire : prochain rappel dans N mois.
+  final int? rappelMois;
+  _SoinCr(this.type, this.nom, this.detail, [this.rappelMois]);
+
+  static const libelles = {
+    'vermifuge': 'Vermifuge', 'antiparasitaire': 'Antiparasitaire', 'allergie': 'Allergie / pathologie',
+    'chirurgie': 'Chirurgie', 'hospitalisation': 'Hospitalisation', 'radio': 'Radio / examen',
+  };
+  static const icones = {
+    'vermifuge': Icons.bug_report_outlined, 'antiparasitaire': Icons.pest_control_outlined,
+    'allergie': Icons.warning_amber_outlined, 'chirurgie': Icons.local_hospital_outlined,
+    'hospitalisation': Icons.local_hospital_outlined, 'radio': Icons.image_search_outlined,
+  };
+  String get libelle => detail.isEmpty ? nom : '$nom ($detail)';
+  Map<String, dynamic> toJson() => {'type': type, 'nom': nom, 'detail': detail, if (rappelMois != null) 'rappel_mois': rappelMois};
+  factory _SoinCr.fromJson(Map<String, dynamic> j) => _SoinCr((j['type'] ?? 'vermifuge').toString(),
+      (j['nom'] ?? '').toString(), (j['detail'] ?? '').toString(), (j['rappel_mois'] as num?)?.toInt());
 }
 
 /// Produit vendu pendant la consultation (non administré : pas au carnet).

@@ -284,6 +284,13 @@ interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: st
 /** Produit vendu pendant la consultation (non administré : pas au carnet) —
  *  facturé et décompté du stock. Miroir de _ProduitCr (appli). */
 interface ProduitCr { nom: string; quantite: number; prix: number | null; item_id?: string | null }
+/** Soin du compte rendu inscrit au carnet dans sa rubrique (miroir de _SoinCr, appli). */
+interface SoinCr { type: 'vermifuge' | 'antiparasitaire' | 'allergie' | 'chirurgie' | 'hospitalisation' | 'radio'; nom: string; detail: string; rappel_mois?: number | null }
+const SOINS_LIBELLES: Record<SoinCr['type'], string> = {
+  vermifuge: 'Vermifuge', antiparasitaire: 'Antiparasitaire', allergie: 'Allergie / pathologie',
+  chirurgie: 'Chirurgie', hospitalisation: 'Hospitalisation', radio: 'Radio / examen',
+};
+const libelleSoin = (s: SoinCr) => s.detail ? `${s.nom} (${s.detail})` : s.nom;
 const libelleProduit = (p: ProduitCr) => p.quantite === 1 ? p.nom : `${p.nom} ×${String(p.quantite).replace('.', ',')}`;
 
 const ANTIPARASITAIRES_COURANTS = ['Bravecto', 'NexGard', 'NexGard Spectra', 'Simparica', 'Simparica Trio', 'Credelio',
@@ -433,10 +440,11 @@ function ChampPharmacie({ value, onChange, onChoix, articles, placeholder, coura
 // ── Compte rendu vétérinaire : vaccins réalisés / traitements prescrits ──────
 // → carnet de santé (rappels au propriétaire par les Cloud Functions sante.js)
 // + ordonnance PDF. Miroir app : compte_rendu_page.dart (_blocActes).
-function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, setProduits, profileId, animalId }: {
+function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, setProduits, soins, setSoins, profileId, animalId }: {
   vaccins: VaccinCr[]; setVaccins: (v: VaccinCr[]) => void;
   traitements: TraitementCr[]; setTraitements: (t: TraitementCr[]) => void;
   produits: ProduitCr[]; setProduits: (p: ProduitCr[]) => void;
+  soins: SoinCr[]; setSoins: (s: SoinCr[]) => void;
   profileId: string | null;
   animalId?: string | null;
 }) {
@@ -473,6 +481,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
   const [vac, setVac] = useState<(VaccinCr & { index: number }) | null>(null);
   // Produit vendu en cours de saisie (quantité / prix en texte : virgule acceptée).
   const [prod, setProd] = useState<{ nom: string; quantite: string; prix: string; item_id: string | null; index: number } | null>(null);
+  const [soin, setSoin] = useState<(SoinCr & { index: number }) | null>(null);
   const [trt, setTrt] = useState<(TraitementCr & { index: number }) | null>(null);
   // Délai libre du rappel ; unité de durée affichée par phase de traitement.
   const [dans, setDans] = useState('');
@@ -709,6 +718,57 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
       </div>
       <p className="text-[11px] text-gray-500">Cliquez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.</p>
       <div className="space-y-2">
+        <p className="text-xs font-semibold text-gray-600">Autres soins (inscrits au carnet)</p>
+        {soins.map((s, i) => ligne('', `${SOINS_LIBELLES[s.type]} : ${s.nom}`,
+          [s.detail, s.rappel_mois ? `rappel dans ${s.rappel_mois} mois` : ''].filter(Boolean).join(' · '),
+          () => setSoin({ ...s, index: i }), () => setSoins(soins.filter((_, j) => j !== i)), `s${i}`))}
+        {soin ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(SOINS_LIBELLES) as SoinCr['type'][]).map(t => (
+                <button key={t} type="button" className={chip(soin.type === t)}
+                  onClick={() => setSoin({ ...soin, type: t, rappel_mois: t === 'vermifuge' || t === 'antiparasitaire' ? soin.rappel_mois : null })}>{SOINS_LIBELLES[t]}</button>
+              ))}
+            </div>
+            {soin.type === 'vermifuge' || soin.type === 'antiparasitaire' ? (
+              <ChampPharmacie value={soin.nom} onChange={nom => setSoin({ ...soin, nom })} placeholder="Produit *"
+                articles={pharmacie.filter(a => a.categorie !== 'vaccin' && a.categorie !== 'alimentation')}
+                onChoix={a => setSoin({ ...soin, nom: a.nom })} />
+            ) : (
+              <input value={soin.nom} onChange={e => setSoin({ ...soin, nom: e.target.value })} className={champ}
+                placeholder={soin.type === 'allergie' ? 'Allergie / pathologie *' : soin.type === 'radio' ? 'Examen (radio, échographie, prise de sang…) *' : 'Intervention *'} />
+            )}
+            <input value={soin.detail} onChange={e => setSoin({ ...soin, detail: e.target.value })} className={champ}
+              placeholder={soin.type === 'vermifuge' ? 'Dosage (facultatif)' : soin.type === 'antiparasitaire' ? 'Fréquence / posologie (facultatif)'
+                : soin.type === 'allergie' ? 'Sévérité (facultatif)' : soin.type === 'radio' ? 'Résultats / observations (facultatif)' : 'Notes (facultatif)'} />
+            {(soin.type === 'vermifuge' || soin.type === 'antiparasitaire') && (
+              <>
+                <p className="text-xs text-gray-500">Prochain rappel (le propriétaire sera prévenu)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {([null, 1, 3, 6, 12] as const).map(m => (
+                    <button key={String(m)} type="button" className={chip((soin.rappel_mois ?? null) === m)}
+                      onClick={() => setSoin({ ...soin, rappel_mois: m })}>{m == null ? 'Aucun' : m === 12 ? '1 an' : `${m} mois`}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setSoin(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
+              <button type="button" disabled={!soin.nom.trim()} onClick={() => {
+                const { index, ...s } = soin;
+                const ok: SoinCr = { ...s, nom: s.nom.trim(), detail: s.detail.trim() };
+                setSoins(index >= 0 ? soins.map((x, j) => j === index ? ok : x) : [...soins, ok]); setSoin(null);
+              }} className="flex-1 py-2 rounded-xl text-sm text-white font-semibold bg-[#0C5C6C] disabled:opacity-40">
+                {soin.index >= 0 ? 'Enregistrer' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setSoin({ type: 'vermifuge', nom: '', detail: '', rappel_mois: null, index: -1 })}
+            className="text-sm font-semibold text-[#0C5C6C]">＋ Ajouter un soin (vermifuge, allergie, chirurgie, examen…)</button>
+        )}
+      </div>
+      <div className="space-y-2">
         <p className="text-xs font-semibold text-gray-600">Produits vendus (non administrés)</p>
         {produits.map((p, i) => ligne('', libelleProduit(p),
           p.prix == null ? 'Prix du stock ou à compléter sur la facture' : `${(p.prix * p.quantite).toFixed(2)} € TTC`,
@@ -874,6 +934,7 @@ function PatientDetailPageInner() {
   // Compte rendu vétérinaire : actes saisis (carnet + ordonnance PDF).
   const [vaccinsCr, setVaccinsCr] = useState<VaccinCr[]>([]);
   const [produitsCr, setProduitsCr] = useState<ProduitCr[]>([]);
+  const [soinsCr, setSoinsCr] = useState<SoinCr[]>([]);
   const [actesRealises, setActesRealises] = useState<string[]>([]);
   // Actes inscrits au carnet AUJOURD'HUI par moi (Synthèse, onglet Santé) et
   // pesée du jour : repris dans le compte rendu sans être réécrits au carnet
@@ -1193,6 +1254,21 @@ function PatientDetailPageInner() {
       });
       if (error) erreurs.push(`vaccin ${v.nom}`);
     }
+    // Autres soins : chacun dans sa rubrique du carnet.
+    for (const s of soinsCr) {
+      const base = { id: `${Date.now()}${Math.floor(Math.random() * 1000)}`, animal_id: animalId, date: ymd(auj), source: 'veterinaire', vet_id: user.uid };
+      const rappel = s.rappel_mois ? ymd(new Date(auj.getFullYear(), auj.getMonth() + s.rappel_mois, auj.getDate(), 12)) : null;
+      const { error } = s.type === 'vermifuge'
+        ? await supabase.from('vermifuges').insert({ ...base, produit: s.nom, dosage: s.detail || null, date_rappel: rappel })
+        : s.type === 'antiparasitaire'
+          ? await supabase.from('antiparasitaires').insert({ ...base, produit: s.nom, frequence: s.detail || null, date_rappel: rappel })
+          : s.type === 'allergie'
+            ? await supabase.from('allergies').insert({ ...base, description: s.nom, severite: s.detail || null })
+            : s.type === 'radio'
+              ? await supabase.from('radios').insert({ ...base, titre: s.nom, notes: s.detail || null, veterinaire: vetName || null })
+              : await supabase.from('chirurgies').insert({ ...base, type: s.type, intitule: s.nom, statut: 'realise', notes: s.detail || null, veterinaire: vetName || null });
+      if (error) erreurs.push(`${SOINS_LIBELLES[s.type].toLowerCase()} ${s.nom}`);
+    }
     for (const t of traitementsCr) {
       // Antiparasitaire : section « Antiparasitaires » du carnet (pas les traitements).
       if (t.type === 'antiparasitaire') {
@@ -1230,6 +1306,9 @@ function PatientDetailPageInner() {
       }
     }
     if (vaccinsCr.length) await notifyOwner('vaccin', vetName);
+    for (const t of new Set(soinsCr.map(s => s.type))) {
+      if (t !== 'radio') await notifyOwner(t, vetName);
+    }
     if (traitementsCr.some(t => t.type !== 'antiparasitaire')) await notifyOwner('traitement', vetName);
     if (traitementsCr.some(t => t.type === 'antiparasitaire')) await notifyOwner('antiparasitaire', vetName);
 
@@ -1541,8 +1620,11 @@ function PatientDetailPageInner() {
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
           formNotes.trim() && formNotes.trim(),
           vaccinsTxt.length > 0 && `Vaccins : ${vaccinsTxt.join(', ')}.`,
-          duCarnet('vermifuge').length > 0 && `Vermifuge : ${duCarnet('vermifuge').join(', ')}.`,
-          duCarnet('antiparasitaire').length > 0 && `Antiparasitaire : ${duCarnet('antiparasitaire').join(', ')}.`,
+          ...(([['vermifuge', 'Vermifuge'], ['antiparasitaire', 'Antiparasitaire'], ['allergie', 'Allergie / pathologie'],
+            ['chirurgie', 'Chirurgie'], ['hospitalisation', 'Hospitalisation'], ['radio', 'Examen']] as const).map(([t, titre]) => {
+            const l = [...soinsCr.filter(s => s.type === t).map(libelleSoin), ...(t === 'vermifuge' || t === 'antiparasitaire' ? duCarnet(t) : [])];
+            return l.length > 0 && `${titre} : ${l.join(', ')}.`;
+          })),
           traitementsTxt.length > 0 && `Traitement : ${traitementsTxt.join(' ; ')}.`,
           produitsCr.length > 0 && `Produits délivrés : ${produitsCr.map(libelleProduit).join(', ')}.`,
         ].filter(Boolean).join('\n\n');
@@ -1561,7 +1643,7 @@ function PatientDetailPageInner() {
           // Saisie complète gardée avec le brouillon (format commun appli / site).
           ...(enBrouillon || brouillonId ? { brouillon: enBrouillon ? {
             motif: formMotif.trim(), poids: formPoids.trim(), texte: formNotes.trim(), diag: formDiag.trim(),
-            actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr,
+            actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr, soins: soinsCr,
           } : null } : {}),
         };
         const { error: eCr } = brouillonId
@@ -1589,7 +1671,7 @@ function PatientDetailPageInner() {
         }
         const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
         setComptesRendus((data ?? []) as CompteRendu[]);
-        if (catPro === 'veterinaire' && (vaccinsCr.length || traitementsCr.length)) {
+        if (catPro === 'veterinaire' && (vaccinsCr.length || traitementsCr.length || soinsCr.length)) {
           await ecrireActesCr(vetName, ownerUid);
         }
         if (catPro === 'veterinaire' && produitsCr.length) await decompterStock(produitsCr);
@@ -1609,7 +1691,7 @@ function PatientDetailPageInner() {
         }
       }
     } finally {
-      setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setActesRealises([]); setAutreActe('');
+      setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setSoinsCr([]); setActesRealises([]); setAutreActe('');
       setCarnetJour([]); setPoidsCarnet(null); setBrouillonId(null);
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
@@ -3408,10 +3490,10 @@ function PatientDetailPageInner() {
               onNouveauCr={() => { setBrouillonId(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={(cr) => {
-                const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[] };
+                const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
                 setBrouillonId(cr.id);
                 setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
-                setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []);
+                setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []); setSoinsCr(e.soins ?? []);
                 setAddingType('cr');
               }}
               onFacturer={async (cr) => {
@@ -3761,7 +3843,7 @@ function PatientDetailPageInner() {
               )}
               {catPro === 'veterinaire' && (
                 <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}
-                  produits={produitsCr} setProduits={setProduitsCr}
+                  produits={produitsCr} setProduits={setProduitsCr} soins={soinsCr} setSoins={setSoinsCr}
                   profileId={activeProfileId || null} animalId={animalId} />
               )}
               <div>
