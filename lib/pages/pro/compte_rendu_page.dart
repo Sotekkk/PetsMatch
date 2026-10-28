@@ -502,9 +502,29 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     var vac = <dynamic>[], trt = <dynamic>[];
     if (vetId != null) {
       try {
-        vac = await _supa.from('vaccinations').select('vaccin, lot, date, date_rappel')
-            .eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
-        trt = await _supa.from('traitements').select('nom').eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
+        // Seulement les actes de CE compte rendu : inscrits après le compte
+        // rendu précédent du jour (et ses 3 min d'enregistrement), jusqu'aux
+        // 3 min qui suivent celui-ci — pas ceux des comptes rendus précédents.
+        final cree = DateTime.tryParse(cr['created_at']?.toString() ?? '');
+        final debutJour = DateTime(d.year, d.month, d.day);
+        DateTime? bas;
+        if (cree != null) {
+          var q = _supa.from('comptes_rendus').select('created_at').eq('animal_id', animalId)
+              .gte('created_at', debutJour.toUtc().toIso8601String()).lt('created_at', cree.toUtc().toIso8601String());
+          q = _profilPro != null ? q.eq('pro_profile_id', _profilPro!) : q.eq('pro_uid', AgendaContexte.uid ?? '');
+          final prec = await q.order('created_at', ascending: false).limit(1);
+          if ((prec as List).isNotEmpty) bas = DateTime.tryParse(prec.first['created_at'].toString())?.add(const Duration(minutes: 3));
+        }
+        final haut = cree?.add(const Duration(minutes: 3));
+        bool dansCr(dynamic r) {
+          final c = DateTime.tryParse(r['created_at']?.toString() ?? '');
+          if (c == null) return true;
+          return (bas == null || c.isAfter(bas)) && (haut == null || !c.isAfter(haut));
+        }
+        vac = [for (final r in await _supa.from('vaccinations').select('vaccin, lot, date, date_rappel, created_at')
+            .eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId) as List) if (dansCr(r)) r];
+        trt = [for (final r in await _supa.from('traitements').select('nom, created_at')
+            .eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId) as List) if (dansCr(r)) r];
       } catch (_) {}
     }
     return (
@@ -620,27 +640,14 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     }
     final animalId = (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString();
     if (animalId == null || animalId.isEmpty) return;
-    final d = DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal() ?? DateTime.now();
-    final ymd = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    final vetId = AgendaContexte.moi ?? AgendaContexte.uid;
-    var vac = <dynamic>[], trt = <dynamic>[];
-    if (vetId != null) {
-      try {
-        vac = await _supa.from('vaccinations').select('vaccin, lot, date, date_rappel')
-            .eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
-        trt = await _supa.from('traitements').select('nom').eq('animal_id', animalId).eq('date', ymd).eq('vet_id', vetId);
-      } catch (_) {}
-    }
+    final c = await _carnetDuCr(animalId, cr);
     final owner = await _resolveOwner();
     if (!mounted) return;
     await _proposerFacture(
       animalId: animalId, rdvId: cr['rdv_id']?.toString(), owner: owner,
       motif: (cr['motif'] ?? '').toString(), poids: (cr['poids'] as num?)?.toDouble(),
       actesRealises: [for (final a in (cr['actes'] as List? ?? const [])) a.toString()],
-      vaccins: [for (final v in vac) _VaccinCr((v['vaccin'] ?? 'Vaccin').toString(), (v['lot'] ?? '').toString(),
-          DateTime.tryParse(v['date']?.toString() ?? '') ?? d, DateTime.tryParse(v['date_rappel']?.toString() ?? ''))],
-      traitements: [for (final n in {for (final t in trt) (t['nom'] ?? '').toString()}) if (n.isNotEmpty)
-          _TraitementCr(nom: n, type: 'medicament', phases: const [], rappels: false)],
+      vaccins: c.vaccins, traitements: c.traitements,
       produits: [for (final p in (cr['produits'] as List? ?? const [])) _ProduitCr.fromJson(Map<String, dynamic>.from(p as Map))],
     );
   }

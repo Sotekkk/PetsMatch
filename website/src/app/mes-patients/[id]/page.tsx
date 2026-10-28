@@ -1695,6 +1695,35 @@ function PatientDetailPageInner() {
     router.push('/elevage/facturation');
   }
 
+  /** Vaccins et traitements de CE compte rendu (facture) : inscrits au carnet
+   *  après le compte rendu précédent du jour (et ses 3 min d'enregistrement),
+   *  jusqu'aux 3 min qui suivent celui-ci — pas ceux des comptes rendus
+   *  précédents. Miroir appli _carnetDuCr. */
+  async function carnetDuCr(aid: string, cr: { created_at: string }) {
+    const cree = new Date(cr.created_at);
+    const jour = cree.toLocaleDateString('sv-SE');
+    const debutJour = new Date(cree.getFullYear(), cree.getMonth(), cree.getDate());
+    let q = supabase.from('comptes_rendus').select('created_at').eq('animal_id', aid)
+      .gte('created_at', debutJour.toISOString()).lt('created_at', cree.toISOString());
+    q = activeProfileId ? q.eq('pro_profile_id', activeProfileId) : q.eq('pro_uid', user?.uid ?? '');
+    const { data: prec } = await q.order('created_at', { ascending: false }).limit(1);
+    const bas = prec?.[0]?.created_at ? new Date(String(prec[0].created_at)).getTime() + 3 * 60000 : 0;
+    const haut = cree.getTime() + 3 * 60000;
+    const dansCr = (r: { created_at?: string | null }) => {
+      if (!r.created_at) return true;
+      const t = new Date(r.created_at).getTime();
+      return t > bas && t <= haut;
+    };
+    const [{ data: v }, { data: t }] = await Promise.all([
+      supabase.from('vaccinations').select('vaccin, lot, date, date_rappel, created_at').eq('animal_id', aid).eq('date', jour).eq('vet_id', user?.uid ?? ''),
+      supabase.from('traitements').select('nom, created_at').eq('animal_id', aid).eq('date', jour).eq('vet_id', user?.uid ?? ''),
+    ]);
+    return {
+      vac: ((v ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null; created_at?: string | null }[]).filter(dansCr),
+      trt: ((t ?? []) as { nom: string | null; created_at?: string | null }[]).filter(dansCr),
+    };
+  }
+
   /** RDV à plusieurs animaux : une seule facture pour la visite, avec les
    *  lignes de chaque animal (son compte rendu validé et ses actes du jour). */
   async function facturerVisite(rdvId: string) {
@@ -1720,11 +1749,7 @@ function PatientDetailPageInner() {
       const cr = crs.filter(c => String(c.animal_id) === a.id).pop();
       if (!cr) continue;
       const an = ((ans ?? []) as { id: string; nom: string; espece: string | null; sexe: string | null; poids: number | null }[]).find(x => String(x.id) === a.id);
-      const jour = new Date(cr.created_at).toLocaleDateString('sv-SE');
-      const [{ data: vac }, { data: trt }] = await Promise.all([
-        supabase.from('vaccinations').select('vaccin, lot, date, date_rappel').eq('animal_id', a.id).eq('date', jour).eq('vet_id', user.uid),
-        supabase.from('traitements').select('nom').eq('animal_id', a.id).eq('date', jour).eq('vet_id', user.uid),
-      ]);
+      const { vac, trt } = await carnetDuCr(a.id, cr);
       const nom = an?.nom ?? a.nom;
       lignes.push(...lignesConsultation({
         an: an ?? {}, prefixe: nom, motif: cr.motif ?? a.motif ?? '', actes: cr.actes ?? [], poids: cr.poids ?? null, produits: cr.produits ?? [],
@@ -3821,11 +3846,7 @@ function PatientDetailPageInner() {
                   const { data: rv } = await supabase.from('rdv').select('animaux_detail').eq('id', c.rdv_id).maybeSingle();
                   if (animauxDetailRdv((rv ?? {}) as { animaux_detail?: unknown }).length > 0) { await facturerVisite(c.rdv_id); return; }
                 }
-                const jour = new Date(c.created_at).toLocaleDateString('sv-SE');
-                const [{ data: vac }, { data: trt }] = await Promise.all([
-                  supabase.from('vaccinations').select('vaccin, lot, date, date_rappel').eq('animal_id', animalId).eq('date', jour).eq('vet_id', user?.uid ?? ''),
-                  supabase.from('traitements').select('nom').eq('animal_id', animalId).eq('date', jour).eq('vet_id', user?.uid ?? ''),
-                ]);
+                const { vac, trt } = await carnetDuCr(String(animalId), c);
                 const vaccins: VaccinCr[] = ((vac ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null }[])
                   .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null }));
                 const noms = [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))];
