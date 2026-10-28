@@ -1791,21 +1791,18 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 ? Text('Aucun animal enregistré dans votre profil.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))
                 : RdvSelectField(
-                    placeholder: 'Choisir un animal',
+                    placeholder: _multiAnimaux ? 'Choisir un ou plusieurs animaux' : 'Choisir un animal',
                     leading: _selectedAnimal == null
                         ? Container(width: 38, height: 38,
                             decoration: BoxDecoration(color: c.withValues(alpha: 0.08), shape: BoxShape.circle),
                             child: Icon(Icons.pets_outlined, size: 18, color: c))
                         : _vignetteAnimal(_selectedAnimal!),
-                    titre: _selectedAnimal?['nom']?.toString(),
+                    titre: _selectedAnimal == null ? null : _nomsAnimauxChoisis,
                     sousTitre: _selectedAnimal == null ? null
+                        : _animauxEnPlus.isNotEmpty ? '${_animauxEnPlus.length + 1} animaux'
                         : [_selectedAnimal!['espece'], _selectedAnimal!['race']]
                             .where((v) => (v?.toString() ?? '').isNotEmpty).join(' · '),
-                    onTap: () async {
-                      final res = await AnimalPickerSheet.pickOne(context,
-                          preloaded: _animaux, current: _selectedAnimal, accentColor: c);
-                      if (mounted) setState(() { _selectedAnimal = res; _selectedSlot = null; });
-                    },
+                    onTap: _choisirAnimaux,
                   ),
           ),
           _buildAutresAnimaux(),
@@ -2801,13 +2798,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         else
           GestureDetector(
             onTap: () async {
-              final result = await AnimalPickerSheet.pickOne(
-                context,
-                preloaded: _animaux,
-                current: _selectedAnimal,
-                accentColor: color,
-              );
-              if (mounted) setState(() { _selectedAnimal = result; if (_multiAnimaux) _selectedSlot = null; });
+              await _choisirAnimaux();
             },
             child: Container(
               width: double.infinity,
@@ -2836,9 +2827,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                      Text(_selectedAnimal!['nom']?.toString() ?? '—',
+                      Text(_nomsAnimauxChoisis,
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: color)),
-                      if ((_selectedAnimal!['espece']?.toString() ?? '').isNotEmpty)
+                      if (_animauxEnPlus.isEmpty && (_selectedAnimal!['espece']?.toString() ?? '').isNotEmpty)
                         Text(_selectedAnimal!['espece'].toString(),
                             style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
                     ]),
@@ -2847,7 +2839,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   Icon(Icons.pets_outlined, color: Colors.grey.shade400, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text('Choisir un animal…',
+                    child: Text(_multiAnimaux ? 'Choisir un ou plusieurs animaux…' : 'Choisir un animal…',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
                   ),
                 ],
@@ -2868,20 +2860,43 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     );
   }
 
+  String get _nomsAnimauxChoisis => [_selectedAnimal, ..._animauxEnPlus]
+      .map((a) => a?['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + ');
+
+  /// Choix des animaux : à cocher d'emblée quand le RDV peut en compter
+  /// plusieurs (« Toute la portée » pour un éleveur) — le premier coché porte
+  /// le motif choisi plus haut, les autres ont chacun le leur.
+  Future<void> _choisirAnimaux() async {
+    final c = widget.categoryColor;
+    if (!_multiAnimaux) {
+      final res = await AnimalPickerSheet.pickOne(context, preloaded: _animaux, current: _selectedAnimal, accentColor: c);
+      if (mounted) setState(() => _selectedAnimal = res);
+      return;
+    }
+    final res = await AnimalPickerSheet.pickMany(context, preloaded: _animaux,
+        current: [if (_selectedAnimal != null) _selectedAnimal!, ..._animauxEnPlus], accentColor: c);
+    if (res == null || !mounted) return;
+    setState(() {
+      _selectedAnimal = res.isEmpty ? null : res.first;
+      _autresAnimaux = res.length > 1 ? res.sublist(1) : [];
+      _selectedSlot = null;
+    });
+  }
+
   /// Autres animaux sur le même RDV (vétérinaire, ostéo, toiletteur,
-  /// éducateur) : chacun avec son motif / sa prestation et sa durée ;
-  /// « Toute la portée » dans le sélecteur pour un éleveur.
+  /// éducateur) : chacun avec son motif / sa prestation et sa durée.
   Widget _buildAutresAnimaux() {
     if (!_multiAnimaux || _selectedAnimal == null) return const SizedBox.shrink();
     final c = widget.categoryColor;
-    final principalId = _selectedAnimal!['id']?.toString();
-    final autres = _animaux.where((a) => a['id']?.toString() != principalId).toList();
-    if (autres.isEmpty) return const SizedBox.shrink();
     final enPlus = _animauxEnPlus;
+    if (enPlus.isEmpty) return const SizedBox.shrink();
     final opts = _optionsMotifAutre;
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${_selectedAnimal!['nom'] ?? ''} : motif choisi plus haut. Motif des autres animaux :',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 6),
         for (final a in enPlus)
           Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -2916,24 +2931,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               ),
             ]),
           ),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final res = await AnimalPickerSheet.pickMany(context,
-                preloaded: autres, current: enPlus, accentColor: c);
-            if (res == null || !mounted) return;
-            setState(() { _autresAnimaux = res; _selectedSlot = null; });
-          },
-          icon: const Icon(Icons.add, size: 18),
-          label: Text(enPlus.isEmpty ? 'Ajouter un autre animal' : 'Ajouter / retirer des animaux',
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
-          style: OutlinedButton.styleFrom(foregroundColor: c, side: BorderSide(color: c.withValues(alpha: 0.4)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-        ),
-        if (enPlus.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text('${enPlus.length + 1} animaux · durée totale ${_durationLabel(_selectedDuration)}',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: c)),
-        ],
+        Text('${enPlus.length + 1} animaux · durée totale ${_durationLabel(_selectedDuration)}',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: c)),
       ]),
     );
   }

@@ -1997,8 +1997,15 @@ function ProDetailContent() {
                         <Link href="/mes-animaux" className="font-semibold underline" style={{ color: catColor }}>Ajouter un animal</Link>
                       </p>
                     ) : (
+                      multiAnimaux ? (
+                        // À cocher d'emblée (« Toute la portée » pour un éleveur) : le premier coché porte le motif.
+                        <AnimalMultiPickerField animaux={animaux} accentColor={catColor}
+                          selectedIds={selectedAnimalId ? [selectedAnimalId, ...animauxEnPlus] : []}
+                          onChange={ids => { setSelectedAnimalId((ids[0] ?? null) as number | null); setAutresAnimaux(ids.slice(1)); setSelectedSlot(null); }} />
+                      ) : (
                       <AnimalPickerField animaux={animaux} selectedId={selectedAnimalId}
                         onSelect={(id) => { setSelectedAnimalId(id as number | null); setSelectedSlot(null); }} accentColor={catColor} />
+                      )
                     )}
                     {multiAnimaux && selectedAnimalId && (
                       <AutresAnimauxRdv animaux={animaux} principalId={selectedAnimalId} selectedIds={autresAnimaux}
@@ -2439,12 +2446,18 @@ function ProDetailContent() {
                       </div>
                     ) : (
                       <>
+                        {multiAnimaux ? (
+                          <AnimalMultiPickerField animaux={animaux} accentColor={catColor}
+                            selectedIds={selectedAnimalId ? [selectedAnimalId, ...animauxEnPlus] : []}
+                            onChange={ids => { setSelectedAnimalId((ids[0] ?? null) as number | null); setAutresAnimaux(ids.slice(1)); setSelectedSlot(null); }} />
+                        ) : (
                         <AnimalPickerField
                           animaux={animaux}
                           selectedId={selectedAnimalId}
-                          onSelect={(id) => { setSelectedAnimalId(id as number | null); if (multiAnimaux) setSelectedSlot(null); }}
+                          onSelect={(id) => setSelectedAnimalId(id as number | null)}
                           accentColor={catColor}
                         />
+                        )}
                         {multiAnimaux && selectedAnimalId && (
                           <AutresAnimauxRdv animaux={animaux} principalId={selectedAnimalId} selectedIds={autresAnimaux}
                             onChange={ids => { setAutresAnimaux(ids); setSelectedSlot(null); }}

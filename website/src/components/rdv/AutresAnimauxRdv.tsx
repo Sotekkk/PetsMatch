@@ -1,11 +1,11 @@
 'use client';
 
-import { AnimalMultiPickerField, type PickableAnimal } from '@/components/AnimalPickerField';
+import type { PickableAnimal } from '@/components/AnimalPickerField';
 
 // Autres animaux sur le même RDV (vétérinaire, ostéo, toiletteur, éducateur) :
 // chacun avec son motif et sa durée ; le créneau couvre la somme des durées
-// (rdv.animaux_ids + rdv.animaux_detail). « Toute la portée » dans le
-// sélecteur pour un éleveur. Miroir appli : _buildAutresAnimaux
+// (rdv.animaux_ids + rdv.animaux_detail). Les animaux se cochent dans le
+// sélecteur (« Toute la portée » pour un éleveur). Miroir appli : _buildAutresAnimaux
 // (lib/pages/pro/rdv_booking_page.dart).
 
 export interface OptionMotifAnimal { key: string; label: string; duree: number }
@@ -26,11 +26,13 @@ export default function AutresAnimauxRdv({ animaux, principalId, selectedIds, on
   dureeTotale: number;
   accentColor: string;
 }) {
-  const autres = animaux.filter(a => a.id !== principalId);
-  if (autres.length === 0) return null;
   const enPlus = selectedIds.filter(id => id !== principalId);
+  if (enPlus.length === 0) return null;
   return (
     <div className="mt-2.5 space-y-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+      <p className="text-xs text-gray-500">
+        {animaux.find(a => a.id === principalId)?.nom} : motif choisi plus haut. Motif des autres animaux :
+      </p>
       {enPlus.map(id => {
         const a = animaux.find(x => x.id === id);
         if (!a) return null;
@@ -51,13 +53,9 @@ export default function AutresAnimauxRdv({ animaux, principalId, selectedIds, on
           </div>
         );
       })}
-      <AnimalMultiPickerField animaux={autres} selectedIds={enPlus} onChange={onChange} accentColor={accentColor}
-        placeholder="Ajouter un autre animal (même rendez-vous)" />
-      {enPlus.length > 0 && (
-        <p className="text-xs font-semibold" style={{ color: accentColor }}>
-          {enPlus.length + 1} animaux · durée totale {fmtDureeRdv(dureeTotale)}
-        </p>
-      )}
+      <p className="text-xs font-semibold" style={{ color: accentColor }}>
+        {enPlus.length + 1} animaux · durée totale {fmtDureeRdv(dureeTotale)}
+      </p>
     </div>
   );
 }
