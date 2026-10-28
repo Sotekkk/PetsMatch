@@ -3,6 +3,7 @@
 // réelles et modules existants : rdv (étapes horodatées, migration
 // toilettage_suivi), prestations_toilettage, employes. Miroir appli :
 // lib/pages/pro/toilettage_salon_dashboard.dart. Scopé au profil actif.
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -125,6 +126,8 @@ export default function ToilettageDashboard({ nom, avatar }: { nom: string; avat
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [pid, charger]);
+  // Nouvelles demandes sans recharger la page.
+  useActualisationAuto(pid ? charger : null);
 
   const nomAnimal = (r: Rdv) => (r.animal_id && animaux[r.animal_id]?.nom) || r.animal_nom_manuel || 'Animal';
   const nomClient = (r: Rdv) => (r.client_profile_id && clients[r.client_profile_id]) || r.client_nom_manuel || 'Client';

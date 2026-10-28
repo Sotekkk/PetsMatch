@@ -6,6 +6,7 @@
 // patient) — aucun module médical parallèle. Miroir appli :
 // lib/pages/pro/vet_dashboard.dart.
 
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -99,6 +100,10 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
       .then(({ data }) => setPidPrincipal((data as { id: string } | null)?.id ?? ''));
   }, [uid, actif]);
 
+  // Nouvelles demandes sans recharger la page : rechargement périodique.
+  const [actualisation, setActualisation] = useState(0);
+  useActualisationAuto(() => setActualisation(n => n + 1));
+
   // Statuts calculés (en cours, à clôturer, retards) : rafraîchis chaque minute.
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60000);
@@ -160,7 +165,7 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
       setLoading(false);
     })();
     return () => { annule = true; };
-  }, [pid, uid]);
+  }, [pid, uid, actualisation]);
 
   const nomClient = (r: Rdv) => (r.client_profile_id && clients[r.client_profile_id]) || r.client_nom_manuel || 'Client';
   const nomAnimal = (r: { animal_id: string | null; animal_nom_manuel?: string | null }) =>

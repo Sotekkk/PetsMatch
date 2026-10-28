@@ -1,5 +1,6 @@
 'use client';
 
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -111,6 +112,10 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
     : isPension ? 'Pensionnaires'
     : 'Animaux suivis';
 
+  // Nouvelles demandes sans recharger la page : rechargement périodique.
+  const [actualisation, setActualisation] = useState(0);
+  useActualisationAuto(() => setActualisation(n => n + 1));
+
   useEffect(() => {
     if (!uid) return;
     async function load() {
@@ -193,7 +198,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       setLoading(false);
     }
     load();
-  }, [uid, profileId, isVet]);
+  }, [uid, profileId, isVet, actualisation]);
 
   useEffect(() => {
     if (!uid || !isPension) return;

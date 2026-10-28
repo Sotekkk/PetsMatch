@@ -4,6 +4,7 @@
 // collectifs, objectifs (education_objectifs), comptes rendus de séance
 // (education_progression), forfaits souscrits. Miroir appli :
 // lib/pages/pro/education_dashboard.dart. Scopé au profil actif (pro_profile_id).
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -114,6 +115,8 @@ export default function EducationDashboard({ nom, avatar }: { nom: string; avata
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [pid, charger]);
+  // Nouvelles demandes sans recharger la page.
+  useActualisationAuto(pid ? charger : null);
 
   const jour = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const nomAnimal = (r: Rdv) => (r.animal_id && animaux[r.animal_id]?.nom) || r.animal_nom_manuel || 'Animal';

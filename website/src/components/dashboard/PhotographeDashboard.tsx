@@ -5,6 +5,7 @@
 // (documents_animaux type contrat_prestation_photo). Statistiques (CA, avis)
 // sur /photographe/dashboard. Miroir appli :
 // lib/pages/pro/photographe_studio_dashboard.dart. Scopé au profil actif.
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -115,6 +116,8 @@ export default function PhotographeDashboard({ nom, avatar }: { nom: string; ava
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [pid, charger]);
+  // Nouvelles demandes sans recharger la page.
+  useActualisationAuto(pid ? charger : null);
 
   const nomClient = (r: { client_profile_id: string | null; client_nom_manuel?: string | null; nom_client?: string | null; prenom_client?: string | null }) =>
     (r.client_profile_id && clients[r.client_profile_id]) || r.client_nom_manuel || `${r.prenom_client ?? ''} ${r.nom_client ?? ''}`.trim() || 'Client';

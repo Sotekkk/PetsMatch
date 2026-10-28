@@ -7,6 +7,7 @@
 //
 // Heures réelles : rdv.arrivee_validee_le = début effectif, depart_valide_le /
 // termine_at = fin effective ; rdv.date_heure (prévu) n'est jamais modifié.
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -136,6 +137,8 @@ export default function GardeDashboard({ nom, avatar }: { nom: string; avatar: s
       .subscribe();
     return () => { supabase.removeChannel(canal); };
   }, [pid, charger]);
+  // Nouvelles demandes sans recharger la page.
+  useActualisationAuto(pid ? charger : null);
 
   const jour = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const duJour = rdvs.filter(r => memeJour(debut(r), now)).sort((a, b) => a.date_heure.localeCompare(b.date_heure));

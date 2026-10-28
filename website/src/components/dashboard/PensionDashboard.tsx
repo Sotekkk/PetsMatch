@@ -3,6 +3,7 @@
 // EXISTANTS uniquement : séjours (pension_entrees), hébergements
 // (enclos_chenil), tâches (taches_elevage, profil_source 'pension'), journal
 // (pension_updates). Miroir appli : lib/pages/pro/pension_dashboard.dart.
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -81,6 +82,8 @@ export default function PensionDashboard({ nom, avatar }: { nom: string; avatar:
     // eslint-disable-next-line react-hooks/set-state-in-effect
     charger();
   }, [uid, charger]);
+  // Nouvelles demandes sans recharger la page.
+  useActualisationAuto(uid ? charger : null);
 
   async function decider(d: Demande, accepter: boolean, forcer = false) {
     let motif: string | null = null;

@@ -10,6 +10,7 @@
 // (rdv.lieu, sans salle) ou des coordonnées — même règle que l'agenda.
 // L'adresse du propriétaire n'est jamais supposée.
 
+import { useActualisationAuto } from '@/hooks/useActualisationAuto';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -181,6 +182,8 @@ export default function SanteDashboard({ nom, avatar }: { nom: string; avatar: s
       .subscribe();
     return () => { supabase.removeChannel(canal); };
   }, [pid, charger]);
+  // Nouvelles demandes sans recharger la page.
+  useActualisationAuto(pid ? charger : null);
 
   const nomClient = (r: Rdv) => (r.client_profile_id && clients[r.client_profile_id]) || r.client_nom_manuel || 'Client';
   const nomAnimal = (r: { animal_id: string | null; animal_nom_manuel?: string | null; animal_nom_libre?: string | null }) =>

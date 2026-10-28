@@ -1508,6 +1508,12 @@ export default function Header() {
     };
 
     fetchNotifs();
+    // Le temps réel ne remonte pas toujours (jeton Firebase) : relecture
+    // toutes les 30 s (onglet visible) et au retour sur l'onglet.
+    const majNotifs = () => { if (document.visibilityState === 'visible') fetchNotifs(); };
+    const tNotifs = setInterval(majNotifs, 30000);
+    document.addEventListener('visibilitychange', majNotifs);
+    window.addEventListener('focus', majNotifs);
 
     // Realtime Supabase : déclenche un re-fetch via l'API à chaque changement
     channel = supabase
@@ -1520,7 +1526,12 @@ export default function Header() {
       }, () => fetchNotifs())
       .subscribe();
 
-    return () => { channel?.unsubscribe(); };
+    return () => {
+      channel?.unsubscribe();
+      clearInterval(tNotifs);
+      document.removeEventListener('visibilitychange', majNotifs);
+      window.removeEventListener('focus', majNotifs);
+    };
     // activeProfileId doit être dans les deps : sans ça, fetchNotifs() gardait
     // le profil actif capturé au tout premier rendu (souvent le profil
     // principal) et ne se remettait jamais à jour après un switch de profil —
