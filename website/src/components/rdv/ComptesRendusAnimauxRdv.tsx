@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
+import { crsDuRdv } from '@/lib/cr-rdv';
 
 // RDV à plusieurs animaux : un compte rendu (vétérinaire) ou une séance
 // (ostéo) par animal, avec l'état de chacun — fait / brouillon / à faire.
@@ -20,8 +21,10 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
     let annule = false;
     (async () => {
       const table = metier === 'veterinaire' ? 'comptes_rendus' : 'suivis_morpho';
+      // Vétérinaire : aussi les comptes rendus faits depuis la fiche le jour du RDV.
       const [{ data: rows }, { data: an }] = await Promise.all([
-        supabase.from(table).select(metier === 'veterinaire' ? 'animal_id, statut' : 'animal_id').eq('rdv_id', rdvId),
+        metier === 'veterinaire' ? crsDuRdv(rdvId, ids.split(',')).then(data => ({ data }))
+          : supabase.from(table).select('animal_id').eq('rdv_id', rdvId),
         supabase.from('animaux').select('id, espece').in('id', ids.split(',')),
       ]);
       if (annule) return;

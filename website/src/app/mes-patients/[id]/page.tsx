@@ -17,6 +17,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
+import { crsDuRdv } from '@/lib/cr-rdv';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
 import { useAuth } from '@/lib/auth-context';
@@ -1006,12 +1007,11 @@ function PatientDetailPageInner() {
   }, [user?.uid, catPro]);
   const [visite, setVisite] = useState<{ rdvId: string; animaux: AnimalRdv[]; etats: Record<string, 'fait' | 'brouillon'> } | null>(null);
   const chargerVisite = useCallback(async (rdvId: string) => {
-    const [{ data: r }, { data: crs }] = await Promise.all([
-      supabase.from('rdv').select('animaux_detail').eq('id', rdvId).maybeSingle(),
-      supabase.from('comptes_rendus').select('animal_id, statut').eq('rdv_id', rdvId),
-    ]);
+    const { data: r } = await supabase.from('rdv').select('animaux_detail').eq('id', rdvId).maybeSingle();
     const animaux = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
     if (animaux.length === 0) { setVisite(null); return; }
+    // Comptes rendus du RDV, y compris ceux faits depuis la fiche le jour du RDV.
+    const crs = await crsDuRdv(rdvId, animaux.map(a => a.id));
     const etats: Record<string, 'fait' | 'brouillon'> = {};
     for (const c of (crs ?? []) as { animal_id: string | null; statut: string | null }[]) {
       const id = String(c.animal_id ?? '');
@@ -1244,9 +1244,16 @@ function PatientDetailPageInner() {
     (async () => {
       // Compte rendu de CE RDV pour cet animal : déjà fait → on l'ouvre ;
       // brouillon → on le reprend ; sinon un compte rendu vierge.
-      const { data: existants } = await supabase.from('comptes_rendus').select('*')
-        .eq('rdv_id', crRdv).eq('animal_id', animalId).order('created_at', { ascending: false });
+      // Y compris un compte rendu fait depuis la fiche le jour du RDV (sans
+      // lien) : il est alors rattaché au RDV.
+      const duRdv = (await crsDuRdv(crRdv, [String(animalId)])).filter(c => c.animal_id === String(animalId));
+      const { data: existants } = duRdv.length
+        ? await supabase.from('comptes_rendus').select('*').in('id', duRdv.map(c => c.id)).order('created_at', { ascending: false })
+        : { data: [] };
       const liste = (existants ?? []) as CompteRendu[];
+      for (const c of duRdv.filter(x => !x.rattache)) {
+        await supabase.from('comptes_rendus').update({ rdv_id: crRdv }).eq('id', c.id);
+      }
       const fait = liste.find(c => c.statut !== 'brouillon');
       if (fait) { setTab('Consultations'); setCrCible(fait.id); return; }
       setCrRdvId(crRdv);
@@ -1741,8 +1748,10 @@ function PatientDetailPageInner() {
       .eq('id', rdvId).maybeSingle();
     const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
     if (!r || detail.length === 0) return;
+    // Comptes rendus validés du RDV (y compris faits depuis la fiche le jour du RDV).
+    const idsCr = (await crsDuRdv(rdvId, detail.map(a => a.id))).filter(c => c.statut !== 'brouillon').map(c => c.id);
     const [{ data: crsData }, { data: ans }, { data: t }, { data: ph }, { data: deja }] = await Promise.all([
-      supabase.from('comptes_rendus').select('*').eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'),
+      idsCr.length ? supabase.from('comptes_rendus').select('*').in('id', idsCr).order('created_at') : Promise.resolve({ data: [] }),
       supabase.from('animaux').select('id, nom, espece, sexe, poids').in('id', detail.map(a => a.id)),
       supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
       supabase.from('inventaire_items').select('nom, prix_vente').eq('eleveur_profile_id', activeProfileId),
@@ -1804,13 +1813,11 @@ function PatientDetailPageInner() {
   /** Après un compte rendu d'une visite à plusieurs animaux : facture proposée
    *  quand tous les comptes rendus sont faits. Renvoie false si ce n'est pas une telle visite. */
   async function apresCrVisite(rdvId: string): Promise<boolean> {
-    const [{ data: r }, { data: crs }] = await Promise.all([
-      supabase.from('rdv').select('animaux_detail').eq('id', rdvId).maybeSingle(),
-      supabase.from('comptes_rendus').select('animal_id').eq('rdv_id', rdvId).eq('statut', 'valide'),
-    ]);
+    const { data: r } = await supabase.from('rdv').select('animaux_detail').eq('id', rdvId).maybeSingle();
     const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
     if (detail.length === 0) return false;
-    const faits = new Set(((crs ?? []) as { animal_id: string }[]).map(c => String(c.animal_id)));
+    const crs = (await crsDuRdv(rdvId, detail.map(a => a.id))).filter(c => c.statut !== 'brouillon');
+    const faits = new Set(crs.map(c => c.animal_id));
     const restants = detail.filter(a => !faits.has(a.id)).map(a => a.nom);
     await chargerVisite(rdvId);
     if (restants.length === 0) await facturerVisite(rdvId);
