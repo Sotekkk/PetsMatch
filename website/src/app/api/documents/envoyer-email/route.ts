@@ -46,9 +46,11 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const clean = sanitizeEmailBody(await req.json().catch(() => ({})), [], req);
   if (clean instanceof NextResponse) return clean;
-  const { animal_id, expediteur_nom, document_type, animal_nom, fichier_nom, pdf_base64 } = clean as {
+  const { animal_id, expediteur_nom, document_type, animal_nom, fichier_nom, pdf_base64, pieces } = clean as {
     email?: string; destinataire_nom?: string; expediteur_nom?: string; document_type?: string;
     animal_nom?: string; fichier_nom?: string; pdf_base64?: string; animal_id?: string;
+    /** Fin de consultation : plusieurs documents dans un seul e-mail. */
+    pieces?: { document_type?: string; fichier_nom?: string; pdf_base64?: string }[];
   };
   let { email, destinataire_nom } = clean as { email?: string; destinataire_nom?: string };
 
@@ -63,14 +65,27 @@ export async function POST(req: NextRequest) {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: 'Adresse e-mail invalide' }, { status: 400 });
   }
-  if (!pdf_base64) return NextResponse.json({ error: 'Document manquant' }, { status: 400 });
-  const contenu = Buffer.from(pdf_base64, 'base64');
-  if (contenu.length === 0 || contenu.length > MAX_OCTETS || contenu.subarray(0, 4).toString() !== '%PDF') {
-    return NextResponse.json({ error: 'Document PDF invalide' }, { status: 400 });
+  // Un document, ou plusieurs (fin de consultation : CR, ordonnance, facture).
+  const docs = Array.isArray(pieces) && pieces.length > 0
+    ? pieces.slice(0, 5)
+    : [{ document_type, fichier_nom, pdf_base64 }];
+  const libelle = (t?: string) => t === 'ordonnance' ? ['une ordonnance', 'Ordonnance'] : t === 'facture' ? ['une facture', 'Facture'] : ['un compte rendu', 'Compte rendu'];
+  const jointes: { filename: string; content: Buffer; contentType: string }[] = [];
+  for (const d of docs) {
+    if (!d?.pdf_base64) return NextResponse.json({ error: 'Document manquant' }, { status: 400 });
+    const contenu = Buffer.from(String(d.pdf_base64), 'base64');
+    if (contenu.length === 0 || contenu.length > MAX_OCTETS || contenu.subarray(0, 4).toString() !== '%PDF') {
+      return NextResponse.json({ error: 'Document PDF invalide' }, { status: 400 });
+    }
+    jointes.push({
+      filename: String(d.fichier_nom || `${libelle(d.document_type)[1].toLowerCase().replace(' ', '-')}.pdf`).replace(/[^\w.\-À-ÿ ]/g, '_'),
+      content: contenu, contentType: 'application/pdf',
+    });
   }
-
-  const quoi = document_type === 'ordonnance' ? 'une ordonnance' : document_type === 'facture' ? 'une facture' : 'un compte rendu';
-  const titre = document_type === 'ordonnance' ? 'Ordonnance' : document_type === 'facture' ? 'Facture' : 'Compte rendu';
+  const plusieurs = jointes.length > 1;
+  const noms = docs.map(d => libelle(d.document_type)[0]);
+  const quoi = plusieurs ? `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1]}` : noms[0];
+  const titre = plusieurs ? 'Documents de consultation' : libelle(docs[0].document_type)[1];
   const pro = expediteur_nom || 'Votre vétérinaire';
   const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
@@ -83,7 +98,7 @@ export async function POST(req: NextRequest) {
     <div style="padding:28px 32px;">
       <p style="font-size:15px;color:#1F2A2E;margin:0 0 14px;">Bonjour${destinataire_nom ? ` <strong>${destinataire_nom}</strong>` : ''},</p>
       <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 18px;">
-        <strong>${pro}</strong> vous transmet ${quoi}${animal_nom ? ` pour <strong>${animal_nom}</strong>` : ''}. Vous le trouverez en pièce jointe (PDF).
+        <strong>${pro}</strong> vous transmet ${quoi}${animal_nom ? ` pour <strong>${animal_nom}</strong>` : ''}. ${plusieurs ? 'Vous les trouverez en pièces jointes (PDF).' : 'Vous le trouverez en pièce jointe (PDF).'}
       </p>
       <p style="font-size:13px;color:#4B5563;line-height:1.6;margin:0 0 18px;">
         Avec l'application PetsMatch, retrouvez le carnet de santé de votre animal, ses ordonnances et des rappels automatiques (vaccins, traitements).
@@ -102,11 +117,7 @@ export async function POST(req: NextRequest) {
       to: email,
       subject: `${titre}${animal_nom ? ` — ${animal_nom}` : ''} (${pro})`,
       html,
-      attachments: [{
-        filename: (fichier_nom || `${titre.toLowerCase().replace(' ', '-')}.pdf`).replace(/[^\w.\-À-ÿ ]/g, '_'),
-        content: contenu,
-        contentType: 'application/pdf',
-      }],
+      attachments: jointes,
     });
     // L'adresse n'est pas renvoyée (compte du propriétaire : donnée privée).
     return NextResponse.json({ success: true });

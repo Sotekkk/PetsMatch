@@ -1521,6 +1521,7 @@ function PatientDetailPageInner() {
           animal_id: animalId, pro_uid: user.uid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: pid } : {}),
           owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
           praticien_uid: user.uid, doc_url: docUrl, date_emit: ymd(auj),
+          ...(crRdvId ? { rdv_id: crRdvId } : {}),
           notes: traitementsCr.map(t => t.nom).join(', '),
         });
         if (ordErr) throw ordErr;

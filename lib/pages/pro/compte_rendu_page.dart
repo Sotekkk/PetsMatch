@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:io';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
@@ -11,7 +12,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart' show ProProfileEditPage;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show saisirAuCarnet;
@@ -1689,6 +1690,173 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       clientUid: owner.uid,
       clientProfileId: owner.profileId,
     )));
+    // Facture préparée : envoi des documents / facture acquittée.
+    if (mounted) await _terminerConsultation();
+  }
+
+  /// Fin de consultation : compte(s) rendu(s), ordonnance(s) et facture du RDV
+  /// (sinon de l'animal, aujourd'hui) envoyés au propriétaire en un seul
+  /// e-mail ; facture marquée acquittée. Miroir site : FinConsultationModal.
+  Future<void> _terminerConsultation() async {
+    final rdvId = (widget.rdv?['id'] ?? _rdvSource?['id'])?.toString();
+    final animalId = _animalCourant;
+    final debut = DateTime.now();
+    final jour = DateTime(debut.year, debut.month, debut.day).toUtc().toIso8601String();
+    var crs = <Map<String, dynamic>>[], ordos = <Map<String, dynamic>>[];
+    Map<String, dynamic>? facture;
+    try {
+      if (rdvId != null) {
+        crs = List<Map<String, dynamic>>.from(await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).eq('statut', 'valide').order('created_at'));
+        ordos = List<Map<String, dynamic>>.from(await _supa.from('ordonnances').select().eq('rdv_id', rdvId).order('created_at'));
+        final f = await _supa.from('factures').select().eq('source_rdv_id', rdvId).neq('statut', 'annulee')
+            .order('created_at', ascending: false).limit(1);
+        if ((f as List).isNotEmpty) facture = Map<String, dynamic>.from(f.first as Map);
+      }
+      if (animalId != null && _profilPro != null) {
+        if (crs.isEmpty) {
+          crs = List<Map<String, dynamic>>.from(await _supa.from('comptes_rendus').select().eq('animal_id', animalId)
+              .eq('pro_profile_id', _profilPro!).eq('statut', 'valide').gte('created_at', jour).order('created_at'));
+        }
+        if (ordos.isEmpty) {
+          ordos = List<Map<String, dynamic>>.from(await _supa.from('ordonnances').select().eq('animal_id', animalId)
+              .eq('pro_profile_id', _profilPro!).gte('created_at', jour).order('created_at'));
+        }
+        if (facture == null) {
+          final f = await _supa.from('factures').select().eq('source_animal_id', animalId).eq('profile_id', _profilPro!)
+              .neq('statut', 'annulee').gte('created_at', jour).order('created_at', ascending: false).limit(1);
+          if ((f as List).isNotEmpty) facture = Map<String, dynamic>.from(f.first as Map);
+        }
+      }
+    } catch (e) {
+      debugPrint('Fin de consultation : $e');
+    }
+    if (!mounted) return;
+    // Noms des animaux concernés.
+    final noms = <String, String>{};
+    for (final a in (widget.rdv == null ? const <Map<String, dynamic>>[] : animauxDetailRdv(widget.rdv!))) {
+      noms[a['id'].toString()] = a['nom']?.toString() ?? '';
+    }
+    String nom(dynamic id) => noms[id?.toString()] ?? (widget.rdv?['_animal_nom']?.toString() ?? 'Animal');
+    final coches = <String, bool>{
+      for (final c in crs) 'cr:${c['id']}': true,
+      for (final o in ordos) 'ordo:${o['id']}': (o['doc_url'] ?? '').toString().isNotEmpty,
+      if (facture != null) 'fac:${facture['id']}': true,
+    };
+    final dejaPayee = facture?['statut'] == 'payee';
+    var acquittee = false;
+    var mode = 'Carte bancaire';
+    final c = widget.categoryColor;
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) {
+        Widget ligne(String cle, String titre, [String? sous, bool actif = true]) => CheckboxListTile(
+              value: coches[cle] ?? false, dense: true, activeColor: c, contentPadding: EdgeInsets.zero,
+              onChanged: actif ? (v) => setM(() => coches[cle] = v ?? false) : null,
+              title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: sous == null ? null : Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            );
+        final nb = coches.values.where((v) => v).length;
+        return SafeArea(child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Fin de consultation', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text('Envoyer au propriétaire par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+            if (crs.isEmpty && ordos.isEmpty && facture == null)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Aucun document pour l\u2019instant (compte rendu validé, ordonnance ou facture).',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+            for (final cr in crs) ligne('cr:${cr['id']}', 'Compte rendu — ${nom(cr['animal_id'])}'),
+            for (final o in ordos) ligne('ordo:${o['id']}', 'Ordonnance — ${nom(o['animal_id'])}',
+                (o['doc_url'] ?? '').toString().isEmpty ? 'PDF indisponible' : null, (o['doc_url'] ?? '').toString().isNotEmpty),
+            if (facture != null) ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
+                '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
+            if (facture != null && !dejaPayee) ...[
+              const SizedBox(height: 6),
+              SwitchListTile(
+                value: acquittee, activeThumbColor: c, contentPadding: EdgeInsets.zero, dense: true,
+                onChanged: (v) => setM(() => acquittee = v),
+                title: const Text('Facture acquittée (réglée aujourd\u2019hui)', style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+              if (acquittee) Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final m in const ['Carte bancaire', 'Espèces', 'Chèque', 'Virement'])
+                  ChoiceChip(label: Text(m, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)), selected: mode == m,
+                      selectedColor: c.withValues(alpha: 0.2), onSelected: (_) => setM(() => mode = m)),
+              ]),
+            ],
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey')))),
+              if (acquittee) ...[
+                const SizedBox(width: 8),
+                Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(ctx, 'acquitter'),
+                    child: const Text('Acquitter seulement', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)))),
+              ],
+              const SizedBox(width: 8),
+              Expanded(flex: 2, child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: c, foregroundColor: Colors.white),
+                onPressed: nb == 0 ? null : () => Navigator.pop(ctx, 'envoyer'),
+                child: Text('Envoyer ($nb)', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              )),
+            ]),
+          ]),
+        ));
+      }),
+    );
+    if (choix == null || !mounted) return;
+    try {
+      if (facture != null && acquittee && !dejaPayee) {
+        final maj = {'statut': 'payee', 'mode_paiement': mode, 'date_paiement': DateTime.now().toUtc().toIso8601String()};
+        await _supa.from('factures').update(maj).eq('id', facture['id']);
+        facture = {...facture, ...maj};
+      }
+      if (choix != 'envoyer') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Facture acquittée.', style: TextStyle(fontFamily: 'Galey')),
+              behavior: SnackBarBehavior.floating));
+        }
+        return;
+      }
+      final pieces = <({String type, String nomFichier, Uint8List bytes})>[];
+      String? emailParDefaut, destinataire, expediteur;
+      for (final cr in crs) {
+        if (coches['cr:${cr['id']}'] != true) continue;
+        final i = await _infosDocument(cr['animal_id']?.toString());
+        emailParDefaut ??= i.email; destinataire ??= i.proprio; expediteur ??= i.clinique;
+        pieces.add((type: 'compte_rendu', nomFichier: 'Compte-rendu-${i.animal}.pdf', bytes: await compteRenduPdfBytes(
+          cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
+          praticien: i.praticien, animalNom: i.animal, animalEspeceRace: i.especeRace, animalSexe: i.sexe, animalAge: i.age,
+          signature: octetsSignature(_signature), animalIdentification: i.identification,
+          proprietaire: i.proprio, contenu: cr['contenu']?.toString() ?? '',
+          date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
+        )));
+      }
+      for (final o in ordos) {
+        if (coches['ordo:${o['id']}'] != true) continue;
+        final res = await http.get(Uri.parse(await lienDocument(o['doc_url'].toString())));
+        if (res.statusCode == 200) {
+          pieces.add((type: 'ordonnance', nomFichier: 'Ordonnance-${nom(o['animal_id'])}.pdf', bytes: res.bodyBytes));
+        }
+      }
+      if (facture != null && coches['fac:${facture['id']}'] == true) {
+        emailParDefaut ??= (facture['email_client'] ?? '').toString().isEmpty ? null : facture['email_client'].toString();
+        pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
+            bytes: await facturePdfDepuisLigne(facture)));
+      }
+      if (pieces.isEmpty || !mounted) return;
+      await envoyerDocumentsParEmail(context, pieces: pieces,
+          animalNom: {for (final cr in crs) nom(cr['animal_id'])}.join(', '),
+          expediteur: expediteur ?? '', emailParDefaut: emailParDefaut, destinataireNom: destinataire,
+          animalId: animalId ?? (crs.isNotEmpty ? crs.first['animal_id']?.toString() : null));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Widget _blocActes() {
@@ -2084,8 +2252,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   /// pas PetsMatch — e-mail pré-rempli).
   Future<({String clinique, String adresse, String tel, String animal, String especeRace,
       String identification, String proprio, String? email, String cliniqueEmail, String praticien,
-      String sexe, String age})> _infosDocument() async {
-    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+      String sexe, String age})> _infosDocument([String? pourAnimal]) async {
+    final animalId = pourAnimal ?? (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
     final pro = _profilPro;
     Map<String, dynamic>? cl, an, client;
     try {
@@ -2458,6 +2626,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         children: [
           if (_visiteMulti) _barreVisite(),
           _bandeauSignature(),
+          if (_saisieActes && _crs.any((c) => c['statut'] == 'valide'))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: OutlinedButton.icon(
+                onPressed: _terminerConsultation,
+                icon: const Icon(Icons.outgoing_mail, size: 18),
+                label: const Text('Fin de consultation : envoyer les documents',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor,
+                    side: BorderSide(color: widget.categoryColor.withValues(alpha: 0.5)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              ),
+            ),
           // Comptes rendus précédents : repliés, le nouveau compte rendu part vide.
           if (_crs.isNotEmpty) ...[
             Theme(

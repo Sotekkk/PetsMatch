@@ -13,6 +13,68 @@ import 'package:PetsMatch/utils/site_api.dart';
 
 const _teal = Color(0xFF0C5C6C);
 
+/// Fin de consultation : plusieurs PDF (compte rendu, ordonnance, facture)
+/// dans un seul e-mail. Sans adresse connue et avec [animalId] : adresse du
+/// compte PetsMatch du propriétaire (résolue par le serveur), sinon saisie.
+/// Renvoie true si l'e-mail est parti.
+Future<bool> envoyerDocumentsParEmail(
+  BuildContext context, {
+  required List<({String type, String nomFichier, Uint8List bytes})> pieces,
+  String animalNom = '',
+  String expediteur = '',
+  String? emailParDefaut,
+  String? destinataireNom,
+  String? animalId,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final corps = {
+    'destinataire_nom': destinataireNom, 'expediteur_nom': expediteur, 'animal_nom': animalNom,
+    'pieces': [for (final p in pieces) {'document_type': p.type, 'fichier_nom': p.nomFichier, 'pdf_base64': base64Encode(p.bytes)}],
+  };
+  Future<http.Response> poster(Map<String, dynamic> extra) async => http.post(
+        Uri.parse('$kSiteBaseUrl/api/documents/envoyer-email'),
+        headers: {...await siteApiHeaders(), 'Content-Type': 'application/json'},
+        body: jsonEncode({...corps, ...extra}),
+      );
+  try {
+    if ((emailParDefaut ?? '').isEmpty && (animalId ?? '').isNotEmpty) {
+      final res = await poster({'animal_id': animalId});
+      if (res.statusCode == 200) {
+        messenger.showSnackBar(const SnackBar(content: Text('Envoyé au propriétaire (adresse de son compte PetsMatch).',
+            style: TextStyle(fontFamily: 'Galey')), behavior: SnackBarBehavior.floating));
+        return true;
+      }
+      if (res.statusCode != 404) {
+        messenger.showSnackBar(SnackBar(content: Text("L'envoi a échoué (${res.statusCode}).", style: const TextStyle(fontFamily: 'Galey')),
+            behavior: SnackBarBehavior.floating));
+        return false;
+      }
+      if (!context.mounted) return false;
+    }
+    final ctrl = TextEditingController(text: emailParDefaut ?? '');
+    final email = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Envoyer par e-mail', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: TextField(controller: ctrl, keyboardType: TextInputType.emailAddress, autofocus: true,
+          decoration: const InputDecoration(labelText: 'E-mail du propriétaire', border: OutlineInputBorder())),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+        ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Envoyer')),
+      ],
+    ));
+    if (email == null || email.isEmpty) return false;
+    final res = await poster({'email': email});
+    messenger.showSnackBar(SnackBar(
+      content: Text(res.statusCode == 200 ? 'Envoyé à $email.' : "L'envoi a échoué (${res.statusCode}).", style: const TextStyle(fontFamily: 'Galey')),
+      behavior: SnackBarBehavior.floating,
+    ));
+    return res.statusCode == 200;
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('Impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+        behavior: SnackBarBehavior.floating));
+    return false;
+  }
+}
+
 Future<void> transmettreDocument(
   BuildContext context, {
   required Future<Uint8List> Function() pdf,

@@ -1505,6 +1505,10 @@ String _datePaiementTxt(dynamic iso) {
   return d == null ? '' : ' le ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
+/// PDF d'une facture depuis sa ligne `factures` (mention « ACQUITTÉE » si
+/// réglée) — fin de consultation du vétérinaire (compte_rendu_page.dart).
+Future<Uint8List> facturePdfDepuisLigne(Map<String, dynamic> row) => _buildPdf(_supaToUi(row));
+
 Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
   final pdf = pw.Document();
   final font = await PdfGoogleFonts.robotoRegular();

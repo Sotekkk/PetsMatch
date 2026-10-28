@@ -3,6 +3,7 @@ import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/Do
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
 import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
+import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
@@ -1081,8 +1082,10 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation }: {
   rdv: Rdv;
+  /** Vétérinaire : envoyer CR / ordonnance / facture, facture acquittée. */
+  onFinConsultation?: () => void;
   /** RDV à plusieurs animaux : un compte rendu (vétérinaire) ou une séance (ostéo) par animal. */
   crParAnimal?: 'veterinaire' | 'sante';
   tab: 'demandes' | 'a_venir' | 'historique';
@@ -1223,6 +1226,13 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
                 </span>
               )}
             </span>
+          )}
+          {onFinConsultation && (
+            <button onClick={onFinConsultation}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              Fin de consultation
+            </button>
           )}
           {rdv.animal_id && onHistorique && (
             <button onClick={onHistorique}
@@ -1685,6 +1695,8 @@ export default function MesRdvPage() {
   const [modalModifier, setModalModifier] = useState<Rdv | null>(null);
   const [modalAnnuler, setModalAnnuler]   = useState<Rdv | null>(null);
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
+  // Vétérinaire : fin de consultation (envoi des documents, facture acquittée).
+  const [finConsultation, setFinConsultation] = useState<Rdv | null>(null);
   const [dossierRdv, setDossierRdv] = useState<Rdv | null>(null);
   const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
   const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string } | null>(null);
@@ -2120,6 +2132,7 @@ export default function MesRdvPage() {
                   onModifier={() => setModalModifier(rdv)}
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
                   crParAnimal={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? catPro : undefined}
+                  onFinConsultation={activeTab !== 'demandes' && catPro === 'veterinaire' ? () => setFinConsultation(rdv) : undefined}
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}
@@ -2139,6 +2152,10 @@ export default function MesRdvPage() {
       {dossierToilettage && (
         <DossierToilettageModal rdvId={dossierToilettage.id} nomClient={dossierToilettage.clientName ?? dossierToilettage.client_nom_manuel ?? 'Client'}
           animal={dossierToilettage.animalNom} onClose={() => setDossierToilettage(null)} onChanged={() => fetchRdvs()} />
+      )}
+      {finConsultation && (
+        <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}
+          onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); fetchRdvs(); }} />
       )}
       {historiqueRdv?.animal_id && activeProfileId && (
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}

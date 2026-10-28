@@ -59,3 +59,31 @@ export async function envoyerPdfParEmail(blob: Blob, opts: {
   alert(res.ok ? `Envoyé à ${email.trim()}.` : "L'envoi a échoué.");
   return res.ok;
 }
+
+/** Fin de consultation : plusieurs PDF (compte rendu, ordonnance, facture)
+ *  dans un seul e-mail. Sans adresse connue et avec [animalId] : adresse du
+ *  compte PetsMatch du propriétaire (résolue par le serveur), sinon saisie. */
+export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture'; blob: Blob; nomFichier: string }[], opts: {
+  emailParDefaut?: string | null; destinataireNom?: string; expediteur?: string; animalNom?: string; animalId?: string | null;
+}): Promise<boolean> {
+  const corps = {
+    destinataire_nom: opts.destinataireNom, expediteur_nom: opts.expediteur, animal_nom: opts.animalNom,
+    pieces: await Promise.all(pieces.map(async p => ({ document_type: p.type, fichier_nom: p.nomFichier, pdf_base64: await enBase64(p.blob) }))),
+  };
+  if (!opts.emailParDefaut && opts.animalId) {
+    const res = await apiFetch('/api/documents/envoyer-email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...corps, animal_id: opts.animalId }),
+    });
+    if (res.ok) { alert('Envoyé au propriétaire (adresse de son compte PetsMatch).'); return true; }
+    if (res.status !== 404) { alert("L'envoi a échoué."); return false; }
+  }
+  const email = window.prompt('E-mail du propriétaire', opts.emailParDefaut ?? '');
+  if (!email?.trim()) return false;
+  const res = await apiFetch('/api/documents/envoyer-email', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...corps, email: email.trim() }),
+  });
+  alert(res.ok ? `Envoyé à ${email.trim()}.` : "L'envoi a échoué.");
+  return res.ok;
+}
