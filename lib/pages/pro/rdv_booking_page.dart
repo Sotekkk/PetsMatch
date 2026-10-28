@@ -7,6 +7,7 @@ import 'package:geocoding/geocoding.dart' as geo;
 import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
+import 'package:PetsMatch/utils/protocoles.dart' show estHorsPriseEnCharge;
 import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
 import 'dart:math' show Random;
@@ -679,7 +680,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // voit les animaux de tous ses profils au lieu du seul profil courant.
       var directQ = supa
           .from('animaux')
-          .select('id, nom, espece, race, photo_url, poids, portee_id, nom_mere')
+          .select('id, nom, espece, race, photo_url, poids, portee_id, nom_mere, statut, date_sortie')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid.isNotEmpty) directQ = directQ.eq('profile_id', pid);
       final directRows = await directQ;
@@ -700,12 +701,16 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       List<Map<String, dynamic>> viaCession = [];
       if (missingIds.isNotEmpty) {
         final rows2 = await supa.from('animaux')
-            .select('id, nom, espece, race, photo_url, poids, portee_id, nom_mere')
+            .select('id, nom, espece, race, photo_url, poids, portee_id, nom_mere, statut, date_sortie')
             .inFilter('id', missingIds.toList());
         viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
       }
 
-      final rows = [...direct, ...viaCession]..sort((a, b) => (a['nom']?.toString() ?? '').compareTo(b['nom']?.toString() ?? ''));
+      // Seulement les animaux présents : pas ceux qui sont sortis (cédés,
+      // vendus), adoptés, transférés ou décédés.
+      final rows = [...direct, ...viaCession]
+          .where((a) => !estHorsPriseEnCharge(a) && (a['date_sortie']?.toString() ?? '').isEmpty).toList()
+        ..sort((a, b) => (a['nom']?.toString() ?? '').compareTo(b['nom']?.toString() ?? ''));
       if (mounted) {
         _animaux = rows;
         // Pré-sélection animal si fourni

@@ -22,6 +22,7 @@ import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
 import { AnimalPickerField, AnimalMultiPickerField } from '@/components/AnimalPickerField';
 import AutresAnimauxRdv from '@/components/rdv/AutresAnimauxRdv';
+import { estHorsPriseEnCharge } from '@/lib/protocoles';
 import { CATEGORIES_ANNUAIRE } from '@/lib/annuaire-filtres';
 import { RdvSection, RdvChoiceGrid, RdvSegmented, RdvIntervenantList, RdvDateStrip, RdvTimeGrid,
   RdvTextArea, RdvRecap, RdvPrimaryButton, RdvVide, type RdvIconName } from '@/components/rdv/RdvForm';
@@ -101,7 +102,10 @@ interface Prestation {
 interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; praticien?: string | null; }
 // Plage occupée (pm_plages_occupees — RDV de tous les clients + indisponibilités).
 interface Occupe { debut: number; fin: number; praticien: string | null; salle: string | null }
-interface Animal { id: number; nom: string; espece: string; race?: string | null; photo_url?: string | null; portee_id?: string | null; nom_mere?: string | null; }
+interface Animal { id: number; nom: string; espece: string; race?: string | null; photo_url?: string | null; portee_id?: string | null; nom_mere?: string | null; statut?: string | null; date_sortie?: string | null; }
+/** Seulement les animaux présents : pas ceux qui sont sortis (cédés, vendus),
+ *  adoptés, transférés ou décédés. Miroir appli _loadAnimaux. */
+const animalPresent = (a: Animal) => !estHorsPriseEnCharge(a) && !a.date_sortie;
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
   pro_profile_id?: string | null; serie_id?: string | null;
@@ -543,11 +547,11 @@ function ProDetailContent() {
     setInscriptionAnimalId(null);
     setInscriptionSerie(false);
     if (animaux.length === 0) {
-      let q = supabase.from('animaux').select('id, nom, espece')
+      let q = supabase.from('animaux').select('id, nom, espece, statut, date_sortie')
         .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom');
       if (activeProfileId) q = q.eq('profile_id', activeProfileId);
       const { data } = await q;
-      setAnimaux((data ?? []) as Animal[]);
+      setAnimaux(((data ?? []) as Animal[]).filter(animalPresent));
     }
   }
 
@@ -682,7 +686,7 @@ function ProDetailContent() {
     // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
     // voit les animaux de tous ses profils au lieu du seul profil courant.
     const moiUid = user?.uid ?? '-';
-    let animauxQ = supabase.from('animaux').select('id, nom, espece, race, photo_url, portee_id, nom_mere')
+    let animauxQ = supabase.from('animaux').select('id, nom, espece, race, photo_url, portee_id, nom_mere, statut, date_sortie')
       .or(`uid_eleveur.eq.${moiUid},uid_proprietaire.eq.${moiUid}`)
       .order('nom');
     if (activeProfileId) animauxQ = animauxQ.eq('profile_id', activeProfileId);
@@ -817,10 +821,10 @@ function ProDetailContent() {
     const missingIds = cessionIds.filter(id => !direct.some(a => String(a.id) === id));
     let viaCession: Animal[] = [];
     if (missingIds.length > 0) {
-      const { data } = await supabase.from('animaux').select('id, nom, espece, race, photo_url, portee_id, nom_mere').in('id', missingIds);
+      const { data } = await supabase.from('animaux').select('id, nom, espece, race, photo_url, portee_id, nom_mere, statut, date_sortie').in('id', missingIds);
       viaCession = (data ?? []) as Animal[];
     }
-    setAnimaux([...direct, ...viaCession].sort((a, b) => a.nom.localeCompare(b.nom)));
+    setAnimaux([...direct, ...viaCession].filter(animalPresent).sort((a, b) => a.nom.localeCompare(b.nom)));
     setSlotsLoading(false);
   }
 
