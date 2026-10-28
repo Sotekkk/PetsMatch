@@ -703,7 +703,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // « Donnez votre avis » après une séance terminée — ouvre la vitrine
     // publique du pro (section avis en bas de page).
-    if (type == 'avis_demande') {
+    // Nouvel avis / avis modifié (reçu par le pro) : ses avis, sur sa vitrine.
+    if (type == 'avis_demande' || type == 'new_avis_pro') {
       final proUid = data is Map ? data['pro_uid'] as String? : null;
       final proProfileId = data is Map ? data['pro_profile_id'] as String? : null;
       final proNom = data is Map ? data['pro_nom'] as String? : null;

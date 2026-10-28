@@ -22,7 +22,9 @@ async function resolveReviewerProfileId(uid: string, activeId: string): Promise<
 
 export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid: string; proProfileId?: string; clientUid: string | null; autoOpen?: boolean }) {
   const activeProfileId = useActiveProfile();
-  const [avis, setAvis] = useState<{ id: string; note: number; commentaire: string | null; created_at: string; client_uid: string }[]>([]);
+  const [avis, setAvis] = useState<{ id: string; note: number; commentaire: string | null; created_at: string; client_uid: string; client_profile_id: string | null }[]>([]);
+  // Modification de son propre avis (id de l'avis modifié).
+  const [editId, setEditId] = useState<string | null>(null);
   const [reviewers, setReviewers] = useState<Record<string, { name: string; photo: string | null }>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -36,25 +38,30 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
   const isPro = clientUid != null && clientUid === proUid;
 
   const reload = useCallback(async () => {
-    let q = supabase.from('avis_pro').select('id, note, commentaire, created_at, client_uid').eq('pro_uid', proUid);
+    let q = supabase.from('avis_pro').select('id, note, commentaire, created_at, client_uid, client_profile_id').eq('pro_uid', proUid);
     if (proProfileId) q = q.eq('pro_profile_id', proProfileId);
     const { data } = await q.order('created_at', { ascending: false });
     const list = (data ?? []) as typeof avis;
     setAvis(list);
     setLoading(false);
 
-    // Résout le nom + photo de chaque auteur d'avis (profil principal).
+    // Résout le nom + photo de chaque auteur d'avis : le profil avec lequel il
+    // a été laissé (client_profile_id), sinon le profil principal du compte.
     const uids = Array.from(new Set(list.map(a => a.client_uid)));
+    const pids = Array.from(new Set(list.map(a => a.client_profile_id).filter(Boolean) as string[]));
     if (uids.length > 0) {
-      const { data: profs } = await supabase.from('user_profiles_complet')
-        .select('uid, firstname, lastname, nom, avatar_url, profile_type')
-        .in('uid', uids).eq('is_main', true);
+      type P = { id?: string; uid?: string; firstname?: string | null; lastname?: string | null; nom?: string | null; avatar_url?: string | null; profile_type?: string | null };
+      const ident = (p: P) => {
+        const name = (p.profile_type === 'eleveur' && p.nom) ? p.nom : `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
+        return { name: name || 'Utilisateur PetsMatch', photo: p.avatar_url ?? null };
+      };
+      const [{ data: principaux }, { data: profils }] = await Promise.all([
+        supabase.from('user_profiles_complet').select('uid, firstname, lastname, nom, avatar_url, profile_type').in('uid', uids).eq('is_main', true),
+        pids.length ? supabase.from('user_profiles_complet').select('id, firstname, lastname, nom, avatar_url, profile_type').in('id', pids) : Promise.resolve({ data: [] }),
+      ]);
       const map: Record<string, { name: string; photo: string | null }> = {};
-      for (const p of profs ?? []) {
-        const isElevage = p.profile_type === 'eleveur';
-        const name = (isElevage && p.nom) ? p.nom : `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
-        map[p.uid] = { name: name || 'Utilisateur PetsMatch', photo: p.avatar_url ?? null };
-      }
+      for (const p of (principaux ?? []) as P[]) map[p.uid!] = ident(p);
+      for (const p of (profils ?? []) as P[]) map[`p:${p.id}`] = ident(p);
       setReviewers(map);
     }
 
@@ -93,9 +100,10 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
   useEffect(() => {
     if (!autoOpen || autoOpenDone.current || loading) return;
     autoOpenDone.current = true;
-    if (clientUid && !dejaNote) setShowForm(true);
+    // Le pro (notification « Nouvel avis ») : ses avis seulement, pas de formulaire.
+    if (clientUid && !dejaNote && !isPro) setShowForm(true);
     sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [autoOpen, loading, clientUid, dejaNote]);
+  }, [autoOpen, loading, clientUid, dejaNote, isPro]);
   const moyenne = avis.length ? avis.reduce((s, a) => s + a.note, 0) / avis.length : 0;
 
   async function submit() {
@@ -103,6 +111,15 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
     setSaving(true);
     setError(null);
     try {
+      if (editId) {
+        // L'auteur modifie son avis.
+        const { error: errMaj } = await supabase.from('avis_pro').update({ note, commentaire: comment.trim() || null })
+          .eq('id', editId).eq('client_uid', clientUid);
+        if (errMaj) { setError(`Erreur : ${errMaj.message}`); return; }
+        setShowForm(false); setEditId(null); setNote(0); setComment(''); setError(null);
+        reload();
+        return;
+      }
       const myProfileId = await resolveReviewerProfileId(clientUid, activeProfileId);
       const { error: err } = await supabase.from('avis_pro').insert({
         pro_uid: proUid, ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
@@ -144,7 +161,7 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
             placeholder="Votre commentaire (optionnel)…" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
           {error && <p className="text-xs text-red-600">{error}</p>}
           <button onClick={submit} disabled={saving || note === 0}
-            className="w-full bg-[#0C5C6C] text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50">Publier l&apos;avis</button>
+            className="w-full bg-[#0C5C6C] text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50">{editId ? 'Enregistrer' : <>Publier l&apos;avis</>}</button>
         </div>
       )}
       {avis.length === 0 ? (
@@ -152,7 +169,7 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
       ) : (
         <div className="space-y-2">
           {avis.map(a => {
-            const rev = reviewers[a.client_uid];
+            const rev = reviewers[`p:${a.client_profile_id}`] ?? reviewers[a.client_uid];
             return (
             <div key={a.id} className="border border-gray-100 rounded-xl p-2.5">
               <div className="flex items-center gap-2">
@@ -171,6 +188,11 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
                 <span className="text-[#FFA000] text-sm">{'★'.repeat(a.note)}<span className="text-gray-200">{'★'.repeat(5 - a.note)}</span></span>
               </div>
               {a.commentaire && <p className="text-sm text-gray-700 mt-1">{a.commentaire}</p>}
+              {clientUid && a.client_uid === clientUid && (
+                <button onClick={() => { setEditId(a.id); setNote(a.note); setComment(a.commentaire ?? ''); setShowForm(true);
+                  sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                  className="text-[11px] font-semibold text-[#0C5C6C] mt-1">Modifier mon avis</button>
+              )}
               {isPro && (
                 <button onClick={() => contester(a.id)} className="text-[11px] text-gray-400 hover:text-gray-600 mt-1">🚩 Signaler</button>
               )}

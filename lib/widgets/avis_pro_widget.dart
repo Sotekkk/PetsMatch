@@ -67,26 +67,35 @@ class _AvisProSectionState extends State<AvisProSection> {
       final list = List<Map<String, dynamic>>.from(rows as List);
       final uid = FirebaseAuth.instance.currentUser?.uid;
 
-      // Résout le nom + photo de chaque auteur d'avis (profil principal).
+      // Résout le nom + photo de chaque auteur d'avis : le profil avec lequel
+      // il a été laissé (client_profile_id), sinon le profil principal.
       Map<String, Map<String, dynamic>> reviewers = {};
+      Map<String, dynamic> identite(Map p) {
+        final isElevage = p['profile_type'] == 'eleveur';
+        final name = isElevage && (p['nom'] as String?)?.isNotEmpty == true
+            ? p['nom'] as String
+            : '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+        return {'name': name.isEmpty ? 'Utilisateur PetsMatch' : name, 'photo': p['avatar_url'] as String?};
+      }
+      final profilIds = list.map((a) => a['client_profile_id']?.toString()).whereType<String>().toSet().toList();
       final clientUids = list.map((a) => a['client_uid']?.toString()).whereType<String>().toSet().toList();
-      if (clientUids.isNotEmpty) {
-        try {
+      try {
+        if (profilIds.isNotEmpty) {
+          final profs = await _supa.from('user_profiles_complet')
+              .select('id, firstname, lastname, nom, avatar_url, profile_type').inFilter('id', profilIds);
+          for (final p in profs as List) {
+            reviewers['p:${p['id']}'] = identite(p as Map);
+          }
+        }
+        if (clientUids.isNotEmpty) {
           final profs = await _supa.from('user_profiles_complet')
               .select('uid, firstname, lastname, nom, avatar_url, profile_type')
               .inFilter('uid', clientUids).eq('is_main', true);
           for (final p in profs as List) {
-            final isElevage = p['profile_type'] == 'eleveur';
-            final name = isElevage && (p['nom'] as String?)?.isNotEmpty == true
-                ? p['nom'] as String
-                : '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-            reviewers[p['uid'].toString()] = {
-              'name': name.isEmpty ? 'Utilisateur PetsMatch' : name,
-              'photo': p['avatar_url'] as String?,
-            };
+            reviewers[p['uid'].toString()] = identite(p as Map);
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
 
       // Éligibilité résolue par PROFIL ACTIF, pas seulement par compte — un
       // RDV pris avec un autre profil du même compte (éleveur, pro…) ne doit
@@ -158,7 +167,7 @@ class _AvisProSectionState extends State<AvisProSection> {
     return _avis.fold<int>(0, (s, a) => s + ((a['note'] as num?)?.toInt() ?? 0)) / _avis.length;
   }
 
-  Future<void> _openForm() async {
+  Future<void> _openForm([Map<String, dynamic>? existant]) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     await showModalBottomSheet<void>(
@@ -169,6 +178,7 @@ class _AvisProSectionState extends State<AvisProSection> {
         proUid: widget.proUid,
         proProfileId: widget.proProfileId,
         clientUid: uid,
+        existant: existant,
         onSubmit: () { Navigator.pop(context); _load(); },
       ),
     );
@@ -201,9 +211,11 @@ class _AvisProSectionState extends State<AvisProSection> {
       else
         ..._avis.map((a) => _AvisTile(
               avis: a,
-              reviewer: _reviewers[a['client_uid']?.toString()],
+              reviewer: _reviewers['p:${a['client_profile_id']}'] ?? _reviewers[a['client_uid']?.toString()],
               isPro: FirebaseAuth.instance.currentUser?.uid == widget.proUid,
               onContester: () => _contester(a['id'].toString()),
+              // L'auteur peut modifier son avis.
+              onModifier: a['client_uid'] == FirebaseAuth.instance.currentUser?.uid ? () => _openForm(a) : null,
             )),
     ]);
   }
@@ -215,7 +227,8 @@ class _AvisTile extends StatelessWidget {
   final Map<String, dynamic>? reviewer;
   final bool isPro;
   final VoidCallback onContester;
-  const _AvisTile({required this.avis, this.reviewer, this.isPro = false, required this.onContester});
+  final VoidCallback? onModifier;
+  const _AvisTile({required this.avis, this.reviewer, this.isPro = false, required this.onContester, this.onModifier});
 
   @override
   Widget build(BuildContext context) {
@@ -253,6 +266,16 @@ class _AvisTile extends StatelessWidget {
           const SizedBox(height: 6),
           Text(avis['commentaire'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
         ],
+        if (onModifier != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: onModifier,
+              icon: const Icon(Icons.edit_outlined, size: 14, color: _teal),
+              label: const Text('Modifier mon avis', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+            ),
+          ),
         if (isPro) ...[
           const SizedBox(height: 6),
           Align(
@@ -275,7 +298,9 @@ class _AvisProForm extends StatefulWidget {
   final String? proProfileId;
   final String clientUid;
   final VoidCallback onSubmit;
-  const _AvisProForm({required this.proUid, required this.proProfileId, required this.clientUid, required this.onSubmit});
+  /// Avis existant de l'auteur : modification au lieu d'un nouvel avis.
+  final Map<String, dynamic>? existant;
+  const _AvisProForm({required this.proUid, required this.proProfileId, required this.clientUid, required this.onSubmit, this.existant});
 
   @override
   State<_AvisProForm> createState() => _AvisProFormState();
@@ -283,8 +308,8 @@ class _AvisProForm extends StatefulWidget {
 
 class _AvisProFormState extends State<_AvisProForm> {
   static const _teal = Color(0xFF0C5C6C);
-  int _note = 0;
-  final _commentCtrl = TextEditingController();
+  late int _note = (widget.existant?['note'] as num?)?.toInt() ?? 0;
+  late final _commentCtrl = TextEditingController(text: widget.existant?['commentaire']?.toString() ?? '');
   bool _saving = false;
 
   Future<void> _submit() async {
@@ -295,6 +320,14 @@ class _AvisProFormState extends State<_AvisProForm> {
     }
     setState(() => _saving = true);
     try {
+      if (widget.existant != null) {
+        await Supabase.instance.client.from('avis_pro').update({
+          'note': _note,
+          'commentaire': _commentCtrl.text.trim().isEmpty ? null : _commentCtrl.text.trim(),
+        }).eq('id', widget.existant!['id']).eq('client_uid', widget.clientUid);
+        widget.onSubmit();
+        return;
+      }
       final clientProfileId = await _activeReviewerProfileId(widget.clientUid);
       await Supabase.instance.client.from('avis_pro').insert({
         'pro_uid': widget.proUid,
@@ -334,7 +367,8 @@ class _AvisProFormState extends State<_AvisProForm> {
     return Padding(
       padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Laisser un avis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        Text(widget.existant != null ? 'Modifier mon avis' : 'Laisser un avis',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         const SizedBox(height: 16),
         Row(children: List.generate(5, (i) => GestureDetector(
           onTap: () => setState(() => _note = i + 1),
@@ -365,7 +399,8 @@ class _AvisProFormState extends State<_AvisProForm> {
             ),
             child: _saving
                 ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Publier l\'avis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                : Text(widget.existant != null ? 'Enregistrer' : 'Publier l\'avis',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
           ),
         ),
       ]),

@@ -965,6 +965,9 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return d.url ?? (d.animalId ? `/mes-patients/${d.animalId}` : '/mes-patients');
     case 'avis_demande':
       return d.url ?? (d.pro_uid ? `/services/pro/${d.pro_uid}?avis=1${d.pro_profile_id ? `&profileId=${d.pro_profile_id}` : ''}` : null);
+    case 'new_avis_pro':
+      // Nouvel avis / avis modifié (reçu par le pro) : ses avis, sur sa vitrine.
+      return d.pro_uid ? `/services/pro/${d.pro_uid}?avis=1${d.pro_profile_id ? `&profileId=${d.pro_profile_id}` : ''}` : null;
     case 'cours_collectif_inscription':
       return d.coursId ? `/education/planning?coursId=${d.coursId}` : '/education/planning';
     case 'devis_recu':
@@ -2166,7 +2169,7 @@ export default function Header() {
                               : n.type === 'education_bilan' ? '📋'
                               : n.type === 'education_forfait_bas' ? '🎫'
                               : n.type === 'education_attestation' ? '🎓'
-                              : n.type === 'avis_demande' ? '⭐'
+                              : n.type === 'avis_demande' || n.type === 'new_avis_pro' ? '⭐'
                               : n.type === 'cours_collectif_inscription' ? '👥'
                               : n.type === 'devis_recu' ? '📋'
                               : n.type === 'devis_accepte' ? '✅'
