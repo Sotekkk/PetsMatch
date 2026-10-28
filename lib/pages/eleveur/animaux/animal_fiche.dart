@@ -11391,7 +11391,9 @@ class ConsultationsProprietaireTab extends StatefulWidget {
   final String espece;
   /// Ajout / suppression des radios (employé sans write_sante : lecture seule).
   final bool canWrite;
-  const ConsultationsProprietaireTab({super.key, required this.animalId, required this.espece, this.canWrite = true});
+  /// Compte rendu à mettre en avant (lien de la notification).
+  final String? crCible;
+  const ConsultationsProprietaireTab({super.key, required this.animalId, required this.espece, this.canWrite = true, this.crCible});
 
   @override
   State<ConsultationsProprietaireTab> createState() => _ConsultationsProprietaireTabState();
@@ -11415,11 +11417,20 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   /// tous | osteopathie | kine | veterinaire | toilettage | autre — d'après le métier de
   /// l'auteur (categorieConsultation), pas le type de séance.
   String _categorie = 'tous';
+  final _crCibleKey = GlobalKey();
+  bool _crCibleVu = false;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load().whenComplete(() {
+      if (widget.crCible == null || _crCibleVu) return;
+      _crCibleVu = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = _crCibleKey.currentContext;
+        if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 400), alignment: 0.1);
+      });
+    });
   }
 
   Future<void> _load() async {
@@ -11617,9 +11628,20 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
                   _VetConsultSectionHeader(label: 'Comptes rendus', count: _crs.length,
                       icon: Icons.assignment_outlined, color: _teal),
                   const SizedBox(height: 10),
-                  ..._crs.map((cr) => _OwnerConsultCrCard(cr: cr, color: _teal,
-                      vetName: _vetNames[cr['pro_uid']?.toString()] ?? 'Professionnel',
-                      fmtDate: _fmtDate)),
+                  ..._crs.map((cr) {
+                    final carte = _OwnerConsultCrCard(cr: cr, color: _teal,
+                        vetName: _vetNames[cr['pro_uid']?.toString()] ?? 'Professionnel',
+                        fmtDate: _fmtDate);
+                    // Compte rendu de la notification : mis en avant.
+                    if (widget.crCible == null || cr['id']?.toString() != widget.crCible) return carte;
+                    return Container(
+                      key: _crCibleKey,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _teal, width: 2)),
+                      child: carte,
+                    );
+                  }),
                   const SizedBox(height: 20),
                 ],
                 if (voir('veterinaire') && _ordos.isNotEmpty) ...[

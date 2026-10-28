@@ -68,7 +68,9 @@ class AnimalFicheParticulierPage extends StatefulWidget {
   /// précédente) : formulaire de rappel pré-rempli (ex. depuis « Mon quotidien »).
   final (String, String)? rappelSante;
 
-  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0, this.initialTabLabel, this.rappelSante});
+  /// Compte rendu à mettre en avant dans l'onglet Consultations (notification).
+  final String? crCible;
+  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0, this.initialTabLabel, this.rappelSante, this.crCible});
 
   @override
   State<AnimalFicheParticulierPage> createState() => _AnimalFicheParticulierPageState();
@@ -1098,7 +1100,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 _buildSanteTab(),
                 _buildAlimentationTab(),
                 // Tous les comptes rendus : vétérinaire, ostéo, kiné… (catégories)
-                ConsultationsProprietaireTab(animalId: _animalId, espece: _espece),
+                ConsultationsProprietaireTab(animalId: _animalId, espece: _espece, crCible: widget.crCible),
                 _buildDocumentsTab(),
                 if (_showEducationTab) _buildEducationTab(),
                 if (_showPensionTab) _buildPensionTab(),

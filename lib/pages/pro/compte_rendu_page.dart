@@ -511,7 +511,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         } catch (_) {}
       }
       if (statut == 'valide') {
-        await _notifyOwner(isOrdo: false);
+        await _notifyOwner(isOrdo: false, crId: await _dernierCrId());
       } else {
         await _notifyValideurs();
       }
@@ -575,6 +575,22 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       } catch (e) { erreurs.add('vaccin ${v.nom}'); }
     }
     for (final t in _traitementsCr) {
+      // Antiparasitaire : section « Antiparasitaires » du carnet (pas les
+      // traitements), une ligne à la date du jour.
+      if (t.type == 'antiparasitaire') {
+        try {
+          await _supa.from('antiparasitaires').insert({
+            'id': DateTime.now().microsecondsSinceEpoch.toString(),
+            'animal_id': animalId, 'produit': t.nom,
+            'date': ymd(today),
+            'frequence': t.posologieComplete,
+            if (t.notes.isNotEmpty) 'notes': t.notes,
+            'source': 'veterinaire',
+            if (vetId != null) 'vet_id': vetId,
+          });
+        } catch (e) { erreurs.add('antiparasitaire ${t.nom}'); }
+        continue;
+      }
       var debut = DateTime(today.year, today.month, today.day, today.hour, today.minute);
       for (var i = 0; i < t.phases.length; i++) {
         final ph = t.phases[i];
@@ -1627,7 +1643,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'statut': 'valide',
         if (monProfil != null) 'valide_par_profile_id': monProfil,
       }).eq('id', cr['id']);
-      await _notifyOwner(isOrdo: false);
+      await _notifyOwner(isOrdo: false, crId: cr['id']?.toString());
       await _loadExisting();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -1691,7 +1707,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   /// Prévient le propriétaire qu'un compte rendu / une ordonnance a été ajouté.
-  Future<void> _notifyOwner({required bool isOrdo}) async {
+  Future<void> _notifyOwner({required bool isOrdo, String? crId}) async {
     try {
       final owner = await _resolveOwner();
       final ownerUid = owner.uid;
@@ -1718,10 +1734,24 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'body': '${proNom.isEmpty ? 'Votre professionnel' : proNom} a ajouté $quoi'
             '${animalNom.isEmpty ? '' : ' pour $animalNom'}.',
         if (ownerProfileId != null && ownerProfileId.isNotEmpty) 'profile_id': ownerProfileId,
-        'data': {'animalId': animalId, 'animalNom': animalNom},
+        'data': {'animalId': animalId, 'animalNom': animalNom, if (!isOrdo && crId != null) 'crId': crId},
         'read': false,
       });
     } catch (_) {}
+  }
+
+  /// Dernier compte rendu de cet animal par ce profil (lien direct de la notification).
+  Future<String?> _dernierCrId() async {
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    if (animalId == null) return null;
+    try {
+      var q = _supa.from('comptes_rendus').select('id').eq('animal_id', animalId);
+      q = _profilPro != null ? q.eq('pro_profile_id', _profilPro!) : q.eq('pro_uid', AgendaContexte.uid ?? '');
+      final r = await q.order('created_at', ascending: false).limit(1).maybeSingle();
+      return r?['id']?.toString();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _saveOrdonnance() async {

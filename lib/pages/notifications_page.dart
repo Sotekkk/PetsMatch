@@ -528,9 +528,31 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // fiche animal (particulier).
     if (type == 'compte_rendu_recu') {
       final animalId = data is Map ? data['animalId'] as String? : null;
+      final crId = data is Map ? data['crId']?.toString() : null;
       if (animalId != null) {
+        // Onglet Consultations, compte rendu concerné mis en avant.
         await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => AnimalFicheParticulierPage(animalId: animalId, initialTab: 3),
+          builder: (_) => AnimalFicheParticulierPage(animalId: animalId, initialTabLabel: 'Consultations', crCible: crId),
+        ));
+      }
+      return;
+    }
+    // Saisie du vétérinaire dans le carnet (vaccin, traitement, visite…) —
+    // notifyOwnerVetEntry, type « vet_<acte> » → onglet Carnet de santé.
+    if ((type ?? '').startsWith('vet_') && !(type ?? '').startsWith('vet_access')) {
+      final animalId = data is Map ? (data['animal_id'] ?? data['animalId'])?.toString() : null;
+      if (animalId != null && animalId.isNotEmpty) {
+        Map<String, dynamic>? a;
+        try {
+          a = await Supabase.instance.client.from('animaux')
+              .select('uid_eleveur, is_association').eq('id', animalId).maybeSingle();
+        } catch (_) {}
+        if (!mounted) return;
+        final pro = a != null && a['uid_eleveur'] == FirebaseAuth.instance.currentUser?.uid;
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => pro
+              ? AnimalFichePage(animalId: animalId, readOnly: false, isAssociation: a?['is_association'] == true)
+              : AnimalFicheParticulierPage(animalId: animalId, initialTabLabel: 'Carnet de santé'),
         ));
       }
       return;

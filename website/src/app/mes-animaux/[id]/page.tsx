@@ -734,10 +734,12 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
 
 // ─── Onglet Consultations vétérinaires (lecture seule) ───────────────────────
 
-function ConsultationsVetTab({ crs, ordonnances, vetNames, autres = 0 }:
+function ConsultationsVetTab({ crs, ordonnances, vetNames, autres = 0, crCible }:
   { crs: HealthRecord[]; ordonnances: HealthRecord[]; vetNames: Record<string,string>;
     /** Autres éléments affichés dans l'onglet (radios, séances) : pas de message « vide ». */
-    autres?: number }) {
+    autres?: number;
+    /** Compte rendu de la notification : déplié et mis en avant. */
+    crCible?: string | null }) {
 
   const isEmpty = crs.length === 0 && ordonnances.length === 0 && autres === 0;
 
@@ -758,7 +760,7 @@ function ConsultationsVetTab({ crs, ordonnances, vetNames, autres = 0 }:
     <HealthPanel>
       {crs.length > 0 && (
         <HealthSection title="Comptes rendus" icon="📋" color="#0C5C6C" count={crs.length}>
-          {crs.map(cr => <VetDocCard key={cr.id as string} record={cr} vetNames={vetNames} />)}
+          {crs.map(cr => <VetDocCard key={cr.id as string} record={cr} vetNames={vetNames} cible={!!crCible && cr.id === crCible} />)}
         </HealthSection>
       )}
       {ordonnances.length > 0 && (
@@ -770,9 +772,9 @@ function ConsultationsVetTab({ crs, ordonnances, vetNames, autres = 0 }:
   );
 }
 
-function VetDocCard({ record, vetNames }:
-  { record: HealthRecord; vetNames: Record<string,string> }) {
-  const [open, setOpen] = useState(false);
+function VetDocCard({ record, vetNames, cible = false }:
+  { record: HealthRecord; vetNames: Record<string,string>; cible?: boolean }) {
+  const [open, setOpen] = useState(cible);
   const docUrl  = record.doc_url  as string | undefined;
   const date    = (record.date ?? record.date_emit ?? record.created_at) as string | undefined;
   const notes   = record.notes    as string | undefined;
@@ -781,7 +783,8 @@ function VetDocCard({ record, vetNames }:
   const vetName = proUid ? (vetNames[proUid] ?? 'Vétérinaire') : 'Vétérinaire';
 
   return (
-    <div className="px-4 py-3">
+    <div className={`px-4 py-3 ${cible ? 'ring-2 ring-[#0C5C6C] rounded-xl scroll-mt-24' : ''}`}
+      ref={el => { if (el && cible && !el.dataset.vu) { el.dataset.vu = '1'; setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300); } }}>
       <div className="flex items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -2751,6 +2754,8 @@ function AnimalFichePageInner() {
   const catParam = searchParams.get('cat');
   // ?rappel=<id> : ouvre directement le formulaire de rappel de cette entrée.
   const rappelParam = searchParams.get('rappel');
+  // ?cr=<id> (notification « compte rendu ») : ce compte rendu déplié et mis en avant.
+  const crParam = searchParams.get('cr');
   const rappelOuvertRef = useRef(false);
 
   // ── État identité
@@ -5752,7 +5757,7 @@ function AnimalFichePageInner() {
                   className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter une radio / imagerie</button>
               </div>
             )}
-            {voir('veterinaire') && <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} autres={radios.length + morphos.length + toilettagesCr.length} />}
+            {voir('veterinaire') && <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} autres={radios.length + morphos.length + toilettagesCr.length} crCible={crParam} />}
             {(addDocOpen === 'radios' || (voir('veterinaire') && radios.length > 0)) && (
               <HealthPanel>
                 <HealthSection title="Radios / Imagerie" color="#546E7A" count={radios.length}

@@ -817,6 +817,16 @@ function typeEmoji(type: string): string {
 // c'était toujours /education/devis en dur, même pour un pet-sitter.
 function getNotifUrl(n: Notif, proType?: string): string | null {
   const d = n.data ?? {};
+  // Saisie du vétérinaire dans le carnet (notifyOwnerVetEntry, « vet_<acte> »).
+  if (n.type.startsWith('vet_') && !n.type.startsWith('vet_access')) {
+    const id = (d as Record<string, unknown>).animal_id ?? d.animalId;
+    return id ? `/mes-animaux/${id}?tab=sante` : '/mes-animaux';
+  }
+  // Compte rendu / ordonnance d'un pro → onglet Consultations, CR mis en avant.
+  if (n.type === 'compte_rendu_recu') {
+    const crId = (d as Record<string, unknown>).crId;
+    return d.animalId ? `/mes-animaux/${d.animalId}?tab=consultations${crId ? `&cr=${crId}` : ''}` : '/mes-animaux';
+  }
   const devisPath = proType === 'garde' ? '/garde/devis' : proType === 'photographe' ? '/photographe/devis' : proType === 'toilettage' ? '/toilettage/devis' : proType === 'marechal_ferrant' ? '/marechal-ferrant/devis' : '/education/devis';
   switch (n.type) {
     // Demande d'adhésion à un groupe (admins) / réponse à ma demande.

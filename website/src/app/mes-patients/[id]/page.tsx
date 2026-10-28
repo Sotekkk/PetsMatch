@@ -1104,6 +1104,26 @@ function PatientDetailPageInner() {
   // Notifie le propriétaire (in-app + push FCM) — même Cloud Function que
   // l'appli (functions/vet_notifications.js:notifyOwnerVetEntry), jamais
   // câblée côté site jusqu'ici malgré l'écriture directe déjà en place.
+  /** Compte rendu validé → notification au propriétaire avec lien direct
+   *  (miroir appli _notifyOwner). Copie aux co-propriétaires par le serveur. */
+  async function notifierCompteRendu(crId?: string) {
+    try {
+      const { data: prop } = await supabase.from('animaux_proprietes').select('uid_proprio, profile_id_proprio')
+        .eq('animal_id', animalId).eq('role_proprio', 'principal').eq('statut', 'actif').is('date_fin', null).limit(1).maybeSingle();
+      const uid = (prop?.uid_proprio as string | undefined) ?? animal?.uid_proprietaire ?? null;
+      if (!uid) return;
+      const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre vétérinaire';
+      const nom = animal?.nom ?? '';
+      await supabase.from('notifications').insert({
+        uid, type: 'compte_rendu_recu',
+        title: `Compte rendu — ${nom || 'votre animal'}`,
+        body: `${proNom} a ajouté un compte rendu${nom ? ` pour ${nom}` : ''}.`,
+        ...(prop?.profile_id_proprio ? { profile_id: prop.profile_id_proprio } : {}),
+        data: { animalId, animalNom: nom, ...(crId ? { crId } : {}) }, read: false,
+      });
+    } catch { /* ignore */ }
+  }
+
   async function notifyOwner(typeActe: string, vetName: string) {
     try {
       await httpsCallable(functions, 'notifyOwnerVetEntry')({ animalId, vetName, typeActe });
@@ -1125,6 +1145,16 @@ function PatientDetailPageInner() {
       if (error) erreurs.push(`vaccin ${v.nom}`);
     }
     for (const t of traitementsCr) {
+      // Antiparasitaire : section « Antiparasitaires » du carnet (pas les traitements).
+      if (t.type === 'antiparasitaire') {
+        const { error } = await supabase.from('antiparasitaires').insert({
+          id: `${Date.now()}${Math.floor(Math.random() * 1000)}`, animal_id: animalId, produit: t.nom,
+          date: new Date(auj).toLocaleDateString('sv-SE'), frequence: posologieComplete(t), notes: t.notes || null,
+          source: 'veterinaire', vet_id: user.uid,
+        });
+        if (error) erreurs.push(`antiparasitaire ${t.nom}`);
+        continue;
+      }
       let debut = new Date(auj);
       for (let i = 0; i < t.phases.length; i++) {
         const ph = t.phases[i];
@@ -1151,7 +1181,8 @@ function PatientDetailPageInner() {
       }
     }
     if (vaccinsCr.length) await notifyOwner('vaccin', vetName);
-    if (traitementsCr.length) await notifyOwner('traitement', vetName);
+    if (traitementsCr.some(t => t.type !== 'antiparasitaire')) await notifyOwner('traitement', vetName);
+    if (traitementsCr.some(t => t.type === 'antiparasitaire')) await notifyOwner('antiparasitaire', vetName);
 
     if (traitementsCr.length) {
       try {
@@ -1468,6 +1499,13 @@ function PatientDetailPageInner() {
           const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
           setComptesRendus((data ?? []) as CompteRendu[]);
           return;
+        }
+        // Propriétaire prévenu, lien direct vers ce compte rendu.
+        {
+          let qCr = supabase.from('comptes_rendus').select('id').eq('animal_id', animalId);
+          qCr = activeProfileId ? qCr.eq('pro_profile_id', activeProfileId) : qCr.eq('pro_uid', user.uid);
+          const { data: dernier } = await qCr.order('created_at', { ascending: false }).limit(1).maybeSingle();
+          await notifierCompteRendu(brouillonId ?? (dernier?.id as string | undefined));
         }
         // Pesée du jour → courbe de poids + poids de la fiche (sauf si c'est
         // la pesée déjà inscrite aujourd'hui depuis la Synthèse).
@@ -3320,6 +3358,7 @@ function PatientDetailPageInner() {
                   statut: 'valide', ...(activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
                 }).eq('id', cr.id);
                 if (error) { alert(error.message); return; }
+                await notifierCompteRendu(cr.id);
                 // Relit le CR : validateur / date posés par le serveur.
                 const { data } = await supabase.from('comptes_rendus').select('*').eq('id', cr.id).maybeSingle();
                 setComptesRendus(prev => prev.map(x => x.id === cr.id ? { ...x, ...(data ?? { statut: 'valide' }) } : x));
