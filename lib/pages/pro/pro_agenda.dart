@@ -1,5 +1,6 @@
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
+import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
 import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart' show NouveauPatientCliniquePage;
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
@@ -1841,27 +1842,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _refuserSerie(List<Map<String, dynamic>> serie) async {
-    final ctrl = TextEditingController();
+    var motifChoisi = '';
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Refuser la série', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(_resumeSerie(serie), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
           const SizedBox(height: 10),
-          TextField(controller: ctrl, maxLines: 2,
-              decoration: const InputDecoration(hintText: 'Motif (facultatif)', border: OutlineInputBorder())),
+          MotifAnnulationField(onChanged: (m) => setD(() => motifChoisi = m)),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Refuser', style: TextStyle(color: Colors.red.shade600, fontWeight: FontWeight.w700))),
+          TextButton(onPressed: motifChoisi.isEmpty ? null : () => Navigator.pop(ctx, true),
+              child: Text('Refuser', style: TextStyle(color: motifChoisi.isEmpty ? Colors.grey : Colors.red.shade600, fontWeight: FontWeight.w700))),
         ],
-      ),
+      )),
     );
-    final motif = ctrl.text.trim();
-    ctrl.dispose();
+    final motif = motifChoisi;
     if (ok != true || !mounted) return;
     final supa = Supabase.instance.client;
     await supa.from('rdv').update({
@@ -2570,13 +2569,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   Future<void> _showCancelDialog(Map<String, dynamic> rdv, {bool isRefus = false}) async {
-    final ctrl = TextEditingController();
+    // Motif obligatoire (liste + « Autre »), envoyé au client.
+    var motif = '';
     final label = isRefus ? 'Refuser' : 'Annuler';
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setModal) => Padding(
         padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
@@ -2584,24 +2584,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           Text('$label ce RDV',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 4),
-          const Text('Un motif (optionnel) sera envoyé au client.',
+          const Text('Le motif sera envoyé au client.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
           const SizedBox(height: 16),
-          TextField(
-            controller: ctrl,
-            maxLines: 2,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Empêchement, motif… (optionnel)',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.all(12),
-            ),
-          ),
+          MotifAnnulationField(onChanged: (m) => setModal(() => motif = m)),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: motif.isEmpty ? null : () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red.shade600, foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -2613,12 +2604,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             ),
           ),
         ]),
-      ),
+      )),
     );
-    ctrl.dispose();
     if (ok != true || !mounted) return;
-    await _updateStatut(rdv['id'].toString(), 'annule',
-        motifAnnulation: ctrl.text.trim().isEmpty ? null : ctrl.text.trim());
+    await _updateStatut(rdv['id'].toString(), 'annule', motifAnnulation: motif);
   }
 
   void _contactClient(Map<String, dynamic> rdv) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState, useProfileSource } from '@/hooks/useActiveProfile';
@@ -1071,6 +1072,9 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
   onDone: () => void;
 }) {
   const [saving, setSaving] = useState(false);
+  // Refus : motif obligatoire (liste + « Autre »).
+  const [refus, setRefus] = useState(false);
+  const [motifRefus, setMotifRefus] = useState('');
   const [clientName, setClientName] = useState('');
   const [proName, setProName] = useState('');
   const [animalName, setAnimalName] = useState('');
@@ -1140,12 +1144,12 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
 
   async function reject() {
     setSaving(true);
-    await supabase.from('rdv').update({ statut: 'refuse' }).eq('id', rdv.id);
+    await supabase.from('rdv').update({ statut: 'refuse', notes_annulation: motifRefus || null }).eq('id', rdv.id);
     await supabase.from('notifications').insert({
       uid: rdv.client_uid,
       type: 'rdv_refuse',
       title: 'RDV refusé',
-      body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_debut)} a été refusée.`,
+      body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_debut)} a été refusée.${motifRefus ? ` Motif : ${motifRefus}` : ''}`,
       ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
       data: { rdv_id: rdv.id, ...((rdv as { animal_id?: unknown }).animal_id ? { animal_id: String((rdv as { animal_id?: unknown }).animal_id) } : {}) },
       read: false,
@@ -1177,12 +1181,22 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
           style={{ fontFamily: 'Galey, sans-serif' }}>
           ✓ Confirmer
         </button>
-        <button onClick={reject} disabled={saving}
+        <button onClick={() => setRefus(v => !v)} disabled={saving}
           className="flex-1 text-xs font-semibold py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors"
           style={{ fontFamily: 'Galey, sans-serif' }}>
           ✗ Refuser
         </button>
       </div>
+      {refus && (
+        <div className="space-y-2">
+          <MotifAnnulationChamp onChange={setMotifRefus} />
+          <button onClick={reject} disabled={saving || !motifRefus}
+            className="w-full text-xs font-semibold py-2 rounded-lg bg-red-500 text-white disabled:opacity-40"
+            style={{ fontFamily: 'Galey, sans-serif' }}>
+            Refuser la demande
+          </button>
+        </div>
+      )}
     </div>
   );
 }

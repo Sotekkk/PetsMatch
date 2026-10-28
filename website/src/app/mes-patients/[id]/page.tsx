@@ -1225,16 +1225,12 @@ function PatientDetailPageInner() {
     crRdvOuvert.current = true;
     chargerVisite(crRdv);
     (async () => {
-      const { data: crs } = await supabase.from('comptes_rendus').select('*')
-        .eq('rdv_id', crRdv).eq('animal_id', animalId).order('created_at', { ascending: false });
-      const liste = (crs ?? []) as CompteRendu[];
-      const brouillon = liste.find(c => (c as CompteRendu & { statut?: string }).statut === 'brouillon');
-      if (liste.length > 0 && !brouillon) { setTab('Consultations'); return; }
+      // Toujours un compte rendu vierge (les précédents et brouillons restent
+      // dans l'onglet Consultations, « Reprendre »).
       setCrRdvId(crRdv);
-      if (brouillon) { reprendreBrouillon(brouillon); return; }
       const { data: r } = await supabase.from('rdv').select('motif, animaux_detail').eq('id', crRdv).maybeSingle();
       const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
-      setBrouillonId(null);
+      viderCr();
       setFormMotif(detail.find(a => a.id === String(animalId))?.motif ?? (r as { motif?: string | null } | null)?.motif ?? '');
       setAddingType('cr');
     })();
@@ -1776,6 +1772,13 @@ function PatientDetailPageInner() {
       }
     }
     return true;
+  }
+
+  /** Nouveau compte rendu : formulaire vierge (rien d'une saisie précédente). */
+  function viderCr() {
+    setBrouillonId(null);
+    setFormMotif(''); setFormPoids(''); setFormNotes(''); setFormDiag('');
+    setActesRealises([]); setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setSoinsCr([]); setAutreActe('');
   }
 
   function reprendreBrouillon(cr: { id: string; brouillon?: unknown }) {
@@ -3789,7 +3792,7 @@ function PatientDetailPageInner() {
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
-              onNouveauCr={() => { setBrouillonId(null); setCrRdvId(null); setAddingType('cr'); }}
+              onNouveauCr={() => { viderCr(); setCrRdvId(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={reprendreBrouillon}
               onFacturer={async (cr) => {

@@ -2,6 +2,7 @@
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
+import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
@@ -1015,12 +1016,11 @@ function SerieModal({ serie, mode, proName, onClose, onDone }: {
         {mode === 'accepter' ? (
           <p className="text-xs text-gray-500">Tous les passages seront confirmés aux horaires demandés. Vous pourrez modifier un passage ensuite depuis « À venir ».</p>
         ) : (
-          <textarea value={motif} onChange={e => setMotif(e.target.value)} rows={3} placeholder="Motif (optionnel)…"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none" />
+          <MotifAnnulationChamp onChange={setMotif} />
         )}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">Retour</button>
-          <button onClick={valider} disabled={saving}
+          <button onClick={valider} disabled={saving || (mode !== 'accepter' && !motif)}
             className={`flex-1 py-2.5 rounded-xl text-sm text-white font-semibold disabled:opacity-50 ${mode === 'accepter' ? '' : 'bg-red-500 hover:bg-red-600'}`}
             style={mode === 'accepter' ? { background: TEAL } : undefined}>
             {saving ? '…' : mode === 'accepter' ? 'Tout accepter' : 'Refuser'}
@@ -1066,13 +1066,10 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
           <p className="font-semibold">{rdv.clientName ?? '—'}</p>
           <p className="text-xs text-gray-400 mt-0.5">{fmtDate(rdv.date_heure)} à {fmtHeure(rdv.date_heure)}</p>
         </div>
-        <textarea value={motif} onChange={e => setMotif(e.target.value)} rows={3}
-          placeholder="Motif (optionnel)…"
-          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none"
-          style={{ fontFamily: 'Galey, sans-serif' }} />
+        <MotifAnnulationChamp onChange={setMotif} />
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 font-semibold">Retour</button>
-          <button onClick={handleSubmit} disabled={saving}
+          <button onClick={handleSubmit} disabled={saving || !motif}
             className="flex-1 py-2.5 rounded-xl text-sm text-white font-semibold bg-red-500 hover:bg-red-600 disabled:opacity-50">
             {saving ? '…' : label}
           </button>

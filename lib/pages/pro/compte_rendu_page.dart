@@ -2458,10 +2458,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         children: [
           if (_visiteMulti) _barreVisite(),
           _bandeauSignature(),
-          // Existing CRs
+          // Comptes rendus précédents : repliés, le nouveau compte rendu part vide.
           if (_crs.isNotEmpty) ...[
-            _sectionTitle('Comptes rendus existants'),
-            const SizedBox(height: 8),
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Text(
+                    'Comptes rendus précédents (${_crs.length})'
+                    '${_crs.any((c) => c['statut'] == 'brouillon') ? ' — dont un brouillon à reprendre' : ''}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: widget.categoryColor)),
+                children: [
             ..._crs.map((cr) => _CrCard(cr: cr, color: widget.categoryColor,
                 onTransmettre: widget.isPension ? null : () => _transmettreCr(cr),
                 onDelete: (cr['statut'] != 'brouillon' && !_peutValider)
@@ -2472,7 +2480,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                 onReprendre: (cr['statut'] == 'brouillon' && cr['brouillon'] != null && cr['id']?.toString() != _brouillonId)
                     ? () => _reprendreBrouillon(cr) : null,
                 onFacturer: (_saisieActes && cr['statut'] != 'brouillon') ? () => _facturerCr(cr) : null)),
-            const SizedBox(height: 20),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             const Divider(),
             const SizedBox(height: 8),
           ],
