@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart' show ProProfileEditPage;
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show saisirAuCarnet;
 import 'package:http/http.dart' as http;
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
@@ -114,7 +115,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   /// carnet. Ceux déjà couverts par un compte rendu de ce jour sont exclus.
   List<({String type, String libelle, Map<String, dynamic> ligne})> _carnetJour = [];
   double? _poidsCarnet;
-  static const _libCarnet = {'vaccin': 'Vaccin', 'traitement': 'Traitement', 'vermifuge': 'Vermifuge', 'antiparasitaire': 'Antiparasitaire'};
+  static const _libCarnet = {'vaccin': 'Vaccin', 'traitement': 'Traitement', 'vermifuge': 'Vermifuge', 'antiparasitaire': 'Antiparasitaire',
+      'allergie': 'Allergie / pathologie', 'chirurgie': 'Chirurgie', 'hospitalisation': 'Hospitalisation', 'radio': 'Examen'};
 
   Future<void> _chargerCarnetDuJour() async {
     final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
@@ -134,16 +136,21 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         return depuis == null || c == null || c.isAfter(depuis);
       }
       final res = <({String type, String libelle, Map<String, dynamic> ligne})>[];
-      for (final (table, type) in const [('vaccinations', 'vaccin'), ('traitements', 'traitement'),
-          ('vermifuges', 'vermifuge'), ('antiparasitaires', 'antiparasitaire')]) {
+      for (final (table, rubrique) in const [('vaccinations', 'vaccin'), ('traitements', 'traitement'),
+          ('vermifuges', 'vermifuge'), ('antiparasitaires', 'antiparasitaire'),
+          ('allergies', 'allergie'), ('chirurgies', 'chirurgie'), ('radios', 'radio')]) {
         final rows = await _supa.from(table).select().eq('animal_id', animalId).eq('vet_id', vetId).eq('date', ymd).order('created_at');
         for (final r in rows as List) {
           final m = Map<String, dynamic>.from(r as Map);
           if (!apres(m)) continue;
           String s(String k) => (m[k] ?? '').toString().trim();
+          final type = rubrique == 'chirurgie' && s('type') == 'hospitalisation' ? 'hospitalisation' : rubrique;
           final libelle = switch (type) {
             'vaccin' => '${s('vaccin').isEmpty ? 'Vaccin' : s('vaccin')}${s('lot').isNotEmpty ? ' (lot ${s('lot')})' : ''}',
             'traitement' => '${s('nom').isEmpty ? 'Traitement' : s('nom')}${s('posologie').isNotEmpty ? ' — ${s('posologie')}' : ''}',
+            'allergie' => '${s('description').isEmpty ? 'Allergie' : s('description')}${s('severite').isNotEmpty ? ' (${s('severite')})' : ''}',
+            'chirurgie' || 'hospitalisation' => s('intitule').isEmpty ? _libCarnet[type]! : s('intitule'),
+            'radio' => s('titre').isEmpty ? 'Radio / examen' : s('titre'),
             _ => s('produit').isEmpty ? _libCarnet[type]! : s('produit'),
           };
           res.add((type: type, libelle: libelle, ligne: m));
@@ -1453,6 +1460,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               leading: Icon(switch (a.type) {
                 'vaccin' => Icons.vaccines_outlined,
                 'traitement' => Icons.medication_outlined,
+                'allergie' => Icons.warning_amber_outlined,
+                'chirurgie' || 'hospitalisation' => Icons.local_hospital_outlined,
+                'radio' => Icons.image_search_outlined,
                 _ => Icons.pest_control_outlined,
               }, color: widget.categoryColor),
               title: Text('${_libCarnet[a.type]} : ${a.libelle}',
@@ -1547,7 +1557,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           [if (s.detail.isNotEmpty) s.detail, if (s.rappelMois != null) 'rappel dans ${s.rappelMois} mois'].join(' · '),
           () => _ajouterSoin(s), () => setState(() => _soinsCr.remove(s))),
       OutlinedButton.icon(
-        onPressed: () => _ajouterSoin(), icon: const Icon(Icons.add, size: 18),
+        onPressed: _saisirSoinAuCarnet, icon: const Icon(Icons.add, size: 18),
         label: const Text('Ajouter un soin (vermifuge, allergie, chirurgie, examen…)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
         style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor, side: BorderSide(color: widget.categoryColor.withValues(alpha: 0.5)),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
@@ -1569,6 +1579,35 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       const SizedBox(height: 16),
     ]);
+  }
+
+  /// Soin saisi avec le formulaire complet de la rubrique du carnet (le même
+  /// que dans le carnet), enregistré tout de suite au nom du vétérinaire puis
+  /// repris dans ce compte rendu (« Déjà inscrit au carnet aujourd'hui »).
+  Future<void> _saisirSoinAuCarnet() async {
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    if (animalId == null || animalId.isEmpty) return;
+    const choix = [
+      ('vermifuges', 'Vermifuge', Icons.bug_report_outlined),
+      ('antiparasitaires', 'Antiparasitaire', Icons.pest_control_outlined),
+      ('allergies', 'Allergie / pathologie', Icons.warning_amber_outlined),
+      ('chirurgies', 'Chirurgie / hospitalisation', Icons.local_hospital_outlined),
+      ('radios', 'Radio / examen', Icons.image_search_outlined),
+    ];
+    final collection = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const ListTile(title: Text('Soin à inscrire au carnet', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+        for (final (c, l, ic) in choix)
+          ListTile(leading: Icon(ic, color: widget.categoryColor),
+              title: Text(l, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(ctx, c)),
+      ])),
+    );
+    if (collection == null || !mounted) return;
+    await saisirAuCarnet(context, animalId: animalId, collection: collection);
+    if (mounted) await _chargerCarnetDuJour();
   }
 
   /// Ajout (ou modification si [existant]) d'un soin inscrit au carnet à

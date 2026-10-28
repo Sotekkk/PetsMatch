@@ -5663,20 +5663,7 @@ function AnimalFichePageInner() {
           </HealthSection>
 
 
-          {/* Visites vétérinaires */}
-          <HealthSection title="Visites vétérinaires" icon="🏥" color="#26A69A" count={health.visites.length}
-            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='visites'?null:'visites') : undefined}
-            addFormOpen={addOpen==='visites'}
-            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={d=>saveHealthRecord('visites',d)}
-              fields={[{key:'motif',label:'Motif',required:true},{key:'date',label:'Date',type:'date'},{key:'veterinaire',label:'Vétérinaire'},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}]}/>}>
-            {health.visites.map(r=>(
-              <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('visites',r.id)}
-                onSave={d=>updateHealthRecord('visites',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
-                fields={[{key:'motif',label:'Motif',required:true},{key:'date',label:'Date',type:'date'},{key:'veterinaire',label:'Vétérinaire'},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}]}/>
-            ))}
-            {health.visites.length===0 && <p className="p-4 text-sm text-gray-400">Aucune visite</p>}
-          </HealthSection>
+          {/* Visites vétérinaires : plus dans le carnet — consultations dans l'onglet Consultations. */}
 
           {/* Génétique & tests : particulier ici, éleveur dans le suivi repro. */}
           {!(isEleveur || isEmployeOfOwner) && especeHasGenetics(animal.espece) && id && (

@@ -2366,24 +2366,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               onDelete: (r) => _deleteRecord('poids', r['id'], _poids),
               fmtDate: _fmtDate,
             ),
-            _HealthSection(
-              title: 'Visites vétérinaires',
-              icon: Icons.local_hospital,
-              color: SanteCouleurs.visites,
-              records: _visites,
-              onAdd: _showVisiteSheet,
-              renderRecord: (r) => _RecordTile(
-                title: r['motif'] ?? 'Consultation',
-                subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-                trailing: r['veterinaire'],
-                onDelete: () => _deleteRecord('visites', r['id'], _visites),
-                  onEdit: r['source'] == 'veterinaire' ? null : () => _showVisiteSheet(existant: r),
-                onTap: () => _showRecordDetail('Visite vétérinaire', r, [
-                  ('Motif', 'motif'), ('Date', 'date'), ('Vétérinaire', 'veterinaire'),
-                  ('Diagnostic', 'diagnostic'), ('Notes', 'notes'),
-                ]),
-              ),
-            ),
+            // Visites vétérinaires : plus dans le carnet — les consultations
+            // (comptes rendus) sont dans l'onglet Consultations.
             if (especeHasGenetics(_espece))
               _HealthSection(
                 title: 'Génétique & tests',

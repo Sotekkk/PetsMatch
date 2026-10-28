@@ -5835,7 +5835,9 @@ class _CarnetSanteTab extends StatelessWidget {
     // Radios / examens : onglet Consultations côté propriétaire (actes du
     // vétérinaire, miroir du site) ; le vétérinaire les garde dans le carnet.
     // Visites : doublon des consultations (comptes rendus) pour le vétérinaire.
-    final cats = [for (final c in _cats) if (vetMode ? c.key != 'visites' : c.key != 'radios') c];
+    // Visites vétérinaires : plus dans le carnet — les consultations (comptes
+    // rendus) sont dans l'onglet Consultations.
+    final cats = [for (final c in _cats) if (c.key != 'visites' && (vetMode || c.key != 'radios')) c];
     Widget ligne(int i) {
         final cat = cats[i];
         return _SanteTile(
@@ -5961,7 +5963,7 @@ class SanteDetailPage extends StatelessWidget {
       case 'chirurgies':       return AddChirurgieDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'allergies':        return _AddAllergieDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'visites':          return _AddVisiteDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
-      case 'radios':           return _AddRadioDialog(animalId: animalId);
+      case 'radios':           return _AddRadioDialog(animalId: animalId, vetId: vid, vetName: vname);
       default:                 return _AddVaccinDialog(animalId: animalId, espece: espece, source: src, vetId: vid, vetName: vname);
     }
   }
@@ -9732,6 +9734,23 @@ class _AddChaleursDialogState extends State<_AddChaleursDialog> {
 /// Nom du vétérinaire connecté, inscrit sur ses saisies du carnet.
 String _nomVeterinaire() => '${User_Info.firstname} ${User_Info.lastname}'.trim();
 
+/// Saisie au carnet avec le formulaire complet de la rubrique (le même que
+/// dans le carnet), au nom du vétérinaire connecté — utilisée par le compte
+/// rendu de consultation. Enregistrée tout de suite dans la bonne rubrique.
+Future<void> saisirAuCarnet(BuildContext context, {required String animalId, required String collection, String? espece}) {
+  final vid = FirebaseAuth.instance.currentUser?.uid;
+  final vname = _nomVeterinaire();
+  final Widget dialogue = switch (collection) {
+    'vermifuges' => AddVermifugeDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
+    'antiparasitaires' => AddAntiparasitaireDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
+    'allergies' => _AddAllergieDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
+    'chirurgies' => AddChirurgieDialog(animalId: animalId, source: 'veterinaire', vetId: vid, vetName: vname),
+    'radios' => _AddRadioDialog(animalId: animalId, vetId: vid, vetName: vname),
+    _ => _AddVaccinDialog(animalId: animalId, espece: espece, source: 'veterinaire', vetId: vid, vetName: vname),
+  };
+  return showDialog(context: context, builder: (_) => dialogue);
+}
+
 Future<void> _scheduleRappelAgenda({
   required String animalId,
   required DateTime dateRappel,
@@ -12623,7 +12642,10 @@ class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
 
 class _AddRadioDialog extends StatefulWidget {
   final String animalId;
-  const _AddRadioDialog({required this.animalId});
+  /// Saisie du vétérinaire : source / vet_id / nom sur la ligne.
+  final String? vetId;
+  final String? vetName;
+  const _AddRadioDialog({required this.animalId, this.vetId, this.vetName});
   @override State<_AddRadioDialog> createState() => _AddRadioDialogState();
 }
 class _AddRadioDialogState extends State<_AddRadioDialog> {
@@ -12657,6 +12679,7 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
         'titre':     _titre.text.trim().isNotEmpty ? _titre.text.trim() : 'Radio / Examen',
         'notes':     _notes.text.trim(), 'image_url': url,
         'date':      '${_date!.year}-${_date!.month.toString().padLeft(2,'0')}-${_date!.day.toString().padLeft(2,'0')}',
+        if (widget.vetId != null) ...{'source': 'veterinaire', 'vet_id': widget.vetId, 'veterinaire': widget.vetName},
       });
       if (mounted) Navigator.pop(context);
     } catch (e) {
