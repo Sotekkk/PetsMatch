@@ -5834,7 +5834,8 @@ class _CarnetSanteTab extends StatelessWidget {
         );
     // Radios / examens : onglet Consultations côté propriétaire (actes du
     // vétérinaire, miroir du site) ; le vétérinaire les garde dans le carnet.
-    final cats = [for (final c in _cats) if (vetMode || c.key != 'radios') c];
+    // Visites : doublon des consultations (comptes rendus) pour le vétérinaire.
+    final cats = [for (final c in _cats) if (vetMode ? c.key != 'visites' : c.key != 'radios') c];
     Widget ligne(int i) {
         final cat = cats[i];
         return _SanteTile(

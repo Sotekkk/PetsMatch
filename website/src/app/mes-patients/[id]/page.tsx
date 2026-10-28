@@ -207,10 +207,15 @@ function InfoGrid({ rows }: { rows: { label: string; value: string | null | unde
   );
 }
 
-function Card({ title, children }: { title?: string; children: React.ReactNode }) {
+function Card({ title, children, action }: { title?: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-      {title && <h3 className="font-bold text-sm text-[#1F2A2E] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>{title}</h3>}
+      {(title || action) && (
+        <div className="flex items-center justify-between gap-2 mb-4">
+          {title ? <h3 className="font-bold text-sm text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{title}</h3> : <span />}
+          {action}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -2281,7 +2286,13 @@ function PatientDetailPageInner() {
             <p className="text-sm text-gray-600 mt-1">La fiche de cet animal a été créée par un autre professionnel. Vous voyez son identité et vos propres documents ; son carnet et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.</p>
           </div>
         )}
-        {tab === 'Santé' && !identiteSeule && (
+        {tab === 'Santé' && !identiteSeule && (() => {
+          // Vétérinaire avec l'accès en écriture : « + Ajouter » sur chaque rubrique du carnet.
+          const ajout = (t: AddType) => isVet && hasWriteAccess ? (
+            <button type="button" onClick={() => setAddingType(t)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#0C5C6C]/5">+ Ajouter</button>
+          ) : undefined;
+          return (
           <>
             {isPensionType && (
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 flex gap-2 items-center text-blue-700 text-xs font-medium">
@@ -2290,7 +2301,7 @@ function PatientDetailPageInner() {
             )}
 
             {/* Vaccins */}
-            <Card title={`💉 Vaccinations (${vaccins.length})`}>
+            <Card title={`💉 Vaccinations (${vaccins.length})`} action={ajout('vaccin')}>
               {vaccins.length === 0 ? <EmptyState text="Aucun vaccin enregistré" /> : (
                 <div className="space-y-3">
                   {vaccins.map(v => {
@@ -2316,7 +2327,8 @@ function PatientDetailPageInner() {
               )}
             </Card>
 
-            {/* Visites / Consultations */}
+            {/* Visites : doublon des consultations pour le vétérinaire (comptes rendus). */}
+            {!isVet && (
             <Card title={`🩺 Visites vétérinaires (${visites.length})`}>
               {visites.length === 0 ? <EmptyState text="Aucune visite enregistrée" /> : (
                 <div className="space-y-3">
@@ -2334,9 +2346,10 @@ function PatientDetailPageInner() {
                 </div>
               )}
             </Card>
+            )}
 
             {/* Traitements */}
-            <Card title={`💊 Traitements (${traitements.length})`}>
+            <Card title={`💊 Traitements (${traitements.length})`} action={ajout('traitement')}>
               {traitements.length === 0 ? <EmptyState text="Aucun traitement enregistré" /> : (
                 <div className="space-y-3">
                   {traitements.map(t => (
@@ -2356,7 +2369,7 @@ function PatientDetailPageInner() {
             {isVet && (
               <>
             {/* Vermifuges */}
-            <Card title={`🪱 Vermifuges (${vermifuges.length})`}>
+            <Card title={`🪱 Vermifuges (${vermifuges.length})`} action={ajout('vermifuge')}>
               {vermifuges.length === 0 ? <EmptyState text="Aucun vermifuge enregistré" /> : (
                 <div className="space-y-2">
                   {vermifuges.map(v => {
@@ -2378,7 +2391,7 @@ function PatientDetailPageInner() {
             </Card>
 
             {/* Antiparasitaires */}
-            <Card title={`🦟 Antiparasitaires (${antiparasitaires.length})`}>
+            <Card title={`🦟 Antiparasitaires (${antiparasitaires.length})`} action={ajout('antiparasitaire')}>
               {antiparasitaires.length === 0 ? <EmptyState text="Aucun antiparasitaire enregistré" /> : (
                 <div className="space-y-2">
                   {antiparasitaires.map(a => {
@@ -2400,7 +2413,7 @@ function PatientDetailPageInner() {
             </Card>
 
             {/* Chirurgies / Hospitalisations */}
-            <Card title={`🏥 Chirurgies / Hospitalisations (${chirurgies.length})`}>
+            <Card title={`🏥 Chirurgies / Hospitalisations (${chirurgies.length})`} action={ajout('chirurgie')}>
               {chirurgies.length === 0 ? <EmptyState text="Aucune chirurgie enregistrée" /> : (
                 <div className="space-y-2">
                   {chirurgies.map(c => (
@@ -2421,7 +2434,7 @@ function PatientDetailPageInner() {
             </Card>
 
             {/* Allergies */}
-            <Card title={`⚠️ Allergies / pathologies (${allergies.length})`}>
+            <Card title={`⚠️ Allergies / pathologies (${allergies.length})`} action={ajout('allergie')}>
               {allergies.length === 0 ? <EmptyState text="Aucune allergie enregistrée" /> : (
                 <div className="space-y-2">
                   {allergies.map(a => (
@@ -2440,7 +2453,7 @@ function PatientDetailPageInner() {
 
             {/* Radios / Examens */}
             {isVet && (
-              <Card title={`🩻 Radios / Examens (${radios.length})`}>
+              <Card title={`🩻 Radios / Examens (${radios.length})`} action={ajout('radio')}>
                 {radios.length === 0 ? <EmptyState text="Aucun examen enregistré" /> : (
                   <div className="space-y-2">
                     {radios.map(r => (
@@ -2486,7 +2499,8 @@ function PatientDetailPageInner() {
               </Card>
             )}
           </>
-        )}
+          );
+        })()}
 
         {/* ── Repro ── */}
         {tab === 'Repro' && (
@@ -3387,7 +3401,6 @@ function PatientDetailPageInner() {
               menuCarnet={[
                 { label: 'Vaccin', onClick: () => setAddingType('vaccin') },
                 { label: 'Traitement', onClick: () => setAddingType('traitement') },
-                { label: 'Visite vétérinaire', onClick: () => setAddingType('visite') },
                 { label: 'Ordonnance (PDF)', onClick: () => setAddingType('ordonnance') },
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
