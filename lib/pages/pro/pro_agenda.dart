@@ -1140,6 +1140,64 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
+  /// RDV confirmés du même profil (et du même praticien en clinique) qui
+  /// chevauchent [debut ; debut + duree[.
+  Future<List<Map<String, dynamic>>> _conflitsCreneau(Map<String, dynamic> rdv, DateTime debut, int duree) async {
+    final pid = (rdv['pro_profile_id'] ?? '').toString().isNotEmpty ? rdv['pro_profile_id'].toString() : _resolveProProfileId();
+    if (pid.isEmpty) return [];
+    final d0 = debut.toUtc();
+    final f0 = d0.add(Duration(minutes: duree));
+    try {
+      final rows = await Supabase.instance.client.from('rdv')
+          .select('id, date_heure, duree_minutes, motif, animal_nom_manuel, client_nom_manuel, instructeur_profile_id')
+          .eq('pro_profile_id', pid).eq('statut', 'confirme').neq('id', rdv['id'].toString())
+          .gte('date_heure', d0.subtract(const Duration(hours: 12)).toIso8601String())
+          .lt('date_heure', f0.toIso8601String());
+      final praticien = (rdv['instructeur_profile_id'] ?? '').toString();
+      final res = <Map<String, dynamic>>[];
+      for (final r in rows as List) {
+        final d = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toUtc();
+        if (d == null) continue;
+        final f = d.add(Duration(minutes: (r['duree_minutes'] as num?)?.toInt() ?? 30));
+        if (!f.isAfter(d0)) continue;
+        if ((r['instructeur_profile_id'] ?? '').toString() != praticien) continue;
+        res.add(Map<String, dynamic>.from(r as Map));
+      }
+      return res;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// true : pas de chevauchement, ou le pro accepte quand même.
+  Future<bool> _accepterMalgreConflit(Map<String, dynamic> rdv, DateTime debut, int duree) async {
+    final conflits = await _conflitsCreneau(rdv, debut, duree);
+    if (conflits.isEmpty || !mounted) return true;
+    String hm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    final lignes = [
+      for (final c in conflits)
+        () {
+          final d = DateTime.parse(c['date_heure'].toString()).toLocal();
+          final f = d.add(Duration(minutes: (c['duree_minutes'] as num?)?.toInt() ?? 30));
+          final qui = [c['motif'], c['animal_nom_manuel'] ?? c['client_nom_manuel']]
+              .where((x) => (x?.toString() ?? '').isNotEmpty).join(' · ');
+          return '${hm(d)} – ${hm(f)}${qui.isNotEmpty ? ' : $qui' : ''}';
+        }(),
+    ];
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Créneau déjà occupé', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: Text('Sur la durée prévue (${hm(debut)} – ${hm(debut.add(Duration(minutes: duree)))}), ce RDV chevauche :\n\n'
+          '${lignes.join('\n')}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5)),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Changer l\'heure', style: TextStyle(fontFamily: 'Galey'))),
+        TextButton(onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Accepter quand même', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+      ],
+    ));
+    return ok == true;
+  }
+
   Future<void> _showAcceptDialog(Map<String, dynamic> rdv) async {
     if (!await _choisirVeterinaire(rdv)) return;
     // Pré-remplir la durée depuis la config du pro selon le motif
@@ -1505,6 +1563,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (result['confirmed'] != true) return;
 
     final dureeMinutes = result['duree'] as int;
+
+    // Créneau déjà occupé (autre RDV confirmé sur la durée prévue) : prévenir.
+    final debutChoisi = requestedDh != null
+        ? DateTime(requestedDh.year, requestedDh.month, requestedDh.day,
+            result['preciseHour'] as int, result['preciseMinute'] as int)
+        : DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
+    if (debutChoisi != null && !await _accepterMalgreConflit(rdv, debutChoisi, dureeMinutes)) return;
 
     if (requestedDh != null) {
       // Update date_heure with the precise time chosen by the pro

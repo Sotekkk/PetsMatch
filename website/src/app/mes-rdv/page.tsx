@@ -125,6 +125,27 @@ function toDateStr(d: Date): string {
 
 // ── Modal Accepter ─────────────────────────────────────────────────────────────
 
+const hm = (d: Date) => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+/** RDV confirmés du même profil (et du même praticien en clinique) qui
+ *  chevauchent [debut ; debut + duree[ — miroir de _conflitsCreneau (appli). */
+async function conflitsCreneau(rdv: Rdv, debut: Date, duree: number, praticien: string): Promise<string[]> {
+  if (!rdv.pro_profile_id) return [];
+  const fin = new Date(debut.getTime() + duree * 60000);
+  const { data } = await supabase.from('rdv')
+    .select('id, date_heure, duree_minutes, motif, animal_nom_manuel, client_nom_manuel, instructeur_profile_id')
+    .eq('pro_profile_id', rdv.pro_profile_id).eq('statut', 'confirme').neq('id', rdv.id)
+    .gte('date_heure', new Date(debut.getTime() - 12 * 3600000).toISOString()).lt('date_heure', fin.toISOString());
+  return ((data ?? []) as { date_heure: string; duree_minutes: number | null; motif: string | null; animal_nom_manuel: string | null; client_nom_manuel: string | null; instructeur_profile_id: string | null }[])
+    .filter(r => new Date(new Date(r.date_heure).getTime() + (r.duree_minutes ?? 30) * 60000) > debut
+      && (r.instructeur_profile_id ?? '') === (praticien ?? ''))
+    .map(r => {
+      const d = new Date(r.date_heure);
+      const qui = [r.motif, r.animal_nom_manuel ?? r.client_nom_manuel].filter(Boolean).join(' · ');
+      return `${hm(d)} – ${hm(new Date(d.getTime() + (r.duree_minutes ?? 30) * 60000))}${qui ? ` : ${qui}` : ''}`;
+    });
+}
+
 function AccepterModal({ rdv, proName, onClose, onDone }: {
   rdv: Rdv; proName: string; onClose: () => void; onDone: (confirme?: boolean) => void;
 }) {
@@ -160,6 +181,15 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
     try {
       const newDt     = new Date(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
       const newStatut = mode === 'confirme' ? 'confirme' : 'contre_proposition';
+      // Créneau déjà occupé (autre RDV confirmé sur la durée prévue) : prévenir.
+      if (mode === 'confirme') {
+        const praticien = (rdv.praticien_indifferent || praticiens.length > 1) ? attribue : (rdv.instructeur_profile_id ?? '');
+        const conflits = await conflitsCreneau(rdv, newDt, duree, praticien);
+        if (conflits.length && !confirm(`Créneau déjà occupé : sur la durée prévue (${hm(newDt)} – ${hm(new Date(newDt.getTime() + duree * 60000))}), ce RDV chevauche :\n\n${conflits.join('\n')}\n\nAccepter quand même ?`)) {
+          setSaving(false);
+          return;
+        }
+      }
 
       const maj = {
         statut: newStatut, date_heure: newDt.toISOString(), duree_minutes: duree,
@@ -1683,9 +1713,10 @@ export default function MesRdvPage() {
 
   const proName = userData?.nameElevage ?? userData?.firstname ?? 'Le professionnel';
 
-  const fetchRdvs = useCallback(async () => {
+  /** [silencieux] : actualisation automatique, sans indicateur de chargement. */
+  const fetchRdvs = useCallback(async (silencieux = false) => {
     if (!user) return;
-    setFetching(true);
+    if (!silencieux) setFetching(true);
     try {
       const { data } = await supabase
         .from('rdv')
@@ -1750,6 +1781,16 @@ export default function MesRdvPage() {
   }, [user, activeProfileId]);
 
   useEffect(() => { fetchRdvs(); }, [fetchRdvs]);
+
+  // Nouvelles demandes sans recharger la page : toutes les 30 s (onglet
+  // visible) et au retour sur l'onglet.
+  useEffect(() => {
+    const maj = () => { if (document.visibilityState === 'visible') fetchRdvs(true); };
+    const t = setInterval(maj, 30000);
+    document.addEventListener('visibilitychange', maj);
+    window.addEventListener('focus', maj);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', maj); window.removeEventListener('focus', maj); };
+  }, [fetchRdvs]);
 
   const fetchAujourdhui = useCallback(async () => {
     // Ne pas interroger tant que le profil actif n'est pas résolu — un
