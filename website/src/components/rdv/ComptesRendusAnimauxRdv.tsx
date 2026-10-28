@@ -48,11 +48,13 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
   }, [rdvId, ids, metier]);
 
   // Fait : la fiche, onglet Consultations, ce compte rendu ouvert ;
-  // brouillon / à faire : le formulaire du compte rendu de ce RDV.
+  // brouillon : ce brouillon repris ; à faire : un compte rendu vierge du RDV.
   const lien = (a: AnimalRdv) => metier === 'veterinaire'
     ? (etats[a.id] === 'fait' && crIds[a.id]
       ? `/mes-patients/${encodeURIComponent(a.id)}?tab=Consultations&cr=${encodeURIComponent(crIds[a.id])}`
-      : `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}`)
+      : etats[a.id] === 'brouillon' && crIds[a.id]
+        ? `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}&brouillon=${encodeURIComponent(crIds[a.id])}`
+        : `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}&nouveau=1`)
     : `/sante/suivis/nouveau?animalId=${encodeURIComponent(a.id)}&espece=${encodeURIComponent(especes[a.id] || 'chien')}&rdvId=${encodeURIComponent(rdvId)}`;
 
   return (

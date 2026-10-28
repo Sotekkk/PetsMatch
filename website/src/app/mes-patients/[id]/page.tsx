@@ -1242,6 +1242,16 @@ function PatientDetailPageInner() {
     crRdvOuvert.current = cle;
     chargerVisite(crRdv);
     (async () => {
+      // « Brouillon · reprendre » (identifiant dans le lien) : CE brouillon.
+      const brouillonParam = searchParams.get('brouillon');
+      if (brouillonParam) {
+        const { data: b } = await supabase.from('comptes_rendus').select('*').eq('id', brouillonParam).maybeSingle();
+        if (b) {
+          viderCr(); setCrRdvId(crRdv); reprendreBrouillon(b as CompteRendu);
+          if ((b as { rdv_id?: string | null }).rdv_id !== crRdv) await supabase.from('comptes_rendus').update({ rdv_id: crRdv }).eq('id', brouillonParam);
+          return;
+        }
+      }
       // Compte rendu de CE RDV pour cet animal : déjà fait → on l'ouvre ;
       // brouillon → on le reprend ; sinon un compte rendu vierge.
       // Y compris un compte rendu fait depuis la fiche le jour du RDV (sans
@@ -1839,8 +1849,9 @@ function PatientDetailPageInner() {
     setCarnetJour([]); setPoidsCarnet(null); setFormErreurs([]); setFormManquants([]);
   }
 
-  function reprendreBrouillon(cr: { id: string; brouillon?: unknown }) {
-    const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
+  function reprendreBrouillon(cr: { id: string; brouillon?: unknown; motif?: string | null; contenu?: string | null }) {
+    // Saisie gardée avec le brouillon ; à défaut (brouillon d'ASV), motif et texte du compte rendu.
+    const e = (cr.brouillon ?? { motif: cr.motif ?? '', texte: cr.contenu ?? '' }) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
     setBrouillonId(cr.id);
     setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
     setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []); setSoinsCr(e.soins ?? []);
