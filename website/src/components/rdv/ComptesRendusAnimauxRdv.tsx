@@ -14,6 +14,8 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
 }) {
   const [etats, setEtats] = useState<Record<string, 'fait' | 'brouillon'>>({});
   const [especes, setEspeces] = useState<Record<string, string>>({});
+  // Vétérinaire : compte rendu (fait ou brouillon) de chaque animal pour ce RDV.
+  const [crIds, setCrIds] = useState<Record<string, string>>({});
 
   // Clé stable : la liste est recréée à chaque affichage de la carte.
   const ids = animaux.map(a => a.id).join(',');
@@ -29,18 +31,28 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
       ]);
       if (annule) return;
       const e: Record<string, 'fait' | 'brouillon'> = {};
-      for (const r of (rows ?? []) as unknown as { animal_id: string | null; statut?: string | null }[]) {
+      const ci: Record<string, string> = {};
+      for (const r of (rows ?? []) as unknown as { id?: string; animal_id: string | null; statut?: string | null; rattache?: boolean }[]) {
         const id = String(r.animal_id ?? '');
-        if (e[id] !== 'fait') e[id] = r.statut === 'brouillon' ? 'brouillon' : 'fait';
+        if (e[id] === 'fait') continue;
+        e[id] = r.statut === 'brouillon' ? 'brouillon' : 'fait';
+        if (r.id) ci[id] = r.id;
+        // Compte rendu fait depuis la fiche le jour du RDV : rattaché au RDV.
+        if (r.id && r.rattache === false) await supabase.from('comptes_rendus').update({ rdv_id: rdvId }).eq('id', r.id);
       }
       setEtats(e);
+      setCrIds(ci);
       setEspeces(Object.fromEntries(((an ?? []) as { id: string; espece: string | null }[]).map(a => [String(a.id), a.espece ?? ''])));
     })();
     return () => { annule = true; };
   }, [rdvId, ids, metier]);
 
+  // Fait : la fiche, onglet Consultations, ce compte rendu ouvert ;
+  // brouillon / à faire : le formulaire du compte rendu de ce RDV.
   const lien = (a: AnimalRdv) => metier === 'veterinaire'
-    ? `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}`
+    ? (etats[a.id] === 'fait' && crIds[a.id]
+      ? `/mes-patients/${encodeURIComponent(a.id)}?tab=Consultations&cr=${encodeURIComponent(crIds[a.id])}`
+      : `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}`)
     : `/sante/suivis/nouveau?animalId=${encodeURIComponent(a.id)}&espece=${encodeURIComponent(especes[a.id] || 'chien')}&rdvId=${encodeURIComponent(rdvId)}`;
 
   return (

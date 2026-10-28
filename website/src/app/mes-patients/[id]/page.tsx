@@ -997,7 +997,7 @@ function PatientDetailPageInner() {
   // de cet animal est rattaché au RDV (rdv_id) pour la facture de la visite.
   const [crRdvId, setCrRdvId] = useState<string | null>(null);
   // « Compte rendu fait » depuis un RDV : ce compte rendu, ouvert dans Consultations.
-  const [crCible, setCrCible] = useState<string | null>(null);
+  const [crCible, setCrCible] = useState<string | null>(() => searchParams.get('cr'));
   // Ma signature (signatures_pro), apposée sur les CR et ordonnances.
   const [signature, setSignature] = useState<string | null | undefined>(undefined);
   const [signer, setSigner] = useState(false);
