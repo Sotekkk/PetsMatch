@@ -79,8 +79,10 @@ function intervenant(c: Consultation, noms: Record<string, string>) {
 }
 const motifDe = (c: Consultation) => c.cr?.motif?.trim() || (c.cr ? 'Consultation' : 'Ordonnance');
 
-export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onTransmettreCr, onTransmettreOrdo }: {
+export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onTransmettreCr, onTransmettreOrdo, crOuvert }: {
   crs: CrVet[]; ordos: OrdoVet[];
+  /** Compte rendu à ouvrir d'emblée (« Compte rendu fait » depuis un RDV). */
+  crOuvert?: string | null;
   peutCr: boolean; peutCarnet: boolean; peutValider: boolean;
   /** Entrées du menu « Ajouter au carnet » (modales existantes de la page). */
   menuCarnet: { label: string; onClick: () => void }[];
@@ -99,6 +101,10 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
   const [noms, setNoms] = useState<Record<string, string>>({});
   const [ouverte, setOuverte] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (crOuvert && consultations.some(c => c.cle === `cr:${crOuvert}`)) setOuverte(`cr:${crOuvert}`);
+  }, [crOuvert, consultations]);
 
   useEffect(() => {
     const profils = [...crs.flatMap(c => [c.redige_par_profile_id ?? '', c.valide_par_profile_id ?? '']), ...ordos.map(o => o.praticien_profile_id ?? '')];

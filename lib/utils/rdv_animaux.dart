@@ -64,17 +64,27 @@ Future<Map<String, dynamic>?> choisirAnimalRdv(BuildContext context, Map<String,
         () {
           final id = a['id'].toString();
           final etat = etats[id];
+          // Fait : l'ouvrir — Brouillon : le reprendre — À faire : le rédiger.
           final (lib, fg) = switch (etat) {
-            'fait' => ('Fait', const Color(0xFF2E7D32)),
-            'brouillon' => ('Brouillon', const Color(0xFF8A5A00)),
-            _ => ('À faire', Colors.grey.shade600),
+            'fait' => ('Fait · ouvrir', const Color(0xFF2E7D32)),
+            'brouillon' => ('Brouillon · reprendre', const Color(0xFF8A5A00)),
+            _ => ('À faire', const Color(0xFF0C5C6C)),
           };
           return ListTile(
             leading: Icon(etat == 'fait' && table != null ? Icons.check_circle : Icons.pets, color: etat == 'fait' ? fg : color),
             title: Text(a['nom']?.toString() ?? '—', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             subtitle: (a['motif']?.toString() ?? '').isEmpty ? null
                 : Text(a['motif'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-            trailing: table == null ? null : Text(lib, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: fg)),
+            trailing: table == null ? null : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: etat == 'fait' ? fg : etat == 'brouillon' ? const Color(0xFFFFF4E0) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: etat == 'brouillon' ? const Color(0xFFC77800) : fg),
+              ),
+              child: Text(lib, style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
+                  color: etat == 'fait' ? Colors.white : fg)),
+            ),
             onTap: () => Navigator.pop(ctx, {'id': id, 'nom': a['nom'], 'espece': especes[id] ?? ''}),
           );
         }(),

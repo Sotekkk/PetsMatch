@@ -995,6 +995,8 @@ function PatientDetailPageInner() {
   // RDV à plusieurs animaux (?crRdv=<id>, « Gérer mes RDV ») : le compte rendu
   // de cet animal est rattaché au RDV (rdv_id) pour la facture de la visite.
   const [crRdvId, setCrRdvId] = useState<string | null>(null);
+  // « Compte rendu fait » depuis un RDV : ce compte rendu, ouvert dans Consultations.
+  const [crCible, setCrCible] = useState<string | null>(null);
   // Ma signature (signatures_pro), apposée sur les CR et ordonnances.
   const [signature, setSignature] = useState<string | null | undefined>(undefined);
   const [signer, setSigner] = useState(false);
@@ -1240,9 +1242,16 @@ function PatientDetailPageInner() {
     crRdvOuvert.current = cle;
     chargerVisite(crRdv);
     (async () => {
-      // Toujours un compte rendu vierge (les précédents et brouillons restent
-      // dans l'onglet Consultations, « Reprendre »).
+      // Compte rendu de CE RDV pour cet animal : déjà fait → on l'ouvre ;
+      // brouillon → on le reprend ; sinon un compte rendu vierge.
+      const { data: existants } = await supabase.from('comptes_rendus').select('*')
+        .eq('rdv_id', crRdv).eq('animal_id', animalId).order('created_at', { ascending: false });
+      const liste = (existants ?? []) as CompteRendu[];
+      const fait = liste.find(c => c.statut !== 'brouillon');
+      if (fait) { setTab('Consultations'); setCrCible(fait.id); return; }
       setCrRdvId(crRdv);
+      const brouillon = liste.find(c => c.statut === 'brouillon');
+      if (brouillon) { viderCr(); setCrRdvId(crRdv); reprendreBrouillon(brouillon); return; }
       const { data: r } = await supabase.from('rdv').select('motif, animaux_detail').eq('id', crRdv).maybeSingle();
       const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
       viderCr();
@@ -3825,6 +3834,7 @@ function PatientDetailPageInner() {
               </p>
             )}
             <ConsultationsVet
+              crOuvert={crCible}
               crs={comptesRendus as CrVet[]} ordos={ordonnances as OrdoVet[]}
               peutCr={hasWriteAccess || identiteSeule} peutCarnet={hasWriteAccess} peutValider={hasWriteAccess || identiteSeule}
               menuCarnet={[
@@ -4208,14 +4218,15 @@ function PatientDetailPageInner() {
                     {visite.animaux.map(a => {
                       const courant = a.id === String(animalId);
                       const etat = visite.etats[a.id];
+                      // Fait (vert plein), brouillon (orange), à faire (contour) ; animal en cours souligné.
                       return (
                         <button key={a.id} type="button" disabled={courant}
                           onClick={() => window.location.assign(`/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(visite.rdvId)}`)}
-                          className="px-3 py-1.5 rounded-full text-[12.5px] font-semibold border"
-                          style={courant ? { background: '#0C5C6C', color: 'white', borderColor: '#0C5C6C' }
-                            : etat === 'fait' ? { background: 'white', color: '#2E7D32', borderColor: '#2E7D32' }
+                          className={`px-3 py-1.5 rounded-full text-[12.5px] font-semibold border-2 ${courant ? 'underline underline-offset-2' : ''}`}
+                          style={etat === 'fait' ? { background: '#2E7D32', color: 'white', borderColor: '#2E7D32' }
+                            : etat === 'brouillon' ? { background: '#FFF4E0', color: '#8A5A00', borderColor: '#C77800' }
                             : { background: 'white', color: '#0C5C6C', borderColor: '#0C5C6C' }}>
-                          {etat === 'fait' ? '✓ ' : ''}{a.nom} · {etat === 'fait' ? 'fait' : etat === 'brouillon' ? 'brouillon' : 'à faire'}
+                          {etat === 'fait' ? '✓ ' : ''}{a.nom} · {etat === 'fait' ? 'fait' : etat === 'brouillon' ? 'brouillon' : 'à faire'}{courant ? ' (en cours)' : ''}
                         </button>
                       );
                     })}

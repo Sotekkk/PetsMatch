@@ -74,6 +74,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
   /// Visite à plusieurs animaux : état du compte rendu de chaque animal.
   Map<String, String> _etatsVisite = {};
+  bool _brouillonAuto = false;
   /// Ma signature (signatures_pro), apposée sur les CR et ordonnances.
   String? _signature;
   bool _signatureChargee = false;
@@ -203,21 +204,26 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               final courant = id == _animalCourant;
               final etat = _etatsVisite[id];
               final lib = etat == 'fait' ? 'fait' : etat == 'brouillon' ? 'brouillon' : 'à faire';
+              // Fait (vert plein), brouillon (orange), à faire (contour) ; animal en cours souligné.
+              const vert = Color(0xFF2E7D32);
+              final fond = etat == 'fait' ? vert : etat == 'brouillon' ? const Color(0xFFFFF4E0) : Colors.white;
+              final texte = etat == 'fait' ? Colors.white : etat == 'brouillon' ? const Color(0xFF8A5A00) : c;
               return InkWell(
                 borderRadius: BorderRadius.circular(20),
                 onTap: courant ? null : () => _ouvrirAnimalVisite(id),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
-                    color: courant ? c : Colors.white,
+                    color: fond,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: etat == 'fait' && !courant ? const Color(0xFF2E7D32) : c),
+                    border: Border.all(width: courant ? 2.5 : 1.2,
+                        color: etat == 'fait' ? vert : etat == 'brouillon' ? const Color(0xFFC77800) : c),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (etat == 'fait') Padding(padding: const EdgeInsets.only(right: 4),
-                        child: Icon(Icons.check, size: 14, color: courant ? Colors.white : const Color(0xFF2E7D32))),
-                    Text('${a['nom'] ?? ''} · $lib', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
-                        color: courant ? Colors.white : (etat == 'fait' ? const Color(0xFF2E7D32) : c))),
+                    if (etat == 'fait') const Padding(padding: EdgeInsets.only(right: 4),
+                        child: Icon(Icons.check, size: 14, color: Colors.white)),
+                    Text('${a['nom'] ?? ''} · $lib${courant ? ' (en cours)' : ''}', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                        fontWeight: FontWeight.w600, color: texte, decoration: courant ? TextDecoration.underline : null)),
                   ]),
                 ),
               );
@@ -449,6 +455,13 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           _ordos     = List<Map<String, dynamic>>.from(ordos);
           _loadingDocs = false;
         });
+        // Ouvert depuis un RDV (« Brouillon · reprendre ») : le brouillon de
+        // ce RDV est repris d'office s'il n'y a pas encore de compte rendu validé.
+        if (!_brouillonAuto && rdvId != null && _brouillonId == null && !_crs.any((c) => c['statut'] != 'brouillon')) {
+          final b = _crs.where((c) => c['statut'] == 'brouillon' && c['brouillon'] != null).firstOrNull;
+          if (b != null) _reprendreBrouillon(b);
+        }
+        _brouillonAuto = true;
       }
     } catch (_) {
       if (mounted) setState(() => _loadingDocs = false);
@@ -2655,10 +2668,12 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             Theme(
               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                // Ouvert depuis un RDV : ce sont les comptes rendus de CE RDV → affichés.
+                initiallyExpanded: widget.rdv != null,
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: Text(
-                    'Comptes rendus précédents (${_crs.length})'
+                    '${widget.rdv != null ? 'Compte rendu de ce rendez-vous' : 'Comptes rendus précédents'} (${_crs.length})'
                     '${_crs.any((c) => c['statut'] == 'brouillon') ? ' — dont un brouillon à reprendre' : ''}',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: widget.categoryColor)),
                 children: [

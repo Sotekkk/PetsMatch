@@ -48,13 +48,14 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
           <div key={a.id} className="flex items-center gap-2">
             <p className="flex-1 min-w-0 text-xs text-gray-500 truncate">🐾 {ligneAnimalRdv(a)}</p>
             {/* Chargement complet : formulaire du compte rendu toujours repris à zéro. */}
+            {/* Fait (vert plein) : l'ouvrir — Brouillon (orange) : le reprendre — À faire (contour) : le rédiger. */}
             <a href={lien(a)} className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-lg border"
-              style={etat === 'fait' ? { borderColor: '#2E7D32', color: '#2E7D32' }
-                : etat === 'brouillon' ? { borderColor: '#8A5A00', color: '#8A5A00' }
-                : { borderColor: '#0C5C6C', color: '#0C5C6C' }}>
-              {etat === 'fait' ? (metier === 'veterinaire' ? 'Compte rendu fait' : 'Séance faite')
-                : etat === 'brouillon' ? 'Brouillon'
-                : metier === 'veterinaire' ? 'Compte rendu' : 'Séance'}
+              style={etat === 'fait' ? { background: '#2E7D32', borderColor: '#2E7D32', color: 'white' }
+                : etat === 'brouillon' ? { background: '#FFF4E0', borderColor: '#C77800', color: '#8A5A00' }
+                : { background: 'white', borderColor: '#0C5C6C', color: '#0C5C6C' }}>
+              {etat === 'fait' ? `✓ ${metier === 'veterinaire' ? 'Compte rendu fait' : 'Séance faite'} · ouvrir`
+                : etat === 'brouillon' ? 'Brouillon · reprendre'
+                : `À faire · ${metier === 'veterinaire' ? 'rédiger le compte rendu' : 'rédiger la séance'}`}
             </a>
           </div>
         );
