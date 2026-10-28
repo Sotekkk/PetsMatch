@@ -17,6 +17,8 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { animauxDetailRdv, type AnimalRdv } from '@/lib/rdv-animaux';
+import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -993,6 +995,13 @@ function PatientDetailPageInner() {
   // RDV à plusieurs animaux (?crRdv=<id>, « Gérer mes RDV ») : le compte rendu
   // de cet animal est rattaché au RDV (rdv_id) pour la facture de la visite.
   const [crRdvId, setCrRdvId] = useState<string | null>(null);
+  // Ma signature (signatures_pro), apposée sur les CR et ordonnances.
+  const [signature, setSignature] = useState<string | null | undefined>(undefined);
+  const [signer, setSigner] = useState(false);
+  useEffect(() => {
+    if (!user?.uid || catPro !== 'veterinaire') return;
+    maSignaturePro(user.uid).then(setSignature).catch(() => setSignature(null));
+  }, [user?.uid, catPro]);
   const [visite, setVisite] = useState<{ rdvId: string; animaux: AnimalRdv[]; etats: Record<string, 'fait' | 'brouillon'> } | null>(null);
   const chargerVisite = useCallback(async (rdvId: string) => {
     const [{ data: r }, { data: crs }] = await Promise.all([
@@ -1495,6 +1504,8 @@ function PatientDetailPageInner() {
           prescripteur,
           animalNom: animal?.nom ?? 'Animal',
           animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+          animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
+          signature,
           animalIdentification: animal?.identification ?? '',
           animalPoids: formPoids.trim() ? `${formPoids.trim().replace('.', ',')} kg` : animal?.poids != null ? `${animal.poids} kg` : '',
           proprietaire: proprio,
@@ -1562,6 +1573,7 @@ function PatientDetailPageInner() {
         praticien: i.praticien,
         animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
         animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
+        signature,
         animalIdentification: animal?.identification ?? '', proprietaire: i.proprio,
         contenu: c.contenu ?? '', date: new Date(c.created_at),
       });
@@ -1898,7 +1910,8 @@ function PatientDetailPageInner() {
           poidsCr != null && !isNaN(poidsCr) && `Poids : ${poidsCr} kg`,
           actesRealises.length > 0 && `Actes réalisés : ${actesRealises.join(', ')}.`,
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
-          formNotes.trim() && formNotes.trim(),
+          // Texte libre du vétérinaire : précédé de « Recommandations : » (en gras dans le PDF).
+          formNotes.trim() && (/^recommandations?/i.test(formNotes.trim()) ? formNotes.trim() : `Recommandations : ${formNotes.trim()}`),
           vaccinsTxt.length > 0 && `Vaccins : ${vaccinsTxt.join(', ')}.`,
           ...(([['vermifuge', 'Vermifuge'], ['antiparasitaire', 'Antiparasitaire'], ['allergie', 'Allergie / pathologie'],
             ['chirurgie', 'Chirurgie'], ['hospitalisation', 'Hospitalisation'], ['radio', 'Examen']] as const).map(([t, titre]) => {
@@ -4134,6 +4147,18 @@ function PatientDetailPageInner() {
 
             {/* Compte rendu */}
             {addingType === 'cr' && (<>
+              {/* Ma signature : apposée sur les comptes rendus et ordonnances. */}
+              {catPro === 'veterinaire' && signature !== undefined && (
+                <div className={`flex items-center gap-2 rounded-xl px-3 py-2 ${signature ? 'bg-[#0C5C6C]/5' : 'bg-[#FFF4E0]'}`}>
+                  <span className={`flex-1 text-[12.5px] ${signature ? 'text-gray-600' : 'text-[#8A5A00]'}`}>
+                    {signature ? 'Votre signature est apposée sur vos comptes rendus et ordonnances.'
+                      : 'Ajoutez votre signature : elle sera apposée sur vos comptes rendus et ordonnances.'}
+                  </span>
+                  <button type="button" onClick={() => setSigner(true)} className="text-sm font-bold text-[#0C5C6C] px-2">
+                    {signature ? 'Modifier' : 'Signer'}
+                  </button>
+                </div>
+              )}
               {/* Visite à plusieurs animaux : passer d'un animal à l'autre. */}
               {visite && (
                 <div className="rounded-xl border border-[#0C5C6C]/25 bg-[#0C5C6C]/5 px-3 py-2.5">
@@ -4278,6 +4303,12 @@ function PatientDetailPageInner() {
             <button onClick={() => setShowSuiviLien(false)} className="mt-3 w-full text-xs text-gray-400 py-1">Fermer</button>
           </div>
         </div>
+      )}
+      {signer && user?.uid && (
+        <SignatureProModal onClose={() => setSigner(false)} onValider={async dataUrl => {
+          if (await enregistrerSignaturePro(user.uid, dataUrl)) { setSignature(dataUrl); setSigner(false); }
+          else alert('Signature non enregistrée — réessayez.');
+        }} />
       )}
     </div>
   );

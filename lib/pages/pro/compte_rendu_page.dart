@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
+import 'package:PetsMatch/utils/signature_pro.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -72,6 +73,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
   /// Visite à plusieurs animaux : état du compte rendu de chaque animal.
   Map<String, String> _etatsVisite = {};
+  /// Ma signature (signatures_pro), apposée sur les CR et ordonnances.
+  String? _signature;
+  bool _signatureChargee = false;
   final _poidsCtrl = TextEditingController();
   final Set<String> _actesRealises = {};
   final _autreActeCtrl = TextEditingController();
@@ -123,6 +127,34 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     _chargerPharmacie();
     _prefillDepuisRdv().whenComplete(() { _chargerRappelsVaccins(); _chargerCarnetDuJour(); });
     _chargerVisite();
+    maSignaturePro().then((s) { if (mounted) setState(() { _signature = s; _signatureChargee = true; }); });
+  }
+
+  /// Bandeau « Ma signature » : à dessiner une fois, apposée sur les comptes
+  /// rendus et ordonnances ; modifiable.
+  Widget _bandeauSignature() {
+    if (widget.isPension || !_signatureChargee) return const SizedBox.shrink();
+    final c = widget.categoryColor;
+    final sans = _signature == null;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+      decoration: BoxDecoration(color: sans ? const Color(0xFFFFF4E0) : c.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Icon(Icons.draw_outlined, size: 18, color: sans ? const Color(0xFF8A5A00) : c),
+        const SizedBox(width: 8),
+        Expanded(child: Text(sans ? 'Ajoutez votre signature : elle sera apposée sur vos comptes rendus et ordonnances.'
+            : 'Votre signature est apposée sur vos comptes rendus et ordonnances.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: sans ? const Color(0xFF8A5A00) : const Color(0xFF555F6A)))),
+        TextButton(
+          onPressed: () async {
+            final s = await signerEtEnregistrer(context);
+            if (s != null && mounted) setState(() => _signature = s);
+          },
+          child: Text(sans ? 'Signer' : 'Modifier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: c)),
+        ),
+      ]),
+    );
   }
 
   bool get _visiteMulti => widget.rdv != null && animauxDetailRdv(widget.rdv!).isNotEmpty;
@@ -658,7 +690,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (motif.isNotEmpty) 'Motif : $motif',
       if (poids != null) 'Poids : ${_fmtPoids(poids)} kg',
       if (actesRealises.isNotEmpty) 'Actes réalisés : ${actesRealises.join(', ')}.',
-      _crContenuCtrl.text.trim(),
+      // Texte libre du vétérinaire : précédé de « Recommandations : » (en gras dans le PDF).
+      if (_crContenuCtrl.text.trim().isNotEmpty)
+        RegExp(r'^recommandations?', caseSensitive: false).hasMatch(_crContenuCtrl.text.trim())
+            ? _crContenuCtrl.text.trim() : 'Recommandations : ${_crContenuCtrl.text.trim()}',
       if (vaccinsTxt.isNotEmpty) 'Vaccins : ${vaccinsTxt.join(', ')}.',
       for (final (type, titre) in const [('vermifuge', 'Vermifuge'), ('antiparasitaire', 'Antiparasitaire'),
           ('allergie', 'Allergie / pathologie'), ('chirurgie', 'Chirurgie'), ('hospitalisation', 'Hospitalisation'), ('radio', 'Examen')])
@@ -893,7 +928,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         final clinique = pro == null ? null : await _supa.from('user_profiles_complet')
             .select('nom, rue_pro, code_postal_pro, ville_pro, phone_number, certifications').eq('id', pro).maybeSingle();
         final animal = await _supa.from('animaux')
-            .select('nom, espece, race, identification, poids').eq('id', animalId).maybeSingle();
+            .select('nom, espece, race, sexe, date_naissance, age_estime, identification, poids').eq('id', animalId).maybeSingle();
         String proprio = widget.clientName;
         if (owner.profileId != null) {
           final o = await _supa.from('user_profiles_complet')
@@ -917,6 +952,9 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           prescripteur: praticien.isEmpty ? 'Vétérinaire' : praticien,
           animalNom: (animal?['nom'] ?? widget.rdv?['_animal_nom'] ?? 'Animal').toString(),
           animalEspeceRace: [animal?['espece'], animal?['race']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
+          animalSexe: sexeAnimal(animal?['sexe']),
+          animalAge: ageAnimal(animal?['date_naissance'], animal?['age_estime']),
+          signature: octetsSignature(_signature),
           animalIdentification: (animal?['identification'] ?? '').toString(),
           animalPoids: _poidsSaisi != null ? '${_fmtPoids(_poidsSaisi!)} kg'
               : animal?['poids'] != null ? '${animal!['poids']} kg' : '',
@@ -2100,6 +2138,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
         praticien: i.praticien,
         animalNom: i.animal, animalEspeceRace: i.especeRace, animalSexe: i.sexe, animalAge: i.age,
+        signature: octetsSignature(_signature),
         animalIdentification: i.identification,
         proprietaire: i.proprio, contenu: cr['contenu']?.toString() ?? '',
         date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
@@ -2418,6 +2457,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_visiteMulti) _barreVisite(),
+          _bandeauSignature(),
           // Existing CRs
           if (_crs.isNotEmpty) ...[
             _sectionTitle('Comptes rendus existants'),

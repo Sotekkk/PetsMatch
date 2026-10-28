@@ -12,11 +12,15 @@ export interface OrdonnanceData {
   prescripteur: string;
   animalNom: string;
   animalEspeceRace?: string;
+  animalSexe?: string;
+  animalAge?: string;
   animalIdentification?: string;
   animalPoids?: string;
   proprietaire?: string;
   lignes: LigneOrdonnance[];
   date?: Date;
+  /** Signature manuscrite du prescripteur (data-URL PNG). */
+  signature?: string | null;
 }
 
 const TEAL: [number, number, number] = [12, 92, 108];
@@ -47,7 +51,10 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
 
   // Patient / propriétaire
   const boxTop = y;
-  doc.setFillColor(244, 247, 246); doc.roundedRect(M, boxTop, W - 2 * M, 78, 6, 6, 'F');
+  const infosOrdo = ([['Espèce / race', d.animalEspeceRace], ['Sexe', d.animalSexe], ['Âge', d.animalAge],
+    ['Identification', d.animalIdentification], ['Poids', d.animalPoids]] as const).filter(([, v]) => !!v) as [string, string][];
+  const hOrdo = Math.max(78, 44 + infosOrdo.length * 11);
+  doc.setFillColor(244, 247, 246); doc.roundedRect(M, boxTop, W - 2 * M, hOrdo, 6, 6, 'F');
   const col2 = M + (W - 2 * M) / 2 + 8;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...TEAL);
   doc.text('Patient', M + 10, boxTop + 16); doc.text('Propriétaire', col2, boxTop + 16);
@@ -57,13 +64,12 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
   doc.text(d.proprietaire || '—', col2, boxTop + 31);
   doc.setFontSize(9);
   let yy = boxTop + 44;
-  for (const [l, v] of [['Espèce / race', d.animalEspeceRace], ['Identification', d.animalIdentification], ['Poids', d.animalPoids]] as const) {
-    if (!v) continue;
+  for (const [l, v] of infosOrdo) {
     doc.setTextColor(...GREY); doc.text(`${l} : `, M + 10, yy);
     doc.setTextColor(...DARK); doc.text(v, M + 10 + doc.getTextWidth(`${l} : `), yy);
     yy += 11;
   }
-  y = boxTop + 98;
+  y = boxTop + hOrdo + 20;
 
   // Prescription
   d.lignes.forEach((l, i) => {
@@ -83,11 +89,12 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
   // Prescripteur
   const sy = H - 150;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DARK);
-  doc.text(`Dr ${d.prescripteur}`, W - M - 180, sy);
+  if (d.prescripteur.trim() && d.prescripteur.trim().toLowerCase() !== 'vétérinaire') doc.text(`Dr ${d.prescripteur}`, W - M - 180, sy);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
   doc.text('Vétérinaire', W - M - 180, sy + 12);
-  doc.setDrawColor(...GREY); doc.line(W - M - 180, sy + 50, W - M - 20, sy + 50);
-  doc.setFontSize(8); doc.text('Signature', W - M - 180, sy + 61);
+  if (d.signature) { try { doc.addImage(d.signature, 'PNG', W - M - 180, sy + 14, 130, 52); } catch { /* signature illisible */ } }
+  doc.setDrawColor(...GREY); doc.line(W - M - 180, sy + 68, W - M - 20, sy + 68);
+  doc.setFontSize(8); doc.text('Signature', W - M - 180, sy + 79);
   doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5);
   doc.text('Ordonnance établie via PetsMatch — à présenter en pharmacie / à conserver dans le carnet de santé.', M, H - 40);
 
@@ -99,6 +106,8 @@ export interface CompteRenduData {
   praticien: string; animalNom: string; animalEspeceRace?: string; animalSexe?: string; animalAge?: string;
   animalIdentification?: string;
   proprietaire?: string; contenu: string; date?: Date;
+  /** Signature manuscrite du vétérinaire (data-URL PNG). */
+  signature?: string | null;
 }
 
 /** Âge de l'animal (« 5 mois », « 3 ans ») d'après sa date de naissance,
@@ -180,9 +189,12 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   }
   // Sans nom de praticien : pas de « Dr Vétérinaire ».
   const praticien = d.praticien.trim().toLowerCase() === 'vétérinaire' ? '' : d.praticien.trim();
-  if (praticien) {
-    y = Math.min(y + 24, H - 70);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`Dr ${praticien}`, W - M - 180, y);
+  if (praticien || d.signature) {
+    if (y + 90 > H - 40) { doc.addPage(); y = 50; }
+    y += 24;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DARK);
+    if (praticien) doc.text(`Dr ${praticien}`, W - M - 180, y);
+    if (d.signature) { try { doc.addImage(d.signature, 'PNG', W - M - 180, y + 6, 130, 52); } catch { /* signature illisible */ } }
   }
   return doc.output('blob');
 }

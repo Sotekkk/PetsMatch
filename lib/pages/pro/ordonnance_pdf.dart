@@ -91,12 +91,16 @@ Future<Uint8List> ordonnancePdfBytes({
   required String prescripteur,
   required String animalNom,
   String animalEspeceRace = '',
+  String animalSexe = '',
+  String animalAge = '',
   String animalIdentification = '',
   String animalPoids = '',
   String proprietaire = '',
   required List<LigneOrdonnance> lignes,
   String? remarques,
   DateTime? date,
+  /// Signature manuscrite du prescripteur (PNG), apposée au-dessus du trait.
+  Uint8List? signature,
 }) async {
   final doc = pw.Document(theme: await _chargerTheme());
   final jour = date ?? DateTime.now();
@@ -142,6 +146,8 @@ Future<Uint8List> ordonnancePdfBytes({
             pw.SizedBox(height: 3),
             pw.Text(animalNom, style: pw.TextStyle(fontSize: 11, color: _dark, fontWeight: pw.FontWeight.bold)),
             info('Espèce / race', animalEspeceRace),
+            info('Sexe', animalSexe),
+            info('Âge', animalAge),
             info('Identification', animalIdentification),
             info('Poids', animalPoids),
           ])),
@@ -187,9 +193,13 @@ Future<Uint8List> ordonnancePdfBytes({
       // Prescripteur
       pw.Row(mainAxisAlignment: pw.MainAxisAlignment.end, children: [
         pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Text('Dr $prescripteur', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
+          if (prescripteur.trim().isNotEmpty && prescripteur.trim().toLowerCase() != 'vétérinaire')
+            pw.Text('Dr $prescripteur', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
           pw.Text('Vétérinaire', style: const pw.TextStyle(fontSize: 9, color: _grey)),
-          pw.SizedBox(height: 30),
+          signature != null
+              ? pw.Container(width: 160, height: 56, alignment: pw.Alignment.bottomLeft,
+                  child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain))
+              : pw.SizedBox(height: 30),
           pw.Container(width: 160, height: 0.6, color: _grey),
           pw.Text('Signature', style: const pw.TextStyle(fontSize: 8, color: _grey)),
         ]),
@@ -217,6 +227,8 @@ Future<Uint8List> compteRenduPdfBytes({
   String proprietaire = '',
   required String contenu,
   DateTime? date,
+  /// Signature manuscrite du vétérinaire (PNG).
+  Uint8List? signature,
 }) async {
   final doc = pw.Document(theme: await _chargerTheme());
   final jour = date ?? DateTime.now();
@@ -264,10 +276,15 @@ Future<Uint8List> compteRenduPdfBytes({
       ),
       pw.SizedBox(height: 16),
       ..._paragraphesCr(contenu),
-      if (nomPraticien.isNotEmpty) ...[
+      if (nomPraticien.isNotEmpty || signature != null) ...[
         pw.SizedBox(height: 28),
-        pw.Align(alignment: pw.Alignment.centerRight,
-            child: pw.Text('Dr $nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold))),
+        pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          if (nomPraticien.isNotEmpty)
+            pw.Text('Dr $nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
+          if (signature != null)
+            pw.Container(width: 160, height: 56, alignment: pw.Alignment.centerLeft,
+                child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain)),
+        ])),
       ],
     ],
   ));
