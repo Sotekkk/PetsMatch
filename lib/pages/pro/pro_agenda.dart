@@ -4955,13 +4955,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // de séance passe par onSuiviMorpho (Soins & Rééducation).
           // Toiletteur : compte rendu de toilettage dans le dossier de la séance.
           onCompteRendu: (showProTools && !const {'education', 'garde', 'sante', 'photographe', 'toilettage'}.contains(AgendaContexte.catPro))
-              ? () => Navigator.push(context, MaterialPageRoute(
+              ? () async {
+                  // Plusieurs animaux : un compte rendu par animal, choisi ici.
+                  String? animalCr;
+                  if (animauxDetailRdv(rdv).isNotEmpty) {
+                    final a = await choisirAnimalRdv(context, rdv, table: 'comptes_rendus', color: _teal);
+                    if (a == null) return;
+                    animalCr = a['id'].toString();
+                  }
+                  if (!context.mounted) return;
+                  await Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
+                    animalId: animalCr,
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
                     categoryColor: _teal,
                     isPension: AgendaContexte.catPro == 'pension',
-                  )))
+                  )));
+                }
               : null,
           // Accès direct au compte-rendu morpho depuis le RDV (était
           // seulement accessible via le menu « Mon activité santé > Mes
@@ -4971,11 +4982,22 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onSuiviMorpho: (showProTools && hasAnimal && AgendaContexte.catPro == 'sante')
               ? () async {
                   final rdvId = rdv['id']?.toString();
+                  // Plusieurs animaux : une séance (compte rendu) par animal.
+                  var animalSeance = animalId;
+                  var especeSeance = rdv['_animal_espece']?.toString() ?? '';
+                  if (animauxDetailRdv(rdv).isNotEmpty) {
+                    final a = await choisirAnimalRdv(context, rdv, table: 'suivis_morpho', color: _teal,
+                        titre: 'Séance de quel animal ?');
+                    if (a == null) return;
+                    animalSeance = a['id'].toString();
+                    especeSeance = a['espece']?.toString() ?? '';
+                  }
                   Map<String, dynamic>? existing;
                   if (rdvId != null) {
                     try {
                       existing = await Supabase.instance.client
-                          .from('suivis_morpho').select().eq('rdv_id', rdvId).maybeSingle();
+                          .from('suivis_morpho').select().eq('rdv_id', rdvId).eq('animal_id', animalSeance)
+                          .order('created_at', ascending: false).limit(1).maybeSingle();
                     } catch (_) {}
                   }
                   if (!context.mounted) return;
@@ -4983,14 +5005,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     await Navigator.push(context, MaterialPageRoute(
                         builder: (_) => MorphoDetailPage(
                               suivi: existing!,
-                              espece: rdv['_animal_espece']?.toString() ?? '',
+                              espece: especeSeance,
                               readOnly: false,
                             )));
                   } else {
                     await Navigator.push(context, MaterialPageRoute(
                         builder: (_) => MorphoFormPage(
-                              animalId: animalId,
-                              espece: rdv['_animal_espece']?.toString() ?? '',
+                              animalId: animalSeance,
+                              espece: especeSeance,
                               proProfileId: AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId : null,
                               rdvId: rdvId,
                               // Pas de proNom : User_Info.primaryLabel reflète le

@@ -309,7 +309,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       final proFilter  = _proProfileId != null ? 'pro_profile_id' : 'pro_uid';
       final proValue   = _proProfileId ?? vetUid;
       if (rdvId != null) {
-        crs   = await _supa.from('comptes_rendus').select().eq('rdv_id', rdvId).order('created_at');
+        // RDV à plusieurs animaux : comptes rendus de cet animal seulement.
+        var qCr = _supa.from('comptes_rendus').select().eq('rdv_id', rdvId);
+        if (aid.isNotEmpty) qCr = qCr.eq('animal_id', aid);
+        crs   = await qCr.order('created_at');
         ordos = await _supa.from('ordonnances').select()
             .eq('animal_id', aid).eq(proFilter, proValue)
             .order('date_emit', ascending: false);

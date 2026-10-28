@@ -1,6 +1,7 @@
 'use client';
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
+import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
@@ -1083,8 +1084,10 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal }: {
   rdv: Rdv;
+  /** RDV à plusieurs animaux : un compte rendu (vétérinaire) ou une séance (ostéo) par animal. */
+  crParAnimal?: 'veterinaire' | 'sante';
   tab: 'demandes' | 'a_venir' | 'historique';
   myUid: string;
   myProfileId: string | null;
@@ -1118,7 +1121,8 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             </span>
           </div>
           {animauxDetailRdv(rdv).length > 0 ? (
-            animauxDetailRdv(rdv).map(a => (
+            crParAnimal ? <ComptesRendusAnimauxRdv rdvId={rdv.id} animaux={animauxDetailRdv(rdv)} metier={crParAnimal} />
+            : animauxDetailRdv(rdv).map(a => (
               <p key={a.id} className="text-xs text-gray-500 mt-0.5">🐾 {ligneAnimalRdv(a)}</p>
             ))
           ) : rdv.animalNom && (
@@ -2102,6 +2106,7 @@ export default function MesRdvPage() {
                   onOpenAnimal={openAnimalFiche}
                   onModifier={() => setModalModifier(rdv)}
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
+                  crParAnimal={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? catPro : undefined}
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}

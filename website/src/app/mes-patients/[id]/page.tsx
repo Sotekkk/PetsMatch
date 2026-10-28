@@ -10,12 +10,13 @@ import CompteRenduExpressModal from '@/components/garde/CompteRenduExpressModal'
 import ToilettageFicheTabs from '@/components/toilettage/ToilettageFicheTabs';
 import { gardePrestationKey } from '@/lib/garde-facturation';
 import { gardeMotifLabel, accesLogementLabel } from '@/lib/garde-labels';
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
+import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -912,6 +913,10 @@ function PatientDetailPageInner() {
   const [addingType, setAddingType] = useState<AddType>(null);
   // Brouillon de compte rendu repris (ligne modifiée au lieu d'en créer une).
   const [brouillonId, setBrouillonId] = useState<string | null>(null);
+  // RDV à plusieurs animaux (?crRdv=<id>, « Gérer mes RDV ») : le compte rendu
+  // de cet animal est rattaché au RDV (rdv_id) pour la facture de la visite.
+  const [crRdvId, setCrRdvId] = useState<string | null>(null);
+  const crRdvOuvert = useRef(false);
   // Soin saisi depuis le compte rendu avec le formulaire complet du carnet :
   // la saisie du CR est mise de côté puis reprise (le soin apparaît alors
   // dans « Déjà inscrit au carnet aujourd'hui »).
@@ -1112,6 +1117,27 @@ function PatientDetailPageInner() {
     })();
     return () => { annule = true; };
   }, [catPro, animalId, activeProfileId, searchParams]);
+
+  useEffect(() => {
+    const crRdv = searchParams.get('crRdv');
+    if (!crRdv || catPro !== 'veterinaire' || !animalId || crRdvOuvert.current) return;
+    crRdvOuvert.current = true;
+    (async () => {
+      const { data: crs } = await supabase.from('comptes_rendus').select('*')
+        .eq('rdv_id', crRdv).eq('animal_id', animalId).order('created_at', { ascending: false });
+      const liste = (crs ?? []) as CompteRendu[];
+      const brouillon = liste.find(c => (c as CompteRendu & { statut?: string }).statut === 'brouillon');
+      if (liste.length > 0 && !brouillon) { setTab('Consultations'); return; }
+      setCrRdvId(crRdv);
+      if (brouillon) { reprendreBrouillon(brouillon); return; }
+      const { data: r } = await supabase.from('rdv').select('motif, animaux_detail').eq('id', crRdv).maybeSingle();
+      const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
+      setBrouillonId(null);
+      setFormMotif(detail.find(a => a.id === String(animalId))?.motif ?? (r as { motif?: string | null } | null)?.motif ?? '');
+      setAddingType('cr');
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catPro, animalId, searchParams]);
 
   const isPensionType = PENSION_TYPES.has(catPro);
   const isVet = catPro === 'veterinaire' || catPro === 'sante' || catPro === 'marechal_ferrant';
@@ -1566,6 +1592,14 @@ function PatientDetailPageInner() {
     router.push('/elevage/facturation');
   }
 
+  function reprendreBrouillon(cr: { id: string; brouillon?: unknown }) {
+    const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
+    setBrouillonId(cr.id);
+    setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
+    setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []); setSoinsCr(e.soins ?? []);
+    setAddingType('cr');
+  }
+
   function saisirSoinDepuisCr(t: 'vermifuge' | 'antiparasitaire' | 'allergie' | 'chirurgie' | 'radio') {
     setRetourCr({ motif: formMotif, notes: formNotes, diag: formDiag, poids: formPoids, actes: actesRealises, vaccins: vaccinsCr,
       traitements: traitementsCr, produits: produitsCr, soins: soinsCr, brouillonId });
@@ -1704,6 +1738,7 @@ function PatientDetailPageInner() {
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
         const ligneCr = {
           animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null,
+          ...(crRdvId ? { rdv_id: crRdvId } : {}),
           ...(activeProfileId ? { pro_profile_id: activeProfileId, redige_par_profile_id: activeProfileId,
             valide_par_profile_id: enBrouillon ? null : activeProfileId } : {}),
           statut: enBrouillon ? 'brouillon' : 'valide', redige_par_uid: user.uid,
@@ -3566,15 +3601,9 @@ function PatientDetailPageInner() {
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
-              onNouveauCr={() => { setBrouillonId(null); setAddingType('cr'); }}
+              onNouveauCr={() => { setBrouillonId(null); setCrRdvId(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
-              onReprendre={(cr) => {
-                const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
-                setBrouillonId(cr.id);
-                setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
-                setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []); setSoinsCr(e.soins ?? []);
-                setAddingType('cr');
-              }}
+              onReprendre={reprendreBrouillon}
               onFacturer={async (cr) => {
                 // Après coup : motif, poids, actes du CR + vaccins / traitements
                 // inscrits au carnet par moi le jour du CR.

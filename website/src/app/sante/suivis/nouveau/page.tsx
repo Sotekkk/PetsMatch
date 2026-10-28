@@ -95,7 +95,10 @@ function NouveauSuiviContent() {
   useEffect(() => {
     if (!rdvIdParam || isEditing) return;
     (async () => {
-      const { data: existant } = await supabase.from('suivis_morpho').select('id').eq('rdv_id', rdvIdParam).limit(1).maybeSingle();
+      // RDV à plusieurs animaux : une séance par animal.
+      let qEx = supabase.from('suivis_morpho').select('id').eq('rdv_id', rdvIdParam);
+      if (animalId) qEx = qEx.eq('animal_id', animalId);
+      const { data: existant } = await qEx.limit(1).maybeSingle();
       if (existant) { router.replace(`/sante/suivis/${existant.id}`); return; }
       const { data: r } = await supabase.from('rdv').select('date_heure, lieu, salle_id, lieu_lat').eq('id', rdvIdParam).maybeSingle();
       if (!r) return;
@@ -106,7 +109,7 @@ function NouveauSuiviContent() {
       const exterieur = (!!(r.lieu as string | null)?.trim() && !r.salle_id) || r.lieu_lat != null;
       setLieu(l => l || (exterieur ? 'exterieur' : 'cabinet'));
     })();
-  }, [rdvIdParam, isEditing, router]);
+  }, [rdvIdParam, animalId, isEditing, router]);
 
   useEffect(() => {
     if (isEditing || !activeProfileId) return;
