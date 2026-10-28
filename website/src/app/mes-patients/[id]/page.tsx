@@ -28,7 +28,7 @@ import LienDocument from '@/components/LienDocument';
 import ConsultationsVet, { type CrVet, type OrdoVet } from '@/components/pro/ConsultationsVet';
 import HistoriquePatient from '@/components/pro/HistoriquePatient';
 import { ouvrirDocument } from '@/lib/document-prive';
-import { ordonnancePdfBlob, compteRenduPdfBlob } from '@/lib/ordonnance-pdf';
+import { ordonnancePdfBlob, compteRenduPdfBlob, ageAnimal, sexeAnimal } from '@/lib/ordonnance-pdf';
 import { imprimerPdf, pdfDepuisUrl, envoyerPdfParEmail } from '@/lib/transmission-document';
 import { phraseChampsARemplir, erreursDatesSante } from '@/lib/controle-dates';
 import VermifugeOptions, { colonnesPrises, optionsVermifugeVides, type OptionsVermifuge } from '@/components/animaux/VermifugeOptions';
@@ -1480,14 +1480,22 @@ function PatientDetailPageInner() {
   /** En-tête / patient / propriétaire des PDF (CR, ordonnance). */
   async function infosDocument() {
     const { data: cl } = activeProfileId
-      ? await supabase.from('user_profiles_complet').select('nom, rue_pro, code_postal_pro, ville_pro, phone_number').eq('id', activeProfileId).maybeSingle()
+      ? await supabase.from('user_profiles_complet')
+        .select('nom, firstname, lastname, rue_pro, code_postal_pro, ville_pro, rue, code_postal, ville, phone_number, phone, telephone, email_contact')
+        .eq('id', activeProfileId).maybeSingle()
       : { data: null };
+    const v = (x: unknown) => String(x ?? '').trim();
     const proprio = clientClinique ? `${clientClinique.prenom ?? ''} ${clientClinique.nom}`.trim()
       : owner ? `${owner.firstname ?? ''} ${owner.lastname ?? ''}`.trim() : '';
     return {
       clinique: (cl?.nom as string | undefined)?.trim() || 'Cabinet vétérinaire',
-      adresse: [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()].filter(x => (x ?? '').toString().trim()).join(', '),
-      tel: (cl?.phone_number as string | undefined) ?? '',
+      // Adresse professionnelle, sinon celle du profil.
+      adresse: (v(cl?.rue_pro) || v(cl?.ville_pro)
+        ? [cl?.rue_pro, `${cl?.code_postal_pro ?? ''} ${cl?.ville_pro ?? ''}`.trim()]
+        : [cl?.rue, `${cl?.code_postal ?? ''} ${cl?.ville ?? ''}`.trim()]).filter(x => v(x)).join(', '),
+      tel: v(cl?.phone_number) || v(cl?.phone) || v(cl?.telephone),
+      cliniqueEmail: v(cl?.email_contact) || v(user?.email),
+      praticien: `${v(cl?.firstname) || v(userData?.firstname)} ${v(cl?.lastname) || v(userData?.lastname)}`.trim(),
       proprio, email: clientClinique?.email ?? null,
     };
   }
@@ -1496,9 +1504,10 @@ function PatientDetailPageInner() {
     try {
       const i = await infosDocument();
       const blob = await compteRenduPdfBlob({
-        cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel,
-        praticien: `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Vétérinaire',
+        cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
+        praticien: i.praticien,
         animalNom: animal?.nom ?? 'Animal', animalEspeceRace: [animal?.espece, animal?.race].filter(Boolean).join(' · '),
+        animalSexe: sexeAnimal(animal?.sexe), animalAge: ageAnimal(animal?.date_naissance, (animal as { age_estime?: string | number | null } | null)?.age_estime),
         animalIdentification: animal?.identification ?? '', proprietaire: i.proprio,
         contenu: c.contenu ?? '', date: new Date(c.created_at),
       });

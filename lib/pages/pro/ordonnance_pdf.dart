@@ -36,6 +36,53 @@ Future<pw.ThemeData> _chargerTheme() async {
 String _date(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
+/// Âge de l'animal (« 5 mois », « 3 ans ») d'après sa date de naissance,
+/// sinon l'âge estimé saisi. Miroir site : ageAnimal (lib/ordonnance-pdf.ts).
+String ageAnimal(dynamic naissance, dynamic estime) {
+  final d = DateTime.tryParse(naissance?.toString() ?? '');
+  if (d != null) {
+    final n = DateTime.now();
+    final mois = (n.year - d.year) * 12 + n.month - d.month - (n.day < d.day ? 1 : 0);
+    if (mois < 0) return '';
+    if (mois < 12) return '$mois mois';
+    final ans = mois ~/ 12;
+    return '$ans an${ans > 1 ? 's' : ''}';
+  }
+  final e = estime?.toString().trim() ?? '';
+  final n = int.tryParse(e);
+  if (n != null) return '$n an${n > 1 ? 's' : ''} (estimé)';
+  return e;
+}
+
+/// « Femelle » / « Mâle » quel que soit le codage (F, femelle, female…).
+String sexeAnimal(dynamic sexe) {
+  final s = sexe?.toString().trim().toLowerCase() ?? '';
+  if (s.isEmpty) return '';
+  if (s.startsWith('f')) return 'Femelle';
+  if (s.startsWith('m')) return 'Mâle';
+  return sexe.toString();
+}
+
+/// Paragraphes du compte rendu : titre en gras (« Motif : », « Poids : »,
+/// « Actes réalisés : », « Recommandations »…), suite en texte normal.
+final _titreParagraphe = RegExp(r'^([A-ZÀ-Ý][^:\n.]{0,40}?)\s*:\s*(.*)$', dotAll: true);
+final _titreSeul = RegExp(r'^(recommandations?|conclusion|conseils?|diagnostic|examen clinique|observations?|traitement)\s*:?\s*$', caseSensitive: false);
+List<pw.Widget> _paragraphesCr(String contenu) => [
+  for (final l in contenu.split('\n'))
+    if (l.trim().isEmpty)
+      pw.SizedBox(height: 6)
+    else if (_titreSeul.hasMatch(l.trim()))
+      pw.Padding(padding: const pw.EdgeInsets.only(top: 2, bottom: 1),
+          child: pw.Text(l.trim(), style: pw.TextStyle(fontSize: 10.5, color: _dark, fontWeight: pw.FontWeight.bold)))
+    else if (_titreParagraphe.firstMatch(l.trim()) case final m?)
+      pw.RichText(text: pw.TextSpan(style: const pw.TextStyle(fontSize: 10.5, color: _dark, lineSpacing: 2), children: [
+        pw.TextSpan(text: '${m.group(1)} : ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        pw.TextSpan(text: m.group(2)),
+      ]))
+    else
+      pw.Text(l, style: const pw.TextStyle(fontSize: 10.5, color: _dark, lineSpacing: 2)),
+];
+
 Future<Uint8List> ordonnancePdfBytes({
   required String cliniqueNom,
   String cliniqueAdresse = '',
@@ -160,9 +207,12 @@ Future<Uint8List> compteRenduPdfBytes({
   required String cliniqueNom,
   String cliniqueAdresse = '',
   String cliniqueTel = '',
+  String cliniqueEmail = '',
   required String praticien,
   required String animalNom,
   String animalEspeceRace = '',
+  String animalSexe = '',
+  String animalAge = '',
   String animalIdentification = '',
   String proprietaire = '',
   required String contenu,
@@ -170,6 +220,8 @@ Future<Uint8List> compteRenduPdfBytes({
 }) async {
   final doc = pw.Document(theme: await _chargerTheme());
   final jour = date ?? DateTime.now();
+  // Sans nom de praticien : pas de « Dr Vétérinaire ».
+  final nomPraticien = praticien.trim().toLowerCase() == 'vétérinaire' ? '' : praticien.trim();
   doc.addPage(pw.MultiPage(
     pageFormat: PdfPageFormat.a4,
     margin: const pw.EdgeInsets.fromLTRB(40, 36, 40, 36),
@@ -179,6 +231,7 @@ Future<Uint8List> compteRenduPdfBytes({
           pw.Text(cliniqueNom, style: pw.TextStyle(fontSize: 15, color: _teal, fontWeight: pw.FontWeight.bold)),
           if (cliniqueAdresse.isNotEmpty) pw.Text(cliniqueAdresse, style: const pw.TextStyle(fontSize: 9, color: _dark)),
           if (cliniqueTel.isNotEmpty) pw.Text('Tél. $cliniqueTel', style: const pw.TextStyle(fontSize: 9, color: _dark)),
+          if (cliniqueEmail.isNotEmpty) pw.Text(cliniqueEmail, style: const pw.TextStyle(fontSize: 9, color: _dark)),
         ])),
         pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
           pw.Text('COMPTE RENDU', style: pw.TextStyle(fontSize: 13, color: _teal, fontWeight: pw.FontWeight.bold, letterSpacing: 1)),
@@ -195,8 +248,12 @@ Future<Uint8List> compteRenduPdfBytes({
           pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text('Patient', style: pw.TextStyle(fontSize: 9, color: _teal, fontWeight: pw.FontWeight.bold)),
             pw.Text(animalNom, style: pw.TextStyle(fontSize: 11, color: _dark, fontWeight: pw.FontWeight.bold)),
-            if (animalEspeceRace.isNotEmpty) pw.Text(animalEspeceRace, style: const pw.TextStyle(fontSize: 9, color: _dark)),
-            if (animalIdentification.isNotEmpty) pw.Text('Identification : $animalIdentification', style: const pw.TextStyle(fontSize: 9, color: _dark)),
+            for (final (l, v) in [('Espèce / race', animalEspeceRace), ('Sexe', animalSexe), ('Âge', animalAge),
+                ('Identification', animalIdentification)])
+              if (v.isNotEmpty) pw.RichText(text: pw.TextSpan(style: const pw.TextStyle(fontSize: 9, color: _dark), children: [
+                pw.TextSpan(text: '$l : ', style: const pw.TextStyle(color: _grey)),
+                pw.TextSpan(text: v),
+              ])),
           ])),
           pw.SizedBox(width: 16),
           pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
@@ -206,12 +263,12 @@ Future<Uint8List> compteRenduPdfBytes({
         ]),
       ),
       pw.SizedBox(height: 16),
-      pw.Text(contenu, style: const pw.TextStyle(fontSize: 10.5, color: _dark, lineSpacing: 2)),
-      pw.SizedBox(height: 28),
-      pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Text('Dr $praticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
-        pw.Text('Vétérinaire', style: const pw.TextStyle(fontSize: 9, color: _grey)),
-      ])),
+      ..._paragraphesCr(contenu),
+      if (nomPraticien.isNotEmpty) ...[
+        pw.SizedBox(height: 28),
+        pw.Align(alignment: pw.Alignment.centerRight,
+            child: pw.Text('Dr $nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold))),
+      ],
     ],
   ));
   return doc.save();

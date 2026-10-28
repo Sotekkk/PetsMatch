@@ -95,10 +95,38 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
 }
 
 export interface CompteRenduData {
-  cliniqueNom: string; cliniqueAdresse?: string; cliniqueTel?: string;
-  praticien: string; animalNom: string; animalEspeceRace?: string; animalIdentification?: string;
+  cliniqueNom: string; cliniqueAdresse?: string; cliniqueTel?: string; cliniqueEmail?: string;
+  praticien: string; animalNom: string; animalEspeceRace?: string; animalSexe?: string; animalAge?: string;
+  animalIdentification?: string;
   proprietaire?: string; contenu: string; date?: Date;
 }
+
+/** Âge de l'animal (« 5 mois », « 3 ans ») d'après sa date de naissance,
+ *  sinon l'âge estimé saisi. Miroir appli : ageAnimal (ordonnance_pdf.dart). */
+export function ageAnimal(naissance?: string | null, estime?: string | number | null): string {
+  const d = naissance ? new Date(naissance) : null;
+  if (d && !isNaN(d.getTime())) {
+    const n = new Date();
+    const mois = (n.getFullYear() - d.getFullYear()) * 12 + n.getMonth() - d.getMonth() - (n.getDate() < d.getDate() ? 1 : 0);
+    if (mois < 0) return '';
+    if (mois < 12) return `${mois} mois`;
+    const ans = Math.floor(mois / 12);
+    return `${ans} an${ans > 1 ? 's' : ''}`;
+  }
+  const e = String(estime ?? '').trim();
+  return /^\d+$/.test(e) ? `${e} an${Number(e) > 1 ? 's' : ''} (estimé)` : e;
+}
+
+/** « Femelle » / « Mâle » quel que soit le codage (F, femelle, female…). */
+export function sexeAnimal(sexe?: string | null): string {
+  const s = (sexe ?? '').trim().toLowerCase();
+  if (!s) return '';
+  return s.startsWith('f') ? 'Femelle' : s.startsWith('m') ? 'Mâle' : (sexe ?? '');
+}
+
+// Paragraphes du CR : titre en gras (« Motif : », « Poids : », « Recommandations »…).
+const TITRE_PARAGRAPHE = /^([A-ZÀ-Ý][^:\n.]{0,40}?)\s*:\s*([\s\S]*)$/;
+const TITRE_SEUL = /^(recommandations?|conclusion|conseils?|diagnostic|examen clinique|observations?|traitement)\s*:?\s*$/i;
 
 /** Compte rendu de consultation en PDF (impression / envoi au propriétaire). */
 export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
@@ -112,25 +140,49 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   doc.setFontSize(13); doc.text('COMPTE RENDU', W - M, y, { align: 'right' });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...DARK);
   doc.text(`Le ${(d.date ?? new Date()).toLocaleDateString('fr-FR')}`, W - M, y + 14, { align: 'right' });
-  for (const l of [d.cliniqueAdresse, d.cliniqueTel ? `Tél. ${d.cliniqueTel}` : '']) { if (l) { y += 13; doc.text(l, M, y); } }
+  for (const l of [d.cliniqueAdresse, d.cliniqueTel ? `Tél. ${d.cliniqueTel}` : '', d.cliniqueEmail]) { if (l) { y += 13; doc.text(l, M, y); } }
   y += 16; doc.setDrawColor(221, 226, 220); doc.line(M, y, W - M, y); y += 14;
-  doc.setFillColor(244, 247, 246); doc.roundedRect(M, y, W - 2 * M, 64, 6, 6, 'F');
+  const infosPatient = ([['Espèce / race', d.animalEspeceRace], ['Sexe', d.animalSexe], ['Âge', d.animalAge],
+    ['Identification', d.animalIdentification]] as const).filter(([, v]) => !!v) as [string, string][];
+  const hBoite = Math.max(64, 40 + infosPatient.length * 11);
+  doc.setFillColor(244, 247, 246); doc.roundedRect(M, y, W - 2 * M, hBoite, 6, 6, 'F');
   const col2 = M + (W - 2 * M) / 2 + 8;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...TEAL);
   doc.text('Patient', M + 10, y + 16); doc.text('Propriétaire', col2, y + 16);
   doc.setFontSize(11); doc.setTextColor(...DARK); doc.text(d.animalNom, M + 10, y + 31);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(d.proprietaire || '—', col2, y + 31);
   doc.setFontSize(9);
-  const infos = [d.animalEspeceRace, d.animalIdentification ? `Identification : ${d.animalIdentification}` : ''].filter(Boolean).join(' · ');
-  if (infos) doc.text(infos, M + 10, y + 45);
-  y += 86;
-  doc.setFontSize(10.5);
-  for (const ligne of doc.splitTextToSize(d.contenu || '', W - 2 * M) as string[]) {
+  infosPatient.forEach(([l, v], i) => {
+    doc.setTextColor(...GREY); doc.text(`${l} : `, M + 10, y + 45 + i * 11);
+    doc.setTextColor(...DARK); doc.text(v, M + 10 + doc.getTextWidth(`${l} : `), y + 45 + i * 11);
+  });
+  y += hBoite + 22;
+  // Contenu : titres de paragraphe en gras, suite en texte normal.
+  doc.setFontSize(10.5); doc.setTextColor(...DARK);
+  const largeur = W - 2 * M;
+  const ecrire = (t: string, x: number) => { if (y > H - 90) { doc.addPage(); y = 50; } doc.text(t, x, y); y += 14; };
+  for (const brut of (d.contenu || '').split('\n')) {
+    const l = brut.trim();
+    if (!l) { y += 6; continue; }
+    if (TITRE_SEUL.test(l)) { doc.setFont('helvetica', 'bold'); ecrire(l, M); doc.setFont('helvetica', 'normal'); continue; }
+    const m = TITRE_PARAGRAPHE.exec(l);
+    if (!m) { for (const t of doc.splitTextToSize(l, largeur) as string[]) ecrire(t, M); continue; }
+    const titre = `${m[1]} : `;
+    doc.setFont('helvetica', 'bold');
+    const lt = doc.getTextWidth(titre);
     if (y > H - 90) { doc.addPage(); y = 50; }
-    doc.text(ligne, M, y); y += 14;
+    doc.text(titre, M, y);
+    doc.setFont('helvetica', 'normal');
+    const [premiere, ...reste] = doc.splitTextToSize(m[2], largeur - lt) as string[];
+    doc.text(premiere ?? '', M + lt, y); y += 14;
+    const suite = reste.join(' ');
+    if (suite) for (const t of doc.splitTextToSize(suite, largeur) as string[]) ecrire(t, M);
   }
-  y = Math.min(y + 24, H - 70);
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`Dr ${d.praticien}`, W - M - 180, y);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GREY); doc.text('Vétérinaire', W - M - 180, y + 12);
+  // Sans nom de praticien : pas de « Dr Vétérinaire ».
+  const praticien = d.praticien.trim().toLowerCase() === 'vétérinaire' ? '' : d.praticien.trim();
+  if (praticien) {
+    y = Math.min(y + 24, H - 70);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`Dr ${praticien}`, W - M - 180, y);
+  }
   return doc.output('blob');
 }

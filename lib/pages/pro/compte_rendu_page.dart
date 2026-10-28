@@ -9,6 +9,7 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/contexte_pro.dart';
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart' show ProProfileEditPage;
@@ -1926,17 +1927,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   /// En-tête clinique, patient, propriétaire (client de la clinique s'il n'a
   /// pas PetsMatch — e-mail pré-rempli).
   Future<({String clinique, String adresse, String tel, String animal, String especeRace,
-      String identification, String proprio, String? email})> _infosDocument() async {
+      String identification, String proprio, String? email, String cliniqueEmail, String praticien,
+      String sexe, String age})> _infosDocument() async {
     final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
     final pro = _profilPro;
     Map<String, dynamic>? cl, an, client;
     try {
       if (pro != null) {
         cl = await _supa.from('user_profiles_complet')
-            .select('nom, rue_pro, code_postal_pro, ville_pro, phone_number').eq('id', pro).maybeSingle();
+            .select('nom, firstname, lastname, rue_pro, code_postal_pro, ville_pro, rue, code_postal, ville, phone_number, phone, telephone, email_contact')
+            .eq('id', pro).maybeSingle();
       }
       if (animalId != null) {
-        an = await _supa.from('animaux').select('nom, espece, race, identification, client_clinique_id')
+        an = await _supa.from('animaux').select('nom, espece, race, sexe, date_naissance, age_estime, identification, client_clinique_id')
             .eq('id', animalId).maybeSingle();
       }
       if (an?['client_clinique_id'] != null) {
@@ -1946,11 +1949,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     } catch (_) {}
     var proprio = widget.clientName;
     if (client != null) proprio = '${client['prenom'] ?? ''} ${client['nom'] ?? ''}'.trim();
+    bool vide(dynamic v) => (v?.toString().trim() ?? '').isEmpty;
     return (
       clinique: (cl?['nom'] as String?)?.trim().isNotEmpty == true ? cl!['nom'] as String : 'Cabinet vétérinaire',
-      adresse: [cl?['rue_pro'], '${cl?['code_postal_pro'] ?? ''} ${cl?['ville_pro'] ?? ''}'.trim()]
+      // Adresse professionnelle, sinon celle du profil.
+      adresse: (vide(cl?['rue_pro']) || vide(cl?['ville_pro']) ? [cl?['rue'], '${cl?['code_postal'] ?? ''} ${cl?['ville'] ?? ''}'.trim()]
+              : [cl?['rue_pro'], '${cl?['code_postal_pro'] ?? ''} ${cl?['ville_pro'] ?? ''}'.trim()])
           .where((x) => (x?.toString() ?? '').trim().isNotEmpty).join(', '),
-      tel: (cl?['phone_number'] ?? '').toString(),
+      tel: [cl?['phone_number'], cl?['phone'], cl?['telephone']].map((x) => x?.toString().trim() ?? '').firstWhere((x) => x.isNotEmpty, orElse: () => ''),
+      cliniqueEmail: (cl?['email_contact'] ?? FirebaseAuth.instance.currentUser?.email ?? '').toString().trim(),
+      praticien: '${cl?['firstname'] ?? User_Info.firstname} ${cl?['lastname'] ?? User_Info.lastname}'.replaceAll('none', '').trim(),
+      sexe: sexeAnimal(an?['sexe']),
+      age: ageAnimal(an?['date_naissance'], an?['age_estime']),
       animal: (an?['nom'] ?? widget.rdv?['_animal_nom'] ?? 'Animal').toString(),
       especeRace: [an?['espece'], an?['race']].where((x) => (x?.toString() ?? '').isNotEmpty).join(' · '),
       identification: (an?['identification'] ?? '').toString(),
@@ -1962,7 +1972,6 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   Future<void> _transmettreCr(Map<String, dynamic> cr) async {
     final i = await _infosDocument();
     if (!mounted) return;
-    final praticien = '${User_Info.firstname} ${User_Info.lastname}'.replaceAll('none', '').trim();
     await transmettreDocument(context,
       type: 'compte_rendu',
       nomFichier: 'Compte-rendu-${i.animal}.pdf',
@@ -1970,9 +1979,10 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       emailParDefaut: i.email, destinataireNom: i.proprio,
       animalId: (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString(),
       pdf: () => compteRenduPdfBytes(
-        cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel,
-        praticien: praticien.isEmpty ? 'Vétérinaire' : praticien,
-        animalNom: i.animal, animalEspeceRace: i.especeRace, animalIdentification: i.identification,
+        cliniqueNom: i.clinique, cliniqueAdresse: i.adresse, cliniqueTel: i.tel, cliniqueEmail: i.cliniqueEmail,
+        praticien: i.praticien,
+        animalNom: i.animal, animalEspeceRace: i.especeRace, animalSexe: i.sexe, animalAge: i.age,
+        animalIdentification: i.identification,
         proprietaire: i.proprio, contenu: cr['contenu']?.toString() ?? '',
         date: DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal(),
       ),
