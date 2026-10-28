@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 
@@ -46,14 +45,15 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
         return (
           <div key={a.id} className="flex items-center gap-2">
             <p className="flex-1 min-w-0 text-xs text-gray-500 truncate">🐾 {ligneAnimalRdv(a)}</p>
-            <Link href={lien(a)} className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-lg border"
+            {/* Chargement complet : formulaire du compte rendu toujours repris à zéro. */}
+            <a href={lien(a)} className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-lg border"
               style={etat === 'fait' ? { borderColor: '#2E7D32', color: '#2E7D32' }
                 : etat === 'brouillon' ? { borderColor: '#8A5A00', color: '#8A5A00' }
                 : { borderColor: '#0C5C6C', color: '#0C5C6C' }}>
               {etat === 'fait' ? (metier === 'veterinaire' ? 'Compte rendu fait' : 'Séance faite')
                 : etat === 'brouillon' ? 'Brouillon'
                 : metier === 'veterinaire' ? 'Compte rendu' : 'Séance'}
-            </Link>
+            </a>
           </div>
         );
       })}

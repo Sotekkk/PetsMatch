@@ -1017,7 +1017,9 @@ function PatientDetailPageInner() {
     }
     setVisite({ rdvId, animaux, etats });
   }, []);
-  const crRdvOuvert = useRef(false);
+  // Compte rendu déjà préparé pour « RDV|animal » (et non une seule fois par
+  // page : en passant d'un animal à l'autre, la page peut être réutilisée).
+  const crRdvOuvert = useRef('');
   // Soin saisi depuis le compte rendu avec le formulaire complet du carnet :
   // la saisie du CR est mise de côté puis reprise (le soin apparaît alors
   // dans « Déjà inscrit au carnet aujourd'hui »).
@@ -1219,10 +1221,20 @@ function PatientDetailPageInner() {
     return () => { annule = true; };
   }, [catPro, animalId, activeProfileId, searchParams]);
 
+  // Autre animal (page réutilisée) : rien de la saisie du précédent.
+  const animalPrecedent = useRef(animalId);
+  useEffect(() => {
+    if (animalPrecedent.current === animalId) return;
+    animalPrecedent.current = animalId;
+    viderCr(); setCrRdvId(null); setAddingType(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animalId]);
+
   useEffect(() => {
     const crRdv = searchParams.get('crRdv');
-    if (!crRdv || catPro !== 'veterinaire' || !animalId || crRdvOuvert.current) return;
-    crRdvOuvert.current = true;
+    const cle = `${crRdv}|${animalId}`;
+    if (!crRdv || catPro !== 'veterinaire' || !animalId || crRdvOuvert.current === cle) return;
+    crRdvOuvert.current = cle;
     chargerVisite(crRdv);
     (async () => {
       // Toujours un compte rendu vierge (les précédents et brouillons restent
@@ -1777,9 +1789,10 @@ function PatientDetailPageInner() {
 
   /** Nouveau compte rendu : formulaire vierge (rien d'une saisie précédente). */
   function viderCr() {
-    setBrouillonId(null);
+    setBrouillonId(null); setRetourCr(null);
     setFormMotif(''); setFormPoids(''); setFormNotes(''); setFormDiag('');
     setActesRealises([]); setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setSoinsCr([]); setAutreActe('');
+    setCarnetJour([]); setPoidsCarnet(null); setFormErreurs([]); setFormManquants([]);
   }
 
   function reprendreBrouillon(cr: { id: string; brouillon?: unknown }) {
