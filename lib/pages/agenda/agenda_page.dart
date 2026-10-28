@@ -503,12 +503,22 @@ class _AgendaPageState extends State<AgendaPage> {
       // vaccins/traitements, mise-bas…) créés par un autre co-propriétaire
       // apparaissent aussi dans mon agenda.
       try {
-        final myAnimals = await _supa
+        // Seulement les animaux du PROFIL ACTIF : sur le profil vétérinaire,
+        // les RDV pris chez l'ostéo pour mon propre chien par un
+        // co-propriétaire n'ont rien à faire dans l'agenda de la clinique.
+        var pidProprio = pid;
+        if (pidProprio.isEmpty) {
+          pidProprio = User_Info.availableProfiles
+              .firstWhere((p) => p['is_main'] == true, orElse: () => const {})['id']?.toString() ?? '';
+        }
+        var qMine = _supa
             .from('animaux_proprietes')
             .select('animal_id')
             .eq('uid_proprio', _uid)
             .eq('statut', 'actif')
             .isFilter('date_fin', null);
+        if (pidProprio.isNotEmpty) qMine = qMine.eq('profile_id_proprio', pidProprio);
+        final myAnimals = await qMine;
         final animalIds = (myAnimals as List)
             .map((r) => r['animal_id'].toString())
             .where((s) => s.isNotEmpty)

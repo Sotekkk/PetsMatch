@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile, useProfileSource } from '@/hooks/useActiveProfile';
+import { useActiveProfileState, useProfileSource } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 import { typeFromMotif } from '@/lib/agenda-type';
 import { sansAutresProfils } from '@/lib/cloisonnement-profils';
@@ -450,7 +450,9 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
 export default function AgendaPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
-  const activeProfileId = useActiveProfile();
+  // Profil actif lu (localStorage) avant de charger : sinon un premier
+  // chargement sans profil mélangeait les agendas des profils du compte.
+  const { loaded: profilCharge, id: activeProfileId } = useActiveProfileState();
   const taskProfilSource = useProfileSource();
   // Un profil particulier OU pro (véto, ostéo, pet-sitter, taxi...) ne
   // "possède" jamais de tâches (concept éleveur/association/pension) —
@@ -489,7 +491,7 @@ export default function AgendaPage() {
   }, [activeProfileId]);
 
   const load = useCallback(async () => {
-    if (!uid) return;
+    if (!uid || !profilCharge) return;
     setLoading(true);
     const from = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString();
     const to   = new Date(focusedMonth.year, focusedMonth.month + 2, 0, 23, 59, 59).toISOString();
@@ -551,8 +553,18 @@ export default function AgendaPage() {
     // vaccins/traitements, mise-bas…) créés par un autre co-propriétaire
     // apparaissent aussi dans mon agenda.
     try {
-      const { data: mine } = await supabase.from('animaux_proprietes')
+      // Seulement les animaux du PROFIL ACTIF (particulier) : sur le profil
+      // vétérinaire, les RDV pris chez l'ostéo pour mon propre chien par un
+      // co-propriétaire n'ont rien à faire dans l'agenda de la clinique.
+      let pidProprio = activeProfileId;
+      if (!pidProprio) {
+        const { data: principal } = await supabase.from('user_profiles_complet').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+        pidProprio = (principal?.id as string | undefined) ?? '';
+      }
+      let qMine = supabase.from('animaux_proprietes')
         .select('animal_id').eq('uid_proprio', uid).eq('statut', 'actif').is('date_fin', null);
+      if (pidProprio) qMine = qMine.eq('profile_id_proprio', pidProprio);
+      const { data: mine } = await qMine;
       const animalIds = [...new Set((mine ?? []).map(r => String(r.animal_id)).filter(Boolean))];
       if (animalIds.length > 0) {
         const { data: owners } = await supabase.from('animaux_proprietes')
@@ -776,7 +788,7 @@ export default function AgendaPage() {
     }
 
     setLoading(false);
-  }, [uid, focusedMonth, activeProfileId, taskProfilSource]);
+  }, [uid, profilCharge, focusedMonth, activeProfileId, taskProfilSource]);
 
   useEffect(() => { if (uid) load(); }, [uid, load]);
 

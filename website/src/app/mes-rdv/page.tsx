@@ -151,8 +151,9 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
 }) {
   const [mode, setMode]     = useState<'confirme' | 'contre_proposition'>('confirme');
   const [hour, setHour]     = useState(new Date(rdv.date_heure).getHours());
-  const [minute, setMinute] = useState(0);
-  const [date, setDate]     = useState(rdv.date_heure.slice(0, 10));
+  // Heure demandée reprise à la minute près (12 h 15 restait 12 h 00) — miroir appli.
+  const [minute, setMinute] = useState(new Date(rdv.date_heure).getMinutes());
+  const [date, setDate]     = useState(new Date(rdv.date_heure).toLocaleDateString('sv-SE'));
   // « Promenade 30 min » : la durée suit la prestation (une demande ancienne
   // pouvait porter la longueur du créneau, ex. 15 min).
   const [duree, setDuree]   = useState(dureeImposeeGarde(rdv.motif) ?? rdv.duree_minutes ?? 60);
@@ -317,7 +318,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
             </select>
             <select value={minute} onChange={e => setMinute(Number(e.target.value))}
               className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
-              {[0, 15, 30, 45].map(m => (
+              {[...new Set([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, minute])].sort((a, b) => a - b).map(m => (
                 <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
               ))}
             </select>
@@ -498,7 +499,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
             </select>
             <select value={minute} onChange={e => setMinute(Number(e.target.value))}
               className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none">
-              {[0, 15, 30, 45].map(m => (
+              {[...new Set([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, minute])].sort((a, b) => a - b).map(m => (
                 <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
               ))}
             </select>
