@@ -595,11 +595,11 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
         {trt ? (
           <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
             <ChampPharmacie value={trt.nom} onChange={nom => setTrt({ ...trt, nom })} placeholder="Médicament *"
-              articles={pharmacie.filter(a => trt.type === 'antiparasitaire' ? a.categorie === 'antiparasitaire' : (a.categorie !== 'vaccin' && a.categorie !== 'alimentation'))}
-              courants={trt.type === 'antiparasitaire' ? ANTIPARASITAIRES_COURANTS : MEDICAMENTS_COURANTS}
-              onChoix={a => setTrt({ ...trt, nom: a.nom, type: a.categorie === 'antiparasitaire' ? 'antiparasitaire' : trt.type })} />
+              articles={pharmacie.filter(a => a.categorie !== 'vaccin' && a.categorie !== 'alimentation' && a.categorie !== 'antiparasitaire')}
+              courants={MEDICAMENTS_COURANTS}
+              onChoix={a => setTrt({ ...trt, nom: a.nom })} />
             <div className="flex flex-wrap gap-1.5">
-              {[['medicament', 'Médicament'], ['antiparasitaire', 'Antiparasitaire'], ['autre', 'Autre']].map(([k, l]) => (
+              {[['medicament', 'Médicament'], ['autre', 'Autre']].map(([k, l]) => (
                 <button key={k} type="button" onClick={() => setTrt({ ...trt, type: k })} className={chip(trt.type === k)}>{l}</button>
               ))}
             </div>

@@ -1046,19 +1046,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             const SizedBox(height: 12),
             _champPharmacie(
               ctrl: nomCtrl, focus: nomFocus, label: 'Médicament *',
-              filtre: (o) => type == 'antiparasitaire' ? o['categorie'] == 'antiparasitaire'
-                  : (o['categorie'] != 'vaccin' && o['categorie'] != 'alimentation'),
-              courants: type == 'antiparasitaire' ? _antiparasitairesCourants : _medicamentsCourants,
-              onChoix: (o) => setM(() {
-                nomCtrl.text = o['nom']?.toString() ?? '';
-                if (o['categorie'] == 'antiparasitaire') type = 'antiparasitaire';
-              }),
+              // Antiparasitaires : rubrique à part (« Ajouter un soin »), pas un traitement.
+              filtre: (o) => o['categorie'] != 'vaccin' && o['categorie'] != 'alimentation' && o['categorie'] != 'antiparasitaire',
+              courants: _medicamentsCourants,
+              onChoix: (o) => setM(() => nomCtrl.text = o['nom']?.toString() ?? ''),
               onChange: () => setM(() {}),
             ),
             const SizedBox(height: 8),
             Wrap(spacing: 6, children: [
               chip('Médicament', type == 'medicament', () => setM(() => type = 'medicament')),
-              chip('Antiparasitaire', type == 'antiparasitaire', () => setM(() => type = 'antiparasitaire')),
               chip('Autre', type == 'autre', () => setM(() => type = 'autre')),
             ]),
             const SizedBox(height: 12),

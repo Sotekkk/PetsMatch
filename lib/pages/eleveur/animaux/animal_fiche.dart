@@ -12193,7 +12193,7 @@ class _VetAddTraitementDialogState extends State<_VetAddTraitementDialog> {
     }
   }
 
-  static const _types = ['medicament', 'antiparasitaire', 'antibiotique', 'anti-inflammatoire', 'autre'];
+  static const _types = ['medicament', 'antibiotique', 'anti-inflammatoire', 'autre'];
 
   Widget _tf(String label, TextEditingController ctrl, {int maxLines = 1}) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
