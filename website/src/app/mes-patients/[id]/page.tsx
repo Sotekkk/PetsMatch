@@ -275,7 +275,11 @@ interface PhaseCr { dose: string; prises: string[]; frequenceJours: number; dure
 const doseDe = (p: PhaseCr, k: string) => p.doses?.[k]?.trim() || p.dose.trim();
 const dosesParPrise = (p: PhaseCr) => !!p.doses && p.prises.length > 1;
 interface TraitementCr { nom: string; type: string; phases: PhaseCr[]; rappels: boolean; notes: string }
-interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: string | null; quantite: number | null; unite: string | null }
+interface ArticlePharmacie { id: string; nom: string; categorie: string; lot: string | null; quantite: number | null; unite: string | null; prix_vente?: number | null }
+/** Produit vendu pendant la consultation (non administré : pas au carnet) —
+ *  facturé et décompté du stock. Miroir de _ProduitCr (appli). */
+interface ProduitCr { nom: string; quantite: number; prix: number | null; item_id?: string | null }
+const libelleProduit = (p: ProduitCr) => p.quantite === 1 ? p.nom : `${p.nom} ×${String(p.quantite).replace('.', ',')}`;
 
 const ANTIPARASITAIRES_COURANTS = ['Bravecto', 'NexGard', 'NexGard Spectra', 'Simparica', 'Simparica Trio', 'Credelio',
   'Advocate', 'Stronghold', 'Frontline', 'Broadline', 'Milbemax', 'Drontal', 'Milpro', 'Profender', 'Seresto (collier)', 'Scalibor (collier)'];
@@ -424,9 +428,10 @@ function ChampPharmacie({ value, onChange, onChoix, articles, placeholder, coura
 // ── Compte rendu vétérinaire : vaccins réalisés / traitements prescrits ──────
 // → carnet de santé (rappels au propriétaire par les Cloud Functions sante.js)
 // + ordonnance PDF. Miroir app : compte_rendu_page.dart (_blocActes).
-function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, animalId }: {
+function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, setProduits, profileId, animalId }: {
   vaccins: VaccinCr[]; setVaccins: (v: VaccinCr[]) => void;
   traitements: TraitementCr[]; setTraitements: (t: TraitementCr[]) => void;
+  produits: ProduitCr[]; setProduits: (p: ProduitCr[]) => void;
   profileId: string | null;
   animalId?: string | null;
 }) {
@@ -461,6 +466,8 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
     return plus(auj, jours);
   };
   const [vac, setVac] = useState<(VaccinCr & { index: number }) | null>(null);
+  // Produit vendu en cours de saisie (quantité / prix en texte : virgule acceptée).
+  const [prod, setProd] = useState<{ nom: string; quantite: string; prix: string; item_id: string | null; index: number } | null>(null);
   const [trt, setTrt] = useState<(TraitementCr & { index: number }) | null>(null);
   // Délai libre du rappel ; unité de durée affichée par phase de traitement.
   const [dans, setDans] = useState('');
@@ -469,7 +476,7 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
   const [pharmacie, setPharmacie] = useState<ArticlePharmacie[]>([]);
   useEffect(() => {
     if (!profileId) return;
-    supabase.from('inventaire_items').select('id, nom, categorie, lot, quantite, unite').eq('eleveur_profile_id', profileId).order('nom')
+    supabase.from('inventaire_items').select('id, nom, categorie, lot, quantite, unite, prix_vente').eq('eleveur_profile_id', profileId).order('nom')
       .then(({ data }) => setPharmacie((data ?? []) as ArticlePharmacie[]));
   }, [profileId]);
 
@@ -696,6 +703,42 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, profileId, 
         )}
       </div>
       <p className="text-[11px] text-gray-500">Cliquez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.</p>
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-gray-600">Produits vendus (non administrés)</p>
+        {produits.map((p, i) => ligne('', libelleProduit(p),
+          p.prix == null ? 'Prix du stock ou à compléter sur la facture' : `${(p.prix * p.quantite).toFixed(2)} € TTC`,
+          () => setProd({ nom: p.nom, quantite: String(p.quantite).replace('.', ','), prix: p.prix == null ? '' : p.prix.toFixed(2).replace('.', ','), item_id: p.item_id ?? null, index: i }),
+          () => setProduits(produits.filter((_, j) => j !== i)), `p${i}`))}
+        {prod ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
+            <ChampPharmacie value={prod.nom} onChange={nom => setProd({ ...prod, nom, item_id: null })} placeholder="Produit (stock ou saisie libre) *"
+              articles={pharmacie.filter(a => a.categorie !== 'vaccin')}
+              onChoix={a => setProd({ ...prod, nom: a.nom, item_id: a.id, prix: a.prix_vente != null ? Number(a.prix_vente).toFixed(2).replace('.', ',') : prod.prix })} />
+            {prod.item_id && (() => {
+              const a = pharmacie.find(x => x.id === prod.item_id);
+              return a?.quantite != null ? <p className="text-xs text-gray-500">En stock : {a.quantite} {a.unite ?? ''}</p> : null;
+            })()}
+            <div className="flex gap-2">
+              <input value={prod.quantite} onChange={e => setProd({ ...prod, quantite: e.target.value })} inputMode="decimal" placeholder="Quantité" aria-label="Quantité" className={`${champ} w-24`} />
+              <input value={prod.prix} onChange={e => setProd({ ...prod, prix: e.target.value })} inputMode="decimal" placeholder="Prix unitaire TTC (€)" aria-label="Prix unitaire TTC" className={champ} />
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setProd(null)} className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600">Annuler</button>
+              <button type="button" disabled={!prod.nom.trim() || !(parseFloat(prod.quantite.replace(',', '.')) > 0)} onClick={() => {
+                const prixNum = parseFloat(prod.prix.replace(',', '.').replace(/\s/g, ''));
+                const p: ProduitCr = { nom: prod.nom.trim(), quantite: parseFloat(prod.quantite.replace(',', '.')), prix: isNaN(prixNum) ? null : prixNum, item_id: prod.item_id };
+                setProduits(prod.index >= 0 ? produits.map((x, j) => j === prod.index ? p : x) : [...produits, p]); setProd(null);
+              }} className="flex-1 py-2 rounded-xl text-sm text-white font-semibold bg-[#0C5C6C] disabled:opacity-40">
+                {prod.index >= 0 ? 'Enregistrer' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setProd({ nom: '', quantite: '1', prix: '', item_id: null, index: -1 })}
+            className="text-sm font-semibold text-[#0C5C6C]">＋ Ajouter un produit vendu</button>
+        )}
+        <p className="text-[11px] text-gray-500">Ajoutés à la facture et décomptés du stock à l’enregistrement ; pas inscrits au carnet.</p>
+      </div>
     </div>
   );
 }
@@ -825,6 +868,7 @@ function PatientDetailPageInner() {
     email: string | null; adresse: string | null; code_postal: string | null; ville: string | null; notes: string | null; uid_lie: string | null } | null>(null);
   // Compte rendu vétérinaire : actes saisis (carnet + ordonnance PDF).
   const [vaccinsCr, setVaccinsCr] = useState<VaccinCr[]>([]);
+  const [produitsCr, setProduitsCr] = useState<ProduitCr[]>([]);
   const [actesRealises, setActesRealises] = useState<string[]>([]);
   // Actes inscrits au carnet AUJOURD'HUI par moi (Synthèse, onglet Santé) et
   // pesée du jour : repris dans le compte rendu sans être réécrits au carnet
@@ -1294,7 +1338,24 @@ function PatientDetailPageInner() {
 
   /** Facture de la consultation, au choix du vétérinaire : RDV (grille de
    *  tarifs du profil), actes, produits (prix de vente de la pharmacie). */
-  async function proposerFacture(motif: string, actes: string[], vaccins: VaccinCr[], traitements: TraitementCr[], poids: number | null) {
+  /** Produits vendus pris dans le stock : sortie enregistrée (mouvement « consommation ») et quantité mise à jour. */
+  async function decompterStock(produits: ProduitCr[]) {
+    if (!user?.uid || !activeProfileId) return;
+    for (const p of produits) {
+      if (!p.item_id) continue;
+      const { data: item } = await supabase.from('inventaire_items').select('quantite, stupefiant').eq('id', p.item_id).maybeSingle();
+      if (!item) continue;
+      const apres = Math.max(0, Number(item.quantite ?? 0) - p.quantite);
+      await supabase.from('inventaire_mouvements').insert({
+        item_id: p.item_id, uid_eleveur: user.uid, uid_auteur: user.uid, eleveur_profile_id: activeProfileId,
+        type: 'consommation', quantite: p.quantite, note: 'Vente — consultation',
+        ...(item.stupefiant ? { stock_apres: apres } : {}),
+      });
+      await supabase.from('inventaire_items').update({ quantite: apres }).eq('id', p.item_id);
+    }
+  }
+
+  async function proposerFacture(motif: string, actes: string[], vaccins: VaccinCr[], traitements: TraitementCr[], poids: number | null, produits: ProduitCr[] = []) {
     if (!activeProfileId || !animal) return;
     const [{ data: t }, { data: ph }] = await Promise.all([
       supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
@@ -1331,6 +1392,11 @@ function PatientDetailPageInner() {
     }
     for (const v of vaccins) ligne(`Vaccin ${v.nom}${v.lot ? ` (lot ${v.lot})` : ''}`, prixPharma(v.nom) ?? tarif(espece === 'chat' ? 'vaccin_chat' : 'vaccin_chien'));
     for (const tr of traitements) ligne(tr.nom, prixPharma(tr.nom));
+    // Produits vendus (non administrés) : quantité + prix saisi, sinon prix de vente du stock.
+    for (const p of produits) {
+      const ttc = p.prix ?? prixPharma(p.nom);
+      lignes.push({ description: p.nom, quantite: p.quantite, prixUnitaire: ttc == null ? 0 : Math.round(ttc / 1.2 * 100) / 100, tva: 20 });
+    }
     const total = lignes.reduce((s, l) => s + l.prixUnitaire * 1.2, 0);
     const aCompleter = lignes.filter(l => l.prixUnitaire === 0).length;
     const recap = lignes.map(l => `• ${l.description} : ${l.prixUnitaire ? `${(l.prixUnitaire * 1.2).toFixed(2)} €` : 'à compléter'}`).join('\n');
@@ -1473,6 +1539,7 @@ function PatientDetailPageInner() {
           duCarnet('vermifuge').length > 0 && `Vermifuge : ${duCarnet('vermifuge').join(', ')}.`,
           duCarnet('antiparasitaire').length > 0 && `Antiparasitaire : ${duCarnet('antiparasitaire').join(', ')}.`,
           traitementsTxt.length > 0 && `Traitement : ${traitementsTxt.join(' ; ')}.`,
+          produitsCr.length > 0 && `Produits délivrés : ${produitsCr.map(libelleProduit).join(', ')}.`,
         ].filter(Boolean).join('\n\n');
         // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
@@ -1485,10 +1552,11 @@ function PatientDetailPageInner() {
           ...(poidsCr != null && !isNaN(poidsCr) ? { poids: poidsCr } : {}),
           ...(actesRealises.length ? { actes: actesRealises } : {}),
           ...(prescription ? { prescription } : {}),
+          ...(produitsCr.length ? { produits: produitsCr } : {}),
           // Saisie complète gardée avec le brouillon (format commun appli / site).
           ...(enBrouillon || brouillonId ? { brouillon: enBrouillon ? {
             motif: formMotif.trim(), poids: formPoids.trim(), texte: formNotes.trim(), diag: formDiag.trim(),
-            actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr,
+            actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr,
           } : null } : {}),
         };
         const { error: eCr } = brouillonId
@@ -1519,10 +1587,11 @@ function PatientDetailPageInner() {
         if (catPro === 'veterinaire' && (vaccinsCr.length || traitementsCr.length)) {
           await ecrireActesCr(vetName, ownerUid);
         }
+        if (catPro === 'veterinaire' && produitsCr.length) await decompterStock(produitsCr);
         if (catPro === 'veterinaire') {
           await proposerFacture(formMotif.trim(), actesRealises,
             [...vaccinsCr, ...carnetJour.flatMap(a => a.vaccin ? [a.vaccin] : [])], traitementsCr,
-            poidsCr != null && !isNaN(poidsCr) ? poidsCr : null);
+            poidsCr != null && !isNaN(poidsCr) ? poidsCr : null, produitsCr);
         }
       } else if (addingType === 'mesure') {
         const updates: Record<string, number> = {};
@@ -1535,7 +1604,7 @@ function PatientDetailPageInner() {
         }
       }
     } finally {
-      setVaccinsCr([]); setTraitementsCr([]); setActesRealises([]); setAutreActe('');
+      setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setActesRealises([]); setAutreActe('');
       setCarnetJour([]); setPoidsCarnet(null); setBrouillonId(null);
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
@@ -3326,10 +3395,10 @@ function PatientDetailPageInner() {
               onNouveauCr={() => { setBrouillonId(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={(cr) => {
-                const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[] };
+                const e = (cr.brouillon ?? {}) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[] };
                 setBrouillonId(cr.id);
                 setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
-                setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []);
+                setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []);
                 setAddingType('cr');
               }}
               onFacturer={async (cr) => {
@@ -3345,7 +3414,8 @@ function PatientDetailPageInner() {
                   .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null }));
                 const noms = [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))];
                 await proposerFacture(c.motif ?? '', c.actes ?? [], vaccins,
-                  noms.map(nom => ({ nom, type: 'medicament', phases: [], rappels: false, notes: '' })), c.poids ?? null);
+                  noms.map(nom => ({ nom, type: 'medicament', phases: [], rappels: false, notes: '' })), c.poids ?? null,
+                  ((c as CompteRendu & { produits?: ProduitCr[] | null }).produits ?? []));
               }}
               onSupprimer={async (cr) => {
                 // Droits contrôlés en base : un CR validé n'est supprimable que par qui peut valider.
@@ -3678,6 +3748,7 @@ function PatientDetailPageInner() {
               )}
               {catPro === 'veterinaire' && (
                 <ActesCr vaccins={vaccinsCr} setVaccins={setVaccinsCr} traitements={traitementsCr} setTraitements={setTraitementsCr}
+                  produits={produitsCr} setProduits={setProduitsCr}
                   profileId={activeProfileId || null} animalId={animalId} />
               )}
               <div>

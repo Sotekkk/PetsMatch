@@ -65,6 +65,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       'Castration / stérilisation', 'Chirurgie', 'Hospitalisation', 'Euthanasie'];
   double? get _poidsSaisi => double.tryParse(_poidsCtrl.text.trim().replaceAll(',', '.'));
   final List<_TraitementCr> _traitementsCr = [];
+  /// Produits vendus (non administrés) : facture + stock, pas le carnet.
+  final List<_ProduitCr> _produitsCr = [];
   bool get _saisieActes => !widget.isPension && _peutValider;
 
   // Ordonnance
@@ -331,6 +333,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'actes': [..._actesRealises],
         'vaccins': [for (final v in _vaccinsCr) v.toJson()],
         'traitements': [for (final t in _traitementsCr) t.toJson()],
+        'produits': [for (final p in _produitsCr) p.toJson()],
       };
 
   void _reprendreBrouillon(Map<String, dynamic> cr) {
@@ -346,6 +349,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       _actesRealises..clear()..addAll([for (final a in (e['actes'] as List? ?? const [])) a.toString()]);
       _vaccinsCr..clear()..addAll([for (final v in (e['vaccins'] as List? ?? const [])) _VaccinCr.fromJson(Map<String, dynamic>.from(v as Map))]);
       _traitementsCr..clear()..addAll([for (final t in (e['traitements'] as List? ?? const [])) _TraitementCr.fromJson(Map<String, dynamic>.from(t as Map))]);
+      _produitsCr..clear()..addAll([for (final p in (e['produits'] as List? ?? const [])) _ProduitCr.fromJson(Map<String, dynamic>.from(p as Map))]);
     });
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Brouillon repris : modifiez-le, puis enregistrez.', style: TextStyle(fontFamily: 'Galey')),
@@ -379,6 +383,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           DateTime.tryParse(v['date']?.toString() ?? '') ?? d, DateTime.tryParse(v['date_rappel']?.toString() ?? ''))],
       traitements: [for (final n in {for (final t in trt) (t['nom'] ?? '').toString()}) if (n.isNotEmpty)
           _TraitementCr(nom: n, type: 'medicament', phases: const [], rappels: false)],
+      produits: [for (final p in (cr['produits'] as List? ?? const [])) _ProduitCr.fromJson(Map<String, dynamic>.from(p as Map))],
     );
   }
 
@@ -388,6 +393,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         _poidsCtrl.clear();
         _vaccinsCr.clear();
         _traitementsCr.clear();
+        _produitsCr.clear();
         _actesRealises.clear();
       });
 
@@ -409,6 +415,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     ];
     final factTraitements = List<_TraitementCr>.of(_traitementsCr);
     final factActes = _actesRealises.toList();
+    final factProduits = _saisieActes ? List<_ProduitCr>.of(_produitsCr) : const <_ProduitCr>[];
     final motif = _saisieActes ? _motifCtrl.text.trim() : '';
     final poids = _saisieActes ? _poidsSaisi : null;
     final actesRealises = _saisieActes ? _actesRealises.toList() : const <String>[];
@@ -433,6 +440,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (duCarnet('vermifuge').isNotEmpty) 'Vermifuge : ${duCarnet('vermifuge').join(', ')}.',
       if (duCarnet('antiparasitaire').isNotEmpty) 'Antiparasitaire : ${duCarnet('antiparasitaire').join(', ')}.',
       if (traitementsTxt.isNotEmpty) 'Traitement : ${traitementsTxt.join(' ; ')}.',
+      if (factProduits.isNotEmpty) 'Produits délivrés : ${factProduits.map((p) => p.libelle).join(', ')}.',
     ].where((l) => l.isNotEmpty).join('\n\n');
     if (proUid == null || contenu.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -476,6 +484,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         if (poids != null) 'poids': poids,
         if (actesRealises.isNotEmpty) 'actes': actesRealises,
         if (prescription.isNotEmpty) 'prescription': prescription,
+        if (factProduits.isNotEmpty) 'produits': [for (final p in factProduits) p.toJson()],
       };
       final etat = enBrouillon ? _etatBrouillon() : null;
       if (_brouillonId != null) {
@@ -486,7 +495,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (enBrouillon) {
         _crContenuCtrl.clear();
         _poidsCtrl.clear();
-        setState(() { _crFile = null; _brouillonId = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); });
+        setState(() { _crFile = null; _brouillonId = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _actesRealises.clear(); });
         await _loadExisting();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -516,17 +525,18 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         await _notifyValideurs();
       }
       if (actes && animalId != null) await _ecrireActes(animalId.toString(), rdvId?.toString(), owner);
+      if (factProduits.isNotEmpty) await _decompterStock(factProduits);
       final poidsFacture = _poidsSaisi;
       final motifFacture = _motifCtrl.text.trim();
       _crContenuCtrl.clear();
       _poidsCtrl.clear();
-      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _actesRealises.clear(); _carnetJour = []; _poidsCarnet = null; });
+      setState(() { _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _actesRealises.clear(); _carnetJour = []; _poidsCarnet = null; });
       await _loadExisting();
       // Le vétérinaire choisit de préparer (ou non) la facture de la consultation.
       if (mounted && _saisieActes && statut == 'valide' && animalId != null) {
         await _proposerFacture(animalId: animalId.toString(), rdvId: rdvId?.toString(), owner: owner,
             motif: motifFacture, poids: poidsFacture, actesRealises: factActes,
-            vaccins: factVaccins, traitements: factTraitements);
+            vaccins: factVaccins, traitements: factTraitements, produits: factProduits);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1206,6 +1216,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     required String animalId, String? rdvId, required ({String? uid, String? profileId}) owner,
     required String motif, double? poids, required List<String> actesRealises,
     required List<_VaccinCr> vaccins, required List<_TraitementCr> traitements,
+    List<_ProduitCr> produits = const [],
   }) async {
     // Tarifs du vétérinaire + infos animal pour choisir la bonne ligne.
     Map<String, dynamic> tarifs = {};
@@ -1259,6 +1270,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     }
     for (final t in traitements) {
       ligne(t.nom, prixPharmacie(t.nom));
+    }
+    // 4. Produits vendus (non administrés) : quantité + prix saisi, sinon prix de vente du stock.
+    for (final p in produits) {
+      final ttc = p.prixTTC ?? prixPharmacie(p.nom);
+      lignes.add(FacturePrefillLigne(designation: p.nom, prixHT: ttc == null ? 0 : _ht(ttc), quantite: p.quantite, tauxTVA: 20));
     }
 
     final total = lignes.fold<double>(0, (s, l) => s + l.prixHT * 1.2);
@@ -1491,8 +1507,114 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       const SizedBox(height: 4),
       Text('Touchez une ligne pour la modifier. Inscrits au carnet de santé ; le propriétaire reçoit les rappels.',
           style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      const SizedBox(height: 14),
+      _inputLabel('Produits vendus (non administrés)'),
+      const SizedBox(height: 6),
+      for (final p in List.of(_produitsCr)) ligne(Icons.shopping_bag_outlined, p.libelle,
+          p.prixTTC == null ? 'Prix du stock ou à compléter sur la facture' : '${(p.prixTTC! * p.quantite).toStringAsFixed(2)} € TTC',
+          () => _ajouterProduit(p), () => setState(() => _produitsCr.remove(p))),
+      OutlinedButton.icon(
+        onPressed: () => _ajouterProduit(), icon: const Icon(Icons.add, size: 18),
+        label: const Text('Ajouter un produit vendu', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor, side: BorderSide(color: widget.categoryColor.withValues(alpha: 0.5)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+      ),
+      const SizedBox(height: 4),
+      Text('Ajoutés à la facture et décomptés du stock à l’enregistrement ; pas inscrits au carnet.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
       const SizedBox(height: 16),
     ]);
+  }
+
+  /// Ajout (ou modification si [existant]) d'un produit vendu : depuis le
+  /// stock (prix de vente repris) ou saisi librement avec son prix.
+  Future<void> _ajouterProduit([_ProduitCr? existant]) async {
+    final nomCtrl = TextEditingController(text: existant?.nom ?? '');
+    final nomFocus = FocusNode();
+    final qteCtrl = TextEditingController(text: existant == null ? '1' : _fmtQ(existant.quantite));
+    final prixCtrl = TextEditingController(text: existant?.prixTTC == null ? '' : existant!.prixTTC!.toStringAsFixed(2).replaceAll('.', ','));
+    String? itemId = existant?.itemId;
+    String? stock;
+    double? nombre(String t) => double.tryParse(t.trim().replaceAll(',', '.').replaceAll(' ', ''));
+    final res = await showModalBottomSheet<_ProduitCr>(
+      context: context, isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(existant == null ? 'Produit vendu' : 'Modifier le produit',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text('Délivré au client, non administré : facturé et décompté du stock.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 12),
+          _champPharmacie(
+            ctrl: nomCtrl, focus: nomFocus, label: 'Produit (stock ou saisie libre) *',
+            filtre: (o) => o['categorie'] != 'vaccin',
+            onChoix: (o) => setM(() {
+              nomCtrl.text = o['nom']?.toString() ?? '';
+              itemId = o['id']?.toString();
+              final pv = (o['prix_vente'] as num?)?.toDouble();
+              if (pv != null) prixCtrl.text = pv.toStringAsFixed(2).replaceAll('.', ',');
+              stock = o['quantite'] == null ? null : 'En stock : ${o['quantite']} ${o['unite'] ?? ''}'.trim();
+            }),
+            onChange: () => setM(() { itemId = null; stock = null; }),
+          ),
+          if (stock != null) Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(stock!, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            SizedBox(width: 110, child: TextField(controller: qteCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDeco('1').copyWith(labelText: 'Quantité'), onChanged: (_) => setM(() {}))),
+            const SizedBox(width: 10),
+            Expanded(child: TextField(controller: prixCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDeco('ex. 24,90').copyWith(labelText: 'Prix unitaire TTC (€)'), onChanged: (_) => setM(() {}))),
+          ]),
+          const SizedBox(height: 18),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: nomCtrl.text.trim().isEmpty || (nombre(qteCtrl.text) ?? 0) <= 0 ? null
+                : () => Navigator.pop(ctx, _ProduitCr(nomCtrl.text.trim(), nombre(qteCtrl.text)!, nombre(prixCtrl.text), itemId)),
+            child: Text(existant == null ? 'Ajouter' : 'Enregistrer', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ])),
+      )),
+    );
+    if (res == null) return;
+    setState(() {
+      final i = existant == null ? -1 : _produitsCr.indexOf(existant);
+      if (i >= 0) { _produitsCr[i] = res; } else { _produitsCr.add(res); }
+    });
+  }
+
+  /// Produits vendus pris dans le stock : sortie enregistrée (mouvement
+  /// « consommation ») et quantité mise à jour.
+  Future<void> _decompterStock(List<_ProduitCr> produits) async {
+    final pro = _profilPro;
+    final uid = AgendaContexte.uid;
+    if (pro == null || uid == null) return;
+    for (final p in produits) {
+      if (p.itemId == null) continue;
+      try {
+        final item = await _supa.from('inventaire_items').select('quantite, stupefiant').eq('id', p.itemId!).maybeSingle();
+        if (item == null) continue;
+        final avant = (item['quantite'] as num?)?.toDouble() ?? 0;
+        final apres = (avant - p.quantite).clamp(0.0, double.infinity);
+        await _supa.from('inventaire_mouvements').insert({
+          'item_id': p.itemId, 'uid_eleveur': uid, 'uid_auteur': AgendaContexte.moi ?? uid,
+          'eleveur_profile_id': pro, 'type': 'consommation', 'quantite': p.quantite,
+          'note': 'Vente — consultation',
+          if (item['stupefiant'] == true) 'stock_apres': apres,
+        });
+        await _supa.from('inventaire_items').update({'quantite': apres}).eq('id', p.itemId!);
+      } catch (_) {}
+    }
+    await _chargerPharmacie();
   }
 
   // ── Imprimer / partager / envoyer (CR et ordonnances) ─────────────────────
@@ -2072,6 +2194,24 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     contentPadding: const EdgeInsets.all(14),
   );
 }
+
+/// Produit vendu pendant la consultation (non administré : pas au carnet).
+class _ProduitCr {
+  final String nom;
+  final double quantite;
+  /// Prix unitaire TTC saisi (null : prix de vente du stock, sinon à compléter).
+  final double? prixTTC;
+  /// Article de l'inventaire (décompté du stock), null si saisi librement.
+  final String? itemId;
+  _ProduitCr(this.nom, this.quantite, this.prixTTC, this.itemId);
+
+  String get libelle => quantite == 1 ? nom : '$nom ×${_fmtQ(quantite)}';
+  Map<String, dynamic> toJson() => {'nom': nom, 'quantite': quantite, 'prix': prixTTC, if (itemId != null) 'item_id': itemId};
+  factory _ProduitCr.fromJson(Map<String, dynamic> j) => _ProduitCr((j['nom'] ?? '').toString(),
+      (j['quantite'] as num?)?.toDouble() ?? 1, (j['prix'] as num?)?.toDouble(), j['item_id']?.toString());
+}
+
+String _fmtQ(double q) => q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toString().replaceAll('.', ',');
 
 class _VaccinCr {
   final String nom, lot;
