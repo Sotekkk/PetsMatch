@@ -100,6 +100,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   final List<TimeOfDay> _gardeHorairesSupp = [];
   // Plusieurs animaux (rdv.animaux_ids) — _selectedAnimal = le premier.
   List<Map<String, dynamic>> _animauxGarde = [];
+  // Vétérinaire, ostéo, toiletteur, éducateur : d'autres animaux sur le même
+  // RDV, chacun avec son motif (ou sa prestation) et sa durée — le créneau
+  // couvre la somme des durées (rdv.animaux_ids + rdv.animaux_detail).
+  List<Map<String, dynamic>> _autresAnimaux = [];
+  final Map<String, String> _motifAutres = {}; // id animal → clé du motif / id de prestation
   // Photographe : lieu du shooting — 'domicile' (adresse du client) ou
   // 'photographe' (plage, forêt, studio… proposé par le photographe).
   String? _lieuPhoto;
@@ -286,8 +291,45 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'taxi_animalier': {'course': 30, 'urgence': 20, 'autre': 30},
   };
 
-  // Durée sélectionnée selon le motif choisi
-  int get _selectedDuration {
+  bool get _multiAnimaux => !widget.isAssociation && !widget.isTaxi && !widget.isGarde
+      && !widget.isPhotographe && !widget.isPension
+      && (widget.isVet || widget.isToilettage || _catPro == 'sante' || _catPro == 'education');
+
+  /// Autres animaux du RDV (sans l'animal principal).
+  List<Map<String, dynamic>> get _animauxEnPlus => !_multiAnimaux || _selectedAnimal == null
+      ? const []
+      : _autresAnimaux.where((a) => a['id']?.toString() != _selectedAnimal!['id']?.toString()).toList();
+
+  /// Motifs (ou prestations) proposés pour un autre animal : (clé, libellé, durée).
+  List<(String, String, int)> get _optionsMotifAutre {
+    if (widget.isToilettage) {
+      return [for (final p in _prestations)
+        (p['id'].toString(), p['nom']?.toString() ?? 'Prestation', (p['duree_minutes'] as num?)?.toInt() ?? 60)];
+    }
+    if (widget.isVet) {
+      return [for (final m in _vetMotifs) if (m.$1 != 'autre') (m.$1, m.$2, _dureesMotifs[m.$1] ?? _selectedVetDuration)];
+    }
+    return [for (final e in _dureesMotifs.entries) if (e.key != 'autre') (e.key, _motifLabels[e.key] ?? e.key, e.value)];
+  }
+
+  /// Motif de l'animal principal, proposé par défaut pour les autres.
+  String? get _motifPrincipalCle {
+    if (widget.isToilettage) return _selectedPrestation?['id']?.toString();
+    return widget.isVet ? _selectedVetMotif : _selectedMotifKey;
+  }
+
+  (String, String, int)? _optionAutre(Map<String, dynamic> a) {
+    final opts = _optionsMotifAutre;
+    if (opts.isEmpty) return null;
+    final cle = _motifAutres[a['id']?.toString()] ?? _motifPrincipalCle;
+    return opts.where((o) => o.$1 == cle).firstOrNull ?? opts.first;
+  }
+
+  int get _selectedDuration => _dureeAnimalPrincipal
+      + _animauxEnPlus.fold<int>(0, (s, a) => s + (_optionAutre(a)?.$3 ?? 30));
+
+  // Durée de l'animal principal selon le motif choisi
+  int get _dureeAnimalPrincipal {
     if ((widget.isPhotographe || widget.isToilettage) && _selectedPrestation != null) {
       return (_selectedPrestation!['duree_minutes'] as num?)?.toInt() ?? 60;
     }
@@ -637,7 +679,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // voit les animaux de tous ses profils au lieu du seul profil courant.
       var directQ = supa
           .from('animaux')
-          .select('id, nom, espece, race, photo_url, poids')
+          .select('id, nom, espece, race, photo_url, poids, portee_id, nom_mere')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid.isNotEmpty) directQ = directQ.eq('profile_id', pid);
       final directRows = await directQ;
@@ -658,7 +700,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       List<Map<String, dynamic>> viaCession = [];
       if (missingIds.isNotEmpty) {
         final rows2 = await supa.from('animaux')
-            .select('id, nom, espece, race, photo_url, poids')
+            .select('id, nom, espece, race, photo_url, poids, portee_id, nom_mere')
             .inFilter('id', missingIds.toList());
         viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
       }
@@ -1168,6 +1210,37 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       } else {
         motif = _motifCtrl.text.trim();
       }
+      // Plusieurs animaux : détail par animal (motif + durée), motif combiné.
+      final enPlus = _animauxEnPlus;
+      final detailAnimaux = enPlus.isEmpty || _selectedAnimal == null ? null : [
+        {
+          'id': _selectedAnimal!['id']?.toString(), 'nom': _selectedAnimal!['nom']?.toString() ?? '',
+          'motif': motif, 'motif_cle': _motifPrincipalCle, 'duree_minutes': _dureeAnimalPrincipal,
+          if (widget.isToilettage && _selectedPrestation != null) ...{
+            'prestation_id': _selectedPrestation!['id'], 'prix': _prixAffiche(_selectedPrestation!),
+          },
+        },
+        for (final a in enPlus) () {
+          final o = _optionAutre(a);
+          final p = widget.isToilettage ? _prestations.where((x) => x['id'].toString() == o?.$1).firstOrNull : null;
+          return {
+            'id': a['id']?.toString(), 'nom': a['nom']?.toString() ?? '',
+            'motif': o?.$2 ?? motif, 'motif_cle': o?.$1, 'duree_minutes': o?.$3 ?? 30,
+            if (p != null) ...{
+              'prestation_id': p['id'],
+              'prix': prixPourAnimal(p, a['espece']?.toString() ?? '', poidsKg(a['poids'])),
+            },
+          };
+        }(),
+      ];
+      final motifRdv = detailAnimaux == null ? motif : () {
+        final parMotif = <String, List<String>>{};
+        for (final d in detailAnimaux) {
+          parMotif.putIfAbsent(d['motif'].toString(), () => []).add(d['nom'].toString());
+        }
+        return parMotif.length == 1 ? motif
+            : parMotif.entries.map((e) => '${e.key} (${e.value.join(', ')})').join(' + ');
+      }();
 
       // Géocodage des adresses de trajet (taxi) / lieu du shooting (photographe)
       // — uniquement en filet de sécurité si aucune suggestion Google Places
@@ -1239,6 +1312,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           if (animauxGarde != null) ...{
             'animal_nom_manuel': animauxGarde.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + '),
             'animaux_ids': animauxGarde.map((a) => a['id']?.toString()).toList(),
+          } else if (detailAnimaux != null) ...{
+            'animal_nom_manuel': detailAnimaux.map((d) => d['nom'].toString()).where((n) => n.isNotEmpty).join(' + '),
+            'animaux_ids': detailAnimaux.map((d) => d['id']).toList(),
+            'animaux_detail': detailAnimaux,
+            'nombre_animaux': detailAnimaux.length,
           } else if (!widget.isTaxi && _selectedAnimal?['nom'] != null) 'animal_nom_manuel': _selectedAnimal!['nom'].toString(),
           if (widget.isGarde) ...{
             if (serieId != null) 'serie_id': serieId,
@@ -1246,7 +1324,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             if (_forfaitId != null) 'forfait_id': _forfaitId,
           },
           'date_heure': dh.toIso8601String(),
-          'motif':      motif,
+          'motif':      motifRdv,
           if (widget.isTaxi) ...{
             'adresse_depart': _adresseDepartCtrl.text.trim(),
             'adresse_arrivee': _adresseArriveeCtrl.text.trim(),
@@ -1271,7 +1349,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           },
           if (widget.isToilettage) ...{
             'prestation_id': _selectedPrestation?['id'],
-            if (_selectedPrestation != null) 'prix_calcule': _prixAffiche(_selectedPrestation!),
+            if (_selectedPrestation != null) 'prix_calcule': detailAnimaux != null
+                ? detailAnimaux.fold<double>(0, (s, d) => s + ((d['prix'] as num?)?.toDouble() ?? 0))
+                : _prixAffiche(_selectedPrestation!),
             if (_selectedEmploye != null) 'employe_id': _selectedEmploye!['id'],
           },
           if ((_hasDomicileOption && _domicile) || _gardeAvecAdresse) ...{
@@ -1299,11 +1379,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       try {
         await Supabase.instance.client.from('rdv').insert(rows);
       } on PostgrestException catch (e) {
-        // migration_garde_demande_serie.sql pas encore passée : on envoie la
-        // demande sans les nouvelles colonnes (l'accès reste dans les consignes).
-        if (!widget.isGarde || !(e.code == 'PGRST204' || e.message.contains('column'))) rethrow;
+        // migration_garde_demande_serie.sql / migration_rdv_animaux_detail.sql
+        // pas encore passées : on envoie la demande sans les nouvelles colonnes
+        // (l'accès reste dans les consignes, les animaux dans le nom affiché).
+        final colonne = e.code == 'PGRST204' || e.message.contains('column');
+        if (!colonne || !(widget.isGarde || detailAnimaux != null)) rethrow;
         await Supabase.instance.client.from('rdv').insert([
-          for (final r in rows) Map<String, dynamic>.from(r)..remove('serie_id')..remove('acces_logement')..remove('forfait_id'),
+          for (final r in rows) Map<String, dynamic>.from(r)
+            ..remove('serie_id')..remove('acces_logement')..remove('forfait_id')..remove('animaux_detail'),
         ]);
       }
 
@@ -1311,16 +1394,19 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // propriétaire, donné ici) — le pro retrouve l'animal dans « Mes patients ».
       if (_proposePartageCarnet && _partagerCarnet && animalId != null && animalId.isNotEmpty) {
         try {
-          await Supabase.instance.client.from('animal_access').upsert({
-            'animal_id': animalId,
-            'pro_profile_id': widget.proProfileId,
-            if (_resolveClientProfileId() != null) 'granted_by_profile_id': _resolveClientProfileId(),
-            'permissions': widget.isVet
-                ? ['read_basic', 'read_health', 'write_health']
-                : ['read_basic', 'write_notes'],
-            'statut': 'active',
-            'granted_at': DateTime.now().toUtc().toIso8601String(),
-          }, onConflict: 'animal_id,pro_profile_id');
+          // Plusieurs animaux : le carnet de chacun est partagé.
+          for (final idPartage in [animalId, ...enPlus.map((a) => a['id']?.toString()).whereType<String>()]) {
+            await Supabase.instance.client.from('animal_access').upsert({
+              'animal_id': idPartage,
+              'pro_profile_id': widget.proProfileId,
+              if (_resolveClientProfileId() != null) 'granted_by_profile_id': _resolveClientProfileId(),
+              'permissions': widget.isVet
+                  ? ['read_basic', 'read_health', 'write_health']
+                  : ['read_basic', 'write_notes'],
+              'statut': 'active',
+              'granted_at': DateTime.now().toUtc().toIso8601String(),
+            }, onConflict: 'animal_id,pro_profile_id');
+          }
         } catch (e) {
           // Le RDV est bien demandé ; on prévient au lieu d'échouer en silence.
           debugPrint('Partage du carnet refusé : $e');
@@ -1351,7 +1437,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'title': isSerie ? 'Nouvelle série de RDV récurrents' : 'Nouvelle demande de RDV',
           'body':  isSerie
               ? '$clientName souhaite ${rows.length} RDV récurrents à partir du $dateStr — motif : $motif'
-              : '$clientName souhaite un RDV le $dateStr — motif : $motif',
+              : '$clientName souhaite un RDV le $dateStr — motif : $motifRdv',
           if ((widget.proProfileId ?? '').isNotEmpty) 'profile_id': widget.proProfileId,
           'data':  <String, dynamic>{
             'client_uid': uid,
@@ -1367,7 +1453,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               'proUid':     widget.proUid,
               'clientName': clientName,
               'dateStr':    dateStr,
-              'motif':      motif,
+              'motif':      motifRdv,
             });
       } catch (_) {}
 
@@ -1524,6 +1610,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   ],
                   ..._buildMotifSection(),
                   const SizedBox(height: 20),
+                  // Plusieurs animaux : la durée en dépend, donc avant les créneaux.
+                  if (_multiAnimaux) ...[
+                    _buildAnimalSection(),
+                    const SizedBox(height: 20),
+                  ],
                   if (widget.isPhotographe) ...[
                     _buildPhotographeLieuSection(),
                     const SizedBox(height: 20),
@@ -1550,8 +1641,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     ],
                   ],
                   const SizedBox(height: 20),
-                  _buildAnimalSection(),
-                  const SizedBox(height: 20),
+                  if (!_multiAnimaux) ...[
+                    _buildAnimalSection(),
+                    const SizedBox(height: 20),
+                  ],
                   _buildNotesSection(),
                   const SizedBox(height: 32),
                   _buildSubmitButton(),
@@ -1711,10 +1804,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     onTap: () async {
                       final res = await AnimalPickerSheet.pickOne(context,
                           preloaded: _animaux, current: _selectedAnimal, accentColor: c);
-                      if (mounted) setState(() => _selectedAnimal = res);
+                      if (mounted) setState(() { _selectedAnimal = res; _selectedSlot = null; });
                     },
                   ),
           ),
+          _buildAutresAnimaux(),
           if (_proposePartageCarnet && _selectedAnimal != null) ...[
             const SizedBox(height: 10),
             Container(
@@ -1728,7 +1822,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 Icon(Icons.health_and_safety_outlined, size: 20, color: c),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Partager le carnet de santé de ${_selectedAnimal!['nom'] ?? 'mon animal'}',
+                  Text(_animauxEnPlus.isNotEmpty
+                          ? 'Partager le carnet de santé de ces ${_animauxEnPlus.length + 1} animaux'
+                          : 'Partager le carnet de santé de ${_selectedAnimal!['nom'] ?? 'mon animal'}',
                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
                   const Text('Vaccins, traitements, antécédents — révocable à tout moment depuis sa fiche.',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B))),
@@ -2711,7 +2807,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 current: _selectedAnimal,
                 accentColor: color,
               );
-              if (mounted) setState(() => _selectedAnimal = result);
+              if (mounted) setState(() { _selectedAnimal = result; if (_multiAnimaux) _selectedSlot = null; });
             },
             child: Container(
               width: double.infinity,
@@ -2762,12 +2858,83 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         if (_selectedAnimal != null) ...[
           const SizedBox(height: 6),
           GestureDetector(
-            onTap: () => setState(() => _selectedAnimal = null),
+            onTap: () => setState(() { _selectedAnimal = null; _autresAnimaux = []; _selectedSlot = null; }),
             child: Text('Supprimer la sélection',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500, decoration: TextDecoration.underline)),
           ),
         ],
+        _buildAutresAnimaux(),
       ],
+    );
+  }
+
+  /// Autres animaux sur le même RDV (vétérinaire, ostéo, toiletteur,
+  /// éducateur) : chacun avec son motif / sa prestation et sa durée ;
+  /// « Toute la portée » dans le sélecteur pour un éleveur.
+  Widget _buildAutresAnimaux() {
+    if (!_multiAnimaux || _selectedAnimal == null) return const SizedBox.shrink();
+    final c = widget.categoryColor;
+    final principalId = _selectedAnimal!['id']?.toString();
+    final autres = _animaux.where((a) => a['id']?.toString() != principalId).toList();
+    if (autres.isEmpty) return const SizedBox.shrink();
+    final enPlus = _animauxEnPlus;
+    final opts = _optionsMotifAutre;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        for (final a in enPlus)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE4E7E2))),
+            child: Row(children: [
+              _vignetteAnimal(a),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(a['nom']?.toString() ?? '—',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF1E2025))),
+                if (opts.isNotEmpty)
+                  DropdownButton<String>(
+                    value: _optionAutre(a)?.$1,
+                    isExpanded: true, isDense: true, underline: const SizedBox.shrink(),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: c, fontWeight: FontWeight.w600),
+                    items: [for (final o in opts)
+                      DropdownMenuItem(value: o.$1, child: Text('${o.$2} · ${_durationLabel(o.$3)}', overflow: TextOverflow.ellipsis))],
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() { _motifAutres[a['id'].toString()] = v; _selectedSlot = null; });
+                    },
+                  ),
+              ])),
+              IconButton(
+                tooltip: 'Retirer', icon: Icon(Icons.close, size: 18, color: Colors.grey.shade500),
+                onPressed: () => setState(() {
+                  _autresAnimaux.removeWhere((x) => x['id']?.toString() == a['id']?.toString());
+                  _selectedSlot = null;
+                }),
+              ),
+            ]),
+          ),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final res = await AnimalPickerSheet.pickMany(context,
+                preloaded: autres, current: enPlus, accentColor: c);
+            if (res == null || !mounted) return;
+            setState(() { _autresAnimaux = res; _selectedSlot = null; });
+          },
+          icon: const Icon(Icons.add, size: 18),
+          label: Text(enPlus.isEmpty ? 'Ajouter un autre animal' : 'Ajouter / retirer des animaux',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+          style: OutlinedButton.styleFrom(foregroundColor: c, side: BorderSide(color: c.withValues(alpha: 0.4)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        ),
+        if (enPlus.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text('${enPlus.length + 1} animaux · durée totale ${_durationLabel(_selectedDuration)}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: c)),
+        ],
+      ]),
     );
   }
 

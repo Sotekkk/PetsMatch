@@ -12,6 +12,18 @@ export interface PickableAnimal {
   espece: string;
   race?: string | null;
   photo_url?: string | null;
+  /** Sélection multiple : « Portée de … — tout sélectionner ». */
+  portee_id?: string | null;
+  nom_mere?: string | null;
+}
+
+function libellePortee(porteeId: string, membres: PickableAnimal[]) {
+  const mere = membres.map(a => a.nom_mere?.trim() ?? '').find(Boolean);
+  if (mere) return `Portée de ${mere}`;
+  const ms = Number(porteeId.replace('portee_', ''));
+  return Number.isFinite(ms) && ms > 0
+    ? `Portée du ${new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}`
+    : 'Portée';
 }
 
 function AnimalThumb({ animal, size = 44 }: { animal: PickableAnimal; size?: number }) {
@@ -199,6 +211,16 @@ function AnimalMultiPickerModal({ animaux, initial, accentColor, onClose, onVali
     return q ? animaux.filter(a => a.nom.toLowerCase().includes(q)) : animaux;
   }, [animaux, query]);
   const basculer = (id: number | string) => setSel(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const portees = useMemo(() => {
+    const m = new Map<string, PickableAnimal[]>();
+    for (const a of animaux) if (a.portee_id) m.set(a.portee_id, [...(m.get(a.portee_id) ?? []), a]);
+    return [...m.entries()];
+  }, [animaux]);
+  // Toute la portée : retirée si déjà entièrement cochée, sinon ajoutée.
+  const basculerPortee = (membres: PickableAnimal[]) => setSel(s => {
+    const ids = membres.map(a => a.id);
+    return ids.every(id => s.includes(id)) ? s.filter(x => !ids.includes(x)) : [...s, ...ids.filter(id => !s.includes(id))];
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
@@ -215,6 +237,21 @@ function AnimalMultiPickerModal({ animaux, initial, accentColor, onClose, onVali
           <div className="px-3.5 pt-2.5 pb-1.5">
             <input value={query} onChange={e => setQuery(e.target.value)} autoFocus placeholder="Rechercher un animal…"
               className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-gray-100" style={{ fontFamily: 'Galey, sans-serif' }} />
+          </div>
+        )}
+        {!query.trim() && portees.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3.5 pt-2.5 pb-2 border-b border-gray-100">
+            {portees.map(([pid, membres]) => {
+              const toutes = membres.every(a => sel.includes(a.id));
+              return (
+                <button key={pid} type="button" onClick={() => basculerPortee(membres)}
+                  className="px-2.5 py-1.5 rounded-full text-[11.5px] font-semibold border"
+                  style={{ fontFamily: 'Galey, sans-serif', borderColor: accentColor, color: toutes ? 'white' : accentColor,
+                    backgroundColor: toutes ? accentColor : `${accentColor}14` }}>
+                  {toutes ? `✓ ${libellePortee(pid, membres)} (${membres.length})` : `${libellePortee(pid, membres)} (${membres.length}) — tout sélectionner`}
+                </button>
+              );
+            })}
           </div>
         )}
         <div className="flex-1 overflow-y-auto">

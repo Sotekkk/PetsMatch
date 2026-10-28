@@ -21,6 +21,7 @@ import ContactModal from '@/components/ContactModal';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
 import { AnimalPickerField, AnimalMultiPickerField } from '@/components/AnimalPickerField';
+import AutresAnimauxRdv from '@/components/rdv/AutresAnimauxRdv';
 import { CATEGORIES_ANNUAIRE } from '@/lib/annuaire-filtres';
 import { RdvSection, RdvChoiceGrid, RdvSegmented, RdvIntervenantList, RdvDateStrip, RdvTimeGrid,
   RdvTextArea, RdvRecap, RdvPrimaryButton, RdvVide, type RdvIconName } from '@/components/rdv/RdvForm';
@@ -100,7 +101,7 @@ interface Prestation {
 interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; praticien?: string | null; }
 // Plage occupée (pm_plages_occupees — RDV de tous les clients + indisponibilités).
 interface Occupe { debut: number; fin: number; praticien: string | null; salle: string | null }
-interface Animal { id: number; nom: string; espece: string; race?: string | null; photo_url?: string | null; }
+interface Animal { id: number; nom: string; espece: string; race?: string | null; photo_url?: string | null; portee_id?: string | null; nom_mere?: string | null; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
   pro_profile_id?: string | null; serie_id?: string | null;
@@ -264,6 +265,10 @@ function ProDetailContent() {
   const [adresseDepart, setAdresseDepart] = useState('');
   const [adresseArrivee, setAdresseArrivee] = useState('');
   const [animauxTaxiIds, setAnimauxTaxiIds] = useState<number[]>([]);
+  // Vétérinaire, ostéo, toiletteur, éducateur : d'autres animaux sur le même
+  // RDV, chacun avec son motif et sa durée (rdv.animaux_ids + animaux_detail).
+  const [autresAnimaux, setAutresAnimaux] = useState<(number | string)[]>([]);
+  const [motifsAutres, setMotifsAutres] = useState<Record<string, string>>({});
 
   // Autocomplétion d'adresse (Google Places) pour le trajet taxi
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
@@ -677,7 +682,7 @@ function ProDetailContent() {
     // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
     // voit les animaux de tous ses profils au lieu du seul profil courant.
     const moiUid = user?.uid ?? '-';
-    let animauxQ = supabase.from('animaux').select('id, nom, espece, race, photo_url')
+    let animauxQ = supabase.from('animaux').select('id, nom, espece, race, photo_url, portee_id, nom_mere')
       .or(`uid_eleveur.eq.${moiUid},uid_proprietaire.eq.${moiUid}`)
       .order('nom');
     if (activeProfileId) animauxQ = animauxQ.eq('profile_id', activeProfileId);
@@ -747,6 +752,9 @@ function ProDetailContent() {
         setSallesParMotif((pf?.salles_par_motif ?? {}) as Record<string, string>);
         setDureesMotifsPro((pf?.durees_motifs ?? {}) as Record<string, number>);
         setChoixPraticienPermis(pf?.rdv_choix_praticien !== false);
+      } else if (profileId) {
+        const { data: pf } = await supabase.from('user_profiles_complet').select('durees_motifs').eq('id', profileId).maybeSingle();
+        setDureesMotifsPro((pf?.durees_motifs ?? {}) as Record<string, number>);
       }
     }
     const [slotsRes, animauxRes, ownRes, rdvsDuJour, clientAdresse] = await Promise.all([
@@ -809,7 +817,7 @@ function ProDetailContent() {
     const missingIds = cessionIds.filter(id => !direct.some(a => String(a.id) === id));
     let viaCession: Animal[] = [];
     if (missingIds.length > 0) {
-      const { data } = await supabase.from('animaux').select('id, nom, espece, race, photo_url').in('id', missingIds);
+      const { data } = await supabase.from('animaux').select('id, nom, espece, race, photo_url, portee_id, nom_mere').in('id', missingIds);
       viaCession = (data ?? []) as Animal[];
     }
     setAnimaux([...direct, ...viaCession].sort((a, b) => a.nom.localeCompare(b.nom)));
@@ -926,6 +934,21 @@ function ProDetailContent() {
         ? (prestations.find(x => x.id === prestationPhotoId)?.nom ?? 'Séance photo')
         : (motifInfo?.label ?? motifKey);
       const premiereSuffix = premiereVisite !== null ? `${premiereVisite ? ' (1ère visite)' : ''}` : '';
+      // Plusieurs animaux : détail par animal (motif + durée), motif combiné.
+      const nomAnimal = (id: number | string) => animaux.find(a => a.id === id)?.nom ?? '';
+      const detailAnimaux = animauxEnPlus.length > 0 && selectedAnimalId ? [
+        { id: String(selectedAnimalId), nom: nomAnimal(selectedAnimalId), motif: motifLabel, motif_cle: motifKey, duree_minutes: dureeMotifCle(motifKey) },
+        ...animauxEnPlus.map(id => {
+          const o = optionAutre(id);
+          return { id: String(id), nom: nomAnimal(id), motif: o?.label ?? motifLabel, motif_cle: o?.key ?? motifKey, duree_minutes: o?.duree ?? 30 };
+        }),
+      ] : null;
+      const motifRdv = (() => {
+        if (!detailAnimaux) return motifLabel;
+        const parMotif = new Map<string, string[]>();
+        for (const d of detailAnimaux) parMotif.set(d.motif, [...(parMotif.get(d.motif) ?? []), d.nom]);
+        return parMotif.size === 1 ? motifLabel : [...parMotif].map(([m, noms]) => `${m} (${noms.join(', ')})`).join(' + ');
+      })();
 
       // Garde-journée : une ligne rdv par jour disponible de la plage.
       if (isGardeJournee) {
@@ -992,7 +1015,7 @@ function ProDetailContent() {
           ...(selectedAnimalId && !isTaxi ? { animal_nom_manuel: animaux.find(a => a.id === selectedAnimalId)?.nom ?? null } : {}),
           date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
           statut: 'demande',
-          motif: `${motifLabel}${premiereSuffix}`,
+          motif: `${motifRdv}${premiereSuffix}`,
           ...(premiereVisite !== null ? { premiere_visite: premiereVisite } : {}),
           notes_client: (pro.cat_pro === 'garde' ? notesGarde : notes) || null,
           pro_profile_id: pro.profileTableId || null,
@@ -1024,12 +1047,24 @@ function ProDetailContent() {
             animal_nom_manuel: animauxSel.map(a => a.nom).filter(Boolean).join(' + '),
             animaux_ids: animauxSel.map(a => a.id),
           } : {}),
+          ...(detailAnimaux ? {
+            animal_nom_manuel: detailAnimaux.map(d => d.nom).filter(Boolean).join(' + '),
+            animaux_ids: detailAnimaux.map(d => d.id),
+            animaux_detail: detailAnimaux,
+            nombre_animaux: detailAnimaux.length,
+          } : {}),
         };
         let { error: rdvErr } = await supabase.from('rdv').insert({ ...ligneRdv, ...extraGarde });
         // migration_garde_demande_serie.sql pas encore passée : demande envoyée
         // sans les nouvelles colonnes (l'accès reste dans les consignes).
         if (rdvErr && Object.keys(extraGarde).length > 0 && (rdvErr.code === 'PGRST204' || rdvErr.message.includes('column'))) {
           ({ error: rdvErr } = await supabase.from('rdv').insert(ligneRdv));
+        }
+        // migration_rdv_animaux_detail.sql pas encore passée : animaux dans le nom affiché.
+        if (rdvErr && detailAnimaux && (rdvErr.code === 'PGRST204' || rdvErr.message.includes('column'))) {
+          const { animaux_detail: _sansDetail, ...sansDetail } = ligneRdv as typeof ligneRdv & { animaux_detail?: unknown };
+          void _sansDetail;
+          ({ error: rdvErr } = await supabase.from('rdv').insert({ ...sansDetail, ...extraGarde }));
         }
         if (rdvErr) {
           // Contrôle en base (clinique) : créneau pris entre-temps.
@@ -1050,12 +1085,13 @@ function ProDetailContent() {
       // Partage du carnet de santé avec le cabinet (consentement du propriétaire).
       setPartageEchoue(false);
       if (['veterinaire', 'sante'].includes(pro.cat_pro) && partagerCarnet && selectedAnimalId && pro.profileTableId) {
-        const { error: errPartage } = await supabase.from('animal_access').upsert({
-          animal_id: selectedAnimalId, pro_profile_id: pro.profileTableId,
+        // Plusieurs animaux : le carnet de chacun est partagé.
+        const { error: errPartage } = await supabase.from('animal_access').upsert([selectedAnimalId, ...animauxEnPlus].map(id => ({
+          animal_id: id, pro_profile_id: pro.profileTableId,
           ...(activeProfileId ? { granted_by_profile_id: activeProfileId } : {}),
           permissions: pro.cat_pro === 'veterinaire' ? ['read_basic', 'read_health', 'write_health'] : ['read_basic', 'write_notes'],
           statut: 'active', granted_at: new Date().toISOString(),
-        }, { onConflict: 'animal_id,pro_profile_id' });
+        })), { onConflict: 'animal_id,pro_profile_id' });
         if (errPartage) { console.warn('Partage du carnet refusé', errPartage); setPartageEchoue(true); }
       }
 
@@ -1065,7 +1101,7 @@ function ProDetailContent() {
         title: isSerie ? 'Nouvelle série de RDV récurrents' : 'Nouvelle demande de RDV',
         body: isSerie
           ? `Demande de ${targetSlots.length} RDV récurrents à partir du ${fmtDate(slotRef.date)} à ${fmtTime(slotRef.heureDebut)} — ${motifLabel}.`
-          : `Demande pour le ${fmtDate(slotRef.date)} à ${fmtTime(slotRef.heureDebut)} — ${motifLabel}.`,
+          : `Demande pour le ${fmtDate(slotRef.date)} à ${fmtTime(slotRef.heureDebut)} — ${motifRdv}.`,
         ...(pro.profileTableId ? { profile_id: pro.profileTableId } : {}),
         data: { pro_uid: pro.uid },
       });
@@ -1139,12 +1175,57 @@ function ProDetailContent() {
     return occupes.some(o => d < o.fin && f > o.debut);
   };
 
+  // Plusieurs animaux sur le même RDV : durée de chaque animal selon son
+  // motif, créneau de la somme des durées (miroir appli _selectedDuration).
+  const multiAnimaux = !!pro && !!user && !isTaxi && ['veterinaire', 'sante', 'toilettage', 'education'].includes(pro.cat_pro);
+  const motifsCat = MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
+  const dureeMotifCle = (k: string) => Number(dureesMotifsPro[k]) || (motifsCat.find(m => m.key === k)?.duree ?? 30);
+  const optionsAutres = motifsCat.filter(m => m.key !== 'autre').map(m => ({ key: m.key, label: m.label, duree: dureeMotifCle(m.key) }));
+  const animauxEnPlus = multiAnimaux && selectedAnimalId ? autresAnimaux.filter(id => id !== selectedAnimalId) : [];
+  const optionAutre = (id: number | string) =>
+    optionsAutres.find(o => o.key === (motifsAutres[String(id)] ?? motifKey)) ?? optionsAutres[0];
+  const dureeEnPlus = animauxEnPlus.reduce<number>((s, id) => s + (optionAutre(id)?.duree ?? 30), 0);
+
+  // Autres métiers, plusieurs animaux : créneaux de la durée totale dans les
+  // plages du pro (fusionnées), sans chevaucher un RDV existant.
+  function slotsDureeTotale(duree: number): Record<string, Slot[]> {
+    const toMin = (h: string) => { const [a, b] = h.split(':').map(Number); return a * 60 + b; };
+    const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}:00`;
+    const parDate: Record<string, { s: number; e: number; origine: string | null }[]> = {};
+    for (const sl of slots) {
+      if (pro?.cat_pro === 'sante' && domicile && !sl.domicileOk) continue;
+      (parDate[sl.date] ??= []).push({ s: toMin(sl.heureDebut), e: toMin(sl.heureFin), origine: sl.trajetOrigine ?? null });
+    }
+    const out: Record<string, Slot[]> = {};
+    for (const [date, fen] of Object.entries(parDate)) {
+      fen.sort((a, b) => a.s - b.s);
+      const fusion: { s: number; e: number; origine: string | null }[] = [];
+      for (const w of fen) {
+        const last = fusion[fusion.length - 1];
+        if (last && w.s <= last.e) last.e = Math.max(last.e, w.e); else fusion.push({ ...w });
+      }
+      const [y, mo, d] = date.split('-').map(Number);
+      for (const w of fusion) {
+        for (let t = w.s; t + duree <= w.e; t += 15) {
+          const debut = new Date(y, mo - 1, d, 0, t).getTime();
+          if (debut < earliestBookable.getTime()) continue;
+          const fin = debut + duree * 60000;
+          if (occupes.some(o => debut < o.fin && fin > o.debut)) continue;
+          const s: Slot = { date, heureDebut: hm(t), heureFin: hm(t + duree), domicileOk: true, trajetOrigine: w.origine };
+          if (pro?.cat_pro === 'sante' && domicile && !trajetOk(s)) continue;
+          (out[date] ??= []).push(s);
+        }
+      }
+    }
+    return out;
+  }
+
   // Vétérinaire : créneaux par praticien (durée du motif) + salle libre du
   // type du motif ; « peu importe » = premier praticien libre. Miroir appli
   // (rdv_booking_page.dart _slotsClinique), contrôle final en base.
   function slotsVeto(): Record<string, Slot[]> {
     const motifDuree = (MOTIFS_BY_CAT.veterinaire ?? []).find(m => m.key === motifKey)?.duree ?? 30;
-    const duree = Number(dureesMotifsPro[motifKey]) || motifDuree;
+    const duree = (Number(dureesMotifsPro[motifKey]) || motifDuree) + dureeEnPlus;
     const typeSalle = sallesParMotif[cleMotif(motifKey)] ?? 'consultation';
     const sallesType = new Set(salles.filter(x => x.type === typeSalle).map(x => x.id));
     if (salles.length > 0 && sallesType.size === 0) return {};
@@ -1189,7 +1270,9 @@ function ProDetailContent() {
     return out;
   }
 
-  const slotsByDate = pro?.cat_pro === 'veterinaire' ? slotsVeto() : slots.reduce<Record<string, Slot[]>>((acc, s) => {
+  const slotsByDate = pro?.cat_pro === 'veterinaire' ? slotsVeto()
+    : dureeEnPlus > 0 ? slotsDureeTotale(dureeMotifCle(motifKey) + dureeEnPlus)
+    : slots.reduce<Record<string, Slot[]>>((acc, s) => {
     if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
     if (!chevauchementOk && estOccupe(s)) return acc;
     if (pro?.cat_pro === 'sante' && domicile && (!s.domicileOk || !trajetOk(s))) return acc;
@@ -1861,7 +1944,7 @@ function ProDetailContent() {
                 const catColor = CATEGORIES_ANNUAIRE.find(c => c.key === 'sante')?.color ?? '#2E7D5E';
                 const dureeMotif = (k: string) => Number(dureesMotifsPro[k]) || (motifs.find(m => m.key === k)?.duree ?? 30);
                 const fmtDuree = (min: number) => min < 60 ? `${min} min` : `${Math.floor(min / 60)}h${min % 60 ? String(min % 60).padStart(2, '0') : ''}`;
-                const dureeSel = dureeMotif(motifKey || 'consultation');
+                const dureeSel = dureeMotif(motifKey || 'consultation') + dureeEnPlus;
                 const dateSel = availableDates.includes(selectedDate) ? selectedDate : null;
                 const slotsJour = dateSel ? [...(slotsByDate[dateSel] ?? [])].sort((a, b) => a.heureDebut.localeCompare(b.heureDebut)) : [];
                 const heureSel = selectedSlot && selectedSlot.date === dateSel ? fmtTime(selectedSlot.heureDebut) : null;
@@ -1915,14 +1998,23 @@ function ProDetailContent() {
                       </p>
                     ) : (
                       <AnimalPickerField animaux={animaux} selectedId={selectedAnimalId}
-                        onSelect={(id) => setSelectedAnimalId(id as number | null)} accentColor={catColor} />
+                        onSelect={(id) => { setSelectedAnimalId(id as number | null); setSelectedSlot(null); }} accentColor={catColor} />
+                    )}
+                    {multiAnimaux && selectedAnimalId && (
+                      <AutresAnimauxRdv animaux={animaux} principalId={selectedAnimalId} selectedIds={autresAnimaux}
+                        onChange={ids => { setAutresAnimaux(ids); setSelectedSlot(null); }}
+                        options={optionsAutres} motifDe={optionAutre}
+                        onMotif={(id, k) => { setMotifsAutres(m => ({ ...m, [String(id)]: k })); setSelectedSlot(null); }}
+                        dureeTotale={dureeSel} accentColor={catColor} />
                     )}
                     {user && animalSel && pro.profileTableId && (
                       <label className="mt-2.5 flex items-center gap-3 rounded-xl px-3 py-2.5 cursor-pointer"
                         style={{ fontFamily: 'Galey, sans-serif', background: `${catColor}0D`, border: `1px solid ${catColor}2E` }}>
                         <span className="text-lg">🩺</span>
                         <span className="flex-1 min-w-0">
-                          <span className="block text-[13px] font-bold text-[#1E2025]">Partager le carnet de santé de {animalSel.nom}</span>
+                          <span className="block text-[13px] font-bold text-[#1E2025]">
+                            {animauxEnPlus.length > 0 ? `Partager le carnet de santé de ces ${animauxEnPlus.length + 1} animaux` : `Partager le carnet de santé de ${animalSel.nom}`}
+                          </span>
                           <span className="block text-[11.5px] text-[#6F767B]">Vaccins, traitements, antécédents — révocable à tout moment depuis sa fiche.</span>
                         </span>
                         <input type="checkbox" checked={partagerCarnet} onChange={e => setPartagerCarnet(e.target.checked)}
@@ -2346,12 +2438,21 @@ function ProDetailContent() {
                         )}
                       </div>
                     ) : (
-                      <AnimalPickerField
-                        animaux={animaux}
-                        selectedId={selectedAnimalId}
-                        onSelect={(id) => setSelectedAnimalId(id as number | null)}
-                        accentColor={catColor}
-                      />
+                      <>
+                        <AnimalPickerField
+                          animaux={animaux}
+                          selectedId={selectedAnimalId}
+                          onSelect={(id) => { setSelectedAnimalId(id as number | null); if (multiAnimaux) setSelectedSlot(null); }}
+                          accentColor={catColor}
+                        />
+                        {multiAnimaux && selectedAnimalId && (
+                          <AutresAnimauxRdv animaux={animaux} principalId={selectedAnimalId} selectedIds={autresAnimaux}
+                            onChange={ids => { setAutresAnimaux(ids); setSelectedSlot(null); }}
+                            options={optionsAutres} motifDe={optionAutre}
+                            onMotif={(id, k) => { setMotifsAutres(m => ({ ...m, [String(id)]: k })); setSelectedSlot(null); }}
+                            dureeTotale={dureeMotifCle(motifKey) + dureeEnPlus} accentColor={catColor} />
+                        )}
+                      </>
                     )}
                   </div>
                   )}
@@ -2541,7 +2642,7 @@ function ProDetailContent() {
                       </p>
                       {selectedAnimalId && !isTaxi && pro.cat_pro !== 'garde' && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          🐾 {animaux.find(a => a.id === selectedAnimalId)?.nom}
+                          🐾 {[selectedAnimalId, ...animauxEnPlus].map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(' + ')}
                         </p>
                       )}
                       {isTaxi && animauxTaxiIds.length > 0 && (
