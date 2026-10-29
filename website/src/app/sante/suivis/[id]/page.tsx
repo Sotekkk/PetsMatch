@@ -79,7 +79,7 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
       const [ph, vi, pt, ob, mv] = await Promise.all([
         supabase.from('suivis_morpho_photos').select('vue, url').eq('suivi_id', id),
         supabase.from('suivis_morpho_videos').select('activite, commentaire, url').eq('suivi_id', id),
-        supabase.from('suivis_morpho_points').select('id, vue, x_pct, y_pct, categorie, note').eq('suivi_id', id),
+        supabase.from('suivis_morpho_points').select('id, vue, x_pct, y_pct, categorie, note, couleur').eq('suivi_id', id),
         supabase.from('suivis_morpho_observations').select('categorie, valeur, commentaire').eq('suivi_id', id),
         supabase.from('suivis_morpho_mouvements').select('activite, observation, gene_observee, commentaire').eq('suivi_id', id),
       ]);

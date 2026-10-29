@@ -34,7 +34,7 @@ export async function pdfSeance(suiviId: string, signature?: string | null): Pro
   if (!s) throw new Error('Séance introuvable');
   const [ph, pt, ob, mv, ex] = await Promise.all([
     supabase.from('suivis_morpho_photos').select('vue, url').eq('suivi_id', suiviId),
-    supabase.from('suivis_morpho_points').select('id, vue, x_pct, y_pct, categorie, note').eq('suivi_id', suiviId),
+    supabase.from('suivis_morpho_points').select('id, vue, x_pct, y_pct, categorie, note, couleur').eq('suivi_id', suiviId),
     supabase.from('suivis_morpho_observations').select('categorie, valeur, commentaire').eq('suivi_id', suiviId),
     supabase.from('suivis_morpho_mouvements').select('activite, observation, gene_observee, commentaire').eq('suivi_id', suiviId),
     supabase.from('suivis_morpho_exercices').select('*').eq('suivi_id', suiviId).order('ordre'),
