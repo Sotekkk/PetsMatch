@@ -4,14 +4,18 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import { crsDuRdv } from '@/lib/cr-rdv';
+import CompteRenduRdvModal from '@/components/rdv/CompteRenduRdvModal';
 
 // RDV à plusieurs animaux : un compte rendu (vétérinaire) ou une séance
 // (ostéo) par animal, avec l'état de chacun — fait / brouillon / à faire.
 // Miroir appli : choisirAnimalRdv (lib/utils/rdv_animaux.dart).
 
-export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
+export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proProfileId = null, clientNom }: {
   rdvId: string; animaux: AnimalRdv[]; metier: 'veterinaire' | 'sante';
+  proProfileId?: string | null; clientNom?: string;
 }) {
+  // Vétérinaire : compte rendu fait ouvert ici, sans quitter le RDV.
+  const [crOuvert, setCrOuvert] = useState<AnimalRdv | null>(null);
   const [etats, setEtats] = useState<Record<string, 'fait' | 'brouillon'>>({});
   const [especes, setEspeces] = useState<Record<string, string>>({});
   // Vétérinaire : compte rendu (fait ou brouillon) de chaque animal pour ce RDV.
@@ -66,7 +70,9 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
             <p className="flex-1 min-w-0 text-xs text-gray-500 truncate">🐾 {ligneAnimalRdv(a)}</p>
             {/* Chargement complet : formulaire du compte rendu toujours repris à zéro. */}
             {/* Fait (vert plein) : l'ouvrir — Brouillon (orange) : le reprendre — À faire (contour) : le rédiger. */}
-            <a href={lien(a)} className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-lg border"
+            <a href={lien(a)}
+              onClick={e => { if (metier === 'veterinaire' && etat === 'fait' && crIds[a.id]) { e.preventDefault(); setCrOuvert(a); } }}
+              className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-lg border"
               style={etat === 'fait' ? { background: '#2E7D32', borderColor: '#2E7D32', color: 'white' }
                 : etat === 'brouillon' ? { background: '#FFF4E0', borderColor: '#C77800', color: '#8A5A00' }
                 : { background: 'white', borderColor: '#0C5C6C', color: '#0C5C6C' }}>
@@ -77,6 +83,10 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier }: {
           </div>
         );
       })}
+      {crOuvert && crIds[crOuvert.id] && (
+        <CompteRenduRdvModal crId={crIds[crOuvert.id]} animalNom={crOuvert.nom} rdvId={rdvId}
+          proProfileId={proProfileId} clientNom={clientNom} onClose={() => setCrOuvert(null)} />
+      )}
     </div>
   );
 }

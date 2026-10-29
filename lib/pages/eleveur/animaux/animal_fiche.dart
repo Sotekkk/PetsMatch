@@ -12545,6 +12545,7 @@ class _VetAddRadioDialogState extends State<_VetAddRadioDialog> {
       final name = '${DateTime.now().millisecondsSinceEpoch}.${_imgFile!.path.split('.').last}';
       final url  = await uploadDocument(_imgFile!, 'radios/${widget.vetUid}/$name');
       await Supabase.instance.client.from('radios').insert({
+        'id':          DateTime.now().microsecondsSinceEpoch.toString(),
         'animal_id':   widget.animalId,
         'vet_id':      widget.vetUid,
         'veterinaire': widget.vetName,
@@ -12673,6 +12674,7 @@ class _AddRadioDialogState extends State<_AddRadioDialog> {
         url = await uploadDocument(_file!, 'radios/$uid/$name');
       }
       await Supabase.instance.client.from('radios').insert({
+        'id':        DateTime.now().microsecondsSinceEpoch.toString(),
         'animal_id': widget.animalId,
         'titre':     _titre.text.trim().isNotEmpty ? _titre.text.trim() : 'Radio / Examen',
         'notes':     _notes.text.trim(), 'image_url': url,

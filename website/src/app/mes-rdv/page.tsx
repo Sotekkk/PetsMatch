@@ -93,6 +93,8 @@ interface Rdv {
   /** Plusieurs animaux : motif et durée de chacun (migration_rdv_animaux_detail.sql). */
   animaux_detail?: unknown;
   acces_logement?: string | null;
+  /** Facture émise pour ce RDV. */
+  facture_id?: string | null;
   /** Demandes : tous les passages de la série (affichée en une carte). */
   serie?: Rdv[];
   /** Retard estimé en cascade (minutes), calculé à l'affichage. */
@@ -1082,8 +1084,10 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation, onFacturer }: {
   rdv: Rdv;
+  /** Vétérinaire : préparer la facture du RDV (comptes rendus, tarifs). */
+  onFacturer?: () => void;
   /** Vétérinaire : envoyer CR / ordonnance / facture, facture acquittée. */
   onFinConsultation?: () => void;
   /** RDV à plusieurs animaux : un compte rendu (vétérinaire) ou une séance (ostéo) par animal. */
@@ -1124,13 +1128,14 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             </span>
           </div>
           {animauxDetailRdv(rdv).length > 0 ? (
-            crParAnimal ? <ComptesRendusAnimauxRdv rdvId={rdv.id} animaux={animauxDetailRdv(rdv)} metier={crParAnimal} />
+            crParAnimal ? <ComptesRendusAnimauxRdv rdvId={rdv.id} animaux={animauxDetailRdv(rdv)} metier={crParAnimal}
+              proProfileId={myProfileId} clientNom={rdv.clientName} />
             : animauxDetailRdv(rdv).map(a => (
               <p key={a.id} className="text-xs text-gray-500 mt-0.5">🐾 {ligneAnimalRdv(a)}</p>
             ))
           ) : crParAnimal && rdv.animal_id ? (
             // Un seul animal : compte rendu / séance rattaché(e) au RDV aussi.
-            <ComptesRendusAnimauxRdv rdvId={rdv.id} metier={crParAnimal}
+            <ComptesRendusAnimauxRdv rdvId={rdv.id} metier={crParAnimal} proProfileId={myProfileId} clientNom={rdv.clientName}
               animaux={[{ id: String(rdv.animal_id), nom: rdv.animalNom ?? 'Animal', motif: rdv.motif ?? null }]} />
           ) : rdv.animalNom && (
             <p className="text-xs text-gray-500 mt-0.5">🐾 {rdv.animalNom}</p>
@@ -1230,6 +1235,13 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
                 </span>
               )}
             </span>
+          )}
+          {onFacturer && (
+            <button onClick={onFacturer}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              Facturer
+            </button>
           )}
           {onFinConsultation && (
             <button onClick={onFinConsultation}
@@ -2137,6 +2149,10 @@ export default function MesRdvPage() {
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
                   crParAnimal={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? catPro : undefined}
                   onFinConsultation={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? () => setFinConsultation(rdv) : undefined}
+                  onFacturer={activeTab !== 'demandes' && catPro === 'veterinaire' && !rdv.facture_id && rdv.statut !== 'annule'
+                    && (rdv.animal_id || animauxDetailRdv(rdv).length > 0)
+                    ? () => window.location.assign(`/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`)
+                    : undefined}
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}

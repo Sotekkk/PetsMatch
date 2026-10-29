@@ -3910,7 +3910,7 @@ function AnimalFichePageInner() {
       const ext = file.name.split('.').pop() ?? 'pdf';
       const url = await uploadDocToStorage(file, `radios/${user.uid}/${crypto.randomUUID()}.${ext}`);
       const { error } = await supabase.from('radios').insert({
-        animal_id: id, titre: titre.trim() || 'Radio / Examen', notes: notes.trim() || null, image_url: url, date,
+        id: crypto.randomUUID(), animal_id: id, titre: titre.trim() || 'Radio / Examen', notes: notes.trim() || null, image_url: url, date,
       });
       if (error) throw error;
       await loadDocs();

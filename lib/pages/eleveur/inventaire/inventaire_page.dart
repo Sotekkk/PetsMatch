@@ -1107,6 +1107,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     controller: _qteCtrl,
                     decoration: _dec('Quantité actuelle'),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    // Unités au pluriel dès que la quantité dépasse 1.
+                    onChanged: (_) => setState(() {}),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1115,7 +1117,8 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     value: _unite,
                     decoration: _dec('Unité'),
                     items: {...(widget.veto ? _unitesVeto : _unites), _unite}
-                        .map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                        .map((u) => DropdownMenuItem(value: u,
+                            child: Text(_plural(u, double.tryParse(_qteCtrl.text.replaceAll(',', '.')) ?? 0)))).toList(),
                     onChanged: (v) => setState(() => _unite = v!),
                   ),
                 ),
@@ -1145,7 +1148,7 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     TextField(
                       controller: _seuilCtrl,
                       decoration: InputDecoration(
-                        labelText: 'Notifier quand il reste moins de… ($_unite)',
+                        labelText: 'Notifier quand il reste moins de… (${_plural(_unite, 2)})',
                         hintText: 'ex : 2',
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         focusedBorder: OutlineInputBorder(

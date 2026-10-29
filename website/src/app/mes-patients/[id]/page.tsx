@@ -1495,8 +1495,8 @@ function PatientDetailPageInner() {
           : s.type === 'allergie'
             ? await supabase.from('allergies').insert({ ...base, description: s.nom, severite: s.detail || null })
             : s.type === 'radio'
-              ? await supabase.from('radios').insert({ ...base, titre: s.nom, notes: s.detail || null, veterinaire: vetName || null })
-              : await supabase.from('chirurgies').insert({ ...base, type: s.type, intitule: s.nom, statut: 'realise', notes: s.detail || null, veterinaire: vetName || null });
+              ? await supabase.from('radios').insert({ ...base, id: crypto.randomUUID(), titre: s.nom, notes: s.detail || null, veterinaire: vetName || null })
+              : await supabase.from('chirurgies').insert({ ...base, id: crypto.randomUUID(), type: s.type, intitule: s.nom, statut: 'realise', notes: s.detail || null, veterinaire: vetName || null });
       if (error) erreurs.push(`${SOINS_LIBELLES[s.type].toLowerCase()} ${s.nom}`);
     }
     for (const t of traitementsCr) {
@@ -1683,7 +1683,7 @@ function PatientDetailPageInner() {
     }
   }
 
-  async function proposerFacture(motif: string, actes: string[], vaccins: VaccinCr[], traitements: TraitementCr[], poids: number | null, produits: ProduitCr[] = []) {
+  async function proposerFacture(motif: string, actes: string[], vaccins: VaccinCr[], traitements: TraitementCr[], poids: number | null, produits: ProduitCr[] = [], rdvFacture?: string) {
     if (!activeProfileId || !animal) return;
     const [{ data: t }, { data: ph }] = await Promise.all([
       supabase.from('user_profiles_complet').select('tarifs_veto').eq('id', activeProfileId).maybeSingle(),
@@ -1734,8 +1734,8 @@ function PatientDetailPageInner() {
         prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
         rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
         notes: `Consultation de ${animal.nom}`,
-        sourceRdvId: dernierRdv?.id, sourceAnimalId: animalId,
-        ...(crRdvId ? { retour: `/mes-rdv?rdv=${encodeURIComponent(crRdvId)}` } : {}),
+        sourceRdvId: rdvFacture ?? dernierRdv?.id, sourceAnimalId: animalId,
+        ...((rdvFacture ?? crRdvId) ? { retour: `/mes-rdv?rdv=${encodeURIComponent((rdvFacture ?? crRdvId)!)}` } : {}),
         clientUid: dernierRdv?.client_uid ?? animal.uid_proprietaire ?? undefined,
         clientProfileId: dernierRdv?.client_profile_id ?? undefined,
       }));
@@ -1901,6 +1901,53 @@ function PatientDetailPageInner() {
     setAddingType('cr');
   }
 
+  /** Facture d'un compte rendu, après coup : motif, poids, actes du CR +
+   *  vaccins / traitements inscrits au carnet par moi le jour du CR ; visite
+   *  à plusieurs animaux : la facture de toute la visite. */
+  async function facturerCr(c: CompteRendu) {
+    if (c.rdv_id) {
+      const { data: rv } = await supabase.from('rdv').select('animaux_detail').eq('id', c.rdv_id).maybeSingle();
+      if (animauxDetailRdv((rv ?? {}) as { animaux_detail?: unknown }).length > 0) { await facturerVisite(c.rdv_id); return; }
+    }
+    const { vac, trt } = await carnetDuCr(String(animalId), c);
+    const vaccins: VaccinCr[] = ((vac ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null }[])
+      .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null }));
+    const noms = [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))];
+    await proposerFacture(c.motif ?? '', c.actes ?? [], vaccins,
+      noms.map(nom => ({ nom, type: 'medicament', phases: [], rappels: false, notes: '' })), c.poids ?? null,
+      c.produits ?? [], c.rdv_id ?? searchParams.get('rdv') ?? undefined);
+  }
+
+  // Liens depuis Gérer mes RDV : « Modifier » un compte rendu fait
+  // (?modifierCr=), « Facturer » le RDV (?facturerRdv=).
+  const actionRdvFaite = useRef('');
+  useEffect(() => {
+    const modif = searchParams.get('modifierCr');
+    const fact = searchParams.get('facturerRdv');
+    const cle = `${modif}|${fact}|${animalId}`;
+    if ((!modif && !fact) || catPro !== 'veterinaire' || !animalId || !animal || actionRdvFaite.current === cle) return;
+    actionRdvFaite.current = cle;
+    (async () => {
+      if (modif) {
+        const { data } = await supabase.from('comptes_rendus').select('*').eq('id', modif).maybeSingle();
+        if (data) modifierCr(data as CompteRendu);
+        return;
+      }
+      const { data: rv } = await supabase.from('rdv').select('motif, animaux_detail').eq('id', fact!).maybeSingle();
+      if (animauxDetailRdv((rv ?? {}) as { animaux_detail?: unknown }).length > 0) await facturerVisite(fact!);
+      else {
+        const crs = (await crsDuRdv(fact!, [String(animalId)])).filter(c => c.statut !== 'brouillon');
+        const { data: cr } = crs.length ? await supabase.from('comptes_rendus').select('*').eq('id', crs[0].id).maybeSingle() : { data: null };
+        if (cr) await facturerCr({ ...(cr as CompteRendu), rdv_id: fact });
+        // Pas encore de compte rendu : facture du RDV (motif seul), à compléter.
+        else await proposerFacture((rv as { motif?: string | null } | null)?.motif ?? '', [], [], [], null, [], fact!);
+      }
+      // Facture refusée : retour au RDV.
+      if (!navigationSuivie.current) retourAuRdv(fact!);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, catPro, animalId, animal]);
+
   /** Retour à la vue du RDV (Gérer mes RDV, RDV mis en avant). */
   function retourAuRdv(rdvId: string) {
     window.location.assign(`/mes-rdv?rdv=${encodeURIComponent(rdvId)}`);
@@ -2030,7 +2077,8 @@ function PatientDetailPageInner() {
         setAntiparasitaires((data ?? []) as AntiparasitaireEntry[]);
         await notifyOwner('antiparasitaire', vetName);
       } else if (addingType === 'chirurgie') {
-        await supabase.from('chirurgies').insert({ ...base, type: formSubType || 'chirurgie', intitule: formIntitule.trim(), date: formDate, statut: formStatut, clinique: formClinique.trim() || null, protocole_preop: formPreop.trim() || null, protocole_postop: formPostop.trim() || null, notes: formNotes.trim() || null });
+        const { error: eChir } = await supabase.from('chirurgies').insert({ ...base, id: crypto.randomUUID(), type: formSubType || 'chirurgie', intitule: formIntitule.trim(), date: formDate, statut: formStatut, clinique: formClinique.trim() || null, protocole_preop: formPreop.trim() || null, protocole_postop: formPostop.trim() || null, notes: formNotes.trim() || null });
+        if (eChir) { alert(`Non enregistré : ${eChir.message}`); return; }
         const { data } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setChirurgies((data ?? []) as ChirurgieEntry[]);
         await notifyOwner(formSubType === 'hospitalisation' ? 'hospitalisation' : 'chirurgie', vetName);
@@ -2065,8 +2113,9 @@ function PatientDetailPageInner() {
           const ext = formFichier.name.split('.').pop() ?? 'pdf';
           imageUrl = await uploadDocToStorage(formFichier, `radios/${user.uid}/${crypto.randomUUID()}.${ext}`);
         }
-        await supabase.from('radios').insert({ ...base, titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null,
+        const { error: eRadio } = await supabase.from('radios').insert({ ...base, id: crypto.randomUUID(), titre: formTitre.trim() || 'Radio / Examen', date: formDate, notes: formNotes.trim() || null,
           ...(imageUrl ? { image_url: imageUrl } : {}) });
+        if (eRadio) { alert(`Radio non enregistrée : ${eRadio.message}`); return; }
         const { data } = await supabase.from('radios').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setRadios((data ?? []) as RadioEntry[]);
       } else if (addingType === 'cr') {
@@ -4015,23 +4064,7 @@ function PatientDetailPageInner() {
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={reprendreBrouillon}
               onModifier={cr => modifierCr(cr as CompteRendu)}
-              onFacturer={async (cr) => {
-                // Après coup : motif, poids, actes du CR + vaccins / traitements
-                // inscrits au carnet par moi le jour du CR.
-                const c = cr as CompteRendu;
-                // Visite à plusieurs animaux : la facture de toute la visite.
-                if (c.rdv_id) {
-                  const { data: rv } = await supabase.from('rdv').select('animaux_detail').eq('id', c.rdv_id).maybeSingle();
-                  if (animauxDetailRdv((rv ?? {}) as { animaux_detail?: unknown }).length > 0) { await facturerVisite(c.rdv_id); return; }
-                }
-                const { vac, trt } = await carnetDuCr(String(animalId), c);
-                const vaccins: VaccinCr[] = ((vac ?? []) as { vaccin: string | null; lot: string | null; date: string; date_rappel: string | null }[])
-                  .map(v => ({ nom: v.vaccin ?? 'Vaccin', lot: v.lot ?? '', date: String(v.date).slice(0, 10), rappel: v.date_rappel ? String(v.date_rappel).slice(0, 10) : null }));
-                const noms = [...new Set(((trt ?? []) as { nom: string | null }[]).map(x => x.nom ?? '').filter(Boolean))];
-                await proposerFacture(c.motif ?? '', c.actes ?? [], vaccins,
-                  noms.map(nom => ({ nom, type: 'medicament', phases: [], rappels: false, notes: '' })), c.poids ?? null,
-                  ((c as CompteRendu & { produits?: ProduitCr[] | null }).produits ?? []));
-              }}
+              onFacturer={cr => facturerCr(cr as CompteRendu)}
               onSupprimer={async (cr) => {
                 // Droits contrôlés en base : un CR validé n'est supprimable que par qui peut valider.
                 const { data, error } = await supabase.from('comptes_rendus').delete().eq('id', cr.id).select('id');
