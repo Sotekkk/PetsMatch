@@ -29,7 +29,7 @@ export async function seancesDuRdv(rdvId: string): Promise<SeanceRdv[]> {
 }
 
 /** PDF du compte rendu de séance (même PDF que « Exporter » sur la séance). */
-export async function pdfSeance(suiviId: string): Promise<{ blob: Blob; animalNom: string }> {
+export async function pdfSeance(suiviId: string, signature?: string | null): Promise<{ blob: Blob; animalNom: string }> {
   const { data: s } = await supabase.from('suivis_morpho').select('*').eq('id', suiviId).maybeSingle();
   if (!s) throw new Error('Séance introuvable');
   const [ph, pt, ob, mv, ex] = await Promise.all([
@@ -56,6 +56,7 @@ export async function pdfSeance(suiviId: string): Promise<{ blob: Blob; animalNo
     observations: (ob.data ?? []) as { categorie: string; valeur: string; commentaire: string | null }[],
     mouvements: (mv.data ?? []) as { activite: string; observation: string | null; gene_observee: boolean | null; commentaire: string | null }[],
     exercices: (ex.data ?? []) as ExerciceSeance[],
+    signature,
   });
   return { blob, animalNom: String(animal.nom ?? 'Animal') };
 }

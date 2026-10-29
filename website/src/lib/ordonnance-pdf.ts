@@ -189,12 +189,15 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   }
   // Sans nom de praticien : pas de « Dr Vétérinaire ».
   const praticien = d.praticien.trim().toLowerCase() === 'vétérinaire' ? '' : d.praticien.trim();
-  if (praticien || d.signature) {
-    if (y + 90 > H - 40) { doc.addPage(); y = 50; }
-    y += 24;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DARK);
-    if (praticien) doc.text(`Dr ${praticien}`, W - M - 180, y);
-    if (d.signature) { try { doc.addImage(d.signature, 'PNG', W - M - 180, y + 6, 130, 52); } catch { /* signature illisible */ } }
-  }
+  // Bloc signature : nom du vétérinaire, date du jour, « Signature : » puis la signature.
+  if (y + 110 > H - 40) { doc.addPage(); y = 50; }
+  y += 24;
+  const xs = W - M - 180;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...DARK);
+  if (praticien) { doc.text(`Dr ${praticien}`, xs, y); y += 14; }
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Le ${new Date().toLocaleDateString('fr-FR')}`, xs, y); y += 14;
+  doc.text('Signature :', xs, y);
+  if (d.signature) { try { doc.addImage(d.signature, 'PNG', xs, y + 6, 130, 52); } catch { /* signature illisible */ } }
   return doc.output('blob');
 }

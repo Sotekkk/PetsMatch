@@ -6,6 +6,8 @@
 
 const TEAL: [number, number, number] = [12, 92, 108];
 
+const DARK_PAIEMENT: [number, number, number] = [30, 32, 37];
+
 export interface FacturePdfLigne {
   designation?: string;
   description?: string;
@@ -212,11 +214,14 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(90);
+  // Mode de paiement et délai de règlement en gras.
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(...DARK_PAIEMENT);
   if (clean(d.modePaiement)) { doc.text(`Mode de paiement : ${clean(d.modePaiement)}`, M, y); y += 11; }
   if (clean(d.delaiPaiement)) {
     doc.text(`Délai de règlement : ${clean(d.delaiPaiement)} jours à compter de la date d'émission.`, M, y);
     y += 11;
   }
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(90);
   if (clean(d.noteComplementaire)) {
     const nl = doc.splitTextToSize(clean(d.noteComplementaire), W - M * 2);
     doc.text(nl, M, y);

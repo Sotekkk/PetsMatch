@@ -60,6 +60,8 @@ export async function morphoSuiviPdfBlob(params: {
   observations: { categorie: string; valeur: string; commentaire?: string | null }[];
   mouvements: { activite: string; observation?: string | null; gene_observee?: boolean | null; commentaire?: string | null }[];
   exercices?: ExerciceSeance[];
+  /** Signature manuscrite du praticien (data-URL PNG, table signatures_pro). */
+  signature?: string | null;
 }): Promise<Blob> {
   const { suivi, animal, pro, photos, observations, mouvements } = params;
   const exercices = params.exercices ?? [];
@@ -340,6 +342,17 @@ export async function morphoSuiviPdfBlob(params: {
       version > 1 ? `version ${version}` : null,
     ].filter(Boolean).join(' — '), M, y + 6);
     y += 20;
+    // Bloc signature : nom du praticien, date du jour, « Signature : » puis la signature.
+    ensureSpace(100);
+    const xs = M + W - 180;
+    y += 10;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 32, 37);
+    doc.text(auteur, xs, y); y += 14;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Le ${new Date().toLocaleDateString('fr-FR')}`, xs, y); y += 14;
+    doc.text('Signature :', xs, y);
+    if (params.signature) { try { doc.addImage(params.signature, 'PNG', xs, y + 6, 130, 52); } catch { /* signature illisible */ } }
+    y += 66;
   }
 
   // Avertissement

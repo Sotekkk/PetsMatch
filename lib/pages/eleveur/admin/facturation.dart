@@ -1699,9 +1699,10 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
         ),
         child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Text('Mode de paiement : ${d['modePaiement'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
+          // Mode de paiement et délai de règlement en gras.
+          pw.Text('Mode de paiement : ${d['modePaiement'] ?? ''}', style: pw.TextStyle(font: bold, fontSize: 10)),
           if ((d['delaiPaiement'] ?? '').toString().isNotEmpty)
-            pw.Text('Délai de règlement : ${d['delaiPaiement']} jours à compter de la date d\'émission.', style: pw.TextStyle(font: font, fontSize: 10)),
+            pw.Text('Délai de règlement : ${d['delaiPaiement']} jours à compter de la date d\'émission.', style: pw.TextStyle(font: bold, fontSize: 10)),
           if ((d['noteComplementaire'] ?? '').toString().isNotEmpty)
             pw.Text(d['noteComplementaire'], style: pw.TextStyle(font: font, fontSize: 9)),
         ]),

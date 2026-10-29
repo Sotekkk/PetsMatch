@@ -108,7 +108,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         const praticien = `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
         const pieces: { type: 'ordonnance' | 'compte_rendu' | 'facture'; blob: Blob; nomFichier: string }[] = [];
         for (const s of docs.seances ?? []) if (coches[`seance:${s.id}`]) {
-          const { blob, animalNom } = await pdfSeance(s.id);
+          const { blob, animalNom } = await pdfSeance(s.id, signature);
           pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-seance-${animalNom}.pdf`, blob });
         }
         for (const c of docs.crs) if (coches[`cr:${c.id}`]) {

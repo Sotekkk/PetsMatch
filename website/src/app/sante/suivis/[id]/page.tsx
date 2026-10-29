@@ -14,6 +14,8 @@ import {
   morphoSpeciesKey, vuesDisponibles, type MorphoPoint,
 } from '@/lib/morpho';
 import { morphoSuiviPdfBlob } from '@/lib/morpho-pdf';
+import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
+import SignatureProModal from '@/components/signature/SignatureProModal';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 
 interface SuiviRow { [k: string]: unknown }
@@ -21,6 +23,7 @@ interface SuiviRow { [k: string]: unknown }
 export default function SuiviDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
   const { user, userData, isSante, loading: authLoading } = useSanteAccess();
+  const [signer, setSigner] = useState(false);
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -109,7 +112,9 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
   /** Télécharge le PDF unique de la séance ; renvoie le nom du fichier. */
   async function telechargerPdf(): Promise<string | null> {
     if (!suivi) return null;
-    const blob = await morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements, exercices });
+    // Signature du praticien : seulement sur ses propres séances.
+    const signature = user && suivi.uid_auteur === user.uid ? await maSignaturePro(user.uid).catch(() => null) : null;
+    const blob = await morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements, exercices, signature });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const nomAnimal = (animal.nom || 'animal').replace(/\s+/g, '_');
@@ -250,6 +255,12 @@ ${pro.nom}` : ''}`;
                 </button>
               )}
             </>
+          )}
+          {suivi.source === 'professionnel' && user && suivi.uid_auteur === user.uid && (
+            <button onClick={() => setSigner(true)} title="Apposée sur vos comptes rendus de séance"
+              className="px-3 py-2 rounded-full text-sm font-galey font-semibold border" style={{ borderColor: TEAL, color: TEAL }}>
+              Ma signature
+            </button>
           )}
           <button disabled={exporting} onClick={handleExport}
             className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold disabled:opacity-50" style={{ background: TEAL }}>
@@ -517,6 +528,12 @@ ${pro.nom}` : ''}`;
             ))}
           </div>
         </div>
+      )}
+      {signer && user && (
+        <SignatureProModal onClose={() => setSigner(false)} onValider={async dataUrl => {
+          if (await enregistrerSignaturePro(user.uid, dataUrl)) setSigner(false);
+          else alert('Signature non enregistrée.');
+        }} />
       )}
     </div>
   );

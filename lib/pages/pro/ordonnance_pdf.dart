@@ -276,16 +276,21 @@ Future<Uint8List> compteRenduPdfBytes({
       ),
       pw.SizedBox(height: 16),
       ..._paragraphesCr(contenu),
-      if (nomPraticien.isNotEmpty || signature != null) ...[
-        pw.SizedBox(height: 28),
-        pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          if (nomPraticien.isNotEmpty)
-            pw.Text('Dr $nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
-          if (signature != null)
-            pw.Container(width: 160, height: 56, alignment: pw.Alignment.centerLeft,
-                child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain)),
-        ])),
-      ],
+      // Bloc signature : nom du vétérinaire, date du jour, « Signature : » puis la signature.
+      pw.SizedBox(height: 28),
+      pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        if (nomPraticien.isNotEmpty)
+          pw.Text('Dr $nomPraticien', style: pw.TextStyle(fontSize: 10, color: _dark, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 3),
+        pw.Text('Le ${_date(DateTime.now())}', style: const pw.TextStyle(fontSize: 10, color: _dark)),
+        pw.SizedBox(height: 3),
+        pw.Text('Signature :', style: const pw.TextStyle(fontSize: 10, color: _dark)),
+        if (signature != null)
+          pw.Container(width: 160, height: 56, alignment: pw.Alignment.centerLeft,
+              child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain))
+        else
+          pw.SizedBox(height: 40),
+      ])),
     ],
   ));
   return doc.save();

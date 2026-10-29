@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'package:PetsMatch/utils/fin_seance_osteo.dart' show finSeanceOsteo;
+import 'package:PetsMatch/utils/signature_pro.dart' show signerEtEnregistrer;
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -372,8 +373,20 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
           if (!_loading && !widget.readOnly)
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert),
-              onSelected: (v) { if (v == 'modifier') _modifier(); if (v == 'supprimer') _supprimer(); },
+              onSelected: (v) async {
+                if (v == 'modifier') _modifier();
+                if (v == 'supprimer') _supprimer();
+                if (v == 'signature') {
+                  final s = await signerEtEnregistrer(context);
+                  if (s != null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Signature enregistrée : apposée sur vos comptes rendus de séance.', style: TextStyle(fontFamily: 'Galey'))));
+                  }
+                }
+              },
               itemBuilder: (_) => [
+                if (source == 'professionnel')
+                  const PopupMenuItem(value: 'signature', child: Text('Ma signature', style: TextStyle(fontFamily: 'Galey'))),
                 PopupMenuItem(value: 'modifier', child: Text(_statut == 'finalise' ? 'Corriger' : 'Modifier', style: const TextStyle(fontFamily: 'Galey'))),
                 if (_statut != 'finalise')
                   const PopupMenuItem(value: 'supprimer', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),

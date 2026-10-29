@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/utils/signature_pro.dart';
 import 'morpho_constants.dart';
 
 // ── Export PDF d'un suivi morphologique — compte rendu imprimable/partageable
@@ -92,6 +94,10 @@ Future<Uint8List> morphoSuiviPdfBytes({
   final espece = morphoSpeciesKey(animal['espece']?.toString()) ?? 'chien';
   final date = DateTime.tryParse(suivi['date']?.toString() ?? '');
   final source = suivi['source']?.toString() ?? 'proprietaire';
+  // Signature du praticien : seulement sur ses propres séances (signatures_pro).
+  final auteurUid = suivi['uid_auteur']?.toString();
+  final signature = source == 'professionnel' && auteurUid != null && auteurUid == FirebaseAuth.instance.currentUser?.uid
+      ? octetsSignature(await maSignaturePro()) : null;
 
   // Photos de référence (4 vues + extra) — téléchargées depuis Supabase Storage.
   final photosByVue = <String, pw.MemoryImage>{};
@@ -405,6 +411,21 @@ Future<Uint8List> morphoSuiviPdfBytes({
           ].join(' — '),
           style: _small(),
         ),
+        // Bloc signature : nom du praticien, date du jour, « Signature : » puis la signature.
+        pw.SizedBox(height: 16),
+        pw.Align(alignment: pw.Alignment.centerRight, child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Text('${(pro['nom'] as String?)?.trim().isNotEmpty == true ? pro['nom'] : suivi['professionnel_nom']}',
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 3),
+          pw.Text('Le ${_fmt(DateTime.now())}', style: const pw.TextStyle(fontSize: 10)),
+          pw.SizedBox(height: 3),
+          pw.Text('Signature :', style: const pw.TextStyle(fontSize: 10)),
+          if (signature != null)
+            pw.Container(width: 160, height: 56, alignment: pw.Alignment.centerLeft,
+                child: pw.Image(pw.MemoryImage(signature), fit: pw.BoxFit.contain))
+          else
+            pw.SizedBox(height: 40),
+        ])),
       ],
 
       pw.SizedBox(height: 20),
