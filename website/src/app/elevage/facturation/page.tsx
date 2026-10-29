@@ -603,6 +603,8 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   const [dateEcheance, setDateEcheance] = useState(addDays(30));
   const [franchise, setFranchise] = useState(false);
   const [modePaiement, setModePaiement] = useState('Virement bancaire');
+  // Réglée à l'émission : facture acquittée (PAYÉE), c'est elle qui est envoyée.
+  const [acquittee, setAcquittee] = useState(false);
   const [delaiPaiement, setDelaiPaiement] = useState('30');
   const [escompte, setEscompte] = useState('Escompte pour paiement anticipé : néant.');
   const [note, setNote] = useState(isAvoir ? `Avoir sur la facture n° ${numLabel(avoirDe!)}.` : (prefill?.note ?? ''));
@@ -765,6 +767,15 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
     const f = data as Facture & { numero_affichage?: string };
     const numero = f.numero_affichage || String(f.numero_facture ?? '');
 
+    // Réglée à l'émission : passage en « payée » (mode + date de règlement),
+    // comme « Marquer payée » sur la fiche facture.
+    const datePaiement = acquittee && !isAvoir ? new Date().toISOString() : null;
+    if (datePaiement) {
+      const maj = { statut: 'payee', mode_paiement: modePaiement, date_paiement: datePaiement };
+      const { error: errPaye } = await supabase.from('factures').update(maj).eq('id', f.id);
+      if (!errPaye) Object.assign(f, maj);
+    }
+
     // Marque les RDV couverts (garde de plusieurs jours = N lignes `rdv`) —
     // même logique que l'appli (facturation.dart lignes 916-925).
     const rdvIds = [...new Set([...(prefill?.sourceRdvIds ?? []), ...(prefill?.sourceRdvId ? [prefill.sourceRdvId] : [])])].filter(Boolean);
@@ -786,6 +797,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
         lignes: lignesNorm, totalHT, totalTVA, totalTTC,
         franchise, modePaiement, delaiPaiement, conditionsEscompte: escompte,
         noteComplementaire: note,
+        acquittee: f.statut === 'payee' ? { date: datePaiement, mode: modePaiement } : null,
       });
       const buf = await blob.arrayBuffer();
       const path = `factures/${uid}/${f.id}.pdf`;
@@ -930,6 +942,12 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
               </select>
               <input value={delaiPaiement} onChange={(e) => setDelaiPaiement(e.target.value)} placeholder="Délai de paiement (jours)" className={inp} />
             </div>
+            {!isAvoir && (
+              <label className="flex items-center gap-2 text-sm font-semibold text-[#1F2A2E]">
+                <input type="checkbox" checked={acquittee} onChange={(e) => setAcquittee(e.target.checked)} className="w-4 h-4" style={{ accentColor: '#0C5C6C' }} />
+                Facture acquittée (réglée aujourd&apos;hui, par le mode de paiement ci-dessus) : le client reçoit la facture marquée PAYÉE
+              </label>
+            )}
             <input value={escompte} onChange={(e) => setEscompte(e.target.value)} placeholder="Conditions d'escompte" className={inp} />
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
               placeholder="Note / coordonnées bancaires (IBAN)…" className={inp} />

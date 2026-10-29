@@ -113,7 +113,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         }
         for (const c of docs.crs) if (coches[`cr:${c.id}`]) {
           pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-${nom(c.animal_id)}.pdf`,
-            blob: await pdfCompteRendu(c, { proProfileId, praticien, signature, emailCompte: user.email }) });
+            blob: await pdfCompteRendu(c, { proProfileId, praticien, signature, emailCompte: user.email, proprietaire: clientNom }) });
         }
         for (const o of docs.ordos) if (coches[`ordo:${o.id}`]) {
           pieces.push({ type: 'ordonnance', nomFichier: `Ordonnance-${nom(o.animal_id)}.pdf`, blob: await pdfOrdonnance(o) });

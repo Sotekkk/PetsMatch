@@ -798,6 +798,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   String _datePrestation = DateFormat('dd/MM/yyyy').format(DateTime.now());
   String _dateEcheance = DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 30)));
   String _modePaiement = 'Virement bancaire';
+  /// Réglée à l'émission : facture acquittée (PAYÉE), c'est elle qui est envoyée.
+  bool _acquittee = false;
   final _delaiPaiement = TextEditingController(text: '30');
   final _noteComplementaire = TextEditingController();
   bool _franchise = false;
@@ -1077,6 +1079,19 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       d['numeroAffichage'] = inserted['numero_affichage'];
       d['numeroFacture'] = inserted['numero_facture'];
 
+      // Réglée à l'émission : passage en « payée » (mode + date de règlement),
+      // comme « Marquer Payée » ; le PDF envoyé porte le tampon PAYÉE.
+      if (_acquittee && widget.typeFacture != 'avoir') {
+        final datePaiement = DateTime.now().toUtc().toIso8601String();
+        try {
+          await Supabase.instance.client.from('factures').update({
+            'statut': 'payee', 'mode_paiement': _modePaiement, 'date_paiement': datePaiement,
+          }).eq('id', factureId);
+          d['statut'] = 'payee';
+          d['datePaiement'] = datePaiement;
+        } catch (_) {}
+      }
+
       // Marque les RDV couverts (garde de plusieurs jours = N lignes `rdv`).
       final rdvIds = {
         ...widget.sourceRdvIds,
@@ -1281,6 +1296,15 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                 items: const ['Virement bancaire', 'Chèque', 'Espèces', 'Carte bancaire', 'PayPal'],
                 onChanged: (v) => setState(() => _modePaiement = v!),
               ),
+              if (widget.typeFacture != 'avoir')
+                SwitchListTile(
+                  value: _acquittee, activeThumbColor: _green, contentPadding: EdgeInsets.zero, dense: true,
+                  onChanged: (v) => setState(() => _acquittee = v),
+                  title: const Text('Facture acquittée (réglée aujourd\u2019hui)',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600, color: _dark)),
+                  subtitle: const Text('Par le mode de paiement ci-dessus ; le client reçoit la facture marquée PAYÉE.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                ),
               _Field(ctrl: _delaiPaiement, label: 'Délai de paiement (jours)', keyboard: TextInputType.number),
               _Field(ctrl: _conditionsEscompte, label: 'Conditions d\'escompte'),
             ])),
@@ -1653,13 +1677,17 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
       ),
       if (d['statut'] == 'payee') ...[
         pw.SizedBox(height: 10),
+        // Tampon « PAYÉE » bien visible, détail du règlement dessous.
         pw.Align(alignment: pw.Alignment.centerRight, child: pw.Container(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColor.fromHex('#2E9E5B'), width: 1.5),
+          padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColor.fromHex('#2E9E5B'), width: 2),
               borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4))),
-          child: pw.Text(
-            'ACQUITTÉE${_datePaiementTxt(d['datePaiement'])}${(d['modePaiement'] ?? '').toString().isNotEmpty ? ' — ${d['modePaiement']}' : ''}',
-            style: pw.TextStyle(font: bold, fontSize: 11, color: PdfColor.fromHex('#2E9E5B'))),
+          child: pw.Column(mainAxisSize: pw.MainAxisSize.min, children: [
+            pw.Text('PAYÉE', style: pw.TextStyle(font: bold, fontSize: 20, color: PdfColor.fromHex('#2E9E5B'))),
+            pw.Text(
+              'Facture acquittée${_datePaiementTxt(d['datePaiement'])}${(d['modePaiement'] ?? '').toString().isNotEmpty ? ' — ${d['modePaiement']}' : ''}',
+              style: pw.TextStyle(font: bold, fontSize: 9, color: PdfColor.fromHex('#2E9E5B'))),
+          ]),
         )),
       ],
       pw.SizedBox(height: 16),

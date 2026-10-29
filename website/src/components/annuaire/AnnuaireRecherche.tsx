@@ -8,7 +8,7 @@
 // animalier + Chevaux). Logique partagée : src/lib/annuaire-filtres.ts —
 // miroir app : lib/pages/services/services_page.dart.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -77,6 +77,7 @@ export default function AnnuaireRecherche() {
   const [rayon, setRayon] = useState(init.rayon);
   const [view, setView] = useState<'map' | 'list'>(init.view);
   const [panneau, setPanneau] = useState(false); // panneau Filtres (mobile)
+  const urlEcrite = useRef<string | null>(null); // dernière URL écrite par la recherche
 
   useEffect(() => { charger(); }, []);
 
@@ -105,8 +106,25 @@ export default function AnnuaireRecherche() {
     }
     if (view === 'map') p.set('view', 'map');
     const qs = p.toString();
+    urlEcrite.current = qs;
     router.replace(qs ? `/services?${qs}` : '/services', { scroll: false });
   }, [q, categorie, type, especes, lieu, rayon, view, router]);
+
+  // Lien suivi alors qu'on est déjà sur l'annuaire (menu du haut : « Vétérinaires »
+  // après « Ostéopathes », « Tout l'annuaire »…) : la page n'est pas remontée,
+  // on relit donc l'URL. Ces liens portent ?metier= (jamais écrit par la
+  // recherche) ou aucun paramètre ; nos propres URL, qui peuvent arriver en
+  // retard, ne sont pas relues.
+  useEffect(() => {
+    const cur = searchParams.toString();
+    if (urlEcrite.current === null || cur === urlEcrite.current) return;
+    const sp = new URLSearchParams(cur);
+    if (!sp.has('metier') && !sp.has('cat') && cur !== '') return;
+    const u = lireUrl(new URLSearchParams(cur));
+    setQSaisie(u.q); setQ(u.q);
+    setCategorie(u.categorie); setType(u.type);
+    setEspeces(u.especes); setLieu(u.lieu); setRayon(u.rayon); setView(u.view);
+  }, [searchParams]);
 
   async function charger() {
     setLoading(true);

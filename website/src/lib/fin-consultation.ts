@@ -56,7 +56,11 @@ export async function chargerDocsConsultation(rdvId: string): Promise<DocsConsul
 }
 
 /** PDF d'un compte rendu (en-tête du profil, patient, propriétaire, signature). */
-export async function pdfCompteRendu(cr: CrConsultation, o: { proProfileId: string | null; praticien: string; signature?: string | null; emailCompte?: string | null }) {
+export async function pdfCompteRendu(cr: CrConsultation, o: {
+  proProfileId: string | null; praticien: string; signature?: string | null; emailCompte?: string | null;
+  /** Nom du client du RDV, en dernier recours. */
+  proprietaire?: string | null;
+}) {
   const v = (x: unknown) => String(x ?? '').trim();
   const [{ data: cl }, { data: an }] = await Promise.all([
     o.proProfileId
@@ -64,7 +68,7 @@ export async function pdfCompteRendu(cr: CrConsultation, o: { proProfileId: stri
         .select('nom, firstname, lastname, rue_pro, code_postal_pro, ville_pro, rue, code_postal, ville, phone_number, phone, telephone, email_contact')
         .eq('id', o.proProfileId).maybeSingle()
       : Promise.resolve({ data: null }),
-    supabase.from('animaux').select('nom, espece, race, sexe, date_naissance, age_estime, identification, client_clinique_id').eq('id', cr.animal_id).maybeSingle(),
+    supabase.from('animaux').select('nom, espece, race, sexe, date_naissance, age_estime, identification, client_clinique_id, uid_proprietaire').eq('id', cr.animal_id).maybeSingle(),
   ]);
   const c = (cl ?? {}) as Record<string, unknown>;
   const a = (an ?? {}) as Record<string, unknown>;
@@ -73,13 +77,17 @@ export async function pdfCompteRendu(cr: CrConsultation, o: { proProfileId: stri
     const { data: cc } = await supabase.from('clients_clinique').select('nom, prenom').eq('id', a.client_clinique_id as string).maybeSingle();
     proprio = `${v(cc?.prenom)} ${v(cc?.nom)}`.trim();
   } else {
-    const { data: p } = await supabase.from('animaux_proprietes').select('profile_id_proprio')
-      .eq('animal_id', cr.animal_id).eq('role_proprio', 'principal').is('date_fin', null).limit(1).maybeSingle();
-    if (p?.profile_id_proprio) {
-      const { data: pp } = await supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', p.profile_id_proprio).maybeSingle();
-      proprio = `${v(pp?.firstname)} ${v(pp?.lastname)}`.trim() || v(pp?.nom);
+    // Nom et prénom du propriétaire : colonnes privées du profil, lues par la
+    // même fonction que la facture (le pro y a droit pour son patient).
+    const { data: cf } = await supabase.rpc('pm_client_facturation', { p_animal_id: cr.animal_id });
+    const j = (cf ?? null) as Record<string, string> | null;
+    proprio = `${v(j?.prenom)} ${v(j?.nom)}`.trim();
+    if (!proprio && a.uid_proprietaire) {
+      const { data: u } = await supabase.from('users_complet').select('firstname, lastname').eq('uid', a.uid_proprietaire as string).maybeSingle();
+      proprio = `${v(u?.firstname)} ${v(u?.lastname)}`.trim();
     }
   }
+  if (!proprio) proprio = v(o.proprietaire);
   return compteRenduPdfBlob({
     cliniqueNom: v(c.nom) || 'Cabinet vétérinaire',
     cliniqueAdresse: (v(c.rue_pro) || v(c.ville_pro)

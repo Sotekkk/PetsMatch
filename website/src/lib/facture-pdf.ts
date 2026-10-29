@@ -191,14 +191,21 @@ export async function facturePdfBlob(d: FacturePdfData): Promise<Blob> {
   }
 
   if (d.acquittee) {
-    const txt = `ACQUITTÉE${d.acquittee.date ? ` le ${fmtD(d.acquittee.date)}` : ''}${clean(d.acquittee.mode) ? ` — ${clean(d.acquittee.mode)}` : ''}`;
-    y += 8;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(46, 158, 91);
-    const w = doc.getTextWidth(txt) + 16;
-    doc.setDrawColor(46, 158, 91); doc.setLineWidth(1.2);
-    doc.roundedRect(W - M - w, y - 12, w, 20, 3, 3);
-    doc.text(txt, W - M - 8, y + 2, { align: 'right' });
-    y += 14;
+    // Tampon « PAYÉE » bien visible, détail du règlement dessous.
+    const sous = `Facture acquittée${d.acquittee.date ? ` le ${fmtD(d.acquittee.date)}` : ''}${clean(d.acquittee.mode) ? ` — ${clean(d.acquittee.mode)}` : ''}`;
+    y += 10;
+    doc.setTextColor(46, 158, 91);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    const wSous = doc.getTextWidth(sous);
+    doc.setFontSize(20);
+    const wTitre = doc.getTextWidth('PAYÉE');
+    const w = Math.max(wSous, wTitre) + 24;
+    doc.setDrawColor(46, 158, 91); doc.setLineWidth(2);
+    doc.roundedRect(W - M - w, y - 4, w, 40, 4, 4);
+    doc.text('PAYÉE', W - M - w / 2, y + 15, { align: 'center' });
+    doc.setFontSize(9);
+    doc.text(sous, W - M - w / 2, y + 29, { align: 'center' });
+    y += 40;
   }
 
   y += 16;
