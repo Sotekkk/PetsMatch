@@ -329,7 +329,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             ? (row['desc_entreprise'] ?? row['description'] ?? '')
             : (row['desc_entreprise'] ?? User_Info.descEntreprise);
         _tarifsCtrl.text       = row['tarifs']          ?? '';
-        _phoneCtrl.text        = (row['phone_number'] ?? row['phone'] ?? row['numero_elevage'] ?? '').toString();
+        // Premier numéro renseigné (le site écrivait phone, l'appli phone_number).
+        _phoneCtrl.text        = [row['phone_number'], row['phone'], row['telephone'], row['numero_elevage']]
+            .map((v) => (v ?? '').toString().trim()).firstWhere((v) => v.isNotEmpty, orElse: () => '');
         // Par défaut l'e-mail du compte (comme l'association), modifiable.
         _emailContactCtrl.text = ((row['email_contact'] ?? '').toString().trim().isNotEmpty
             ? row['email_contact'] : FirebaseAuth.instance.currentUser?.email ?? '').toString();
@@ -767,6 +769,15 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     }
 
     final emailContact = _emailContactCtrl.text.trim();
+    // Ostéo / kiné : téléphone et e-mail obligatoires (fiche, factures, envois).
+    if (_catPro == 'sante' && (_phoneCtrl.text.trim().isEmpty || emailContact.isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Champs obligatoires : ${[if (_phoneCtrl.text.trim().isEmpty) 'téléphone', if (emailContact.isEmpty) 'e-mail de contact'].join(', ')}.',
+            style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     if (emailContact.isNotEmpty && !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(emailContact)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('E-mail de contact invalide (ex. contact@monentreprise.fr).', style: TextStyle(fontFamily: 'Galey')),
@@ -1135,10 +1146,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   _sectionTitle('Type d\'activité'),
                   const SizedBox(height: 10),
                   _catProSelector(),
-                  if (_siret.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _readOnlyInfo('SIRET', _siret, Icons.business_center_outlined),
-                  ],
+                  // SIRET validé avec le profil pro : non modifiable ici.
+                  const SizedBox(height: 16),
+                  _readOnlyInfo('SIRET (validé avec votre profil)', _siret.isNotEmpty ? _siret : 'Non renseigné', Icons.business_center_outlined),
                   if (_ordreVeterinaire.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     _readOnlyInfo('N° ordre vétérinaire', _ordreVeterinaire, Icons.verified_outlined),
@@ -1146,10 +1156,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _field(_descCtrl, 'Description de l\'activité', Icons.description_outlined, maxLines: 4),
                   const SizedBox(height: 12),
-                  _field(_phoneCtrl, 'Téléphone (visible sur votre fiche : appel + WhatsApp)',
+                  _field(_phoneCtrl, _catPro == 'sante' ? 'Téléphone * (visible sur votre fiche : appel + WhatsApp)' : 'Téléphone (visible sur votre fiche : appel + WhatsApp)',
                       Icons.call_outlined, inputType: TextInputType.phone),
                   const SizedBox(height: 12),
-                  _field(_emailContactCtrl, 'E-mail de contact (visible sur votre fiche)',
+                  _field(_emailContactCtrl, _catPro == 'sante' ? 'E-mail de contact * (visible sur votre fiche)' : 'E-mail de contact (visible sur votre fiche)',
                       Icons.mail_outline, inputType: TextInputType.emailAddress, hint: 'contact@monentreprise.fr'),
                   // L'éducateur, le vétérinaire, l'ostéo/kiné et le pet-sitter ont une grille
                   // de tarifs structurée (prestations fixes + libres) — le

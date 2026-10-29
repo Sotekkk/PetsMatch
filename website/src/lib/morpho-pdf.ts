@@ -17,7 +17,10 @@ const GREY: [number, number, number] = [136, 136, 136];
 
 interface SuiviRow { [k: string]: unknown }
 
-async function urlToDataUrl(url: string): Promise<{ data: string; w: number; h: number } | null> {
+// Image réduite (côté max [maxDim] px) avant d'entrer dans le PDF : les
+// photos d'origine (plusieurs Mo chacune) rendaient le compte rendu trop
+// lourd pour l'envoi par e-mail. [png] : garde la transparence (schémas).
+async function urlToDataUrl(url: string, { maxDim = 900, png = false }: { maxDim?: number; png?: boolean } = {}): Promise<{ data: string; w: number; h: number } | null> {
   try {
     const resp = await fetch(url);
     const blob = await resp.blob();
@@ -27,13 +30,22 @@ async function urlToDataUrl(url: string): Promise<{ data: string; w: number; h: 
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
-    const dims = await new Promise<{ w: number; h: number }>((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-      img.onerror = () => resolve({ w: 1, h: 1 });
-      img.src = data;
+    const img = await new Promise<HTMLImageElement | null>((resolve) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => resolve(null);
+      i.src = data;
     });
-    return { data, ...dims };
+    if (!img) return { data, w: 1, h: 1 };
+    const w0 = img.naturalWidth, h0 = img.naturalHeight;
+    const k = Math.min(1, maxDim / Math.max(w0, h0));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(w0 * k)); canvas.height = Math.max(1, Math.round(h0 * k));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { data, w: w0, h: h0 };
+    if (!png) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { data: png ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.8), w: canvas.width, h: canvas.height };
   } catch {
     return null;
   }
@@ -224,7 +236,7 @@ export async function morphoSuiviPdfBlob(params: {
 
   // Conseils et exercices — un bloc insécable par élément
   if (exercices.length > 0) {
-    const imgs = await Promise.all(exercices.map(e => (e.photo_url ? urlToDataUrl(e.photo_url) : Promise.resolve(null))));
+    const imgs = await Promise.all(exercices.map(e => (e.photo_url ? urlToDataUrl(e.photo_url, { maxDim: 400 }) : Promise.resolve(null))));
     doc.setFontSize(9);
     exercices.forEach((e, i) => {
       const textW = W - 16 - (imgs[i] ? 90 : 0);
@@ -276,7 +288,7 @@ export async function morphoSuiviPdfBlob(params: {
     for (const it of items) {
       if (x + thumb > PAGE_W - M) { x = M; y += thumb + 24; }
       ensureSpace(thumb + 16);
-      const img = await urlToDataUrl(it.url);
+      const img = await urlToDataUrl(it.url, { maxDim: 700 });
       if (img) {
         doc.setDrawColor(220); doc.rect(x, y, thumb, thumb);
         doc.addImage(img.data, 'JPEG', x, y, thumb, thumb);
@@ -301,7 +313,7 @@ export async function morphoSuiviPdfBlob(params: {
       const h = w / asset.ratio;
       if (premier) { sectionTitle('Bilan anatomique — points relevés', h + 10); premier = false; }
       else ensureSpace(h + 12);
-      const img = await urlToDataUrl(asset.src);
+      const img = await urlToDataUrl(asset.src, { maxDim: 1000, png: true });
       if (img) {
         const x0 = (PAGE_W - w) / 2;
         doc.addImage(img.data, 'PNG', x0, y, w, h);

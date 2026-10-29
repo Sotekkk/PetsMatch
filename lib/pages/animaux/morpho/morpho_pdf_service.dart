@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -62,7 +63,15 @@ pw.Widget _line(String label, String? value) {
 Future<pw.MemoryImage?> _fetchNetworkImage(String url) async {
   try {
     final resp = await http.get(Uri.parse(url));
-    if (resp.statusCode == 200) return pw.MemoryImage(resp.bodyBytes);
+    if (resp.statusCode != 200) return null;
+    // Photo réduite (JPEG ~900 px) : les originaux rendaient le compte rendu
+    // trop lourd pour l'envoi par e-mail. Miroir site : urlToDataUrl (morpho-pdf.ts).
+    try {
+      final reduite = await FlutterImageCompress.compressWithList(resp.bodyBytes,
+          minWidth: 900, minHeight: 900, quality: 75, format: CompressFormat.jpeg);
+      if (reduite.isNotEmpty) return pw.MemoryImage(reduite);
+    } catch (_) {}
+    return pw.MemoryImage(resp.bodyBytes);
   } catch (_) {}
   return null;
 }

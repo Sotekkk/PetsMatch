@@ -631,6 +631,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
         : [{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]
   );
   const [saving, setSaving] = useState(false);
+  const [siretVerrouille, setSiretVerrouille] = useState(false);
 
   useEffect(() => {
     async function loadEmetteur() {
@@ -642,7 +643,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
 
       // Les associations rangent leur adresse dans rue/ville/code_postal/pays et
       // leur téléphone dans phone (pas les colonnes *_pro).
-      let pq = supabase.from('user_profiles_complet').select('nom,firstname,lastname,phone_number,phone,rue_pro,code_postal_pro,ville_pro,pays_pro,rue,ville,code_postal,pays,siret,numero_tva,forme_juridique_pro,capital_social_pro,rcs_pro,rm_pro,regime_tva_pro,iban_pro,bic_pro');
+      let pq = supabase.from('user_profiles_complet').select('nom,firstname,lastname,phone_number,phone,telephone,email_contact,rue_pro,code_postal_pro,ville_pro,pays_pro,rue,ville,code_postal,pays,siret,numero_tva,forme_juridique_pro,capital_social_pro,rcs_pro,rm_pro,regime_tva_pro,iban_pro,bic_pro,is_main');
       pq = profileId ? pq.eq('id', profileId) : pq.eq('uid', uid).eq('is_main', true);
       const { data: prof } = await pq.maybeSingle();
 
@@ -655,9 +656,17 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       setEmCp(pick(last?.cp_emetteur, prof?.code_postal_pro, prof?.code_postal));
       setEmVille(pick(last?.ville_emetteur, prof?.ville_pro, prof?.ville));
       setEmPays(pick(last?.pays_emetteur, prof?.pays_pro, prof?.pays) || 'France');
-      setEmTel(pick(last?.tel_emetteur, prof?.phone_number, prof?.phone));
-      setEmEmail(pick(last?.email_emetteur, null));
-      setEmSiret(pick(last?.siret_emetteur, prof?.siret));
+      setEmTel(pick(last?.tel_emetteur, prof?.phone_number, prof?.phone, prof?.telephone));
+      setEmEmail(pick(last?.email_emetteur, prof?.email_contact));
+      // SIRET validé avec le profil pro (à défaut celui du compte pour le
+      // profil principal) : repris et verrouillé.
+      let siretProfil = pick(prof?.siret);
+      if (!siretProfil && prof?.is_main) {
+        const { data: u } = await supabase.from('users_complet').select('siret').eq('uid', uid).maybeSingle();
+        siretProfil = pick(u?.siret as string | null | undefined);
+      }
+      setSiretVerrouille(!!siretProfil);
+      setEmSiret(siretProfil || pick(last?.siret_emetteur));
       setEmTva(pick(last?.tva_emetteur, prof?.numero_tva));
       setEmForme(pick(last?.forme_juridique_emetteur, prof?.forme_juridique_pro));
       setEmCapital(pick(last?.capital_emetteur, prof?.capital_social_pro));
@@ -891,7 +900,8 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
                 <input type="email" value={emEmail} onChange={(e) => setEmEmail(e.target.value)} placeholder="Email" className={inp} />
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <input value={emSiret} onChange={(e) => setEmSiret(e.target.value)} placeholder="SIRET *" className={inp} />
+                <input value={emSiret} onChange={(e) => setEmSiret(e.target.value)} placeholder="SIRET *" className={inp}
+                  readOnly={siretVerrouille} title={siretVerrouille ? 'SIRET validé avec votre profil' : undefined} />
                 <input value={emTva} onChange={(e) => setEmTva(e.target.value)} placeholder="N° TVA intracommunautaire" className={inp} />
               </div>
               <input value={emForme} onChange={(e) => setEmForme(e.target.value)} placeholder="Forme juridique (EI, EURL, SAS, association…)" className={inp} />

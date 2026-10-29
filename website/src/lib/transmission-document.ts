@@ -5,6 +5,11 @@ import { apiFetch } from '@/lib/api-fetch';
 import { lienDocument } from '@/lib/document-prive';
 
 /** Ouvre le PDF dans un onglet (impression via le lecteur du navigateur). */
+/** Raison renvoyée par l'API d'envoi (« : Document trop lourd… »), sinon rien. */
+async function raisonEchec(res: Response): Promise<string> {
+  try { const j = await res.clone().json() as { error?: string }; return j.error ? ` : ${j.error}` : ''; } catch { return ''; }
+}
+
 export function imprimerPdf(blob: Blob) {
   const url = URL.createObjectURL(blob);
   const w = window.open(url, '_blank');
@@ -44,7 +49,7 @@ export async function envoyerPdfParEmail(blob: Blob, opts: {
       }),
     });
     if (res.ok) { alert(`Envoyé au propriétaire (adresse de son compte PetsMatch).`); return true; }
-    if (res.status !== 404) { alert("L'envoi a échoué."); return false; }
+    if (res.status !== 404) { alert(`L'envoi a échoué${await raisonEchec(res)}.`); return false; }
     // Pas de compte / d'adresse connue : saisie de l'adresse comme avant.
   }
   const email = window.prompt('E-mail du propriétaire', opts.emailParDefaut ?? '');
@@ -56,7 +61,7 @@ export async function envoyerPdfParEmail(blob: Blob, opts: {
       document_type: opts.type, animal_nom: opts.animalNom, fichier_nom: opts.nomFichier, pdf_base64: await enBase64(blob),
     }),
   });
-  alert(res.ok ? `Envoyé à ${email.trim()}.` : "L'envoi a échoué.");
+  alert(res.ok ? `Envoyé à ${email.trim()}.` : `L'envoi a échoué${await raisonEchec(res)}.`);
   return res.ok;
 }
 
@@ -76,7 +81,7 @@ export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'comp
       body: JSON.stringify({ ...corps, animal_id: opts.animalId }),
     });
     if (res.ok) { alert('Envoyé au propriétaire (adresse de son compte PetsMatch).'); return true; }
-    if (res.status !== 404) { alert("L'envoi a échoué."); return false; }
+    if (res.status !== 404) { alert(`L'envoi a échoué${await raisonEchec(res)}.`); return false; }
   }
   const email = window.prompt('E-mail du propriétaire', opts.emailParDefaut ?? '');
   if (!email?.trim()) return false;
@@ -84,6 +89,6 @@ export async function envoyerPiecesParEmail(pieces: { type: 'ordonnance' | 'comp
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...corps, email: email.trim() }),
   });
-  alert(res.ok ? `Envoyé à ${email.trim()}.` : "L'envoi a échoué.");
+  alert(res.ok ? `Envoyé à ${email.trim()}.` : `L'envoi a échoué${await raisonEchec(res)}.`);
   return res.ok;
 }

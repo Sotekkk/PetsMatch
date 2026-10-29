@@ -18,6 +18,7 @@ import { preparerFactureOsteo } from '@/lib/seance-osteo';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
+import { envoyerPdfParEmail } from '@/lib/transmission-document';
 
 interface SuiviRow { [k: string]: unknown }
 
@@ -110,12 +111,18 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
     })();
   }, [id, authLoading, user, isSante]);
 
+  /** PDF unique de la séance (signature du praticien sur ses propres séances). */
+  async function pdfBlob(): Promise<Blob | null> {
+    if (!suivi) return null;
+    const signature = user && suivi.uid_auteur === user.uid ? await maSignaturePro(user.uid).catch(() => null) : null;
+    return morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements, exercices, signature });
+  }
+
   /** Télécharge le PDF unique de la séance ; renvoie le nom du fichier. */
   async function telechargerPdf(): Promise<string | null> {
     if (!suivi) return null;
-    // Signature du praticien : seulement sur ses propres séances.
-    const signature = user && suivi.uid_auteur === user.uid ? await maSignaturePro(user.uid).catch(() => null) : null;
-    const blob = await morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements, exercices, signature });
+    const blob = await pdfBlob();
+    if (!blob) return null;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const nomAnimal = (animal.nom || 'animal').replace(/\s+/g, '_');
@@ -157,7 +164,12 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
       const sent = (result.data as { sent?: number } | undefined)?.sent ?? 0;
       const now = new Date().toISOString();
       setSuivi(prev => (prev ? { ...prev, notifie_a: now } : prev));
-      if (sent === 0) {
+      // Le compte rendu part aussi en PDF par e-mail (adresse du compte du propriétaire).
+      const blob = await pdfBlob();
+      if (blob) {
+        await envoyerPdfParEmail(blob, { type: 'compte_rendu', expediteur: pro.nom || undefined, animalNom: animal.nom || undefined,
+          nomFichier: `Compte-rendu-seance-${(animal.nom || 'animal').replace(/\s+/g, '_')}.pdf`, animalId: String(suivi.animal_id) });
+      } else if (sent === 0) {
         alert('Envoyé, mais aucun propriétaire distinct trouvé à notifier (peut-être le même compte que vous).');
       }
     } catch (e) {

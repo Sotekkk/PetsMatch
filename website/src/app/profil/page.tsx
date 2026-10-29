@@ -937,13 +937,18 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setSiteWeb((r.site_web as string) ?? '');
         setInstagram((r.instagram as string) ?? '');
         setFacebook((r.facebook as string) ?? '');
-        setPhone((r.phone as string) ?? '');
+        setPhone(((r.phone_number as string) || (r.phone as string) || (r.telephone as string)) ?? '');
         setEmailContact(((r.email_contact as string) ?? '').trim() || compte?.email || '');
         setRayon(((r.rayon_intervention as number) ?? 20));
         setAcceptNewClients((r.accept_new_clients as boolean) ?? true);
         setUrgences24h((r.urgences_24h as boolean) ?? false);
         setRetardAlerteAuto(r.retard_alerte_auto === true);
         setSiret((r.siret as string) ?? '');
+        // Profil principal : SIRET saisi à l'inscription (users) à défaut.
+        if (!r.siret && r.is_main) {
+          supabase.from('users_complet').select('siret').eq('uid', uid).maybeSingle()
+            .then(({ data: u }) => { if (u?.siret) setSiret(String(u.siret)); });
+        }
         setTvaIntra((r.numero_tva as string) ?? '');
         setFormeJuridique((r.forme_juridique_pro as string) ?? '');
         setCapitalSocial((r.capital_social_pro as string) ?? '');
@@ -1150,6 +1155,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
     // ACACED obligatoire (Code rural, art. L214-6-1) pour garde (pet-sitter)
     // et éducateur — le champ + le justificatif étaient collectés mais rien
     // n'empêchait d'enregistrer sans les avoir renseignés.
+    // Ostéo / kiné : téléphone et e-mail obligatoires (fiche, factures, envois).
+    if ((data?.profile_type ?? data?.cat_pro) === 'sante') {
+      const manque = [!phone.trim() && 'téléphone', !emailContact.trim() && 'e-mail de contact'].filter(Boolean);
+      if (manque.length) { alert(`Champs obligatoires : ${manque.join(', ')}.`); return; }
+    }
+    if (emailContact.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailContact.trim())) {
+      alert('E-mail de contact invalide (ex. contact@monentreprise.fr).'); return;
+    }
     if (['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')) {
       const hasDoc = !!acacedDocFile || !!acacedDocUrl;
       if (!acacedNum.trim() || !hasDoc) {
@@ -1178,6 +1191,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       instagram: instagram.trim(),
       facebook: facebook.trim(),
       phone: phone.trim(),
+      phone_number: phone.trim(),
       email_contact: emailContact.trim() || null,
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
@@ -2045,6 +2059,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           <p className="text-xs text-gray-500 mb-3">
             Ces informations figurent sur vos factures (mentions obligatoires). Renseignées ici, elles pré-remplissent chaque nouvelle facture.
           </p>
+          {/* SIRET validé avec le profil pro : non modifiable ici. */}
+          <div className="mb-3"><ReadOnly label="SIRET (validé avec votre profil)" value={siret || 'Non renseigné'} icon="🏢" /></div>
           <Field label="Forme juridique">
             <input value={formeJuridique} onChange={e => setFormeJuridique(e.target.value)} className={inputCls} placeholder="EI, EURL, SAS, association…" />
           </Field>
@@ -2076,9 +2092,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Réseaux sociaux */}
         <Card title="Présence en ligne">
-          {siret && (
-            <div className="mb-3"><ReadOnly label="SIRET" value={siret} icon="🏢" /></div>
-          )}
           <Field label="Site web">
             <input value={siteWeb} onChange={e => setSiteWeb(e.target.value)} className={inputCls} placeholder="https://monsite.fr" />
           </Field>

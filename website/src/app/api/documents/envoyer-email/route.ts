@@ -39,7 +39,7 @@ async function emailProprietaire(animalId: string, appelant: string): Promise<{ 
 // Envoi d'une ordonnance / d'un compte rendu (PDF joint) au propriétaire, y
 // compris s'il n'a pas PetsMatch (patient créé par la clinique). Appelant
 // authentifié ; textes nettoyés ; pièce jointe PDF uniquement, taille limitée.
-const MAX_OCTETS = 4 * 1024 * 1024;
+const MAX_OCTETS = 10 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     if (!d?.pdf_base64) return NextResponse.json({ error: 'Document manquant' }, { status: 400 });
     const contenu = Buffer.from(String(d.pdf_base64), 'base64');
     if (contenu.length === 0 || contenu.length > MAX_OCTETS || contenu.subarray(0, 4).toString() !== '%PDF') {
-      return NextResponse.json({ error: 'Document PDF invalide' }, { status: 400 });
+      return NextResponse.json({ error: contenu.length > MAX_OCTETS ? 'Document trop lourd (10 Mo maximum)' : 'Document PDF invalide' }, { status: 400 });
     }
     jointes.push({
       filename: String(d.fichier_nom || `${libelle(d.document_type)[1].toLowerCase().replace(' ', '-')}.pdf`).replace(/[^\w.\-À-ÿ ]/g, '_'),
