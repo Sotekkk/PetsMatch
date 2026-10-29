@@ -17,7 +17,8 @@ String? morphoSpeciesKey(String? espece) {
   final e = (espece ?? '').toLowerCase();
   if (e.contains('chien')) return 'chien';
   if (e.contains('chat')) return 'chat';
-  if (e.contains('cheval')) return 'cheval';
+  // Équidés : cheval, poney, âne, mule… (et « Équidé » / « Cheval / équidé »).
+  if (RegExp(r'cheva|[ée]quid|[ée]quin|poney|jument|[ée]talon|hongre|poulain|pouliche|mule|bardot|(^|[^a-z])[âa]nes?($|[^a-z])|[âa]nesse').hasMatch(e)) return 'cheval';
   return null;
 }
 

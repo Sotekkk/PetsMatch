@@ -334,6 +334,11 @@ class _SyntheseOsteoTabState extends State<SyntheseOsteoTab> {
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _ouvrirAgenda(ProAgendaPage page) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    if (mounted) _charger();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
@@ -378,7 +383,27 @@ class _SyntheseOsteoTabState extends State<SyntheseOsteoTab> {
                     if (champ('commentaires').isNotEmpty) _txt(champ('commentaires')),
                     if (champ('prochain_controle').isNotEmpty) _txt('Prochain contrôle : ${_date(champ('prochain_controle'))}', c: _ambre),
                   ])),
-        _carte('Prochain rendez-vous', Icons.event_outlined, _rdv == null ? _discret('Aucun rendez-vous planifié.') : _txt(_rdvTexte(_rdv!))),
+        _carte('Prochain rendez-vous', Icons.event_outlined,
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _rdv == null ? _discret('Aucun rendez-vous planifié.') : _txt(_rdvTexte(_rdv!)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                if (_rdv != null)
+                  OutlinedButton.icon(
+                    onPressed: () => _ouvrirAgenda(ProAgendaPage(focusRdvId: _rdv!['id']?.toString(), modifierFocus: true)),
+                    icon: const Icon(Icons.edit_calendar_outlined, size: 17),
+                    label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey')),
+                    style: OutlinedButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact),
+                  ),
+                OutlinedButton.icon(
+                  // Nouveau RDV pour cet animal, propriétaire pré-rempli.
+                  onPressed: () => _ouvrirAgenda(ProAgendaPage(nouveauRdv: true, nouveauRdvAnimalId: widget.animalId)),
+                  icon: const Icon(Icons.event_available_outlined, size: 17),
+                  label: Text(_rdv == null ? 'Planifier un RDV' : 'Autre RDV', style: const TextStyle(fontFamily: 'Galey')),
+                  style: OutlinedButton.styleFrom(foregroundColor: _teal, visualDensity: VisualDensity.compact),
+                ),
+              ]),
+            ])),
         OutlinedButton.icon(
           onPressed: widget.onIdentite,
           icon: const Icon(Icons.badge_outlined, size: 18),

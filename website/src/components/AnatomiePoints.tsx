@@ -61,7 +61,8 @@ function speciesKey(espece: string): 'chien' | 'chat' | 'cheval' | null {
   const e = (espece || '').toLowerCase();
   if (e.includes('chien')) return 'chien';
   if (e.includes('chat')) return 'chat';
-  if (e.includes('cheval')) return 'cheval';
+  // Équidés : cheval, poney, âne, mule… (et « Équidé » / « Cheval / équidé »).
+  if (/cheva|[ée]quid|[ée]quin|poney|jument|[ée]talon|hongre|poulain|pouliche|mule|bardot|(^|[^a-z])[âa]nes?($|[^a-z])|[âa]nesse/.test(e)) return 'cheval';
   return null;
 }
 

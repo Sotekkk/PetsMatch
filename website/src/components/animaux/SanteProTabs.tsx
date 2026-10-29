@@ -240,7 +240,18 @@ export function SyntheseOsteo({ animalId, pid, onIdentite, onSeances }: { animal
             {der?.prochain_controle ? <p style={{ color: '#D97706' }}>Prochain contrôle : {dateFr(der.prochain_controle)}</p> : null}
           </> : <Discret t="Aucune recommandation." />}
         </Carte>
-        <Carte titre="Prochain rendez-vous">{d.rdv ? <p>{rdvTexte(d.rdv)}</p> : <Discret t="Aucun rendez-vous planifié." />}</Carte>
+        <Carte titre="Prochain rendez-vous">
+          {d.rdv ? <p>{rdvTexte(d.rdv)}</p> : <Discret t="Aucun rendez-vous planifié." />}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {d.rdv && (
+              <Link href={`/mes-rdv?onglet=a_venir&rdv=${d.rdv.id}&modifier=1&animal=${encodeURIComponent(animalId)}`}
+                className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: TEAL, color: TEAL }}>Modifier</Link>
+            )}
+            <Link href={lienNouveauRdv(animalId)} className="px-3 py-1.5 rounded-lg border text-xs font-semibold" style={{ borderColor: TEAL, color: TEAL }}>
+              {d.rdv ? 'Autre RDV' : 'Planifier un RDV'}
+            </Link>
+          </div>
+        </Carte>
       </div>
       <button onClick={onIdentite} className="px-4 py-2 rounded-xl border text-sm font-semibold" style={{ borderColor: TEAL, color: TEAL }}>Identité complète</button>
     </div>

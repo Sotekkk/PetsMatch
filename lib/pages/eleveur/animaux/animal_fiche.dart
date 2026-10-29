@@ -382,8 +382,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.vetMode) {
       // Propriétaire : dans l'en-tête commun (ProAnimalEntete), plus un onglet.
       // Véto : Synthèse · Consultations · Santé · Documents ;
-      // ostéo : Synthèse · Séances · Bilans · Documents.
-      if (User_Info.catPro == 'sante') return 4;
+      // ostéo : Synthèse · Séances · Documents (plus d'onglet Bilans : les
+      // bilans sont des séances).
+      if (User_Info.catPro == 'sante') return 3;
       if (User_Info.catPro == 'marechal_ferrant') return 5;
       if (User_Info.catPro == 'veterinaire') return 4;
       if (User_Info.catPro == 'garde') return 3; // Identité · Santé · Alimentation (pas de Repro)
@@ -2595,13 +2596,6 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           animalId: widget.animalId ?? '', espece: _espece,
           canWrite: _canWriteHealth,
           proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-          sansBilans: true,
-        ),
-        MorphoTimelineTab(
-          animalId: widget.animalId ?? '', espece: _espece,
-          canWrite: _canWriteHealth,
-          proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-          bilansSeulement: true,
         ),
         DocumentsSanteProTab(animalId: widget.animalId!, espece: _espece, osteo: true),
       ];
@@ -2690,7 +2684,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           tabs: (widget.vetMode && _ficheSanteMetier)
               ? (User_Info.catPro == 'veterinaire'
                   ? const [Tab(text: 'Synthèse'), Tab(text: 'Consultations'), Tab(text: 'Santé'), Tab(text: 'Documents')]
-                  : const [Tab(text: 'Synthèse'), Tab(text: 'Séances'), Tab(text: 'Bilans'), Tab(text: 'Documents')])
+                  : const [Tab(text: 'Synthèse'), Tab(text: 'Séances'), Tab(text: 'Documents')])
               : widget.vetMode
               ? (User_Info.catPro == 'sante'
                   // Anatomie a fusionné dans Morphologie pour santé (pointage

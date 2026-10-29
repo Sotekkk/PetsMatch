@@ -1309,9 +1309,10 @@ function PatientDetailPageInner() {
       // Ostéo / kiné (sante) : UN onglet « Consultations » = ses comptes
       // rendus de séance ; vétérinaire : ses consultations + « Ostéo / Kiné ».
       // Véto : Synthèse · Consultations · Santé (carnet / repro / ostéo-kiné) · Documents ;
-      // ostéo : Synthèse · Séances · Bilans · Documents. Identité depuis la Synthèse.
+      // ostéo : Synthèse · Séances · Documents (plus d'onglet Bilans : les bilans
+      // sont des séances). Identité depuis la Synthèse.
       ? catPro === 'sante'
-        ? ['Synthèse', 'Séances', 'Bilans', 'Documents']
+        ? ['Synthèse', 'Séances', 'Documents']
         : catPro === 'veterinaire'
           ? ['Synthèse', 'Consultations', 'Santé', 'Documents']
           : ['Identité', 'Santé', 'Repro', 'Consultations',
@@ -3916,10 +3917,7 @@ function PatientDetailPageInner() {
           <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} />
         )}
         {tab === 'Séances' && catPro === 'sante' && animal && (
-          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} sansBilans />
-        )}
-        {tab === 'Bilans' && catPro === 'sante' && animal && (
-          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} bilansSeulement />
+          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} proProfileId={activeProfileId} />
         )}
       </div>
 
