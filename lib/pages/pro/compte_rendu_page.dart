@@ -472,6 +472,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 
   /// Brouillon repris (ligne comptes_rendus modifiée au lieu d'en créer une).
   String? _brouillonId;
+  /// Compte rendu validé rouvert dans le formulaire (« Modifier ») et
+  /// rubriques de son texte conservées telles quelles.
+  Map<String, dynamic>? _crEdition;
+  List<({String titre, String corps})> _crConserve = [];
+  final _formCrKey = GlobalKey();
 
   /// Saisie complète, gardée avec le brouillon (format commun appli / site).
   Map<String, dynamic> _etatBrouillon() => {
@@ -672,6 +677,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 
   void _abandonnerBrouillon() => setState(() {
         _brouillonId = null;
+        _crEdition = null;
+        _crConserve = [];
         _crContenuCtrl.clear();
         _poidsCtrl.clear();
         _vaccinsCr.clear();
@@ -723,7 +730,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       if (actesRealises.isNotEmpty) 'Actes réalisés : ${actesRealises.join(', ')}.',
       // Texte libre du vétérinaire : précédé de « Recommandations : » (en gras dans le PDF).
       if (_crContenuCtrl.text.trim().isNotEmpty)
-        RegExp(r'^recommandations?', caseSensitive: false).hasMatch(_crContenuCtrl.text.trim())
+        RegExp(r'^(recommandations?|diagnostic)\b', caseSensitive: false).hasMatch(_crContenuCtrl.text.trim())
             ? _crContenuCtrl.text.trim() : 'Recommandations : ${_crContenuCtrl.text.trim()}',
       if (vaccinsTxt.isNotEmpty) 'Vaccins : ${vaccinsTxt.join(', ')}.',
       for (final (type, titre) in const [('vermifuge', 'Vermifuge'), ('antiparasitaire', 'Antiparasitaire'),
@@ -738,6 +745,11 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             style: TextStyle(fontFamily: 'Galey')),
         behavior: SnackBarBehavior.floating,
       ));
+      return;
+    }
+    if (_crEdition != null) {
+      await _enregistrerModification(contenu: contenu, motif: motif, poids: poids, actesRealises: actesRealises,
+          prescription: prescription, produits: factProduits, actes: actes);
       return;
     }
     setState(() => _crSaving = true);
@@ -2438,34 +2450,123 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   /// Valide un brouillon (vétérinaire) → visible et notifié au propriétaire.
-  /// Compte rendu validé : corriger / compléter le texte (oubli). Modification
-  /// tracée côté serveur (journal médical). Miroir site : « Modifier » (ConsultationsVet).
-  Future<void> _modifierCr(Map<String, dynamic> cr) async {
-    final ctrl = TextEditingController(text: cr['contenu']?.toString() ?? '');
-    final texte = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Modifier le compte rendu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: SizedBox(width: 520, child: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: ctrl, maxLines: 14, minLines: 6, textCapitalization: TextCapitalization.sentences,
-              decoration: _inputDeco('Compte rendu')),
-          const SizedBox(height: 8),
-          Text('La modification est tracée ; le propriétaire voit la version corrigée.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-        ])),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white),
-            child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    if (texte == null || texte.isEmpty || !mounted) return;
+  /// Rubriques du texte d'un compte rendu reprises telles quelles quand on le
+  /// modifie (actes déjà inscrits au carnet). Miroir site : TITRES_CR_CONSERVES.
+  static const _titresCrConserves = ['Vaccins', 'Vermifuge', 'Antiparasitaire', 'Allergie / pathologie',
+      'Chirurgie', 'Hospitalisation', 'Examen', 'Traitement', 'Produits délivrés'];
+
+  /// « Modifier » un compte rendu validé : même formulaire qu'à la création,
+  /// pré-rempli depuis le texte ; le reste (vaccins, examens…) est conservé et
+  /// complété par ce qui est ajouté. Miroir site : modifierCr (mes-patients).
+  void _modifierCr(Map<String, dynamic> cr) {
+    const editables = ['Motif', 'Demande du client', 'Poids', 'Actes réalisés', 'Diagnostic', 'Recommandations'];
+    final champs = <String, String>{};
+    final conserve = <({String titre, String corps})>[];
+    String? titreCourant;
+    for (final p in (cr['contenu'] ?? '').toString().split(RegExp(r'\n\s*\n'))) {
+      final m = RegExp(r'^([^:\n]{2,40}) : ([\s\S]*)$').firstMatch(p.trim());
+      if (m != null && (editables.contains(m.group(1)) || _titresCrConserves.contains(m.group(1)))) {
+        titreCourant = m.group(1)!;
+        if (editables.contains(titreCourant)) {
+          champs[titreCourant] = m.group(2)!;
+        } else {
+          conserve.add((titre: titreCourant, corps: m.group(2)!));
+        }
+      } else if (titreCourant != null) {
+        // Paragraphe sans titre : suite du précédent.
+        if (editables.contains(titreCourant)) {
+          champs[titreCourant] = '${champs[titreCourant]}\n\n$p';
+        } else {
+          final d = conserve.removeLast();
+          conserve.add((titre: d.titre, corps: '${d.corps}\n\n$p'));
+        }
+      } else {
+        titreCourant = 'Recommandations';
+        champs['Recommandations'] = p;
+      }
+    }
+    final demande = (champs['Demande du client'] ?? '').trim();
+    setState(() {
+      _brouillonId = null;
+      _crEdition = cr;
+      _crConserve = conserve;
+      _motifCtrl.text = (cr['motif'] ?? champs['Motif'] ?? '').toString();
+      _messageClient = demande;
+      _inclureMessage = demande.isNotEmpty;
+      final poids = cr['poids'] as num?;
+      _poidsCtrl.text = poids == null ? '' : poids.toString().replaceAll('.', ',');
+      _actesRealises..clear()..addAll([for (final a in (cr['actes'] as List? ?? const [])) a.toString()]);
+      _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _soinsCr.clear();
+      _crFile = null;
+      _crContenuCtrl.text = [
+        if ((champs['Diagnostic'] ?? '').trim().isNotEmpty) 'Diagnostic : ${champs['Diagnostic']!.trim()}',
+        if ((champs['Recommandations'] ?? '').trim().isNotEmpty) 'Recommandations : ${champs['Recommandations']!.trim()}',
+      ].join('\n\n');
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = _formCrKey.currentContext;
+      if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 300));
+    });
+  }
+
+  /// Texte du compte rendu modifié : rubriques conservées complétées par les
+  /// ajouts de même rubrique, nouvelles rubriques à la suite.
+  String _fusionEdition(String contenu) {
+    final paras = contenu.isEmpty ? <String>[] : contenu.split('\n\n');
+    final fusion = [
+      for (final c in _crConserve)
+        () {
+          final i = paras.indexWhere((p) => p.startsWith('${c.titre} : '));
+          if (i < 0) return '${c.titre} : ${c.corps}';
+          final ajout = paras.removeAt(i).substring(c.titre.length + 3).replaceAll(RegExp(r'\.$'), '');
+          final base = c.corps.replaceAll(RegExp(r'\.$'), '');
+          return base.contains(ajout) ? '${c.titre} : $base.' : '${c.titre} : $base${c.titre == 'Traitement' ? ' ; ' : ', '}$ajout.';
+        }(),
+    ];
+    bool conservee(String p) => _titresCrConserves.any((t) => p.startsWith('$t : '));
+    return [...paras.where((p) => !conservee(p)), ...fusion, ...paras.where(conservee)].join('\n\n');
+  }
+
+  /// Enregistre la modification d'un compte rendu validé : la ligne reste
+  /// validée (modification tracée côté serveur) ; ajouts inscrits au carnet ;
+  /// ni nouvelle notification ni facture.
+  Future<void> _enregistrerModification({required String contenu, required String motif, required double? poids,
+      required List<String> actesRealises, required String prescription, required List<_ProduitCr> produits, required bool actes}) async {
+    final cr = _crEdition!;
+    setState(() => _crSaving = true);
     try {
-      await _supa.from('comptes_rendus').update({'contenu': texte}).eq('id', cr['id']);
+      final animalId = (cr['animal_id'] ?? widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+      String? docUrl;
+      if (_crFile != null) {
+        final name = '${DateTime.now().millisecondsSinceEpoch}.${_crFile!.path.split('.').last}';
+        docUrl = await uploadDocument(_crFile!, 'comptes_rendus/${AgendaContexte.moi ?? AgendaContexte.uid}/$name');
+      }
+      final ancienne = (cr['prescription'] ?? '').toString();
+      await _supa.from('comptes_rendus').update({
+        'contenu': _fusionEdition(contenu),
+        'motif': motif.isEmpty ? null : motif,
+        'poids': poids,
+        'actes': actesRealises,
+        'prescription': (ancienne.isNotEmpty && prescription.isNotEmpty && !ancienne.contains(prescription))
+            ? '$ancienne ; $prescription' : (ancienne.isNotEmpty ? ancienne : (prescription.isEmpty ? null : prescription)),
+        'produits': [...(cr['produits'] as List? ?? const []), for (final p in produits) p.toJson()],
+        if (docUrl != null) 'doc_url': docUrl,
+      }).eq('id', cr['id']);
+      if (poids != null && animalId != null && poids != (cr['poids'] as num?)?.toDouble() && poids != _poidsCarnet) {
+        try {
+          await _supa.from('poids').insert({
+            'id': DateTime.now().microsecondsSinceEpoch.toString(),
+            'animal_id': animalId, 'valeur': poids,
+            'date': DateTime.now().toIso8601String(), 'notes': 'Consultation',
+          });
+          await _supa.from('animaux').update({'poids': poids}).eq('id', animalId);
+        } catch (_) {}
+      }
+      if (actes && animalId != null) await _ecrireActes(animalId, cr['rdv_id']?.toString(), await _resolveOwner());
+      if (produits.isNotEmpty) await _decompterStock(produits);
+      _crContenuCtrl.clear();
+      _poidsCtrl.clear();
+      setState(() { _crEdition = null; _crConserve = []; _crFile = null; _vaccinsCr.clear(); _traitementsCr.clear(); _produitsCr.clear(); _soinsCr.clear(); _actesRealises.clear(); });
       await _loadExisting();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -2480,6 +2581,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
         ));
       }
+    } finally {
+      if (mounted) setState(() => _crSaving = false);
     }
   }
 
@@ -2758,8 +2861,15 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             const SizedBox(height: 8),
           ],
 
-          _sectionTitle(_brouillonId != null ? 'Brouillon en cours de modification' : 'Nouveau compte rendu'),
-          if (_brouillonId != null)
+          KeyedSubtree(key: _formCrKey, child: _sectionTitle(_crEdition != null ? 'Modification du compte rendu validé'
+              : _brouillonId != null ? 'Brouillon en cours de modification' : 'Nouveau compte rendu')),
+          if (_crEdition != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('La modification est tracée ; le propriétaire voit la version corrigée. Vaccins, examens… déjà inscrits restent dans le texte et sont complétés par vos ajouts.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            ),
+          if (_brouillonId != null || _crEdition != null)
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton(
@@ -2811,7 +2921,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                   ? const SizedBox(width: 18, height: 18,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.save_outlined),
-              label: Text(_crSaving ? 'Enregistrement…' : 'Enregistrer le CR',
+              label: Text(_crSaving ? 'Enregistrement…' : _crEdition != null ? 'Enregistrer la modification' : 'Enregistrer le CR',
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.categoryColor,
@@ -2821,7 +2931,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
               ),
             ),
           ),
-          if (_saisieActes) ...[
+          if (_saisieActes && _crEdition == null) ...[
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,

@@ -96,6 +96,7 @@ interface CompteRendu {
   brouillon?: unknown;
   // CR structuré (migration_cr_structure.sql) — historique du patient.
   motif?: string | null; poids?: number | null; actes?: string[] | null; prescription?: string | null;
+  produits?: ProduitCr[] | null;
 }
 interface Ordonnance {
   id: string; date_emit: string; doc_url: string | null; notes: string | null; pro_uid: string | null;
@@ -297,6 +298,10 @@ type LigneFacture = { description: string; quantite: number; prixUnitaire: numbe
 /** Lignes de facture d'une consultation (grille du vétérinaire + prix de la
  *  pharmacie) — miroir appli _lignesFacture. [prefixe] : nom de l'animal
  *  devant chaque ligne (visite à plusieurs animaux). */
+/** Rubriques du texte d'un compte rendu reprises telles quelles quand on le
+ *  modifie (actes déjà inscrits au carnet) — voir modifierCr. */
+const TITRES_CR_CONSERVES = ['Vaccins', 'Vermifuge', 'Antiparasitaire', 'Allergie / pathologie', 'Chirurgie', 'Hospitalisation', 'Examen', 'Traitement', 'Produits délivrés'];
+
 function lignesConsultation({ an, motif, actes, vaccins, traitements, poids, produits, tarif, prixPharma, prefixe = '' }: {
   an: { espece?: string | null; sexe?: string | null; poids?: number | string | null };
   motif: string; actes: string[]; vaccins: VaccinCr[]; traitements: TraitementCr[]; poids: number | null; produits: ProduitCr[];
@@ -1022,6 +1027,10 @@ function PatientDetailPageInner() {
   // Compte rendu déjà préparé pour « RDV|animal » (et non une seule fois par
   // page : en passant d'un animal à l'autre, la page peut être réutilisée).
   const crRdvOuvert = useRef('');
+  // Compte rendu validé rouvert dans le formulaire (« Modifier ») : la ligne
+  // est mise à jour, et ce qui n'est pas repris dans les champs (vaccins,
+  // traitements, examens… déjà dans le texte) est conservé.
+  const [crEdition, setCrEdition] = useState<null | { cr: CompteRendu; conserve: { titre: string; corps: string }[] }>(null);
   // Après un compte rendu : page suivante déjà choisie (facture, animal suivant).
   const navigationSuivie = useRef(false);
   // Soin saisi depuis le compte rendu avec le formulaire complet du carnet :
@@ -1857,6 +1866,41 @@ function PatientDetailPageInner() {
     return true;
   }
 
+  /** « Modifier » un compte rendu validé : même formulaire qu'à la création,
+   *  pré-rempli depuis le texte (motif, demande, poids, actes, diagnostic,
+   *  recommandations) ; le reste du texte (vaccins, examens…) est conservé et
+   *  complété par ce qui est ajouté. */
+  function modifierCr(cr: CompteRendu) {
+    viderCr();
+    const champs: Record<string, string> = {};
+    const conserve: { titre: string; corps: string }[] = [];
+    const EDITABLES = ['Motif', 'Demande du client', 'Poids', 'Actes réalisés', 'Diagnostic', 'Recommandations'];
+    let courant: { titre: string; corps: string } | null = null;
+    for (const p of (cr.contenu ?? '').split(/\n\s*\n/)) {
+      const m = /^([^:\n]{2,40}) : ([\s\S]*)$/.exec(p.trim());
+      if (m && (EDITABLES.includes(m[1]) || TITRES_CR_CONSERVES.includes(m[1]))) {
+        courant = { titre: m[1], corps: m[2] };
+        if (EDITABLES.includes(m[1])) champs[m[1]] = m[2]; else conserve.push(courant);
+      } else if (courant) {
+        // Paragraphe sans titre : suite du précédent.
+        courant.corps += `\n\n${p}`;
+        if (EDITABLES.includes(courant.titre)) champs[courant.titre] = courant.corps;
+      } else {
+        courant = { titre: 'Recommandations', corps: p };
+        champs.Recommandations = p;
+      }
+    }
+    setFormMotif(cr.motif ?? champs.Motif ?? '');
+    setDemandeClient(champs['Demande du client'] ?? '');
+    setFormPoids(cr.poids != null ? String(cr.poids).replace('.', ',') : '');
+    setActesRealises(cr.actes ?? []);
+    setFormDiag(champs.Diagnostic ?? '');
+    setFormNotes(champs.Recommandations ?? '');
+    setCrRdvId(cr.rdv_id ?? null);
+    setCrEdition({ cr, conserve });
+    setAddingType('cr');
+  }
+
   /** Retour à la vue du RDV (Gérer mes RDV, RDV mis en avant). */
   function retourAuRdv(rdvId: string) {
     window.location.assign(`/mes-rdv?rdv=${encodeURIComponent(rdvId)}`);
@@ -1864,7 +1908,7 @@ function PatientDetailPageInner() {
 
   /** Nouveau compte rendu : formulaire vierge (rien d'une saisie précédente). */
   function viderCr() {
-    setBrouillonId(null); setRetourCr(null); setDemandeClient('');
+    setBrouillonId(null); setRetourCr(null); setDemandeClient(''); setCrEdition(null);
     setFormMotif(''); setFormPoids(''); setFormNotes(''); setFormDiag('');
     setActesRealises([]); setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setSoinsCr([]); setAutreActe('');
     setCarnetJour([]); setPoidsCarnet(null); setFormErreurs([]); setFormManquants([]);
@@ -1898,7 +1942,7 @@ function PatientDetailPageInner() {
   // fenêtre est fermée ou la page rechargée (radio ajoutée entre-temps…).
   const cleCrEnCours = animalId ? `pm_cr_en_cours:${animalId}` : '';
   useEffect(() => {
-    if (addingType !== 'cr' || !cleCrEnCours) return;
+    if (addingType !== 'cr' || !cleCrEnCours || crEdition) return;
     const vide = !formMotif.trim() && !formNotes.trim() && !formDiag.trim() && !actesRealises.length && !vaccinsCr.length
       && !traitementsCr.length && !produitsCr.length && !soinsCr.length;
     if (vide) return;
@@ -1909,7 +1953,7 @@ function PatientDetailPageInner() {
         actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr, soins: soinsCr,
       }));
     } catch { /* stockage indisponible : rien de gardé */ }
-  }, [addingType, cleCrEnCours, crRdvId, brouillonId, formMotif, formNotes, formDiag, formPoids, demandeClient,
+  }, [addingType, cleCrEnCours, crEdition, crRdvId, brouillonId, formMotif, formNotes, formDiag, formPoids, demandeClient,
     actesRealises, vaccinsCr, traitementsCr, produitsCr, soinsCr]);
   /** Reprend la saisie gardée du compte rendu (même animal, même RDV, même jour). */
   function restaurerCrEnCours(rdvId: string | null): boolean {
@@ -2033,14 +2077,14 @@ function PatientDetailPageInner() {
         const vaccinsTxt = [...vaccinsCr.map(v => v.nom + (v.lot ? ` (lot ${v.lot})` : '')), ...duCarnet('vaccin')];
         const traitementsTxt = [...traitementsCr.map(t => `${t.nom} — ${posologieComplete(t)}`), ...duCarnet('traitement')];
         const prescription = traitementsTxt.join(' ; ');
-        const contenu = [
+        let contenu = [
           formMotif.trim() && `Motif : ${formMotif.trim()}`,
           demandeClient.trim() && `Demande du client : ${demandeClient.trim()}`,
           poidsCr != null && !isNaN(poidsCr) && `Poids : ${poidsCr} kg`,
           actesRealises.length > 0 && `Actes réalisés : ${actesRealises.join(', ')}.`,
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
           // Texte libre du vétérinaire : précédé de « Recommandations : » (en gras dans le PDF).
-          formNotes.trim() && (/^recommandations?/i.test(formNotes.trim()) ? formNotes.trim() : `Recommandations : ${formNotes.trim()}`),
+          formNotes.trim() && (/^recommandations?\b/i.test(formNotes.trim()) ? formNotes.trim() : `Recommandations : ${formNotes.trim()}`),
           vaccinsTxt.length > 0 && `Vaccins : ${vaccinsTxt.join(', ')}.`,
           ...(([['vermifuge', 'Vermifuge'], ['antiparasitaire', 'Antiparasitaire'], ['allergie', 'Allergie / pathologie'],
             ['chirurgie', 'Chirurgie'], ['hospitalisation', 'Hospitalisation'], ['radio', 'Examen']] as const).map(([t, titre]) => {
@@ -2050,6 +2094,22 @@ function PatientDetailPageInner() {
           traitementsTxt.length > 0 && `Traitement : ${traitementsTxt.join(' ; ')}.`,
           produitsCr.length > 0 && `Produits délivrés : ${produitsCr.map(libelleProduit).join(', ')}.`,
         ].filter(Boolean).join('\n\n');
+        // Modification d'un compte rendu validé : texte déjà présent (vaccins,
+        // examens…) conservé, complété par les ajouts de même rubrique.
+        if (crEdition) {
+          const paras = contenu ? contenu.split('\n\n') : [];
+          const fusion = crEdition.conserve.map(c => {
+            const i = paras.findIndex(p => p.startsWith(`${c.titre} : `));
+            if (i < 0) return `${c.titre} : ${c.corps}`;
+            const ajout = paras.splice(i, 1)[0].slice(c.titre.length + 3).replace(/\.$/, '');
+            const base = c.corps.replace(/\.$/, '');
+            return base.includes(ajout) ? `${c.titre} : ${base}.` : `${c.titre} : ${base}${c.titre === 'Traitement' ? ' ; ' : ', '}${ajout}.`;
+          });
+          // Rubriques éditables d'abord (motif… recommandations), puis le reste.
+          const edites = paras.filter(p => !TITRES_CR_CONSERVES.some(t => p.startsWith(`${t} : `)));
+          const nouveaux = paras.filter(p => TITRES_CR_CONSERVES.some(t => p.startsWith(`${t} : `)));
+          contenu = [...edites, ...fusion, ...nouveaux].join('\n\n');
+        }
         // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
         const ligneCr = {
@@ -2069,6 +2129,34 @@ function PatientDetailPageInner() {
             demande: demandeClient.trim(), actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr, soins: soinsCr,
           } : null } : {}),
         };
+        // « Modifier » un compte rendu validé : la ligne est mise à jour (reste
+        // validée, modification tracée), ajouts inscrits au carnet ; ni
+        // nouvelle notification ni facture ; retour au RDV.
+        if (crEdition) {
+          const ancien = crEdition.cr;
+          const poidsOk = poidsCr != null && !isNaN(poidsCr) ? poidsCr : null;
+          const { error } = await supabase.from('comptes_rendus').update({
+            contenu: contenu || null, motif: formMotif.trim() || null, poids: poidsOk, actes: actesRealises,
+            prescription: (ancien.prescription && prescription && !ancien.prescription.includes(prescription)
+              ? `${ancien.prescription} ; ${prescription}` : ancien.prescription || prescription) || null,
+            produits: [...(ancien.produits ?? []), ...produitsCr],
+          }).eq('id', ancien.id);
+          if (error) { alert(`Modification non enregistrée : ${error.message}`); return; }
+          oublierCrEnCours();
+          if (poidsOk != null && poidsOk !== ancien.poids && poidsOk !== poidsCarnet) {
+            await supabase.from('poids').insert({ id: `${Date.now()}`, animal_id: animalId, valeur: poidsOk, date: new Date().toISOString(), notes: 'Consultation' });
+            await supabase.from('animaux').update({ poids: poidsOk }).eq('id', animalId);
+            setAnimal(a => a ? { ...a, poids: poidsOk } : a);
+          }
+          if (catPro === 'veterinaire' && (vaccinsCr.length || traitementsCr.length || soinsCr.length)) await ecrireActesCr(vetName, ownerUid);
+          if (catPro === 'veterinaire' && produitsCr.length) await decompterStock(produitsCr);
+          const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
+          setComptesRendus((data ?? []) as CompteRendu[]);
+          setCrEdition(null);
+          const rdvRetour = ancien.rdv_id ?? searchParams.get('rdv');
+          if (rdvRetour) retourAuRdv(rdvRetour);
+          return;
+        }
         const { error: eCr } = brouillonId
           ? await supabase.from('comptes_rendus').update(ligneCr).eq('id', brouillonId)
           : await supabase.from('comptes_rendus').insert(ligneCr);
@@ -3926,15 +4014,7 @@ function PatientDetailPageInner() {
               onNouveauCr={() => { viderCr(); setCrRdvId(null); restaurerCrEnCours(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={reprendreBrouillon}
-              onModifier={async (cr, contenu) => {
-                const { error } = await supabase.from('comptes_rendus').update({ contenu }).eq('id', cr.id);
-                if (error) { alert(`Modification non enregistrée : ${error.message}`); return; }
-                const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
-                setComptesRendus((data ?? []) as CompteRendu[]);
-                // Ouvert depuis un RDV : retour à la vue du RDV.
-                const rdvRetour = searchParams.get('rdv');
-                if (rdvRetour && confirm('Compte rendu modifié. Revenir au rendez-vous ?')) retourAuRdv(rdvRetour);
-              }}
+              onModifier={cr => modifierCr(cr as CompteRendu)}
               onFacturer={async (cr) => {
                 // Après coup : motif, poids, actes du CR + vaccins / traitements
                 // inscrits au carnet par moi le jour du CR.
@@ -3997,7 +4077,7 @@ function PatientDetailPageInner() {
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                {addingType === 'cr' && '📋 Rédiger un compte rendu'}
+                {addingType === 'cr' && (crEdition ? 'Modifier le compte rendu' : 'Rédiger un compte rendu')}
                 {addingType === 'vaccin' && '💉 Nouveau vaccin'}
                 {addingType === 'visite' && '🩺 Nouvelle visite'}
                 {addingType === 'traitement' && '💊 Nouveau traitement'}
@@ -4394,11 +4474,11 @@ function PatientDetailPageInner() {
               );
             })()}
             <div className="flex gap-3 pt-1">
-              <button onClick={() => { if (retourCr) { revenirAuCr(retourCr); return; } setAddingType(null); setBrouillonId(null); setFormErreurs([]); setFormManquants([]); }}
+              <button onClick={() => { if (retourCr) { revenirAuCr(retourCr); return; } setAddingType(null); setBrouillonId(null); setCrEdition(null); setFormErreurs([]); setFormManquants([]); }}
                 className="flex-1 border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
                 Annuler
               </button>
-              {addingType === 'cr' && catPro === 'veterinaire' && (
+              {addingType === 'cr' && catPro === 'veterinaire' && !crEdition && (
                 <button onClick={() => saveForm(true)} disabled={savingForm} title="Non visible du propriétaire ; à reprendre plus tard"
                   className="flex-1 border text-sm font-semibold py-2.5 rounded-xl transition-colors disabled:opacity-50"
                   style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
@@ -4412,7 +4492,9 @@ function PatientDetailPageInner() {
               </button>
             </div>
             {addingType === 'cr' && catPro === 'veterinaire' && (
-              <p className="text-[11px] text-gray-500 text-center">Brouillon : non visible du propriétaire, à reprendre et modifier plus tard.</p>
+              <p className="text-[11px] text-gray-500 text-center">{crEdition
+                ? 'Compte rendu déjà validé : la modification est tracée et le propriétaire voit la version corrigée. Vaccins, examens… déjà inscrits restent dans le texte.'
+                : 'Brouillon : non visible du propriétaire, à reprendre et modifier plus tard.'}</p>
             )}
           </div>
         </div>
