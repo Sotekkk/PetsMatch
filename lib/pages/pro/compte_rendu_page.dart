@@ -324,6 +324,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
 
   /// Message laissé par le client dans sa demande de RDV (symptômes…).
   String _messageClient = '';
+  /// Demande du client reprise dans le compte rendu (« Demande du client : … »).
+  bool _inclureMessage = true;
   Map<String, dynamic>? _rdvSource;
 
   /// Accès au carnet de l'animal pour la clinique (RDV pris avant le partage
@@ -477,6 +479,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'poids': _poidsCtrl.text.trim(),
         'texte': _crContenuCtrl.text.trim(),
         'diag': '',
+        'demande': _inclureMessage ? _messageClient : '',
         'actes': [..._actesRealises],
         'vaccins': [for (final v in _vaccinsCr) v.toJson()],
         'traitements': [for (final t in _traitementsCr) t.toJson()],
@@ -493,6 +496,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       _brouillonId = cr['id'].toString();
       _motifCtrl.text = (e['motif'] ?? '').toString();
       _poidsCtrl.text = (e['poids'] ?? '').toString();
+      final demande = (e['demande'] ?? '').toString().trim();
+      if (demande.isNotEmpty) { _messageClient = demande; _inclureMessage = true; }
       _crContenuCtrl.text = [if (diag.isNotEmpty) 'Diagnostic : $diag', if (texte.isNotEmpty) texte].join('\n\n');
       _actesRealises..clear()..addAll([for (final a in (e['actes'] as List? ?? const [])) a.toString()]);
       _vaccinsCr..clear()..addAll([for (final v in (e['vaccins'] as List? ?? const [])) _VaccinCr.fromJson(Map<String, dynamic>.from(v as Map))]);
@@ -713,6 +718,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     final prescription = traitementsTxt.join(' ; ');
     final contenu = [
       if (motif.isNotEmpty) 'Motif : $motif',
+      if (_inclureMessage && _messageClient.isNotEmpty) 'Demande du client : $_messageClient',
       if (poids != null) 'Poids : ${_fmtPoids(poids)} kg',
       if (actesRealises.isNotEmpty) 'Actes réalisés : ${actesRealises.join(', ')}.',
       // Texte libre du vétérinaire : précédé de « Recommandations : » (en gras dans le PDF).
@@ -1437,8 +1443,19 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: const Color(0xFFF6F8F7), borderRadius: BorderRadius.circular(10),
               border: Border.all(color: const Color(0xFFE4E7E2))),
-          child: Text('💬 Message du client : $_messageClient',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text.rich(TextSpan(children: [
+              TextSpan(text: 'Demande du client', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+              TextSpan(text: _inclureMessage ? ' (reprise dans le compte rendu) : ' : ' (non reprise) : '),
+              TextSpan(text: _messageClient),
+            ]), style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
+            GestureDetector(
+              onTap: () => setState(() => _inclureMessage = !_inclureMessage),
+              child: Padding(padding: const EdgeInsets.only(top: 4),
+                child: Text(_inclureMessage ? 'Ne pas la reprendre' : 'La reprendre dans le compte rendu',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
+            ),
+          ]),
         ),
       ],
       const SizedBox(height: 12),

@@ -1027,7 +1027,7 @@ function PatientDetailPageInner() {
   // dans « Déjà inscrit au carnet aujourd'hui »).
   const [retourCr, setRetourCr] = useState<null | {
     motif: string; notes: string; diag: string; poids: string; actes: string[]; vaccins: VaccinCr[];
-    traitements: TraitementCr[]; produits: ProduitCr[]; soins: SoinCr[]; brouillonId: string | null;
+    traitements: TraitementCr[]; produits: ProduitCr[]; soins: SoinCr[]; brouillonId: string | null; demande: string;
   }>(null);
   // Synthèse rechargée après une saisie (rappel fait depuis la Synthèse).
   const [syntheseMaj, setSyntheseMaj] = useState(0);
@@ -1139,6 +1139,9 @@ function PatientDetailPageInner() {
   }, [addingType, catPro, user?.uid, animalId, activeProfileId]);
   // Dernière demande de RDV de cet animal : motif + message du client.
   const [dernierRdv, setDernierRdv] = useState<{ id: string; motif: string | null; notes_client: string | null; client_nom_manuel: string | null; client_email_manuel: string | null; client_telephone_manuel: string | null; client_uid: string | null; client_profile_id: string | null } | null>(null);
+  // Demande écrite par le client en prenant RDV : reprise dans le compte rendu
+  // (« Demande du client : … ») sauf si le vétérinaire la retire.
+  const [demandeClient, setDemandeClient] = useState('');
   const [autreActe, setAutreActe] = useState('');
   const [traitementsCr, setTraitementsCr] = useState<TraitementCr[]>([]);
   const [requestingWrite, setRequestingWrite] = useState(false);
@@ -1269,10 +1272,14 @@ function PatientDetailPageInner() {
       setCrRdvId(crRdv);
       const brouillon = liste.find(c => c.statut === 'brouillon');
       if (brouillon) { viderCr(); setCrRdvId(crRdv); reprendreBrouillon(brouillon); return; }
-      const { data: r } = await supabase.from('rdv').select('motif, animaux_detail').eq('id', crRdv).maybeSingle();
+      const { data: r } = await supabase.from('rdv').select('motif, animaux_detail, notes_client').eq('id', crRdv).maybeSingle();
       const detail = animauxDetailRdv((r ?? {}) as { animaux_detail?: unknown });
       viderCr();
-      setFormMotif(detail.find(a => a.id === String(animalId))?.motif ?? (r as { motif?: string | null } | null)?.motif ?? '');
+      // Saisie en cours (non enregistrée) de ce compte rendu : reprise telle quelle.
+      if (!restaurerCrEnCours(crRdv)) {
+        setFormMotif(detail.find(a => a.id === String(animalId))?.motif ?? (r as { motif?: string | null } | null)?.motif ?? '');
+        setDemandeClient(String((r as { notes_client?: string | null } | null)?.notes_client ?? '').trim());
+      }
       setAddingType('cr');
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1642,6 +1649,7 @@ function PatientDetailPageInner() {
       .then(({ data }) => {
         setDernierRdv(data as typeof dernierRdv);
         if (data?.motif) setFormMotif(m => m || (data.motif as string));
+        if (data?.notes_client && !crRdvId) setDemandeClient(d => d || String(data.notes_client).trim());
       });
   }, [addingType, animalId, activeProfileId]);
 
@@ -1844,7 +1852,7 @@ function PatientDetailPageInner() {
 
   /** Nouveau compte rendu : formulaire vierge (rien d'une saisie précédente). */
   function viderCr() {
-    setBrouillonId(null); setRetourCr(null);
+    setBrouillonId(null); setRetourCr(null); setDemandeClient('');
     setFormMotif(''); setFormPoids(''); setFormNotes(''); setFormDiag('');
     setActesRealises([]); setVaccinsCr([]); setTraitementsCr([]); setProduitsCr([]); setSoinsCr([]); setAutreActe('');
     setCarnetJour([]); setPoidsCarnet(null); setFormErreurs([]); setFormManquants([]);
@@ -1852,8 +1860,8 @@ function PatientDetailPageInner() {
 
   function reprendreBrouillon(cr: { id: string; brouillon?: unknown; motif?: string | null; contenu?: string | null }) {
     // Saisie gardée avec le brouillon ; à défaut (brouillon d'ASV), motif et texte du compte rendu.
-    const e = (cr.brouillon ?? { motif: cr.motif ?? '', texte: cr.contenu ?? '' }) as { motif?: string; poids?: string; texte?: string; diag?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
-    setBrouillonId(cr.id);
+    const e = (cr.brouillon ?? { motif: cr.motif ?? '', texte: cr.contenu ?? '' }) as { motif?: string; poids?: string; texte?: string; diag?: string; demande?: string; actes?: string[]; vaccins?: VaccinCr[]; traitements?: TraitementCr[]; produits?: ProduitCr[]; soins?: SoinCr[] };
+    setBrouillonId(cr.id); setDemandeClient(e.demande ?? '');
     setFormMotif(e.motif ?? ''); setFormPoids(e.poids ?? ''); setFormNotes(e.texte ?? ''); setFormDiag(e.diag ?? '');
     setActesRealises(e.actes ?? []); setVaccinsCr(e.vaccins ?? []); setTraitementsCr(e.traitements ?? []); setProduitsCr(e.produits ?? []); setSoinsCr(e.soins ?? []);
     setAddingType('cr');
@@ -1861,7 +1869,7 @@ function PatientDetailPageInner() {
 
   function saisirSoinDepuisCr(t: 'vermifuge' | 'antiparasitaire' | 'allergie' | 'chirurgie' | 'radio') {
     setRetourCr({ motif: formMotif, notes: formNotes, diag: formDiag, poids: formPoids, actes: actesRealises, vaccins: vaccinsCr,
-      traitements: traitementsCr, produits: produitsCr, soins: soinsCr, brouillonId });
+      traitements: traitementsCr, produits: produitsCr, soins: soinsCr, brouillonId, demande: demandeClient });
     setFormNom(''); setFormNotes(''); setFormDiag(''); setFormRappel(''); setFormTitre(''); setFormDosage(''); setFormFrequence('');
     setFormSubType(''); setFormIntitule(''); setFormSeverite(''); setFormDescription('');
     setFormDate(new Date().toLocaleDateString('sv-SE'));
@@ -1870,7 +1878,42 @@ function PatientDetailPageInner() {
   function revenirAuCr(r: NonNullable<typeof retourCr>) {
     setFormMotif(r.motif); setFormNotes(r.notes); setFormDiag(r.diag); setFormPoids(r.poids);
     setActesRealises(r.actes); setVaccinsCr(r.vaccins); setTraitementsCr(r.traitements); setProduitsCr(r.produits); setSoinsCr(r.soins);
-    setBrouillonId(r.brouillonId); setRetourCr(null); setAddingType('cr');
+    setBrouillonId(r.brouillonId); setDemandeClient(r.demande); setRetourCr(null); setAddingType('cr');
+  }
+
+  // Compte rendu en cours, pas encore enregistré : gardé (onglet du
+  // navigateur) jusqu'à son enregistrement, pour le retrouver tel quel si la
+  // fenêtre est fermée ou la page rechargée (radio ajoutée entre-temps…).
+  const cleCrEnCours = animalId ? `pm_cr_en_cours:${animalId}` : '';
+  useEffect(() => {
+    if (addingType !== 'cr' || !cleCrEnCours) return;
+    const vide = !formMotif.trim() && !formNotes.trim() && !formDiag.trim() && !actesRealises.length && !vaccinsCr.length
+      && !traitementsCr.length && !produitsCr.length && !soinsCr.length;
+    if (vide) return;
+    try {
+      sessionStorage.setItem(cleCrEnCours, JSON.stringify({
+        jour: new Date().toLocaleDateString('sv-SE'), rdv: crRdvId ?? null, brouillonId,
+        motif: formMotif, notes: formNotes, diag: formDiag, poids: formPoids, demande: demandeClient,
+        actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr, soins: soinsCr,
+      }));
+    } catch { /* stockage indisponible : rien de gardé */ }
+  }, [addingType, cleCrEnCours, crRdvId, brouillonId, formMotif, formNotes, formDiag, formPoids, demandeClient,
+    actesRealises, vaccinsCr, traitementsCr, produitsCr, soinsCr]);
+  /** Reprend la saisie gardée du compte rendu (même animal, même RDV, même jour). */
+  function restaurerCrEnCours(rdvId: string | null): boolean {
+    if (!cleCrEnCours) return false;
+    try {
+      const s = JSON.parse(sessionStorage.getItem(cleCrEnCours) ?? 'null');
+      if (!s || s.jour !== new Date().toLocaleDateString('sv-SE') || (s.rdv ?? null) !== (rdvId ?? null)) return false;
+      setFormMotif(s.motif ?? ''); setFormNotes(s.notes ?? ''); setFormDiag(s.diag ?? ''); setFormPoids(s.poids ?? '');
+      setDemandeClient(s.demande ?? ''); setBrouillonId(s.brouillonId ?? null);
+      setActesRealises(s.actes ?? []); setVaccinsCr(s.vaccins ?? []); setTraitementsCr(s.traitements ?? []);
+      setProduitsCr(s.produits ?? []); setSoinsCr(s.soins ?? []);
+      return true;
+    } catch { return false; }
+  }
+  function oublierCrEnCours() {
+    try { if (cleCrEnCours) sessionStorage.removeItem(cleCrEnCours); } catch { /* ignore */ }
   }
 
   /** [enBrouillon] : CR enregistré sans être validé — invisible du propriétaire,
@@ -1980,6 +2023,7 @@ function PatientDetailPageInner() {
         const prescription = traitementsTxt.join(' ; ');
         const contenu = [
           formMotif.trim() && `Motif : ${formMotif.trim()}`,
+          demandeClient.trim() && `Demande du client : ${demandeClient.trim()}`,
           poidsCr != null && !isNaN(poidsCr) && `Poids : ${poidsCr} kg`,
           actesRealises.length > 0 && `Actes réalisés : ${actesRealises.join(', ')}.`,
           formDiag.trim() && `Diagnostic : ${formDiag.trim()}`,
@@ -2010,13 +2054,14 @@ function PatientDetailPageInner() {
           // Saisie complète gardée avec le brouillon (format commun appli / site).
           ...(enBrouillon || brouillonId ? { brouillon: enBrouillon ? {
             motif: formMotif.trim(), poids: formPoids.trim(), texte: formNotes.trim(), diag: formDiag.trim(),
-            actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr, soins: soinsCr,
+            demande: demandeClient.trim(), actes: actesRealises, vaccins: vaccinsCr, traitements: traitementsCr, produits: produitsCr, soins: soinsCr,
           } : null } : {}),
         };
         const { error: eCr } = brouillonId
           ? await supabase.from('comptes_rendus').update(ligneCr).eq('id', brouillonId)
           : await supabase.from('comptes_rendus').insert(ligneCr);
         if (eCr) { alert(`Erreur : ${eCr.message}`); return; }
+        oublierCrEnCours();
         if (enBrouillon) {
           const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
           setComptesRendus((data ?? []) as CompteRendu[]);
@@ -3863,7 +3908,7 @@ function PatientDetailPageInner() {
                 { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
-              onNouveauCr={() => { viderCr(); setCrRdvId(null); setAddingType('cr'); }}
+              onNouveauCr={() => { viderCr(); setCrRdvId(null); restaurerCrEnCours(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={reprendreBrouillon}
               onFacturer={async (cr) => {
@@ -3924,7 +3969,7 @@ function PatientDetailPageInner() {
       {/* ── Modales d'ajout ── */}
       {addingType && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setAddingType(null)}>
+          onClick={() => { if (retourCr) revenirAuCr(retourCr); else setAddingType(null); }}>
           <div className="bg-white rounded-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -3940,7 +3985,7 @@ function PatientDetailPageInner() {
                 {addingType === 'radio' && '🩻 Radio / Examen'}
                 {addingType === 'mesure' && '⚖️ Nouvelle mesure'}
               </h3>
-              <button onClick={() => setAddingType(null)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+              <button onClick={() => { if (retourCr) revenirAuCr(retourCr); else setAddingType(null); }} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
             </div>
 
             {/* Champ date commun (pas pour mesure) */}
@@ -4265,8 +4310,11 @@ function PatientDetailPageInner() {
                 <datalist id="motifs-cr">
                   {['Consultation', 'Vaccination', 'Bilan annuel', 'Urgence', 'Suivi post-opératoire', 'Contrôle', 'Chirurgie'].map(m => <option key={m} value={m} />)}
                 </datalist>
-                {dernierRdv?.notes_client && (
-                  <p className="mt-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">💬 Message du client : {dernierRdv.notes_client}</p>
+                {demandeClient.trim() && (
+                  <div className="mt-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                    <p><span className="font-semibold text-gray-700">Demande du client</span> (reprise dans le compte rendu) : {demandeClient}</p>
+                    <button type="button" onClick={() => setDemandeClient('')} className="mt-1 font-semibold text-[#0C5C6C]">Ne pas la reprendre</button>
+                  </div>
                 )}
               </div>
               <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
