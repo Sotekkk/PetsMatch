@@ -14,6 +14,7 @@ import {
   morphoSpeciesKey, vuesDisponibles, type MorphoPoint,
 } from '@/lib/morpho';
 import { morphoSuiviPdfBlob } from '@/lib/morpho-pdf';
+import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 
 interface SuiviRow { [k: string]: unknown }
 
@@ -35,6 +36,8 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
   const [finalisant, setFinalisant] = useState(false);
   const [vue, setVue] = useState('profil_d');
   const [exporting, setExporting] = useState(false);
+  // Séance d'un RDV : fin de séance (envoi compte rendu + facture, facture acquittée).
+  const [finSeance, setFinSeance] = useState(false);
   const [sendingNotif, setSendingNotif] = useState(false);
   // Accessible au pro qui a réalisé le suivi (isSante) OU au propriétaire
   // enregistré de l'animal (pour qu'il puisse consulter/imprimer son bilan
@@ -323,6 +326,23 @@ ${pro.nom}` : ''}`;
             {sendingNotif ? 'Envoi…' : suivi.notifie_a ? 'Renvoyer le compte rendu' : 'Envoyer le compte rendu'}
           </button>
         </div>
+      )}
+
+      {isSante && !brouillon && !!suivi.rdv_id && (
+        <div className="rounded-2xl p-4 bg-white border border-gray-100 shadow-sm flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold font-galey text-gray-800">Fin de séance</p>
+            <p className="text-xs font-galey text-gray-400">Facture, envoi du compte rendu et de la facture par e-mail, facture acquittée.</p>
+          </div>
+          <button onClick={() => setFinSeance(true)}
+            className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold flex-shrink-0" style={{ background: TEAL }}>
+            Fin de séance
+          </button>
+        </div>
+      )}
+      {finSeance && !!suivi.rdv_id && (
+        <FinConsultationModal metier="sante" rdvId={String(suivi.rdv_id)} proProfileId={(suivi.pro_profile_id as string | null) ?? null}
+          onClose={() => setFinSeance(false)} onDone={() => setFinSeance(false)} />
       )}
 
       {isSante && !brouillon && !!suivi.animal_id && (

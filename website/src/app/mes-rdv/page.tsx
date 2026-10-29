@@ -1235,7 +1235,7 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <button onClick={onFinConsultation}
               className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
               style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
-              Fin de consultation
+              {crParAnimal === 'sante' ? 'Fin de séance' : 'Fin de consultation'}
             </button>
           )}
           {rdv.animal_id && onHistorique && (
@@ -2136,7 +2136,7 @@ export default function MesRdvPage() {
                   onModifier={() => setModalModifier(rdv)}
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
                   crParAnimal={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? catPro : undefined}
-                  onFinConsultation={activeTab !== 'demandes' && catPro === 'veterinaire' ? () => setFinConsultation(rdv) : undefined}
+                  onFinConsultation={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? () => setFinConsultation(rdv) : undefined}
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}
@@ -2159,6 +2159,7 @@ export default function MesRdvPage() {
       )}
       {finConsultation && (
         <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}
+          metier={catPro === 'sante' ? 'sante' : 'veterinaire'}
           onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); fetchRdvs(); }} />
       )}
       {historiqueRdv?.animal_id && activeProfileId && (
