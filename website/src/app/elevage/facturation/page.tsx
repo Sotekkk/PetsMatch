@@ -62,6 +62,8 @@ interface Facture {
 // sessionStorage avant la navigation — voir l'effet plus bas et
 // PensionFacturationModal.
 interface FacturePrefill {
+  /** Page où revenir une fois la facture émise (vue du RDV). */
+  retour?: string;
   nomClient?: string;
   prenomClient?: string;
   emailClient?: string;
@@ -554,7 +556,12 @@ export default function FacturationPage() {
           avoirDe={avoirSource}
           prefill={prefill}
           onClose={() => { setShowForm(false); setAvoirSource(null); setPrefill(null); }}
-          onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null); setPrefill(null); }}
+          onSaved={(f) => {
+            setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null);
+            // Facture préparée depuis un RDV : retour à la vue du RDV (fin de consultation).
+            if (prefill?.retour?.startsWith('/')) router.push(prefill.retour);
+            setPrefill(null);
+          }}
         />
       )}
     </div>

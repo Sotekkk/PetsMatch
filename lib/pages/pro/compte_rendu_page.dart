@@ -2438,6 +2438,51 @@ class _CompteRenduPageState extends State<CompteRenduPage>
   }
 
   /// Valide un brouillon (vétérinaire) → visible et notifié au propriétaire.
+  /// Compte rendu validé : corriger / compléter le texte (oubli). Modification
+  /// tracée côté serveur (journal médical). Miroir site : « Modifier » (ConsultationsVet).
+  Future<void> _modifierCr(Map<String, dynamic> cr) async {
+    final ctrl = TextEditingController(text: cr['contenu']?.toString() ?? '');
+    final texte = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Modifier le compte rendu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: SizedBox(width: 520, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: ctrl, maxLines: 14, minLines: 6, textCapitalization: TextCapitalization.sentences,
+              decoration: _inputDeco('Compte rendu')),
+          const SizedBox(height: 8),
+          Text('La modification est tracée ; le propriétaire voit la version corrigée.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: widget.categoryColor, foregroundColor: Colors.white),
+            child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (texte == null || texte.isEmpty || !mounted) return;
+    try {
+      await _supa.from('comptes_rendus').update({'contenu': texte}).eq('id', cr['id']);
+      await _loadExisting();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Compte rendu modifié.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Modification non enregistrée : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
   Future<void> _validerCr(Map<String, dynamic> cr) async {
     try {
       final monProfil = await AgendaContexte.monProfil();
@@ -2703,7 +2748,8 @@ class _CompteRenduPageState extends State<CompteRenduPage>
                 onValider: (cr['statut'] == 'brouillon' && _peutValider && cr['brouillon'] == null) ? () => _validerCr(cr) : null,
                 onReprendre: (cr['statut'] == 'brouillon' && cr['brouillon'] != null && cr['id']?.toString() != _brouillonId)
                     ? () => _reprendreBrouillon(cr) : null,
-                onFacturer: (_saisieActes && cr['statut'] != 'brouillon') ? () => _facturerCr(cr) : null)),
+                onFacturer: (_saisieActes && cr['statut'] != 'brouillon') ? () => _facturerCr(cr) : null,
+                onModifier: (cr['statut'] != 'brouillon' && _peutValider) ? () => _modifierCr(cr) : null)),
                 ],
               ),
             ),
@@ -3103,7 +3149,9 @@ class _CrCard extends StatelessWidget {
   final VoidCallback? onFacturer;
   /// Imprimer / partager / envoyer au propriétaire (CR validé).
   final VoidCallback? onTransmettre;
-  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onReprendre, this.onFacturer, this.onTransmettre});
+  /// CR validé : corriger / compléter le texte.
+  final VoidCallback? onModifier;
+  const _CrCard({required this.cr, required this.color, this.onDelete, this.onValider, this.onReprendre, this.onFacturer, this.onTransmettre, this.onModifier});
 
   @override
   Widget build(BuildContext context) {
@@ -3134,6 +3182,9 @@ class _CrCard extends StatelessWidget {
             ),
           ],
           const Spacer(),
+          if (onModifier != null)
+            IconButton(visualDensity: VisualDensity.compact, tooltip: 'Modifier le compte rendu',
+                onPressed: onModifier, icon: Icon(Icons.edit_outlined, size: 18, color: color)),
           if (onTransmettre != null && cr['statut'] != 'brouillon')
             IconButton(visualDensity: VisualDensity.compact, tooltip: 'Imprimer / envoyer',
                 onPressed: onTransmettre, icon: Icon(Icons.ios_share, size: 18, color: color)),

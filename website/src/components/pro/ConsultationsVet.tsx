@@ -79,7 +79,7 @@ function intervenant(c: Consultation, noms: Record<string, string>) {
 }
 const motifDe = (c: Consultation) => c.cr?.motif?.trim() || (c.cr ? 'Consultation' : 'Ordonnance');
 
-export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onTransmettreCr, onTransmettreOrdo, crOuvert }: {
+export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutValider, menuCarnet, onNouveauCr, onHistorique, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo, crOuvert }: {
   crs: CrVet[]; ordos: OrdoVet[];
   /** Compte rendu à ouvrir d'emblée (« Compte rendu fait » depuis un RDV). */
   crOuvert?: string | null;
@@ -94,6 +94,8 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
   onSupprimer?: (cr: CrVet) => Promise<void>;
   /** CR validé : préparer la facture après coup. */
   onFacturer?: (cr: CrVet) => Promise<void>;
+  /** CR validé : corriger / compléter le texte (oubli). */
+  onModifier?: (cr: CrVet, contenu: string) => Promise<void>;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
 }) {
@@ -185,24 +187,29 @@ export default function ConsultationsVet({ crs, ordos, peutCr, peutCarnet, peutV
           onReprendre={onReprendre ? cr => { setOuverte(null); onReprendre(cr); } : undefined}
           onSupprimer={onSupprimer && peutCr ? async cr => { setOuverte(null); await onSupprimer(cr); } : undefined}
           onFacturer={onFacturer && peutCr ? async cr => { setOuverte(null); await onFacturer(cr); } : undefined}
+          onModifier={onModifier && peutValider ? onModifier : undefined}
           onTransmettreCr={onTransmettreCr} onTransmettreOrdo={onTransmettreOrdo} />
       )}
     </div>
   );
 }
 
-function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onTransmettreCr, onTransmettreOrdo }: {
+function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValider, onReprendre, onSupprimer, onFacturer, onModifier, onTransmettreCr, onTransmettreOrdo }: {
   c: Consultation; noms: Record<string, string>; onClose: () => void; peutValider: boolean;
   onValider: (cr: CrVet) => Promise<void>;
   onReprendre?: (cr: CrVet) => void;
   onSupprimer?: (cr: CrVet) => Promise<void>;
   onFacturer?: (cr: CrVet) => Promise<void>;
+  onModifier?: (cr: CrVet, contenu: string) => Promise<void>;
   onTransmettreCr: (cr: CrVet, action: 'imprimer' | 'email') => void;
   onTransmettreOrdo: (o: OrdoVet, action: 'imprimer' | 'email') => void;
 }) {
   const [journal, setJournal] = useState<Journal[]>([]);
   const [nomsJournal, setNomsJournal] = useState<Record<string, string>>({});
   const [validation, setValidation] = useState(false);
+  // Correction d'un compte rendu validé : texte modifiable (null = lecture).
+  const [edition, setEdition] = useState<string | null>(null);
+  const [enregistrement, setEnregistrement] = useState(false);
   const noms = { ...nomsInit, ...nomsJournal };
   const cr = c.cr;
   const brouillon = cr?.statut === 'brouillon';
@@ -254,7 +261,21 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
         {cr && (
           <>
             {titre('Compte rendu')}
-            {cr.contenu?.trim()
+            {edition !== null ? (
+              <div className="space-y-2">
+                <textarea value={edition} onChange={e => setEdition(e.target.value)} rows={14} autoFocus
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm leading-relaxed focus:outline-none focus:border-[#0C5C6C]" />
+                <p className="text-xs text-gray-500">La modification est tracée (historique du dossier) ; le propriétaire voit la version corrigée.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setEdition(null)} className={bouton} style={{ borderColor: '#D1D5DB', color: '#4B5563' }}>Annuler</button>
+                  <button type="button" disabled={enregistrement || !edition.trim()}
+                    onClick={async () => { setEnregistrement(true); try { await onModifier!(cr, edition.trim()); setEdition(null); } finally { setEnregistrement(false); } }}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: TEAL }}>
+                    {enregistrement ? '…' : 'Enregistrer la modification'}
+                  </button>
+                </div>
+              </div>
+            ) : cr.contenu?.trim()
               ? <p className="text-sm text-[#1E2025] whitespace-pre-wrap leading-relaxed">{cr.contenu}</p>
               : <p className="text-sm text-gray-400">Aucun texte saisi.</p>}
             {cr.prescription && (
@@ -269,6 +290,11 @@ function PanneauConsultation({ c, noms: nomsInit, onClose, peutValider, onValide
               </LienDocument>
             )}
             <div className="flex flex-wrap gap-2 mt-3">
+              {!brouillon && onModifier && edition === null && (
+                <button onClick={() => setEdition(cr.contenu ?? '')} className={bouton} style={{ borderColor: TEAL, color: TEAL }}>
+                  Modifier
+                </button>
+              )}
               {!brouillon && onFacturer && (
                 <button onClick={() => onFacturer(cr)}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white" style={{ background: TEAL }}>

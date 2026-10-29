@@ -1022,6 +1022,8 @@ function PatientDetailPageInner() {
   // Compte rendu déjà préparé pour « RDV|animal » (et non une seule fois par
   // page : en passant d'un animal à l'autre, la page peut être réutilisée).
   const crRdvOuvert = useRef('');
+  // Après un compte rendu : page suivante déjà choisie (facture, animal suivant).
+  const navigationSuivie = useRef(false);
   // Soin saisi depuis le compte rendu avec le formulaire complet du carnet :
   // la saisie du CR est mise de côté puis reprise (le soin apparaît alors
   // dans « Déjà inscrit au carnet aujourd'hui »).
@@ -1682,6 +1684,7 @@ function PatientDetailPageInner() {
     // Aucune grille saisie : les prix seraient à 0 → proposer de la remplir.
     if (Object.values(tarifs).every(v => !(parseFloat(String(v ?? '').replace(',', '.')) > 0))
       && confirm('Vos tarifs ne sont pas encore renseignés : la facture serait à 0 €.\n\nOuvrir « Mes tarifs » pour les saisir ?\n(Annuler : préparer la facture quand même)')) {
+      navigationSuivie.current = true;
       router.push('/profil#tarifs');
       return;
     }
@@ -1723,10 +1726,12 @@ function PatientDetailPageInner() {
         rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
         notes: `Consultation de ${animal.nom}`,
         sourceRdvId: dernierRdv?.id, sourceAnimalId: animalId,
+        ...(crRdvId ? { retour: `/mes-rdv?rdv=${encodeURIComponent(crRdvId)}` } : {}),
         clientUid: dernierRdv?.client_uid ?? animal.uid_proprietaire ?? undefined,
         clientProfileId: dernierRdv?.client_profile_id ?? undefined,
       }));
     } catch { /* ignore */ }
+    navigationSuivie.current = true;
     router.push('/elevage/facturation');
   }
 
@@ -1822,10 +1827,11 @@ function PatientDetailPageInner() {
         prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
         rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
         notes: `Consultation de ${listeNoms}`,
-        sourceRdvId: rdvId, sourceAnimalId: detail[0].id,
+        sourceRdvId: rdvId, sourceAnimalId: detail[0].id, retour: `/mes-rdv?rdv=${encodeURIComponent(rdvId)}`,
         clientUid: rr.client_uid ?? undefined, clientProfileId: rr.client_profile_id ?? undefined,
       }));
     } catch { /* ignore */ }
+    navigationSuivie.current = true;
     router.push('/elevage/facturation');
   }
 
@@ -1844,10 +1850,16 @@ function PatientDetailPageInner() {
       // Animal suivant de la visite (premier sans compte rendu).
       const suivant = detail.find(a => !faits.has(a.id));
       if (suivant && confirm(`Compte rendu enregistré. Reste : ${restants.join(', ')} — la facture de la visite sera proposée au dernier compte rendu.\n\nPasser au compte rendu de ${suivant.nom} ?`)) {
+        navigationSuivie.current = true;
         window.location.assign(`/mes-patients/${encodeURIComponent(suivant.id)}?crRdv=${encodeURIComponent(rdvId)}`);
       }
     }
     return true;
+  }
+
+  /** Retour à la vue du RDV (Gérer mes RDV, RDV mis en avant). */
+  function retourAuRdv(rdvId: string) {
+    window.location.assign(`/mes-rdv?rdv=${encodeURIComponent(rdvId)}`);
   }
 
   /** Nouveau compte rendu : formulaire vierge (rien d'une saisie précédente). */
@@ -2065,6 +2077,7 @@ function PatientDetailPageInner() {
         if (enBrouillon) {
           const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
           setComptesRendus((data ?? []) as CompteRendu[]);
+          if (crRdvId) retourAuRdv(crRdvId);
           return;
         }
         // Propriétaire prévenu, lien direct vers ce compte rendu.
@@ -2093,6 +2106,8 @@ function PatientDetailPageInner() {
             [...vaccinsCr, ...carnetJour.flatMap(a => a.vaccin ? [a.vaccin] : [])], traitementsCr,
             poidsCr != null && !isNaN(poidsCr) ? poidsCr : null, produitsCr);
         }
+        // Compte rendu d'un RDV : retour à la vue du RDV (sauf facture ou animal suivant ouverts).
+        if (crRdvId && !navigationSuivie.current) retourAuRdv(crRdvId);
       } else if (addingType === 'mesure') {
         const updates: Record<string, number> = {};
         const kgSaisi = poidsKg(formPoids);
@@ -3911,6 +3926,15 @@ function PatientDetailPageInner() {
               onNouveauCr={() => { viderCr(); setCrRdvId(null); restaurerCrEnCours(null); setAddingType('cr'); }}
               onHistorique={() => setHistoriqueOuvert(true)}
               onReprendre={reprendreBrouillon}
+              onModifier={async (cr, contenu) => {
+                const { error } = await supabase.from('comptes_rendus').update({ contenu }).eq('id', cr.id);
+                if (error) { alert(`Modification non enregistrée : ${error.message}`); return; }
+                const { data } = await supabase.from('comptes_rendus').select('*').eq('animal_id', animalId).order('created_at', { ascending: false });
+                setComptesRendus((data ?? []) as CompteRendu[]);
+                // Ouvert depuis un RDV : retour à la vue du RDV.
+                const rdvRetour = searchParams.get('rdv');
+                if (rdvRetour && confirm('Compte rendu modifié. Revenir au rendez-vous ?')) retourAuRdv(rdvRetour);
+              }}
               onFacturer={async (cr) => {
                 // Après coup : motif, poids, actes du CR + vaccins / traitements
                 // inscrits au carnet par moi le jour du CR.
