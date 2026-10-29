@@ -14,6 +14,7 @@ import {
   morphoSpeciesKey, vuesDisponibles, type MorphoPoint,
 } from '@/lib/morpho';
 import { morphoSuiviPdfBlob } from '@/lib/morpho-pdf';
+import { preparerFactureOsteo } from '@/lib/seance-osteo';
 import { maSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
@@ -352,10 +353,19 @@ ${pro.nom}` : ''}`;
             <p className="text-sm font-bold font-galey text-gray-800">Fin de séance</p>
             <p className="text-xs font-galey text-gray-400">Facture, envoi du compte rendu et de la facture par e-mail, facture acquittée.</p>
           </div>
-          <button onClick={() => setFinSeance(true)}
-            className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold flex-shrink-0" style={{ background: TEAL }}>
-            Fin de séance
-          </button>
+          <div className="flex gap-2 flex-shrink-0">
+            {/* Facture préparée depuis les tarifs ostéo ; retour au RDV après l'émission. */}
+            <button onClick={async () => {
+              if (suivi.pro_profile_id && await preparerFactureOsteo(String(suivi.rdv_id), String(suivi.pro_profile_id))) router.push('/elevage/facturation');
+            }}
+              className="px-4 py-2 rounded-full text-sm font-galey font-semibold border" style={{ borderColor: TEAL, color: TEAL }}>
+              Facturer
+            </button>
+            <button onClick={() => setFinSeance(true)}
+              className="text-white px-4 py-2 rounded-full text-sm font-galey font-semibold" style={{ background: TEAL }}>
+              Fin de séance
+            </button>
+          </div>
         </div>
       )}
       {finSeance && !!suivi.rdv_id && (

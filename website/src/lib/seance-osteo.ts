@@ -83,3 +83,44 @@ export async function lignesFactureOsteo(proProfileId: string, seances: SeanceRd
   if (seances.some(s => s.lieu === 'exterieur' || s.lieu === 'domicile')) lignes.push(ligne('Supplément déplacement', tarif('deplacement')));
   return lignes;
 }
+
+/** Facture d'un RDV ostéo préparée (sessionStorage pm_facture_prefill) depuis
+ *  ses séances finalisées, à défaut une séance par animal du RDV ; client du
+ *  RDV ; retour au RDV après l'émission. Renvoie false si rien à facturer.
+ *  Utilisé par « Facturer » (RDV, séance) et la fin de séance. */
+export async function preparerFactureOsteo(rdvId: string, proProfileId: string): Promise<boolean> {
+  const { data: r } = await supabase.from('rdv')
+    .select('animal_id, animaux_ids, lieu, client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel')
+    .eq('id', rdvId).maybeSingle();
+  if (!r) return false;
+  let seances = await seancesDuRdv(rdvId);
+  if (seances.length === 0) {
+    // Séance pas encore rédigée : une ligne « Séance » par animal du RDV.
+    const ids = (Array.isArray(r.animaux_ids) && r.animaux_ids.length ? r.animaux_ids : [r.animal_id]).filter(Boolean).map(String);
+    seances = (ids.length ? ids : [null]).map(id => ({ id: '', animal_id: id, type_suivi: null, lieu: (r.lieu as string | null) ?? null, statut: null, date: null }));
+  }
+  const ids = [...new Set(seances.map(s => s.animal_id).filter(Boolean) as string[])];
+  const { data: an } = ids.length ? await supabase.from('animaux').select('id, nom').in('id', ids) : { data: [] };
+  const noms = Object.fromEntries(((an ?? []) as { id: string; nom: string }[]).map(a => [String(a.id), a.nom]));
+  const lignes = await lignesFactureOsteo(proProfileId, seances, noms);
+  const animalRef = ids[0] ?? null;
+  const c = { prenom: '', nom: r.client_nom_manuel ?? '', email: r.client_email_manuel ?? '', tel: r.client_telephone_manuel ?? '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };
+  if (animalRef) {
+    const { data: cf } = await supabase.rpc('pm_client_facturation', {
+      p_animal_id: animalRef, ...(r.client_profile_id ? { p_client_profile_id: r.client_profile_id } : {}),
+    });
+    const j = (cf ?? null) as Record<string, string> | null;
+    if (j && (j.nom || j.prenom)) Object.assign(c, { prenom: j.prenom ?? '', nom: j.nom ?? '', email: j.email ?? '', tel: j.telephone ?? '',
+      rue: j.rue ?? '', cp: j.code_postal ?? '', ville: j.ville ?? '', pays: j.pays ?? '', siret: j.siret ?? '', tva: j.numero_tva ?? '' });
+  }
+  const nomsListe = ids.map(i => noms[i]).filter(Boolean);
+  sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
+    prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
+    rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
+    notes: `Séance${nomsListe.length > 1 ? 's' : ''} de ${nomsListe.join(', ') || 'votre animal'}`,
+    sourceRdvId: rdvId, sourceAnimalId: animalRef ?? undefined,
+    clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
+    retour: `/mes-rdv?rdv=${encodeURIComponent(rdvId)}`,
+  }));
+  return true;
+}

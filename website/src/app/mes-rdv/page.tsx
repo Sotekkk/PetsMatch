@@ -2,6 +2,7 @@
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
+import { preparerFactureOsteo } from '@/lib/seance-osteo';
 import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
@@ -2149,9 +2150,12 @@ export default function MesRdvPage() {
                   onHistorique={catPro === 'veterinaire' && rdv.animal_id ? () => setHistoriqueRdv(rdv) : undefined}
                   crParAnimal={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? catPro : undefined}
                   onFinConsultation={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') ? () => setFinConsultation(rdv) : undefined}
-                  onFacturer={activeTab !== 'demandes' && catPro === 'veterinaire' && !rdv.facture_id && rdv.statut !== 'annule'
+                  onFacturer={activeTab !== 'demandes' && (catPro === 'veterinaire' || catPro === 'sante') && !rdv.facture_id && rdv.statut !== 'annule'
                     && (rdv.animal_id || animauxDetailRdv(rdv).length > 0)
-                    ? () => window.location.assign(`/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`)
+                    ? (catPro === 'sante'
+                      // Ostéo : facture depuis les séances du RDV et les tarifs.
+                      ? async () => { if (activeProfileId && await preparerFactureOsteo(rdv.id, activeProfileId)) router.push('/elevage/facturation'); }
+                      : () => window.location.assign(`/mes-patients/${encodeURIComponent(String(rdv.animal_id ?? animauxDetailRdv(rdv)[0].id))}?facturerRdv=${encodeURIComponent(rdv.id)}`))
                     : undefined}
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)

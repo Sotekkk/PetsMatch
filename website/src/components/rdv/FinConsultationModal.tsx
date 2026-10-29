@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { seancesDuRdv, pdfSeance, lignesFactureOsteo, type SeanceRdv } from '@/lib/seance-osteo';
+import { seancesDuRdv, pdfSeance, preparerFactureOsteo, type SeanceRdv } from '@/lib/seance-osteo';
 import { useAuth } from '@/lib/auth-context';
 import { maSignaturePro } from '@/lib/signature-pro';
 import { envoyerPiecesParEmail } from '@/lib/transmission-document';
@@ -62,27 +62,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
     if (!docs?.seances?.length || !proProfileId) return;
     setPrepa(true);
     try {
-      const lignes = await lignesFactureOsteo(proProfileId, docs.seances, docs.noms);
-      const { data: r } = await supabase.from('rdv').select('client_uid, client_profile_id, client_nom_manuel, client_email_manuel, client_telephone_manuel').eq('id', rdvId).maybeSingle();
-      const animalRef = docs.seances.find(s => s.animal_id)?.animal_id ?? docs.animalIdPrincipal;
-      const c = { prenom: '', nom: r?.client_nom_manuel ?? '', email: r?.client_email_manuel ?? '', tel: r?.client_telephone_manuel ?? '', rue: '', cp: '', ville: '', pays: '', siret: '', tva: '' };
-      if (animalRef) {
-        const { data: cf } = await supabase.rpc('pm_client_facturation', {
-          p_animal_id: animalRef, ...(r?.client_profile_id ? { p_client_profile_id: r.client_profile_id } : {}),
-        });
-        const j = (cf ?? null) as Record<string, string> | null;
-        if (j && (j.nom || j.prenom)) Object.assign(c, { prenom: j.prenom ?? '', nom: j.nom ?? '', email: j.email ?? '', tel: j.telephone ?? '',
-          rue: j.rue ?? '', cp: j.code_postal ?? '', ville: j.ville ?? '', pays: j.pays ?? '', siret: j.siret ?? '', tva: j.numero_tva ?? '' });
-      }
-      const noms = [...new Set(docs.seances.map(s => (s.animal_id ? docs.noms[s.animal_id] : '') || '').filter(Boolean))];
-      sessionStorage.setItem('pm_facture_prefill', JSON.stringify({
-        prenomClient: c.prenom, nomClient: c.nom, emailClient: c.email, telClient: c.tel,
-        rueClient: c.rue, cpClient: c.cp, villeClient: c.ville, paysClient: c.pays, siretClient: c.siret, tvaClient: c.tva, lignes,
-        notes: `Séance${noms.length > 1 ? 's' : ''} de ${noms.join(', ') || 'votre animal'}`,
-        sourceRdvId: rdvId, sourceAnimalId: animalRef ?? undefined,
-        clientUid: r?.client_uid ?? undefined, clientProfileId: r?.client_profile_id ?? undefined,
-      }));
-      router.push('/elevage/facturation');
+      if (await preparerFactureOsteo(rdvId, proProfileId)) router.push('/elevage/facturation');
     } catch (e) {
       alert(`Impossible : ${(e as Error).message}`);
     } finally { setPrepa(false); }
