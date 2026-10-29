@@ -1,6 +1,7 @@
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/utils/rdv_animaux.dart';
 import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
+import 'package:PetsMatch/utils/fin_seance_osteo.dart' show finSeanceOsteo;
 import 'package:PetsMatch/pages/pro/nouveau_patient_clinique_page.dart' show NouveauPatientCliniquePage;
 import 'package:PetsMatch/pages/pro/photographe_dossier_seance.dart' show showDossierSeance, genererContratPhoto;
 import 'package:PetsMatch/pages/pro/toilettage_dossier_seance.dart' show showDossierToilettage, genererContratToilettage, facturerToilettage;
@@ -4980,6 +4981,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           // suivis », peu visible juste après une séance). Si un suivi existe
           // déjà pour CE rdv, on rouvre celui-là (lecture/PDF/envoi) au lieu
           // d'en recréer un nouveau à chaque tap.
+          onFinSeance: (showProTools && hasAnimal && AgendaContexte.catPro == 'sante' && rdv['statut'] != 'demande')
+              ? () => finSeanceOsteo(context, rdvId: rdv['id'].toString(),
+                  proProfileId: AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId : null)
+              : null,
           onSuiviMorpho: (showProTools && hasAnimal && AgendaContexte.catPro == 'sante')
               ? () async {
                   final rdvId = rdv['id']?.toString();
@@ -5010,7 +5015,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                               readOnly: false,
                             )));
                   } else {
-                    await Navigator.push(context, MaterialPageRoute(
+                    final fait = await Navigator.push<bool>(context, MaterialPageRoute(
                         builder: (_) => MorphoFormPage(
                               animalId: animalSeance,
                               espece: especeSeance,
@@ -5022,6 +5027,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                               // vide et éditable, comme dans
                               // sante_suivis_morpho_page.dart.
                             )));
+                    // Séance finalisée : fin de séance proposée (facture, envoi, acquittée).
+                    if (fait == true && rdvId != null && context.mounted) {
+                      try {
+                        final fin = await Supabase.instance.client.from('suivis_morpho').select('id')
+                            .eq('rdv_id', rdvId).eq('animal_id', animalSeance).eq('statut', 'finalise').limit(1);
+                        if ((fin as List).isNotEmpty && context.mounted) {
+                          await finSeanceOsteo(context, rdvId: rdvId,
+                              proProfileId: AgendaContexte.profileId.isNotEmpty ? AgendaContexte.profileId : null);
+                        }
+                      } catch (_) {}
+                    }
                   }
                 }
               : null,
@@ -5133,6 +5149,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onCarnetSante;
   final VoidCallback? onCompteRendu;
   final VoidCallback? onSuiviMorpho;
+  /// Ostéo : fin de séance (facture, envoi des documents, facture acquittée).
+  final VoidCallback? onFinSeance;
   final VoidCallback? onNouvelles;
   final VoidCallback? onContact;
   final VoidCallback? onDelete;
@@ -5159,6 +5177,7 @@ class _RdvCard extends StatelessWidget {
     this.onCarnetSante,
     this.onCompteRendu,
     this.onSuiviMorpho,
+    this.onFinSeance,
     this.onNouvelles,
     this.onContact,
     this.onDelete,
@@ -5488,6 +5507,16 @@ class _RdvCard extends StatelessWidget {
                   onPressed: onSuiviMorpho,
                   icon: const Icon(Icons.accessibility_new, size: 20, color: Color(0xFF6E9E57)),
                   tooltip: 'Rédiger le compte rendu',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onFinSeance != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onFinSeance,
+                  icon: const Icon(Icons.outgoing_mail, size: 20, color: Color(0xFF0C5C6C)),
+                  tooltip: 'Fin de séance : facture, envoi, acquittée',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),

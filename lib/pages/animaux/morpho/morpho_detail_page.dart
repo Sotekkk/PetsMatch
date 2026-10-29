@@ -1,4 +1,5 @@
 import 'dart:async' show unawaited;
+import 'package:PetsMatch/utils/fin_seance_osteo.dart' show finSeanceOsteo;
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -292,6 +293,11 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       }).eq('id', _suiviId);
       widget.suivi['statut'] = 'finalise';
       if (mounted) setState(() { _statut = 'finalise'; _finalisant = false; });
+      // Séance d'un RDV : fin de séance proposée (facture, envoi, acquittée).
+      if (mounted && widget.suivi['rdv_id'] != null) {
+        await finSeanceOsteo(context, rdvId: widget.suivi['rdv_id'].toString(),
+            proProfileId: widget.suivi['pro_profile_id']?.toString());
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _finalisant = false);
@@ -469,6 +475,19 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                 ])),
               ],
 
+              // Séance d'un RDV finalisée : fin de séance (facture, envoi, acquittée).
+              if (!widget.readOnly && !_brouillon && s['rdv_id'] != null) ...[
+                const SizedBox(height: 10),
+                SizedBox(width: double.infinity, child: ElevatedButton.icon(
+                  onPressed: () => finSeanceOsteo(context, rdvId: s['rdv_id'].toString(),
+                      proProfileId: s['pro_profile_id']?.toString()),
+                  icon: const Icon(Icons.outgoing_mail, size: 18),
+                  label: const Text('Fin de séance : facture et envoi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                )),
+              ],
               if (!widget.readOnly && !_brouillon && s['animal_id'] != null) ...[
                 const SizedBox(height: 10),
                 _card(child: _notifieA != null
