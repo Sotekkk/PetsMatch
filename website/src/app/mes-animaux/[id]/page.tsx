@@ -45,6 +45,7 @@ import { fetchContactAcquereur, type ContactAcquereur } from '@/lib/contact-acqu
 import EditCessionModal from '@/components/animaux/EditCessionModal';
 
 import LienDocument from '@/components/LienDocument';
+import { pdfCompteRendu } from '@/lib/fin-consultation';
 import ReproducteurSelect from '@/components/animaux/ReproducteurSelect';
 import { chargerReproducteurs, chargerReproducteursExterieurs, raisonNonEligible, type Reproducteur } from '@/lib/reproducteurs';
 import ImagePrivee, { VideoPrivee } from '@/components/ImagePrivee';
@@ -781,6 +782,25 @@ function VetDocCard({ record, vetNames, cible = false }:
   const contenu = record.contenu  as string | undefined;
   const proUid  = record.pro_uid  as string | undefined;
   const vetName = proUid ? (vetNames[proUid] ?? 'Vétérinaire') : 'Vétérinaire';
+  // Compte rendu (pas une ordonnance) : PDF téléchargeable, si l'e-mail est perdu.
+  const estCr = typeof record.contenu === 'string' && !record.date_emit;
+  const [pdfEnCours, setPdfEnCours] = useState(false);
+  async function telechargerPdf() {
+    setPdfEnCours(true);
+    try {
+      const blob = await pdfCompteRendu(
+        { id: String(record.id), animal_id: String(record.animal_id), contenu: contenu ?? null, created_at: String(record.created_at) },
+        { proProfileId: (record.pro_profile_id as string | null) ?? null, praticien: vetName === 'Vétérinaire' ? '' : vetName });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Compte-rendu-${String(record.created_at ?? '').slice(0, 10)}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert(`Téléchargement impossible : ${(e as Error).message}`);
+    } finally { setPdfEnCours(false); }
+  }
 
   return (
     <div className={`px-4 py-3 ${cible ? 'ring-2 ring-[#0C5C6C] rounded-xl scroll-mt-24' : ''}`}
@@ -813,6 +833,12 @@ function VetDocCard({ record, vetNames, cible = false }:
               className="inline-flex items-center gap-1 text-xs text-[#0C5C6C] font-semibold hover:underline">
               Voir le document
             </LienDocument>
+          )}
+          {estCr && (
+            <button type="button" disabled={pdfEnCours} onClick={telechargerPdf}
+              className="block text-xs text-[#0C5C6C] font-semibold hover:underline disabled:opacity-50">
+              {pdfEnCours ? 'Préparation du PDF…' : 'Télécharger le PDF'}
+            </button>
           )}
         </div>
       )}

@@ -30,7 +30,7 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proPro
       // Vétérinaire : aussi les comptes rendus faits depuis la fiche le jour du RDV.
       const [{ data: rows }, { data: an }] = await Promise.all([
         metier === 'veterinaire' ? crsDuRdv(rdvId, ids.split(',')).then(data => ({ data }))
-          : supabase.from(table).select('animal_id').eq('rdv_id', rdvId),
+          : supabase.from(table).select('id, animal_id, statut').eq('rdv_id', rdvId).order('created_at', { ascending: false }),
         supabase.from('animaux').select('id, espece').in('id', ids.split(',')),
       ]);
       if (annule) return;
@@ -59,6 +59,9 @@ export default function ComptesRendusAnimauxRdv({ rdvId, animaux, metier, proPro
       : etats[a.id] === 'brouillon' && crIds[a.id]
         ? `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}&brouillon=${encodeURIComponent(crIds[a.id])}`
         : `/mes-patients/${encodeURIComponent(a.id)}?crRdv=${encodeURIComponent(rdvId)}&nouveau=1`)
+    // Ostéo : séance faite → la séance ; brouillon → sa reprise ; sinon une nouvelle séance du RDV.
+    : etats[a.id] === 'fait' && crIds[a.id] ? `/sante/suivis/${encodeURIComponent(crIds[a.id])}`
+    : etats[a.id] === 'brouillon' && crIds[a.id] ? `/sante/suivis/nouveau?suiviId=${encodeURIComponent(crIds[a.id])}`
     : `/sante/suivis/nouveau?animalId=${encodeURIComponent(a.id)}&espece=${encodeURIComponent(especes[a.id] || 'chien')}&rdvId=${encodeURIComponent(rdvId)}`;
 
   return (

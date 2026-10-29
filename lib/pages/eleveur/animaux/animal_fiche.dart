@@ -1,5 +1,6 @@
 import 'package:PetsMatch/utils/ages_plausibles.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:PetsMatch/utils/cr_pdf_proprietaire.dart' show telechargerCompteRenduProprietaire;
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/utils/poids.dart';
 import 'package:PetsMatch/utils/recuperation_animal.dart' show verifierPuce, showRecuperationAnimal, inviterAcquereur;
@@ -11885,6 +11886,19 @@ class _OwnerConsultCrCard extends StatelessWidget {
               Expanded(child: Text('Document joint', maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                       color: color, decoration: TextDecoration.underline))),
+            ]),
+          ),
+        ],
+        // Compte rendu en PDF (e-mail perdu…) : enregistrer / partager.
+        if (contenu.trim().isNotEmpty) ...[
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => telechargerCompteRenduProprietaire(context, cr),
+            child: Row(children: [
+              Icon(Icons.picture_as_pdf_outlined, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text('Télécharger le PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: color, fontWeight: FontWeight.w600, decoration: TextDecoration.underline)),
             ]),
           ),
         ],
