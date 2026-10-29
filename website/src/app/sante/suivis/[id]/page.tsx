@@ -256,6 +256,13 @@ ${pro.nom}` : ''}`;
               )}
             </>
           )}
+          {/* Séance d'un RDV : retour à la vue du RDV (Gérer mes RDV). */}
+          {typeof suivi.rdv_id === 'string' && suivi.rdv_id && (
+            <a href={`/mes-rdv?rdv=${encodeURIComponent(suivi.rdv_id)}`}
+              className="px-3 py-2 rounded-full text-sm font-galey font-semibold border" style={{ borderColor: TEAL, color: TEAL }}>
+              Retour au rendez-vous
+            </a>
+          )}
           {suivi.source === 'professionnel' && user && suivi.uid_auteur === user.uid && (
             <button onClick={() => setSigner(true)} title="Apposée sur vos comptes rendus de séance"
               className="px-3 py-2 rounded-full text-sm font-galey font-semibold border" style={{ borderColor: TEAL, color: TEAL }}>
