@@ -866,7 +866,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                     </div>
                     <div className="flex gap-2">
                       <button type="button" onClick={() => setSlotChoisi(null)} disabled={saving}
-                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Changer</button>
+                        className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Modifier</button>
                       <button type="button" disabled={saving}
                         onClick={async () => {
                           try { await confirmSlot(slotChoisi.date, slotChoisi.heure); }
