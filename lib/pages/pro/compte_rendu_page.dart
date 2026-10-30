@@ -17,6 +17,7 @@ import 'package:PetsMatch/pages/pro/transmission_document.dart';
 import 'package:PetsMatch/pages/pro/pro_profile_edit.dart' show ProProfileEditPage;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show saisirAuCarnet;
 import 'package:http/http.dart' as http;
+import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
 /// Vétérinaire : le CR saisit aussi les vaccins réalisés et les traitements
@@ -1790,8 +1791,13 @@ class _CompteRenduPageState extends State<CompteRenduPage>
       noms[a['id'].toString()] = a['nom']?.toString() ?? '';
     }
     String nom(dynamic id) => noms[id?.toString()] ?? (widget.rdv?['_animal_nom']?.toString() ?? 'Animal');
+    // Mes comptes rendus chargés (photo / PDF) : envoyés à la place des comptes rendus rédigés.
+    final rdvIdFin = widget.rdv?['id']?.toString();
+    final crsPro = rdvIdFin == null ? <Map<String, dynamic>>[] : await comptesRendusProDuRdv(rdvIdFin);
+    if (!mounted) return;
     final coches = <String, bool>{
-      for (final c in crs) 'cr:${c['id']}': true,
+      for (final c in crs) 'cr:${c['id']}': crsPro.isEmpty,
+      for (final d in crsPro) 'pro:${d['id']}': true,
       for (final o in ordos) 'ordo:${o['id']}': (o['doc_url'] ?? '').toString().isNotEmpty,
       if (facture != null) 'fac:${facture['id']}': true,
     };
@@ -1817,11 +1823,13 @@ class _CompteRenduPageState extends State<CompteRenduPage>
             const Text('Fin de consultation', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 6),
             Text('Envoyer au propriétaire par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-            if (crs.isEmpty && ordos.isEmpty && facture == null)
+            if (crs.isEmpty && ordos.isEmpty && facture == null && crsPro.isEmpty)
               const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text('Aucun document pour l\u2019instant (compte rendu validé, ordonnance ou facture).',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
             for (final cr in crs) ligne('cr:${cr['id']}', 'Compte rendu — ${nom(cr['animal_id'])}'),
+            if (rdvIdFin != null)
+              ...lignesCrsPro(ctx, setM, rdvId: rdvIdFin, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('cr:')),
             for (final o in ordos) ligne('ordo:${o['id']}', 'Ordonnance — ${nom(o['animal_id'])}',
                 (o['doc_url'] ?? '').toString().isEmpty ? 'PDF indisponible' : null, (o['doc_url'] ?? '').toString().isNotEmpty),
             if (facture != null) ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
@@ -1894,6 +1902,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
           pieces.add((type: 'ordonnance', nomFichier: 'Ordonnance-${nom(o['animal_id'])}.pdf', bytes: res.bodyBytes));
         }
       }
+      await ajouterPiecesCrsPro(pieces, crsPro, coches);
       if (facture != null && coches['fac:${facture['id']}'] == true) {
         emailParDefaut ??= (facture['email_client'] ?? '').toString().isEmpty ? null : facture['email_client'].toString();
         pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',

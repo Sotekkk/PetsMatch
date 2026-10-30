@@ -41,6 +41,7 @@ import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
+import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
 
 /// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
 /// motif texte saisi par le client à la réservation (ex. "Promenade 1h",
@@ -2123,6 +2124,36 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // registre_visites_page.dart).
   // Contrat photo : logique partagée avec le dossier de la séance
   // (photographe_dossier_seance.dart) — formules Essentiel et Premium.
+  /// Tous les pros : mon propre compte rendu ou mon contrat (photo / PDF) —
+  /// miroir site DocumentProModal (boutons « Mon compte rendu » / « Mon contrat »).
+  Future<void> _documentPro(Map<String, dynamic> rdv, String mode) async {
+    final proNom = User_Info.nameElevage.trim().isNotEmpty ? User_Info.nameElevage.trim() : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+    if (await showDocumentProSheet(context, rdv: {...rdv, 'pro_profile_id': rdv['pro_profile_id'] ?? _resolveProProfileId()}, mode: mode,
+        clientNom: rdv['_client_name']?.toString() ?? 'Client', animalNom: rdv['_animal_nom']?.toString() ?? '', proNom: proNom)) {
+      _loadRdvs();
+    }
+  }
+
+  /// Contrat : celui de PetsMatch (généré) ou le mien (photo / PDF chargé).
+  Future<void> _choixContrat(Map<String, dynamic> rdv, Future<void> Function() generer) async {
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(leading: const Icon(Icons.auto_awesome_outlined, color: _teal),
+            title: const Text('Contrat PetsMatch', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            subtitle: const Text('Généré à partir du rendez-vous', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'petsmatch')),
+        ListTile(leading: const Icon(Icons.upload_file_outlined, color: _teal),
+            title: const Text('Mon contrat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            subtitle: const Text('Votre document (photo ou PDF), signé en ligne par le client', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'mien')),
+      ])),
+    );
+    if (choix == 'petsmatch') await generer();
+    if (choix == 'mien') await _documentPro(rdv, 'contrat');
+  }
+
   Future<void> _genererContratPhoto(Map<String, dynamic> rdv) async {
     final uid = AgendaContexte.uid;
     if (uid == null) return;
@@ -5241,12 +5272,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ? () => sendGardeNews(context, rdv)
               : null,
           onContrat: (showProTools && AgendaContexte.catPro == 'photographe')
-              ? () => _genererContratPhoto(rdv)
+              ? () => _choixContrat(rdv, () => _genererContratPhoto(rdv))
               : (showProTools && AgendaContexte.catPro == 'toilettage')
-                  ? () => _genererContratToilettage(rdv)
+                  ? () => _choixContrat(rdv, () => _genererContratToilettage(rdv))
                   : (showProTools && AgendaContexte.catPro == 'marechal_ferrant')
-                      ? () => _genererContratMarechal(rdv)
+                      ? () => _choixContrat(rdv, () => _genererContratMarechal(rdv))
                       : null,
+          onDocumentPro: showProTools && rdv['statut'] != 'annule' && rdv['statut'] != 'refuse'
+              ? (mode) => _documentPro(rdv, mode)
+              : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
                   const {
                     'toilettage',
@@ -5357,6 +5391,8 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onDossier;
   /// Vétérinaire : historique des consultations du patient.
   final VoidCallback? onHistorique;
+  /// Tous les pros : mon compte rendu / mon contrat (photo ou PDF).
+  final void Function(String mode)? onDocumentPro;
 
   const _RdvCard({
     required this.rdv,
@@ -5382,6 +5418,7 @@ class _RdvCard extends StatelessWidget {
     this.onFiche,
     this.onDossier,
     this.onHistorique,
+    this.onDocumentPro,
   });
 
   Widget _badge(String texte, Color fg, Color bg) => Container(
@@ -5733,6 +5770,19 @@ class _RdvCard extends StatelessWidget {
                   tooltip: 'Contrat de prestation',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onDocumentPro != null) ...[
+                const SizedBox(width: 6),
+                PopupMenuButton<String>(
+                  onSelected: onDocumentPro,
+                  tooltip: 'Mon compte rendu / mon contrat',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.upload_file_outlined, size: 20, color: Color(0xFF90A4AE)),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'compte_rendu', child: Text('Mon compte rendu (photo / PDF)', style: TextStyle(fontFamily: 'Galey'))),
+                    PopupMenuItem(value: 'contrat', child: Text('Mon contrat (photo / PDF)', style: TextStyle(fontFamily: 'Galey'))),
+                  ],
                 ),
               ],
               if (onFacturer != null) ...[

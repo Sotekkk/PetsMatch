@@ -7,6 +7,7 @@ import { preparerFactureOsteo } from '@/lib/seance-osteo';
 import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import NouveauPatientModal from '@/components/pro/NouveauPatientModal';
+import DocumentProModal from '@/components/pro/DocumentProModal';
 import DossierToilettageModal from '@/components/toilettage/DossierToilettageModal';
 import { dureeImposeeGarde } from '@/lib/garde-facturation';
 
@@ -78,6 +79,7 @@ interface Rdv {
   notes_client?: string | null;
   client_nom_manuel?: string | null;
   client_telephone_manuel?: string | null;
+  client_email_manuel?: string | null;
   duree_minutes?: number | null;
   premiere_visite?: boolean | null;
   lieu?: string | null;
@@ -1265,8 +1267,10 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation, onFacturer }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier, onHistorique, onDossier, crParAnimal, onFinConsultation, onFacturer, onDocumentPro }: {
   rdv: Rdv;
+  /** Tous les pros : charger mon propre compte rendu ou mon contrat (PDF / photo). */
+  onDocumentPro?: (mode: 'compte_rendu' | 'contrat') => void;
   /** Vétérinaire : préparer la facture du RDV (comptes rendus, tarifs). */
   onFacturer?: () => void;
   /** Vétérinaire : envoyer CR / ordonnance / facture, facture acquittée. */
@@ -1438,6 +1442,18 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
               🕘 Historique
             </button>
           )}
+          {onDocumentPro && (<>
+            <button onClick={() => onDocumentPro('compte_rendu')}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              Mon compte rendu
+            </button>
+            <button onClick={() => onDocumentPro('contrat')}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              Mon contrat
+            </button>
+          </>)}
         </div>
       )}
 
@@ -1901,6 +1917,7 @@ export default function MesRdvPage() {
   const [historiqueRdv, setHistoriqueRdv] = useState<Rdv | null>(null);
   // Vétérinaire : fin de consultation (envoi des documents, facture acquittée).
   const [finConsultation, setFinConsultation] = useState<Rdv | null>(null);
+  const [docPro, setDocPro] = useState<{ rdv: Rdv; mode: 'compte_rendu' | 'contrat' } | null>(null);
   const [dossierRdv, setDossierRdv] = useState<Rdv | null>(null);
   const [dossierToilettage, setDossierToilettage] = useState<Rdv | null>(null);
   const [modalNouveau, setModalNouveau]   = useState<{ date?: Date; praticien?: string | null; salle?: string | null; animalId?: string; motif?: string } | null>(null);
@@ -2352,6 +2369,8 @@ export default function MesRdvPage() {
                   onDossier={activeTab === 'demandes' ? undefined
                     : catPro === 'photographe' ? () => setDossierRdv(rdv)
                     : catPro === 'toilettage' ? () => setDossierToilettage(rdv) : undefined}
+                  onDocumentPro={activeTab !== 'demandes' && rdv.statut !== 'annule' && rdv.statut !== 'refuse'
+                    ? mode => setDocPro({ rdv, mode }) : undefined}
                 />
                 </div>
               ))}
@@ -2373,6 +2392,11 @@ export default function MesRdvPage() {
         <FinConsultationModal rdvId={finConsultation.id} proProfileId={activeProfileId || null} clientNom={finConsultation.clientName}
           metier={catPro === 'sante' ? 'sante' : 'veterinaire'}
           onClose={() => setFinConsultation(null)} onDone={() => { setFinConsultation(null); fetchRdvs(); }} />
+      )}
+      {docPro && (
+        <DocumentProModal rdv={{ ...docPro.rdv, pro_profile_id: docPro.rdv.pro_profile_id ?? (activeProfileId || null) }} mode={docPro.mode}
+          clientNom={docPro.rdv.clientName ?? docPro.rdv.client_nom_manuel ?? 'Client'} animalNom={docPro.rdv.animalNom ?? docPro.rdv.animal_nom_manuel ?? undefined}
+          proNom={proName} onClose={() => setDocPro(null)} onDone={() => { setDocPro(null); fetchRdvs(true); }} />
       )}
       {historiqueRdv?.animal_id && activeProfileId && (
         <HistoriquePatient animalId={String(historiqueRdv.animal_id)} animalNom={historiqueRdv.animalNom ?? 'Patient'}

@@ -19,6 +19,8 @@ import { useAuth } from '@/lib/auth-context';
 import { apiFetch } from '@/lib/api-fetch';
 
 import LienDocument from '@/components/LienDocument';
+import { lienDocument } from '@/lib/document-prive';
+import { TYPE_CONTRAT_PRO, contratProHtml, contratProSigne } from '@/lib/document-pro';
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -49,6 +51,9 @@ interface DocRow {
   statut: DocStatut;
   signe_le: string | null;
   pdf_signe_url: string | null;
+  /** Contrat chargé par le pro (contrat_document_pro) : son PDF. */
+  pdf_original_url?: string | null;
+  url?: string | null;
   rejection_reason: string | null;
   metadata: Record<string, string>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -527,6 +532,12 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             notes: meta.notes,
           },
         );
+      } else if (data.type === TYPE_CONTRAT_PRO) {
+        // Contrat chargé par le professionnel : son document, puis les signatures.
+        const original = (data.pdf_original_url ?? data.url) as string | null;
+        const lien = original ? await lienDocument(original, token).catch(() => null) : null;
+        generatedHtml = contratProHtml({ titre: data.titre ?? 'Contrat', lien, proNom: elvNom,
+          clientNom: (meta as Record<string, string>).client_nom ?? meta.acquereur_nom ?? '' });
       } else if (data.type === 'contrat_adoption') {
         const assoInfo = {
           nom: meta.asso_nom ?? elvNom,
@@ -832,6 +843,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       case 'contrat_prestation_marechal':
       case 'contrat_education':
       case 'contrat_sante':
+      case TYPE_CONTRAT_PRO:
         return { vendeur: 'Signature du prestataire', acquereur: 'Signature du client', vendeurNoun: 'Le prestataire', acquereurNoun: 'Le client', vendeurA: 'au prestataire', acquereurA: 'au client' };
       case 'contrat_adoption':
         return { vendeur: 'Signature de l\'association', acquereur: 'Signature de l\'adoptant(e)', vendeurNoun: 'L\'association', acquereurNoun: 'L\'adoptant(e)', vendeurA: 'à l\'association', acquereurA: 'à l\'adoptant(e)' };
@@ -857,6 +869,27 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const iframeHtml = ownerCanEdit ? html : html.replace(/contenteditable="true"/g, 'contenteditable="false"');
   const elvHandlers  = makeDrawHandlers(canvasElvRef,  drawingElv);
   const acqHandlers  = makeDrawHandlers(canvasAcqRef,  drawingAcq);
+
+  /** Contrat chargé par le pro : son PDF + une page de signatures à la fin. */
+  async function telechargerContratPro() {
+    const original = (doc?.pdf_original_url ?? doc?.url) as string | null | undefined;
+    if (!doc || !original) return;
+    try {
+      const res = await fetch(await lienDocument(original, token));
+      if (!res.ok) throw new Error('Document inaccessible');
+      const m = (doc.metadata ?? {}) as Record<string, string | null | undefined>;
+      const blob = await contratProSigne(await res.blob(), {
+        titre: doc.titre ?? 'Contrat', proNom: m.signataire_eleveur_nom || '', clientNom: m.client_nom || m.acquereur_nom || '',
+        sigPro: m.signature_eleveur, sigClient: m.signature_acquereur, signeLePro: m.signe_eleveur_le, signeLeClient: m.signe_acquereur_le,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${(doc.titre ?? 'Contrat').replace(/[\\/:*?"<>|]/g, '-')}.pdf`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      alert(`Téléchargement impossible : ${(e as Error).message}`);
+    }
+  }
 
   function handlePrint() {
     if (!html) return;
@@ -1096,6 +1129,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
                 className="flex items-center gap-2 border border-green-600 text-green-700 hover:bg-green-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
                 📥 Télécharger le PDF signé
               </LienDocument>
+            ) : doc?.type === TYPE_CONTRAT_PRO ? (
+              <button onClick={telechargerContratPro}
+                className="flex items-center gap-2 border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">
+                Télécharger le PDF signé
+              </button>
             ) : (
               <button onClick={handlePrint}
                 className="flex items-center gap-2 border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors">

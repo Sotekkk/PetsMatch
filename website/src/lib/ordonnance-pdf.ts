@@ -2,6 +2,8 @@
 // en-tête de la clinique (n° d'Ordre), patient, propriétaire, médicaments
 // (posologie, durée), prescripteur. Miroir app : lib/pages/pro/ordonnance_pdf.dart.
 
+import { majuscule } from './majuscule';
+
 export interface LigneOrdonnance { medicament: string; posologie: string; dureeJours?: number | null; notes?: string }
 
 export interface OrdonnanceData {
@@ -66,7 +68,7 @@ export async function ordonnancePdfBlob(d: OrdonnanceData): Promise<Blob> {
   let yy = boxTop + 44;
   for (const [l, v] of infosOrdo) {
     doc.setTextColor(...GREY); doc.text(`${l} : `, M + 10, yy);
-    doc.setTextColor(...DARK); doc.text(v, M + 10 + doc.getTextWidth(`${l} : `), yy);
+    doc.setTextColor(...DARK); doc.text(majuscule(v), M + 10 + doc.getTextWidth(`${l} : `), yy);
     yy += 11;
   }
   y = boxTop + hOrdo + 20;
@@ -163,7 +165,7 @@ export async function compteRenduPdfBlob(d: CompteRenduData): Promise<Blob> {
   doc.setFontSize(9);
   infosPatient.forEach(([l, v], i) => {
     doc.setTextColor(...GREY); doc.text(`${l} : `, M + 10, y + 45 + i * 11);
-    doc.setTextColor(...DARK); doc.text(v, M + 10 + doc.getTextWidth(`${l} : `), y + 45 + i * 11);
+    doc.setTextColor(...DARK); doc.text(majuscule(v), M + 10 + doc.getTextWidth(`${l} : `), y + 45 + i * 11);
   });
   y += hBoite + 22;
   // Contenu : titres de paragraphe en gras, suite en texte normal.

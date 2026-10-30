@@ -18,6 +18,7 @@ import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/document_prive.dart';
+import 'package:PetsMatch/utils/document_pro.dart' show kTypeContratPro, contratProSigne;
 
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -304,7 +305,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     // / santé (prestation générale, sans animal précisé) ne sont pas rattachés à un animal.
     final animalRequired = type != 'contrat_garde' && type != 'contrat_education' && type != 'contrat_sante'
         && type != 'contrat_prestation_photo' && type != 'contrat_prestation_toilettage'
-        && type != 'contrat_hebergement';
+        && type != 'contrat_hebergement' && type != kTypeContratPro;
     if ((animalRequired && _animal == null) || _eleveur == null) { _pdfBytes = null; return; }
     final sigElv = meta['signature_eleveur'] as String?;
     final sigAcq = meta['signature_acquereur'] as String?;
@@ -568,6 +569,15 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,
         );
+      } else if (type == kTypeContratPro) {
+        // Contrat chargé par le pro : son PDF + une page de signatures à la fin.
+        final original = (_doc?['pdf_original_url'] ?? _doc?['url'])?.toString() ?? '';
+        final res = await http.get(Uri.parse(await lienDocument(original, lienSecret: widget.token)));
+        _pdfBytes = res.statusCode == 200
+            ? await contratProSigne(res.bodyBytes, titre: _doc?['titre']?.toString() ?? 'Contrat',
+                proNom: m('signataire_eleveur_nom'), clientNom: m('client_nom'),
+                sigPro: sigElv, sigClient: sigAcq, signeLePro: m('signe_eleveur_le'), signeLeClient: m('signe_acquereur_le'))
+            : null;
       } else {
         _pdfBytes = null; // autres types → carte récap
       }
@@ -639,6 +649,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       case 'contrat_prestation_marechal':
       case 'contrat_education':
       case 'contrat_sante':
+      case kTypeContratPro:
         return (
           vendeurDe: 'du prestataire', acquereurDe: 'du client', acquereurA: 'au client',
           vendeurLabel: 'Prestataire', acquereurLabel: 'Client',

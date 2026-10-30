@@ -7,7 +7,8 @@ import { seancesDuRdv, pdfSeance, preparerFactureOsteo, type SeanceRdv } from '@
 import { seanceToilettageDuRdv, pdfCompteRenduToilettage, type SeanceToilettagePdf } from '@/lib/toilettage-pdf';
 import { useAuth } from '@/lib/auth-context';
 import { maSignaturePro } from '@/lib/signature-pro';
-import { envoyerPiecesParEmail } from '@/lib/transmission-document';
+import { envoyerPiecesParEmail, pdfDepuisUrl } from '@/lib/transmission-document';
+import { ACCEPT_DOCUMENT_PRO, fichierEnPdf, chargerCompteRenduPro, comptesRendusProDuRdv, type DocumentProRdv } from '@/lib/document-pro';
 import {
   chargerDocsConsultation, pdfCompteRendu, pdfFacture, pdfOrdonnance, type DocsConsultation,
 } from '@/lib/fin-consultation';
@@ -37,6 +38,35 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
   const [acquittee, setAcquittee] = useState(false);
   const [mode, setMode] = useState('Carte bancaire');
   const [envoi, setEnvoi] = useState(false);
+  // Comptes rendus faits par le pro lui-même (PDF / photo) : envoyés à la place du compte rendu généré.
+  const [crsPro, setCrsPro] = useState<DocumentProRdv[]>([]);
+  const [depot, setDepot] = useState(false);
+
+  useEffect(() => {
+    comptesRendusProDuRdv(rdvId).then(l => {
+      setCrsPro(l);
+      if (l.length) setCoches(c => ({ ...c, ...Object.fromEntries(l.map(d => [`pro:${d.id}`, true])) }));
+    });
+  }, [rdvId]);
+
+  /** Mon propre compte rendu : rangé avec le RDV, coché à la place des comptes rendus générés. */
+  async function joindreMonCr(f: File | undefined) {
+    if (!f || !user) return;
+    setDepot(true);
+    try {
+      const { data: r } = await supabase.from('rdv').select('id, animal_id, pro_profile_id, client_uid, client_profile_id').eq('id', rdvId).maybeSingle();
+      if (!r) throw new Error('Rendez-vous introuvable');
+      const nomA = r.animal_id ? nom(String(r.animal_id)) : '';
+      const titre = `Compte rendu${nomA ? ` — ${nomA}` : ''}`;
+      const { id, url } = await chargerCompteRenduPro(await fichierEnPdf(f), {
+        rdv: { ...r, id: String(r.id), animal_id: r.animal_id != null ? String(r.animal_id) : null }, uid: user.uid,
+        proProfileId: (r.pro_profile_id as string | null) ?? proProfileId, titre });
+      setCrsPro(l => [...l, { id, titre, url, created_at: new Date().toISOString() }]);
+      setCoches(c => Object.fromEntries([...Object.entries(c).map(([k, v]) => [k, k === 'toil' || k.startsWith('cr:') || k.startsWith('seance:') ? false : v]), [`pro:${id}`, true]]));
+    } catch (e) {
+      alert(`Impossible : ${(e as Error).message}`);
+    } finally { setDepot(false); }
+  }
 
   useEffect(() => {
     if (toilettage) {
@@ -124,6 +154,9 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
           pieces.push({ type: 'compte_rendu', nomFichier: `Compte-rendu-${nom(c.animal_id)}.pdf`,
             blob: await pdfCompteRendu(c, { proProfileId, praticien, signature, emailCompte: user.email, proprietaire: clientNom }) });
         }
+        for (const d of crsPro) if (coches[`pro:${d.id}`]) {
+          pieces.push({ type: 'compte_rendu', nomFichier: `${(d.titre ?? 'Compte rendu').replace(/[\\/:*?"<>|]/g, '-')}.pdf`, blob: await pdfDepuisUrl(d.url) });
+        }
         for (const o of docs.ordos) if (coches[`ordo:${o.id}`]) {
           pieces.push({ type: 'ordonnance', nomFichier: `Ordonnance-${nom(o.animal_id)}.pdf`, blob: await pdfOrdonnance(o) });
         }
@@ -165,7 +198,7 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
         {!docs ? <p className="text-sm text-gray-500">Chargement…</p> : (<>
           <div className="space-y-2">
             <p className="text-xs font-semibold text-gray-500">Envoyer au propriétaire par e-mail</p>
-            {docs.crs.length === 0 && docs.ordos.length === 0 && !docs.facture && !(docs.seances?.length) && !ficheToil && (
+            {docs.crs.length === 0 && docs.ordos.length === 0 && !docs.facture && !(docs.seances?.length) && !ficheToil && crsPro.length === 0 && (
               <p className="text-sm text-gray-500">{osteo
                 ? <>Aucun document pour ce rendez-vous pour l&apos;instant : finalisez d&apos;abord la séance.</>
                 : <>Aucun document pour ce rendez-vous pour l&apos;instant (compte rendu validé, ordonnance ou facture).</>}</p>
@@ -173,6 +206,12 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
             {toilettage && ficheToil && ligne('toil', `Compte rendu de toilettage — ${docs.animalIdPrincipal ? nom(docs.animalIdPrincipal) : 'Animal'}`)}
             {(docs.seances ?? []).map(s => ligne(`seance:${s.id}`, `Compte rendu de séance — ${s.animal_id ? nom(s.animal_id) : 'Animal'}`))}
             {docs.crs.map(c => ligne(`cr:${c.id}`, `Compte rendu — ${nom(c.animal_id)}`))}
+            {crsPro.map(d => ligne(`pro:${d.id}`, d.titre ?? 'Compte rendu', 'Mon document'))}
+            <label className={`block text-center text-sm font-semibold py-2 rounded-xl border border-dashed border-[#0C5C6C] text-[#0C5C6C] ${depot ? 'opacity-50' : 'cursor-pointer'}`}>
+              {depot ? 'Envoi du fichier…' : '+ Joindre mon compte rendu (PDF ou photo)'}
+              <input type="file" accept={ACCEPT_DOCUMENT_PRO} className="hidden" disabled={depot}
+                onChange={e => { joindreMonCr(e.target.files?.[0]); e.target.value = ''; }} />
+            </label>
             {docs.ordos.map(o => ligne(`ordo:${o.id}`, `Ordonnance — ${nom(o.animal_id)}`, o.doc_url ? undefined : 'PDF indisponible', !o.doc_url))}
             {docs.facture && ligne(`fac:${docs.facture.id}`, `Facture ${docs.facture.numero_affichage ?? ''}`,
               `${Number(docs.facture.total_ttc ?? 0).toFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}`)}

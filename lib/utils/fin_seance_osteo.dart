@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_pdf_service.dart' show morphoSuiviPdfBytes;
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne, facturePdfDepuisLigne;
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
+import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
 
 const _teal = Color(0xFF0C5C6C);
 
@@ -125,9 +126,12 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
     }
   }
   final pro = proProfileId ?? (seances.isNotEmpty ? seances.first['pro_profile_id']?.toString() : null);
+  // Mes comptes rendus chargés (photo / PDF) : envoyés à la place des comptes rendus de séance.
+  final crsPro = await comptesRendusProDuRdv(rdvId);
   if (!context.mounted) return;
   final coches = <String, bool>{
-    for (final s in seances) 'seance:${s['id']}': true,
+    for (final s in seances) 'seance:${s['id']}': crsPro.isEmpty,
+    for (final d in crsPro) 'pro:${d['id']}': true,
     if (facture != null) 'fac:${facture['id']}': true,
   };
   final dejaPayee = facture?['statut'] == 'payee';
@@ -151,11 +155,12 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
           const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text('Envoyer au propriétaire par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-          if (seances.isEmpty && facture == null)
+          if (seances.isEmpty && facture == null && crsPro.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Aucun document pour ce rendez-vous : finalisez d’abord la séance.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
           for (final s in seances)
             ligne('seance:${s['id']}', 'Compte rendu de séance — ${noms[s['animal_id']?.toString()] ?? s['animal_nom_libre'] ?? 'Animal'}'),
+          ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('seance:')),
           if (facture != null)
             ligne('fac:${facture['id']}', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
@@ -253,6 +258,7 @@ Future<void> finSeanceOsteo(BuildContext context, {required String rdvId, String
       final nomA = noms[s['animal_id']?.toString()] ?? s['animal_nom_libre']?.toString() ?? 'animal';
       pieces.add((type: 'compte_rendu', nomFichier: 'Compte-rendu-seance-$nomA.pdf', bytes: await pdfSeance(s)));
     }
+    await ajouterPiecesCrsPro(pieces, crsPro, coches);
     if (facture != null && coches['fac:${facture['id']}'] == true) {
       pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
           bytes: await facturePdfDepuisLigne(facture)));

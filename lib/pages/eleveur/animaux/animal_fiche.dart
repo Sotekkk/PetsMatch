@@ -11449,6 +11449,8 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   List<Map<String, dynamic>> _seances = [];
   /// Comptes rendus de toilettage que le salon a choisi de partager.
   List<Map<String, dynamic>> _toilettages = [];
+  /// Comptes rendus faits par les pros eux-mêmes (photo / PDF chargés : documents_animaux « compte_rendu_pro »).
+  List<Map<String, dynamic>> _docsPro = [];
   /// tous | osteopathie | kine | veterinaire | toilettage | autre — d'après le métier de
   /// l'auteur (categorieConsultation), pas le type de séance.
   String _categorie = 'tous';
@@ -11558,8 +11560,24 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
         }
       } catch (_) {}
 
+      var docsPro = <Map<String, dynamic>>[];
+      try {
+        docsPro = List<Map<String, dynamic>>.from(await _supa.from('documents_animaux').select('id, titre, url, created_at, pro_profile_id')
+            .eq('animal_id', widget.animalId!).eq('type', 'compte_rendu_pro').order('created_at', ascending: false));
+        final pids = docsPro.map((x) => x['pro_profile_id']?.toString()).whereType<String>().toSet().toList();
+        if (pids.isNotEmpty) {
+          final pros = await _supa.from('user_profiles_complet').select('id, nom, firstname, lastname').inFilter('id', pids);
+          final noms = {
+            for (final r in pros as List)
+              r['id'].toString(): (r['nom'] ?? '').toString().trim().isNotEmpty ? r['nom'].toString().trim() : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim(),
+          };
+          for (final x in docsPro) { x['_pro'] = noms[x['pro_profile_id']?.toString()]; }
+        }
+      } catch (_) {}
+
       if (mounted) setState(() {
         _toilettages = toilettages;
+        _docsPro = docsPro;
         _crs      = allCrs;
         _ordos    = allOrdos;
         _radios   = radios;
@@ -11583,7 +11601,7 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _radios.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty && _toilettages.isEmpty;
+    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _radios.isEmpty && _seancesOsteoCount == 0 && _seances.isEmpty && _toilettages.isEmpty && _docsPro.isEmpty;
     final Widget? ajouterRadio = !widget.canWrite || widget.animalId == null ? null : Align(
       alignment: Alignment.centerRight,
       child: TextButton.icon(
@@ -11721,6 +11739,22 @@ class _ConsultationsProprietaireTabState extends State<ConsultationsProprietaire
                       icon: Icons.content_cut, color: _teal),
                   const SizedBox(height: 10),
                   for (final x in _toilettages) _ToilettageProprietaireCard(seance: x),
+                  const SizedBox(height: 20),
+                ],
+                if (_categorie == 'tous' && _docsPro.isNotEmpty) ...[
+                  _VetConsultSectionHeader(label: 'Documents de vos professionnels', count: _docsPro.length,
+                      icon: Icons.picture_as_pdf_outlined, color: _teal),
+                  const SizedBox(height: 10),
+                  for (final d in _docsPro) Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      leading: const Icon(Icons.picture_as_pdf_outlined, color: _teal),
+                      title: Text(d['titre']?.toString() ?? 'Compte rendu', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      subtitle: Text([_fmtDate(d['created_at']?.toString()), d['_pro']?.toString() ?? ''].where((x) => x.isNotEmpty).join(' — '),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      onTap: () => ouvrirDocument(context, d['url']?.toString()),
+                    ),
+                  ),
                   const SizedBox(height: 20),
                 ],
                 if (voir('osteopathie') && _seancesOsteoCount > 0)

@@ -13,6 +13,8 @@ import { geocodeAddress } from '@/lib/geocoding';
 import { styleGalerie } from '@/lib/photographe';
 import { envoyerContratParEmail } from '@/lib/contrat-email';
 import ContactCanaux from '@/components/ContactCanaux';
+import DocumentProModal from '@/components/pro/DocumentProModal';
+import { TYPE_CONTRAT_PRO } from '@/lib/document-pro';
 import LieuGoogleRecherche from '@/components/LieuGoogleRecherche';
 import { livrerFichiers, relancerSelection, FactureNonPayeeError, JOURS_LIVRAISON, JOURS_LIVRAISON_DEFAUT, LIVRAISON_MAX, fmtTaille } from '@/lib/galeries-client';
 
@@ -77,6 +79,8 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   const animaux = (animal ?? '').split('+').map(x => x.trim()).filter(Boolean).join(', ');
   const designation = [prestation, animaux].filter(Boolean).join(' — ');
   const [diffusion, setDiffusion] = useState<string | null>(null);
+  // Contrat : celui de PetsMatch (généré) ou le mien (PDF / photo chargé).
+  const [monContrat, setMonContrat] = useState(false);
   const [r, setR] = useState(rdv);
   const [now, setNow] = useState(0);
   const pid = r.pro_profile_id || pidActif;
@@ -87,7 +91,8 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
   const charger = useCallback(async () => {
     const [d, c, g, f, p] = await Promise.all([
       supabase.from('devis').select('id, statut, total_ttc, token_acceptation').eq('rdv_id', rdv.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('documents_animaux').select('id, token, statut').eq('rdv_id', rdv.id).eq('type', 'contrat_prestation_photo').maybeSingle(),
+      supabase.from('documents_animaux').select('id, token, statut').eq('rdv_id', rdv.id).in('type', ['contrat_prestation_photo', TYPE_CONTRAT_PRO])
+        .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('albums_photo').select('*').eq('rdv_id', rdv.id).maybeSingle(),
       supabase.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture, date_paiement, mode_paiement, type_facture').eq('source_rdv_id', rdv.id).neq('statut', 'annulee').or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       rdv.prestation_id ? supabase.from('prestations_photographe').select('prix').eq('id', rdv.prestation_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -332,7 +337,7 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
               {ligne('Contrat',
                 !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
                 !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
-                !contrat ? [btn('Générer et envoyer', () => setDiffusion(''))]
+                !contrat ? [btn('Générer et envoyer', () => setDiffusion('')), btn('Charger mon contrat', () => setMonContrat(true))]
                   : [btn('Voir', () => router.push(`/signer-contrat/${contrat.token}`)), ...(contrat.statut !== 'signe' ? [btn(r.client_uid ? 'Renvoyer' : 'Envoyer par e-mail', () => { transmettreContrat(contrat.token); })] : [])])}
               {diffusion !== null && !contrat && (
                 <div className="bg-gray-50 rounded-xl p-3 my-1 space-y-1.5">
@@ -449,6 +454,11 @@ export default function DossierSeanceModal({ rdv, nomClient, prestation, animal,
         </div>
         <button onClick={onClose} className="w-full mt-3 py-2.5 rounded-xl text-sm font-semibold border border-gray-200">Fermer</button>
       </div>
+      {monContrat && (
+        <DocumentProModal mode="contrat" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animaux || undefined}
+          proNom={user?.displayName ?? ''} onClose={() => setMonContrat(false)}
+          onDone={() => { setMonContrat(false); setMessage('Contrat envoyé au client pour signature.'); charger(); onChanged?.(); }} />
+      )}
     </div>
   );
 }

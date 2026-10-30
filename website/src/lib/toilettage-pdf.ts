@@ -5,6 +5,7 @@
 // (lib/pages/pro/toilettage_dossier_seance.dart).
 import { supabase } from '@/lib/supabase';
 import { TRAVAUX_TOILETTAGE } from '@/lib/toilettage';
+import { majuscule } from '@/lib/majuscule';
 
 const TEAL: [number, number, number] = [12, 92, 108];
 const DARK: [number, number, number] = [30, 32, 37];
@@ -53,7 +54,7 @@ export async function pdfCompteRenduToilettage(s: SeanceToilettagePdf, o: { proP
   doc.text(v(a.nom) || o.nomAnimal || 'Animal', M, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
   const er = [a.espece, a.race].map(v).filter(Boolean).join(' · ');
-  if (er) { y += 14; doc.text(er, M, y); }
+  if (er) { y += 14; doc.text(majuscule(er), M, y); }
   y += 22;
 
   const libelles = new Map(TRAVAUX_TOILETTAGE);

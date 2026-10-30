@@ -10,6 +10,7 @@ import 'package:printing/printing.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
+import 'package:PetsMatch/utils/majuscule.dart';
 import 'morpho_constants.dart';
 
 // ── Export PDF d'un suivi morphologique — compte rendu imprimable/partageable
@@ -56,7 +57,7 @@ pw.Widget _line(String label, String? value) {
     padding: const pw.EdgeInsets.only(bottom: 2),
     child: pw.RichText(text: pw.TextSpan(children: [
       pw.TextSpan(text: '$label : ', style: _bold()),
-      pw.TextSpan(text: value.trim(), style: _body()),
+      pw.TextSpan(text: majuscule(value.trim()), style: _body()),
     ])),
   );
 }

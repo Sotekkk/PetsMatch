@@ -27,6 +27,7 @@ import 'package:PetsMatch/widgets/contact_canaux.dart';
 import 'package:PetsMatch/utils/consignes_rdv.dart';
 import 'package:PetsMatch/pages/rdv_consignes_page.dart';
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, signerEtEnregistrer;
+import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
 
 const _teal = Color(0xFF0C5C6C);
 const _ink = Color(0xFF1F2A2E);
@@ -210,9 +211,12 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
         .order('created_at', ascending: false).limit(1);
     if ((f as List).isNotEmpty) facture = Map<String, dynamic>.from(f.first as Map);
   } catch (_) {}
+  // Mes comptes rendus chargés (photo / PDF) : envoyés à la place de la fiche technique.
+  final crsPro = await comptesRendusProDuRdv(rdvId);
   if (!context.mounted) return;
   final animalNom = (animal ?? '').trim().isEmpty ? 'Animal' : animal!.trim();
-  final coches = <String, bool>{if (fiche != null) 'toil': true, if (facture != null) 'fac': true};
+  final coches = <String, bool>{if (fiche != null) 'toil': crsPro.isEmpty, if (facture != null) 'fac': true,
+    for (final d in crsPro) 'pro:${d['id']}': true};
   final dejaPayee = facture?['statut'] == 'payee';
   var acquittee = false;
   var mode = 'Carte bancaire';
@@ -234,10 +238,11 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
           const Text('Fin de séance', style: TextStyle(fontFamily: 'Galey', fontSize: 17, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           Text('Envoyer au client par e-mail', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700)),
-          if (fiche == null && facture == null)
+          if (fiche == null && facture == null && crsPro.isEmpty)
             const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Aucun document pour ce rendez-vous : remplissez d’abord la fiche technique.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
           if (fiche != null) ligne('toil', 'Compte rendu de toilettage — $animalNom'),
+          ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k == 'toil'),
           if (facture != null)
             ligne('fac', 'Facture ${facture['numero_affichage'] ?? ''}',
                 '${((facture['total_ttc'] as num?) ?? 0).toStringAsFixed(2)} € TTC${dejaPayee ? ' — acquittée' : ''}'),
@@ -335,6 +340,7 @@ Future<void> finSeanceToilettage(BuildContext context, Map<String, dynamic> rdv,
         signature: octetsSignature(await maSignaturePro()),
       )));
     }
+    await ajouterPiecesCrsPro(pieces, crsPro, coches);
     if (facture != null && coches['fac'] == true) {
       pieces.add((type: 'facture', nomFichier: 'Facture-${facture['numero_affichage'] ?? ''}${facture['statut'] == 'payee' ? '-acquittee' : ''}.pdf',
           bytes: await facturePdfDepuisLigne(facture)));

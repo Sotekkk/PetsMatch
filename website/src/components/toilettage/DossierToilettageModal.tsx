@@ -17,6 +17,8 @@ import { envoyerContratParEmail } from '@/lib/contrat-email';
 import { signerContratAvecSignaturePro, enregistrerSignaturePro } from '@/lib/signature-pro';
 import SignatureProModal from '@/components/signature/SignatureProModal';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
+import DocumentProModal from '@/components/pro/DocumentProModal';
+import { TYPE_CONTRAT_PRO } from '@/lib/document-pro';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -61,6 +63,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
   const [signerContrat, setSignerContrat] = useState<string | null>(null);
   // Fin de séance : compte rendu + facture par e-mail, facture acquittée (comme le vétérinaire).
   const [finSeance, setFinSeance] = useState(false);
+  // Contrat : celui de PetsMatch (généré) ou le mien (PDF / photo chargé).
+  const [monContrat, setMonContrat] = useState(false);
   const [now, setNow] = useState(0);
 
   const charger = useCallback(async () => {
@@ -72,7 +76,8 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
       x.prestation_id ? supabase.from('prestations_toilettage').select('nom, prix_base').eq('id', x.prestation_id).maybeSingle() : Promise.resolve({ data: null }),
       x.animal_id ? supabase.from('animaux').select('nom').eq('id', x.animal_id).maybeSingle() : Promise.resolve({ data: null }),
       supabase.from('seances_toilettage').select('id, compte_rendu, partage_proprietaire').eq('rdv_id', rdvId).maybeSingle(),
-      supabase.from('documents_animaux').select('id, token, statut').eq('rdv_id', rdvId).eq('type', 'contrat_prestation_toilettage').maybeSingle(),
+      supabase.from('documents_animaux').select('id, token, statut').eq('rdv_id', rdvId).in('type', ['contrat_prestation_toilettage', TYPE_CONTRAT_PRO])
+        .not('statut', 'in', '(annule,refuse)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factures').select('id, statut, total_ttc, pdf_url, numero_affichage, numero_facture, date_paiement, mode_paiement')
         .eq('source_rdv_id', rdvId).neq('statut', 'annulee').or('type_facture.is.null,type_facture.not.in.(acompte,avoir)')
         .order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -239,7 +244,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
           {ligne('Contrat',
             !contrat ? 'Non généré' : contrat.statut === 'signe' ? 'Signé' : contrat.statut === 'partiellement_signe' ? 'Signé par une partie' : 'En attente de signature',
             !contrat ? GRIS : contrat.statut === 'signe' ? VERT : AMBRE,
-            !contrat ? [btn('Générer et envoyer', genererContrat)]
+            !contrat ? [btn('Générer et envoyer', genererContrat), btn('Charger mon contrat', () => setMonContrat(true))]
               : [btn('Voir', () => router.push(`/signer-contrat/${contrat.token}`)),
                 ...(contrat.statut !== 'signe' && r.client_uid ? [btn('Renvoyer', () => notifier('contrat_invite', 'Contrat de prestation à signer',
                   'Votre toiletteur vous envoie le contrat de votre rendez-vous — vérifiez et signez', { token: contrat.token, url: `/signer-contrat/${contrat.token}` }))] : []),
@@ -281,6 +286,11 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         <FinConsultationModal metier="toilettage" rdvId={r.id} proProfileId={pid || null} clientNom={nomClient}
           onPreparerFacture={() => { setFinSeance(false); facturer(); }}
           onClose={() => setFinSeance(false)} onDone={() => { setFinSeance(false); charger(); onChanged?.(); }} />
+      )}
+      {monContrat && (
+        <DocumentProModal mode="contrat" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient} animalNom={animalNom || undefined}
+          proNom={user?.displayName ?? ''} onClose={() => setMonContrat(false)}
+          onDone={() => { setMonContrat(false); setMessage('Contrat envoyé au client pour signature.'); charger(); onChanged?.(); }} />
       )}
       {signerContrat && user && (
         <SignatureProModal onClose={() => setSignerContrat(null)} onValider={async dataUrl => {

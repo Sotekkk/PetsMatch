@@ -10,6 +10,7 @@ import {
   MORPHO_AVERTISSEMENT, VUES_PHOTOS, SILHOUETTE_ASSETS, morphoSpeciesKey,
   NIVEAUX_ACTIVITE, type MorphoPoint, type ExerciceSeance,
 } from './morpho';
+import { majuscule } from './majuscule';
 
 const TEAL: [number, number, number] = [12, 92, 108];
 const DARK: [number, number, number] = [31, 42, 46];
@@ -102,7 +103,7 @@ export async function morphoSuiviPdfBlob(params: {
     const lab = `${label} : `;
     const labelW = doc.getTextWidth(lab);
     doc.setFont('helvetica', 'normal');
-    const lines = doc.splitTextToSize(String(value), width - labelW) as string[];
+    const lines = doc.splitTextToSize(majuscule(String(value)), width - labelW) as string[];
     ensureSpace(lines.length * LH);
     doc.setFont('helvetica', 'bold'); doc.text(lab, x, y);
     doc.setFont('helvetica', 'normal');

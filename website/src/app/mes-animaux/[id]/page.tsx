@@ -15,6 +15,7 @@ import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { ouvrirDocument } from '@/lib/document-prive';
 import { ACCEPT_DOCUMENTS, FORMATS_DOCUMENTS } from '@/lib/alleger-envoi';
 import { erreursDatesSante, lireHeures, PREMIERE_DATE_ACTE, derniereDateActe, dateValide, phraseChampsARemplir } from '@/lib/controle-dates';
 import ChampDate from '@/components/ChampDate';
@@ -2882,6 +2883,8 @@ function AnimalFichePageInner() {
   // Bilans morphologiques (ex-onglet Morphologie) : carnet › Comptes rendus
   // Soins & Rééducation (comptes rendus de séance partagés) — cartes + filtres
   // Comptes rendus de toilettage que le salon a choisi de partager.
+  // Comptes rendus faits par les pros eux-mêmes (PDF / photo chargés : documents_animaux « compte_rendu_pro »).
+  const [docsPro, setDocsPro] = useState<{ id: string; titre: string | null; url: string; created_at: string; _pro?: string }[]>([]);
   const [toilettagesCr, setToilettagesCr] = useState<{ id: string; date_seance: string; travaux: string[] | null; compte_rendu: string | null; conseils_pelage?: string | null; finition?: string | null; produits?: string | null; _pro?: string }[]>([]);
   const [morphos, setMorphos] = useState<{ id: string; date: string; type_suivi: string; source?: string | null; intitule?: string | null; _pro?: string; _categorie?: string }[]>([]);
   const [filtreSoins, setFiltreSoins] = useState('tous');
@@ -3046,6 +3049,19 @@ function AnimalFichePageInner() {
           noms[x.id] = (x.nom ?? '').trim() || `${x.firstname ?? ''} ${x.lastname ?? ''}`.trim();
       }
       setToilettagesCr(rows.map(r => ({ ...r, _pro: r.pro_profile_id ? noms[r.pro_profile_id] : undefined })));
+    }
+    {
+      const { data: dp } = await supabase.from('documents_animaux').select('id, titre, url, created_at, pro_profile_id')
+        .eq('animal_id', id).eq('type', 'compte_rendu_pro').order('created_at', { ascending: false });
+      const rows = (dp ?? []) as { id: string; titre: string | null; url: string; created_at: string; pro_profile_id: string | null }[];
+      const pids = [...new Set(rows.map(r => r.pro_profile_id).filter((x): x is string => !!x))];
+      const noms: Record<string, string> = {};
+      if (pids.length) {
+        const { data: pr } = await supabase.from('user_profiles_complet').select('id, nom, firstname, lastname').in('id', pids);
+        for (const x of (pr ?? []) as { id: string; nom?: string | null; firstname?: string | null; lastname?: string | null }[])
+          noms[x.id] = (x.nom ?? '').trim() || `${x.firstname ?? ''} ${x.lastname ?? ''}`.trim();
+      }
+      setDocsPro(rows.map(r => ({ ...r, _pro: r.pro_profile_id ? noms[r.pro_profile_id] : undefined })));
     }
     const allDocs = [...(ord.data ?? []), ...(rad.data ?? []), ...(cr.data ?? [])] as HealthRecord[];
     setOrdonnances((ord.data ?? []) as HealthRecord[]);
@@ -5774,7 +5790,7 @@ function AnimalFichePageInner() {
                   className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter une radio / imagerie</button>
               </div>
             )}
-            {voir('veterinaire') && <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} autres={radios.length + morphos.length + toilettagesCr.length} crCible={crParam} />}
+            {voir('veterinaire') && <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} autres={radios.length + morphos.length + toilettagesCr.length + docsPro.length} crCible={crParam} />}
             {(addDocOpen === 'radios' || (voir('veterinaire') && radios.length > 0)) && (
               <HealthPanel>
                 <HealthSection title="Radios / Imagerie" color="#546E7A" count={radios.length}
@@ -5827,6 +5843,18 @@ function AnimalFichePageInner() {
                       </div>
                     )}
                   </div>
+                ))}
+              </div>
+            )}
+            {filtreSoins === 'tous' && docsPro.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <p className="px-4 pt-3 pb-1 text-sm font-bold text-[#0C5C6C]">Documents de vos professionnels</p>
+                {docsPro.map(d => (
+                  <button key={d.id} type="button" onClick={() => ouvrirDocument(d.url)}
+                    className="w-full text-left px-4 py-3 border-t border-gray-50 hover:bg-gray-50">
+                    <p className="text-sm font-semibold text-[#1F2A2E]">{d.titre || 'Compte rendu'}</p>
+                    <p className="text-xs text-gray-500">{[new Date(d.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }), d._pro].filter(Boolean).join(' — ')} · PDF</p>
+                  </button>
                 ))}
               </div>
             )}

@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:PetsMatch/utils/majuscule.dart';
 
 const _teal = PdfColor.fromInt(0xFF0C5C6C);
 const _dark = PdfColor.fromInt(0xFF1E2025);
@@ -110,7 +111,7 @@ Future<Uint8List> ordonnancePdfBytes({
           padding: const pw.EdgeInsets.only(bottom: 2),
           child: pw.RichText(text: pw.TextSpan(children: [
             pw.TextSpan(text: '$label : ', style: const pw.TextStyle(fontSize: 9, color: _grey)),
-            pw.TextSpan(text: valeur, style: const pw.TextStyle(fontSize: 9, color: _dark)),
+            pw.TextSpan(text: majuscule(valeur), style: const pw.TextStyle(fontSize: 9, color: _dark)),
           ])),
         );
 
@@ -264,7 +265,7 @@ Future<Uint8List> compteRenduPdfBytes({
                 ('Identification', animalIdentification)])
               if (v.isNotEmpty) pw.RichText(text: pw.TextSpan(style: const pw.TextStyle(fontSize: 9, color: _dark), children: [
                 pw.TextSpan(text: '$l : ', style: const pw.TextStyle(color: _grey)),
-                pw.TextSpan(text: v),
+                pw.TextSpan(text: majuscule(v)),
               ])),
           ])),
           pw.SizedBox(width: 16),
@@ -332,7 +333,7 @@ Future<Uint8List> compteRenduToilettagePdfBytes({
       pw.Divider(color: _line, thickness: 1),
       pw.SizedBox(height: 8),
       pw.Text(animalNom, style: pw.TextStyle(fontSize: 12, color: _dark, fontWeight: pw.FontWeight.bold)),
-      if (especeRace.isNotEmpty) pw.Text(especeRace, style: const pw.TextStyle(fontSize: 10, color: _dark)),
+      if (especeRace.isNotEmpty) pw.Text(majuscule(especeRace), style: const pw.TextStyle(fontSize: 10, color: _dark)),
       pw.SizedBox(height: 14),
       for (final (titre, texte) in rubriques)
         if (texte.trim().isNotEmpty) ...[
