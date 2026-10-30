@@ -10,6 +10,7 @@ import 'package:PetsMatch/widgets/week_events_grid.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
+import 'package:PetsMatch/widgets/rdv/motif_annulation.dart';
 import 'package:PetsMatch/widgets/rattachement_picker.dart';
 import 'package:PetsMatch/utils/cloisonnement_profils.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
@@ -553,8 +554,16 @@ class _AgendaPageState extends State<AgendaPage> {
             Map<String, String> noms = {};
             try { noms = await _coProprietaires(animalIds); } catch (_) {}
             final seen = filtered.map((e) => e['id']).toSet();
+            // RDV déjà dans mon agenda (événement client, rdv_id) : pas de doublon.
+            final rdvsVus = {for (final e in filtered) if ((e['rdv_id']?.toString() ?? '').isNotEmpty) e['rdv_id'].toString()};
             for (final e in (shared as List)) {
               if (!seen.add(e['id'])) continue;
+              // Copie d'un RDV dans l'agenda du PRO (couleur rdv:<id>) d'un
+              // co-propriétaire qui est aussi ce pro : ce n'est pas mon RDV
+              // de client (double point, ni modification ni annulation).
+              if ((e['couleur']?.toString() ?? '').startsWith('rdv:')) continue;
+              final rid = e['rdv_id']?.toString() ?? '';
+              if (rid.isNotEmpty && !rdvsVus.add(rid)) continue;
               // Qui l'a pris / ajouté : le co-propriétaire le sait d'un coup d'œil.
               final nom = noms[e['uid']?.toString()];
               final m = Map<String, dynamic>.from(e as Map);
@@ -2203,13 +2212,45 @@ class _EventTile extends StatelessWidget {
       ),
     );
     if (choice == 'modifier' && context.mounted) {
-      await _proposeNewSlot(context);
+      final motif = await _demanderMotif(context, 'Modifier le rendez-vous', 'Continuer');
+      if (motif == null || !context.mounted) return;
+      await _proposeNewSlot(context, motif);
     } else if (choice == 'annuler' && context.mounted) {
       await _cancelRdv(context);
     }
   }
 
-  Future<void> _proposeNewSlot(BuildContext context) async {
+  /// Motif obligatoire (liste client + « Autre ») ; null si abandon.
+  Future<String?> _demanderMotif(BuildContext context, String titre, String bouton, {bool danger = false}) async {
+    var motif = '';
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setM) => Padding(
+        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('Le professionnel sera prévenu, avec votre motif.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 16),
+          MotifAnnulationField(motifs: kMotifsClient, onChanged: (v) => setM(() => motif = v)),
+          const SizedBox(height: 20),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: motif.isEmpty ? null : () => Navigator.pop(ctx, motif),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: danger ? Colors.red.shade600 : _kTeal, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
+            child: Text(bouton, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          )),
+        ]),
+      )),
+    );
+  }
+
+  Future<void> _proposeNewSlot(BuildContext context, String motif) async {
     final supa = Supabase.instance.client;
     final rdvId = _rdvId!;
 
@@ -2266,7 +2307,7 @@ class _EventTile extends StatelessWidget {
       if (pickedTime == null || !context.mounted) return;
       final chosen = DateTime(pickedDate.year, pickedDate.month, pickedDate.day,
           pickedTime.hour, pickedTime.minute);
-      await _applyModification(context, supa, rdvId, proUid, chosen, duration);
+      await _applyModification(context, supa, rdvId, proUid, chosen, duration, motif);
       return;
     }
 
@@ -2385,11 +2426,11 @@ class _EventTile extends StatelessWidget {
     );
 
     if (chosen == null || !context.mounted) return;
-    await _applyModification(context, supa, rdvId, proUid, chosen, duration);
+    await _applyModification(context, supa, rdvId, proUid, chosen, duration, motif);
   }
 
   Future<void> _applyModification(BuildContext context, dynamic supa,
-      String rdvId, String proUid, DateTime chosen, int duration) async {
+      String rdvId, String proUid, DateTime chosen, int duration, String motif) async {
     try {
       final updated = await supa.from('rdv').update({
         'statut':              'contre_proposition',
@@ -2405,7 +2446,7 @@ class _EventTile extends StatelessWidget {
         'uid':   proUid,
         'type':  'rdv_contre_proposition',
         'title': 'Modification demandée par $clientName',
-        'body':  '$clientName souhaite déplacer le RDV au $dateStr',
+        'body':  '$clientName souhaite déplacer le RDV au $dateStr — Motif : $motif',
         if ((proProfileId ?? '').isNotEmpty) 'profile_id': proProfileId,
         'data':  {'rdv_id': rdvId},
         'read':  false,
@@ -2432,57 +2473,14 @@ class _EventTile extends StatelessWidget {
   }
 
   Future<void> _cancelRdv(BuildContext context) async {
-    final ctrl = TextEditingController();
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-          const Text('Annuler définitivement',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text('Le professionnel sera notifié de votre annulation.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-          const SizedBox(height: 16),
-          TextField(
-            controller: ctrl,
-            maxLines: 2,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Motif de l\'annulation (optionnel)…',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.all(12),
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade600, foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
-              child: const Text('Confirmer l\'annulation',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-          ),
-        ]),
-      ),
-    );
-    ctrl.dispose();
-    if (ok != true) return;
+    // Motif obligatoire (liste client + « Autre »), transmis au professionnel.
+    final choisi = await _demanderMotif(context, 'Annuler définitivement', 'Confirmer l\'annulation', danger: true);
+    if (choisi == null) return;
 
     try {
       final supa = Supabase.instance.client;
       final rdvId = _rdvId!;
-      final motif = ctrl.text.trim();
+      final motif = choisi.trim();
 
       // Load rdv to get pro_uid
       final rdvRows = await supa.from('rdv').select('pro_uid, pro_profile_id').eq('id', rdvId);
@@ -2942,7 +2940,7 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                           onPressed: () => launchUrl(Uri.parse('tel:$_ownerTel')),
                         ),
                     ]),
-                    if ((_animal?['id']?.toString() ?? '').isNotEmpty) ...[
+                    if (_iAmPro && (_animal?['id']?.toString() ?? '').isNotEmpty) ...[
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,

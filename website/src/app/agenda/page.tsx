@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
+import MotifAnnulationChamp, { MOTIFS_CLIENT } from '@/components/rdv/MotifAnnulationChamp';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState, useProfileSource } from '@/hooks/useActiveProfile';
@@ -232,17 +232,13 @@ function AnnulerModal({ event, onClose, onDone }: { event: AgendaEvent; onClose:
           {event.titre}<br />
           <span className="text-[#0C5C6C] font-medium">{fmtDate(event.date_debut)} à {fmtTime(event.date_debut)}</span>
         </p>
-        <textarea
-          value={motif} onChange={e => setMotif(e.target.value)}
-          rows={3} placeholder="Motif de l'annulation (optionnel)…"
-          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm resize-none focus:outline-none focus:border-red-400"
-          style={{ fontFamily: 'Galey, sans-serif' }}
-        />
+        {/* Motif obligatoire, transmis au professionnel. */}
+        <MotifAnnulationChamp motifs={MOTIFS_CLIENT} onChange={setMotif} />
         <div className="flex gap-3 justify-end">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">
             Retour
           </button>
-          <button onClick={handleAnnuler} disabled={saving}
+          <button onClick={handleAnnuler} disabled={saving || !motif.trim()}
             className="px-5 py-2 rounded-xl text-sm text-white bg-red-500 hover:bg-red-600 font-semibold disabled:opacity-50 transition-colors">
             {saving ? '…' : 'Annuler le RDV'}
           </button>
@@ -255,6 +251,7 @@ function AnnulerModal({ event, onClose, onDone }: { event: AgendaEvent; onClose:
 // ── Modal modification client ──────────────────────────────────────────────────
 
 function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose: () => void; onDone: () => void }) {
+  const [motifModif, setMotifModif] = useState('');
   const [slotsLoading, setSlotsLoading] = useState(true);
   const [slotsByDate, setSlotsByDate] = useState<Record<string, number[]>>({});
   const [proUid, setProUid] = useState<string | null>(null);
@@ -332,7 +329,7 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
         uid: proUid,
         type: 'rdv_contre_proposition',
         title: 'Modification demandée par le client',
-        body: `Le client souhaite déplacer le RDV au ${dateStr}`,
+        body: `Le client souhaite déplacer le RDV au ${dateStr} — Motif : ${motifModif}`,
         ...(proProfileId ? { profile_id: proProfileId } : {}),
         data: { rdv_id: event.rdv_id },
         read: false,
@@ -341,7 +338,7 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
     } catch { /* ignore */ } finally { setSaving(false); }
   }
 
-  const canConfirm = hasSlots ? selHour !== null : fallbackDate !== '';
+  const canConfirm = (hasSlots ? selHour !== null : fallbackDate !== '') && !!motifModif.trim();
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -353,6 +350,8 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
           {event.titre}<br />
           <span className="text-[#0C5C6C] font-medium">{fmtDate(event.date_debut)} à {fmtTime(event.date_debut)}</span>
         </p>
+        {/* Motif obligatoire, transmis au professionnel. */}
+        <MotifAnnulationChamp motifs={MOTIFS_CLIENT} onChange={setMotifModif} />
 
         {slotsLoading ? (
           <div className="flex justify-center py-4">
@@ -581,10 +580,16 @@ export default function AgendaPage() {
           .in('animal_id', animalIds).in('uid', ownerUids)
           .gte('date_debut', from).lte('date_debut', to) : { data: [] };
         const seen = new Set(list.map(e => e.id));
+        const rdvsVus = new Set(list.map(e => e.rdv_id).filter(Boolean) as string[]);
         const noms = (shared ?? []).length ? await coProprietaires(animalIds, uid) : new Map();
         for (const e of (shared ?? []) as AgendaEvent[]) {
           if (seen.has(e.id)) continue;
           seen.add(e.id);
+          // Copie d'un RDV dans l'agenda du PRO (couleur rdv:<id>) d'un
+          // co-propriétaire qui est aussi ce pro : pas mon RDV de client
+          // (double point, ni modification ni annulation).
+          if (e.couleur?.startsWith('rdv:')) continue;
+          if (e.rdv_id) { if (rdvsVus.has(e.rdv_id)) continue; rdvsVus.add(e.rdv_id); }
           // Qui l'a pris / ajouté : le co-propriétaire le sait d'un coup d'œil.
           const nom = noms.get((e as { uid?: string }).uid ?? '')?.nom;
           list.push(nom ? { ...e, titre: `${e.titre} — ${e.type === 'rdv' ? 'pris par' : 'ajouté par'} ${nom}` } : e);
@@ -1719,7 +1724,8 @@ function RdvDetails({ rdv, viewerUid, onNavigateToAnimal }: {
 
   return (
     <div className="space-y-2 pt-1">
-      {animal && (
+      {/* Fiche de l'animal : vue pro seulement (le client a la sienne). */}
+      {animal && iAmPro && (
         <button onClick={() => onNavigateToAnimal(rdv.animal_id)}
           className="w-full flex items-center gap-3 rounded-lg border border-gray-100 hover:border-[#0C5C6C]/40 px-3 py-2 transition-colors text-left">
           {animal.photo_url

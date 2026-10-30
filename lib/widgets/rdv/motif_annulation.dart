@@ -12,10 +12,21 @@ const kMotifsAnnulation = [
   'Autre',
 ];
 
+/// Motifs du client qui annule ou déplace son RDV.
+const kMotifsClient = [
+  'Empêchement de ma part',
+  'Mon animal est malade',
+  'Changement d’horaire souhaité',
+  'Rendez-vous pris par erreur',
+  'Autre',
+];
+
 /// [onChanged] reçoit le motif complet, ou '' tant qu'il n'est pas choisi / précisé.
 class MotifAnnulationField extends StatefulWidget {
   final ValueChanged<String> onChanged;
-  const MotifAnnulationField({super.key, required this.onChanged});
+  /// Liste proposée (par défaut : motifs du professionnel).
+  final List<String> motifs;
+  const MotifAnnulationField({super.key, required this.onChanged, this.motifs = kMotifsAnnulation});
 
   @override
   State<MotifAnnulationField> createState() => _MotifAnnulationFieldState();
@@ -45,7 +56,7 @@ class _MotifAnnulationFieldState extends State<MotifAnnulationField> {
         isExpanded: true,
         decoration: deco.copyWith(labelText: 'Motif *'),
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
-        items: [for (final m in kMotifsAnnulation) DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis))],
+        items: [for (final m in widget.motifs) DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis))],
         onChanged: (v) { setState(() => _choix = v); _maj(); },
       ),
       if (_choix == 'Autre') ...[

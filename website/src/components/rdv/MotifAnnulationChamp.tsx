@@ -14,8 +14,17 @@ export const MOTIFS_ANNULATION = [
   'Autre',
 ];
 
+/** Motifs du client qui annule ou déplace son RDV. Miroir appli : kMotifsClient. */
+export const MOTIFS_CLIENT = [
+  'Empêchement de ma part',
+  'Mon animal est malade',
+  'Changement d’horaire souhaité',
+  'Rendez-vous pris par erreur',
+  'Autre',
+];
+
 /** [onChange] reçoit le motif complet, ou '' tant qu'il n'est pas choisi / précisé. */
-export default function MotifAnnulationChamp({ onChange }: { onChange: (motif: string) => void }) {
+export default function MotifAnnulationChamp({ onChange, motifs = MOTIFS_ANNULATION }: { onChange: (motif: string) => void; motifs?: string[] }) {
   const [choix, setChoix] = useState('');
   const [autre, setAutre] = useState('');
   const maj = (c: string, a: string) => { setChoix(c); setAutre(a); onChange(c === 'Autre' ? a.trim() : c); };
@@ -25,7 +34,7 @@ export default function MotifAnnulationChamp({ onChange }: { onChange: (motif: s
       <select value={choix} onChange={e => maj(e.target.value, autre)}
         className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none">
         <option value="">Choisir un motif…</option>
-        {MOTIFS_ANNULATION.map(m => <option key={m} value={m}>{m}</option>)}
+        {motifs.map(m => <option key={m} value={m}>{m}</option>)}
       </select>
       {choix === 'Autre' && (
         <textarea value={autre} onChange={e => maj('Autre', e.target.value)} rows={2} autoFocus placeholder="Précisez le motif…"
