@@ -147,6 +147,9 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   // E-mail de contact du profil (fiche publique) ; par défaut celui du compte.
   const { user: compte } = useAuth();
   const [emailContact, setEmailContact] = useState(compte?.email ?? '');
+  // Préférences de contact (migration_preferences_contact_pro.sql), modifiables ensuite dans le profil.
+  const [contactMessages, setContactMessages] = useState(true);
+  const [contactEmailOk, setContactEmailOk] = useState(true);
   const [description, setDescription] = useState('');
   const [siret, setSiret] = useState('');
   const [numeroOrdre, setNumeroOrdre] = useState('');
@@ -274,6 +277,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         profile_label: profileLabel.trim(),
         phone:         phone.trim(),
         ...(typeInfo.type !== 'particulier' && emailContact.trim() ? { email_contact: emailContact.trim() } : {}),
+        ...(typeInfo.type !== 'particulier' ? { contact_messages: contactMessages, contact_email: contactEmailOk } : {}),
         adresse:       addressSearch.trim(),
         rue:           rue.trim(),
         ville:         ville.trim(),
@@ -499,6 +503,15 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
               <input type="email" value={emailContact} onChange={e => setEmailContact(e.target.value)}
                 className="w-full input-field" placeholder="contact@monentreprise.fr" />
             </Field>
+          )}
+          {typeInfo.type !== 'particulier' && (
+            <div className="space-y-1.5">
+              {([['Recevoir des messages PetsMatch', contactMessages, setContactMessages], ['Être contacté par e-mail', contactEmailOk, setContactEmailOk]] as const).map(([l, v, m]) => (
+                <label key={l} className="flex items-center gap-2 text-sm text-[#1F2A2E] cursor-pointer">
+                  <input type="checkbox" checked={v} onChange={e => m(e.target.checked)} className="w-4 h-4" style={{ accentColor: '#0C5C6C' }} />{l}
+                </label>
+              ))}
+            </div>
           )}
 
           {/* Éleveur spécifique */}

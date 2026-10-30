@@ -77,6 +77,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   double? _lng;
 
   bool _acceptNewClients = true;
+  // Préférences de contact (migration_preferences_contact_pro.sql) : messages
+  // PetsMatch et e-mail acceptés ou non — masqués sur les fiches publiques.
+  bool _contactMessages = true;
+  bool _contactEmail = true;
+  String? _profilRowId;
   bool _urgences24h = false;
   bool _retardAlerteAuto = false;
   String _catPro = '';
@@ -308,6 +313,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
       if (row != null) {
         final isSecondary = widget.secondaryProfileId != null;
+        _profilRowId = row['id']?.toString();
+        try {
+          final pref = await _supa.rpc('pm_preferences_contact', params: {'p_profile': _profilRowId}) as Map?;
+          _contactMessages = pref?['messages'] != false;
+          _contactEmail = pref?['email'] != false;
+        } catch (_) {}
         _tvaCtrl.text            = row['numero_tva']         ?? '';
         _formeJuridiqueCtrl.text = row['forme_juridique_pro'] ?? '';
         _capitalCtrl.text        = row['capital_social_pro'] ?? '';
@@ -1060,6 +1071,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         User_Info.codePostalElevage = _cpCtrl.text.trim();
         User_Info.paysElevage       = _paysCtrl.text.trim();
       }
+      final idPrefs = widget.secondaryProfileId ?? _profilRowId;
+      if (idPrefs != null) {
+        await _supa.from('user_profiles').update({'contact_messages': _contactMessages, 'contact_email': _contactEmail}).eq('id', idPrefs);
+      }
       if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
       if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
       if (_hasGalerie) {
@@ -1287,6 +1302,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     const SizedBox(height: 16),
                   ],
                   _acceptClientsToggle(),
+                  const SizedBox(height: 10),
+                  _prefContactToggle('Recevoir des messages PetsMatch', 'Bouton « Message » sur votre fiche publique',
+                      Icons.chat_bubble_outline, _contactMessages, (v) => setState(() => _contactMessages = v)),
+                  const SizedBox(height: 10),
+                  _prefContactToggle('Être contacté par e-mail', 'Votre e-mail de contact affiché sur votre fiche',
+                      Icons.mail_outline, _contactEmail, (v) => setState(() => _contactEmail = v)),
 
                   if (_catPro == 'veterinaire') ...[
                     const SizedBox(height: 12),
@@ -2600,6 +2621,24 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       ),
     );
   }
+
+  Widget _prefContactToggle(String titre, String sous, IconData icone, bool valeur, ValueChanged<bool> onChanged) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Row(children: [
+          Icon(icone, color: const Color(0xFF0C5C6C), size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+            Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          ])),
+          Switch(value: valeur, onChanged: onChanged, activeThumbColor: const Color(0xFF0C5C6C)),
+        ]),
+      );
 
   Widget _acceptClientsToggle() {
     return Container(

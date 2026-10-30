@@ -515,7 +515,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                         child: ElevatedButton.icon(
                           onPressed: _loadingChat ? null : () => showContactSheet(context,
                               nom: user.nameElevage.isNotEmpty ? user.nameElevage : 'cet élevage',
-                              tel: _telephone, email: _email, onMessage: _openChat),
+                              tel: _telephone, email: _email, onMessage: _openChat, profileId: _eleveurProfileId),
                           icon: _loadingChat
                               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                               : const Icon(Icons.chat_bubble_outline, size: 18),

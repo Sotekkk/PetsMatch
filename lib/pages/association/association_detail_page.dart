@@ -327,7 +327,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                             child: ElevatedButton.icon(
                               onPressed: _loadingChat ? null : () => showContactSheet(context,
                                   nom: _loadedName.isNotEmpty ? _loadedName : widget.name,
-                                  tel: _phone, email: _email, onMessage: _openChat),
+                                  tel: _phone, email: _email, onMessage: _openChat, profileId: _assoProfileId),
                               icon: _loadingChat
                                   ? const SizedBox(width: 16, height: 16,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))

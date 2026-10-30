@@ -855,6 +855,17 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [phone, setPhone] = useState('');
   const [rayon, setRayon] = useState(20);
   const [acceptNewClients, setAcceptNewClients] = useState(true);
+  // Préférences de contact (migration_preferences_contact_pro.sql) : messages
+  // PetsMatch et e-mail acceptés ou non — masqués sur les fiches publiques.
+  const [contactMessages, setContactMessages] = useState(true);
+  const [contactEmail, setContactEmail] = useState(true);
+  useEffect(() => {
+    if (!profileId) return;
+    supabase.rpc('pm_preferences_contact', { p_profile: profileId }).then(({ data: pref }) => {
+      const d = pref as { messages?: boolean; email?: boolean } | null;
+      if (d) { setContactMessages(d.messages !== false); setContactEmail(d.email !== false); }
+    });
+  }, [profileId]);
   const [urgences24h, setUrgences24h] = useState(false);
   const [retardAlerteAuto, setRetardAlerteAuto] = useState(false);
   const [siret, setSiret] = useState('');
@@ -1195,6 +1206,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       email_contact: emailContact.trim() || null,
       rayon_intervention: rayon,
       accept_new_clients: acceptNewClients,
+      contact_messages: contactMessages,
+      contact_email: contactEmail,
       ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h, retard_alerte_auto: retardAlerteAuto } : {}),
       ...(catPro === 'sante' ? { retard_alerte_auto: retardAlerteAuto } : {}),
       ...(catPro === 'veterinaire'
@@ -1452,6 +1465,21 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${acceptNewClients ? 'left-5' : 'left-0.5'}`} />
             </button>
           </div>
+          {([
+            ['Recevoir des messages PetsMatch', 'Bouton « Message » sur votre fiche publique', contactMessages, setContactMessages],
+            ['Être contacté par e-mail', 'Votre e-mail de contact affiché sur votre fiche', contactEmail, setContactEmail],
+          ] as const).map(([titre, sous, valeur, maj]) => (
+            <div key={titre} className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm font-medium text-[#1F2A2E]">{titre}</p>
+                <p className="text-xs text-gray-400">{sous}</p>
+              </div>
+              <button type="button" onClick={() => maj(v => !v)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${valeur ? 'bg-[#0C5C6C]' : 'bg-gray-400'}`}>
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${valeur ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+          ))}
 
           {/* Toggle urgences 24h — vétérinaires uniquement */}
           {(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire') && (

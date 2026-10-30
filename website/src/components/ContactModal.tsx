@@ -5,8 +5,9 @@
 // connexion puis ouvre la conversation). Toujours le PROFIL affiché :
 // profileId = conversation avec ce profil ; tel / email = ceux de ce profil.
 // Miroir appli : lib/widgets/contact_canaux.dart (showContactSheet).
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import ContactCanaux from '@/components/ContactCanaux';
+import { supabase } from '@/lib/supabase';
 
 export default function ContactModal({ nom, uid, profileId, tel, email, onClose }: {
   nom: string; uid: string; profileId?: string | null; tel?: string | null; email?: string | null; onClose: () => void;
@@ -16,7 +17,17 @@ export default function ContactModal({ nom, uid, profileId, tel, email, onClose 
     window.addEventListener('keydown', echap);
     return () => window.removeEventListener('keydown', echap);
   }, [onClose]);
-  const t = (tel ?? '').trim(), m = (email ?? '').trim();
+  // Préférences du pro (migration_preferences_contact_pro.sql) : messages
+  // PetsMatch et / ou e-mail refusés → moyen masqué.
+  const [pref, setPref] = useState<{ messages: boolean; email: boolean }>({ messages: true, email: true });
+  useEffect(() => {
+    if (!profileId) return;
+    supabase.rpc('pm_preferences_contact', { p_profile: profileId }).then(({ data }) => {
+      const d = data as { messages?: boolean; email?: boolean } | null;
+      if (d) setPref({ messages: d.messages !== false, email: d.email !== false });
+    });
+  }, [profileId]);
+  const t = (tel ?? '').trim(), m = pref.email ? (email ?? '').trim() : '';
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={`Contacter ${nom}`}
@@ -33,9 +44,9 @@ export default function ContactModal({ nom, uid, profileId, tel, email, onClose 
             {m && <p className="break-all">E-mail : <a href={`mailto:${m}`} className="font-semibold text-[#0C5C6C]">{m}</a></p>}
           </div>
         )}
-        <ContactCanaux uid={uid} profileId={profileId} tel={t} email={m} sujet="Contact via PetsMatch"
+        <ContactCanaux uid={pref.messages ? uid : null} profileId={profileId} tel={t} email={m} sujet="Contact via PetsMatch"
           texteVide="Aucune coordonnée indiquée." />
-        <p className="text-[11px] text-gray-400">« Message PetsMatch » ouvre la messagerie (connexion demandée si besoin).</p>
+        {pref.messages && <p className="text-[11px] text-gray-400">« Message PetsMatch » ouvre la messagerie (connexion demandée si besoin).</p>}
       </div>
     </div>
   );

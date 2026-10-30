@@ -217,6 +217,9 @@ export default function InscriptionPage() {
   const [phone, setPhone] = useState('');
   // E-mail de contact du profil pro / élevage (fiche publique) ; vide = e-mail du compte.
   const [emailContact, setEmailContact] = useState('');
+  // Préférences de contact (migration_preferences_contact_pro.sql), modifiables ensuite dans le profil.
+  const [contactMessages, setContactMessages] = useState(true);
+  const [contactEmailOk, setContactEmailOk] = useState(true);
   // Particulier : pays + position de l'adresse, animaux & projet d'adoption.
   const [pays, setPays] = useState('France');
   const [latLng, setLatLng] = useState<{ lat?: number; lng?: number }>({});
@@ -441,10 +444,9 @@ export default function InscriptionPage() {
     // (create_main_profile_on_signup ne le recopie pas) : fiche publique.
     if (isEleveurOrPro) {
       const contact = emailContact.trim() || emailAddr;
-      if (contact) {
-        await supabase.from('user_profiles').update({ email_contact: contact })
-          .eq('uid', uid).neq('profile_type', 'particulier');
-      }
+      await supabase.from('user_profiles').update({
+        ...(contact ? { email_contact: contact } : {}), contact_messages: contactMessages, contact_email: contactEmailOk,
+      }).eq('uid', uid).neq('profile_type', 'particulier');
     }
 
     // Le numéro d'ordre vétérinaire n'est packé que dans `certifications`
@@ -704,6 +706,13 @@ export default function InscriptionPage() {
                       <label className={labelCls}>E-mail de contact <span className="text-gray-400 font-normal">(visible sur votre fiche, sinon celui du compte)</span></label>
                       <input type="email" value={emailContact} onChange={(e) => setEmailContact(e.target.value)}
                         placeholder={email || 'contact@monentreprise.fr'} className={inputCls} />
+                    </div>
+                    <div className="space-y-1.5">
+                      {([['Recevoir des messages PetsMatch', contactMessages, setContactMessages], ['Être contacté par e-mail', contactEmailOk, setContactEmailOk]] as const).map(([l, v, m]) => (
+                        <label key={l} className="flex items-center gap-2 text-sm text-[#1F2A2E] cursor-pointer">
+                          <input type="checkbox" checked={v} onChange={e => m(e.target.checked)} className="w-4 h-4" style={{ accentColor: '#0C5C6C' }} />{l}
+                        </label>
+                      ))}
                     </div>
                     <div>
                       <label className={labelCls}>Adresse de l&apos;élevage / structure</label>

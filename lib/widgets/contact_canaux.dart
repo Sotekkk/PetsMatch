@@ -3,6 +3,7 @@
 // si la coordonnée existe. Miroir site : website/src/components/ContactCanaux.tsx.
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
@@ -101,13 +102,25 @@ class ContactCanaux extends StatelessWidget {
 /// WhatsApp, e-mail). Toujours le PROFIL affiché : [onMessage] ouvre la
 /// conversation avec ce profil, [tel] / [email] sont ceux de ce profil.
 /// Miroir site : website/src/components/ContactModal.tsx.
+/// [profileId] : profil contacté — ses préférences (messages PetsMatch, e-mail ;
+/// migration_preferences_contact_pro.sql) masquent les moyens refusés.
 Future<void> showContactSheet(BuildContext context, {
   required String nom,
   String? tel,
   String? email,
   required Future<void> Function() onMessage,
-}) {
-  final t = (tel ?? '').trim(), m = (email ?? '').trim();
+  String? profileId,
+}) async {
+  var messages = true, avecEmail = true;
+  if ((profileId ?? '').isNotEmpty) {
+    try {
+      final p = await Supabase.instance.client.rpc('pm_preferences_contact', params: {'p_profile': profileId}) as Map?;
+      messages = p?['messages'] != false;
+      avecEmail = p?['email'] != false;
+    } catch (_) {}
+    if (!context.mounted) return;
+  }
+  final t = (tel ?? '').trim(), m = avecEmail ? (email ?? '').trim() : '';
   return showModalBottomSheet(
     context: context,
     showDragHandle: true,
@@ -126,7 +139,7 @@ Future<void> showContactSheet(BuildContext context, {
           const SizedBox(height: 14),
           ContactCanaux(
             tel: t, email: m, sujet: 'Contact via PetsMatch',
-            onMessage: () async { Navigator.of(ctx).pop(); await onMessage(); },
+            onMessage: messages ? () async { Navigator.of(ctx).pop(); await onMessage(); } : null,
             texteVide: 'Aucune coordonnée indiquée.',
           ),
         ]),

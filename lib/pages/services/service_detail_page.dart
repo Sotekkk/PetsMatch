@@ -1407,7 +1407,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         Expanded(
           child: OutlinedButton.icon(
             onPressed: _loadingChat ? null : () => showContactSheet(context,
-                nom: _nomStructure, tel: _telephone, email: _proData?['email_contact']?.toString(), onMessage: _openChat),
+                nom: _nomStructure, tel: _telephone, email: _proData?['email_contact']?.toString(), onMessage: _openChat,
+                profileId: widget.profileTableId ?? _proData?['id']?.toString()),
             icon: _loadingChat
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.message_outlined, size: 18),
