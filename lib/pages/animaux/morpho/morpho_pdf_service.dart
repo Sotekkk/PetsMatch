@@ -8,6 +8,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/signature_pro.dart';
 import 'morpho_constants.dart';
 
@@ -105,8 +106,17 @@ Future<Uint8List> morphoSuiviPdfBytes({
   final source = suivi['source']?.toString() ?? 'proprietaire';
   // Signature du praticien : seulement sur ses propres séances (signatures_pro).
   final auteurUid = suivi['uid_auteur']?.toString();
-  final signature = source == 'professionnel' && auteurUid != null && auteurUid == FirebaseAuth.instance.currentUser?.uid
-      ? octetsSignature(await maSignaturePro()) : null;
+  Uint8List? signature;
+  if (source == 'professionnel' && auteurUid != null && auteurUid == FirebaseAuth.instance.currentUser?.uid) {
+    signature = octetsSignature(await maSignaturePro());
+  } else if (source == 'professionnel' && suivi['id'] != null) {
+    // Propriétaire : signature de l'auteur, renvoyée à lui seul
+    // (migration_signature_documents_proprietaire.sql).
+    try {
+      signature = octetsSignature((await Supabase.instance.client
+          .rpc('pm_signature_seance', params: {'p_suivi_id': suivi['id'].toString()}))?.toString());
+    } catch (_) {}
+  }
 
   // Photos de référence (4 vues + extra) — téléchargées depuis Supabase Storage.
   final photosByVue = <String, pw.MemoryImage>{};

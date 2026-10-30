@@ -114,7 +114,13 @@ export default function SuiviDetailPage({ params }: { params: Promise<{ id: stri
   /** PDF unique de la séance (signature du praticien sur ses propres séances). */
   async function pdfBlob(): Promise<Blob | null> {
     if (!suivi) return null;
-    const signature = user && suivi.uid_auteur === user.uid ? await maSignaturePro(user.uid).catch(() => null) : null;
+    // Praticien : sa signature ; propriétaire : celle de l'auteur, renvoyée
+    // à lui seul (migration_signature_documents_proprietaire.sql).
+    const signature = user && suivi.uid_auteur === user.uid
+      ? await maSignaturePro(user.uid).catch(() => null)
+      : suivi.source === 'professionnel'
+        ? ((await supabase.rpc('pm_signature_seance', { p_suivi_id: String(suivi.id) })).data as string | null) ?? null
+        : null;
     return morphoSuiviPdfBlob({ suivi, animal, pro, photos, points, observations, mouvements, exercices, signature });
   }
 

@@ -788,9 +788,13 @@ function VetDocCard({ record, vetNames, cible = false }:
   async function telechargerPdf() {
     setPdfEnCours(true);
     try {
+      // Signature du vétérinaire, renvoyée au seul propriétaire de l'animal
+      // (migration_signature_documents_proprietaire.sql).
+      const { data: signature } = await supabase.rpc('pm_signature_compte_rendu', { p_cr_id: String(record.id) });
       const blob = await pdfCompteRendu(
         { id: String(record.id), animal_id: String(record.animal_id), contenu: contenu ?? null, created_at: String(record.created_at) },
-        { proProfileId: (record.pro_profile_id as string | null) ?? null, praticien: vetName === 'Vétérinaire' ? '' : vetName });
+        { proProfileId: (record.pro_profile_id as string | null) ?? null, praticien: vetName === 'Vétérinaire' ? '' : vetName,
+          signature: (signature as string | null) ?? null });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

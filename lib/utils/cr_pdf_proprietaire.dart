@@ -1,14 +1,15 @@
 // Côté propriétaire : compte rendu vétérinaire téléchargeable en PDF (e-mail
 // perdu…). Même PDF que celui envoyé par le vétérinaire (en-tête du cabinet,
-// patient, propriétaire), sans la signature manuscrite, qui n'est lisible
-// que par le vétérinaire. Miroir site : « Télécharger le PDF » (VetDocCard,
-// mes-animaux).
+// patient, propriétaire, signature — renvoyée au seul propriétaire par
+// pm_signature_compte_rendu). Miroir site : « Télécharger le PDF »
+// (VetDocCard, mes-animaux).
 
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart' show compteRenduPdfBytes, ageAnimal, sexeAnimal;
+import 'package:PetsMatch/utils/signature_pro.dart' show octetsSignature;
 
 Future<void> telechargerCompteRenduProprietaire(BuildContext context, Map<String, dynamic> cr) async {
   final supa = Supabase.instance.client;
@@ -28,6 +29,10 @@ Future<void> telechargerCompteRenduProprietaire(BuildContext context, Map<String
       final u = await supa.from('users_complet').select('firstname, lastname').eq('uid', animal['uid_proprietaire']).maybeSingle();
       proprio = '${s(u?['firstname'])} ${s(u?['lastname'])}'.trim();
     }
+    String? signature;
+    try {
+      signature = (await supa.rpc('pm_signature_compte_rendu', params: {'p_cr_id': cr['id'].toString()}))?.toString();
+    } catch (_) {}
     final adresse = (s(pro?['rue_pro']).isNotEmpty || s(pro?['ville_pro']).isNotEmpty)
         ? [s(pro?['rue_pro']), '${s(pro?['code_postal_pro'])} ${s(pro?['ville_pro'])}'.trim()]
         : [s(pro?['rue']), '${s(pro?['code_postal'])} ${s(pro?['ville'])}'.trim()];
@@ -45,6 +50,7 @@ Future<void> telechargerCompteRenduProprietaire(BuildContext context, Map<String
       proprietaire: proprio,
       contenu: s(cr['contenu']),
       date: DateTime.tryParse(s(cr['created_at']))?.toLocal(),
+      signature: octetsSignature(signature),
     );
     final jour = s(cr['created_at']).split('T').first;
     await Printing.sharePdf(bytes: bytes, filename: 'Compte-rendu-${s(animal['nom']).replaceAll(' ', '_')}-$jour.pdf');
