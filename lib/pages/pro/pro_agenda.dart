@@ -2894,6 +2894,91 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     // Clinique : patient de la clinique (propriétaire hors appli) — remplit
     // client + animal et rattache le RDV à sa fiche (animal_id).
     String? patientAnimalId;
+    // Puce : animal et propriétaire retrouvés (miroir site NouveauRdvModal).
+    final puceCtrl = TextEditingController();
+    bool puceCherche = false, puceIntrouvable = false;
+    Map<String, dynamic>? puceRes;
+    // Planning du jour choisi + créneaux libres (créneaux ouverts moins RDV pris).
+    String? jourCharge;
+    List<String> libres = [];
+    List<String> planningJour = [];
+    Future<void> chargerJour(void Function(void Function()) setModal) async {
+      final cle = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}|$duree';
+      if (jourCharge == cle) return;
+      jourCharge = cle;
+      final supa = Supabase.instance.client;
+      final pid = _resolveProProfileId();
+      final jour = cle.split('|').first;
+      try {
+        final debut = DateTime(date.year, date.month, date.day), fin = debut.add(const Duration(days: 1));
+        final res = await Future.wait([
+          supa.from('creneaux_pro').select('heure_debut').eq('pro_uid', AgendaContexte.uid ?? '')
+              .eq('pro_profile_id', pid).eq('date', jour).eq('statut', 'disponible').order('heure_debut'),
+          supa.from('rdv').select('date_heure, duree_minutes, animal_nom_manuel, client_nom_manuel, motif')
+              .eq('pro_profile_id', pid).gte('date_heure', debut.toUtc().toIso8601String())
+              .lt('date_heure', fin.toUtc().toIso8601String()).not('statut', 'in', '(annule,refuse)').order('date_heure'),
+        ]);
+        final pris = [
+          for (final r in res[1] as List)
+            (debut: DateTime.parse(r['date_heure'].toString()).toLocal(), duree: (r['duree_minutes'] as num?)?.toInt() ?? 30,
+             libelle: [r['animal_nom_manuel'], r['client_nom_manuel'], r['motif']].map((x) => (x ?? '').toString().trim()).where((x) => x.isNotEmpty).join(' · ')),
+        ];
+        String hm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+        final heures = {for (final c in res[0] as List) c['heure_debut'].toString().substring(0, 5)}.toList();
+        setModal(() {
+          planningJour = [for (final p in pris) '${hm(p.debut)} – ${hm(p.debut.add(Duration(minutes: p.duree)))} · ${p.libelle.isEmpty ? 'RDV' : p.libelle}'];
+          libres = heures.where((h) {
+            final d = DateTime(date.year, date.month, date.day, int.parse(h.substring(0, 2)), int.parse(h.substring(3, 5)));
+            final f = d.add(Duration(minutes: duree));
+            return d.isAfter(DateTime.now()) && !pris.any((p) => d.isBefore(p.debut.add(Duration(minutes: p.duree))) && f.isAfter(p.debut));
+          }).toList();
+        });
+      } catch (_) {}
+    }
+    Future<void> chercherPuce(void Function(void Function()) setModal) async {
+      final n = puceCtrl.text.replaceAll(RegExp(r'[\s-]'), '');
+      if (n.isEmpty) return;
+      setModal(() { puceCherche = true; puceRes = null; puceIntrouvable = false; });
+      try {
+        final supa = Supabase.instance.client;
+        final hits = await supa.rpc('pm_puce_existante', params: {'p_identification': n, 'p_profile': _resolveProProfileId()}) as List;
+        if (hits.isEmpty) { setModal(() { puceCherche = false; puceIntrouvable = true; }); return; }
+        final h = Map<String, dynamic>.from(hits.first as Map);
+        var ownerNom = '';
+        if (h['owner_profile_id'] != null) {
+          final up = await supa.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', h['owner_profile_id']).maybeSingle();
+          ownerNom = '${up?['firstname'] ?? ''} ${up?['lastname'] ?? ''}'.trim();
+          if (ownerNom.isEmpty) ownerNom = up?['nom']?.toString() ?? '';
+        }
+        h['_owner_nom'] = ownerNom.isEmpty ? 'Propriétaire' : ownerNom;
+        setModal(() { puceRes = h; puceCherche = false; });
+      } catch (_) {
+        setModal(() { puceCherche = false; puceIntrouvable = true; });
+      }
+    }
+    Future<void> utiliserPuce(void Function(void Function()) setModal) async {
+      final h = puceRes;
+      if (h == null) return;
+      final aVous = h['a_vous'] == true, dejaLie = h['deja_lie'] == true;
+      if (h['owner_uid'] != null && h['owner_profile_id'] != null && !aVous) {
+        // Compte PetsMatch : RDV au nom du propriétaire (il l'a demandé par téléphone).
+        linkedUid = h['owner_uid'].toString();
+        linkedProfileId = h['owner_profile_id'].toString();
+        linkedNom = h['_owner_nom'].toString();
+      } else if (h['detenteur'] == 'pro' && !dejaLie) {
+        // Fiche créée par un autre pro : rattachée à mes patients.
+        try {
+          await Supabase.instance.client.rpc('pm_rattacher_fiche_pro', params: {
+            'p_profile': _resolveProProfileId(), 'p_animal': h['animal_id'], 'p_client_id': null, 'p_client': null});
+        } catch (_) {}
+      }
+      setModal(() {
+        patientAnimalId = h['animal_id']?.toString();
+        animalNomCtrl.text = h['nom']?.toString() ?? '';
+        puceRes = null;
+        puceCtrl.clear();
+      });
+    }
     // Depuis la fiche d'un patient : animal + propriétaire pré-remplis (le RDV
     // arrive dans l'agenda du propriétaire et de ses co-propriétaires).
     if (motifInit != null) motifCtrl.text = motifInit;
@@ -2972,6 +3057,52 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 18),
 
+              // Puce : retrouver l'animal et son propriétaire.
+              if (linkedUid == null) ...[
+                Row(children: [
+                  Expanded(child: TextField(
+                    controller: puceCtrl, keyboardType: TextInputType.number,
+                    onChanged: (_) => setModal(() { puceRes = null; puceIntrouvable = false; }),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(labelText: 'Numéro de puce (facultatif)', labelStyle: const TextStyle(fontFamily: 'Galey'),
+                        isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))),
+                  )),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: puceCherche ? null : () => chercherPuce(setModal),
+                    style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+                    child: Text(puceCherche ? '…' : 'Rechercher', style: const TextStyle(fontFamily: 'Galey')),
+                  ),
+                ]),
+                if (puceRes != null)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: _teal.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _teal.withValues(alpha: 0.2))),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${puceRes!['nom'] ?? 'Animal'}${(puceRes!['espece'] ?? '').toString().isNotEmpty ? ' · ${puceRes!['espece']}' : ''}',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      Text(puceRes!['a_vous'] == true || puceRes!['deja_lie'] == true ? 'Déjà dans mon fichier.'
+                          : puceRes!['owner_uid'] != null ? 'Propriétaire : ${puceRes!['_owner_nom']} (compte PetsMatch)'
+                          : puceRes!['detenteur'] == 'pro' ? 'Fiche créée par un autre professionnel : propriétaire à renseigner.' : '',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                      const SizedBox(height: 6),
+                      SizedBox(width: double.infinity, child: OutlinedButton(
+                        onPressed: () => utiliserPuce(setModal),
+                        style: OutlinedButton.styleFrom(foregroundColor: _teal),
+                        child: Text(puceRes!['owner_uid'] != null && puceRes!['a_vous'] != true ? 'Créer le RDV pour ce propriétaire'
+                            : puceRes!['detenteur'] == 'pro' && puceRes!['deja_lie'] != true ? 'Rattacher à mes patients et l’utiliser' : 'Utiliser cet animal',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                      )),
+                    ]),
+                  )
+                else if (puceIntrouvable)
+                  Padding(padding: const EdgeInsets.only(top: 6),
+                      child: Text('Aucun animal avec cette puce sur PetsMatch : saisissez le client ci-dessous.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600))),
+                const SizedBox(height: 12),
+              ],
               if (_fichierClients && linkedUid == null) ...[
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -3209,6 +3340,40 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   ),
                 ),
               ]),
+              // Créneaux libres du jour, puis planning du jour pour vérifier.
+              Builder(builder: (_) {
+                Future.microtask(() => chargerJour(setModal));
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (libres.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text('Créneaux libres', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      for (final h in libres)
+                        ChoiceChip(
+                          label: Text(h.replaceAll(':', 'h'), style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                          selected: heure.hour == int.parse(h.substring(0, 2)) && heure.minute == int.parse(h.substring(3, 5)),
+                          selectedColor: _teal.withValues(alpha: 0.2),
+                          onSelected: (_) => setModal(() => heure = TimeOfDay(hour: int.parse(h.substring(0, 2)), minute: int.parse(h.substring(3, 5)))),
+                        ),
+                    ]),
+                  ],
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Planning du ${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Colors.grey.shade700)),
+                      if (planningJour.isEmpty)
+                        Text('Aucun RDV ce jour-là.', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))
+                      else
+                        for (final l in planningJour) Text(l, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    ]),
+                  ),
+                ]);
+              }),
               const SizedBox(height: 10),
               Row(children: [
                 const Text('Durée',

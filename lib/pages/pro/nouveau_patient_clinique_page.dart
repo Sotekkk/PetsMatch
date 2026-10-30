@@ -8,6 +8,7 @@
 // website/src/components/pro/NouveauPatientModal.tsx.
 
 import 'package:flutter/material.dart';
+import 'package:PetsMatch/widgets/champ_race.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/animal_acces_page.dart';
 import 'package:PetsMatch/utils/user_lookup.dart';
@@ -353,7 +354,7 @@ class _NouveauPatientCliniquePageState extends State<NouveauPatientCliniquePage>
           )),
         ]),
         const SizedBox(height: 8),
-        TextField(controller: _race, decoration: _deco('Race')),
+        ChampRace(espece: _espece, controller: _race, decoration: _deco('Race')),
         const SizedBox(height: 8),
         Row(children: [
           Expanded(child: OutlinedButton.icon(
