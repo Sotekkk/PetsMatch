@@ -47,6 +47,14 @@ export const supabase = brancherAllegement(createClient(
   { accessToken: firebaseAccessToken }
 ));
 
+// Temps réel : le jeton n'était lu qu'à la connexion du canal, souvent avant que
+// Firebase ait restauré la session → canal anonyme, les règles d'accès masquaient
+// messages et conversations (rien en direct). Relu à chaque connexion /
+// renouvellement du jeton Firebase.
+if (typeof window !== 'undefined') {
+  auth.onIdTokenChanged(() => { supabase.realtime.setAuth().catch(() => {}); });
+}
+
 // Client des pages ouvertes par LIEN secret (/album, /partage, /suivi,
 // /reclamer-animal…) : envoie le token du lien dans l'en-tête `x-pm-token`
 // sur TOUTES ses requêtes. Les policies RLS (pm_token_requete) n'ouvrent

@@ -270,7 +270,12 @@ function MessagesPageInner() {
         loadConversations();
       })
       .subscribe();
-    return () => { convChannelRef.current?.unsubscribe(); };
+    // Le temps réel ne remonte pas toujours (jeton Firebase) : relecture toutes
+    // les 10 s (onglet visible) et au retour sur l'onglet.
+    const maj = () => { if (document.visibilityState === 'visible') loadConversations(); };
+    const t = setInterval(maj, 10000);
+    document.addEventListener('visibilitychange', maj);
+    return () => { convChannelRef.current?.unsubscribe(); clearInterval(t); document.removeEventListener('visibilitychange', maj); };
   }, [user, loadConversations]);
 
   // ── Nouveau message — recherche d'un contact PetsMatch ────────────────────
@@ -388,6 +393,20 @@ function MessagesPageInner() {
           setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         }
       });
+    // Secours si le temps réel ne remonte pas : nouveaux messages relus toutes les 4 s (onglet visible).
+    const relire = () => {
+      if (document.visibilityState !== 'visible') return;
+      supabase.from('messages').select('*').eq('conversation_id', selectedId).order('created_at').then(({ data }) => {
+        if (!data) return;
+        setMessages(prev => {
+          const nouveaux = (data as Message[]).filter(m => !prev.some(x => x.id === m.id));
+          if (!nouveaux.length && prev.length === data.length) return prev;
+          setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+          return data as Message[];
+        });
+      });
+    };
+    const relecture = setInterval(relire, 4000);
     msgChannelRef.current?.unsubscribe();
     msgChannelRef.current = supabase
       .channel(`web_msgs_${selectedId}`)
@@ -402,7 +421,7 @@ function MessagesPageInner() {
         setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       })
       .subscribe();
-    return () => { msgChannelRef.current?.unsubscribe(); };
+    return () => { msgChannelRef.current?.unsubscribe(); clearInterval(relecture); };
   }, [selectedId]);
 
   // Réactions — charge quand les messages changent
@@ -426,7 +445,10 @@ function MessagesPageInner() {
     const conv = conversations.find(c => c.id === selectedId);
     if (conv && (conv.unread_count?.[user.uid] ?? 0) > 0) {
       const updated = { ...conv.unread_count, [user.uid]: 0 };
-      supabase.from('conversations').update({ unread_count: updated }).eq('id', selectedId).then(() => {});
+      // Bulle et enveloppe à jour tout de suite (sans attendre le temps réel).
+      setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, unread_count: updated } : c));
+      supabase.from('conversations').update({ unread_count: updated }).eq('id', selectedId)
+        .then(() => window.dispatchEvent(new Event('pm-messages-maj')));
     }
   }, [selectedId, conversations, user]);
 
@@ -484,14 +506,22 @@ function MessagesPageInner() {
     setText('');
     setSending(true);
     try {
-      await supabase.from('messages').insert({
+      const { data: envoye, error } = await supabase.from('messages').insert({
         conversation_id: selectedId,
         sender_id: user.uid,
         text: msg,
         msg_type: 'text',
         is_read: false,
         ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
-      });
+      }).select('*').single();
+      if (error || !envoye) {
+        setText(msg);
+        alert(`Message non envoyé${error?.message ? ` : ${error.message}` : ''}. Réessayez.`);
+        return;
+      }
+      // Mon message s'affiche tout de suite (sans attendre le temps réel).
+      setMessages(prev => (prev.some(m => m.id === envoye.id) ? prev : [...prev, envoye as Message]));
+      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
       const conv = conversations.find(c => c.id === selectedId);
       const unread = { ...(conv?.unread_count ?? {}) };
       for (const p of conv?.participants ?? []) {
@@ -503,6 +533,7 @@ function MessagesPageInner() {
         unread_count: unread,
         deleted_for: {},
       }).eq('id', selectedId);
+      loadConversations();
     } finally {
       setSending(false);
       inputRef.current?.focus();
@@ -540,11 +571,14 @@ function MessagesPageInner() {
     if (!reportReason || !selectedId || !user) return;
     setReportSending(true);
     try {
-      await supabase.from('conversation_reports').insert({
+      const { error } = await supabase.from('conversation_reports').insert({
         conversation_id: selectedId, reported_by_uid: user.uid,
         reason: reportReason, details: reportDetails.trim() || null,
       });
+      // Avant : aucun retour (ni confirmation ni erreur) — le signalement semblait ne rien faire.
+      if (error) { alert(`Signalement non envoyé : ${error.message}`); return; }
       setShowReportModal(false); setReportReason(''); setReportDetails('');
+      alert('Conversation signalée. Merci, notre équipe va l’examiner.');
     } finally { setReportSending(false); }
   }
 
@@ -1067,8 +1101,8 @@ function MessagesPageInner() {
 
       {/* ── Modal signalement ────────────────────────────────────────────────── */}
       {showReportModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setShowReportModal(false)}>
-          <div className="bg-white rounded-t-3xl w-full max-w-lg p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/40 px-0 md:px-4" onClick={() => setShowReportModal(false)}>
+          <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-lg p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
             <h2 className="text-base font-bold text-[#1E2025] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>Signaler la conversation</h2>
             <div className="space-y-2 mb-4">

@@ -1861,7 +1861,8 @@ class _ReportSheetState extends State<_ReportSheet> {
     try {
       await _supa.from('conversation_reports').insert({
         'conversation_id': widget.conversationId,
-        'reported_by_uid': widget.reporterUid,
+        // uid du jeton (policy : sub = reported_by_uid).
+        'reported_by_uid': FirebaseAuth.instance.currentUser?.uid ?? widget.reporterUid,
         'reason': _selected,
         'details': _detailsCtrl.text.trim().isNotEmpty ? _detailsCtrl.text.trim() : null,
       });
@@ -1872,8 +1873,14 @@ class _ReportSheetState extends State<_ReportSheet> {
           backgroundColor: Color(0xFF0C5C6C),
         ));
       }
-    } catch (_) {
-      if (mounted) setState(() => _sending = false);
+    } catch (e) {
+      // Avant : échec silencieux, le signalement semblait ne rien faire.
+      if (mounted) {
+        setState(() => _sending = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Signalement non envoyé : $e', style: const TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating));
+      }
     }
   }
 

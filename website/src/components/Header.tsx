@@ -1522,8 +1522,17 @@ export default function Header() {
       .channel(`header_convs_${user.uid}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => fetchUnread())
       .subscribe();
-
-    return () => { channel?.unsubscribe(); };
+    // Le temps réel ne remonte pas toujours (jeton Firebase) : relecture toutes
+    // les 20 s (onglet visible), au retour sur l'onglet et dès qu'une conversation
+    // est lue / un message envoyé depuis la messagerie (« pm-messages-maj »).
+    const maj = () => { if (document.visibilityState === 'visible') fetchUnread(); };
+    const t = setInterval(maj, 20000);
+    document.addEventListener('visibilitychange', maj);
+    window.addEventListener('pm-messages-maj', fetchUnread);
+    return () => {
+      channel?.unsubscribe(); clearInterval(t);
+      document.removeEventListener('visibilitychange', maj); window.removeEventListener('pm-messages-maj', fetchUnread);
+    };
   }, [user, activeProfileId, profiles]);
 
   // ── Notifications ─────────────────────────────────────────────────────────
