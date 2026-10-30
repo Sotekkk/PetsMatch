@@ -1,6 +1,7 @@
 'use client';
 
 import { AideEtapes } from '@/components/animaux/EtapesTraitement';
+import { useEspaceClinique } from '@/lib/espace-clinique';
 import { PlanAlimentationDepuisLigne } from '@/components/alimentation/PlanAlimentationLecture';
 import { poidsKg } from '@/lib/poids';
 import { progression, libelleDuree, echeanceDans, DUREES_EXERCICE, DUREE_DEFAUT_JOURS } from '@/lib/exercices-progression';
@@ -912,6 +913,10 @@ function ActesCr({ vaccins, setVaccins, traitements, setTraitements, produits, s
 
 function PatientDetailPageInner() {
   const { user, userData } = useAuth();
+  // Espace employé : documents au nom de la clinique (proUid = titulaire),
+  // rédigés / prescrits par l'employé (son profil dans la clinique).
+  const esp = useEspaceClinique();
+  const proUid = esp.uid;
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
@@ -1578,7 +1583,7 @@ function PatientDetailPageInner() {
           ownerProfileId = (op?.id as string | undefined) ?? null;
         }
         const { error: ordErr } = await supabase.from('ordonnances').insert({
-          animal_id: animalId, pro_uid: user.uid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: pid } : {}),
+          animal_id: animalId, pro_uid: proUid, ...(pid ? { pro_profile_id: pid, praticien_profile_id: (esp.espace ? esp.monProfil : null) ?? pid } : {}),
           owner_uid: ownerUid, ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
           praticien_uid: user.uid, doc_url: docUrl, date_emit: ymd(auj),
           ...(crRdvId ? { rdv_id: crRdvId } : {}),
@@ -1675,7 +1680,7 @@ function PatientDetailPageInner() {
       if (!item) continue;
       const apres = Math.max(0, Number(item.quantite ?? 0) - p.quantite);
       await supabase.from('inventaire_mouvements').insert({
-        item_id: p.item_id, uid_eleveur: user.uid, uid_auteur: user.uid, eleveur_profile_id: activeProfileId,
+        item_id: p.item_id, uid_eleveur: proUid, uid_auteur: user.uid, eleveur_profile_id: activeProfileId,
         type: 'consommation', quantite: p.quantite, note: 'Vente — consultation',
         ...(item.stupefiant ? { stock_apres: apres } : {}),
       });
@@ -2097,7 +2102,7 @@ function PatientDetailPageInner() {
         const pid = activeProfileId || null;
         await supabase.from('ordonnances').insert({
           animal_id: animalId,
-          pro_uid: user.uid,
+          pro_uid: proUid,
           ...(pid ? { pro_profile_id: pid } : {}),
           owner_uid: ownerUid,
           ...(ownerProfileId ? { owner_profile_id: ownerProfileId } : {}),
@@ -2162,10 +2167,11 @@ function PatientDetailPageInner() {
         // Profil du vétérinaire (multi-profil) ; statut contrôlé en base
         // (brouillon si l'auteur n'a pas le droit de valider — équipe clinique).
         const ligneCr = {
-          animal_id: animalId, pro_uid: user.uid, owner_uid: ownerUid, contenu: contenu || null,
+          animal_id: animalId, pro_uid: proUid, owner_uid: ownerUid, contenu: contenu || null,
           ...(crRdvId ? { rdv_id: crRdvId } : {}),
-          ...(activeProfileId ? { pro_profile_id: activeProfileId, redige_par_profile_id: activeProfileId,
-            valide_par_profile_id: enBrouillon ? null : activeProfileId } : {}),
+          ...(activeProfileId ? { pro_profile_id: activeProfileId,
+            redige_par_profile_id: (esp.espace ? esp.monProfil : null) ?? activeProfileId,
+            valide_par_profile_id: enBrouillon ? null : (esp.espace ? esp.monProfil : null) ?? activeProfileId } : {}),
           statut: enBrouillon ? 'brouillon' : 'valide', redige_par_uid: user.uid,
           ...(formMotif.trim() ? { motif: formMotif.trim() } : {}),
           ...(poidsCr != null && !isNaN(poidsCr) ? { poids: poidsCr } : {}),

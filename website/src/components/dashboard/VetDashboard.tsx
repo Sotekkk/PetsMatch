@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useEspaceClinique } from '@/lib/espace-clinique';
 import { retardsEnCascade } from '@/lib/retards-rdv';
 import TuilesSanteVet from '@/components/dashboard/TuilesSanteVet';
 import { Kpi, PhotoAnimal, Donut, BarresSemaine, EnteteAccueil, Icone } from '@/components/dashboard/kit';
@@ -76,8 +77,10 @@ function ongletDe(r: Rdv) {
 const lienRdv = (r: Rdv) => `/mes-rdv?onglet=${ongletDe(r)}&rdv=${r.id}`;
 
 export default function VetDashboard({ nom, avatar }: { nom: string; avatar: string | null }) {
-  const { user, userData } = useAuth();
-  const uid = user?.uid ?? '';
+  const { userData } = useAuth();
+  // Espace employé : compte de la clinique ; vétérinaire → ses RDV / patients.
+  const esp = useEspaceClinique();
+  const uid = esp.uid;
   const actif = useActiveProfile();
   const [pidPrincipal, setPidPrincipal] = useState('');
   const pid = actif || pidPrincipal;
@@ -111,7 +114,7 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
   }, []);
 
   useEffect(() => {
-    if (!pid || !uid) return;
+    if (!pid || !uid || !esp.charge) return;
     let annule = false;
     (async () => {
       const n = new Date();
@@ -133,16 +136,22 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
           .in('statut', ['confirme', 'termine']).not('animal_id', 'is', null),
       ]);
       if (annule) return;
-      const liste = (rdvRes.data ?? []) as Rdv[];
-      const brouillons = (crRes.data ?? []) as Cr[];
+      // Vétérinaire employé : ses RDV (et les « peu importe » en demande).
+      const liste = ((rdvRes.data ?? []) as Rdv[]).filter(r => !esp.praticien
+        || (!!esp.monProfil && r.instructeur_profile_id === esp.monProfil)
+        || (r.praticien_indifferent === true && r.statut === 'demande'));
+      // CR à valider : seulement avec ce droit (espace employé).
+      const brouillons = esp.peut('vet_cr_valider') ? (crRes.data ?? []) as Cr[] : [];
       setRdvs(liste);
       setCrs(brouillons);
-      setPraticiens(((pratRes.data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
+      setPraticiens(esp.praticien ? [] : ((pratRes.data ?? []) as { praticien_profile_id: string | null; nom: string | null }[])
         .map(p => ({ id: p.praticien_profile_id ?? '', nom: p.nom?.trim() || 'Vétérinaire' })));
-      setPatientsCount(new Set([
-        ...((grantRes.data ?? []) as { animal_id: string }[]).map(g => String(g.animal_id)),
-        ...((rdvAnimRes.data ?? []) as { animal_id: string }[]).map(r => String(r.animal_id)),
-      ].filter(Boolean)).size);
+      setPatientsCount(esp.praticien
+        ? new Set(liste.map(r => r.animal_id).filter(Boolean).map(String)).size
+        : new Set([
+          ...((grantRes.data ?? []) as { animal_id: string }[]).map(g => String(g.animal_id)),
+          ...((rdvAnimRes.data ?? []) as { animal_id: string }[]).map(r => String(r.animal_id)),
+        ].filter(Boolean)).size);
 
       // Noms utiles : planning du jour + actions (pas toute l'année).
       const utiles = liste.filter(r => memeJour(debutDe(r), n) || ['demande', 'contre_proposition'].includes(r.statut)
@@ -165,7 +174,8 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
       setLoading(false);
     })();
     return () => { annule = true; };
-  }, [pid, uid, actualisation]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pid, uid, actualisation, esp.charge, esp.praticien, esp.monProfil]);
 
   const nomClient = (r: Rdv) => (r.client_profile_id && clients[r.client_profile_id]) || r.client_nom_manuel || 'Client';
   const nomAnimal = (r: { animal_id: string | null; animal_nom_manuel?: string | null }) =>
@@ -193,7 +203,9 @@ export default function VetDashboard({ nom, avatar }: { nom: string; avatar: str
         <EnteteAccueil
           nom={nom}
           avatar={avatar}
-          sousTitre={[personne, 'Vétérinaire · Gérant'].filter(Boolean).join(' — ')}
+          sousTitre={esp.espace
+            ? (esp.praticien ? 'Espace employé — vos rendez-vous et vos patients' : 'Espace employé — agenda et patients de la clinique')
+            : [personne, 'Vétérinaire · Gérant'].filter(Boolean).join(' — ')}
           statut={<span className="inline-flex items-center gap-1.5 text-sm text-gray-600"><Icone nom="calendrier" taille={15} className="text-[#0C5C6C]" /><span className="first-letter:uppercase">{dateJour}</span></span>}
         />
       </div>

@@ -40,6 +40,9 @@ interface UserProfile {
   name_elevage: string | null;
   cat_pro: string | null;
   _is_cogerance?: boolean;
+  /** Clinique où l'on est employé (espace employé). */
+  _is_employe_clinique?: boolean;
+  _role_pro?: string | null;
 }
 
 // ── Navigation selon profil ───────────────────────────────────────────────────
@@ -1377,7 +1380,23 @@ export default function Header() {
   const posAncienne = withAchats.findIndex(sec => sec.section === 'Annonces');
   const posAnnuaire = sansAnnonces.findIndex(sec => sec.section === 'Annuaire & Communauté');
   const posAnnonces = posAncienne >= 0 ? posAncienne : posAnnuaire >= 0 ? posAnnuaire : sansAnnonces.length;
-  const menuSections = user
+  // Espace employé d'une clinique : ses RDV, ses patients, les comptes rendus
+  // à valider — rien de la gestion de la clinique (équipe, salles, tarifs,
+  // factures, abonnement, profil). Miroir appli : « Mon activité à la clinique ».
+  const espaceClinique = (activeProfile as { _is_employe_clinique?: boolean } | undefined)?._is_employe_clinique === true;
+  const menuSections = user && espaceClinique
+    ? [
+        { section: 'Mon activité à la clinique', icon: '🩺', items: [
+          { href: '/mes-rdv',                   label: 'Gérer mes RDV',            icon: '🗓️' },
+          { href: '/mes-patients',              label: 'Mes patients',             icon: '🐾' },
+          { href: '/veterinaire/comptes-rendus', label: 'Comptes rendus à valider', icon: '📝' },
+        ] },
+        { section: 'Annuaire & Communauté', icon: '🔎', items: [
+          { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+          { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+        ] },
+      ]
+    : user
     ? [...sansAnnonces.slice(0, posAnnonces), sectionAnnonces, ...sansAnnonces.slice(posAnnonces)]
     : withAchats;
   // Entrée active = la plus précise (ex. /annonces/objets plutôt que /annonces).
@@ -1936,6 +1955,11 @@ export default function Header() {
                   {p._is_cogerance === true && (
                     <span className="text-[10px] text-[#0C5C6C] border border-[#0C5C6C]/30 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">
                       Cogérance
+                    </span>
+                  )}
+                  {p._is_employe_clinique === true && (
+                    <span className="text-[10px] text-[#0C5C6C] border border-[#0C5C6C]/30 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">
+                      {p._role_pro === 'asv' ? 'Employé · ASV' : 'Employé · vétérinaire'}
                     </span>
                   )}
                 </div>

@@ -4,6 +4,7 @@
 // (miroir appli : cr_a_valider_page.dart). Scopé au profil clinique actif ;
 // un vétérinaire employé l'ouvre au nom de la clinique (?clinique=<profil>).
 import FormuleVetRequise from '@/components/pro/FormuleVetRequise';
+import { useEspaceClinique } from '@/lib/espace-clinique';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -19,6 +20,7 @@ function CrAValiderContenu() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { id: activeProfileId, loaded } = useActiveProfileState();
+  const esp = useEspaceClinique();
   const [cliniqueParam, setCliniqueParam] = useState<string | null>(null);
   const [crs, setCrs] = useState<Cr[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -54,7 +56,8 @@ function CrAValiderContenu() {
     // particulier est renseigné côté base via valide_par_uid.
     const { error } = await supabase.from('comptes_rendus').update({
       statut: 'valide',
-      ...(!cliniqueParam && activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
+      ...(esp.espace ? (esp.monProfil ? { valide_par_profile_id: esp.monProfil } : {})
+        : !cliniqueParam && activeProfileId ? { valide_par_profile_id: activeProfileId } : {}),
     }).eq('id', cr.id);
     if (error) { alert(error.message); return; }
     setCrs(prev => prev.filter(x => x.id !== cr.id));

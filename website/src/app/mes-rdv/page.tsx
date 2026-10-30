@@ -2,6 +2,7 @@
 import DossierSeanceModal, { type RdvDossier } from '@/components/photographe/DossierSeanceModal';
 import { animauxDetailRdv, dureeRdvLabel, ligneAnimalRdv, type AnimalRdv } from '@/lib/rdv-animaux';
 import ComptesRendusAnimauxRdv from '@/components/rdv/ComptesRendusAnimauxRdv';
+import { useEspaceClinique } from '@/lib/espace-clinique';
 import { preparerFactureOsteo } from '@/lib/seance-osteo';
 import MotifAnnulationChamp from '@/components/rdv/MotifAnnulationChamp';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
@@ -1695,6 +1696,9 @@ type TabKey = 'demandes' | 'a_venir' | 'historique' | 'creneaux' | 'planning';
 
 export default function MesRdvPage() {
   const { user, userData, loading } = useAuth();
+  // Espace employé : compte de la clinique (proUid) ; vétérinaire → ses RDV.
+  const esp = useEspaceClinique();
+  const proUid = esp.uid;
   const router      = useRouter();
   const activeProfileId = useActiveProfile();
 
@@ -1797,17 +1801,20 @@ export default function MesRdvPage() {
 
   /** [silencieux] : actualisation automatique, sans indicateur de chargement. */
   const fetchRdvs = useCallback(async (silencieux = false) => {
-    if (!user) return;
+    if (!user || !esp.charge) return;
     if (!silencieux) setFetching(true);
     try {
       const { data } = await supabase
         .from('rdv')
         .select('*')
-        .eq('pro_uid', user.uid)
+        .eq('pro_uid', proUid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });
 
-      const list = (data ?? []) as Rdv[];
+      // Vétérinaire employé : ses RDV (et les « peu importe » en demande).
+      const list = ((data ?? []) as Rdv[]).filter(r => !esp.praticien
+        || (!!esp.monProfil && r.instructeur_profile_id === esp.monProfil)
+        || (r.praticien_indifferent === true && r.statut === 'demande'));
       const clientUids = [...new Set(list.map(r => r.client_uid).filter(Boolean))];
       const clientProfileIds = [...new Set(list.map(r => r.client_profile_id).filter(Boolean) as string[])];
       const animalIds  = [...new Set(list.map(r => r.animal_id).filter(Boolean) as string[])];
@@ -1840,7 +1847,7 @@ export default function MesRdvPage() {
       const visitCounts: Record<string, number> = {};
       if (clientUids.length) {
         let histQ = supabase.from('rdv')
-          .select('client_uid').eq('pro_uid', user.uid)
+          .select('client_uid').eq('pro_uid', proUid)
           .in('client_uid', clientUids).in('statut', ['confirme', 'termine']);
         if (activeProfileId) histQ = histQ.eq('pro_profile_id', activeProfileId);
         const { data: hist } = await histQ;
@@ -1860,7 +1867,8 @@ export default function MesRdvPage() {
         visitCount: visitCounts[r.client_uid] ?? 0,
       })));
     } catch { /* ignore */ } finally { setFetching(false); }
-  }, [user, activeProfileId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeProfileId, proUid, esp.charge, esp.praticien, esp.monProfil]);
 
   useEffect(() => { fetchRdvs(); }, [fetchRdvs]);
 
@@ -1883,13 +1891,13 @@ export default function MesRdvPage() {
     const end = new Date(start); end.setDate(end.getDate() + 1);
     try {
       const { data } = await supabase.from('agenda_events').select('id, titre, date_debut, type')
-        .eq('uid', user.uid)
+        .eq('uid', proUid)
         .eq('pro_profile_id', activeProfileId)
         .gte('date_debut', start.toISOString()).lt('date_debut', end.toISOString())
         .order('date_debut');
       setAujourdhui((data ?? []) as { id: string; titre: string; date_debut: string; type: string }[]);
     } catch { /* ignore */ }
-  }, [user, activeProfileId]);
+  }, [user, activeProfileId, proUid]);
 
   useEffect(() => { fetchAujourdhui(); }, [fetchAujourdhui]);
 
@@ -1902,7 +1910,7 @@ export default function MesRdvPage() {
       // Photographe : l'avis est demandé à la livraison des photos, pas en fin de séance.
       if (user && rdv.client_uid && catPro !== 'photographe') {
         let avisQ = supabase.from('avis_pro').select('id')
-          .eq('pro_uid', user.uid).eq('client_uid', rdv.client_uid);
+          .eq('pro_uid', proUid).eq('client_uid', rdv.client_uid);
         if (rdv.pro_profile_id) avisQ = avisQ.eq('pro_profile_id', rdv.pro_profile_id);
         const [{ data: existingAvis }, { data: dupNotif }] = await Promise.all([
           avisQ.limit(1).maybeSingle(),
@@ -1919,10 +1927,10 @@ export default function MesRdvPage() {
             body: `Comment s'est passée votre séance avec ${proNom} ? Laissez un avis.`,
             ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
             data: {
-              rdv_id: rdv.id, pro_uid: user.uid,
+              rdv_id: rdv.id, pro_uid: proUid,
               ...(rdv.pro_profile_id ? { pro_profile_id: rdv.pro_profile_id } : {}),
               pro_nom: proNom,
-              url: `/services/pro/${user.uid}?avis=1${rdv.pro_profile_id ? `&profileId=${rdv.pro_profile_id}` : ''}`,
+              url: `/services/pro/${proUid}?avis=1${rdv.pro_profile_id ? `&profileId=${rdv.pro_profile_id}` : ''}`,
             },
             read: false,
           });
@@ -1936,7 +1944,7 @@ export default function MesRdvPage() {
     await supabase.from('agenda_events').delete().eq('rdv_id', rdvId);
     if (user) {
       await supabase.from('agenda_events').delete()
-        .eq('uid', user.uid).eq('couleur', `rdv:${rdvId}`);
+        .eq('uid', proUid).eq('couleur', `rdv:${rdvId}`);
     }
     await supabase.from('rdv').delete().eq('id', rdvId);
     setRdvs(prev => prev.filter(r => r.id !== rdvId));
@@ -1977,7 +1985,8 @@ export default function MesRdvPage() {
     { key: 'demandes',   label: 'Demandes',   badge: demandes.length   },
     { key: 'a_venir',    label: 'À venir',    badge: aVenir.length     },
     { key: 'historique', label: 'Historique', badge: 0                 },
-    { key: 'creneaux',   label: 'Créneaux',   badge: 0                 },
+    // Espace employé : les créneaux sont ceux de la clinique (gérés par le titulaire).
+    ...(esp.espace ? [] : [{ key: 'creneaux' as TabKey, label: 'Créneaux', badge: 0 }]),
     // Clinique : journée en colonnes par praticien / par salle.
     ...(catPro === 'veterinaire' ? [{ key: 'planning' as TabKey, label: 'Planning', badge: 0 }] : []),
   ];
@@ -2094,7 +2103,7 @@ export default function MesRdvPage() {
         {/* Planning de la clinique */}
         {activeTab === 'planning' && activeProfileId && (
           <FormuleVetRequise requise="clinique" fonction="Planning de la clinique">
-          <PlanningClinique profileId={activeProfileId} version={rdvs} uid={user?.uid}
+          <PlanningClinique profileId={activeProfileId} version={rdvs} uid={proUid}
             onCreer={(date, praticien, salle) => setModalNouveau({ date, praticien, salle })}
             onOuvrirRdv={id => {
               const r = rdvs.find(x => x.id === id);
@@ -2190,7 +2199,7 @@ export default function MesRdvPage() {
         <ModalRetard profileId={activeProfileId} onClose={() => setModalRetard(false)} />
       )}
       {modalNouveau && user && activeProfileId && (
-        <NouveauRdvModal proUid={user.uid} profileId={activeProfileId} proName={proName} catPro={catPro}
+        <NouveauRdvModal proUid={proUid} profileId={activeProfileId} proName={proName} catPro={catPro}
           initial={modalNouveau}
           onClose={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); }}
           onDone={() => { setModalNouveau(null); if (retourFiche) router.push(`/mes-patients/${retourFiche}`); else fetchRdvs(); }} />

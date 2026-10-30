@@ -95,6 +95,32 @@ async function fetchCogerances(uid: string): Promise<Profile[]> {
   }
 }
 
+// Cliniques vétérinaires où l'on est employé (employes actif) : leur profil
+// s'ouvre comme un profil à soi (espace employé, lib/espace-clinique.ts),
+// scopé à ses RDV / patients et limité par ses autorisations. Marqué
+// `_is_employe_clinique` (+ `_employeur_uid`, `_role_pro`) — champs
+// synthétiques. Prénom, nom, téléphone vidés : ceux de la clinique, pas les
+// siens. Miroir appli : ProfileService._loadEmploisCliniques.
+async function fetchEmploisCliniques(uid: string): Promise<Profile[]> {
+  try {
+    const { data: liens } = await supabase.from('employes')
+      .select('uid_eleveur, eleveur_profile_id, role_pro')
+      .eq('uid_employe', uid).eq('actif', true).not('eleveur_profile_id', 'is', null);
+    const parId = new Map(((liens ?? []) as { uid_eleveur: string; eleveur_profile_id: string; role_pro: string | null }[])
+      .filter(l => l.uid_eleveur !== uid).map(l => [String(l.eleveur_profile_id), l]));
+    if (parId.size === 0) return [];
+    const { data: profs } = await supabase.from('user_profiles_complet').select('*').in('id', [...parId.keys()]);
+    return ((profs ?? []) as Profile[]).filter(p => p.profile_type === 'veterinaire').map(p => ({
+      ...p, firstname: '', lastname: '', phone: '', is_main: false,
+      _is_employe_clinique: true,
+      _employeur_uid: parId.get(String(p.id))?.uid_eleveur,
+      _role_pro: parId.get(String(p.id))?.role_pro ?? null,
+    }) as Profile);
+  } catch {
+    return [];
+  }
+}
+
 // Doit rester synchro avec _profileTypes (app: add_profile_page.dart),
 // seule source de vérité des profile_type réellement enregistrés en base.
 const PRO_TYPES = new Set([
@@ -261,7 +287,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cachedUserRowRef.current = userRow;
       const cguAcceptedAt = (userRow?.cgu_accepted_at as string | undefined) ?? null;
 
-      const profiles = [...owned, ...(await fetchCogerances(uid))];
+      const cogeres = await fetchCogerances(uid);
+      const dejaLa = new Set([...owned, ...cogeres].map(p => p.id));
+      const cliniques = (await fetchEmploisCliniques(uid)).filter(p => !dejaLa.has(p.id));
+      const profiles = [...owned, ...cogeres, ...cliniques];
       setAvailableProfiles(profiles);
 
       if (profiles.length === 0) { setUserData(null); return; }

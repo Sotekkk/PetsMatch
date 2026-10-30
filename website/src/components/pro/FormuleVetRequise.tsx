@@ -6,12 +6,16 @@
 // (pro_agenda.dart). La base reste le vrai contrôle (ex. ajout d'employés).
 
 import Link from 'next/link';
+import { useEspaceClinique } from '@/lib/espace-clinique';
 import { useProfessionPlanCode, vetFormuleOk, VET_FORMULE_LABEL } from '@/lib/use-plan';
 
 export default function FormuleVetRequise({ requise, fonction, children }: {
   requise: 'avance' | 'clinique'; fonction: string; children: React.ReactNode;
 }) {
   const { planCode, loading } = useProfessionPlanCode('veterinaire');
+  // Espace employé : la clinique a la formule de ses fonctions d'équipe.
+  const esp = useEspaceClinique();
+  if (esp.espace) return <>{children}</>;
   if (loading) return (
     <div className="flex justify-center items-center min-h-[40vh]">
       <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />

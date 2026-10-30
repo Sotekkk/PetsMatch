@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useEspaceClinique } from '@/lib/espace-clinique';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -72,6 +73,11 @@ interface ChipResult {
 
 export default function MesPatientsPage() {
   const { user, userData } = useAuth();
+  // Espace employé : vétérinaire → ses patients (RDV à son nom, comptes rendus
+  // rédigés / validés par lui) ; une recherche porte sur tout le fichier.
+  const esp = useEspaceClinique();
+  const [mesAnimaux, setMesAnimaux] = useState<Set<string> | null>(null);
+  const [toutLeFichier, setToutLeFichier] = useState(false);
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const [grants, setGrants] = useState<Grant[]>([]);
@@ -236,10 +242,18 @@ export default function MesPatientsPage() {
       const { data: rdvRows } = await supabase
         .from('rdv')
         .select('animal_id')
-        .eq('pro_uid', user!.uid)
+        .eq('pro_uid', esp.uid)
         .eq('pro_profile_id', activeProfileId)
         .in('statut', ['confirme', 'termine'])
         .not('animal_id', 'is', null);
+      if (esp.praticien && user) {
+        const [{ data: r1 }, { data: c1 }] = await Promise.all([
+          supabase.from('rdv').select('animal_id').eq('pro_profile_id', activeProfileId).eq('instructeur_profile_id', esp.monProfil ?? '-'),
+          supabase.from('comptes_rendus').select('animal_id').eq('pro_profile_id', activeProfileId)
+            .or(`redige_par_uid.eq.${user.uid},valide_par_uid.eq.${user.uid}`),
+        ]);
+        setMesAnimaux(new Set([...(r1 ?? []), ...(c1 ?? [])].map(r => String(r.animal_id ?? '')).filter(Boolean)));
+      } else setMesAnimaux(null);
       const extraIds = [...new Set((rdvRows ?? []).map(r => r.animal_id).filter((id) => id && !seenIds.has(id)))];
       const extraGrants: Grant[] = extraIds.map(id => ({
         id: `rdv-${id}`, animal_id: id, statut: 'active', granted_at: '', animal: null,
@@ -295,8 +309,9 @@ export default function MesPatientsPage() {
       setGrants(merged as unknown as Grant[]);
       setLoading(false);
     }
-    load();
-  }, [user, activeProfileId, rechargement]);
+    if (esp.charge) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeProfileId, rechargement, esp.charge, esp.praticien, esp.monProfil]);
 
   // Auto-retrait : le propriétaire peut aussi révoquer depuis la fiche animal
   // (mes-animaux/[id]/page.tsx) — même effet, mêmes colonnes. Ne s'applique
@@ -318,7 +333,7 @@ export default function MesPatientsPage() {
 
   const filtered = grants.filter(g => {
     if (!g.animal) return false;
-    if (!search) return true;
+    if (!search) return !mesAnimaux || toutLeFichier || mesAnimaux.has(String(g.animal_id));
     return g.animal.nom.toLowerCase().includes(search.toLowerCase()) ||
       g.animal.espece.toLowerCase().includes(search.toLowerCase()) ||
       g.animal.race.toLowerCase().includes(search.toLowerCase());
@@ -347,6 +362,18 @@ export default function MesPatientsPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Vétérinaire employé : ses patients ou tout le fichier de la clinique. */}
+        {mesAnimaux && (
+          <div className="mb-3 flex gap-2">
+            {([[false, 'Mes patients'], [true, 'Tout le fichier de la clinique']] as const).map(([tout, label]) => (
+              <button key={label} type="button" onClick={() => setToutLeFichier(tout)}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                style={toutLeFichier === tout ? { background: '#0C5C6C', borderColor: '#0C5C6C', color: 'white' } : { borderColor: '#D1D5DB', color: '#374151', background: 'white' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {/* Recherche */}
         <div className="mb-4 flex gap-2">
           <input
