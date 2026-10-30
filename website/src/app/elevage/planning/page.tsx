@@ -1820,7 +1820,9 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
         }
       } else if (cibleType === 'gestantes') {
         const { data: gestations } = await supabase.from('gestations')
-          .select('animal_id, date_prevue, animaux(nom, statut)').eq('uid_eleveur', uid).is('date_mise_bas', null);
+          // gestations n'a pas de uid_eleveur : on filtre par l'animal ; en cours = confirmée, mise bas non saisie.
+          .select('animal_id, date_prevue, animaux!inner(nom, statut, uid_eleveur)').eq('animaux.uid_eleveur', uid)
+          .eq('gestation_confirmee', true).is('date_naissance', null);
         for (const g of (gestations ?? []) as unknown as { animal_id: string; date_prevue: string | null; animaux: { nom: string; statut?: string | null }[] | { nom: string; statut?: string | null } | null }[]) {
           const anim = Array.isArray(g.animaux) ? g.animaux[0] : g.animaux;
           if (anim && estHorsPriseEnCharge(anim)) continue;

@@ -359,11 +359,13 @@ class PlanningService {
       }
 
       case 'gestantes': {
-        // Charger toutes les gestations en cours (sans date_mise_bas)
+        // Gestations en cours : confirmées, mise bas (date_naissance) non saisie.
+        // gestations n'a pas de uid_eleveur : on filtre par l'animal.
         var q = _supa.from('gestations')
-            .select('id, animal_id, date_mise_bas, date_prevue, animaux(nom, espece, statut)')
-            .eq('uid_eleveur', uid)
-            .filter('date_mise_bas', 'is', null);  // gestations en cours
+            .select('id, animal_id, date_naissance, date_prevue, animaux!inner(nom, espece, statut, uid_eleveur)')
+            .eq('animaux.uid_eleveur', uid)
+            .eq('gestation_confirmee', true)
+            .filter('date_naissance', 'is', null);
         final rows = await q.order('date_prevue');
         return (rows as List).where((g) =>
             !estHorsPriseEnCharge(g['animaux'] as Map<String, dynamic>? ?? {})).map((g) {
@@ -405,17 +407,17 @@ class PlanningService {
         // Femelles dont la mise bas date de moins de 8 semaines
         final cutoff = DateTime.now().subtract(const Duration(days: 56)).toIso8601String().split('T').first;
         final gestRows = await _supa.from('gestations')
-            .select('animal_id, date_mise_bas, animaux(nom, espece, statut)')
-            .eq('uid_eleveur', uid)
-            .not('date_mise_bas', 'is', null)
-            .gte('date_mise_bas', cutoff);
+            .select('animal_id, date_naissance, animaux!inner(nom, espece, statut, uid_eleveur)')
+            .eq('animaux.uid_eleveur', uid)
+            .not('date_naissance', 'is', null)
+            .gte('date_naissance', cutoff);
         return (gestRows as List).where((g) {
           final anim = g['animaux'] as Map<String, dynamic>? ?? {};
           if (estHorsPriseEnCharge(anim)) return false;
           if (espece == null || espece.isEmpty) return true;
           return anim['espece'] == espece;
         }).map((g) {
-          final dateMiseBas = DateTime.tryParse(g['date_mise_bas'] as String? ?? '') ?? dateReference;
+          final dateMiseBas = DateTime.tryParse(g['date_naissance'] as String? ?? '') ?? dateReference;
           final anim = g['animaux'] as Map<String, dynamic>? ?? {};
           return {
             'animal_id': g['animal_id'] as String?,
