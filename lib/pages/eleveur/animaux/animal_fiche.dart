@@ -208,8 +208,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _healthAccessGrantId;
   bool get _canWriteHealth => _isHealthPro || _healthAccessStatut == 'active_write';
   /// Fiche créée par un autre pro : identité et documents de ce pro seulement,
-  /// le carnet reste privé tant que le propriétaire ne l'a pas partagé.
-  bool get _carnetPrive => _healthAccessStatut == 'identite';
+  /// le carnet reste privé tant que le propriétaire ne l'a pas partagé…
+  bool get _carnetPrive => _healthAccessStatut == 'identite' && !_carnetCommun;
+  /// … sauf le carnet commun (vaccins, vermifuges, antiparasitaires, poids,
+  /// allergies, traitements) : lu et écrit par le vétérinaire et l'ostéo / kiné
+  /// (pm_carnet_commun, migration_carnet_commun_pros.sql — miroir du site).
+  bool get _carnetCommun => _healthAccessStatut == 'identite'
+      && (User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante');
   // Vet access (visible au propriétaire)
   List<Map<String, dynamic>> _vetAcces = [];
   // Owner uid (utilisé dans le mode vétérinaire)
@@ -2554,7 +2559,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   Widget _carnetVet() => _carnetPrive ? const _CarnetPriveTab() : _CarnetSanteTab(
         animalId: widget.animalId, vetMode: true, espece: _espece,
-        canWrite: _canWriteHealth,
+        canWrite: _canWriteHealth, carnetCommun: _carnetCommun,
         writeRequested: _healthAccessStatut == 'write_requested',
         onRequestWrite: (!_canWriteHealth && _healthAccessGrantId != null && _healthAccessStatut != 'write_requested')
             ? _requestHealthWriteAccess : null,
@@ -5793,8 +5798,11 @@ class _CarnetSanteTab extends StatelessWidget {
   final bool canWrite;
   final bool writeRequested;
   final VoidCallback? onRequestWrite;
+  /// Fiche créée par un autre pro : carnet commun seulement (pas les
+  /// chirurgies ni les radios, documents propres à chaque pro).
+  final bool carnetCommun;
   const _CarnetSanteTab({this.animalId, this.vetMode = false, required this.espece,
-      this.canWrite = true, this.writeRequested = false, this.onRequestWrite});
+      this.canWrite = true, this.writeRequested = false, this.onRequestWrite, this.carnetCommun = false});
 
   static const _cats = [
     // Couleurs fonctionnelles (rubrique + « Ajouter » + rappels agenda) :
@@ -5832,7 +5840,8 @@ class _CarnetSanteTab extends StatelessWidget {
     // Visites : doublon des consultations (comptes rendus) pour le vétérinaire.
     // Visites vétérinaires : plus dans le carnet — les consultations (comptes
     // rendus) sont dans l'onglet Consultations.
-    final cats = [for (final c in _cats) if (c.key != 'visites' && (vetMode || c.key != 'radios')) c];
+    final cats = [for (final c in _cats) if (c.key != 'visites' && (vetMode || c.key != 'radios')
+        && !(carnetCommun && (c.key == 'chirurgies' || c.key == 'radios'))) c];
     Widget ligne(int i) {
         final cat = cats[i];
         return _SanteTile(
@@ -5851,6 +5860,17 @@ class _CarnetSanteTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
+        if (carnetCommun)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFF4F7F8), borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade300)),
+            child: Text('Fiche créée par un autre professionnel : carnet commun (vaccins, vermifuges, antiparasitaires, '
+                'poids, allergies, traitements) partagé entre les professionnels de santé. Les comptes rendus, '
+                'ordonnances, radios et chirurgies de chacun restent privés.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade700, height: 1.35)),
+          ),
         panneau([
           for (var i = 0; i < cats.length; i++) ligne(i),
         ]),

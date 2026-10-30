@@ -1317,6 +1317,10 @@ function PatientDetailPageInner() {
   // Fiche créée par un autre pro : identité + ses propres documents ; le
   // carnet reste privé tant que le propriétaire ne l'a pas partagé.
   const identiteSeule = grant?.statut === 'identite';
+  // … sauf le carnet commun (vaccins, vermifuges, antiparasitaires, poids,
+  // allergies, traitements) : lu et écrit par le vétérinaire et l'ostéo / kiné
+  // (pm_carnet_commun, migration_carnet_commun_pros.sql).
+  const carnetCommun = identiteSeule && (catPro === 'veterinaire' || catPro === 'sante');
   // Les rapports de séance sont le contenu propre de l'éducateur (ses notes de
   // séance), pas une modification de la fiche du propriétaire — n'importe quel
   // accès accordé (lecture ou écriture) suffit pour les gérer, comme côté app.
@@ -2256,7 +2260,15 @@ function PatientDetailPageInner() {
         const kgSaisi = poidsKg(formPoids);
         if (kgSaisi != null) updates.poids = kgSaisi;
         if (formTaille.trim()) updates.taille = parseFloat(formTaille);
-        if (Object.keys(updates).length > 0) {
+        if (carnetCommun) {
+          // Fiche d'un autre pro : la fiche n'est pas modifiable, le poids va dans
+          // la courbe (carnet commun) et le trigger le reporte sur la fiche.
+          if (kgSaisi != null) {
+            const { error: ep } = await supabase.from('poids').insert({ id: `${Date.now()}`, animal_id: animalId, valeur: kgSaisi, date: new Date().toISOString(), notes: 'Consultation' });
+            if (ep) alert(`Poids non enregistré : ${ep.message}`);
+            else setAnimal(a => a ? { ...a, poids: kgSaisi } : a);
+          }
+        } else if (Object.keys(updates).length > 0) {
           await supabase.from('animaux').update(updates).eq('id', animalId);
           setAnimal(a => a ? { ...a, ...updates } : a);
         }
@@ -2936,20 +2948,26 @@ function PatientDetailPageInner() {
         )}
 
         {/* ── Santé ── */}
-        {tab === 'Santé' && identiteSeule && (
+        {tab === 'Santé' && identiteSeule && !carnetCommun && (
           <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
             <p className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Carnet de santé privé</p>
             <p className="text-sm text-gray-600 mt-1">La fiche de cet animal a été créée par un autre professionnel. Vous voyez son identité et vos propres documents ; son carnet et les documents de l’autre professionnel restent privés tant que le propriétaire ne les a pas partagés.</p>
           </div>
         )}
-        {tab === 'Santé' && !identiteSeule && (() => {
-          // Vétérinaire avec l'accès en écriture : « + Ajouter » sur chaque rubrique du carnet.
-          const ajout = (t: AddType) => isVet && hasWriteAccess ? (
+        {tab === 'Santé' && (!identiteSeule || carnetCommun) && (() => {
+          // Vétérinaire avec l'accès en écriture : « + Ajouter » sur chaque rubrique du carnet
+          // (carnet commun : pas les chirurgies ni les radios, documents propres à chaque pro).
+          const ajout = (t: AddType) => isVet && (hasWriteAccess || (carnetCommun && t !== 'chirurgie' && t !== 'radio')) ? (
             <button type="button" onClick={() => setAddingType(t)}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#0C5C6C]/5">+ Ajouter</button>
           ) : undefined;
           return (
           <>
+            {carnetCommun && (
+              <p className="text-xs text-gray-600 bg-[#F4F7F8] border border-gray-200 rounded-lg px-3 py-2">
+                Fiche créée par un autre professionnel : carnet commun (vaccins, vermifuges, antiparasitaires, poids, allergies, traitements) partagé entre les professionnels de santé. Les comptes rendus, ordonnances, radios et chirurgies de chacun restent privés.
+              </p>
+            )}
             {isPensionType && (
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 flex gap-2 items-center text-blue-700 text-xs font-medium">
                 <span>📖</span><span>Lecture seule — accordé par le propriétaire</span>
@@ -3068,7 +3086,8 @@ function PatientDetailPageInner() {
               )}
             </Card>
 
-            {/* Chirurgies / Hospitalisations */}
+            {/* Chirurgies / Hospitalisations (hors carnet commun) */}
+            {!carnetCommun && (
             <Card title={`🏥 Chirurgies / Hospitalisations (${chirurgies.length})`} action={ajout('chirurgie')}>
               {chirurgies.length === 0 ? <EmptyState text="Aucune chirurgie enregistrée" /> : (
                 <div className="space-y-2">
@@ -3088,6 +3107,7 @@ function PatientDetailPageInner() {
                 </div>
               )}
             </Card>
+            )}
 
             {/* Allergies */}
             <Card title={`⚠️ Allergies / pathologies (${allergies.length})`} action={ajout('allergie')}>
@@ -3149,7 +3169,7 @@ function PatientDetailPageInner() {
                     </div>
                   )}
                 </div>
-                {hasWriteAccess && (
+                {(hasWriteAccess || carnetCommun) && (
                   <button onClick={() => setAddingType('mesure')}
                     className="mt-3 w-full text-sm font-semibold py-2 rounded-xl border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E3F2FD] transition-colors"
                     style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -4048,7 +4068,9 @@ function PatientDetailPageInner() {
           <>
             {identiteSeule ? (
               <p className="text-xs text-gray-600 bg-[#F4F7F8] border border-gray-200 rounded-lg px-3 py-2">
-                Fiche créée par un autre professionnel : vos comptes rendus et ordonnances restent privés ; le carnet de santé n&apos;est pas partagé.
+                Fiche créée par un autre professionnel : vos comptes rendus et ordonnances restent privés{carnetCommun
+                  ? ' ; le carnet commun (vaccins, traitements, poids…) est partagé entre les professionnels de santé.'
+                  : ' ; le carnet de santé n’est pas partagé.'}
               </p>
             ) : !hasWriteAccess && !writeRequested && (
               <p className="text-xs text-[#8A5A00] bg-[#FFF8EA] border border-[#F3E2BD] rounded-lg px-3 py-2">
@@ -4058,12 +4080,14 @@ function PatientDetailPageInner() {
             <ConsultationsVet
               crOuvert={crCible}
               crs={comptesRendus as CrVet[]} ordos={ordonnances as OrdoVet[]}
-              peutCr={hasWriteAccess || identiteSeule} peutCarnet={hasWriteAccess} peutValider={hasWriteAccess || identiteSeule}
+              peutCr={hasWriteAccess || identiteSeule} peutCarnet={hasWriteAccess || carnetCommun} peutValider={hasWriteAccess || identiteSeule}
               menuCarnet={[
                 { label: 'Vaccin', onClick: () => setAddingType('vaccin') },
                 { label: 'Traitement', onClick: () => setAddingType('traitement') },
-                { label: 'Ordonnance (PDF)', onClick: () => setAddingType('ordonnance') },
-                { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
+                ...(carnetCommun ? [] : [
+                  { label: 'Ordonnance (PDF)', onClick: () => setAddingType('ordonnance') },
+                  { label: 'Radio / Examen', onClick: () => setAddingType('radio') },
+                ]),
                 { label: 'Nouvelle mesure', onClick: () => setAddingType('mesure') },
               ]}
               onNouveauCr={() => { viderCr(); setCrRdvId(null); restaurerCrEnCours(null); setAddingType('cr'); }}
