@@ -7,7 +7,8 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 import { getClientKnownAddress } from '@/lib/client-address';
-import { AnimalPickerField } from '@/components/AnimalPickerField';
+import { AnimalMultiPickerField } from '@/components/AnimalPickerField';
+import AutresAnimauxRdv, { fmtDureeRdv } from '@/components/rdv/AutresAnimauxRdv';
 import AdresseGoogleInput from '@/components/AdresseGoogleInput';
 
 // Vitesse moyenne heuristique (à vol d'oiseau) + marge de sécurité — même
@@ -70,6 +71,12 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | string | null>(null);
+  // Plusieurs animaux sur la même séance (comme véto / ostéo) : les autres
+  // animaux ont chacun leur cours (individuel), durées et prix additionnés
+  // (rdv.animaux_ids + rdv.animaux_detail) ; en cours collectif, une place
+  // par animal. Miroir appli : education_reservation_page.dart.
+  const [autresAnimaux, setAutresAnimaux] = useState<(number | string)[]>([]);
+  const [prestationsAutres, setPrestationsAutres] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
 
   // Profil du pro consulté, résolu une fois (fallback "is_main" si l'appelant
@@ -288,7 +295,27 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPrestation, domicile, domicileLatLng, resolvedProfileId]);
 
-  const duration = selectedPrestation?.duree_minutes ?? 60;
+  const prestationsIndividuelles = prestations.filter(p => p.type !== 'collectif');
+  /** Cours retenu pour un autre animal (le cours choisi par défaut). */
+  const prestationDe = (id: number | string) =>
+    prestationsIndividuelles.find(p => p.id === prestationsAutres[String(id)]) ?? selectedPrestation;
+  const animauxEnPlus = selectedAnimalId != null ? autresAnimaux.filter(id => id !== selectedAnimalId) : [];
+  const tousAnimaux = selectedAnimalId != null ? [selectedAnimalId, ...animauxEnPlus] : [];
+  const nomAnimal = (id: number | string) => animaux.find(a => a.id === id)?.nom ?? '';
+  const dureePrincipale = selectedPrestation?.duree_minutes ?? 60;
+  // Durée totale de la séance : somme des cours de chaque animal (individuel).
+  const duration = dureePrincipale + (isCollectif ? 0 : animauxEnPlus.reduce<number>((s, id) => s + (prestationDe(id)?.duree_minutes ?? dureePrincipale), 0));
+  const prixTotal = selectedPrestation?.prix == null ? null
+    : isCollectif ? selectedPrestation.prix * Math.max(1, tousAnimaux.length)
+    : animauxEnPlus.reduce<number>((s, id) => s + (prestationDe(id)?.prix ?? 0), selectedPrestation.prix);
+  /** Détail par animal (rdv.animaux_detail) — null pour un seul animal. */
+  const detailAnimaux = animauxEnPlus.length > 0 && selectedAnimalId != null
+    ? tousAnimaux.map((id, i) => {
+        const p = i === 0 ? selectedPrestation : prestationDe(id);
+        return { id: String(id), nom: nomAnimal(id), motif: p?.nom ?? 'Cours', motif_cle: p?.id ?? null,
+          duree_minutes: p?.duree_minutes ?? dureePrincipale, prestation_id: p?.id ?? null, prix: p?.prix ?? null };
+      })
+    : null;
 
   // Vérifie qu'il reste assez de temps pour le trajet avant/après ce créneau
   // à domicile — même heuristique que education_reservation_page.dart _trajetOk.
@@ -466,22 +493,23 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     const { data: current } = await supabase.from('cours_collectifs_participants')
       .select('id').eq('cours_id', coursId).neq('statut', 'annule');
     const capacite = selectedPrestation.capacite_max ?? 6;
-    const complet = (current ?? []).length >= capacite;
-
-    await supabase.from('cours_collectifs_participants').insert({
+    // Une place par animal : au-delà de la capacité, liste d'attente.
+    const deja = (current ?? []).length;
+    const ids = tousAnimaux.length > 0 ? tousAnimaux : [selectedAnimalId];
+    await supabase.from('cours_collectifs_participants').insert(ids.map((id, i) => ({
       cours_id: coursId, client_uid: user.uid,
       ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
-      animal_id: selectedAnimalId,
+      animal_id: id,
       ...(selectedPrestation.prix != null ? { prix: selectedPrestation.prix } : {}),
-      statut: complet ? 'en_attente' : 'demande',
-    });
+      statut: deja + i >= capacite ? 'en_attente' : 'demande',
+    })));
 
     const clientName = await resolveClientName();
     const dateStr = dateHeure.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
     await supabase.from('notifications').insert({
       uid: proUid, type: 'cours_collectif_inscription',
       title: `Demande d'inscription — ${selectedPrestation.nom}`,
-      body: `${clientName} souhaite s'inscrire au cours du ${dateStr} — en attente de votre confirmation.`,
+      body: `${clientName} souhaite ${tousAnimaux.length > 1 ? `inscrire ${tousAnimaux.map(nomAnimal).filter(Boolean).join(' et ')}` : 's\'inscrire'} au cours du ${dateStr} — en attente de votre confirmation.`,
       ...(pid ? { profile_id: pid } : {}),
       data: { coursId }, read: false,
     });
@@ -505,6 +533,13 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         client_uid: user.uid,
         ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
         animal_id: selectedAnimalId,
+        // Plusieurs animaux : nom figé, liste et détail (cours / durée de chacun).
+        ...(detailAnimaux ? {
+          animal_nom_manuel: detailAnimaux.map(d => d.nom).filter(Boolean).join(' + '),
+          animaux_ids: detailAnimaux.map(d => d.id),
+          animaux_detail: detailAnimaux,
+          nombre_animaux: detailAnimaux.length,
+        } : {}),
         date_heure: dateHeure.toISOString(),
         duree_minutes: duration,
         motif: selectedPrestation.nom,
@@ -522,7 +557,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       await supabase.from('notifications').insert({
         uid: proUid, type: 'rdv_demande',
         title: 'Nouvelle demande de RDV',
-        body: `${clientName || 'Un client'} souhaite un cours "${selectedPrestation.nom}" le ${dateStr}`,
+        body: `${clientName || 'Un client'} souhaite un cours "${selectedPrestation.nom}" le ${dateStr}${detailAnimaux ? ` pour ${detailAnimaux.map(d => d.nom).filter(Boolean).join(' et ')}` : ''}`,
         ...(resolvedProfileId ? { profile_id: resolvedProfileId } : {}),
         data: { client_uid: user.uid }, read: false,
       });
@@ -670,12 +705,26 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                   Ajoutez un animal depuis <a href="/mes-animaux" className="underline">Mes animaux</a> pour réserver.
                 </p>
               ) : (
-                <AnimalPickerField
-                  animaux={animaux}
-                  selectedId={selectedAnimalId}
-                  onSelect={setSelectedAnimalId}
-                  accentColor={catColor}
-                />
+                <>
+                  {/* À cocher d'emblée (« Toute la portée » pour un éleveur) : le premier coché porte le cours choisi. */}
+                  <AnimalMultiPickerField animaux={animaux} accentColor={catColor}
+                    selectedIds={tousAnimaux}
+                    onChange={ids => { setSelectedAnimalId(ids[0] ?? null); setAutresAnimaux(ids.slice(1)); }} />
+                  {selectedAnimalId != null && !isCollectif && (
+                    <AutresAnimauxRdv animaux={animaux} principalId={selectedAnimalId} selectedIds={autresAnimaux}
+                      onChange={setAutresAnimaux}
+                      options={prestationsIndividuelles.map(p => ({ key: p.id, label: p.nom, duree: p.duree_minutes }))}
+                      motifDe={id => { const p = prestationDe(id); return p ? { key: p.id, label: p.nom, duree: p.duree_minutes } : undefined; }}
+                      onMotif={(id, k) => setPrestationsAutres(m => ({ ...m, [String(id)]: k }))}
+                      dureeTotale={duration} accentColor={catColor} />
+                  )}
+                  {animauxEnPlus.length > 0 && (
+                    <p className="text-xs font-semibold" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>
+                      {isCollectif ? `${tousAnimaux.length} animaux · une place par animal` : `Durée ${fmtDureeRdv(duration)}`}
+                      {prixTotal != null ? ` · ${prixTotal.toFixed(0)} € au total` : ''}
+                    </p>
+                  )}
+                </>
               )}
 
               <p className="text-xs font-semibold" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>

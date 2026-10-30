@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFactur
 import 'package:PetsMatch/pages/pro/education_devis_page.dart' show DevisPage, DevisPrefill;
 import 'package:PetsMatch/pages/pro/ordonnance_pdf.dart' show compteRenduPdfBytes, ageAnimal, sexeAnimal;
 import 'package:PetsMatch/pages/pro/transmission_document.dart' show envoyerDocumentsParEmail;
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv;
 import 'package:PetsMatch/utils/document_pro.dart' show comptesRendusProDuRdv, lignesCrsPro, ajouterPiecesCrsPro;
 import 'package:PetsMatch/utils/signature_pro.dart' show maSignaturePro, octetsSignature;
 import 'package:PetsMatch/widgets/rich_text_view.dart' show richTextToPlain;
@@ -39,10 +40,17 @@ Future<void> devisDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {Str
   final c = await _client(rdv);
   if (!context.mounted) return;
   final motif = _v(rdv['motif']);
+  // Plusieurs animaux : une ligne par animal (son cours, son prix).
+  final detail = animauxDetailRdv(rdv);
   await Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(prefill: DevisPrefill(
     animalId: rdv['animal_id']?.toString(), clientUid: rdv['client_uid']?.toString(), clientProfileId: rdv['client_profile_id']?.toString(),
     clientNom: c['nom'], clientPrenom: c['prenom'], clientEmail: c['email'], clientTel: c['tel'], rdvId: rdv['id'].toString(),
-    lignes: motif.isEmpty ? const [] : [{
+    lignes: detail.isNotEmpty
+        ? [for (final a in detail) {
+            'description': [_v(a['motif']), _v(a['nom'])].where((x) => x.isNotEmpty).join(' — '),
+            'quantite': 1, 'prix_unitaire': (a['prix'] as num?)?.toDouble() ?? 0,
+          }]
+        : motif.isEmpty ? const [] : [{
       'description': [motif, animalNom].where((x) => x.isNotEmpty).join(' — '),
       'quantite': 1, 'prix_unitaire': (rdv['prix_calcule'] as num?)?.toDouble() ?? 0,
     }],
@@ -54,12 +62,20 @@ Future<void> factureDepuisRdv(BuildContext context, Map<String, dynamic> rdv, {S
   final c = await _client(rdv);
   if (!context.mounted) return;
   final d = DateTime.tryParse(_v(rdv['date_heure']))?.toLocal();
+  final seanceDu = d == null ? '' : 'Séance du ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  final detail = animauxDetailRdv(rdv);
   await Navigator.push(context, MaterialPageRoute(builder: (_) => CreerFacturePage(
     clientPrenom: c['prenom'], clientNom: c['nom'], clientEmail: c['email'], clientTel: c['tel'],
     clientRue: c['rue'], clientCp: c['cp'], clientVille: c['ville'],
-    lignesPrefill: [FacturePrefillLigne(
+    // Plusieurs animaux : une ligne par animal (son cours, son prix).
+    lignesPrefill: detail.isNotEmpty
+        ? [for (final a in detail) FacturePrefillLigne(
+            designation: [_v(a['motif']).isEmpty ? 'Séance d’éducation' : _v(a['motif']), _v(a['nom'])].where((x) => x.isNotEmpty).join(' — '),
+            description: seanceDu, prixTTC: (a['prix'] as num?)?.toDouble() ?? 0,
+          )]
+        : [FacturePrefillLigne(
       designation: [_v(rdv['motif']).isEmpty ? 'Séance d’éducation' : _v(rdv['motif']), animalNom].where((x) => x.isNotEmpty).join(' — '),
-      description: d == null ? '' : 'Séance du ${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}',
+      description: seanceDu,
       prixTTC: (rdv['prix_calcule'] as num?)?.toDouble() ?? 0,
     )],
     sourceRdvId: rdv['id'].toString(), sourceAnimalId: rdv['animal_id']?.toString(),
@@ -155,6 +171,9 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
   } catch (_) {}
   // Mes comptes rendus chargés (photo / PDF) : envoyés à la place des comptes rendus rédigés.
   final crsPro = await comptesRendusProDuRdv(rdvId);
+  // Plusieurs animaux : chaque compte rendu porte le nom de son animal.
+  final nomsAnimaux = {for (final a in animauxDetailRdv(rdv)) a['id'].toString(): _v(a['nom'])};
+  String nomDe(Map<String, dynamic> s) => nomsAnimaux[s['animal_id']?.toString()] ?? animalNom;
   if (!context.mounted) return;
   final coches = <String, bool>{
     for (final s in seances) 'edu:${s['id']}': crsPro.isEmpty,
@@ -186,7 +205,7 @@ Future<void> finSeanceEducation(BuildContext context, Map<String, dynamic> rdv, 
             const Padding(padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text('Aucun document pour ce rendez-vous : rédigez d’abord le compte rendu.', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
           for (final s in seances)
-            ligne('edu:${s['id']}', '${s['type'] == 'bilan' ? 'Bilan' : 'Compte rendu de séance'}${animalNom.isEmpty ? '' : ' — $animalNom'}',
+            ligne('edu:${s['id']}', '${s['type'] == 'bilan' ? 'Bilan' : 'Compte rendu de séance'}${nomDe(s).isEmpty ? '' : ' — ${nomDe(s)}'}',
                 'Avec les exercices et le programme de travail, signé'),
           ...lignesCrsPro(ctx, setM, rdvId: rdvId, crsPro: crsPro, coches: coches, ligne: ligne, estGenere: (k) => k.startsWith('edu:')),
           if (facture != null)

@@ -7,6 +7,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/widgets/adresse_recherche_field.dart';
+import 'package:PetsMatch/utils/rdv_animaux.dart' show dureeRdvLabel;
 
 // Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
 // + marge de sécurité — même principe que pro_agenda.dart _travelWarningsToday(),
@@ -51,6 +52,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   List<Map<String, dynamic>> _prestations = [];
   Map<String, dynamic>? _selectedPrestation;
   Map<String, dynamic>? _selectedAnimal;
+  // Plusieurs animaux sur la même séance (comme véto / ostéo) : les autres
+  // animaux ont chacun leur cours (individuel) — durées et prix additionnés,
+  // rdv.animaux_ids + rdv.animaux_detail ; en cours collectif, une place par
+  // animal. Miroir site : EducationReservationModal.
+  List<Map<String, dynamic>> _autresAnimaux = [];
+  final Map<String, String> _prestationAutres = {}; // animal id → prestation id
 
   bool _educationBilanRequis = true;
   bool _isFirstTimeClient = false;
@@ -356,7 +363,52 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   String _dateKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  int get _duration => (_selectedPrestation?['duree_minutes'] as num?)?.toInt() ?? 60;
+  int get _dureePrincipale => (_selectedPrestation?['duree_minutes'] as num?)?.toInt() ?? 60;
+
+  // Durée totale de la séance : somme des cours de chaque animal (individuel).
+  int get _duration => _dureePrincipale + (_isCollectif ? 0 : _autresAnimaux.fold<int>(0,
+      (s, a) => s + ((_prestationDe(a)?['duree_minutes'] as num?)?.toInt() ?? _dureePrincipale)));
+
+  List<Map<String, dynamic>> get _prestationsIndividuelles =>
+      _prestations.where((p) => p['type'] != 'collectif').toList();
+
+  /// Cours retenu pour un autre animal (le cours choisi plus haut par défaut).
+  Map<String, dynamic>? _prestationDe(Map<String, dynamic> a) {
+    final id = _prestationAutres[a['id']?.toString()];
+    for (final p in _prestationsIndividuelles) {
+      if (p['id']?.toString() == id) return p;
+    }
+    return _selectedPrestation;
+  }
+
+  List<Map<String, dynamic>> get _tousAnimaux => [if (_selectedAnimal != null) _selectedAnimal!, ..._autresAnimaux];
+
+  String get _nomsAnimaux => _tousAnimaux.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + ');
+
+  num? get _prixTotal {
+    final prix = (_selectedPrestation?['prix'] as num?);
+    if (prix == null) return null;
+    if (_isCollectif) return prix * (_tousAnimaux.isEmpty ? 1 : _tousAnimaux.length);
+    return _autresAnimaux.fold<num>(prix, (s, a) => s + ((_prestationDe(a)?['prix'] as num?) ?? 0));
+  }
+
+  /// Détail par animal (rdv.animaux_detail) — null pour un seul animal.
+  List<Map<String, dynamic>>? get _detailAnimaux {
+    if (_selectedAnimal == null || _autresAnimaux.isEmpty) return null;
+    return [
+      for (final a in _tousAnimaux)
+        () {
+          final p = identical(a, _selectedAnimal) ? _selectedPrestation : _prestationDe(a);
+          return <String, dynamic>{
+            'id': a['id'].toString(), 'nom': a['nom']?.toString() ?? '',
+            'motif': p?['nom']?.toString() ?? 'Cours', 'motif_cle': p?['id']?.toString(),
+            'duree_minutes': (p?['duree_minutes'] as num?)?.toInt() ?? _dureePrincipale,
+            if (p?['id'] != null) 'prestation_id': p!['id'].toString(),
+            if (p?['prix'] != null) 'prix': p!['prix'],
+          };
+        }(),
+    ];
+  }
 
   // Cours collectif : créneaux fixes bout à bout + inscription à une séance
   // de groupe (capacité / liste d'attente) au lieu d'un RDV 1-pour-1.
@@ -550,20 +602,108 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     _loadWeek(_weekStart);
   }
 
+  /// Choix des animaux à cocher (« Toute la portée » pour un éleveur) : le
+  /// premier coché porte le cours choisi, les autres ont chacun le leur.
+  Future<void> _choisirAnimaux() async {
+    final res = await AnimalPickerSheet.pickMany(
+      context,
+      uid: FirebaseAuth.instance.currentUser?.uid,
+      profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+      current: _tousAnimaux,
+      accentColor: widget.categoryColor,
+    );
+    if (res == null || !mounted) return;
+    setState(() {
+      _selectedAnimal = res.isEmpty ? null : res.first;
+      _autresAnimaux = res.length > 1 ? res.sublist(1) : [];
+      _selectedSlot = null;
+    });
+  }
+
   Future<void> _pickSlot(Map<String, dynamic> slot) async {
     if (_selectedAnimal == null) {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      final animal = await AnimalPickerSheet.pickOne(
-        context,
-        uid: uid,
-        profileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        accentColor: widget.categoryColor,
-      );
-      if (animal == null || !mounted) return;
-      setState(() => _selectedAnimal = animal);
+      await _choisirAnimaux();
+      if (_selectedAnimal == null || !mounted) return;
+      // Plusieurs animaux en cours individuel : la durée change, les créneaux
+      // sont recalculés — on laisse choisir le cours de chacun puis l'heure.
+      if (_autresAnimaux.isNotEmpty && !_isCollectif) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Choisissez le cours de chaque animal, puis un créneau.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+        return;
+      }
     }
     setState(() => _selectedSlot = slot);
     await _confirmSheet();
+  }
+
+  /// Animaux de la séance, au-dessus des créneaux : le cours des autres
+  /// animaux se choisit ici (la durée totale détermine les créneaux proposés).
+  Widget _buildAnimaux(Color color) {
+    final opts = _prestationsIndividuelles;
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _choisirAnimaux,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+            child: Row(children: [
+              Icon(Icons.pets, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_tousAnimaux.isEmpty ? 'Choisir un ou plusieurs animaux' : _nomsAnimaux,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                      color: _tousAnimaux.isEmpty ? Colors.grey.shade500 : color))),
+              Icon(Icons.expand_more, color: Colors.grey.shade500),
+            ]),
+          ),
+        ),
+        if (_autresAnimaux.isNotEmpty && !_isCollectif) ...[
+          const SizedBox(height: 8),
+          Text('${_selectedAnimal?['nom'] ?? ''} : ${_selectedPrestation?['nom'] ?? ''}. Cours des autres animaux :',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          for (final a in _autresAnimaux)
+            Row(children: [
+              SizedBox(width: 90, child: Text(a['nom']?.toString() ?? '—', overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700))),
+              Expanded(child: DropdownButton<String>(
+                value: _prestationDe(a)?['id']?.toString(),
+                isExpanded: true, isDense: true, underline: const SizedBox.shrink(),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: color, fontWeight: FontWeight.w600),
+                items: [for (final p in opts)
+                  DropdownMenuItem(value: p['id'].toString(), child: Text(
+                      '${p['nom']} · ${dureeRdvLabel((p['duree_minutes'] as num?)?.toInt() ?? 60)}', overflow: TextOverflow.ellipsis))],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setState(() { _prestationAutres[a['id'].toString()] = v; _selectedSlot = null; });
+                },
+              )),
+              IconButton(
+                tooltip: 'Retirer', visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.close, size: 18, color: Colors.grey.shade500),
+                onPressed: () => setState(() {
+                  _autresAnimaux.removeWhere((x) => x['id']?.toString() == a['id']?.toString());
+                  _selectedSlot = null;
+                }),
+              ),
+            ]),
+          Text('${_autresAnimaux.length + 1} animaux · durée totale ${dureeRdvLabel(_duration)}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+        ] else if (_autresAnimaux.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('${_autresAnimaux.length + 1} animaux · une place par animal',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+          ),
+      ]),
+    );
   }
 
   Future<void> _confirmSheet() async {
@@ -585,11 +725,14 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           const SizedBox(height: 12),
           _recapLine('Cours', prestation['nom']?.toString() ?? ''),
           _recapLine('Avec', widget.proName),
-          _recapLine('Animal', _selectedAnimal?['nom']?.toString() ?? '—'),
+          _recapLine(_autresAnimaux.isEmpty ? 'Animal' : 'Animaux', _nomsAnimaux.isEmpty ? '—' : _nomsAnimaux),
+          if (_detailAnimaux != null && !_isCollectif)
+            for (final d in _detailAnimaux!)
+              _recapLine('', '${d['nom']} — ${d['motif']} · ${dureeRdvLabel(d['duree_minutes'] as int)}'),
           _recapLine('Date', DateFormat('EEEE d MMMM à HH:mm', 'fr_FR').format(dateHeure)),
-          _recapLine('Durée', '$_duration min'),
-          if ((prestation['prix'] as num?) != null)
-            _recapLine('Prix', '${(prestation['prix'] as num).toStringAsFixed(0)} €'),
+          _recapLine('Durée', dureeRdvLabel(_duration)),
+          if (_prixTotal != null)
+            _recapLine('Prix', '${_prixTotal!.toStringAsFixed(0)} €'),
           _lieuRecapLine(
             label: (_isCollectif || !_domicile)
                 ? ((prestation['lieu_adresse']?.toString().trim().isNotEmpty ?? false)
@@ -702,19 +845,26 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .select('id').eq('cours_id', coursId).neq('statut', 'annule');
       final capacite = (_selectedSlot?['capacite'] as int?)
           ?? (prestation['capacite_max'] as num?)?.toInt() ?? 6;
-      final complet = (current as List).length >= capacite;
-
-      await _supa.from('cours_collectifs_participants').insert({
-        'cours_id': coursId,
-        'client_uid': uid,
-        if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
-        if (_selectedAnimal?['id'] != null) 'animal_id': _selectedAnimal!['id'].toString(),
-        if ((prestation['prix'] as num?) != null) 'prix': prestation['prix'],
-        'statut': complet ? 'en_attente' : 'demande',
-      });
+      // Une place par animal : au-delà de la capacité, liste d'attente.
+      var inscrits = (current as List).length;
+      var complet = false;
+      final animaux = _tousAnimaux;
+      for (final a in animaux.isEmpty ? <Map<String, dynamic>?>[null] : animaux) {
+        final plein = inscrits >= capacite;
+        if (plein) complet = true;
+        inscrits++;
+        await _supa.from('cours_collectifs_participants').insert({
+          'cours_id': coursId,
+          'client_uid': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+          if (a?['id'] != null) 'animal_id': a!['id'].toString(),
+          if ((prestation['prix'] as num?) != null) 'prix': prestation['prix'],
+          'statut': plein ? 'en_attente' : 'demande',
+        });
+      }
 
       final dateStr = DateFormat('dd/MM à HH:mm').format(dateHeure);
-      final animalNom = _selectedAnimal?['nom']?.toString() ?? 'son animal';
+      final animalNom = _nomsAnimaux.isEmpty ? 'son animal' : _nomsAnimaux.replaceAll(' + ', ' et ');
       await _supa.from('notifications').insert({
         'uid': widget.proUid,
         'type': 'cours_collectif_inscription',
@@ -729,7 +879,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
             complet
-                ? 'Demande envoyée — vous êtes en liste d\'attente (séance complète).'
+                ? (animaux.length > 1
+                    ? 'Demande envoyée — séance complète pour une partie de vos animaux : liste d\'attente.'
+                    : 'Demande envoyée — vous êtes en liste d\'attente (séance complète).')
                 : 'Demande envoyée — en attente de confirmation du professionnel.',
             style: const TextStyle(fontFamily: 'Galey'),
           ),
@@ -797,6 +949,13 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         'client_uid': uid,
         if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
         if (_selectedAnimal?['id'] != null) 'animal_id': _selectedAnimal!['id'].toString(),
+        // Plusieurs animaux : nom figé, liste et détail (cours / durée de chacun).
+        if (_detailAnimaux != null) ...{
+          'animal_nom_manuel': _nomsAnimaux,
+          'animaux_ids': _detailAnimaux!.map((d) => d['id']).toList(),
+          'animaux_detail': _detailAnimaux,
+          'nombre_animaux': _detailAnimaux!.length,
+        },
         'date_heure': dateHeure.toUtc().toIso8601String(),
         'duree_minutes': _duration,
         'motif': _selectedPrestation!['nom']?.toString() ?? 'Cours',
@@ -818,7 +977,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         'uid': widget.proUid,
         'type': 'rdv_demande',
         'title': 'Nouvelle demande de RDV',
-        'body': '$clientName souhaite un cours "${_selectedPrestation!['nom']}" le $dateStr',
+        'body': '$clientName souhaite un cours "${_selectedPrestation!['nom']}" le $dateStr'
+            '${_autresAnimaux.isNotEmpty ? ' pour ${_nomsAnimaux.replaceAll(' + ', ' et ')}' : ''}',
         if (_resolvedProfileId != null && _resolvedProfileId!.isNotEmpty) 'profile_id': _resolvedProfileId,
         'data': <String, dynamic>{'client_uid': uid},
         'read': false,
@@ -1042,6 +1202,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _shiftWeek(7)),
         ]),
       ),
+      _buildAnimaux(color),
       if (weekLoading)
         const LinearProgressIndicator(minHeight: 2)
       else if (aucuneDispo)

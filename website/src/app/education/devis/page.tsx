@@ -197,7 +197,12 @@ function DevisPageInner() {
     setNote(searchParams.get('note') ?? '');
     setRdvId(searchParams.get('rdv') || null);
     const ld = searchParams.get('ligneDesc');
-    if (ld) {
+    // Plusieurs animaux sur la séance : une ligne par animal (JSON [{d, q, p}]).
+    let lj: { d: string; q?: number; p?: number }[] = [];
+    try { lj = JSON.parse(searchParams.get('lignes') ?? '[]'); } catch { /* ignoré */ }
+    if (Array.isArray(lj) && lj.length > 0) {
+      setLignes(lj.map(l => ({ description: l.d, quantite: l.q ?? 1, prix_unitaire: l.p ?? 0, total: (l.q ?? 1) * (l.p ?? 0) })));
+    } else if (ld) {
       const q = Number(searchParams.get('ligneQte') ?? 1) || 1;
       const p = Number(searchParams.get('lignePrix') ?? 0) || 0;
       setLignes([{ description: ld, quantite: q, prix_unitaire: p, total: q * p }]);

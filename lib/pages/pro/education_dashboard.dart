@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/itineraire.dart';
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv, choisirAnimalRdv;
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
@@ -195,6 +196,9 @@ class _EducationDashboardState extends State<EducationDashboard> {
   }
 
   String _nomAnimal(Map<String, dynamic> r) {
+    // Plusieurs animaux sur la séance : tous les noms.
+    final detail = animauxDetailRdv(r);
+    if (detail.isNotEmpty) return detail.map((a) => a['nom']?.toString() ?? '').where((n) => n.isNotEmpty).join(' + ');
     final n = _animaux[r['animal_id']?.toString()]?['nom']?.toString() ?? '';
     if (n.isNotEmpty) return n;
     final m = r['animal_nom_manuel']?.toString() ?? '';
@@ -216,12 +220,20 @@ class _EducationDashboardState extends State<EducationDashboard> {
     if (mounted) _charger();
   }
 
-  void _fiche(Map<String, dynamic> r, {int onglet = 0, bool compteRendu = false}) {
-    final animalId = r['animal_id']?.toString();
-    if (animalId == null) return;
+  /// Plusieurs animaux sur la séance : l'animal choisi ({id, nom}), sinon celui du RDV.
+  Future<Map<String, dynamic>?> _animalSeance(Map<String, dynamic> r, {String? table, String titre = 'Fiche de quel animal ?'}) async {
+    if (animauxDetailRdv(r).isNotEmpty) return choisirAnimalRdv(context, r, table: table, color: _teal, titre: titre);
+    final id = r['animal_id']?.toString();
+    return id == null ? null : {'id': id, 'nom': _nomAnimal(r)};
+  }
+
+  Future<void> _fiche(Map<String, dynamic> r, {int onglet = 0, bool compteRendu = false}) async {
+    final a = await _animalSeance(r, table: compteRendu ? 'education_progression' : null,
+        titre: compteRendu ? 'Compte rendu de quel animal ?' : 'Fiche de quel animal ?');
+    if (a == null || !mounted) return;
     _go(EducationSuiviPage(
-      animalId: animalId,
-      animalNom: _nomAnimal(r),
+      animalId: a['id'].toString(),
+      animalNom: a['nom']?.toString() ?? _nomAnimal(r),
       ownerProfileId: r['client_profile_id']?.toString(),
       rdvId: compteRendu ? r['id']?.toString() : null,
       initialTab: compteRendu ? 2 : onglet,
@@ -257,9 +269,13 @@ class _EducationDashboardState extends State<EducationDashboard> {
             ],
             const SizedBox(height: 8),
             if (r['animal_id'] != null)
-              _action(ctx, Icons.folder_open_outlined, 'Dossier de la séance', () => _go(EducationSuiviPage(
-                animalId: r['animal_id'].toString(), animalNom: _nomAnimal(r), ownerProfileId: r['client_profile_id']?.toString(),
-                ownerName: _nomClient(r), rdvId: r['id']?.toString(), dossier: true))),
+              _action(ctx, Icons.folder_open_outlined, 'Dossier de la séance', () async {
+                final a = await _animalSeance(r, table: 'education_progression', titre: 'Dossier de quel animal ?');
+                if (a == null || !mounted) return;
+                _go(EducationSuiviPage(
+                  animalId: a['id'].toString(), animalNom: a['nom']?.toString() ?? _nomAnimal(r), ownerProfileId: r['client_profile_id']?.toString(),
+                  ownerName: _nomClient(r), rdvId: r['id']?.toString(), dossier: true));
+              }),
             _action(ctx, Icons.assignment_ind_outlined, 'Ouvrir la fiche éducative', () => _fiche(r)),
             _action(ctx, Icons.track_changes_outlined, 'Consulter les objectifs', () => _fiche(r, onglet: 1)),
             if (_domicile(r))

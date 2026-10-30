@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// RDV à plusieurs animaux (vétérinaire, ostéo, toiletteur, éducateur) :
+// RDV à plusieurs animaux (vétérinaire, ostéo, toiletteur, éducateur / comportementaliste) :
 // rdv.animaux_detail = [{ id, nom, motif, motif_cle, duree_minutes, prestation_id?, prix? }]
 // (migration_rdv_animaux_detail.sql). rdv.animal_id = le premier animal,
 // rdv.duree_minutes = la somme des durées. Miroir site : lib/rdv-animaux.ts.
@@ -30,7 +30,7 @@ String ligneAnimalRdv(Map<String, dynamic> a) {
 
 /// RDV à plusieurs animaux : choix de l'animal dont on rédige le compte rendu
 /// (ou la séance), avec l'état de chacun — fait / brouillon / à faire —
-/// d'après [table] (comptes_rendus, suivis_morpho) liée au RDV par rdv_id ;
+/// d'après [table] (comptes_rendus, suivis_morpho, education_progression) liée au RDV par rdv_id ;
 /// sans [table] (ouvrir une fiche), pas d'état. Renvoie { id, nom, espece } ou null.
 Future<Map<String, dynamic>?> choisirAnimalRdv(BuildContext context, Map<String, dynamic> rdv,
     {String? table, required Color color, String titre = 'Compte rendu de quel animal ?'}) async {
@@ -41,7 +41,7 @@ Future<Map<String, dynamic>?> choisirAnimalRdv(BuildContext context, Map<String,
   final etats = <String, String>{};
   final especes = <String, String>{};
   if (table != null) try {
-    final rows = await supa.from(table).select(table == 'comptes_rendus' ? 'animal_id, statut' : 'animal_id')
+    final rows = await supa.from(table).select(table == 'suivis_morpho' ? 'animal_id' : 'animal_id, statut')
         .eq('rdv_id', rdv['id'].toString());
     for (final r in rows as List) {
       final id = r['animal_id']?.toString() ?? '';

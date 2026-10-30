@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { seancesDuRdv, pdfSeance, preparerFactureOsteo, type SeanceRdv } from '@/lib/seance-osteo';
 import { seanceToilettageDuRdv, pdfCompteRenduToilettage, type SeanceToilettagePdf } from '@/lib/toilettage-pdf';
+import { animauxDetailRdv } from '@/lib/rdv-animaux';
 import { seancesEducationDuRdv, pdfSeanceEducation, type SeanceEducation } from '@/lib/seance-education';
 import { useAuth } from '@/lib/auth-context';
 import { maSignaturePro } from '@/lib/signature-pro';
@@ -78,15 +79,17 @@ export default function FinConsultationModal({ rdvId, proProfileId, clientNom, o
       (async () => {
         const [seances, { data: r }, { data: fac }] = await Promise.all([
           seancesEducationDuRdv(rdvId),
-          supabase.from('rdv').select('animal_id, animal_nom_manuel').eq('id', rdvId).maybeSingle(),
+          supabase.from('rdv').select('animal_id, animal_nom_manuel, animaux_detail').eq('id', rdvId).maybeSingle(),
           supabase.from('factures').select('*').eq('source_rdv_id', rdvId).neq('statut', 'annulee').order('created_at', { ascending: false }).limit(1),
         ]);
         const aid = r?.animal_id != null ? String(r.animal_id) : null;
         const { data: an } = aid ? await supabase.from('animaux').select('id, nom').eq('id', aid).maybeSingle() : { data: null };
         const facture = ((fac ?? [])[0] as DocsConsultation['facture']) ?? null;
         setSeancesEdu(seances);
+        // Plusieurs animaux : chaque compte rendu porte le nom de son animal.
+        const nomsDetail = Object.fromEntries(animauxDetailRdv(r ?? {}).map(a => [a.id, a.nom]));
         setDocs({ rdvId, animalIdPrincipal: aid,
-          noms: aid ? { [aid]: (an?.nom as string | undefined) ?? (r?.animal_nom_manuel as string | undefined) ?? 'Animal' } : {},
+          noms: { ...nomsDetail, ...(aid ? { [aid]: (an?.nom as string | undefined) ?? nomsDetail[aid] ?? (r?.animal_nom_manuel as string | undefined) ?? 'Animal' } : {}) },
           crs: [], ordos: [], facture, seances: [] });
         setCoches(c => ({ ...c, ...Object.fromEntries([...seances.map(s => [`edu:${s.id}`, true]), ...(facture ? [[`fac:${facture.id}`, true]] : [])]) }));
       })();

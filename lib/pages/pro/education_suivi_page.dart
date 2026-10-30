@@ -16,6 +16,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:PetsMatch/widgets/animal/pro_animal_entete.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 import 'package:PetsMatch/utils/document_pro.dart' show showDocumentProSheet;
+import 'package:PetsMatch/utils/rdv_animaux.dart' show animauxDetailRdv, choisirAnimalRdv;
 import 'package:PetsMatch/utils/fin_seance_education.dart' show devisDepuisRdv, factureDepuisRdv, finSeanceEducation;
 
 /// Fiche éducative (éducateur / comportementaliste) — vue métier unique de
@@ -1188,10 +1189,22 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Séance${d == null ? '' : ' du ${_dateFr(rdv['date_heure']?.toString())} à ${d.hour.toString().padLeft(2, '0')}h${d.minute.toString().padLeft(2, '0')}'}'
+            '${animauxDetailRdv(rdv).isNotEmpty ? ' · ${widget.animalNom}' : ''}'
             '${crRdv == null ? ' · compte rendu à rédiger' : crRdv['statut'] == 'brouillon' ? ' · compte rendu en brouillon' : ' · compte rendu rédigé'}',
             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
         const SizedBox(height: 6),
         SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+          // Plusieurs animaux (comme véto / ostéo) : un compte rendu par animal.
+          if (animauxDetailRdv(rdv).isNotEmpty)
+            chip(Icons.pets_outlined, 'Autre animal', () async {
+              final a = await choisirAnimalRdv(context, rdv, table: 'education_progression',
+                  color: const Color(0xFF0C5C6C), titre: 'Dossier de quel animal ?');
+              if (a == null || !mounted || a['id'] == widget.animalId) return;
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => EducationSuiviPage(
+                animalId: a['id'].toString(), animalNom: a['nom']?.toString() ?? 'Animal',
+                ownerProfileId: widget.ownerProfileId, ownerName: widget.ownerName,
+                rdvId: widget.rdvId, dossier: true)));
+            }),
           chip(Icons.edit_note_outlined, crRdv == null ? 'Compte rendu' : 'Modifier le compte rendu', () async {
             _tab.animateTo(2);
             await _editSeance(existing: crRdv, rdv: rdv);

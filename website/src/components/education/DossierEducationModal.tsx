@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import FinConsultationModal from '@/components/rdv/FinConsultationModal';
 import DocumentProModal from '@/components/pro/DocumentProModal';
+import { animauxDetailRdv } from '@/lib/rdv-animaux';
 
 const TEAL = '#0C5C6C';
 const AMBRE = '#D97706';
@@ -24,7 +25,7 @@ interface RdvRow {
   id: string; date_heure: string; duree_minutes: number | null; statut: string; motif: string | null; lieu: string | null;
   animal_id: string | null; animal_nom_manuel?: string | null; client_uid: string | null; client_profile_id: string | null;
   client_nom_manuel?: string | null; client_email_manuel?: string | null; client_telephone_manuel?: string | null;
-  pro_profile_id?: string | null; prix_calcule?: number | null;
+  pro_profile_id?: string | null; prix_calcule?: number | null; animaux_detail?: unknown;
 }
 
 /** Lien de retour vers ce dossier (après une action dans une autre page). */
@@ -37,6 +38,9 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const { user } = useAuth();
   const pidActif = useActiveProfile();
   const [r, setR] = useState<RdvRow | null>(null);
+  // Plusieurs animaux (comme véto / ostéo) : un compte rendu, des exercices et
+  // un programme par animal — animal affiché (le premier par défaut).
+  const [animalChoisi, setAnimalChoisi] = useState<string | null>(null);
   const [animalNom, setAnimalNom] = useState('');
   const [cr, setCr] = useState<{ id: string; statut: string | null; type: string | null } | null>(null);
   const [nbExercices, setNbExercices] = useState(0);
@@ -54,16 +58,19 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (!x) return;
     setR(x);
     const pid = x.pro_profile_id || pidActif;
-    const aid = x.animal_id;
+    const detail = animauxDetailRdv(x);
+    const aid = (detail.length > 0 && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : x.animal_id;
     const [an, pr, dv, fa, cc] = await Promise.all([
       aid ? supabase.from('animaux').select('nom').eq('id', aid).maybeSingle() : Promise.resolve({ data: null }),
-      supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      (detail.length > 0 && aid
+        ? supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId).eq('animal_id', aid)
+        : supabase.from('education_progression').select('id, statut, type').eq('rdv_id', rdvId)).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('devis').select('id, statut, total_ttc').eq('rdv_id', rdvId).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factures').select('id, statut, total_ttc, numero_affichage').eq('source_rdv_id', rdvId).neq('statut', 'annulee')
         .or('type_facture.is.null,type_facture.not.in.(acompte,avoir)').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.rpc('pm_contact_client_rdv', { p_rdv_id: rdvId }),
     ]);
-    setAnimalNom((an.data as { nom?: string } | null)?.nom ?? x.animal_nom_manuel ?? '');
+    setAnimalNom((an.data as { nom?: string } | null)?.nom ?? detail.find(a => a.id === aid)?.nom ?? x.animal_nom_manuel ?? '');
     setCr((pr.data as typeof cr) ?? null);
     setDevis(dv.error ? null : (dv.data as typeof devis) ?? null);
     setFacture((fa.data as typeof facture) ?? null);
@@ -79,7 +86,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
       setNbObjectifs(o.count ?? 0); setNbExercices(e.count ?? 0);
       setForfait((f.data as typeof forfait) ?? null);
     }
-  }, [rdvId, pidActif]);
+  }, [rdvId, pidActif, animalChoisi]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -90,8 +97,10 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
   const debut = new Date(r.date_heure);
   const pid = r.pro_profile_id || pidActif;
   const retour = retourDossierEducation(r.id);
-  const fiche = (suite: string) => r.animal_id
-    ? router.push(`/mes-patients/${encodeURIComponent(r.animal_id)}?${suite}&retourRdv=${encodeURIComponent(r.id)}`)
+  const detail = animauxDetailRdv(r);
+  const aidSel = (detail.length > 0 && animalChoisi && detail.some(a => a.id === animalChoisi)) ? animalChoisi : r.animal_id;
+  const fiche = (suite: string) => aidSel
+    ? router.push(`/mes-patients/${encodeURIComponent(aidSel)}?${suite}&retourRdv=${encodeURIComponent(r.id)}`)
     : alert('Ce rendez-vous n’est rattaché à aucune fiche animal : créez d’abord la fiche du client (Gérer mes RDV → nouveau client).');
 
   function creerDevis() {
@@ -104,7 +113,9 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
     if (coord.prenom) q.set('prenom', coord.prenom);
     if (coord.email) q.set('email', coord.email);
     if (coord.tel) q.set('tel', coord.tel);
-    if (r.motif?.trim()) { q.set('ligneDesc', [r.motif.trim(), animalNom].filter(Boolean).join(' — ')); q.set('ligneQte', '1');
+    // Plusieurs animaux : une ligne par animal (son cours, son prix).
+    if (detail.length > 0) q.set('lignes', JSON.stringify(detail.map(a => ({ d: [a.motif?.trim(), a.nom].filter(Boolean).join(' — '), q: 1, p: a.prix ?? 0 }))));
+    else if (r.motif?.trim()) { q.set('ligneDesc', [r.motif.trim(), animalNom].filter(Boolean).join(' — ')); q.set('ligneQte', '1');
       if (r.prix_calcule != null) q.set('lignePrix', String(r.prix_calcule)); }
     router.push(`/education/devis?${q.toString()}`);
   }
@@ -117,7 +128,10 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
         rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
         sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         retour,
-        lignes: [{ description: [r.motif?.trim() || 'Séance d’éducation', animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
+        lignes: detail.length > 0
+          ? detail.map(a => ({ description: [a.motif?.trim() || 'Séance d’éducation', a.nom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
+              quantite: 1, prixUnitaire: 0, prixTTC: Number(a.prix ?? 0), tva: 20 }))
+          : [{ description: [r.motif?.trim() || 'Séance d’éducation', animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`,
           quantite: 1, prixUnitaire: 0, prixTTC: Number(r.prix_calcule ?? 0), tva: 20 }],
       }));
     } catch { /* facture vierge */ }
@@ -148,6 +162,23 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           {[animalNom, nomClient].filter(Boolean).join(' · ')} — {debut.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} à {debut.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
         </p>
         {r.motif && <p className="text-xs text-gray-500 mt-0.5">{r.motif}{r.lieu ? ` · ${r.lieu}` : ''}</p>}
+        {detail.length > 0 && (
+          <div className="mt-3">
+            <p className="text-xs text-gray-500 mb-1.5">Plusieurs animaux : un compte rendu par animal.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {detail.map(a => {
+                const actif = a.id === aidSel;
+                return (
+                  <button key={a.id} type="button" onClick={() => setAnimalChoisi(a.id)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border"
+                    style={{ borderColor: TEAL, background: actif ? TEAL : '#fff', color: actif ? '#fff' : TEAL }}>
+                    {a.nom}{a.motif ? ` · ${a.motif}` : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="mt-3">
           {ligne('Compte rendu',
@@ -185,7 +216,7 @@ export default function DossierEducationModal({ rdvId, nomClient, onClose, onCha
           onClose={() => setFinSeance(false)} onDone={() => { setFinSeance(false); charger(); onChanged?.(); }} />
       )}
       {docPro && (
-        <DocumentProModal mode={docPro} catPro="education" rdv={{ ...r, pro_profile_id: pid || null }} clientNom={nomClient}
+        <DocumentProModal mode={docPro} catPro="education" rdv={{ ...r, animal_id: aidSel, pro_profile_id: pid || null }} clientNom={nomClient}
           animalNom={animalNom || undefined} proNom={user?.displayName ?? ''} onClose={() => setDocPro(null)}
           onDone={() => { setDocPro(null); charger(); onChanged?.(); }} />
       )}

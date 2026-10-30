@@ -5326,8 +5326,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   // Éducateur : dossier de la séance (compte rendu, exercices, devis, facture, envoi).
                   : AgendaContexte.catPro == 'education' && rdv['statut'] != 'demande' && rdv['statut'] != 'contre_proposition' && hasAnimal
                       ? () async {
+                          // Plusieurs animaux : dossier de l'animal choisi (un compte rendu chacun).
+                          var animalDossier = animalId;
+                          var nomDossier = rdv['_animal_nom']?.toString() ?? 'Animal';
+                          if (animauxDetailRdv(rdv).isNotEmpty) {
+                            final a = await choisirAnimalRdv(context, rdv, table: 'education_progression', color: _teal,
+                                titre: 'Dossier de quel animal ?');
+                            if (a == null) return;
+                            animalDossier = a['id'].toString();
+                            nomDossier = a['nom']?.toString() ?? 'Animal';
+                          }
+                          if (!context.mounted) return;
                           await Navigator.push(context, MaterialPageRoute(builder: (_) => EducationSuiviPage(
-                            animalId: animalId, animalNom: rdv['_animal_nom']?.toString() ?? 'Animal',
+                            animalId: animalDossier, animalNom: nomDossier,
                             ownerProfileId: rdv['client_profile_id']?.toString(),
                             ownerName: rdv['_client_name']?.toString() ?? 'La famille',
                             rdvId: rdv['id']?.toString(), dossier: true)));
@@ -5699,14 +5710,24 @@ class _RdvCard extends StatelessWidget {
                   (rdv['animal_id']?.toString().isNotEmpty ?? false)) ...[
                 const SizedBox(width: 4),
                 Builder(builder: (ctx) => IconButton(
-                  onPressed: () => Navigator.push(ctx, MaterialPageRoute(
-                    // Fiche éducative (Synthèse · Programme · Séances · Documents).
-                    builder: (_) => EducationSuiviPage(
-                      animalId: rdv['animal_id'].toString(),
-                      animalNom: (rdv['_animal_nom'] ?? rdv['animal_nom_manuel'] ?? 'Animal').toString(),
-                      ownerProfileId: rdv['client_profile_id']?.toString(),
-                    ),
-                  )),
+                  onPressed: () async {
+                    var id = rdv['animal_id'].toString();
+                    var nom = (rdv['_animal_nom'] ?? rdv['animal_nom_manuel'] ?? 'Animal').toString();
+                    if (animauxDetailRdv(rdv).isNotEmpty) {
+                      final a = await choisirAnimalRdv(ctx, rdv, color: const Color(0xFF6E9E57), titre: 'Fiche de quel animal ?');
+                      if (a == null) return;
+                      id = a['id'].toString();
+                      nom = a['nom']?.toString() ?? 'Animal';
+                    }
+                    if (!ctx.mounted) return;
+                    await Navigator.push(ctx, MaterialPageRoute(
+                      // Fiche éducative (Synthèse · Programme · Séances · Documents).
+                      builder: (_) => EducationSuiviPage(
+                        animalId: id, animalNom: nom,
+                        ownerProfileId: rdv['client_profile_id']?.toString(),
+                      ),
+                    ));
+                  },
                   icon: const Icon(Icons.pets_outlined, size: 20, color: Color(0xFF6E9E57)),
                   tooltip: 'Fiche de l\'animal',
                   padding: EdgeInsets.zero,
