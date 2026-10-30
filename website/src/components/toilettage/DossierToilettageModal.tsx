@@ -174,7 +174,7 @@ export default function DossierToilettageModal({ rdvId, nomClient, animal, onClo
         rueClient: coord.rue || undefined, cpClient: coord.cp || undefined, villeClient: coord.ville || undefined,
         sourceRdvId: r.id, sourceAnimalId: r.animal_id ?? undefined, clientUid: r.client_uid ?? undefined, clientProfileId: r.client_profile_id ?? undefined,
         // Après l'émission : retour au RDV en cours de traitement.
-        retour: `/mes-rdv?rdv=${encodeURIComponent(r.id)}`,
+        retour: `/mes-rdv?onglet=a_venir&rdv=${encodeURIComponent(r.id)}`,
         lignes: [{ description: [prestation.nom, animalNom].filter(Boolean).join(' — ') + ` — ${debut.toLocaleDateString('fr-FR')}`, quantite: 1, prixUnitaire: 0, prixTTC: Number(prestation.prix ?? 0), tva: 20 }],
       }));
     } catch { /* facture vierge */ }

@@ -654,6 +654,77 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
   const [nouveauClient, setNouveauClient] = useState(false);
   const [rechargerFichier, setRechargerFichier] = useState(0);
   const fichierClients = ['veterinaire', 'toilettage', 'marechal_ferrant', 'sante', 'education', 'garde', 'pension'].includes(catPro);
+  // Puce : retrouve l'animal (une puce = une fiche) et son propriétaire —
+  // compte PetsMatch → RDV à son nom (client qui appelle) ; fiche d'un autre
+  // pro → rattachée à mes patients.
+  const [puce, setPuce] = useState('');
+  const [puceCherche, setPuceCherche] = useState(false);
+  const [puceIntrouvable, setPuceIntrouvable] = useState(false);
+  const [puceRes, setPuceRes] = useState<{ animalId: string; nom: string; espece: string; detenteur: string; ownerUid: string | null;
+    ownerProfileId: string | null; ownerNom: string; aVous: boolean; dejaLie: boolean } | null>(null);
+  // Planning du jour choisi + créneaux libres (créneaux ouverts moins RDV pris).
+  const [rdvsJour, setRdvsJour] = useState<{ debut: Date; duree: number; libelle: string }[]>([]);
+  const [libres, setLibres] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!profileId || !date) return;
+    let annule = false;
+    (async () => {
+      const debutJour = new Date(`${date}T00:00:00`), finJour = new Date(`${date}T23:59:59`);
+      let cq = supabase.from('creneaux_pro').select('heure_debut, praticien_profile_id')
+        .eq('pro_uid', proUid).eq('pro_profile_id', profileId).eq('date', date).eq('statut', 'disponible').order('heure_debut');
+      if (praticien) cq = cq.eq('praticien_profile_id', praticien);
+      const [{ data: cr }, { data: rv }] = await Promise.all([cq,
+        supabase.from('rdv').select('date_heure, duree_minutes, animal_nom_manuel, client_nom_manuel, motif, instructeur_profile_id')
+          .eq('pro_profile_id', profileId).gte('date_heure', debutJour.toISOString()).lte('date_heure', finJour.toISOString())
+          .not('statut', 'in', '(annule,refuse)').order('date_heure')]);
+      if (annule) return;
+      const pris = ((rv ?? []) as { date_heure: string; duree_minutes: number | null; animal_nom_manuel: string | null; client_nom_manuel: string | null; motif: string | null; instructeur_profile_id: string | null }[])
+        .filter(r => !praticien || !r.instructeur_profile_id || r.instructeur_profile_id === praticien)
+        .map(r => ({ debut: new Date(r.date_heure), duree: r.duree_minutes ?? 30,
+          libelle: [r.animal_nom_manuel, r.client_nom_manuel, r.motif].map(x => (x ?? '').trim()).filter(Boolean).join(' · ') || 'RDV' }));
+      setRdvsJour(pris);
+      const heures = [...new Set(((cr ?? []) as { heure_debut: string }[]).map(c => String(c.heure_debut).slice(0, 5)))];
+      setLibres(heures.filter(h => {
+        const d = new Date(`${date}T${h}:00`), f = new Date(d.getTime() + duree * 60000);
+        return d > new Date() && !pris.some(p => d < new Date(p.debut.getTime() + p.duree * 60000) && f > p.debut);
+      }));
+    })();
+    return () => { annule = true; };
+  }, [date, praticien, duree, profileId, proUid]);
+
+  async function chercherPuce() {
+    const n = puce.replace(/[\s-]/g, '');
+    if (!n) return;
+    setPuceCherche(true); setPuceRes(null); setPuceIntrouvable(false);
+    const { data } = await supabase.rpc('pm_puce_existante', { p_identification: n, p_profile: profileId || null });
+    const h = ((data ?? []) as { animal_id: string; nom: string | null; espece: string | null; detenteur: string; a_vous: boolean; deja_lie: boolean; owner_uid: string | null; owner_profile_id: string | null }[])[0];
+    if (!h) { setPuceCherche(false); setPuceIntrouvable(true); return; }
+    let ownerNom = '';
+    if (h.owner_profile_id) {
+      const { data: up } = await supabase.from('user_profiles_complet').select('firstname, lastname, nom').eq('id', h.owner_profile_id).maybeSingle();
+      ownerNom = `${up?.firstname ?? ''} ${up?.lastname ?? ''}`.trim() || String(up?.nom ?? '');
+    }
+    setPuceRes({ animalId: h.animal_id, nom: h.nom ?? 'Animal', espece: h.espece ?? '', detenteur: h.detenteur,
+      ownerUid: h.owner_uid, ownerProfileId: h.owner_profile_id, ownerNom: ownerNom || 'Propriétaire', aVous: h.a_vous, dejaLie: h.deja_lie });
+    setPuceCherche(false);
+  }
+
+  async function utiliserPuce() {
+    if (!puceRes) return;
+    if (puceRes.ownerUid && puceRes.ownerProfileId && !puceRes.aVous) {
+      // Compte PetsMatch : RDV au nom du propriétaire (il l'a demandé par téléphone).
+      setLinked({ uid: puceRes.ownerUid, nom: puceRes.ownerNom, profileId: puceRes.ownerProfileId });
+    } else if (puceRes.detenteur === 'pro' && !puceRes.dejaLie && profileId) {
+      // Fiche créée par un autre pro : rattachée à mes patients.
+      const { error: er } = await supabase.rpc('pm_rattacher_fiche_pro', { p_profile: profileId, p_animal: puceRes.animalId, p_client_id: null, p_client: null });
+      if (er) { setError(er.message); return; }
+      setRechargerFichier(n => n + 1);
+    }
+    setPatientId(puceRes.animalId);
+    setAnimalNom(puceRes.nom);
+    setPuceRes(null); setPuce('');
+  }
   useEffect(() => {
     if (!fichierClients || !profileId) return;
     (async () => {
@@ -830,6 +901,37 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
           <p className="text-xs text-gray-400 mt-0.5">Pour un client qui appelle. Le RDV est ajouté directement confirmé.</p>
         </div>
 
+        {/* Puce : retrouver l'animal et son propriétaire. */}
+        {!linked && (
+          <div>
+            <label className={label}>Numéro de puce (facultatif)</label>
+            <div className="flex gap-2 mt-1">
+              <input value={puce} onChange={e => { setPuce(e.target.value); setPuceRes(null); setPuceIntrouvable(false); }} placeholder="250…" inputMode="numeric"
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <button type="button" onClick={chercherPuce} disabled={puceCherche || !puce.trim()}
+                className="px-3 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{ background: TEAL }}>
+                {puceCherche ? '…' : 'Rechercher'}
+              </button>
+            </div>
+            {puceRes ? (
+              <div className="mt-2 rounded-xl p-3 space-y-2" style={{ background: '#0C5C6C0C', border: '1px solid #0C5C6C33' }}>
+                <p className="text-sm"><span className="font-semibold">{puceRes.nom}</span>{puceRes.espece ? ` · ${puceRes.espece}` : ''}</p>
+                <p className="text-xs text-gray-600">
+                  {puceRes.aVous || puceRes.dejaLie ? 'Déjà dans mon fichier.'
+                    : puceRes.ownerUid ? `Propriétaire : ${puceRes.ownerNom} (compte PetsMatch)`
+                    : puceRes.detenteur === 'pro' ? 'Fiche créée par un autre professionnel : propriétaire à renseigner.' : ''}
+                </p>
+                <button type="button" onClick={utiliserPuce} className="w-full py-2 rounded-xl text-xs font-bold border" style={{ borderColor: TEAL, color: TEAL }}>
+                  {puceRes.ownerUid && !puceRes.aVous ? 'Créer le RDV pour ce propriétaire'
+                    : puceRes.detenteur === 'pro' && !puceRes.dejaLie ? 'Rattacher à mes patients et l’utiliser' : 'Utiliser cet animal'}
+                </button>
+              </div>
+            ) : puceIntrouvable ? (
+              <p className="text-[11px] text-gray-400 mt-1">Aucun animal avec cette puce sur PetsMatch : saisissez le client ci-dessous.</p>
+            ) : null}
+          </div>
+        )}
+
         {fichierClients && !linked && (
           <button type="button" onClick={() => setNouveauClient(true)} className="text-sm font-semibold" style={{ color: '#0C5C6C' }}>
             + {catPro === 'veterinaire' ? 'Nouveau patient (propriétaire sans appli)' : 'Nouveau client (sans appli)'}
@@ -896,6 +998,34 @@ function NouveauRdvModal({ proUid, profileId, proName, catPro, initial, onClose,
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className={champ} /></div>
           <div><label className={label}>Heure</label>
             <input type="time" step={300} value={heure} onChange={e => setHeure(e.target.value)} className={champ} /></div>
+        </div>
+        {/* Créneaux libres du jour (créneaux ouverts moins RDV pris), puis planning du jour pour vérifier. */}
+        {libres.length > 0 && (
+          <div>
+            <label className={label}>Créneaux libres</label>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {libres.map(h => (
+                <button key={h} type="button" onClick={() => setHeure(h)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                  style={heure === h ? { background: TEAL, borderColor: TEAL, color: 'white' } : { borderColor: '#D1D5DB', color: '#1E2025' }}>
+                  {h.replace(':', 'h')}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wide">Planning du {new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+          {rdvsJour.length === 0 ? <p className="text-xs text-gray-400 mt-1">Aucun RDV ce jour-là.</p> : (
+            <ul className="mt-1 space-y-0.5">
+              {rdvsJour.map((r, i) => (
+                <li key={i} className="text-xs text-[#1E2025]">
+                  <span className="font-semibold">{r.debut.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                  {' – '}{new Date(r.debut.getTime() + r.duree * 60000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} · {r.libelle}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div>
           <label className={label}>Durée</label>

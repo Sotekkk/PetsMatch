@@ -115,7 +115,8 @@ export default function SeanceToilettageModal({ animalId, animalNom, proUid, pro
   }
 
   async function enregistrer() {
-    if (partage && !v.compte_rendu.trim()) { alert('Rédigez le compte rendu à partager avec le propriétaire.'); return; }
+    // Compte rendu obligatoire : il fait partie de la fiche technique (envoyé au propriétaire).
+    if (!v.compte_rendu.trim()) { alert('Le compte rendu est obligatoire : rédigez-le avant d’enregistrer la fiche technique.'); return; }
     setSaving(true);
     try {
       const fid = await assurerFiche();
@@ -236,7 +237,7 @@ export default function SeanceToilettageModal({ animalId, animalNom, proUid, pro
               <p className="text-xs text-gray-500">Les photos restent dans la fiche du salon : elles ne sont jamais publiées.</p>
             </>)}</div>
             <div className="bg-white rounded-2xl">{section('Compte rendu pour le propriétaire', <>
-              {champ('compte_rendu', 'Compte rendu court', 4)}
+              {champ('compte_rendu', 'Compte rendu court *', 4)}
               {champ('conseils_pelage', 'Conseils de soin du pelage (brossage, produits, prochain toilettage conseillé…)', 4)}
               <label className="flex items-start gap-2 text-sm">
                 <input type="checkbox" checked={partage} onChange={e => setPartage(e.target.checked)} className="mt-0.5" />

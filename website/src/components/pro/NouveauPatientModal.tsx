@@ -9,6 +9,7 @@
 // Miroir app : lib/pages/pro/nouveau_patient_clinique_page.dart.
 
 import { useEffect, useState } from 'react';
+import ChampRace from '@/components/animaux/ChampRace';
 import { supabase } from '@/lib/supabase';
 import { trouverUtilisateurParEmail, type UtilisateurTrouve } from '@/lib/user-lookup';
 
@@ -204,7 +205,7 @@ export default function NouveauPatientModal({ cliniqueProfileId, onClose, onCree
             <option value="">Sexe —</option><option value="male">Mâle</option><option value="femelle">Femelle</option>
           </select>
         </div>
-        <input value={a.race} onChange={e => setA({ ...a, race: e.target.value })} placeholder="Race" className={champ} />
+        <ChampRace espece={a.espece} value={a.race} onChange={race => setA({ ...a, race })} className={champ} />
         <div className="grid grid-cols-2 gap-2">
           <label className="text-xs text-gray-500">Naissance
             <input type="date" value={a.date_naissance} onChange={e => setA({ ...a, date_naissance: e.target.value })} className={`${champ} mt-1`} />

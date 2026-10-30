@@ -157,8 +157,9 @@ class _ToilettageSeancePageState extends State<ToilettageSeancePage> {
   String? _v(String k) => _c[k]!.text.trim().isEmpty ? null : _c[k]!.text.trim();
 
   Future<void> _enregistrer() async {
-    if (_partage && (_v('compte_rendu') == null)) {
-      _snack('Rédigez le compte rendu à partager avec le propriétaire.');
+    // Compte rendu obligatoire : il fait partie de la fiche technique (envoyé au propriétaire).
+    if (_v('compte_rendu') == null) {
+      _snack('Le compte rendu est obligatoire : rédigez-le avant d’enregistrer la fiche technique.');
       return;
     }
     setState(() => _saving = true);
@@ -366,7 +367,7 @@ class _ToilettageSeancePageState extends State<ToilettageSeancePage> {
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ]),
               _section('Compte rendu pour le propriétaire', [
-                _champ('compte_rendu', 'Compte rendu court', lignes: 4),
+                _champ('compte_rendu', 'Compte rendu court *', lignes: 4),
                 _champ('conseils_pelage', 'Conseils de soin du pelage (brossage, produits, prochain toilettage conseillé…)', lignes: 4),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
